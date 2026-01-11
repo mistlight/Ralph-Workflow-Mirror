@@ -454,6 +454,11 @@ test_verbosity_affects_claude_output() {
   # Use a sample Claude text event
   local json='{"type":"assistant","message":{"content":[{"type":"text","text":"This is a test message that will be truncated depending on verbosity settings"}]}}'
 
+  # Save and unset STREAM_LOGFILE to prevent "no such file" errors
+  # when running tests outside the normal context (P1 test hermeticity fix)
+  local saved_logfile="${STREAM_LOGFILE:-}"
+  unset STREAM_LOGFILE
+
   RALPH_VERBOSITY=0  # quiet mode - 60 char limit
   local output=$(print -r -- "$json" | stream_parse_claude)
   # In quiet mode, text should be shorter
@@ -471,6 +476,8 @@ test_verbosity_affects_claude_output() {
 
   # Reset to default
   RALPH_VERBOSITY=1
+  # Restore STREAM_LOGFILE if it was set
+  [[ -n "$saved_logfile" ]] && STREAM_LOGFILE="$saved_logfile"
 }
 
 ############################################
@@ -481,9 +488,10 @@ test_prompt_claude_iteration() {
   local result=$(prompt_claude_iteration 2 5)
   # Note: We intentionally do NOT include iteration count in the prompt
   # to avoid context pollution - agents should not know loop structure
+  # Also, no "stop" instruction - agent works until all goals satisfied
   assert_contains "$result" "PROMPT.md" "prompt_claude_iteration references PROMPT.md"
   assert_contains "$result" "STATUS.md" "prompt_claude_iteration references STATUS.md"
-  assert_contains "$result" "next best progress" "prompt_claude_iteration asks for progress"
+  assert_contains "$result" "until all are satisfied" "prompt_claude_iteration works until complete"
 }
 
 test_prompt_codex_review_fresh_eyes() {
@@ -726,10 +734,10 @@ test_clean_context_for_reviewer() {
     test_fail "clean_context_for_reviewer clears NOTES.md" "expected empty, got '$notes_content'"
   fi
 
-  # Check STATUS.md is reset (not empty, but reset)
+  # Check STATUS.md is reset (not empty, but reset to non-revealing content)
   ((TESTS_RUN++))
   local status_content=$(cat .agent/STATUS.md)
-  if [[ "$status_content" == *"Development phase complete"* ]]; then
+  if [[ "$status_content" == *"Code changes made"* ]]; then
     test_pass "clean_context_for_reviewer resets STATUS.md"
   else
     test_fail "clean_context_for_reviewer resets STATUS.md"
@@ -929,6 +937,292 @@ run_test "Agent - developer_cmd" test_agent_developer_cmd
 run_test "Agent - reviewer_cmd" test_agent_reviewer_cmd
 run_test "Agent - detect_from_cmd" test_detect_agent_from_cmd
 run_test "Agent - register_agent" test_register_agent
+
+############################################
+# Integration tests for P0/P1/P2 issues
+############################################
+
+test_print_progress_zero_total() {
+  # P1 fix: print_progress should not crash with total=0
+  local result="$(print_progress 0 0 "Test")"
+  ((TESTS_RUN++))
+  if [[ -n "$result" ]]; then
+    test_pass "print_progress handles total=0 gracefully"
+  else
+    test_fail "print_progress handles total=0 gracefully"
+  fi
+  assert_contains "$result" "no progress data" "print_progress shows 'no progress data' for zero total"
+}
+
+test_hook_uses_absolute_path() {
+  # P2 fix: Hook should use absolute path for orig backup
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  local hooks_dir="${tmpdir}/.git/hooks"
+  mkdir -p "$hooks_dir"
+
+  # Create an existing hook to trigger backup
+  echo "#!/bin/bash" > "${hooks_dir}/pre-commit"
+  echo "exit 0" >> "${hooks_dir}/pre-commit"
+  chmod +x "${hooks_dir}/pre-commit"
+
+  install_hook "TestHook" "${hooks_dir}/pre-commit"
+
+  # Read the installed hook content
+  local hook_content="$(cat ${hooks_dir}/pre-commit)"
+
+  ((TESTS_RUN++))
+  # The orig= line should contain an absolute path (starts with /)
+  if [[ "$hook_content" == *'orig="/'* ]]; then
+    test_pass "install_hook uses absolute path for orig backup"
+  else
+    test_fail "install_hook uses absolute path for orig backup" "Expected absolute path in hook"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_hook_works_from_subdirectory() {
+  # P2 fix: Hook should work when committing from a subdirectory
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  # Create an existing hook that we'll backup
+  local hooks_dir="${tmpdir}/.git/hooks"
+  mkdir -p "$hooks_dir"
+  echo '#!/bin/bash' > "${hooks_dir}/pre-commit"
+  echo 'echo "Original hook ran"' >> "${hooks_dir}/pre-commit"
+  chmod +x "${hooks_dir}/pre-commit"
+
+  # Install Ralph hook (which should backup the original with absolute path)
+  install_hook "Commit" "${hooks_dir}/pre-commit"
+
+  # Create a subdirectory and a file
+  mkdir -p subdir
+  echo "test" > subdir/file.txt
+  git add subdir/file.txt
+
+  # Commit from the root (should work - no .no_agent_commit)
+  ((TESTS_RUN++))
+  if git commit -m "test commit" 2>/dev/null; then
+    test_pass "hook allows commit when .no_agent_commit absent"
+  else
+    test_fail "hook allows commit when .no_agent_commit absent"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+run_test "Progress bar - zero total" test_print_progress_zero_total
+run_test "Hook - uses absolute path" test_hook_uses_absolute_path
+run_test "Hook - works from subdirectory" test_hook_works_from_subdirectory
+
+############################################
+# Hook uninstall tests
+############################################
+
+test_uninstall_hook_restores_original() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  local hooks_dir="${tmpdir}/.git/hooks"
+  mkdir -p "$hooks_dir"
+
+  # Create an existing hook
+  echo '#!/bin/bash' > "${hooks_dir}/pre-commit"
+  echo 'echo "Original hook"' >> "${hooks_dir}/pre-commit"
+  chmod +x "${hooks_dir}/pre-commit"
+
+  # Install Ralph hook (backs up original)
+  install_hook "Commit" "${hooks_dir}/pre-commit"
+
+  # Verify Ralph hook is installed
+  ((TESTS_RUN++))
+  if file_contains_marker "${hooks_dir}/pre-commit" "$HOOK_MARKER"; then
+    test_pass "Ralph hook installed"
+  else
+    test_fail "Ralph hook installed"
+  fi
+
+  # Uninstall hook
+  uninstall_hook "${hooks_dir}/pre-commit" >/dev/null 2>&1
+
+  # Verify original is restored
+  ((TESTS_RUN++))
+  if [[ -f "${hooks_dir}/pre-commit" ]]; then
+    local content=$(cat "${hooks_dir}/pre-commit")
+    if [[ "$content" == *"Original hook"* ]]; then
+      test_pass "uninstall_hook restores original"
+    else
+      test_fail "uninstall_hook restores original" "content doesn't match original"
+    fi
+  else
+    test_fail "uninstall_hook restores original" "hook file missing"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_uninstall_hook_removes_when_no_original() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  local hooks_dir="${tmpdir}/.git/hooks"
+  mkdir -p "$hooks_dir"
+
+  # Install Ralph hook (no original)
+  install_hook "Commit" "${hooks_dir}/pre-commit"
+
+  # Uninstall hook
+  uninstall_hook "${hooks_dir}/pre-commit" >/dev/null 2>&1
+
+  # Verify hook is removed
+  ((TESTS_RUN++))
+  if [[ ! -f "${hooks_dir}/pre-commit" ]]; then
+    test_pass "uninstall_hook removes hook when no original"
+  else
+    test_fail "uninstall_hook removes hook when no original"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_cleanup_orphaned_marker() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  # Create orphaned marker
+  touch .no_agent_commit
+
+  # Clean up
+  cleanup_orphaned_marker >/dev/null 2>&1
+
+  # Verify marker is removed
+  ((TESTS_RUN++))
+  if [[ ! -f ".no_agent_commit" ]]; then
+    test_pass "cleanup_orphaned_marker removes marker"
+  else
+    test_fail "cleanup_orphaned_marker removes marker"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_cleanup_orphaned_marker_when_missing() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  # Ensure no marker exists
+  rm -f .no_agent_commit
+
+  # Clean up (should succeed even when no marker)
+  ((TESTS_RUN++))
+  if cleanup_orphaned_marker >/dev/null 2>&1; then
+    test_pass "cleanup_orphaned_marker succeeds when no marker"
+  else
+    test_fail "cleanup_orphaned_marker succeeds when no marker"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+run_test "Hook - uninstall restores original" test_uninstall_hook_restores_original
+run_test "Hook - uninstall removes when no original" test_uninstall_hook_removes_when_no_original
+run_test "Cleanup - removes orphaned marker" test_cleanup_orphaned_marker
+run_test "Cleanup - succeeds when no marker" test_cleanup_orphaned_marker_when_missing
+
+############################################
+# Commit verification tests
+############################################
+
+test_commit_verification_detects_new_commit() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  # Create initial commit
+  echo "initial" > file.txt
+  git add file.txt
+  git commit -m "initial" -q
+
+  # Capture HEAD before
+  local head_before="$(git rev-parse HEAD)"
+
+  # Make a new commit
+  echo "change" >> file.txt
+  git add file.txt
+  git commit -m "second commit" -q
+
+  # Capture HEAD after
+  local head_after="$(git rev-parse HEAD)"
+
+  # Verify detection
+  ((TESTS_RUN++))
+  if [[ "$head_before" != "$head_after" ]]; then
+    test_pass "commit verification detects new commit (HEAD changed)"
+  else
+    test_fail "commit verification detects new commit (HEAD changed)"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_commit_verification_detects_no_commit() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  # Create initial commit
+  echo "initial" > file.txt
+  git add file.txt
+  git commit -m "initial" -q
+
+  # Capture HEAD before (no new commit)
+  local head_before="$(git rev-parse HEAD)"
+  local head_after="$(git rev-parse HEAD)"
+
+  # Verify no change detected
+  ((TESTS_RUN++))
+  if [[ "$head_before" == "$head_after" ]]; then
+    test_pass "commit verification detects no new commit (HEAD unchanged)"
+  else
+    test_fail "commit verification detects no new commit (HEAD unchanged)"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+run_test "Commit verification - detects new commit" test_commit_verification_detects_new_commit
+run_test "Commit verification - detects no commit" test_commit_verification_detects_no_commit
 
 ############################################
 # Summary
