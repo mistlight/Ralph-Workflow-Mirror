@@ -31,7 +31,7 @@
 //! ```toml
 //! [agents.myagent]
 //! cmd = "my-ai-tool run"
-//! json_flag = "--json-stream"
+//! output_flag = "--json-stream"
 //! yolo_flag = "--auto-fix"
 //! verbose_flag = "--verbose"
 //! can_commit = true
@@ -112,8 +112,8 @@ impl std::fmt::Display for JsonParserType {
 pub(crate) struct AgentConfig {
     /// Base command to run the agent
     pub(crate) cmd: String,
-    /// Flag to enable JSON output
-    pub(crate) json_flag: String,
+    /// Output-format flag (JSON streaming, text mode, etc.)
+    pub(crate) output_flag: String,
     /// Flag for autonomous mode (no prompts)
     pub(crate) yolo_flag: String,
     /// Flag for verbose output
@@ -129,9 +129,11 @@ pub(crate) struct AgentConfig {
 pub(crate) struct AgentConfigToml {
     /// Base command to run the agent
     pub(crate) cmd: String,
-    /// Flag to enable JSON output (optional, defaults to empty)
-    #[serde(default)]
-    pub(crate) json_flag: String,
+    /// Output-format flag (optional, defaults to empty)
+    ///
+    /// Backwards compatible with `json_flag` from older configs.
+    #[serde(default, alias = "json_flag")]
+    pub(crate) output_flag: String,
     /// Flag for autonomous mode (optional, defaults to empty)
     #[serde(default)]
     pub(crate) yolo_flag: String,
@@ -154,7 +156,7 @@ impl From<AgentConfigToml> for AgentConfig {
     fn from(toml: AgentConfigToml) -> Self {
         AgentConfig {
             cmd: toml.cmd,
-            json_flag: toml.json_flag,
+            output_flag: toml.output_flag,
             yolo_flag: toml.yolo_flag,
             verbose_flag: toml.verbose_flag,
             can_commit: toml.can_commit,
@@ -241,14 +243,14 @@ impl AgentsConfigFile {
 impl AgentConfig {
     /// Build full command string with specified flags
     ///
-    /// Note: For Claude CLI, when using `--output-format=stream-json` (the json_flag),
+    /// Note: For Claude CLI, when using `--output-format=stream-json` (the output_flag),
     /// the `--verbose` flag is always required. This method automatically adds verbose
     /// when using Claude's stream-json format, regardless of the `verbose` parameter.
-    pub(crate) fn build_cmd(&self, json: bool, yolo: bool, verbose: bool) -> String {
+    pub(crate) fn build_cmd(&self, output: bool, yolo: bool, verbose: bool) -> String {
         let mut parts = vec![self.cmd.clone()];
 
-        if json && !self.json_flag.is_empty() {
-            parts.push(self.json_flag.clone());
+        if output && !self.output_flag.is_empty() {
+            parts.push(self.output_flag.clone());
         }
         if yolo && !self.yolo_flag.is_empty() {
             parts.push(self.yolo_flag.clone());
@@ -256,7 +258,7 @@ impl AgentConfig {
 
         // Claude CLI requires --verbose when using --output-format=stream-json
         // See: https://github.com/anthropics/claude-code
-        let needs_verbose = verbose || self.requires_verbose_for_json(json);
+        let needs_verbose = verbose || self.requires_verbose_for_json(output);
 
         if needs_verbose && !self.verbose_flag.is_empty() {
             parts.push(self.verbose_flag.clone());
@@ -270,10 +272,12 @@ impl AgentConfig {
     /// Claude CLI specifically requires --verbose when using --output-format=stream-json
     /// in print mode (-p). Without it, the command fails with:
     /// "Error: When using --print, --output-format=stream-json requires --verbose"
+    ///
+    /// Note: This is specific to the Claude CLI binary, not just agents using the Claude parser.
+    /// Other CLIs like Qwen Code may use Claude-compatible output format but don't have this requirement.
     fn requires_verbose_for_json(&self, json_enabled: bool) -> bool {
-        json_enabled
-            && self.json_parser == JsonParserType::Claude
-            && self.json_flag.contains("stream-json")
+        // Only applies to Claude CLI (claude -p command), not other CLIs using Claude parser
+        json_enabled && self.cmd.starts_with("claude ") && self.output_flag.contains("stream-json")
     }
 }
 
@@ -745,6 +749,8 @@ impl AgentRegistry {
             .get_fallbacks(role)
             .iter()
             .filter(|name| self.is_agent_available(name))
+            // Agents with can_commit=false are chat-only / non-tool agents and will stall Ralph.
+            .filter(|name| self.get(name.as_str()).is_some_and(|cfg| cfg.can_commit))
             .map(|s| s.as_str())
             .collect()
     }
@@ -776,6 +782,23 @@ impl AgentRegistry {
                 Add 'reviewer = [\"your-agent\", ...]' to your [agent_chain] section.\n\
                 Use --list-agents to see available agents."
                 .to_string());
+        }
+
+        // Sanity check: ensure there is at least one workflow-capable agent per role.
+        // Agents with can_commit=false are chat-only / non-tool agents and will stall Ralph.
+        for role in [AgentRole::Developer, AgentRole::Reviewer] {
+            let chain = self.fallback.get_fallbacks(role);
+            let has_capable = chain
+                .iter()
+                .any(|name| self.get(name).is_some_and(|cfg| cfg.can_commit));
+            if !has_capable {
+                return Err(format!(
+                    "No workflow-capable agents found for {}.\n\
+	                    All agents in the {} chain have can_commit=false.\n\
+                    Fix: set can_commit=true for at least one agent or update [agent_chain].",
+                    role, role
+                ));
+            }
         }
 
         Ok(())
@@ -848,6 +871,17 @@ mod tests {
         assert!(registry.is_known("continue"));
         assert!(registry.is_known("amazon-q"));
         assert!(registry.is_known("gemini"));
+
+        // Lower-cost / open-source agents
+        assert!(registry.is_known("qwen"));
+        assert!(registry.is_known("vibe"));
+        assert!(registry.is_known("llama-cli"));
+        assert!(registry.is_known("aichat"));
+
+        // Additional popular CLI tools
+        assert!(registry.is_known("cursor"));
+        assert!(registry.is_known("plandex"));
+        assert!(registry.is_known("ollama"));
 
         assert!(!registry.is_known("unknown_agent"));
     }
@@ -948,7 +982,7 @@ mod tests {
             "testbot",
             AgentConfig {
                 cmd: "testbot run".to_string(),
-                json_flag: "--output-json".to_string(),
+                output_flag: "--output-json".to_string(),
                 yolo_flag: "--auto".to_string(),
                 verbose_flag: String::new(),
                 can_commit: true,
@@ -1010,7 +1044,7 @@ mod tests {
     fn test_agent_config_from_toml() {
         let toml = AgentConfigToml {
             cmd: "myagent run".to_string(),
-            json_flag: "--json".to_string(),
+            output_flag: "--json".to_string(),
             yolo_flag: "--auto".to_string(),
             verbose_flag: "--verbose".to_string(),
             can_commit: false,
@@ -1019,7 +1053,7 @@ mod tests {
 
         let config: AgentConfig = toml.into();
         assert_eq!(config.cmd, "myagent run");
-        assert_eq!(config.json_flag, "--json");
+        assert_eq!(config.output_flag, "--json");
         assert_eq!(config.yolo_flag, "--auto");
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(!config.can_commit);
@@ -1033,7 +1067,7 @@ mod tests {
         let config: AgentConfigToml = toml::from_str(toml_str).unwrap();
 
         assert_eq!(config.cmd, "myagent");
-        assert_eq!(config.json_flag, "");
+        assert_eq!(config.output_flag, "");
         assert_eq!(config.yolo_flag, "");
         assert_eq!(config.verbose_flag, "");
         assert!(config.can_commit); // default is true
@@ -1062,7 +1096,7 @@ json_parser = "claude"
 
         let custom1 = &config.agents["custom1"];
         assert_eq!(custom1.cmd, "custom1-cli");
-        assert_eq!(custom1.json_flag, "--json");
+        assert_eq!(custom1.output_flag, "--json");
         assert_eq!(custom1.json_parser, "codex");
 
         let custom2 = &config.agents["custom2"];
@@ -1107,7 +1141,7 @@ json_parser = "codex"
 
         let config = registry.get("testbot").unwrap();
         assert_eq!(config.cmd, "testbot exec");
-        assert_eq!(config.json_flag, "--output-json");
+        assert_eq!(config.output_flag, "--output-json");
         assert_eq!(config.json_parser, JsonParserType::Codex);
     }
 
@@ -1135,7 +1169,7 @@ json_parser = "codex"
 
         let config = registry.get("claude").unwrap();
         assert_eq!(config.cmd, "claude-custom -p");
-        assert_eq!(config.json_flag, "--custom-json");
+        assert_eq!(config.output_flag, "--custom-json");
         assert_eq!(config.json_parser, JsonParserType::Codex);
     }
 
@@ -1164,6 +1198,224 @@ json_parser = "codex"
         // Test Gemini config
         let gemini = registry.get("gemini").unwrap();
         assert!(gemini.cmd.contains("gemini"));
+    }
+
+    #[test]
+    fn test_lower_cost_agent_configs() {
+        let registry = AgentRegistry::new().unwrap();
+
+        // Test Qwen Code config (Alibaba's Qwen3-Coder)
+        let qwen = registry.get("qwen").unwrap();
+        assert!(qwen.cmd.contains("qwen"));
+        assert_eq!(qwen.cmd, "qwen -p");
+        assert!(qwen.output_flag.contains("stream-json"));
+        assert_eq!(qwen.yolo_flag, "--yolo");
+        assert_eq!(qwen.verbose_flag, "--debug");
+        assert!(qwen.can_commit);
+        // Qwen uses Claude parser (forked from Gemini CLI with Claude-compatible output)
+        assert_eq!(qwen.json_parser, JsonParserType::Claude);
+
+        // Test Mistral Vibe config
+        let vibe = registry.get("vibe").unwrap();
+        assert!(vibe.cmd.contains("vibe"));
+        assert_eq!(vibe.cmd, "vibe --prompt");
+        assert_eq!(vibe.output_flag, ""); // No JSON streaming support
+        assert_eq!(vibe.yolo_flag, "--auto-approve");
+        assert!(vibe.can_commit);
+        assert_eq!(vibe.json_parser, JsonParserType::Generic);
+
+        // Test llama-cli config (llama.cpp)
+        let llama = registry.get("llama-cli").unwrap();
+        assert!(llama.cmd.contains("llama-cli"));
+        assert!(llama.cmd.contains("-m")); // Local model path (no auto-download)
+        assert!(llama.cmd.contains("-cnv")); // Conversation mode
+        assert_eq!(llama.output_flag, ""); // No native JSON streaming
+        assert_eq!(llama.yolo_flag, ""); // No autonomous mode
+        assert_eq!(llama.verbose_flag, "-v");
+        assert!(!llama.can_commit); // Local model without tool use
+        assert_eq!(llama.json_parser, JsonParserType::Generic);
+
+        // Test AIChat config (multi-provider LLM CLI)
+        let aichat = registry.get("aichat").unwrap();
+        assert!(aichat.cmd.contains("aichat"));
+        assert_eq!(aichat.output_flag, ""); // No CLI JSON output
+        assert_eq!(aichat.yolo_flag, ""); // No autonomous mode
+        assert!(!aichat.can_commit); // General chat, no tool use
+        assert_eq!(aichat.json_parser, JsonParserType::Generic);
+    }
+
+    #[test]
+    fn test_qwen_build_cmd() {
+        let registry = AgentRegistry::new().unwrap();
+        let qwen = registry.get("qwen").unwrap();
+
+        // Build developer command (json=true, yolo=true, verbose=true)
+        let dev_cmd = qwen.build_cmd(true, true, true);
+        assert!(dev_cmd.contains("qwen -p"));
+        assert!(dev_cmd.contains("--output-format stream-json"));
+        assert!(dev_cmd.contains("--yolo"));
+        assert!(dev_cmd.contains("--debug"));
+
+        // Build reviewer command (json=true, yolo=true, verbose=false)
+        // Qwen doesn't require verbose with stream-json (unlike Claude)
+        let rev_cmd = qwen.build_cmd(true, true, false);
+        assert!(rev_cmd.contains("qwen -p"));
+        assert!(rev_cmd.contains("--output-format stream-json"));
+        assert!(rev_cmd.contains("--yolo"));
+        assert!(!rev_cmd.contains("--debug"));
+    }
+
+    #[test]
+    fn test_vibe_build_cmd() {
+        let registry = AgentRegistry::new().unwrap();
+        let vibe = registry.get("vibe").unwrap();
+
+        // Build command with yolo mode
+        let cmd = vibe.build_cmd(true, true, true);
+        assert!(cmd.contains("vibe --prompt"));
+        assert!(cmd.contains("--auto-approve"));
+        // No output_flag or verbose_flag for vibe
+        assert!(!cmd.contains("--json"));
+    }
+
+    #[test]
+    fn test_lower_cost_agents_in_chain() {
+        let registry = AgentRegistry::new().unwrap();
+        let fallback = registry.fallback_config();
+
+        // Verify new agents are in the developer fallback chain
+        assert!(
+            fallback.developer.contains(&"qwen".to_string()),
+            "qwen should be in developer fallback chain"
+        );
+        assert!(
+            fallback.developer.contains(&"vibe".to_string()),
+            "vibe should be in developer fallback chain"
+        );
+        assert!(
+            !fallback.developer.contains(&"llama-cli".to_string()),
+            "llama-cli should not be in developer chain by default (can_commit=false)"
+        );
+        assert!(
+            !fallback.developer.contains(&"aichat".to_string()),
+            "aichat should not be in developer chain by default (can_commit=false)"
+        );
+
+        // Verify qwen and vibe are in reviewer chain (they support tool use)
+        assert!(
+            fallback.reviewer.contains(&"qwen".to_string()),
+            "qwen should be in reviewer fallback chain"
+        );
+        assert!(
+            fallback.reviewer.contains(&"vibe".to_string()),
+            "vibe should be in reviewer fallback chain"
+        );
+
+        // llama-cli and aichat are NOT in reviewer chain (no tool use)
+        assert!(
+            !fallback.reviewer.contains(&"llama-cli".to_string()),
+            "llama-cli should not be in reviewer chain (no tool use)"
+        );
+        assert!(
+            !fallback.reviewer.contains(&"aichat".to_string()),
+            "aichat should not be in reviewer chain (no tool use)"
+        );
+    }
+
+    #[test]
+    fn test_cursor_agent_config() {
+        let registry = AgentRegistry::new().unwrap();
+        let cursor = registry.get("cursor").unwrap();
+        assert!(cursor.cmd.contains("agent"));
+        assert!(cursor.cmd.contains("-p"));
+        assert_eq!(cursor.output_flag, "--output-format text");
+        assert!(cursor.can_commit);
+        assert_eq!(cursor.json_parser, JsonParserType::Generic);
+    }
+
+    #[test]
+    fn test_plandex_agent_config() {
+        let registry = AgentRegistry::new().unwrap();
+        let plandex = registry.get("plandex").unwrap();
+        assert!(plandex.cmd.contains("plandex"));
+        assert!(plandex.cmd.contains("tell"));
+        assert!(plandex.yolo_flag.contains("--apply"));
+        assert!(plandex.yolo_flag.contains("--commit"));
+        assert!(plandex.can_commit);
+        assert_eq!(plandex.json_parser, JsonParserType::Generic);
+    }
+
+    #[test]
+    fn test_ollama_agent_config() {
+        let registry = AgentRegistry::new().unwrap();
+        let ollama = registry.get("ollama").unwrap();
+        assert!(ollama.cmd.contains("ollama"));
+        assert!(ollama.cmd.contains("run"));
+        assert!(!ollama.can_commit); // Local model, no tool use
+        assert_eq!(ollama.json_parser, JsonParserType::Generic);
+    }
+
+    #[test]
+    fn test_new_agents_in_chain() {
+        let registry = AgentRegistry::new().unwrap();
+        let fallback = registry.fallback_config();
+
+        // cursor and plandex should be in both chains (they support tool use)
+        assert!(
+            fallback.developer.contains(&"cursor".to_string()),
+            "cursor should be in developer fallback chain"
+        );
+        assert!(
+            fallback.developer.contains(&"plandex".to_string()),
+            "plandex should be in developer fallback chain"
+        );
+        assert!(
+            fallback.reviewer.contains(&"cursor".to_string()),
+            "cursor should be in reviewer fallback chain"
+        );
+        assert!(
+            fallback.reviewer.contains(&"plandex".to_string()),
+            "plandex should be in reviewer fallback chain"
+        );
+
+        // Chat-only / local-model agents are not included by default
+        assert!(
+            !fallback.developer.contains(&"ollama".to_string()),
+            "ollama should not be in developer chain by default (can_commit=false)"
+        );
+        assert!(
+            !fallback.reviewer.contains(&"ollama".to_string()),
+            "ollama should not be in reviewer chain (can_commit=false)"
+        );
+    }
+
+    #[test]
+    fn test_qwen_developer_and_reviewer_cmd() {
+        let registry = AgentRegistry::new().unwrap();
+
+        // Developer cmd should include all flags
+        let dev_cmd = registry.developer_cmd("qwen").unwrap();
+        assert!(dev_cmd.contains("qwen -p"));
+        assert!(dev_cmd.contains("stream-json"));
+        assert!(dev_cmd.contains("--yolo"));
+
+        // Reviewer cmd should also work
+        let rev_cmd = registry.reviewer_cmd("qwen").unwrap();
+        assert!(rev_cmd.contains("qwen -p"));
+        assert!(rev_cmd.contains("stream-json"));
+    }
+
+    #[test]
+    fn test_vibe_developer_and_reviewer_cmd() {
+        let registry = AgentRegistry::new().unwrap();
+
+        let dev_cmd = registry.developer_cmd("vibe").unwrap();
+        assert!(dev_cmd.contains("vibe --prompt"));
+        assert!(dev_cmd.contains("--auto-approve"));
+
+        let rev_cmd = registry.reviewer_cmd("vibe").unwrap();
+        assert!(rev_cmd.contains("vibe --prompt"));
+        assert!(rev_cmd.contains("--auto-approve"));
     }
 
     #[test]
@@ -1555,10 +1807,47 @@ retry_delay_ms = 500
         assert!(config.agents.contains_key("amazon-q"));
         assert!(config.agents.contains_key("gemini"));
 
+        // Check lower-cost / open-source agents
+        assert!(config.agents.contains_key("qwen"));
+        assert!(config.agents.contains_key("vibe"));
+        assert!(config.agents.contains_key("llama-cli"));
+        assert!(config.agents.contains_key("aichat"));
+
+        // Check additional popular CLI tools
+        assert!(config.agents.contains_key("cursor"));
+        assert!(config.agents.contains_key("plandex"));
+        assert!(config.agents.contains_key("ollama"));
+
         // Verify Claude config is correct
         let claude = &config.agents["claude"];
         assert_eq!(claude.cmd, "claude -p");
         assert_eq!(claude.json_parser, "claude");
+
+        // Verify Qwen config is correct
+        let qwen = &config.agents["qwen"];
+        assert_eq!(qwen.cmd, "qwen -p");
+        assert_eq!(qwen.json_parser, "claude"); // Uses Claude parser
+        assert!(qwen.output_flag.contains("stream-json"));
+
+        // Verify Vibe config is correct
+        let vibe = &config.agents["vibe"];
+        assert_eq!(vibe.cmd, "vibe --prompt");
+        assert_eq!(vibe.json_parser, "generic"); // Generic parser (no JSON streaming)
+
+        // Verify Cursor config is correct
+        let cursor = &config.agents["cursor"];
+        assert_eq!(cursor.cmd, "agent -p");
+        assert_eq!(cursor.json_parser, "generic");
+
+        // Verify Plandex config is correct
+        let plandex = &config.agents["plandex"];
+        assert_eq!(plandex.cmd, "plandex tell");
+        assert!(plandex.yolo_flag.contains("--apply"));
+
+        // Verify Ollama config is correct
+        let ollama = &config.agents["ollama"];
+        assert!(ollama.cmd.contains("ollama run"));
+        assert!(!ollama.can_commit);
     }
 
     #[test]
@@ -1578,7 +1867,7 @@ retry_delay_ms = 500
             let expected: AgentConfig = cfg_toml.into();
             let actual = registry.get(&name).unwrap();
             assert_eq!(actual.cmd, expected.cmd);
-            assert_eq!(actual.json_flag, expected.json_flag);
+            assert_eq!(actual.output_flag, expected.output_flag);
             assert_eq!(actual.yolo_flag, expected.yolo_flag);
             assert_eq!(actual.verbose_flag, expected.verbose_flag);
             assert_eq!(actual.can_commit, expected.can_commit);
