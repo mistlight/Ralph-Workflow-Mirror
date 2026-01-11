@@ -36,11 +36,6 @@ Append brief bullets to .agent/NOTES.md."#
     }
 }
 
-/// Back-compat alias for `prompt_developer_iteration`.
-pub fn prompt_claude_iteration(iteration: u32, total: u32, context: ContextLevel) -> String {
-    prompt_developer_iteration(iteration, total, context)
-}
-
 /// Generate reviewer review prompt with minimal context
 /// Reviewer should NOT see what was done - just evaluate the code against requirements
 pub fn prompt_reviewer_review(context: ContextLevel) -> String {
@@ -66,22 +61,12 @@ Write findings into .agent/ISSUES.md as a prioritized checklist."#
     }
 }
 
-/// Back-compat alias for `prompt_reviewer_review`.
-pub fn prompt_codex_review(context: ContextLevel) -> String {
-    prompt_reviewer_review(context)
-}
-
 /// Generate fix prompt (applies to either role)
 pub fn prompt_fix() -> String {
     r#"Fix everything in .agent/ISSUES.md.
 Update .agent/ISSUES.md to mark items resolved.
 Append brief bullets to .agent/NOTES.md."#
         .to_string()
-}
-
-/// Back-compat alias for `prompt_fix`.
-pub fn prompt_codex_fix() -> String {
-    prompt_fix()
 }
 
 /// Generate reviewer re-review prompt with minimal context
@@ -102,11 +87,6 @@ Be thorough but efficient."#
 If issues remain, fix them and update .agent/ISSUES.md."#
             .to_string(),
     }
-}
-
-/// Back-compat alias for `prompt_codex_review_again`.
-pub fn prompt_reviewer_review_again(context: ContextLevel) -> String {
-    prompt_codex_review_again(context)
 }
 
 /// Generate commit prompt for reviewer

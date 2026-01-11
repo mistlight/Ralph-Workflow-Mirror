@@ -193,8 +193,13 @@ impl Default for Logger {
 
 /// Strip ANSI escape sequences from a string
 pub fn strip_ansi_codes(s: &str) -> String {
-    let re = regex::Regex::new(r"\x1b\[[0-9;]*m").unwrap();
-    re.replace_all(s, "").to_string()
+    use once_cell::sync::Lazy;
+    static ANSI_RE: Lazy<Result<regex::Regex, regex::Error>> =
+        Lazy::new(|| regex::Regex::new(r"\x1b\[[0-9;]*m"));
+    match &*ANSI_RE {
+        Ok(re) => re.replace_all(s, "").to_string(),
+        Err(_) => s.to_string(),
+    }
 }
 
 /// Print progress bar: [████████░░░░░░░░] 50%
@@ -309,24 +314,6 @@ pub fn clean_context_for_reviewer(logger: &Logger) -> io::Result<()> {
     Ok(())
 }
 
-/// Reset context between iterations
-pub fn reset_iteration_context(iteration: u32, next_action: &str) -> io::Result<()> {
-    fs::write(
-        ".agent/STATUS.md",
-        format!(
-            r#"# STATUS
-- Last action: Starting iteration {}
-- Blockers: none
-- Next action: {}
-- Updated at: {}
-"#,
-            iteration,
-            next_action,
-            timestamp()
-        ),
-    )
-}
-
 /// Update the status file
 pub fn update_status(last_action: &str, blockers: &str, next_action: &str) -> io::Result<()> {
     fs::write(
@@ -386,13 +373,44 @@ pub fn ensure_files() -> io::Result<()> {
         File::create(".agent/ISSUES.md")?;
     }
 
+    if !Path::new(".agent/agents.toml").exists() {
+        fs::write(
+            ".agent/agents.toml",
+            r#"# Ralph agents config
+#
+# This file is optional. If you don't need custom agents, you can delete it.
+#
+# For a full example config, see:
+#   examples/agents.toml
+"#,
+        )?;
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use tempfile::TempDir;
+
+    fn with_temp_cwd<F: FnOnce(&TempDir)>(f: F) {
+        struct DirGuard(PathBuf);
+
+        impl Drop for DirGuard {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+
+        let dir = TempDir::new().unwrap();
+        let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+        std::env::set_current_dir(dir.path()).unwrap();
+        let _guard = DirGuard(old_dir);
+
+        f(&dir);
+    }
 
     #[test]
     fn test_timestamp_format() {
@@ -432,17 +450,16 @@ mod tests {
 
     #[test]
     fn test_archive_context_file() {
-        let dir = TempDir::new().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/STATUS.md", "test content").unwrap();
 
-        fs::create_dir_all(".agent").unwrap();
-        fs::write(".agent/STATUS.md", "test content").unwrap();
+            archive_context_file(Path::new(".agent/STATUS.md")).unwrap();
 
-        archive_context_file(Path::new(".agent/STATUS.md")).unwrap();
-
-        assert!(Path::new(".agent/archive").exists());
-        let entries: Vec<_> = fs::read_dir(".agent/archive").unwrap().collect();
-        assert_eq!(entries.len(), 1);
+            assert!(Path::new(".agent/archive").exists());
+            let entries: Vec<_> = fs::read_dir(".agent/archive").unwrap().collect();
+            assert_eq!(entries.len(), 1);
+        });
     }
 
     #[test]
@@ -527,28 +544,15 @@ mod tests {
 
     #[test]
     fn test_update_status() {
-        let dir = TempDir::new().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        fs::create_dir_all(".agent").unwrap();
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
 
-        update_status("Testing", "none", "Next step").unwrap();
+            update_status("Testing", "none", "Next step").unwrap();
 
-        let content = fs::read_to_string(".agent/STATUS.md").unwrap();
-        assert!(content.contains("Testing"));
-        assert!(content.contains("none"));
-        assert!(content.contains("Next step"));
-    }
-
-    #[test]
-    fn test_reset_iteration_context() {
-        let dir = TempDir::new().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        fs::create_dir_all(".agent").unwrap();
-
-        reset_iteration_context(3, "Continue working").unwrap();
-
-        let content = fs::read_to_string(".agent/STATUS.md").unwrap();
-        assert!(content.contains("iteration 3"));
-        assert!(content.contains("Continue working"));
+            let content = fs::read_to_string(".agent/STATUS.md").unwrap();
+            assert!(content.contains("Testing"));
+            assert!(content.contains("none"));
+            assert!(content.contains("Next step"));
+        });
     }
 }

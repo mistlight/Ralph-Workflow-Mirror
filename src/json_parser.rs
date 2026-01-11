@@ -572,24 +572,13 @@ impl CodexParser {
     }
 }
 
-/// Detect agent type from command string
-pub fn detect_agent_type(cmd: &str) -> &'static str {
-    if cmd.contains("claude") {
-        "claude"
-    } else if cmd.contains("codex") {
-        "codex"
-    } else {
-        "unknown"
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_parse_claude_system_init() {
-        let parser = ClaudeParser::new(Colors::disabled(), Verbosity::Normal);
+        let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
         let json = r#"{"type":"system","subtype":"init","session_id":"abc123"}"#;
         let output = parser.parse_event(json);
         assert!(output.is_some());
@@ -598,7 +587,7 @@ mod tests {
 
     #[test]
     fn test_parse_claude_result_success() {
-        let parser = ClaudeParser::new(Colors::disabled(), Verbosity::Normal);
+        let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
         let json = r#"{"type":"result","subtype":"success","duration_ms":60000,"num_turns":5,"total_cost_usd":0.05}"#;
         let output = parser.parse_event(json);
         assert!(output.is_some());
@@ -607,7 +596,7 @@ mod tests {
 
     #[test]
     fn test_parse_codex_thread_started() {
-        let parser = CodexParser::new(Colors::disabled(), Verbosity::Normal);
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
         let json = r#"{"type":"thread.started","thread_id":"xyz789"}"#;
         let output = parser.parse_event(json);
         assert!(output.is_some());
@@ -616,7 +605,7 @@ mod tests {
 
     #[test]
     fn test_parse_codex_turn_completed() {
-        let parser = CodexParser::new(Colors::disabled(), Verbosity::Normal);
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
         let json = r#"{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":50}}"#;
         let output = parser.parse_event(json);
         assert!(output.is_some());
@@ -624,24 +613,9 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_agent_type_claude() {
-        assert_eq!(detect_agent_type("claude -p --json"), "claude");
-    }
-
-    #[test]
-    fn test_detect_agent_type_codex() {
-        assert_eq!(detect_agent_type("codex exec --json"), "codex");
-    }
-
-    #[test]
-    fn test_detect_agent_type_unknown() {
-        assert_eq!(detect_agent_type("some-other-tool"), "unknown");
-    }
-
-    #[test]
     fn test_verbosity_affects_output() {
-        let quiet_parser = ClaudeParser::new(Colors::disabled(), Verbosity::Quiet);
-        let full_parser = ClaudeParser::new(Colors::disabled(), Verbosity::Full);
+        let quiet_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Quiet);
+        let full_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Full);
 
         let long_text = "a".repeat(200);
         let json = format!(

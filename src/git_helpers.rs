@@ -37,12 +37,6 @@ impl GitHelpers {
             }
         }
     }
-
-    /// Get the real git path
-    pub fn real_git_path(&mut self) -> Option<&Path> {
-        self.init_real_git();
-        self.real_git.as_deref()
-    }
 }
 
 impl Default for GitHelpers {
@@ -473,7 +467,7 @@ mod tests {
     fn test_uninstall_hook_restores_original() {
         let dir = TempDir::new().unwrap();
         let dir_path = dir.path();
-        let logger = Logger::new(crate::colors::Colors::disabled());
+        let logger = Logger::new(crate::colors::Colors { enabled: false });
 
         Command::new("git")
             .arg("init")
@@ -509,7 +503,7 @@ mod tests {
     fn test_uninstall_hook_removes_when_no_original() {
         let dir = TempDir::new().unwrap();
         let dir_path = dir.path();
-        let logger = Logger::new(crate::colors::Colors::disabled());
+        let logger = Logger::new(crate::colors::Colors { enabled: false });
 
         Command::new("git")
             .arg("init")
@@ -612,7 +606,7 @@ mod tests {
     fn test_cleanup_orphaned_marker() {
         let dir = TempDir::new().unwrap();
         let dir_path = dir.path();
-        let _logger = Logger::new(crate::colors::Colors::disabled());
+        let _logger = Logger::new(crate::colors::Colors { enabled: false });
 
         Command::new("git")
             .arg("init")

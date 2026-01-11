@@ -84,8 +84,6 @@ pub struct Config {
     pub fast_check_cmd: Option<String>,
     /// Full check command (optional)
     pub full_check_cmd: Option<String>,
-    /// Use PTY for agent commands
-    pub use_pty: bool,
     /// Interactive mode (keep agent in foreground)
     pub interactive: bool,
     /// Path to save last prompt
@@ -102,6 +100,8 @@ pub struct Config {
     pub verbosity: Verbosity,
     /// Commit message
     pub commit_msg: String,
+    /// Enable automatic agent fallback on errors
+    pub use_fallback: bool,
 }
 
 impl Config {
@@ -137,7 +137,6 @@ impl Config {
                 .unwrap_or(2),
             fast_check_cmd: env::var("FAST_CHECK_CMD").ok().filter(|s| !s.is_empty()),
             full_check_cmd: env::var("FULL_CHECK_CMD").ok().filter(|s| !s.is_empty()),
-            use_pty: env::var("RALPH_USE_PTY").map(|s| s == "1").unwrap_or(false),
             interactive: env::var("RALPH_INTERACTIVE")
                 .map(|s| s == "1")
                 .unwrap_or(true),
@@ -166,6 +165,9 @@ impl Config {
                 .map(Verbosity::from)
                 .unwrap_or(Verbosity::Normal),
             commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
+            use_fallback: env::var("RALPH_USE_FALLBACK")
+                .map(|s| s == "1" || s.to_lowercase() == "true")
+                .unwrap_or(false),
         }
     }
 
@@ -210,5 +212,12 @@ mod tests {
         assert_eq!(config.reviewer_agent, "codex");
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
+    }
+
+    #[test]
+    fn test_use_fallback_default() {
+        // Default should be false when env var is not set
+        let config = Config::from_env();
+        assert!(!config.use_fallback);
     }
 }

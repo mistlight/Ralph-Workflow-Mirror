@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Ralph: PROMPT-driven agent loop for git repos
 //!
 //! Runs:
@@ -6,25 +7,31 @@
 //! - Optional fast/full checks
 //! - Final `git add -A` + `git commit -m <msg>`
 
-use clap::{Parser, ValueEnum};
-use ralph::agents::{AgentRegistry, JsonParserType};
-use ralph::colors::Colors;
-use ralph::config::Config;
-use ralph::git_helpers::{
-    allow_reviewer_commit, disable_git_wrapper, end_agent_phase, get_head_commit,
-    get_last_commit_message, get_repo_root, git_add_all, git_commit, git_snapshot,
-    require_git_repo, start_agent_phase, GitHelpers,
+mod agents;
+mod colors;
+mod config;
+mod git_helpers;
+mod json_parser;
+mod prompts;
+mod timer;
+mod utils;
+
+use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole, JsonParserType};
+use crate::colors::Colors;
+use crate::config::Config;
+use crate::git_helpers::{
+    allow_reviewer_commit, block_commits_again, cleanup_orphaned_marker, disable_git_wrapper,
+    end_agent_phase, get_head_commit, get_last_commit_message, get_repo_root, git_add_all,
+    git_commit, git_snapshot, require_git_repo, start_agent_phase, uninstall_hooks, GitHelpers,
 };
-use ralph::prompts::{
-    prompt_commit, prompt_developer_iteration, prompt_fix, prompt_reviewer_review,
-    prompt_reviewer_review_again, ContextLevel,
-};
-use ralph::timer::Timer;
-use ralph::utils::{
+use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
+use crate::timer::Timer;
+use crate::utils::{
     clean_context_for_reviewer, ensure_files, print_progress, update_status, Logger,
 };
+use clap::{Parser, ValueEnum};
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -66,6 +73,18 @@ struct Args {
     /// Verbosity level (0=quiet, 1=normal, 2=verbose, 3=full)
     #[arg(short, long, default_value = "1")]
     verbosity: u8,
+
+    /// Enable automatic agent fallback on errors (rate limits, token exhaustion, etc.)
+    #[arg(long, env = "RALPH_USE_FALLBACK")]
+    use_fallback: bool,
+
+    /// List configured agents and exit
+    #[arg(long)]
+    list_agents: bool,
+
+    /// List agents found in PATH and exit
+    #[arg(long)]
+    list_available_agents: bool,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -97,6 +116,13 @@ impl Stats {
     }
 }
 
+/// Result of running a command, including stderr for error classification
+#[allow(dead_code)]
+struct CommandResult {
+    exit_code: i32,
+    stderr: String,
+}
+
 /// Run a command with a prompt argument
 #[allow(clippy::too_many_arguments)]
 fn run_with_prompt(
@@ -109,7 +135,7 @@ fn run_with_prompt(
     logger: &Logger,
     colors: &Colors,
     config: &Config,
-) -> io::Result<i32> {
+) -> io::Result<CommandResult> {
     timer.start_phase();
     logger.step(&format!("{}{}{}", colors.bold(), label, colors.reset()));
 
@@ -156,10 +182,7 @@ fn run_with_prompt(
         || cmd_str.contains("--json");
 
     logger.info(&format!("Using {} parser...", parser_type));
-
-    // Create log file
-    let log_file = File::create(logfile)?;
-    let mut log_writer = io::BufWriter::new(log_file);
+    File::create(logfile)?;
 
     // Execute command
     let mut child = Command::new("sh")
@@ -174,38 +197,50 @@ fn run_with_prompt(
         .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
     let reader = BufReader::new(stdout);
 
+    // Capture stderr in a separate thread
+    let stderr_handle = child.stderr.take();
+
     if uses_json {
-        for line in reader.lines() {
-            let line = line?;
-            if line.is_empty() {
-                continue;
-            }
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
 
-            // Parse and display based on configured parser type
-            if let Some(output) = match parser_type {
-                JsonParserType::Claude => {
-                    let p = ralph::json_parser::ClaudeParser::new(*colors, config.verbosity);
-                    p.parse_event(&line)
-                }
-                JsonParserType::Codex => {
-                    let p = ralph::json_parser::CodexParser::new(*colors, config.verbosity);
-                    p.parse_event(&line)
-                }
-                JsonParserType::Generic => Some(format!(
-                    "{}[Agent]{} {}\n",
-                    colors.dim(),
-                    colors.reset(),
-                    &line.chars().take(100).collect::<String>()
-                )),
-            } {
-                print!("{}", output);
+        match parser_type {
+            JsonParserType::Claude => {
+                let p = crate::json_parser::ClaudeParser::new(*colors, config.verbosity)
+                    .with_log_file(logfile);
+                p.parse_stream(reader, &mut out)?;
             }
+            JsonParserType::Codex => {
+                let p = crate::json_parser::CodexParser::new(*colors, config.verbosity)
+                    .with_log_file(logfile);
+                p.parse_stream(reader, &mut out)?;
+            }
+            JsonParserType::Generic => {
+                let log_file = OpenOptions::new().create(true).append(true).open(logfile)?;
+                let mut log_writer = io::BufWriter::new(log_file);
 
-            // Log raw JSON
-            writeln!(log_writer, "{}", line)?;
+                for line in reader.lines() {
+                    let line = line?;
+                    if line.is_empty() {
+                        continue;
+                    }
+
+                    let output = format!(
+                        "{}[Agent]{} {}\n",
+                        colors.dim(),
+                        colors.reset(),
+                        &line.chars().take(100).collect::<String>()
+                    );
+                    write!(out, "{}", output)?;
+
+                    writeln!(log_writer, "{}", line)?;
+                }
+            }
         }
     } else {
         // Non-JSON mode: just pipe through
+        let log_file = OpenOptions::new().create(true).append(true).open(logfile)?;
+        let mut log_writer = io::BufWriter::new(log_file);
         for line in reader.lines() {
             let line = line?;
             println!("{}", line);
@@ -213,16 +248,144 @@ fn run_with_prompt(
         }
     }
 
+    // Collect stderr
+    let stderr = if let Some(mut stderr_pipe) = stderr_handle {
+        let mut stderr_output = String::new();
+        if let Err(err) = std::io::Read::read_to_string(&mut stderr_pipe, &mut stderr_output) {
+            logger.warn(&format!("Failed to read stderr: {}", err));
+        }
+        stderr_output
+    } else {
+        String::new()
+    };
+
     let status = child.wait()?;
     let exit_code = status.code().unwrap_or(1);
 
     if exit_code != 0 {
         logger.error(&format!("Command exited with code {}", exit_code));
+        if !stderr.is_empty() {
+            logger.error(&format!("stderr: {}", stderr.lines().next().unwrap_or("")));
+        }
     } else {
         logger.success(&format!("Completed in {}", timer.phase_elapsed_formatted()));
     }
 
-    Ok(exit_code)
+    Ok(CommandResult { exit_code, stderr })
+}
+
+/// Run a command with automatic fallback to alternative agents on failure
+///
+/// This function attempts to run the command with the primary agent first,
+/// then falls back to alternative agents based on the fallback configuration
+/// if the primary agent fails with specific error types (rate limiting,
+/// token exhaustion, auth failures, command not found).
+#[allow(clippy::too_many_arguments)]
+fn run_with_fallback(
+    role: AgentRole,
+    base_label: &str,
+    prompt: &str,
+    logfile_prefix: &str,
+    timer: &mut Timer,
+    logger: &Logger,
+    colors: &Colors,
+    config: &Config,
+    registry: &AgentRegistry,
+    primary_agent: &str,
+) -> io::Result<i32> {
+    let fallback_config = registry.fallback_config();
+    let fallbacks = registry.available_fallbacks(role);
+    if !fallback_config.has_fallbacks(role) {
+        logger.info(&format!(
+            "No configured fallbacks for {}, using primary only",
+            role
+        ));
+    }
+
+    // Start with primary agent
+    let mut agents_to_try: Vec<&str> = vec![primary_agent];
+
+    // Add configured fallbacks that aren't the primary
+    for fb in &fallbacks {
+        if *fb != primary_agent && !agents_to_try.contains(fb) {
+            agents_to_try.push(fb);
+        }
+    }
+
+    for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
+        let Some(agent_config) = registry.get(agent_name) else {
+            logger.warn(&format!(
+                "Agent '{}' not found in registry, skipping",
+                agent_name
+            ));
+            continue;
+        };
+
+        let cmd_str = agent_config.build_cmd(true, true, role == AgentRole::Developer);
+        let parser_type = agent_config.json_parser;
+        let label = format!("{} ({})", base_label, agent_name);
+        let logfile = format!("{}_{}.log", logfile_prefix, agent_name);
+
+        // Try with retries
+        for retry in 0..fallback_config.max_retries {
+            if retry > 0 {
+                logger.info(&format!(
+                    "Retry {}/{} for {} after {}ms delay...",
+                    retry, fallback_config.max_retries, agent_name, fallback_config.retry_delay_ms
+                ));
+                std::thread::sleep(std::time::Duration::from_millis(
+                    fallback_config.retry_delay_ms,
+                ));
+            }
+
+            let result = run_with_prompt(
+                &label,
+                &cmd_str,
+                prompt,
+                &logfile,
+                parser_type,
+                timer,
+                logger,
+                colors,
+                config,
+            )?;
+
+            if result.exit_code == 0 {
+                return Ok(0);
+            }
+
+            // Classify the error
+            let error_kind = AgentErrorKind::classify(result.exit_code, &result.stderr);
+
+            logger.warn(&format!(
+                "Agent '{}' failed with {:?} (exit code {})",
+                agent_name, error_kind, result.exit_code
+            ));
+
+            // Decide whether to retry or fallback
+            if error_kind.should_retry() && retry + 1 < fallback_config.max_retries {
+                continue; // Retry same agent
+            }
+
+            if error_kind.should_fallback() && agent_index + 1 < agents_to_try.len() {
+                logger.info(&format!(
+                    "Switching to fallback agent: {}",
+                    agents_to_try[agent_index + 1]
+                ));
+                break; // Try next agent
+            }
+
+            // For permanent errors or no more retries, try next agent or give up
+            if agent_index + 1 >= agents_to_try.len() {
+                logger.error("All agents exhausted, returning last error");
+                return Ok(result.exit_code);
+            }
+            break;
+        }
+    }
+
+    // Should not reach here, but return error if we do
+    Ok(1)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -231,8 +394,7 @@ fn main() -> anyhow::Result<()> {
     let logger = Logger::new(colors).with_log_file(".agent/logs/pipeline.log");
 
     // Load configuration
-    let mut config = Config::from_env();
-    config.commit_msg = args.commit_msg;
+    let mut config = Config::from_env().with_commit_msg(args.commit_msg);
     config.verbosity = args.verbosity.into();
 
     // Apply preset first (CLI/env preset overrides env-selected agents, but can be overridden by
@@ -262,9 +424,12 @@ fn main() -> anyhow::Result<()> {
     if let Some(agent) = args.reviewer_agent {
         config.reviewer_agent = agent;
     }
+    if args.use_fallback {
+        config.use_fallback = true;
+    }
 
     // Initialize agent registry (load from config file if present)
-    let registry = match AgentRegistry::with_config_file(&config.agents_config_path) {
+    let mut registry = match AgentRegistry::with_config_file(&config.agents_config_path) {
         Ok(r) => r,
         Err(e) => {
             logger.warn(&format!(
@@ -275,6 +440,56 @@ fn main() -> anyhow::Result<()> {
             AgentRegistry::new()
         }
     };
+
+    if config.use_fallback {
+        let mut fallback = registry.fallback_config().clone();
+        let default_chain = [
+            "claude", "codex", "opencode", "aider", "goose", "cline", "continue", "amazon-q",
+            "gemini",
+        ];
+
+        if !fallback.has_fallbacks(AgentRole::Developer) {
+            fallback.developer = default_chain.iter().map(|s| s.to_string()).collect();
+        }
+        if !fallback.has_fallbacks(AgentRole::Reviewer) {
+            fallback.reviewer = default_chain.iter().map(|s| s.to_string()).collect();
+        }
+
+        registry.set_fallback(fallback);
+    }
+
+    if args.list_agents {
+        let mut items = registry.list();
+        items.sort_by(|(a, _), (b, _)| a.cmp(b));
+        for (name, cfg) in items {
+            println!(
+                "{}\tcmd={}\tparser={}\tcan_commit={}",
+                name, cfg.cmd, cfg.json_parser, cfg.can_commit
+            );
+        }
+        return Ok(());
+    }
+
+    if args.list_available_agents {
+        let mut items = registry.list_available();
+        items.sort();
+        for name in items {
+            println!("{}", name);
+        }
+        return Ok(());
+    }
+
+    if config.reviewer_commits {
+        if let Some(cfg) = registry.get(&config.reviewer_agent) {
+            if !cfg.can_commit {
+                logger.warn(&format!(
+                    "Reviewer agent '{}' is configured as can_commit=false; disabling reviewer commits",
+                    config.reviewer_agent
+                ));
+                config.reviewer_commits = false;
+            }
+        }
+    }
 
     // Get agent commands and parser types
     let developer_cmd = config.developer_cmd.clone().unwrap_or_else(|| {
@@ -302,10 +517,12 @@ fn main() -> anyhow::Result<()> {
     // Set up git helpers
     let mut git_helpers = GitHelpers::new();
 
-    // Cleanup handler (simplified - Rust doesn't have trap)
-    let cleanup = || {
+    cleanup_orphaned_marker(&logger)?;
+
+    let cleanup = |helpers: &mut GitHelpers| {
         let _ = end_agent_phase();
-        disable_git_wrapper(&mut GitHelpers::new());
+        disable_git_wrapper(helpers);
+        let _ = uninstall_hooks(&logger);
     };
 
     start_agent_phase(&mut git_helpers)?;
@@ -383,10 +600,7 @@ fn main() -> anyhow::Result<()> {
     let developer_context = ContextLevel::from(config.developer_context);
 
     for i in 1..=config.developer_iters {
-        logger.subheader(&format!(
-            "Iteration {} of {}",
-            i, config.developer_iters
-        ));
+        logger.subheader(&format!("Iteration {} of {}", i, config.developer_iters));
         print_progress(i, config.developer_iters, "Overall");
 
         update_status(
@@ -395,20 +609,43 @@ fn main() -> anyhow::Result<()> {
             "Make progress on PROMPT.md goals",
         )?;
 
-        let prompt = prompt_developer_iteration(i, config.developer_iters, developer_context);
+        let prompt = prompt_for_agent(
+            Role::Developer,
+            Action::Iterate,
+            developer_context,
+            Some(i),
+            Some(config.developer_iters),
+            None,
+        );
         let logfile = format!(".agent/logs/developer_{}.log", i);
 
-        let exit_code = run_with_prompt(
-            &format!("{} run #{}", config.developer_agent, i),
-            &developer_cmd,
-            &prompt,
-            &logfile,
-            developer_parser,
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-        )?;
+        let exit_code = if config.use_fallback {
+            run_with_fallback(
+                AgentRole::Developer,
+                &format!("run #{}", i),
+                &prompt,
+                &format!(".agent/logs/developer_{}", i),
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+                &registry,
+                &config.developer_agent,
+            )?
+        } else {
+            let result = run_with_prompt(
+                &format!("{} run #{}", config.developer_agent, i),
+                &developer_cmd,
+                &prompt,
+                &logfile,
+                developer_parser,
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+            )?;
+            result.exit_code
+        };
 
         if exit_code != 0 {
             logger.error(&format!(
@@ -476,36 +713,80 @@ fn main() -> anyhow::Result<()> {
     logger.subheader("Initial Review");
     update_status("Starting code review", "none", "Evaluate codebase")?;
 
-    let prompt = prompt_reviewer_review(reviewer_context);
-    let _ = run_with_prompt(
-        &format!("{} review (initial)", config.reviewer_agent),
-        &reviewer_cmd,
-        &prompt,
-        ".agent/logs/codex_review_1.log",
-        reviewer_parser,
-        &mut timer,
-        &logger,
-        &colors,
-        &config,
+    let prompt = prompt_for_agent(
+        Role::Reviewer,
+        Action::Review,
+        reviewer_context,
+        None,
+        None,
+        None,
     );
+    if config.use_fallback {
+        let _ = run_with_fallback(
+            AgentRole::Reviewer,
+            "review (initial)",
+            &prompt,
+            ".agent/logs/reviewer_review_1",
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &config.reviewer_agent,
+        );
+    } else {
+        let _ = run_with_prompt(
+            &format!("{} review (initial)", config.reviewer_agent),
+            &reviewer_cmd,
+            &prompt,
+            ".agent/logs/codex_review_1.log",
+            reviewer_parser,
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+        );
+    }
     stats.reviewer_runs_completed += 1;
 
     // Applying fixes
     logger.subheader("Applying Fixes");
     update_status("Applying fixes", "none", "Address issues found")?;
 
-    let prompt = prompt_fix();
-    let _ = run_with_prompt(
-        &format!("{} fix", config.reviewer_agent),
-        &reviewer_cmd,
-        &prompt,
-        ".agent/logs/codex_fix.log",
-        reviewer_parser,
-        &mut timer,
-        &logger,
-        &colors,
-        &config,
+    let prompt = prompt_for_agent(
+        Role::Reviewer,
+        Action::Fix,
+        reviewer_context,
+        None,
+        None,
+        None,
     );
+    if config.use_fallback {
+        let _ = run_with_fallback(
+            AgentRole::Reviewer,
+            "fix",
+            &prompt,
+            ".agent/logs/reviewer_fix",
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &config.reviewer_agent,
+        );
+    } else {
+        let _ = run_with_prompt(
+            &format!("{} fix", config.reviewer_agent),
+            &reviewer_cmd,
+            &prompt,
+            ".agent/logs/codex_fix.log",
+            reviewer_parser,
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+        );
+    }
     stats.reviewer_runs_completed += 1;
 
     // Verification reviews
@@ -518,22 +799,46 @@ fn main() -> anyhow::Result<()> {
 
         update_status("Verification review", "none", "Re-evaluate codebase")?;
 
-        let prompt = prompt_reviewer_review_again(reviewer_context);
+        let prompt = prompt_for_agent(
+            Role::Reviewer,
+            Action::ReviewAgain,
+            reviewer_context,
+            None,
+            None,
+            None,
+        );
         let logfile = format!(".agent/logs/codex_review_{}.log", j + 1);
 
-        let _ = run_with_prompt(
-            &format!("{} re-review #{}", config.reviewer_agent, j),
-            &reviewer_cmd,
-            &prompt,
-            &logfile,
-            reviewer_parser,
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-        );
+        if config.use_fallback {
+            let _ = run_with_fallback(
+                AgentRole::Reviewer,
+                &format!("re-review #{}", j),
+                &prompt,
+                &format!(".agent/logs/reviewer_review_{}", j + 1),
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+                &registry,
+                &config.reviewer_agent,
+            );
+        } else {
+            let _ = run_with_prompt(
+                &format!("{} re-review #{}", config.reviewer_agent, j),
+                &reviewer_cmd,
+                &prompt,
+                &logfile,
+                reviewer_parser,
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+            );
+        }
         stats.reviewer_runs_completed += 1;
     }
+
+    let mut reviewer_commit_unblocked = false;
 
     // Reviewer commit phase
     if config.reviewer_commits {
@@ -544,19 +849,42 @@ fn main() -> anyhow::Result<()> {
 
         // Allow reviewer to commit
         allow_reviewer_commit(&mut git_helpers);
+        reviewer_commit_unblocked = true;
 
-        let prompt = prompt_commit(&config.commit_msg);
-        let _ = run_with_prompt(
-            &format!("{} commit", config.reviewer_agent),
-            &reviewer_cmd,
-            &prompt,
-            ".agent/logs/codex_commit.log",
-            reviewer_parser,
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
+        let prompt = prompt_for_agent(
+            Role::Reviewer,
+            Action::Commit,
+            reviewer_context,
+            None,
+            None,
+            Some(&config.commit_msg),
         );
+        if config.use_fallback {
+            let _ = run_with_fallback(
+                AgentRole::Reviewer,
+                "commit",
+                &prompt,
+                ".agent/logs/reviewer_commit",
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+                &registry,
+                &config.reviewer_agent,
+            );
+        } else {
+            let _ = run_with_prompt(
+                &format!("{} commit", config.reviewer_agent),
+                &reviewer_cmd,
+                &prompt,
+                ".agent/logs/codex_commit.log",
+                reviewer_parser,
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+            );
+        }
         stats.reviewer_runs_completed += 1;
 
         // Verify reviewer created a new commit
@@ -572,6 +900,15 @@ fn main() -> anyhow::Result<()> {
             stats.reviewer_committed = true;
         } else {
             logger.warn("Reviewer did not create a new commit");
+        }
+    }
+
+    if reviewer_commit_unblocked {
+        if let Err(err) = block_commits_again(&mut git_helpers) {
+            logger.warn(&format!(
+                "Failed to re-enable commit blocking after reviewer commit: {}",
+                err
+            ));
         }
     }
 
@@ -593,7 +930,7 @@ fn main() -> anyhow::Result<()> {
             logger.success("Full check passed");
         } else {
             logger.error("Full check failed");
-            cleanup();
+            cleanup(&mut git_helpers);
             std::process::exit(1);
         }
     }
@@ -601,6 +938,9 @@ fn main() -> anyhow::Result<()> {
     // Phase 4: Commit (only if Ralph commits, not reviewer)
     end_agent_phase()?;
     disable_git_wrapper(&mut git_helpers);
+    if let Err(err) = uninstall_hooks(&logger) {
+        logger.warn(&format!("Failed to uninstall Ralph hooks: {}", err));
+    }
 
     if !config.reviewer_commits {
         logger.header("PHASE 4: Commit Changes", |c| c.green());

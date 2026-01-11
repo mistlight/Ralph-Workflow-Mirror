@@ -17,7 +17,7 @@ When you run `ralph`, it:
 - You must run Ralph inside a git repository.
 - You must have the agent CLIs you want to use installed and authenticated:
   - Defaults: `claude` and `codex`
-  - Built-in alternatives: `opencode`, `aider`
+  - Built-in alternatives: `opencode`, `aider`, `goose`, `cline`, `continue`, `amazon-q`, `gemini`
 - Optional: `pbcopy` (macOS) for clipboard copy of prompts in interactive mode.
 
 ## Install
@@ -67,6 +67,7 @@ Common options:
 - `--preset <default|opencode>`: pick a common agent combination quickly
 - `--developer-agent <NAME>` (alias: `--driver-agent`): which agent to use for the developer role
 - `--reviewer-agent <NAME>`: which agent to use for the reviewer role
+- `--use-fallback`: enable automatic agent switching on failures (rate limits, token exhaustion, etc.)
 - `-v, --verbosity <0..3>`: output verbosity (0=quiet, 3=full)
 
 Run `ralph --help` for the authoritative list.
@@ -140,7 +141,7 @@ You can start from `examples/agents.toml` and copy it into `.agent/agents.toml`.
 
 Ralph loads agents in this order:
 
-1. Built-in defaults (`claude`, `codex`, `opencode`, `aider`)
+1. Built-in defaults (`claude`, `codex`, `opencode`, `aider`, `goose`, `cline`, `continue`, `amazon-q`, `gemini`)
 2. Agents from `.agent/agents.toml` (or `RALPH_AGENTS_CONFIG`) override defaults by name
 3. `RALPH_DEVELOPER_CMD` / `RALPH_REVIEWER_CMD` (if set) override the command Ralph runs for those roles (legacy aliases: `CLAUDE_CMD` / `CODEX_CMD`)
 
@@ -148,6 +149,34 @@ Pick agents by name:
 
 - `ralph --developer-agent claude --reviewer-agent codex`
 - `ralph --developer-agent myagent --reviewer-agent my_plain_agent`
+
+### Automatic agent fallback
+
+Ralph can automatically switch to a fallback agent when the primary agent fails due to:
+
+- Rate limits (429 errors)
+- Token/context exhaustion
+- API unavailability (503, timeout)
+- Authentication failures
+- Command not found
+
+Enable fallback via CLI or environment variable:
+
+```bash
+ralph --use-fallback
+# or
+RALPH_USE_FALLBACK=1 ralph
+```
+
+Configure fallback chains in `.agent/agents.toml`:
+
+```toml
+[fallback]
+developer = ["claude", "codex", "goose"]
+reviewer = ["codex", "claude"]
+max_retries = 3
+retry_delay_ms = 1000
+```
 
 ## Environment variables
 
@@ -179,12 +208,12 @@ Examples:
 ### Behavior and output
 
 - `RALPH_INTERACTIVE`: `1` (default) keeps agents interactive; `0` avoids interactive affordances
-- `RALPH_USE_PTY`: `1` to use a PTY for agent commands (default `0`)
 - `RALPH_REVIEWER_COMMITS`: `1` (default) lets the reviewer create the final commit; `0` makes Ralph commit instead
 - `RALPH_PROMPT_PATH`: where Ralph writes the last generated prompt (default `.agent/last_prompt.txt`)
 - `RALPH_DEVELOPER_CONTEXT`: `0` minimal, `1` normal (default `1`)
 - `RALPH_REVIEWER_CONTEXT`: `0` minimal/fresh eyes, `1` normal (default `0`)
 - `RALPH_VERBOSITY`: `0..3` (default `1`)
+- `RALPH_USE_FALLBACK`: `1` to enable automatic agent fallback on failures (default `0`)
 
 ## Files Ralph creates
 
@@ -212,4 +241,4 @@ If you don’t want these tracked in git, add this to your repo’s `.gitignore`
 
 ## License
 
-MIT. See `LICENSE`.
+AGPL-3.0. See `LICENSE`.
