@@ -75,68 +75,75 @@ json_parser = "claude"
 
 # OpenAI Codex CLI
 # https://github.com/openai/codex
+# Uses --full-auto for automatic sandboxed execution
 [agents.codex]
 cmd = "codex exec"
 json_flag = "--json"
-yolo_flag = "--yolo"
+yolo_flag = "--full-auto"
 verbose_flag = ""
 can_commit = true
 json_parser = "codex"
 
 # OpenCode - Open source AI coding tool
 # https://github.com/opencode-ai/opencode
+# Uses 'run' command for non-interactive, --format json for raw JSON events output
 [agents.opencode]
-cmd = "opencode"
-json_flag = "--json"
-yolo_flag = "--auto"
-verbose_flag = "--verbose"
+cmd = "opencode run"
+json_flag = "--format json"
+yolo_flag = ""
+verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "generic"
 
 # Aider - AI pair programming in your terminal
 # https://github.com/paul-gauthier/aider
+# Uses --message for single-message mode, --yes-always for auto-confirm
 [agents.aider]
-cmd = "aider"
+cmd = "aider --message"
 json_flag = ""
-yolo_flag = "--yes"
+yolo_flag = "--yes-always"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "generic"
 
 # Goose - Block's open-source AI agent
 # https://github.com/block/goose
+# Uses run command with -t for text input, --output-format for JSON streaming
 [agents.goose]
-cmd = "goose run"
-json_flag = "--json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--verbose"
+cmd = "goose run -t"
+json_flag = "--output-format=stream-json"
+yolo_flag = ""
+verbose_flag = "--debug"
 can_commit = true
 json_parser = "generic"
 
 # Cline - Autonomous coding agent
 # https://github.com/cline/cline
+# Uses -F json for JSON output, -y for autonomous mode
 [agents.cline]
-cmd = "cline"
-json_flag = "--json"
-yolo_flag = "--auto"
-verbose_flag = "--verbose"
+cmd = "cline -o"
+json_flag = "-F json"
+yolo_flag = "-y"
+verbose_flag = "-v"
 can_commit = true
 json_parser = "generic"
 
 # Continue.dev CLI (cn)
 # https://docs.continue.dev/guides/cli
+# Uses -p for headless mode, --format json for JSON output
 [agents.continue]
-cmd = "cn"
-json_flag = ""
-yolo_flag = "--allow"
-verbose_flag = ""
+cmd = "cn -p"
+json_flag = "--format json"
+yolo_flag = "--auto"
+verbose_flag = "--verbose"
 can_commit = true
 json_parser = "generic"
 
 # Amazon Q Developer CLI
 # https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html
+# Uses --no-interactive for non-interactive mode
 [agents.amazon-q]
-cmd = "q chat"
+cmd = "q chat --no-interactive"
 json_flag = ""
 yolo_flag = "--trust-all-tools"
 verbose_flag = ""
@@ -145,13 +152,15 @@ json_parser = "generic"
 
 # Gemini CLI
 # https://github.com/google-gemini/gemini-cli
+# Positional argument for prompt, -o/--output-format for output format
+# -y/--yolo for auto-approve all actions
 [agents.gemini]
 cmd = "gemini"
-json_flag = "--json"
-yolo_flag = "--auto"
-verbose_flag = "--verbose"
+json_flag = "-o stream-json"
+yolo_flag = "-y"
+verbose_flag = "-d"
 can_commit = true
-json_parser = "generic"
+json_parser = "gemini"
 
 # =============================================================================
 # ROLE-FRIENDLY ALIASES
@@ -172,7 +181,7 @@ json_parser = "claude"
 [agents.reviewer]
 cmd = "codex exec"
 json_flag = "--json"
-yolo_flag = "--yolo"
+yolo_flag = "--full-auto"
 verbose_flag = ""
 can_commit = true
 json_parser = "codex"

@@ -77,6 +77,8 @@ pub(crate) enum JsonParserType {
     Claude,
     /// Codex's JSON format
     Codex,
+    /// Gemini's stream-json format
+    Gemini,
     /// Generic line-based output (no parsing)
     Generic,
 }
@@ -87,6 +89,7 @@ impl JsonParserType {
         match s.to_lowercase().as_str() {
             "claude" => JsonParserType::Claude,
             "codex" => JsonParserType::Codex,
+            "gemini" => JsonParserType::Gemini,
             "generic" | "none" | "raw" => JsonParserType::Generic,
             _ => JsonParserType::Generic,
         }
@@ -98,6 +101,7 @@ impl std::fmt::Display for JsonParserType {
         match self {
             JsonParserType::Claude => write!(f, "claude"),
             JsonParserType::Codex => write!(f, "codex"),
+            JsonParserType::Gemini => write!(f, "gemini"),
             JsonParserType::Generic => write!(f, "generic"),
         }
     }
@@ -236,6 +240,10 @@ impl AgentsConfigFile {
 
 impl AgentConfig {
     /// Build full command string with specified flags
+    ///
+    /// Note: For Claude CLI, when using `--output-format=stream-json` (the json_flag),
+    /// the `--verbose` flag is always required. This method automatically adds verbose
+    /// when using Claude's stream-json format, regardless of the `verbose` parameter.
     pub(crate) fn build_cmd(&self, json: bool, yolo: bool, verbose: bool) -> String {
         let mut parts = vec![self.cmd.clone()];
 
@@ -245,11 +253,27 @@ impl AgentConfig {
         if yolo && !self.yolo_flag.is_empty() {
             parts.push(self.yolo_flag.clone());
         }
-        if verbose && !self.verbose_flag.is_empty() {
+
+        // Claude CLI requires --verbose when using --output-format=stream-json
+        // See: https://github.com/anthropics/claude-code
+        let needs_verbose = verbose || self.requires_verbose_for_json(json);
+
+        if needs_verbose && !self.verbose_flag.is_empty() {
             parts.push(self.verbose_flag.clone());
         }
 
         parts.join(" ")
+    }
+
+    /// Check if this agent requires --verbose when JSON output is enabled.
+    ///
+    /// Claude CLI specifically requires --verbose when using --output-format=stream-json
+    /// in print mode (-p). Without it, the command fails with:
+    /// "Error: When using --print, --output-format=stream-json requires --verbose"
+    fn requires_verbose_for_json(&self, json_enabled: bool) -> bool {
+        json_enabled
+            && self.json_parser == JsonParserType::Claude
+            && self.json_flag.contains("stream-json")
     }
 }
 
@@ -632,28 +656,22 @@ impl AgentRegistry {
         let has_reviewer = self.fallback.has_fallbacks(AgentRole::Reviewer);
 
         if !has_developer && !has_reviewer {
-            return Err(
-                "No agent chain configured.\n\
+            return Err("No agent chain configured.\n\
                 Please add an [agent_chain] section to your agents.toml file.\n\
                 Run 'ralph --init' to create a default configuration."
-                    .to_string(),
-            );
+                .to_string());
         }
 
         if !has_developer {
-            return Err(
-                "No developer agent chain configured.\n\
+            return Err("No developer agent chain configured.\n\
                 Add 'developer = [\"claude\", ...]' to your [agent_chain] section."
-                    .to_string(),
-            );
+                .to_string());
         }
 
         if !has_reviewer {
-            return Err(
-                "No reviewer agent chain configured.\n\
+            return Err("No reviewer agent chain configured.\n\
                 Add 'reviewer = [\"codex\", ...]' to your [agent_chain] section."
-                    .to_string(),
-            );
+                .to_string());
         }
 
         Ok(())
@@ -726,13 +744,48 @@ mod tests {
     #[test]
     fn test_agent_build_cmd() {
         let registry = AgentRegistry::new().unwrap();
+        let codex = registry.get("codex").unwrap();
+
+        // Codex doesn't require verbose with JSON, so verbose=false should exclude it
+        let cmd = codex.build_cmd(true, true, false);
+        assert!(cmd.contains("codex"));
+        assert!(cmd.contains("json"));
+        assert!(cmd.contains("full-auto")); // Codex uses --full-auto for automatic execution
+        assert!(!cmd.contains("verbose"));
+
+        // With verbose=true, it should be included
+        let cmd_verbose = codex.build_cmd(true, true, true);
+        // Codex has empty verbose_flag, so still no verbose in output
+        assert!(!cmd_verbose.contains("verbose"));
+    }
+
+    #[test]
+    fn test_claude_requires_verbose_with_stream_json() {
+        let registry = AgentRegistry::new().unwrap();
         let claude = registry.get("claude").unwrap();
 
+        // Claude requires --verbose when using --output-format=stream-json
+        // Even when verbose=false is passed, it should include --verbose
         let cmd = claude.build_cmd(true, true, false);
         assert!(cmd.contains("claude"));
-        assert!(cmd.contains("json"));
+        assert!(cmd.contains("stream-json"));
         assert!(cmd.contains("skip-permissions"));
-        assert!(!cmd.contains("verbose"));
+        assert!(
+            cmd.contains("verbose"),
+            "Claude should always include --verbose with stream-json"
+        );
+
+        // With verbose=true, it should also be included
+        let cmd_verbose = claude.build_cmd(true, true, true);
+        assert!(cmd_verbose.contains("verbose"));
+
+        // Without JSON, verbose should follow the parameter
+        let cmd_no_json = claude.build_cmd(false, true, false);
+        assert!(!cmd_no_json.contains("verbose"));
+        assert!(!cmd_no_json.contains("stream-json"));
+
+        let cmd_no_json_verbose = claude.build_cmd(false, true, true);
+        assert!(cmd_no_json_verbose.contains("verbose"));
     }
 
     #[test]
@@ -749,6 +802,20 @@ mod tests {
         let cmd = registry.reviewer_cmd("codex").unwrap();
         assert!(cmd.contains("codex"));
         assert!(cmd.contains("json"));
+    }
+
+    #[test]
+    fn test_claude_reviewer_cmd_includes_verbose() {
+        // Regression test: Claude as reviewer must include --verbose with stream-json
+        // See: "Error: When using --print, --output-format=stream-json requires --verbose"
+        let registry = AgentRegistry::new().unwrap();
+        let cmd = registry.reviewer_cmd("claude").unwrap();
+        assert!(cmd.contains("claude"));
+        assert!(cmd.contains("stream-json"));
+        assert!(
+            cmd.contains("verbose"),
+            "Claude reviewer must include --verbose for stream-json to work"
+        );
     }
 
     #[test]
@@ -789,6 +856,8 @@ mod tests {
         assert_eq!(JsonParserType::parse("claude"), JsonParserType::Claude);
         assert_eq!(JsonParserType::parse("CLAUDE"), JsonParserType::Claude);
         assert_eq!(JsonParserType::parse("codex"), JsonParserType::Codex);
+        assert_eq!(JsonParserType::parse("gemini"), JsonParserType::Gemini);
+        assert_eq!(JsonParserType::parse("GEMINI"), JsonParserType::Gemini);
         assert_eq!(JsonParserType::parse("generic"), JsonParserType::Generic);
         assert_eq!(JsonParserType::parse("none"), JsonParserType::Generic);
         assert_eq!(JsonParserType::parse("raw"), JsonParserType::Generic);
@@ -799,6 +868,7 @@ mod tests {
     fn test_json_parser_type_display() {
         assert_eq!(format!("{}", JsonParserType::Claude), "claude");
         assert_eq!(format!("{}", JsonParserType::Codex), "codex");
+        assert_eq!(format!("{}", JsonParserType::Gemini), "gemini");
         assert_eq!(format!("{}", JsonParserType::Generic), "generic");
     }
 
@@ -808,6 +878,7 @@ mod tests {
 
         assert_eq!(registry.parser_type("claude"), JsonParserType::Claude);
         assert_eq!(registry.parser_type("codex"), JsonParserType::Codex);
+        assert_eq!(registry.parser_type("gemini"), JsonParserType::Gemini);
         assert_eq!(registry.parser_type("opencode"), JsonParserType::Generic);
         assert_eq!(registry.parser_type("aider"), JsonParserType::Generic);
         assert_eq!(registry.parser_type("unknown"), JsonParserType::Generic);

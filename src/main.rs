@@ -347,6 +347,11 @@ fn run_with_prompt(
                     .with_log_file(logfile);
                 p.parse_stream(reader, &mut out)?;
             }
+            JsonParserType::Gemini => {
+                let p = crate::json_parser::GeminiParser::new(*colors, config.verbosity)
+                    .with_log_file(logfile);
+                p.parse_stream(reader, &mut out)?;
+            }
             JsonParserType::Generic => {
                 let log_file = OpenOptions::new().create(true).append(true).open(logfile)?;
                 let mut log_writer = io::BufWriter::new(log_file);
@@ -759,41 +764,40 @@ fn main() -> anyhow::Result<()> {
 
     // Initialize agent registry with merged configs (global + local)
     // Priority: built-in defaults < global config < local config
-    let (registry, config_sources) =
-        match AgentRegistry::with_merged_configs(&agents_config_path) {
-            Ok((r, sources, warnings)) => {
-                for warning in warnings {
-                    logger.warn(&warning);
-                }
-                // Log which configs were loaded
-                if !sources.is_empty() {
-                    for source in &sources {
-                        logger.info(&format!(
-                            "Loaded {} agents from {}{}{}",
-                            source.agents_loaded,
-                            colors.cyan(),
-                            source.path.display(),
-                            colors.reset()
-                        ));
-                    }
-                }
-                (r, sources)
+    let (registry, config_sources) = match AgentRegistry::with_merged_configs(&agents_config_path) {
+        Ok((r, sources, warnings)) => {
+            for warning in warnings {
+                logger.warn(&warning);
             }
-            Err(e) => {
-                logger.warn(&format!(
-                    "Failed to load agents config from {}: {}, using defaults",
-                    agents_config_path.display(),
-                    e
-                ));
-                let registry = AgentRegistry::new().map_err(|defaults_err| {
-                    anyhow::anyhow!(
-                        "Failed to load built-in default agents config (examples/agents.toml): {}",
-                        defaults_err
-                    )
-                })?;
-                (registry, Vec::new())
+            // Log which configs were loaded
+            if !sources.is_empty() {
+                for source in &sources {
+                    logger.info(&format!(
+                        "Loaded {} agents from {}{}{}",
+                        source.agents_loaded,
+                        colors.cyan(),
+                        source.path.display(),
+                        colors.reset()
+                    ));
+                }
             }
-        };
+            (r, sources)
+        }
+        Err(e) => {
+            logger.warn(&format!(
+                "Failed to load agents config from {}: {}, using defaults",
+                agents_config_path.display(),
+                e
+            ));
+            let registry = AgentRegistry::new().map_err(|defaults_err| {
+                anyhow::anyhow!(
+                    "Failed to load built-in default agents config (examples/agents.toml): {}",
+                    defaults_err
+                )
+            })?;
+            (registry, Vec::new())
+        }
+    };
 
     // Log if no config files were found (but we still have built-in defaults)
     if config_sources.is_empty() {
