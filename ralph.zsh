@@ -278,15 +278,17 @@ for i in $(seq 1 "$CLAUDE_ITERS"); do
     print_progress "$i" "$CLAUDE_ITERS" "Overall"
 
     # Update status BEFORE starting iteration
-    update_status "Starting Claude iteration ${i}/${CLAUDE_ITERS}" "none" "Complete Claude iteration ${i}"
+    # NOTE: Do NOT include iteration count in STATUS.md - agent should not know loop structure
+    update_status "Starting Claude iteration" "none" "Make progress on PROMPT.md goals"
     tlog_info ">>> ITERATION ${i}/${CLAUDE_ITERS} STARTING <<<"
 
     run_with_prompt_arg "Claude run #$i" "$CLAUDE_CMD" "$(claude_prompt "$i")" ".agent/logs/claude_${i}.log"
     ((CLAUDE_RUNS_COMPLETED++))
 
     # Update status AFTER completing iteration
+    # NOTE: Do NOT include iteration count or "next iteration" hints - agent should not know loop structure
     tlog_info ">>> ITERATION ${i}/${CLAUDE_ITERS} COMPLETED (total completed: ${CLAUDE_RUNS_COMPLETED}) <<<"
-    update_status "Completed Claude iteration ${i}/${CLAUDE_ITERS}" "none" "Continue to iteration $((i+1)) or Phase 2"
+    update_status "Completed progress step" "none" "Continue work on PROMPT.md goals"
 
     snap="$(git_snapshot)"
     if [[ "$snap" == "$prev_snap" ]]; then
@@ -312,26 +314,36 @@ for i in $(seq 1 "$CLAUDE_ITERS"); do
   }
 done
 
-# Explicit notification that all Claude iterations are complete
+# Explicit notification that all Claude iterations are complete (for logs only)
 tlog_info ">>> ALL ${CLAUDE_ITERS} CLAUDE ITERATIONS COMPLETED <<<"
-update_status "All ${CLAUDE_ITERS} Claude iterations complete" "none" "Start Phase 2: Codex review"
+# NOTE: Status message doesn't reveal that Codex review is next - agent should not know the workflow
+update_status "Development phase complete" "none" "Await review"
 
 ############################################
 # Phase 2: Codex review/fix cycle
 ############################################
 print_header "PHASE 2: Codex Review & Fix" "$MAGENTA"
 log_to_file "=== PHASE 2: Codex Review & Fix ==="
+
+# CONTEXT CLEANUP: Before reviewer starts, clean context to prevent pollution
+# This ensures the reviewer has "fresh eyes" and isn't biased by developer notes
+if [[ "${RALPH_REVIEWER_CONTEXT:-0}" == "0" ]]; then
+  clean_context_for_reviewer
+fi
+
 log_info "Running review ${ARROW} fix ${ARROW} review×${BOLD}$CODEX_REVIEWS${RESET} cycle"
 tlog_info ">>> ENTERING CODEX PHASE <<<"
 
 print_subheader "Initial Review"
-update_status "Starting Codex initial review" "none" "Complete Codex review"
+# NOTE: Status doesn't reveal review cycle structure - reviewer should not know workflow
+update_status "Starting code review" "none" "Evaluate codebase"
 run_with_prompt_arg "Codex review (initial)" "$CODEX_CMD" "$(codex_review_prompt)" ".agent/logs/codex_review_1.log"
 ((CODEX_RUNS_COMPLETED++))
 tlog_info ">>> CODEX INITIAL REVIEW COMPLETED <<<"
 
 print_subheader "Applying Fixes"
-update_status "Starting Codex fix phase" "none" "Apply fixes from review"
+# NOTE: Status doesn't reveal fix/review cycle - agent should just fix issues
+update_status "Applying fixes" "none" "Address issues found"
 run_with_prompt_arg "Codex fix" "$CODEX_CMD" "$(codex_fix_prompt)" ".agent/logs/codex_fix.log"
 ((CODEX_RUNS_COMPLETED++))
 tlog_info ">>> CODEX FIX PHASE COMPLETED <<<"
@@ -339,7 +351,8 @@ tlog_info ">>> CODEX FIX PHASE COMPLETED <<<"
 for j in $(seq 1 "$CODEX_REVIEWS"); do
   print_subheader "Verification Review $j of $CODEX_REVIEWS"
   print_progress "$j" "$CODEX_REVIEWS" "Review passes"
-  update_status "Starting Codex verification review ${j}/${CODEX_REVIEWS}" "none" "Complete verification review"
+  # NOTE: Status doesn't reveal iteration count - reviewer should not know how many reviews remain
+  update_status "Verification review" "none" "Re-evaluate codebase"
   run_with_prompt_arg "Codex re-review #$j" "$CODEX_CMD" "$(codex_review_again_prompt)" ".agent/logs/codex_review_$((j+1)).log"
   ((CODEX_RUNS_COMPLETED++))
   tlog_info ">>> CODEX VERIFICATION REVIEW ${j}/${CODEX_REVIEWS} COMPLETED <<<"
@@ -359,7 +372,8 @@ if [[ "${RALPH_REVIEWER_COMMITS}" == "1" ]]; then
 fi
 
 tlog_info ">>> ALL CODEX PHASES COMPLETED (total runs: ${CODEX_RUNS_COMPLETED}) <<<"
-update_status "All Codex phases complete" "none" "Proceed to final checks or commit"
+# NOTE: Status doesn't reveal what comes next - agent should not know workflow
+update_status "Review phase complete" "none" "Awaiting finalization"
 
 ############################################
 # Phase 3: Final checks (if configured)

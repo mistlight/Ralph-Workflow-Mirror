@@ -155,3 +155,74 @@ file_contains_marker() {
   fi
   grep -Fq -- "$marker" "$file" >/dev/null 2>&1
 }
+
+############################################
+# Context cleanup utilities
+############################################
+# These functions help prevent "context pollution" between agent phases
+# by archiving/clearing context files that might bias subsequent agents.
+
+# Archive a context file to .agent/archive/ with timestamp
+# Args: $1 = file path (e.g., .agent/STATUS.md)
+archive_context_file() {
+  local file="$1"
+  [[ ! -f "$file" ]] && return 0
+
+  local archive_dir=".agent/archive"
+  local timestamp="$(date +%Y%m%d_%H%M%S)"
+  local basename="${file:t}"
+
+  mkdir -p "$archive_dir"
+  cp "$file" "${archive_dir}/${basename%.md}_${timestamp}.md"
+}
+
+# Clear context file by truncating it (preserves file, removes content)
+# Args: $1 = file path
+clear_context_file() {
+  local file="$1"
+  [[ ! -f "$file" ]] && return 0
+  : > "$file"
+}
+
+# Clean context before reviewer phase
+# Archives STATUS.md, NOTES.md, and ISSUES.md, then clears them so reviewer has fresh eyes
+# This prevents "context pollution" where reviewer sees developer's notes or stale issues
+clean_context_for_reviewer() {
+  log_info "Cleaning context for reviewer (fresh eyes)..."
+
+  # Archive current context files (including ISSUES.md to prevent stale issues)
+  archive_context_file ".agent/STATUS.md"
+  archive_context_file ".agent/NOTES.md"
+  archive_context_file ".agent/ISSUES.md"
+
+  # Reset STATUS.md to minimal state
+  cat > .agent/STATUS.md <<'EOF'
+# STATUS
+- Last action: Development phase complete
+- Blockers: none
+- Next action: Review phase starting
+EOF
+
+  # Clear NOTES.md (reviewer should not see developer notes)
+  : > .agent/NOTES.md
+
+  # Clear ISSUES.md (reviewer should find issues fresh, not see stale ones)
+  : > .agent/ISSUES.md
+
+  log_success "Context cleaned for reviewer"
+}
+
+# Reset context between iterations (lighter cleanup)
+# Only resets STATUS.md, preserves NOTES.md for continuity
+reset_iteration_context() {
+  local iteration="$1"
+  local next_action="${2:-Continue development}"
+
+  cat > .agent/STATUS.md <<EOF
+# STATUS
+- Last action: Starting iteration ${iteration}
+- Blockers: none
+- Next action: ${next_action}
+- Updated at: $(ts)
+EOF
+}
