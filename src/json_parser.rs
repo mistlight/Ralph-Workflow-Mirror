@@ -462,6 +462,320 @@ impl ClaudeParser {
     }
 }
 
+/// Gemini event types
+///
+/// Based on Gemini CLI documentation, events include:
+/// - `init`: Session initialization with session_id and model
+/// - `message`: User or assistant messages with content and role
+/// - `tool_use`: Tool invocations with tool name, ID, and parameters
+/// - `tool_result`: Tool execution results with status and output
+/// - `error`: Non-fatal errors and warnings
+/// - `result`: Final session outcome with aggregated stats
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum GeminiEvent {
+    Init {
+        session_id: Option<String>,
+        model: Option<String>,
+        timestamp: Option<String>,
+    },
+    Message {
+        role: Option<String>,
+        content: Option<String>,
+        delta: Option<bool>,
+        timestamp: Option<String>,
+    },
+    ToolUse {
+        tool_name: Option<String>,
+        tool_id: Option<String>,
+        parameters: Option<serde_json::Value>,
+        timestamp: Option<String>,
+    },
+    ToolResult {
+        tool_id: Option<String>,
+        status: Option<String>,
+        output: Option<String>,
+        timestamp: Option<String>,
+    },
+    Error {
+        message: Option<String>,
+        code: Option<String>,
+        timestamp: Option<String>,
+    },
+    Result {
+        status: Option<String>,
+        stats: Option<GeminiStats>,
+        timestamp: Option<String>,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct GeminiStats {
+    pub(crate) total_tokens: Option<u64>,
+    pub(crate) input_tokens: Option<u64>,
+    pub(crate) output_tokens: Option<u64>,
+    pub(crate) duration_ms: Option<u64>,
+    pub(crate) tool_calls: Option<u32>,
+}
+
+/// Gemini event parser
+pub(crate) struct GeminiParser {
+    colors: Colors,
+    verbosity: Verbosity,
+    log_file: Option<String>,
+}
+
+impl GeminiParser {
+    pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
+        Self {
+            colors,
+            verbosity,
+            log_file: None,
+        }
+    }
+
+    pub(crate) fn with_log_file(mut self, path: &str) -> Self {
+        self.log_file = Some(path.to_string());
+        self
+    }
+
+    /// Parse and display a single Gemini JSON event
+    pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
+        let event: GeminiEvent = serde_json::from_str(line).ok()?;
+        let c = &self.colors;
+
+        let output = match event {
+            GeminiEvent::Init {
+                session_id, model, ..
+            } => {
+                let sid = session_id.unwrap_or_else(|| "unknown".to_string());
+                let model_str = model.unwrap_or_else(|| "unknown".to_string());
+                format!(
+                    "{}[Gemini]{} {}Session started{} {}({:.8}..., {}){}\n",
+                    c.dim(),
+                    c.reset(),
+                    c.cyan(),
+                    c.reset(),
+                    c.dim(),
+                    sid,
+                    model_str,
+                    c.reset()
+                )
+            }
+            GeminiEvent::Message {
+                role,
+                content,
+                delta,
+                ..
+            } => {
+                let role_str = role.unwrap_or_else(|| "unknown".to_string());
+                if let Some(text) = content {
+                    let limit = self.verbosity.truncate_limit("text");
+                    let preview = truncate_text(&text, limit);
+                    // Show delta indicator if streaming
+                    let delta_marker = if delta.unwrap_or(false) { "..." } else { "" };
+                    if role_str == "assistant" {
+                        format!(
+                            "{}[Gemini]{} {}{}{}{}\n",
+                            c.dim(),
+                            c.reset(),
+                            c.white(),
+                            preview,
+                            delta_marker,
+                            c.reset()
+                        )
+                    } else {
+                        format!(
+                            "{}[Gemini]{} {}{}:{} {}{}{}\n",
+                            c.dim(),
+                            c.reset(),
+                            c.blue(),
+                            role_str,
+                            c.reset(),
+                            c.dim(),
+                            preview,
+                            c.reset()
+                        )
+                    }
+                } else {
+                    String::new()
+                }
+            }
+            GeminiEvent::ToolUse {
+                tool_name,
+                parameters,
+                ..
+            } => {
+                let name = tool_name.unwrap_or_else(|| "unknown".to_string());
+                let mut out = format!(
+                    "{}[Gemini]{} {}Tool{}: {}{}{}\n",
+                    c.dim(),
+                    c.reset(),
+                    c.magenta(),
+                    c.reset(),
+                    c.bold(),
+                    name,
+                    c.reset()
+                );
+                if self.verbosity.show_tool_input() {
+                    if let Some(ref params) = parameters {
+                        let params_str = format_tool_input(params);
+                        let limit = self.verbosity.truncate_limit("tool_input");
+                        let preview = truncate_text(&params_str, limit);
+                        if !preview.is_empty() {
+                            out.push_str(&format!(
+                                "{}[Gemini]{} {}  └─ {}{}\n",
+                                c.dim(),
+                                c.reset(),
+                                c.dim(),
+                                preview,
+                                c.reset()
+                            ));
+                        }
+                    }
+                }
+                out
+            }
+            GeminiEvent::ToolResult { status, output, .. } => {
+                let status_str = status.unwrap_or_else(|| "unknown".to_string());
+                let is_success = status_str == "success";
+                let icon = if is_success { CHECK } else { CROSS };
+                let color = if is_success { c.green() } else { c.red() };
+
+                let mut out = format!(
+                    "{}[Gemini]{} {}{} Tool result{}\n",
+                    c.dim(),
+                    c.reset(),
+                    color,
+                    icon,
+                    c.reset()
+                );
+
+                if self.verbosity.is_verbose() {
+                    if let Some(ref output_text) = output {
+                        let limit = self.verbosity.truncate_limit("tool_result");
+                        let preview = truncate_text(output_text, limit);
+                        out.push_str(&format!(
+                            "{}[Gemini]{} {}  └─ {}{}\n",
+                            c.dim(),
+                            c.reset(),
+                            c.dim(),
+                            preview,
+                            c.reset()
+                        ));
+                    }
+                }
+                out
+            }
+            GeminiEvent::Error { message, code, .. } => {
+                let msg = message.unwrap_or_else(|| "unknown error".to_string());
+                let code_str = code
+                    .map(|c| format!(" ({})", c))
+                    .unwrap_or_else(String::new);
+                format!(
+                    "{}[Gemini]{} {}{} Error{}:{} {}\n",
+                    c.dim(),
+                    c.reset(),
+                    c.red(),
+                    CROSS,
+                    code_str,
+                    c.reset(),
+                    msg
+                )
+            }
+            GeminiEvent::Result { status, stats, .. } => {
+                let status_str = status.unwrap_or_else(|| "unknown".to_string());
+                let is_success = status_str == "success";
+                let icon = if is_success { CHECK } else { CROSS };
+                let color = if is_success { c.green() } else { c.red() };
+
+                let stats_str = if let Some(s) = stats {
+                    let duration_s = s.duration_ms.unwrap_or(0) / 1000;
+                    let duration_m = duration_s / 60;
+                    let duration_s_rem = duration_s % 60;
+                    let input = s.input_tokens.unwrap_or(0);
+                    let output = s.output_tokens.unwrap_or(0);
+                    let tools = s.tool_calls.unwrap_or(0);
+                    format!(
+                        "({}m {}s, in:{} out:{}, {} tools)",
+                        duration_m, duration_s_rem, input, output, tools
+                    )
+                } else {
+                    String::new()
+                };
+
+                format!(
+                    "{}[Gemini]{} {}{} {}{} {}{}{}\n",
+                    c.dim(),
+                    c.reset(),
+                    color,
+                    icon,
+                    status_str,
+                    c.reset(),
+                    c.dim(),
+                    stats_str,
+                    c.reset()
+                )
+            }
+            GeminiEvent::Unknown => String::new(),
+        };
+
+        if output.is_empty() {
+            None
+        } else {
+            Some(output)
+        }
+    }
+
+    /// Parse a stream of Gemini NDJSON events
+    pub(crate) fn parse_stream<R: BufRead, W: Write>(
+        &self,
+        reader: R,
+        mut writer: W,
+    ) -> io::Result<()> {
+        let c = &self.colors;
+
+        for line in reader.lines() {
+            let line = line?;
+            if line.is_empty() {
+                continue;
+            }
+
+            // In debug mode, also show the raw JSON
+            if self.verbosity.is_debug() {
+                writeln!(
+                    writer,
+                    "{}[DEBUG]{} {}{}{}",
+                    c.dim(),
+                    c.reset(),
+                    c.dim(),
+                    &line,
+                    c.reset()
+                )?;
+            }
+
+            if let Some(output) = self.parse_event(&line) {
+                write!(writer, "{}", output)?;
+            }
+
+            // Log raw JSON to file if configured
+            if let Some(ref log_path) = self.log_file {
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(log_path)
+                {
+                    writeln!(file, "{}", line)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Codex event parser
 pub(crate) struct CodexParser {
     colors: Colors,
@@ -1166,5 +1480,116 @@ mod tests {
         let output = parser.parse_event(json);
         assert!(output.is_some());
         assert!(output.unwrap().contains("Search completed"));
+    }
+
+    // Gemini parser tests
+    #[test]
+    fn test_gemini_init_event() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"init","timestamp":"2025-10-10T12:00:00.000Z","session_id":"abc123","model":"gemini-2.0-flash-exp"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Session started"));
+        assert!(out.contains("gemini-2.0-flash-exp"));
+    }
+
+    #[test]
+    fn test_gemini_message_assistant() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"message","role":"assistant","content":"Here are the files...","timestamp":"2025-10-10T12:00:04.000Z"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Here are the files"));
+    }
+
+    #[test]
+    fn test_gemini_message_user() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"message","role":"user","content":"List files in current directory","timestamp":"2025-10-10T12:00:01.000Z"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("user"));
+        assert!(out.contains("List files"));
+    }
+
+    #[test]
+    fn test_gemini_tool_use() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","tool_name":"Bash","tool_id":"bash-123","parameters":{"command":"ls -la"},"timestamp":"2025-10-10T12:00:02.000Z"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool"));
+        assert!(out.contains("Bash"));
+        assert!(out.contains("command=ls -la"));
+    }
+
+    #[test]
+    fn test_gemini_tool_result_success() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Verbose);
+        let json = r#"{"type":"tool_result","tool_id":"bash-123","status":"success","output":"file1.txt\nfile2.txt","timestamp":"2025-10-10T12:00:03.000Z"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool result"));
+        assert!(out.contains("file1.txt"));
+    }
+
+    #[test]
+    fn test_gemini_tool_result_error() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_result","tool_id":"bash-123","status":"error","output":"command not found","timestamp":"2025-10-10T12:00:03.000Z"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool result"));
+    }
+
+    #[test]
+    fn test_gemini_error_event() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"error","message":"Rate limit exceeded","code":"429","timestamp":"2025-10-10T12:00:05.000Z"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Error"));
+        assert!(out.contains("Rate limit exceeded"));
+        assert!(out.contains("429"));
+    }
+
+    #[test]
+    fn test_gemini_result_success() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"result","status":"success","stats":{"total_tokens":250,"input_tokens":50,"output_tokens":200,"duration_ms":3000,"tool_calls":1},"timestamp":"2025-10-10T12:00:05.000Z"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("success"));
+        assert!(out.contains("in:50"));
+        assert!(out.contains("out:200"));
+        assert!(out.contains("1 tools"));
+    }
+
+    #[test]
+    fn test_gemini_message_delta() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"message","role":"assistant","content":"Streaming","delta":true,"timestamp":"2025-10-10T12:00:04.000Z"}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Streaming"));
+        assert!(out.contains("..."));
+    }
+
+    #[test]
+    fn test_gemini_unknown_event() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"unknown_event_type","data":"something"}"#;
+        let output = parser.parse_event(json);
+        // Unknown events should return None (empty output)
+        assert!(output.is_none());
     }
 }
