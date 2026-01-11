@@ -12,8 +12,11 @@ mod colors;
 mod config;
 mod git_helpers;
 mod json_parser;
+mod language_detector;
 mod platform;
 mod prompts;
+mod review_guidelines;
+mod review_metrics;
 mod timer;
 mod utils;
 
@@ -22,23 +25,30 @@ use crate::agents::{
     ConfigInitResult, JsonParserType,
 };
 use crate::colors::Colors;
-use crate::config::{Config, Verbosity};
+use crate::config::{Config, ReviewDepth, Verbosity};
 use crate::git_helpers::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
     get_repo_root, git_add_all, git_commit, git_snapshot, require_git_repo, start_agent_phase,
     uninstall_hooks, GitHelpers,
 };
-use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
+use crate::language_detector::{detect_stack, detect_stack_summary, ProjectStack};
+use crate::prompts::{
+    prompt_comprehensive_review, prompt_for_agent, prompt_incremental_review,
+    prompt_security_focused_review, Action, ContextLevel, Role,
+};
+use crate::review_guidelines::{CheckSeverity, ReviewGuidelines};
+use crate::review_metrics::ReviewMetrics;
 use crate::timer::Timer;
 use crate::utils::{
-    clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
-    delete_plan_file, ensure_files, print_progress, read_commit_message_file, split_command,
-    truncate_text, update_status, Logger,
+    checkpoint_exists, clean_context_for_reviewer, cleanup_generated_files, clear_checkpoint,
+    delete_commit_message_file, delete_plan_file, ensure_files, load_checkpoint, print_progress,
+    read_commit_message_file, save_checkpoint, split_command, truncate_text, update_status, Logger,
+    PipelineCheckpoint, PipelinePhase,
 };
 use clap::{Parser, ValueEnum};
 use std::env;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -217,6 +227,36 @@ struct Args {
     /// Show the generated commit message and exit
     #[arg(long, help = "Read and display .agent/commit-message.txt")]
     show_commit_msg: bool,
+
+    // === Recovery Commands ===
+    /// Resume from last checkpoint after an interruption
+    #[arg(
+        long,
+        help = "Resume from last checkpoint (if one exists from a previous interrupted run)"
+    )]
+    resume: bool,
+
+    /// Validate setup without running agents (dry run)
+    #[arg(
+        long,
+        help = "Validate configuration and PROMPT.md without running agents"
+    )]
+    dry_run: bool,
+
+    /// Output comprehensive diagnostic information
+    #[arg(
+        long,
+        help = "Show system info, agent status, and config for troubleshooting"
+    )]
+    diagnose: bool,
+
+    /// Review depth level (standard, comprehensive, security, incremental)
+    #[arg(
+        long,
+        value_name = "LEVEL",
+        help = "Review depth: standard (balanced), comprehensive (thorough), security (OWASP-focused), incremental (changed files only)"
+    )]
+    review_depth: Option<String>,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -429,8 +469,15 @@ fn run_with_prompt(
         .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
     let reader = BufReader::new(stdout);
 
-    // Capture stderr in a separate thread
-    let stderr_handle = child.stderr.take();
+    // Drain stderr concurrently to avoid deadlocks when stderr output is large.
+    let stderr_join_handle = child.stderr.take().map(|stderr| {
+        std::thread::spawn(move || -> io::Result<String> {
+            let mut stderr_output = String::new();
+            let mut reader = BufReader::new(stderr);
+            reader.read_to_string(&mut stderr_output)?;
+            Ok(stderr_output)
+        })
+    });
 
     if uses_json {
         let stdout = io::stdout();
@@ -486,19 +533,25 @@ fn run_with_prompt(
         }
     }
 
-    // Collect stderr
-    let stderr = if let Some(mut stderr_pipe) = stderr_handle {
-        let mut stderr_output = String::new();
-        if let Err(err) = std::io::Read::read_to_string(&mut stderr_pipe, &mut stderr_output) {
-            logger.warn(&format!("Failed to read stderr: {}", err));
+    let status = child.wait()?;
+    let exit_code = status.code().unwrap_or(1);
+
+    // Collect stderr (drained on a background thread).
+    let stderr = if let Some(handle) = stderr_join_handle {
+        match handle.join() {
+            Ok(Ok(output)) => output,
+            Ok(Err(err)) => {
+                logger.warn(&format!("Failed to read stderr: {}", err));
+                String::new()
+            }
+            Err(_) => {
+                logger.warn("Failed to join stderr reader thread");
+                String::new()
+            }
         }
-        stderr_output
     } else {
         String::new()
     };
-
-    let status = child.wait()?;
-    let exit_code = status.code().unwrap_or(1);
 
     if exit_code != 0 {
         logger.error(&format!("Command exited with code {}", exit_code));
@@ -606,15 +659,10 @@ fn run_with_fallback(
             for retry in 0..fallback_config.max_retries {
                 if retry > 0 {
                     logger.info(&format!(
-                        "Retry {}/{} for {} after {}ms delay...",
-                        retry,
-                        fallback_config.max_retries,
-                        agent_name,
-                        fallback_config.retry_delay_ms
+                        "Retry {}/{} for {}...",
+                        retry, fallback_config.max_retries, agent_name,
                     ));
-                    std::thread::sleep(std::time::Duration::from_millis(
-                        fallback_config.retry_delay_ms,
-                    ));
+                    // Note: actual sleep with error-specific delay happens before this point
                 }
 
                 let result = run_with_prompt(
@@ -659,8 +707,29 @@ fn run_with_fallback(
                     logger.info("Tip: Check your internet connection, firewall, or VPN settings.");
                 }
 
+                // Provide context reduction hint for memory-related errors
+                if error_kind.suggests_smaller_context() {
+                    logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
+                }
+
+                // Check for unrecoverable errors - abort immediately
+                if error_kind.is_unrecoverable() {
+                    logger.error("Unrecoverable error - cannot continue pipeline");
+                    return Ok(last_exit_code);
+                }
+
+                // Use error-specific wait time for retries
+                let suggested_wait = error_kind.suggested_wait_ms();
+                let actual_wait = if suggested_wait > 0 {
+                    suggested_wait
+                } else {
+                    fallback_config.retry_delay_ms
+                };
+
                 // Decide whether to retry or fallback
                 if error_kind.should_retry() && retry + 1 < fallback_config.max_retries {
+                    logger.info(&format!("Waiting {}ms before retry...", actual_wait));
+                    std::thread::sleep(std::time::Duration::from_millis(actual_wait));
                     continue; // Retry same agent
                 }
 
@@ -793,6 +862,20 @@ fn main() -> anyhow::Result<()> {
     }
     if let Some(agent) = args.reviewer_agent {
         config.reviewer_agent = Some(agent);
+    }
+    if let Some(depth) = args.review_depth {
+        if let Some(parsed) = ReviewDepth::from_str(&depth) {
+            config.review_depth = parsed;
+        } else {
+            eprintln!(
+                "{}{}Warning:{} Unknown review depth '{}'. Using default (standard).",
+                colors.bold(),
+                colors.yellow(),
+                colors.reset(),
+                depth
+            );
+            eprintln!("Valid options: standard, comprehensive, security, incremental");
+        }
     }
 
     // Handle --init-global flag: create global agents.toml if it doesn't exist and exit
@@ -1017,6 +1100,259 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // --diagnose: Output comprehensive diagnostic information
+    if args.diagnose {
+        println!(
+            "{}=== Ralph Diagnostic Report ==={}",
+            colors.bold(),
+            colors.reset()
+        );
+        println!();
+
+        // System Information
+        println!("{}System:{}", colors.bold(), colors.reset());
+        println!("  OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
+        if let Ok(cwd) = std::env::current_dir() {
+            println!("  Working directory: {}", cwd.display());
+        }
+        if let Ok(shell) = std::env::var("SHELL") {
+            println!("  Shell: {}", shell);
+        }
+        println!();
+
+        // Git Information
+        println!("{}Git:{}", colors.bold(), colors.reset());
+        if let Ok(output) = Command::new("git").args(["--version"]).output() {
+            if let Ok(version) = std::str::from_utf8(&output.stdout) {
+                println!("  Version: {}", version.trim());
+            }
+        }
+        let is_repo = Command::new("git")
+            .args(["rev-parse", "--git-dir"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        println!("  In git repo: {}", if is_repo { "yes" } else { "no" });
+        if is_repo {
+            if let Ok(output) = Command::new("git")
+                .args(["branch", "--show-current"])
+                .output()
+            {
+                if let Ok(branch) = std::str::from_utf8(&output.stdout) {
+                    println!("  Current branch: {}", branch.trim());
+                }
+            }
+            // Check for uncommitted changes
+            if let Ok(output) = Command::new("git").args(["status", "--porcelain"]).output() {
+                if let Ok(status) = std::str::from_utf8(&output.stdout) {
+                    let changes = status.lines().count();
+                    println!("  Uncommitted changes: {}", changes);
+                }
+            }
+        }
+        println!();
+
+        // Configuration
+        println!("{}Configuration:{}", colors.bold(), colors.reset());
+        println!("  Config file: {}", agents_config_path.display());
+        println!("  Config exists: {}", agents_config_path.exists());
+        println!(
+            "  Review depth: {:?} ({})",
+            config.review_depth,
+            config.review_depth.description()
+        );
+        if let Some(global_path) = agents::global_agents_config_path() {
+            println!("  Global config: {}", global_path.display());
+            println!("  Global exists: {}", global_path.exists());
+        }
+        if !config_sources.is_empty() {
+            println!("  Loaded sources:");
+            for src in &config_sources {
+                println!(
+                    "    - {} ({} agents)",
+                    src.path.display(),
+                    src.agents_loaded
+                );
+            }
+        }
+        println!();
+
+        // Agent Chain Configuration
+        println!("{}Agent Chain:{}", colors.bold(), colors.reset());
+        let fallback = registry.fallback_config();
+        let dev_chain = fallback.get_fallbacks(agents::AgentRole::Developer);
+        let rev_chain = fallback.get_fallbacks(agents::AgentRole::Reviewer);
+        println!("  Developer chain: {:?}", dev_chain);
+        println!("  Reviewer chain: {:?}", rev_chain);
+        println!("  Max retries: {}", fallback.max_retries);
+        println!("  Retry delay: {}ms", fallback.retry_delay_ms);
+        println!();
+
+        // Agent Availability
+        println!("{}Agent Availability:{}", colors.bold(), colors.reset());
+        let all_agents = registry.list();
+        let mut sorted_agents: Vec<_> = all_agents.into_iter().collect();
+        sorted_agents.sort_by(|(a, _), (b, _)| a.cmp(b));
+        for (name, cfg) in sorted_agents {
+            let available = registry.is_agent_available(name);
+            let status_color = if available {
+                colors.green()
+            } else {
+                colors.red()
+            };
+            let status_icon = if available { "✓" } else { "✗" };
+            println!(
+                "  {}{}{} {} (parser: {}, cmd: {})",
+                status_color,
+                status_icon,
+                colors.reset(),
+                name,
+                cfg.json_parser,
+                cfg.cmd.split_whitespace().next().unwrap_or(&cfg.cmd)
+            );
+        }
+        println!();
+
+        // PROMPT.md Status
+        println!("{}PROMPT.md:{}", colors.bold(), colors.reset());
+        let prompt_path = Path::new("PROMPT.md");
+        if prompt_path.exists() {
+            if let Ok(content) = fs::read_to_string(prompt_path) {
+                println!("  Exists: yes");
+                println!("  Size: {} bytes", content.len());
+                println!("  Lines: {}", content.lines().count());
+                let has_goal = content.contains("## Goal") || content.contains("# Goal");
+                let has_acceptance =
+                    content.contains("## Acceptance") || content.contains("Acceptance Criteria");
+                println!(
+                    "  Has Goal section: {}",
+                    if has_goal { "yes" } else { "no" }
+                );
+                println!(
+                    "  Has Acceptance section: {}",
+                    if has_acceptance { "yes" } else { "no" }
+                );
+            }
+        } else {
+            println!("  Exists: no");
+        }
+        println!();
+
+        // Checkpoint Status
+        println!("{}Checkpoint:{}", colors.bold(), colors.reset());
+        let checkpoint_path = Path::new(".agent/checkpoint.json");
+        if checkpoint_path.exists() {
+            println!("  Exists: yes");
+            if let Ok(Some(cp)) = utils::load_checkpoint() {
+                println!("  Phase: {:?}", cp.phase);
+                println!("  Developer agent: {}", cp.developer_agent);
+                println!("  Reviewer agent: {}", cp.reviewer_agent);
+                println!(
+                    "  Iterations: {}/{} dev, {}/{} review",
+                    cp.iteration, cp.total_iterations, cp.reviewer_pass, cp.total_reviewer_passes
+                );
+            }
+        } else {
+            println!("  Exists: no (no interrupted run to resume)");
+        }
+        println!();
+
+        // Language Detection
+        println!("{}Project Stack:{}", colors.bold(), colors.reset());
+        if let Ok(cwd) = std::env::current_dir() {
+            match language_detector::detect_stack(&cwd) {
+                Ok(stack) => {
+                    println!("  Primary language: {}", stack.primary_language);
+                    if !stack.secondary_languages.is_empty() {
+                        println!("  Secondary languages: {:?}", stack.secondary_languages);
+                    }
+                    if !stack.frameworks.is_empty() {
+                        println!("  Frameworks: {:?}", stack.frameworks);
+                    }
+                    if let Some(pm) = &stack.package_manager {
+                        println!("  Package manager: {}", pm);
+                    }
+                    if let Some(tf) = &stack.test_framework {
+                        println!("  Test framework: {}", tf);
+                    }
+
+                    // Show language type indicators (useful for debugging language detection)
+                    let language_types: Vec<&str> = [
+                        if stack.is_rust() { Some("Rust") } else { None },
+                        if stack.is_python() {
+                            Some("Python")
+                        } else {
+                            None
+                        },
+                        if stack.is_javascript_or_typescript() {
+                            Some("JS/TS")
+                        } else {
+                            None
+                        },
+                        if stack.is_go() { Some("Go") } else { None },
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                    if !language_types.is_empty() {
+                        println!("  Language flags: {}", language_types.join(", "));
+                    }
+
+                    // Show review guidelines summary
+                    let guidelines = review_guidelines::ReviewGuidelines::for_stack(&stack);
+                    println!("  Review checks: {} total", guidelines.total_checks());
+
+                    // Show severity breakdown from get_all_checks
+                    let all_checks = guidelines.get_all_checks();
+                    let critical_count = all_checks
+                        .iter()
+                        .filter(|c| matches!(c.severity, CheckSeverity::Critical))
+                        .count();
+                    let high_count = all_checks
+                        .iter()
+                        .filter(|c| matches!(c.severity, CheckSeverity::High))
+                        .count();
+                    if critical_count > 0 || high_count > 0 {
+                        println!(
+                            "  Check severities: {} critical, {} high",
+                            critical_count, high_count
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!("  Detection failed: {}", e);
+                }
+            }
+        }
+        println!();
+
+        // Recent errors (if log exists)
+        let log_path = Path::new(".agent/logs/pipeline.log");
+        if log_path.exists() {
+            println!(
+                "{}Recent Log Entries (last 10):{}",
+                colors.bold(),
+                colors.reset()
+            );
+            if let Ok(content) = fs::read_to_string(log_path) {
+                let lines: Vec<&str> = content.lines().collect();
+                let start = lines.len().saturating_sub(10);
+                for line in &lines[start..] {
+                    println!("  {}", line);
+                }
+            }
+        }
+
+        println!();
+        println!(
+            "{}Copy this output for bug reports: https://github.com/anthropics/ralph/issues{}",
+            colors.dim(),
+            colors.reset()
+        );
+
+        return Ok(());
+    }
+
     // Validate that agent chains are configured
     if let Err(msg) = registry.validate_agent_chains() {
         eprintln!();
@@ -1131,6 +1467,101 @@ fn main() -> anyhow::Result<()> {
     ensure_files()?;
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
+    // --dry-run: Validate setup without running agents
+    if args.dry_run {
+        logger.header("DRY RUN: Validation", |c| c.cyan());
+
+        // Validate PROMPT.md using the utility function
+        let validation = utils::validate_prompt_md(config.strict_validation);
+
+        // Report errors first
+        for err in &validation.errors {
+            logger.error(err);
+        }
+
+        // Report warnings
+        for warn in &validation.warnings {
+            logger.warn(&format!("{} (recommended)", warn));
+        }
+
+        // Bail if validation failed
+        if !validation.is_valid() {
+            anyhow::bail!("Dry run failed: PROMPT.md validation errors");
+        }
+
+        // Report successes
+        if validation.has_goal {
+            logger.success("PROMPT.md has Goal section");
+        }
+        if validation.has_acceptance {
+            logger.success("PROMPT.md has acceptance checks section");
+        }
+
+        logger.success(&format!("Developer agent: {}", developer_agent));
+        logger.success(&format!("Reviewer agent: {}", reviewer_agent));
+        logger.success(&format!("Developer iterations: {}", config.developer_iters));
+        logger.success(&format!("Reviewer passes: {}", config.reviewer_reviews));
+
+        // Check for checkpoint
+        if checkpoint_exists() {
+            logger.info("Checkpoint found - can resume with --resume");
+            if let Ok(Some(cp)) = load_checkpoint() {
+                logger.info(&format!("  Phase: {}", cp.phase));
+                logger.info(&format!("  Progress: {}", cp.description()));
+                logger.info(&format!("  Saved at: {}", cp.timestamp));
+            }
+        }
+
+        // Detect stack - use the convenience function for simple display
+        logger.success(&format!(
+            "Detected stack: {}",
+            detect_stack_summary(&repo_root)
+        ));
+
+        logger.success("Dry run validation complete");
+        return Ok(());
+    }
+
+    // --resume: Resume from last checkpoint
+    let resume_checkpoint = if args.resume {
+        match load_checkpoint() {
+            Ok(Some(checkpoint)) => {
+                logger.header("RESUME: Loading Checkpoint", |c| c.yellow());
+                logger.info(&format!("Resuming from: {}", checkpoint.description()));
+                logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
+
+                // Verify agents match
+                if checkpoint.developer_agent != developer_agent {
+                    logger.warn(&format!(
+                        "Developer agent changed: {} -> {}",
+                        checkpoint.developer_agent, developer_agent
+                    ));
+                }
+                if checkpoint.reviewer_agent != reviewer_agent {
+                    logger.warn(&format!(
+                        "Reviewer agent changed: {} -> {}",
+                        checkpoint.reviewer_agent, reviewer_agent
+                    ));
+                }
+
+                Some(checkpoint)
+            }
+            Ok(None) => {
+                logger.warn("No checkpoint found. Starting fresh pipeline...");
+                None
+            }
+            Err(e) => {
+                logger.warn(&format!(
+                    "Failed to load checkpoint (starting fresh): {}",
+                    e
+                ));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // --generate-commit-msg: Run only the commit message generation phase
     if args.generate_commit_msg {
         let reviewer_context = ContextLevel::from(config.reviewer_context);
@@ -1144,6 +1575,7 @@ fn main() -> anyhow::Result<()> {
             reviewer_context,
             None,
             None,
+            None, // No guidelines needed for commit message generation
         );
 
         let _ = run_with_fallback(
@@ -1243,145 +1675,295 @@ fn main() -> anyhow::Result<()> {
         config.commit_msg,
         colors.reset()
     ));
+
+    // Detect project stack for language-specific review guidance (if enabled)
+    let project_stack: Option<ProjectStack> = if config.auto_detect_stack {
+        match detect_stack(&repo_root) {
+            Ok(stack) => {
+                logger.info(&format!(
+                    "Detected stack: {}{}{}",
+                    colors.cyan(),
+                    stack.summary(),
+                    colors.reset()
+                ));
+                Some(stack)
+            }
+            Err(e) => {
+                logger.warn(&format!("Could not detect project stack: {}", e));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Generate language-specific review guidelines if stack was detected
+    let review_guidelines: Option<ReviewGuidelines> =
+        project_stack.as_ref().map(ReviewGuidelines::for_stack);
+
+    if let Some(ref guidelines) = review_guidelines {
+        logger.info(&format!(
+            "Review guidelines: {}{}{}",
+            colors.dim(),
+            guidelines.summary(),
+            colors.reset()
+        ));
+    }
+
     println!();
+
+    let phase_rank = |p: PipelinePhase| -> u8 {
+        match p {
+            PipelinePhase::Planning => 0,
+            PipelinePhase::Development => 1,
+            PipelinePhase::Review => 2,
+            PipelinePhase::Fix => 3,
+            PipelinePhase::ReviewAgain => 4,
+            PipelinePhase::CommitMessage => 5,
+            PipelinePhase::FinalValidation => 6,
+            PipelinePhase::Complete => 7,
+        }
+    };
+
+    let resume_phase = resume_checkpoint.as_ref().map(|c| c.phase);
+    let resume_rank = resume_phase.map(phase_rank);
+    let should_run_from = |phase: PipelinePhase| -> bool {
+        match resume_rank {
+            None => true,
+            Some(rank) => phase_rank(phase) >= rank,
+        }
+    };
 
     // Phase 1: Development (PROMPT → PLAN → Execute → Delete PLAN, repeated X times)
     logger.header("PHASE 1: Development", |c| c.blue());
-    logger.info(&format!(
-        "Running {}{}{} developer iterations ({})",
-        colors.bold(),
-        config.developer_iters,
-        colors.reset(),
-        developer_agent
-    ));
+    if resume_rank.is_some_and(|rank| rank >= phase_rank(PipelinePhase::Review)) {
+        logger.info("Skipping development phase (checkpoint indicates it already completed)");
+    } else {
+        logger.info(&format!(
+            "Running {}{}{} developer iterations ({})",
+            colors.bold(),
+            config.developer_iters,
+            colors.reset(),
+            developer_agent
+        ));
 
-    let mut prev_snap = git_snapshot()?;
-    let developer_context = ContextLevel::from(config.developer_context);
+        let mut prev_snap = git_snapshot()?;
+        let developer_context = ContextLevel::from(config.developer_context);
 
-    for i in 1..=config.developer_iters {
-        logger.subheader(&format!("Iteration {} of {}", i, config.developer_iters));
-        print_progress(i, config.developer_iters, "Overall");
+        let start_iter = match resume_phase {
+            Some(PipelinePhase::Planning | PipelinePhase::Development) => resume_checkpoint
+                .as_ref()
+                .map(|c| c.iteration)
+                .unwrap_or(1)
+                .clamp(1, config.developer_iters),
+            _ => 1,
+        };
 
-        // Step 1: Create PLAN from PROMPT
-        logger.info("Creating plan from PROMPT.md...");
-        update_status(
-            "Starting planning phase",
-            "none",
-            "Analyze PROMPT.md and create PLAN.md",
-        )?;
+        for i in start_iter..=config.developer_iters {
+            logger.subheader(&format!("Iteration {} of {}", i, config.developer_iters));
+            print_progress(i, config.developer_iters, "Overall");
 
-        let plan_prompt = prompt_for_agent(
-            Role::Developer,
-            Action::Plan,
-            ContextLevel::Normal,
-            None,
-            None,
-        );
+            let resuming_into_development =
+                args.resume && resume_phase == Some(PipelinePhase::Development) && i == start_iter;
 
-        let _ = run_with_fallback(
-            AgentRole::Developer,
-            &format!("planning #{}", i),
-            &plan_prompt,
-            &format!(".agent/logs/planning_{}", i),
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-            &registry,
-            &developer_agent,
-        );
+            // Step 1: Create PLAN from PROMPT (skip if resuming into development)
+            if !resuming_into_development {
+                // Save checkpoint at start of planning phase (if enabled)
+                if config.checkpoint_enabled {
+                    let _ = save_checkpoint(&PipelineCheckpoint::new(
+                        PipelinePhase::Planning,
+                        i,
+                        config.developer_iters,
+                        0,
+                        config.reviewer_reviews,
+                        &developer_agent,
+                        &reviewer_agent,
+                    ));
+                }
 
-        // Verify PLAN.md was created (required)
-        let plan_path = std::path::Path::new(".agent/PLAN.md");
-        let plan_ok = plan_path
-            .exists()
-            .then(|| fs::read_to_string(plan_path).ok())
-            .flatten()
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+                logger.info("Creating plan from PROMPT.md...");
+                update_status(
+                    "Starting planning phase",
+                    "none",
+                    "Analyze PROMPT.md and create PLAN.md",
+                )?;
 
-        if !plan_ok {
-            anyhow::bail!("Planning phase did not create a non-empty .agent/PLAN.md");
-        }
-        logger.success("PLAN.md created");
+                let plan_prompt = prompt_for_agent(
+                    Role::Developer,
+                    Action::Plan,
+                    ContextLevel::Normal,
+                    None,
+                    None,
+                    None, // No guidelines needed for planning
+                );
 
-        // Step 2: Execute the PLAN
-        logger.info("Executing plan...");
-        update_status(
-            "Starting development iteration",
-            "none",
-            "Make progress on PROMPT.md goals",
-        )?;
-
-        let prompt = prompt_for_agent(
-            Role::Developer,
-            Action::Iterate,
-            developer_context,
-            Some(i),
-            Some(config.developer_iters),
-        );
-
-        let exit_code = run_with_fallback(
-            AgentRole::Developer,
-            &format!("run #{}", i),
-            &prompt,
-            &format!(".agent/logs/developer_{}", i),
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-            &registry,
-            &developer_agent,
-        )?;
-
-        if exit_code != 0 {
-            logger.error(&format!(
-                "Iteration {} encountered an error but continuing",
-                i
-            ));
-        }
-
-        stats.developer_runs_completed += 1;
-        update_status(
-            "Completed progress step",
-            "none",
-            "Continue work on PROMPT.md goals",
-        )?;
-
-        let snap = git_snapshot()?;
-        if snap == prev_snap {
-            logger.warn("No git-status change detected");
-        } else {
-            logger.success("Repository modified");
-            stats.changes_detected += 1;
-        }
-        prev_snap = snap;
-
-        // Run fast check if configured
-        if let Some(ref fast_cmd) = config.fast_check_cmd {
-            logger.info(&format!(
-                "Running fast check: {}{}{}",
-                colors.dim(),
-                fast_cmd,
-                colors.reset()
-            ));
-
-            let _fast_logfile = format!(".agent/logs/fast_check_{}.log", i);
-            let status = Command::new("sh").args(["-c", fast_cmd]).status()?;
-
-            if status.success() {
-                logger.success("Fast check passed");
+                let _ = run_with_fallback(
+                    AgentRole::Developer,
+                    &format!("planning #{}", i),
+                    &plan_prompt,
+                    &format!(".agent/logs/planning_{}", i),
+                    &mut timer,
+                    &logger,
+                    &colors,
+                    &config,
+                    &registry,
+                    &developer_agent,
+                );
             } else {
-                logger.warn("Fast check had issues (non-blocking)");
+                logger.info("Resuming at development step; skipping plan generation");
             }
-        }
 
-        // Step 3: Delete the PLAN
-        logger.info("Deleting PLAN.md...");
-        if let Err(err) = delete_plan_file() {
-            logger.warn(&format!("Failed to delete PLAN.md: {}", err));
+            // Verify PLAN.md was created (required)
+            let plan_path = std::path::Path::new(".agent/PLAN.md");
+            let mut plan_ok = plan_path
+                .exists()
+                .then(|| fs::read_to_string(plan_path).ok())
+                .flatten()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
+
+            if !plan_ok && resuming_into_development {
+                logger.warn("Missing .agent/PLAN.md; rerunning plan generation to recover");
+
+                if config.checkpoint_enabled {
+                    let _ = save_checkpoint(&PipelineCheckpoint::new(
+                        PipelinePhase::Planning,
+                        i,
+                        config.developer_iters,
+                        0,
+                        config.reviewer_reviews,
+                        &developer_agent,
+                        &reviewer_agent,
+                    ));
+                }
+
+                let plan_prompt = prompt_for_agent(
+                    Role::Developer,
+                    Action::Plan,
+                    ContextLevel::Normal,
+                    None,
+                    None,
+                    None,
+                );
+
+                let _ = run_with_fallback(
+                    AgentRole::Developer,
+                    &format!("planning #{}", i),
+                    &plan_prompt,
+                    &format!(".agent/logs/planning_{}", i),
+                    &mut timer,
+                    &logger,
+                    &colors,
+                    &config,
+                    &registry,
+                    &developer_agent,
+                );
+
+                plan_ok = plan_path
+                    .exists()
+                    .then(|| fs::read_to_string(plan_path).ok())
+                    .flatten()
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false);
+            }
+
+            if !plan_ok {
+                anyhow::bail!("Planning phase did not create a non-empty .agent/PLAN.md");
+            }
+            logger.success("PLAN.md created");
+
+            // Save checkpoint at start of development phase (if enabled)
+            if config.checkpoint_enabled {
+                let _ = save_checkpoint(&PipelineCheckpoint::new(
+                    PipelinePhase::Development,
+                    i,
+                    config.developer_iters,
+                    0,
+                    config.reviewer_reviews,
+                    &developer_agent,
+                    &reviewer_agent,
+                ));
+            }
+
+            // Step 2: Execute the PLAN
+            logger.info("Executing plan...");
+            update_status(
+                "Starting development iteration",
+                "none",
+                "Make progress on PROMPT.md goals",
+            )?;
+
+            let prompt = prompt_for_agent(
+                Role::Developer,
+                Action::Iterate,
+                developer_context,
+                Some(i),
+                Some(config.developer_iters),
+                None, // No guidelines needed for development iteration
+            );
+
+            let exit_code = run_with_fallback(
+                AgentRole::Developer,
+                &format!("run #{}", i),
+                &prompt,
+                &format!(".agent/logs/developer_{}", i),
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+                &registry,
+                &developer_agent,
+            )?;
+
+            if exit_code != 0 {
+                logger.error(&format!(
+                    "Iteration {} encountered an error but continuing",
+                    i
+                ));
+            }
+
+            stats.developer_runs_completed += 1;
+            update_status(
+                "Completed progress step",
+                "none",
+                "Continue work on PROMPT.md goals",
+            )?;
+
+            let snap = git_snapshot()?;
+            if snap == prev_snap {
+                logger.warn("No git-status change detected");
+            } else {
+                logger.success("Repository modified");
+                stats.changes_detected += 1;
+            }
+            prev_snap = snap;
+
+            // Run fast check if configured
+            if let Some(ref fast_cmd) = config.fast_check_cmd {
+                logger.info(&format!(
+                    "Running fast check: {}{}{}",
+                    colors.dim(),
+                    fast_cmd,
+                    colors.reset()
+                ));
+
+                let _fast_logfile = format!(".agent/logs/fast_check_{}.log", i);
+                let status = Command::new("sh").args(["-c", fast_cmd]).status()?;
+
+                if status.success() {
+                    logger.success("Fast check passed");
+                } else {
+                    logger.warn("Fast check had issues (non-blocking)");
+                }
+            }
+
+            // Step 3: Delete the PLAN
+            logger.info("Deleting PLAN.md...");
+            if let Err(err) = delete_plan_file() {
+                logger.warn(&format!("Failed to delete PLAN.md: {}", err));
+            }
+            logger.success("PLAN.md deleted");
         }
-        logger.success("PLAN.md deleted");
     }
 
     update_status("Code changes made", "none", "Evaluate codebase")?;
@@ -1391,78 +1973,86 @@ fn main() -> anyhow::Result<()> {
 
     // Clean context for reviewer if using minimal context
     let reviewer_context = ContextLevel::from(config.reviewer_context);
-    if reviewer_context == ContextLevel::Minimal {
+    let run_any_reviewer_phase = should_run_from(PipelinePhase::Review)
+        || should_run_from(PipelinePhase::Fix)
+        || should_run_from(PipelinePhase::ReviewAgain)
+        || should_run_from(PipelinePhase::CommitMessage);
+    if reviewer_context == ContextLevel::Minimal && run_any_reviewer_phase {
         clean_context_for_reviewer(&logger)?;
     }
 
-    logger.info(&format!(
-        "Running review → fix → review×{}{}{} cycle ({})",
-        colors.bold(),
-        config.reviewer_reviews,
-        colors.reset(),
-        reviewer_agent
-    ));
-
-    // Initial review
-    logger.subheader("Initial Review");
-    update_status("Starting code review", "none", "Evaluate codebase")?;
-
-    let prompt = prompt_for_agent(Role::Reviewer, Action::Review, reviewer_context, None, None);
-    let _ = run_with_fallback(
-        AgentRole::Reviewer,
-        "review (initial)",
-        &prompt,
-        ".agent/logs/reviewer_review_1",
-        &mut timer,
-        &logger,
-        &colors,
-        &config,
-        &registry,
-        &reviewer_agent,
-    );
-    stats.reviewer_runs_completed += 1;
-
-    // Applying fixes
-    logger.subheader("Applying Fixes");
-    update_status("Applying fixes", "none", "Address issues found")?;
-
-    let prompt = prompt_for_agent(Role::Reviewer, Action::Fix, reviewer_context, None, None);
-    let _ = run_with_fallback(
-        AgentRole::Reviewer,
-        "fix",
-        &prompt,
-        ".agent/logs/reviewer_fix",
-        &mut timer,
-        &logger,
-        &colors,
-        &config,
-        &registry,
-        &reviewer_agent,
-    );
-    stats.reviewer_runs_completed += 1;
-
-    // Verification reviews
-    for j in 1..=config.reviewer_reviews {
-        logger.subheader(&format!(
-            "Verification Review {} of {}",
-            j, config.reviewer_reviews
+    if should_run_from(PipelinePhase::Review) {
+        logger.info(&format!(
+            "Running review → fix → review×{}{}{} cycle ({})",
+            colors.bold(),
+            config.reviewer_reviews,
+            colors.reset(),
+            reviewer_agent
         ));
-        print_progress(j, config.reviewer_reviews, "Review passes");
 
-        update_status("Verification review", "none", "Re-evaluate codebase")?;
+        // Save checkpoint at start of review phase (if enabled)
+        if config.checkpoint_enabled {
+            let _ = save_checkpoint(&PipelineCheckpoint::new(
+                PipelinePhase::Review,
+                config.developer_iters,
+                config.developer_iters,
+                0,
+                config.reviewer_reviews,
+                &developer_agent,
+                &reviewer_agent,
+            ));
+        }
 
-        let prompt = prompt_for_agent(
-            Role::Reviewer,
-            Action::ReviewAgain,
-            reviewer_context,
-            None,
-            None,
-        );
+        // Initial review - select prompt based on review_depth configuration
+        logger.subheader("Initial Review");
+        update_status("Starting code review", "none", "Evaluate codebase")?;
+
+        let prompt = match config.review_depth {
+            ReviewDepth::Security => {
+                if let Some(ref guidelines) = review_guidelines {
+                    logger.info("Using security-focused review with language-specific checks");
+                    prompt_security_focused_review(reviewer_context, guidelines)
+                } else {
+                    logger.info("Using security-focused review");
+                    prompt_security_focused_review(reviewer_context, &ReviewGuidelines::default())
+                }
+            }
+            ReviewDepth::Incremental => {
+                logger.info("Using incremental review (changed files only)");
+                prompt_incremental_review(reviewer_context)
+            }
+            ReviewDepth::Comprehensive => {
+                if let Some(ref guidelines) = review_guidelines {
+                    logger.info("Using comprehensive review with language-specific checks");
+                    prompt_comprehensive_review(reviewer_context, guidelines)
+                } else {
+                    logger.info("Using comprehensive review");
+                    prompt_comprehensive_review(reviewer_context, &ReviewGuidelines::default())
+                }
+            }
+            ReviewDepth::Standard => {
+                // Standard review: use comprehensive if guidelines available, else basic
+                if let Some(ref guidelines) = review_guidelines {
+                    logger.info("Using comprehensive review with language-specific checks");
+                    prompt_comprehensive_review(reviewer_context, guidelines)
+                } else {
+                    // Fall back to standard review prompt
+                    prompt_for_agent(
+                        Role::Reviewer,
+                        Action::Review,
+                        reviewer_context,
+                        None,
+                        None,
+                        None,
+                    )
+                }
+            }
+        };
         let _ = run_with_fallback(
             AgentRole::Reviewer,
-            &format!("re-review #{}", j),
+            "review (comprehensive)",
             &prompt,
-            &format!(".agent/logs/reviewer_review_{}", j + 1),
+            ".agent/logs/reviewer_review_1",
             &mut timer,
             &logger,
             &colors,
@@ -1471,57 +2061,197 @@ fn main() -> anyhow::Result<()> {
             &reviewer_agent,
         );
         stats.reviewer_runs_completed += 1;
+    } else if run_any_reviewer_phase {
+        logger.info("Skipping initial review (resuming from a later checkpoint phase)");
     }
 
-    // Commit message generation phase
-    logger.subheader("Generating Commit Message");
-    update_status(
-        "Generating commit message",
-        "none",
-        "Agent writes commit message",
-    )?;
+    if should_run_from(PipelinePhase::Fix) {
+        // Save checkpoint at start of fix phase (if enabled)
+        if config.checkpoint_enabled {
+            let _ = save_checkpoint(&PipelineCheckpoint::new(
+                PipelinePhase::Fix,
+                config.developer_iters,
+                config.developer_iters,
+                0,
+                config.reviewer_reviews,
+                &developer_agent,
+                &reviewer_agent,
+            ));
+        }
 
-    let commit_msg_prompt = prompt_for_agent(
-        Role::Reviewer,
-        Action::GenerateCommitMessage,
-        reviewer_context,
-        None,
-        None,
-    );
+        // Applying fixes
+        logger.subheader("Applying Fixes");
+        update_status("Applying fixes", "none", "Address issues found")?;
 
-    let _ = run_with_fallback(
-        AgentRole::Reviewer,
-        "generate commit msg",
-        &commit_msg_prompt,
-        ".agent/logs/commit_message",
-        &mut timer,
-        &logger,
-        &colors,
-        &config,
-        &registry,
-        &reviewer_agent,
-    );
-    stats.reviewer_runs_completed += 1;
+        let prompt = prompt_for_agent(
+            Role::Reviewer,
+            Action::Fix,
+            reviewer_context,
+            None,
+            None,
+            None, // No guidelines needed for fix phase
+        );
+        let _ = run_with_fallback(
+            AgentRole::Reviewer,
+            "fix",
+            &prompt,
+            ".agent/logs/reviewer_fix",
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &reviewer_agent,
+        );
+        stats.reviewer_runs_completed += 1;
+    } else if run_any_reviewer_phase {
+        logger.info("Skipping fix phase (resuming from a later checkpoint phase)");
+    }
+
+    if should_run_from(PipelinePhase::ReviewAgain) {
+        let start_pass = if resume_phase == Some(PipelinePhase::ReviewAgain) {
+            resume_checkpoint
+                .as_ref()
+                .map(|c| c.reviewer_pass)
+                .unwrap_or(1)
+                .clamp(1, config.reviewer_reviews.max(1))
+        } else {
+            1
+        };
+
+        // Verification reviews
+        for j in start_pass..=config.reviewer_reviews {
+            // Save checkpoint at start of each verification review (if enabled)
+            if config.checkpoint_enabled {
+                let _ = save_checkpoint(&PipelineCheckpoint::new(
+                    PipelinePhase::ReviewAgain,
+                    config.developer_iters,
+                    config.developer_iters,
+                    j,
+                    config.reviewer_reviews,
+                    &developer_agent,
+                    &reviewer_agent,
+                ));
+            }
+
+            logger.subheader(&format!(
+                "Verification Review {} of {}",
+                j, config.reviewer_reviews
+            ));
+            print_progress(j, config.reviewer_reviews, "Review passes");
+
+            update_status("Verification review", "none", "Re-evaluate codebase")?;
+
+            let prompt = prompt_for_agent(
+                Role::Reviewer,
+                Action::ReviewAgain,
+                reviewer_context,
+                None,
+                None,
+                None, // ReviewAgain is a verification pass, no guidelines needed
+            );
+            let _ = run_with_fallback(
+                AgentRole::Reviewer,
+                &format!("re-review #{}", j),
+                &prompt,
+                &format!(".agent/logs/reviewer_review_{}", j + 1),
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+                &registry,
+                &reviewer_agent,
+            );
+            stats.reviewer_runs_completed += 1;
+        }
+    } else if run_any_reviewer_phase {
+        logger.info("Skipping verification reviews (resuming from a later checkpoint phase)");
+    }
+
+    if should_run_from(PipelinePhase::CommitMessage) {
+        // Save checkpoint at start of commit message phase (if enabled)
+        if config.checkpoint_enabled {
+            let _ = save_checkpoint(&PipelineCheckpoint::new(
+                PipelinePhase::CommitMessage,
+                config.developer_iters,
+                config.developer_iters,
+                config.reviewer_reviews,
+                config.reviewer_reviews,
+                &developer_agent,
+                &reviewer_agent,
+            ));
+        }
+
+        // Commit message generation phase
+        logger.subheader("Generating Commit Message");
+        update_status(
+            "Generating commit message",
+            "none",
+            "Agent writes commit message",
+        )?;
+
+        let commit_msg_prompt = prompt_for_agent(
+            Role::Reviewer,
+            Action::GenerateCommitMessage,
+            reviewer_context,
+            None,
+            None,
+            None, // No guidelines needed for commit message generation
+        );
+
+        let _ = run_with_fallback(
+            AgentRole::Reviewer,
+            "generate commit msg",
+            &commit_msg_prompt,
+            ".agent/logs/commit_message",
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &reviewer_agent,
+        );
+        stats.reviewer_runs_completed += 1;
+    } else if run_any_reviewer_phase {
+        logger.info("Skipping commit message generation (resuming from a later checkpoint phase)");
+    }
 
     update_status("Review phase complete", "none", "Awaiting finalization")?;
 
     // Phase 3: Final checks (if configured)
     if let Some(ref full_cmd) = config.full_check_cmd {
-        logger.header("PHASE 3: Final Validation", |c| c.yellow());
-        logger.info(&format!(
-            "Running full check: {}{}{}",
-            colors.dim(),
-            full_cmd,
-            colors.reset()
-        ));
+        if should_run_from(PipelinePhase::FinalValidation) {
+            if config.checkpoint_enabled {
+                let _ = save_checkpoint(&PipelineCheckpoint::new(
+                    PipelinePhase::FinalValidation,
+                    config.developer_iters,
+                    config.developer_iters,
+                    config.reviewer_reviews,
+                    config.reviewer_reviews,
+                    &developer_agent,
+                    &reviewer_agent,
+                ));
+            }
 
-        let status = Command::new("sh").args(["-c", full_cmd]).status()?;
+            logger.header("PHASE 3: Final Validation", |c| c.yellow());
+            logger.info(&format!(
+                "Running full check: {}{}{}",
+                colors.dim(),
+                full_cmd,
+                colors.reset()
+            ));
 
-        if status.success() {
-            logger.success("Full check passed");
+            let status = Command::new("sh").args(["-c", full_cmd]).status()?;
+
+            if status.success() {
+                logger.success("Full check passed");
+            } else {
+                logger.error("Full check failed");
+                anyhow::bail!("Full check failed");
+            }
         } else {
-            logger.error("Full check failed");
-            anyhow::bail!("Full check failed");
+            logger.header("PHASE 3: Final Validation", |c| c.yellow());
+            logger.info("Skipping final validation (resuming from a later checkpoint phase)");
         }
     }
 
@@ -1572,6 +2302,11 @@ fn main() -> anyhow::Result<()> {
         logger.warn(&format!("Failed to delete commit-message.txt: {}", err));
     }
 
+    // Clear checkpoint on successful completion
+    if let Err(e) = clear_checkpoint() {
+        logger.warn(&format!("Failed to clear checkpoint: {}", e));
+    }
+
     // Final summary
     logger.header("Pipeline Complete", |c| c.green());
 
@@ -1620,6 +2355,62 @@ fn main() -> anyhow::Result<()> {
         stats.changes_detected,
         colors.reset()
     );
+
+    // Review metrics from ISSUES.md
+    if let Ok(metrics) = ReviewMetrics::from_issues_file() {
+        if metrics.issues_file_found {
+            if metrics.no_issues_declared && metrics.total_issues == 0 {
+                println!(
+                    "  {}✓{}   Review result:   {}{}{}",
+                    colors.green(),
+                    colors.reset(),
+                    colors.bold(),
+                    metrics.summary(),
+                    colors.reset()
+                );
+            } else if metrics.total_issues > 0 {
+                // Use summary() for a concise one-line display
+                println!(
+                    "  {}🔎{}  Review summary:  {}{}{}",
+                    colors.yellow(),
+                    colors.reset(),
+                    colors.bold(),
+                    metrics.summary(),
+                    colors.reset()
+                );
+                // Show unresolved count
+                let unresolved = metrics.unresolved_issues();
+                if unresolved > 0 {
+                    println!(
+                        "  {}⚠{}   Unresolved:      {}{}{} issues remaining",
+                        colors.red(),
+                        colors.reset(),
+                        colors.bold(),
+                        unresolved,
+                        colors.reset()
+                    );
+                }
+                // Show detailed breakdown in verbose mode
+                if config.verbosity.is_verbose() && metrics.total_issues > 1 {
+                    println!("  {}📊{}  Breakdown:", colors.dim(), colors.reset());
+                    for line in metrics.detailed_summary().lines() {
+                        println!("      {}{}{}", colors.dim(), line.trim(), colors.reset());
+                    }
+                }
+                // Highlight blocking issues
+                if metrics.has_blocking_issues() {
+                    println!(
+                        "  {}🚨{}  BLOCKING:        {}{}{} critical/high issues unresolved",
+                        colors.red(),
+                        colors.reset(),
+                        colors.bold(),
+                        metrics.unresolved_blocking_issues(),
+                        colors.reset()
+                    );
+                }
+            }
+        }
+    }
     println!();
 
     println!(

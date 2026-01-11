@@ -6,9 +6,175 @@ use crate::colors::{
     Colors, ARROW, BOX_BL, BOX_BR, BOX_H, BOX_TL, BOX_TR, BOX_V, CHECK, CROSS, INFO, WARN,
 };
 use chrono::Local;
+use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+
+// ============================================================================
+// Pipeline Checkpoint System
+// ============================================================================
+
+/// Pipeline phases for checkpoint tracking
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum PipelinePhase {
+    /// Planning phase (creating PLAN.md)
+    Planning,
+    /// Development/implementation phase
+    Development,
+    /// Initial review phase
+    Review,
+    /// Fix phase
+    Fix,
+    /// Verification review phase
+    ReviewAgain,
+    /// Commit message generation
+    CommitMessage,
+    /// Final validation phase
+    FinalValidation,
+    /// Pipeline complete
+    Complete,
+}
+
+impl std::fmt::Display for PipelinePhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PipelinePhase::Planning => write!(f, "Planning"),
+            PipelinePhase::Development => write!(f, "Development"),
+            PipelinePhase::Review => write!(f, "Review"),
+            PipelinePhase::Fix => write!(f, "Fix"),
+            PipelinePhase::ReviewAgain => write!(f, "Verification Review"),
+            PipelinePhase::CommitMessage => write!(f, "Commit Message Generation"),
+            PipelinePhase::FinalValidation => write!(f, "Final Validation"),
+            PipelinePhase::Complete => write!(f, "Complete"),
+        }
+    }
+}
+
+/// Pipeline checkpoint for resume functionality
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PipelineCheckpoint {
+    /// Current pipeline phase
+    pub(crate) phase: PipelinePhase,
+    /// Current iteration number (for developer iterations)
+    pub(crate) iteration: u32,
+    /// Total iterations configured
+    pub(crate) total_iterations: u32,
+    /// Current reviewer pass number
+    pub(crate) reviewer_pass: u32,
+    /// Total reviewer passes configured
+    pub(crate) total_reviewer_passes: u32,
+    /// Timestamp when checkpoint was saved
+    pub(crate) timestamp: String,
+    /// Developer agent name
+    pub(crate) developer_agent: String,
+    /// Reviewer agent name
+    pub(crate) reviewer_agent: String,
+}
+
+impl PipelineCheckpoint {
+    /// Create a new checkpoint
+    pub(crate) fn new(
+        phase: PipelinePhase,
+        iteration: u32,
+        total_iterations: u32,
+        reviewer_pass: u32,
+        total_reviewer_passes: u32,
+        developer_agent: &str,
+        reviewer_agent: &str,
+    ) -> Self {
+        Self {
+            phase,
+            iteration,
+            total_iterations,
+            reviewer_pass,
+            total_reviewer_passes,
+            timestamp: timestamp(),
+            developer_agent: developer_agent.to_string(),
+            reviewer_agent: reviewer_agent.to_string(),
+        }
+    }
+
+    /// Get a human-readable description of the checkpoint
+    pub(crate) fn description(&self) -> String {
+        match self.phase {
+            PipelinePhase::Planning => {
+                format!(
+                    "Planning phase, iteration {}/{}",
+                    self.iteration, self.total_iterations
+                )
+            }
+            PipelinePhase::Development => {
+                format!(
+                    "Development iteration {}/{}",
+                    self.iteration, self.total_iterations
+                )
+            }
+            PipelinePhase::Review => "Initial review".to_string(),
+            PipelinePhase::Fix => "Applying fixes".to_string(),
+            PipelinePhase::ReviewAgain => {
+                format!(
+                    "Verification review {}/{}",
+                    self.reviewer_pass, self.total_reviewer_passes
+                )
+            }
+            PipelinePhase::CommitMessage => "Commit message generation".to_string(),
+            PipelinePhase::FinalValidation => "Final validation".to_string(),
+            PipelinePhase::Complete => "Pipeline complete".to_string(),
+        }
+    }
+}
+
+const CHECKPOINT_PATH: &str = ".agent/checkpoint.json";
+
+/// Save a pipeline checkpoint
+pub(crate) fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
+    let json = serde_json::to_string_pretty(checkpoint).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to serialize checkpoint: {}", e),
+        )
+    })?;
+
+    // Write atomically by writing to temp file then renaming
+    let temp_path = format!("{}.tmp", CHECKPOINT_PATH);
+    fs::write(&temp_path, &json)?;
+    fs::rename(&temp_path, CHECKPOINT_PATH)?;
+
+    Ok(())
+}
+
+/// Load an existing checkpoint if one exists
+pub(crate) fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
+    let path = Path::new(CHECKPOINT_PATH);
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(path)?;
+    let checkpoint: PipelineCheckpoint = serde_json::from_str(&content).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to parse checkpoint: {}", e),
+        )
+    })?;
+
+    Ok(Some(checkpoint))
+}
+
+/// Delete the checkpoint file (called on successful completion)
+pub(crate) fn clear_checkpoint() -> io::Result<()> {
+    let path = Path::new(CHECKPOINT_PATH);
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+/// Check if a checkpoint exists
+pub(crate) fn checkpoint_exists() -> bool {
+    Path::new(CHECKPOINT_PATH).exists()
+}
 
 /// Get current timestamp in "YYYY-MM-DD HH:MM:SS" format
 pub(crate) fn timestamp() -> String {
@@ -417,6 +583,7 @@ pub(crate) const GENERATED_FILES: &[&str] = &[
     ".no_agent_commit",
     ".agent/PLAN.md",
     ".agent/commit-message.txt",
+    ".agent/checkpoint.json.tmp",
 ];
 
 /// Delete PLAN.md after integration
@@ -461,6 +628,104 @@ pub(crate) fn cleanup_generated_files() {
     for file in GENERATED_FILES {
         let _ = fs::remove_file(file);
     }
+}
+
+/// Result of PROMPT.md validation
+#[derive(Debug, Clone)]
+pub(crate) struct PromptValidationResult {
+    /// Whether PROMPT.md exists
+    pub exists: bool,
+    /// Whether PROMPT.md has non-empty content
+    pub has_content: bool,
+    /// Whether a Goal section was found
+    pub has_goal: bool,
+    /// Whether an Acceptance section was found
+    pub has_acceptance: bool,
+    /// List of warnings (non-blocking issues)
+    pub warnings: Vec<String>,
+    /// List of errors (blocking issues)
+    pub errors: Vec<String>,
+}
+
+impl PromptValidationResult {
+    /// Returns true if validation passed (no errors)
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// Returns true if validation passed with no warnings
+    #[allow(dead_code)]
+    pub fn is_perfect(&self) -> bool {
+        self.errors.is_empty() && self.warnings.is_empty()
+    }
+}
+
+/// Validate PROMPT.md structure and content
+///
+/// Checks for:
+/// - File existence and non-empty content
+/// - Goal section (## Goal or # Goal)
+/// - Acceptance section (## Acceptance, Acceptance Criteria, or acceptance)
+///
+/// In strict mode, missing sections are errors; otherwise they're warnings.
+pub(crate) fn validate_prompt_md(strict: bool) -> PromptValidationResult {
+    let prompt_path = Path::new("PROMPT.md");
+    let mut result = PromptValidationResult {
+        exists: prompt_path.exists(),
+        has_content: false,
+        has_goal: false,
+        has_acceptance: false,
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    if !result.exists {
+        result.errors.push("PROMPT.md not found".to_string());
+        return result;
+    }
+
+    let content = match fs::read_to_string(prompt_path) {
+        Ok(c) => c,
+        Err(e) => {
+            result
+                .errors
+                .push(format!("Failed to read PROMPT.md: {}", e));
+            return result;
+        }
+    };
+
+    result.has_content = !content.trim().is_empty();
+    if !result.has_content {
+        result.errors.push("PROMPT.md is empty".to_string());
+        return result;
+    }
+
+    // Check for Goal section
+    result.has_goal = content.contains("## Goal") || content.contains("# Goal");
+    if !result.has_goal {
+        let msg = "PROMPT.md missing '## Goal' section".to_string();
+        if strict {
+            result.errors.push(msg);
+        } else {
+            result.warnings.push(msg);
+        }
+    }
+
+    // Check for Acceptance section
+    result.has_acceptance = content.contains("## Acceptance")
+        || content.contains("# Acceptance")
+        || content.contains("Acceptance Criteria")
+        || content.to_lowercase().contains("acceptance");
+    if !result.has_acceptance {
+        let msg = "PROMPT.md missing acceptance checks section".to_string();
+        if strict {
+            result.errors.push(msg);
+        } else {
+            result.warnings.push(msg);
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -755,5 +1020,224 @@ mod tests {
         assert!(!marker_path.exists());
         assert!(!plan_path.exists());
         assert!(!msg_path.exists());
+    }
+
+    // Checkpoint system tests
+    #[test]
+    fn test_pipeline_phase_display() {
+        assert_eq!(format!("{}", PipelinePhase::Planning), "Planning");
+        assert_eq!(format!("{}", PipelinePhase::Development), "Development");
+        assert_eq!(format!("{}", PipelinePhase::Review), "Review");
+        assert_eq!(format!("{}", PipelinePhase::Fix), "Fix");
+        assert_eq!(
+            format!("{}", PipelinePhase::ReviewAgain),
+            "Verification Review"
+        );
+        assert_eq!(
+            format!("{}", PipelinePhase::CommitMessage),
+            "Commit Message Generation"
+        );
+        assert_eq!(
+            format!("{}", PipelinePhase::FinalValidation),
+            "Final Validation"
+        );
+        assert_eq!(format!("{}", PipelinePhase::Complete), "Complete");
+    }
+
+    #[test]
+    fn test_checkpoint_new() {
+        let checkpoint =
+            PipelineCheckpoint::new(PipelinePhase::Development, 2, 5, 0, 2, "claude", "codex");
+
+        assert_eq!(checkpoint.phase, PipelinePhase::Development);
+        assert_eq!(checkpoint.iteration, 2);
+        assert_eq!(checkpoint.total_iterations, 5);
+        assert_eq!(checkpoint.reviewer_pass, 0);
+        assert_eq!(checkpoint.total_reviewer_passes, 2);
+        assert_eq!(checkpoint.developer_agent, "claude");
+        assert_eq!(checkpoint.reviewer_agent, "codex");
+        assert!(!checkpoint.timestamp.is_empty());
+    }
+
+    #[test]
+    fn test_checkpoint_description() {
+        let checkpoint =
+            PipelineCheckpoint::new(PipelinePhase::Development, 3, 5, 0, 2, "claude", "codex");
+        assert_eq!(checkpoint.description(), "Development iteration 3/5");
+
+        let checkpoint =
+            PipelineCheckpoint::new(PipelinePhase::ReviewAgain, 5, 5, 2, 3, "claude", "codex");
+        assert_eq!(checkpoint.description(), "Verification review 2/3");
+    }
+
+    #[test]
+    fn test_checkpoint_save_load() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+
+            let checkpoint =
+                PipelineCheckpoint::new(PipelinePhase::Review, 5, 5, 1, 2, "claude", "codex");
+
+            save_checkpoint(&checkpoint).unwrap();
+            assert!(checkpoint_exists());
+
+            let loaded = load_checkpoint().unwrap().unwrap();
+            assert_eq!(loaded.phase, PipelinePhase::Review);
+            assert_eq!(loaded.iteration, 5);
+            assert_eq!(loaded.developer_agent, "claude");
+            assert_eq!(loaded.reviewer_agent, "codex");
+        });
+    }
+
+    #[test]
+    fn test_checkpoint_clear() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+
+            let checkpoint =
+                PipelineCheckpoint::new(PipelinePhase::Development, 1, 5, 0, 2, "claude", "codex");
+
+            save_checkpoint(&checkpoint).unwrap();
+            assert!(checkpoint_exists());
+
+            clear_checkpoint().unwrap();
+            assert!(!checkpoint_exists());
+        });
+    }
+
+    #[test]
+    fn test_load_checkpoint_nonexistent() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+
+            let result = load_checkpoint().unwrap();
+            assert!(result.is_none());
+        });
+    }
+
+    #[test]
+    fn test_checkpoint_serialization() {
+        let checkpoint =
+            PipelineCheckpoint::new(PipelinePhase::Fix, 3, 5, 1, 2, "aider", "opencode");
+
+        let json = serde_json::to_string(&checkpoint).unwrap();
+        assert!(json.contains("Fix"));
+        assert!(json.contains("aider"));
+        assert!(json.contains("opencode"));
+
+        let deserialized: PipelineCheckpoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.phase, checkpoint.phase);
+        assert_eq!(deserialized.iteration, checkpoint.iteration);
+    }
+
+    // PROMPT.md validation tests
+    #[test]
+    fn test_validate_prompt_md_not_exists() {
+        with_temp_cwd(|_dir| {
+            let result = validate_prompt_md(false);
+            assert!(!result.exists);
+            assert!(!result.is_valid());
+            assert!(result.errors.iter().any(|e| e.contains("not found")));
+        });
+    }
+
+    #[test]
+    fn test_validate_prompt_md_empty() {
+        with_temp_cwd(|_dir| {
+            fs::write("PROMPT.md", "   \n\n  ").unwrap();
+            let result = validate_prompt_md(false);
+            assert!(result.exists);
+            assert!(!result.has_content);
+            assert!(!result.is_valid());
+            assert!(result.errors.iter().any(|e| e.contains("empty")));
+        });
+    }
+
+    #[test]
+    fn test_validate_prompt_md_complete() {
+        with_temp_cwd(|_dir| {
+            fs::write(
+                "PROMPT.md",
+                r#"# PROMPT
+
+## Goal
+Build a feature
+
+## Acceptance
+- Tests pass
+"#,
+            )
+            .unwrap();
+            let result = validate_prompt_md(false);
+            assert!(result.exists);
+            assert!(result.has_content);
+            assert!(result.has_goal);
+            assert!(result.has_acceptance);
+            assert!(result.is_valid());
+            assert!(result.is_perfect());
+        });
+    }
+
+    #[test]
+    fn test_validate_prompt_md_missing_sections_lenient() {
+        with_temp_cwd(|_dir| {
+            fs::write("PROMPT.md", "Just some random content").unwrap();
+            let result = validate_prompt_md(false);
+            assert!(result.exists);
+            assert!(result.has_content);
+            assert!(!result.has_goal);
+            assert!(!result.has_acceptance);
+            // In lenient mode, missing sections are warnings, not errors
+            assert!(result.is_valid());
+            assert!(!result.is_perfect());
+            assert_eq!(result.warnings.len(), 2);
+        });
+    }
+
+    #[test]
+    fn test_validate_prompt_md_missing_sections_strict() {
+        with_temp_cwd(|_dir| {
+            fs::write("PROMPT.md", "Just some random content").unwrap();
+            let result = validate_prompt_md(true);
+            assert!(result.exists);
+            assert!(result.has_content);
+            assert!(!result.has_goal);
+            assert!(!result.has_acceptance);
+            // In strict mode, missing sections are errors
+            assert!(!result.is_valid());
+            assert_eq!(result.errors.len(), 2);
+        });
+    }
+
+    #[test]
+    fn test_validate_prompt_md_acceptance_variations() {
+        with_temp_cwd(|_dir| {
+            // Test "Acceptance Criteria" variant
+            fs::write(
+                "PROMPT.md",
+                r#"## Goal
+Test
+
+## Acceptance Criteria
+- Pass
+"#,
+            )
+            .unwrap();
+            let result = validate_prompt_md(false);
+            assert!(result.has_acceptance);
+
+            // Test lowercase "acceptance" variant
+            fs::write(
+                "PROMPT.md",
+                r#"## Goal
+Test
+
+The acceptance tests should pass.
+"#,
+            )
+            .unwrap();
+            let result = validate_prompt_md(false);
+            assert!(result.has_acceptance);
+        });
     }
 }
