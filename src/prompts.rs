@@ -89,7 +89,7 @@ If issues remain, fix them and update .agent/ISSUES.md."#
     }
 }
 
-/// Generate commit prompt for reviewer
+/// Generate commit prompt for reviewer (DEPRECATED: prefer prompt_generate_commit_message)
 pub fn prompt_commit(message: &str) -> String {
     format!(
         r#"All work is complete. Create a git commit with all changes.
@@ -104,6 +104,38 @@ Report success or failure."#,
     )
 }
 
+/// Generate prompt for planning phase
+/// Agent does a deep dive on PROMPT.md and creates a detailed PLAN.md
+pub fn prompt_plan() -> String {
+    r#"Do a deep dive on PROMPT.md to understand the Goal and Acceptance checks.
+
+Create .agent/PLAN.md with:
+1. A clear understanding of what needs to be done
+2. Step-by-step implementation plan
+3. Identified risks or challenges
+4. Specific files that will need changes
+5. Testing strategy to verify acceptance checks
+
+Be thorough but concise. This plan will guide the implementation."#
+        .to_string()
+}
+
+/// Generate prompt for agent to generate a commit message
+/// Agent writes the commit message to .agent/commit-message.txt
+pub fn prompt_generate_commit_message() -> String {
+    r#"All work is complete. Generate a commit message for the changes.
+
+Review the changes made and write a clear, concise commit message to .agent/commit-message.txt
+
+The message should:
+1. Start with a type prefix (feat:, fix:, chore:, refactor:, docs:, test:)
+2. Be a single line (50-72 characters ideal)
+3. Describe WHAT was done and WHY
+
+Write ONLY the commit message to .agent/commit-message.txt (no other text)."#
+        .to_string()
+}
+
 /// Role types for agents
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -113,12 +145,15 @@ pub enum Role {
 
 /// Action types for prompts
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Action {
+    Plan,
     Iterate,
     Review,
     Fix,
     ReviewAgain,
     Commit,
+    GenerateCommitMessage,
 }
 
 /// Generate a prompt for any agent type
@@ -131,16 +166,23 @@ pub fn prompt_for_agent(
     commit_msg: Option<&str>,
 ) -> String {
     match (role, action) {
+        (_, Action::Plan) => prompt_plan(),
         (Role::Developer, Action::Iterate) => prompt_developer_iteration(
             iteration.unwrap_or(1),
             total_iterations.unwrap_or(1),
             context,
         ),
-        (Role::Reviewer, Action::Review) => prompt_reviewer_review(context),
-        (Role::Reviewer, Action::Fix) | (Role::Developer, Action::Fix) => prompt_fix(),
-        (Role::Reviewer, Action::ReviewAgain) => prompt_codex_review_again(context),
+        (_, Action::Review) => prompt_reviewer_review(context),
+        (_, Action::Fix) => prompt_fix(),
+        (_, Action::ReviewAgain) => prompt_codex_review_again(context),
         (_, Action::Commit) => prompt_commit(commit_msg.unwrap_or("chore: apply changes")),
-        _ => "Unknown prompt action".to_string(),
+        (_, Action::GenerateCommitMessage) => prompt_generate_commit_message(),
+        // Fallback for Reviewer + Iterate (shouldn't happen but be safe)
+        (Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
+            iteration.unwrap_or(1),
+            total_iterations.unwrap_or(1),
+            context,
+        ),
     }
 }
 
@@ -216,5 +258,46 @@ mod tests {
             None,
         );
         assert!(result.contains("fresh eyes"));
+    }
+
+    #[test]
+    fn test_prompt_plan() {
+        let result = prompt_plan();
+        assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("PLAN.md"));
+        assert!(result.contains("implementation plan"));
+    }
+
+    #[test]
+    fn test_prompt_generate_commit_message() {
+        let result = prompt_generate_commit_message();
+        assert!(result.contains("commit-message.txt"));
+        assert!(result.contains("feat:"));
+    }
+
+    #[test]
+    fn test_prompt_for_agent_plan() {
+        let result = prompt_for_agent(
+            Role::Developer,
+            Action::Plan,
+            ContextLevel::Normal,
+            None,
+            None,
+            None,
+        );
+        assert!(result.contains("PLAN.md"));
+    }
+
+    #[test]
+    fn test_prompt_for_agent_generate_commit_message() {
+        let result = prompt_for_agent(
+            Role::Reviewer,
+            Action::GenerateCommitMessage,
+            ContextLevel::Normal,
+            None,
+            None,
+            None,
+        );
+        assert!(result.contains("commit-message.txt"));
     }
 }

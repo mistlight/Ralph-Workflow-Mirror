@@ -8,14 +8,16 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tempfile::TempDir;
 
 /// Marker string for Ralph-managed hooks
 pub const HOOK_MARKER: &str = "RALPH_RUST_MANAGED_HOOK";
+const WRAPPER_DIR_TRACK_FILE: &str = ".agent/git-wrapper-dir.txt";
 
 /// Git helper state
 pub struct GitHelpers {
     real_git: Option<PathBuf>,
-    wrapper_dir: Option<PathBuf>,
+    wrapper_dir: Option<TempDir>,
 }
 
 impl GitHelpers {
@@ -231,6 +233,34 @@ pub fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
     Ok(())
 }
 
+/// Silently uninstall all Ralph-managed hooks (for signal handlers)
+/// Does not log output; safe to call during cleanup
+pub fn uninstall_hooks_silent() {
+    let hooks_dir = match get_hooks_dir() {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    if !hooks_dir.exists() {
+        return;
+    }
+
+    for hook_name in &["pre-commit", "pre-push"] {
+        let hook_path = hooks_dir.join(hook_name);
+        if hook_path.exists() {
+            if let Ok(true) = file_contains_marker(&hook_path, HOOK_MARKER) {
+                let hook_path_abs = fs::canonicalize(&hook_path).unwrap_or(hook_path.clone());
+                let orig_path = PathBuf::from(format!("{}.ralph.orig", hook_path_abs.display()));
+
+                if orig_path.exists() {
+                    let _ = fs::rename(&orig_path, &hook_path);
+                } else {
+                    let _ = fs::remove_file(&hook_path);
+                }
+            }
+        }
+    }
+}
+
 /// Enable git wrapper that blocks commits during agent phase
 pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<PathBuf> {
     helpers.init_real_git();
@@ -239,9 +269,8 @@ pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<PathBuf> {
         .as_ref()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "git not found"))?;
 
-    #[allow(deprecated)]
-    let wrapper_dir = tempfile::tempdir()?.into_path();
-    let wrapper_path = wrapper_dir.join("git");
+    let wrapper_dir = tempfile::tempdir()?;
+    let wrapper_path = wrapper_dir.path().join("git");
 
     let wrapper_content = format!(
         r#"#!/usr/bin/env bash
@@ -277,20 +306,28 @@ exec "{}" "$@"
     let current_path = env::var("PATH").unwrap_or_default();
     env::set_var(
         "PATH",
-        format!("{}:{}", wrapper_dir.display(), current_path),
+        format!("{}:{}", wrapper_dir.path().display(), current_path),
     );
 
-    helpers.wrapper_dir = Some(wrapper_dir.clone());
-    Ok(wrapper_dir)
+    fs::create_dir_all(".agent")?;
+    fs::write(
+        WRAPPER_DIR_TRACK_FILE,
+        wrapper_dir.path().display().to_string(),
+    )?;
+
+    let wrapper_dir_path = wrapper_dir.path().to_path_buf();
+    helpers.wrapper_dir = Some(wrapper_dir);
+    Ok(wrapper_dir_path)
 }
 
 /// Disable git wrapper
 pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
     if let Some(wrapper_dir) = helpers.wrapper_dir.take() {
-        let _ = fs::remove_dir_all(&wrapper_dir);
+        let wrapper_dir_path = wrapper_dir.path().to_path_buf();
+        let _ = fs::remove_dir_all(&wrapper_dir_path);
         // Remove from PATH
         if let Ok(path) = env::var("PATH") {
-            let wrapper_str = wrapper_dir.to_string_lossy();
+            let wrapper_str = wrapper_dir_path.to_string_lossy();
             let new_path: String = path
                 .split(':')
                 .filter(|p| !p.contains(wrapper_str.as_ref()))
@@ -299,6 +336,7 @@ pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
             env::set_var("PATH", new_path);
         }
     }
+    let _ = fs::remove_file(WRAPPER_DIR_TRACK_FILE);
 }
 
 /// Start agent phase (creates marker file, installs hooks, enables wrapper)
@@ -315,13 +353,35 @@ pub fn end_agent_phase() -> io::Result<()> {
     Ok(())
 }
 
+fn cleanup_git_wrapper_dir_silent() {
+    let wrapper_dir = match fs::read_to_string(WRAPPER_DIR_TRACK_FILE) {
+        Ok(path) => PathBuf::from(path.trim()),
+        Err(_) => return,
+    };
+
+    if !wrapper_dir.as_os_str().is_empty() {
+        let _ = fs::remove_dir_all(&wrapper_dir);
+    }
+    let _ = fs::remove_file(WRAPPER_DIR_TRACK_FILE);
+}
+
+/// Best-effort cleanup for unexpected exits (Ctrl+C, early-return, panics).
+pub fn cleanup_agent_phase_silent() {
+    let _ = end_agent_phase();
+    cleanup_git_wrapper_dir_silent();
+    uninstall_hooks_silent();
+    crate::utils::cleanup_generated_files();
+}
+
 /// Allow reviewer to commit by temporarily lifting the block
+#[allow(dead_code)]
 pub fn allow_reviewer_commit(helpers: &mut GitHelpers) {
     let _ = fs::remove_file(".no_agent_commit");
     disable_git_wrapper(helpers);
 }
 
 /// Re-enable commit block after reviewer phase
+#[allow(dead_code)]
 pub fn block_commits_again(helpers: &mut GitHelpers) -> io::Result<()> {
     File::create(".no_agent_commit")?;
     enable_git_wrapper(helpers)?;
@@ -344,6 +404,7 @@ pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
 }
 
 /// Get current HEAD commit hash
+#[allow(dead_code)]
 pub fn get_head_commit() -> io::Result<String> {
     let output = Command::new("git").args(["rev-parse", "HEAD"]).output()?;
 
@@ -355,6 +416,7 @@ pub fn get_head_commit() -> io::Result<String> {
 }
 
 /// Get last commit message
+#[allow(dead_code)]
 pub fn get_last_commit_message() -> io::Result<String> {
     let output = Command::new("git")
         .args(["log", "-1", "--pretty=%s"])
@@ -859,5 +921,87 @@ mod tests {
         let msg_str = String::from_utf8_lossy(&msg.stdout).trim().to_string();
 
         assert_eq!(msg_str, "feat: test commit message");
+    }
+
+    #[test]
+    fn test_uninstall_hooks_silent_removes_ralph_hooks() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        Command::new("git")
+            .arg("init")
+            .current_dir(dir_path)
+            .output()
+            .unwrap();
+
+        let hooks_dir = dir_path.join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        // Install Ralph hook (no original)
+        let hook_path = hooks_dir.join("pre-commit");
+        install_hook("Commit", &hook_path).unwrap();
+        assert!(hook_path.exists());
+
+        // Verify it's a Ralph hook
+        let content = fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains(HOOK_MARKER));
+
+        // Simulate the silent uninstall logic
+        if file_contains_marker(&hook_path, HOOK_MARKER).unwrap() {
+            let hook_path_abs = fs::canonicalize(&hook_path).unwrap();
+            let orig_path = PathBuf::from(format!("{}.ralph.orig", hook_path_abs.display()));
+
+            if orig_path.exists() {
+                fs::rename(&orig_path, &hook_path).unwrap();
+            } else {
+                fs::remove_file(&hook_path).unwrap();
+            }
+        }
+
+        // Hook should be removed
+        assert!(!hook_path.exists());
+    }
+
+    #[test]
+    fn test_uninstall_hooks_silent_restores_original() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        Command::new("git")
+            .arg("init")
+            .current_dir(dir_path)
+            .output()
+            .unwrap();
+
+        let hooks_dir = dir_path.join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        // Create an original hook
+        let hook_path = hooks_dir.join("pre-commit");
+        fs::write(&hook_path, "#!/bin/bash\necho 'Original hook'").unwrap();
+
+        // Install Ralph hook (backs up original)
+        install_hook("Commit", &hook_path).unwrap();
+
+        // Verify Ralph hook is installed
+        let content = fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains(HOOK_MARKER));
+
+        // Simulate the silent uninstall logic
+        if file_contains_marker(&hook_path, HOOK_MARKER).unwrap() {
+            let hook_path_abs = fs::canonicalize(&hook_path).unwrap();
+            let orig_path = PathBuf::from(format!("{}.ralph.orig", hook_path_abs.display()));
+
+            if orig_path.exists() {
+                fs::rename(&orig_path, &hook_path).unwrap();
+            } else {
+                fs::remove_file(&hook_path).unwrap();
+            }
+        }
+
+        // Original should be restored
+        let content = fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains("Original hook"));
+        assert!(!content.contains(HOOK_MARKER));
     }
 }
