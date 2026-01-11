@@ -25,7 +25,7 @@ use std::io::{self, BufRead, Write};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum ClaudeEvent {
+pub(crate) enum ClaudeEvent {
     System {
         subtype: Option<String>,
         session_id: Option<String>,
@@ -50,19 +50,19 @@ pub enum ClaudeEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct AssistantMessage {
-    pub content: Option<Vec<ContentBlock>>,
+pub(crate) struct AssistantMessage {
+    pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UserMessage {
-    pub content: Option<Vec<ContentBlock>>,
+pub(crate) struct UserMessage {
+    pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum ContentBlock {
+pub(crate) enum ContentBlock {
     Text {
         text: Option<String>,
     },
@@ -81,7 +81,7 @@ pub enum ContentBlock {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum CodexEvent {
+pub(crate) enum CodexEvent {
     #[serde(rename = "thread.started")]
     ThreadStarted { thread_id: Option<String> },
     #[serde(rename = "turn.started")]
@@ -103,18 +103,18 @@ pub enum CodexEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CodexUsage {
-    pub input_tokens: Option<u64>,
-    pub output_tokens: Option<u64>,
+pub(crate) struct CodexUsage {
+    pub(crate) input_tokens: Option<u64>,
+    pub(crate) output_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CodexItem {
+pub(crate) struct CodexItem {
     #[serde(rename = "type")]
-    pub item_type: Option<String>,
-    pub command: Option<String>,
-    pub text: Option<String>,
-    pub path: Option<String>,
+    pub(crate) item_type: Option<String>,
+    pub(crate) command: Option<String>,
+    pub(crate) text: Option<String>,
+    pub(crate) path: Option<String>,
 }
 
 /// Format tool input for display
@@ -149,14 +149,14 @@ fn format_tool_input(input: &serde_json::Value) -> String {
 }
 
 /// Claude event parser
-pub struct ClaudeParser {
+pub(crate) struct ClaudeParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
 }
 
 impl ClaudeParser {
-    pub fn new(colors: Colors, verbosity: Verbosity) -> Self {
+    pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
         Self {
             colors,
             verbosity,
@@ -164,13 +164,13 @@ impl ClaudeParser {
         }
     }
 
-    pub fn with_log_file(mut self, path: &str) -> Self {
+    pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
         self
     }
 
     /// Parse and display a single Claude JSON event
-    pub fn parse_event(&self, line: &str) -> Option<String> {
+    pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: ClaudeEvent = serde_json::from_str(line).ok()?;
         let c = &self.colors;
 
@@ -380,7 +380,11 @@ impl ClaudeParser {
     }
 
     /// Parse a stream of Claude NDJSON events
-    pub fn parse_stream<R: BufRead, W: Write>(&self, reader: R, mut writer: W) -> io::Result<()> {
+    pub(crate) fn parse_stream<R: BufRead, W: Write>(
+        &self,
+        reader: R,
+        mut writer: W,
+    ) -> io::Result<()> {
         let c = &self.colors;
 
         for line in reader.lines() {
@@ -422,14 +426,14 @@ impl ClaudeParser {
 }
 
 /// Codex event parser
-pub struct CodexParser {
+pub(crate) struct CodexParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
 }
 
 impl CodexParser {
-    pub fn new(colors: Colors, verbosity: Verbosity) -> Self {
+    pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
         Self {
             colors,
             verbosity,
@@ -437,13 +441,13 @@ impl CodexParser {
         }
     }
 
-    pub fn with_log_file(mut self, path: &str) -> Self {
+    pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
         self
     }
 
     /// Parse and display a single Codex JSON event
-    pub fn parse_event(&self, line: &str) -> Option<String> {
+    pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: CodexEvent = serde_json::from_str(line).ok()?;
         let c = &self.colors;
 
@@ -638,7 +642,11 @@ impl CodexParser {
     }
 
     /// Parse a stream of Codex NDJSON events
-    pub fn parse_stream<R: BufRead, W: Write>(&self, reader: R, mut writer: W) -> io::Result<()> {
+    pub(crate) fn parse_stream<R: BufRead, W: Write>(
+        &self,
+        reader: R,
+        mut writer: W,
+    ) -> io::Result<()> {
         let c = &self.colors;
 
         for line in reader.lines() {

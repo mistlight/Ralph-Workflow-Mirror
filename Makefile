@@ -86,7 +86,7 @@ fmt-check:
 
 # Run clippy lints
 lint:
-	$(CARGO) clippy $(CARGO_FLAGS) -- -D warnings
+	$(CARGO) clippy $(CARGO_FLAGS) --all-targets -- -D warnings
 	@echo "Lint check passed"
 
 # Run all checks (format, lint, test)

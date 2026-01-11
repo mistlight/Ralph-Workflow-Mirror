@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 /// Verbosity levels for output
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Verbosity {
+pub(crate) enum Verbosity {
     /// Quiet - minimal output, aggressive truncation
     Quiet = 0,
     /// Normal - balanced output with moderate truncation
@@ -43,7 +43,7 @@ impl Verbosity {
     /// - "result": Final result summaries
     /// - "command": Command execution strings
     /// - "agent_msg": Agent messages/thinking
-    pub fn truncate_limit(&self, content_type: &str) -> usize {
+    pub(crate) fn truncate_limit(&self, content_type: &str) -> usize {
         match self {
             Verbosity::Quiet => match content_type {
                 "text" => 80,
@@ -85,12 +85,12 @@ impl Verbosity {
     }
 
     /// Returns true if this verbosity level should show debug information
-    pub fn is_debug(&self) -> bool {
+    pub(crate) fn is_debug(&self) -> bool {
         matches!(self, Verbosity::Debug)
     }
 
     /// Returns true if this verbosity level is at least Verbose
-    pub fn is_verbose(&self) -> bool {
+    pub(crate) fn is_verbose(&self) -> bool {
         matches!(
             self,
             Verbosity::Verbose | Verbosity::Full | Verbosity::Debug
@@ -101,51 +101,51 @@ impl Verbosity {
     ///
     /// Tool inputs provide crucial context for understanding what the agent is doing.
     /// They are now shown at Normal level and above for better usability.
-    pub fn show_tool_input(&self) -> bool {
+    pub(crate) fn show_tool_input(&self) -> bool {
         !matches!(self, Verbosity::Quiet)
     }
 }
 
 /// Ralph configuration
 #[derive(Debug, Clone)]
-pub struct Config {
+pub(crate) struct Config {
     /// Developer (driver) agent (default: claude)
-    pub developer_agent: String,
+    pub(crate) developer_agent: String,
     /// Reviewer agent (default: codex)
-    pub reviewer_agent: String,
+    pub(crate) reviewer_agent: String,
     /// Developer command override (alias: CLAUDE_CMD)
-    pub developer_cmd: Option<String>,
+    pub(crate) developer_cmd: Option<String>,
     /// Reviewer command override (alias: CODEX_CMD)
-    pub reviewer_cmd: Option<String>,
+    pub(crate) reviewer_cmd: Option<String>,
     /// Number of developer iterations (alias: CLAUDE_ITERS)
-    pub developer_iters: u32,
+    pub(crate) developer_iters: u32,
     /// Number of reviewer re-review passes after fix (alias: CODEX_REVIEWS)
-    pub reviewer_reviews: u32,
+    pub(crate) reviewer_reviews: u32,
     /// Fast check command (optional)
-    pub fast_check_cmd: Option<String>,
+    pub(crate) fast_check_cmd: Option<String>,
     /// Full check command (optional)
-    pub full_check_cmd: Option<String>,
+    pub(crate) full_check_cmd: Option<String>,
     /// Interactive mode (keep agent in foreground)
-    pub interactive: bool,
+    pub(crate) interactive: bool,
     /// Path to save last prompt
-    pub prompt_path: PathBuf,
+    pub(crate) prompt_path: PathBuf,
     /// Path to agents configuration file (default: .agent/agents.toml)
-    pub agents_config_path: PathBuf,
+    pub(crate) agents_config_path: PathBuf,
     /// Developer context level (0=minimal, 1=normal)
-    pub developer_context: u8,
+    pub(crate) developer_context: u8,
     /// Reviewer context level (0=minimal/fresh eyes, 1=normal)
-    pub reviewer_context: u8,
+    pub(crate) reviewer_context: u8,
     /// Verbosity level
-    pub verbosity: Verbosity,
+    pub(crate) verbosity: Verbosity,
     /// Commit message
-    pub commit_msg: String,
+    pub(crate) commit_msg: String,
     /// Enable automatic agent fallback on errors
-    pub use_fallback: bool,
+    pub(crate) use_fallback: bool,
 }
 
 impl Config {
     /// Load configuration from environment variables
-    pub fn from_env() -> Self {
+    pub(crate) fn from_env() -> Self {
         let developer_agent = env::var("RALPH_DEVELOPER_AGENT")
             .or_else(|_| env::var("RALPH_DRIVER_AGENT"))
             .unwrap_or_else(|_| "claude".to_string());
@@ -208,7 +208,7 @@ impl Config {
     }
 
     /// Set the commit message
-    pub fn with_commit_msg(mut self, msg: String) -> Self {
+    pub(crate) fn with_commit_msg(mut self, msg: String) -> Self {
         self.commit_msg = msg;
         self
     }

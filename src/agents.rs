@@ -41,11 +41,11 @@ use std::io;
 use std::path::Path;
 
 /// Default agents.toml template embedded at compile time
-pub const DEFAULT_AGENTS_TOML: &str = include_str!("../examples/agents.toml");
+pub(crate) const DEFAULT_AGENTS_TOML: &str = include_str!("../examples/agents.toml");
 
 /// JSON parser type for agent output
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum JsonParserType {
+pub(crate) enum JsonParserType {
     /// Claude's stream-json format
     #[default]
     Claude,
@@ -57,7 +57,7 @@ pub enum JsonParserType {
 
 impl JsonParserType {
     /// Parse parser type from string
-    pub fn parse(s: &str) -> Self {
+    pub(crate) fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "claude" => JsonParserType::Claude,
             "codex" => JsonParserType::Codex,
@@ -79,41 +79,41 @@ impl std::fmt::Display for JsonParserType {
 
 /// Agent capabilities
 #[derive(Debug, Clone)]
-pub struct AgentConfig {
+pub(crate) struct AgentConfig {
     /// Base command to run the agent
-    pub cmd: String,
+    pub(crate) cmd: String,
     /// Flag to enable JSON output
-    pub json_flag: String,
+    pub(crate) json_flag: String,
     /// Flag for autonomous mode (no prompts)
-    pub yolo_flag: String,
+    pub(crate) yolo_flag: String,
     /// Flag for verbose output
-    pub verbose_flag: String,
+    pub(crate) verbose_flag: String,
     /// Whether the agent can run git commit
-    pub can_commit: bool,
+    pub(crate) can_commit: bool,
     /// Which JSON parser to use for this agent's output
-    pub json_parser: JsonParserType,
+    pub(crate) json_parser: JsonParserType,
 }
 
 /// TOML configuration for an agent (for deserialization)
 #[derive(Debug, Clone, Deserialize)]
-pub struct AgentConfigToml {
+pub(crate) struct AgentConfigToml {
     /// Base command to run the agent
-    pub cmd: String,
+    pub(crate) cmd: String,
     /// Flag to enable JSON output (optional, defaults to empty)
     #[serde(default)]
-    pub json_flag: String,
+    pub(crate) json_flag: String,
     /// Flag for autonomous mode (optional, defaults to empty)
     #[serde(default)]
-    pub yolo_flag: String,
+    pub(crate) yolo_flag: String,
     /// Flag for verbose output (optional, defaults to empty)
     #[serde(default)]
-    pub verbose_flag: String,
+    pub(crate) verbose_flag: String,
     /// Whether the agent can run git commit (optional, defaults to true)
     #[serde(default = "default_can_commit")]
-    pub can_commit: bool,
+    pub(crate) can_commit: bool,
     /// Which JSON parser to use: "claude", "codex", or "generic" (optional, defaults to "generic")
     #[serde(default)]
-    pub json_parser: String,
+    pub(crate) json_parser: String,
 }
 
 fn default_can_commit() -> bool {
@@ -135,18 +135,18 @@ impl From<AgentConfigToml> for AgentConfig {
 
 /// Root TOML configuration structure
 #[derive(Debug, Clone, Deserialize)]
-pub struct AgentsConfigFile {
+pub(crate) struct AgentsConfigFile {
     /// Map of agent name to configuration
     #[serde(default)]
-    pub agents: HashMap<String, AgentConfigToml>,
+    pub(crate) agents: HashMap<String, AgentConfigToml>,
     /// Fallback configuration for agent switching
     #[serde(default)]
-    pub fallback: FallbackConfig,
+    pub(crate) fallback: FallbackConfig,
 }
 
 /// Error type for agent configuration loading
 #[derive(Debug, thiserror::Error)]
-pub enum AgentConfigError {
+pub(crate) enum AgentConfigError {
     #[error("Failed to read config file: {0}")]
     Io(#[from] std::io::Error),
     #[error("Failed to parse TOML: {0}")]
@@ -157,7 +157,7 @@ pub enum AgentConfigError {
 
 /// Result of checking/initializing the agents config file
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigInitResult {
+pub(crate) enum ConfigInitResult {
     /// Config file already exists, no action taken
     AlreadyExists,
     /// Config file was just created from template
@@ -169,7 +169,9 @@ impl AgentsConfigFile {
     ///
     /// Returns Ok(None) if the file doesn't exist.
     /// Returns Err if the file exists but can't be parsed.
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Option<Self>, AgentConfigError> {
+    pub(crate) fn load_from_file<P: AsRef<Path>>(
+        path: P,
+    ) -> Result<Option<Self>, AgentConfigError> {
         let path = path.as_ref();
         if !path.exists() {
             return Ok(None);
@@ -186,7 +188,7 @@ impl AgentsConfigFile {
     /// - `Ok(ConfigInitResult::AlreadyExists)` if the file already exists
     /// - `Ok(ConfigInitResult::Created)` if the file was just created from the default template
     /// - `Err` if there was an error creating the file or parent directories
-    pub fn ensure_config_exists<P: AsRef<Path>>(path: P) -> io::Result<ConfigInitResult> {
+    pub(crate) fn ensure_config_exists<P: AsRef<Path>>(path: P) -> io::Result<ConfigInitResult> {
         let path = path.as_ref();
 
         if path.exists() {
@@ -207,7 +209,7 @@ impl AgentsConfigFile {
 
 impl AgentConfig {
     /// Build full command string with specified flags
-    pub fn build_cmd(&self, json: bool, yolo: bool, verbose: bool) -> String {
+    pub(crate) fn build_cmd(&self, json: bool, yolo: bool, verbose: bool) -> String {
         let mut parts = vec![self.cmd.clone()];
 
         if json && !self.json_flag.is_empty() {
@@ -226,19 +228,19 @@ impl AgentConfig {
 
 /// Fallback configuration for agent switching
 #[derive(Debug, Clone, Deserialize)]
-pub struct FallbackConfig {
+pub(crate) struct FallbackConfig {
     /// Ordered list of fallback agents for developer role
     #[serde(default)]
-    pub developer: Vec<String>,
+    pub(crate) developer: Vec<String>,
     /// Ordered list of fallback agents for reviewer role
     #[serde(default)]
-    pub reviewer: Vec<String>,
+    pub(crate) reviewer: Vec<String>,
     /// Maximum number of retries before giving up
     #[serde(default = "default_max_retries")]
-    pub max_retries: u32,
+    pub(crate) max_retries: u32,
     /// Delay between retries in milliseconds
     #[serde(default = "default_retry_delay_ms")]
-    pub retry_delay_ms: u64,
+    pub(crate) retry_delay_ms: u64,
 }
 
 fn default_max_retries() -> u32 {
@@ -262,7 +264,7 @@ impl Default for FallbackConfig {
 
 impl FallbackConfig {
     /// Get fallback agents for a role
-    pub fn get_fallbacks(&self, role: AgentRole) -> &[String] {
+    pub(crate) fn get_fallbacks(&self, role: AgentRole) -> &[String] {
         match role {
             AgentRole::Developer => &self.developer,
             AgentRole::Reviewer => &self.reviewer,
@@ -270,14 +272,14 @@ impl FallbackConfig {
     }
 
     /// Check if fallback is configured for a role
-    pub fn has_fallbacks(&self, role: AgentRole) -> bool {
+    pub(crate) fn has_fallbacks(&self, role: AgentRole) -> bool {
         !self.get_fallbacks(role).is_empty()
     }
 }
 
 /// Agent role (developer or reviewer)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentRole {
+pub(crate) enum AgentRole {
     Developer,
     Reviewer,
 }
@@ -293,7 +295,7 @@ impl std::fmt::Display for AgentRole {
 
 /// Error classification for agent failures (to determine if retry is appropriate)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentErrorKind {
+pub(crate) enum AgentErrorKind {
     /// API rate limit exceeded - retry after delay
     RateLimited,
     /// Token/context limit exceeded - may need different agent
@@ -312,7 +314,7 @@ pub enum AgentErrorKind {
 
 impl AgentErrorKind {
     /// Determine if this error should trigger a retry
-    pub fn should_retry(&self) -> bool {
+    pub(crate) fn should_retry(&self) -> bool {
         matches!(
             self,
             AgentErrorKind::RateLimited
@@ -322,7 +324,7 @@ impl AgentErrorKind {
     }
 
     /// Determine if this error should trigger a fallback to another agent
-    pub fn should_fallback(&self) -> bool {
+    pub(crate) fn should_fallback(&self) -> bool {
         matches!(
             self,
             AgentErrorKind::TokenExhausted
@@ -332,7 +334,7 @@ impl AgentErrorKind {
     }
 
     /// Classify an error from exit code and output
-    pub fn classify(exit_code: i32, stderr: &str) -> Self {
+    pub(crate) fn classify(exit_code: i32, stderr: &str) -> Self {
         let stderr_lower = stderr.to_lowercase();
 
         // Rate limiting indicators
@@ -391,14 +393,14 @@ impl AgentErrorKind {
 }
 
 /// Agent registry
-pub struct AgentRegistry {
+pub(crate) struct AgentRegistry {
     agents: HashMap<String, AgentConfig>,
     fallback: FallbackConfig,
 }
 
 impl AgentRegistry {
     /// Create a new registry with default agents
-    pub fn new() -> Result<Self, AgentConfigError> {
+    pub(crate) fn new() -> Result<Self, AgentConfigError> {
         let AgentsConfigFile { agents, fallback } =
             toml::from_str(DEFAULT_AGENTS_TOML).map_err(AgentConfigError::DefaultTemplateToml)?;
 
@@ -415,37 +417,37 @@ impl AgentRegistry {
     }
 
     /// Register a new agent
-    pub fn register(&mut self, name: &str, config: AgentConfig) {
+    pub(crate) fn register(&mut self, name: &str, config: AgentConfig) {
         self.agents.insert(name.to_string(), config);
     }
 
     /// Get agent configuration
-    pub fn get(&self, name: &str) -> Option<&AgentConfig> {
+    pub(crate) fn get(&self, name: &str) -> Option<&AgentConfig> {
         self.agents.get(name)
     }
 
     /// Check if agent exists
-    pub fn is_known(&self, name: &str) -> bool {
+    pub(crate) fn is_known(&self, name: &str) -> bool {
         self.agents.contains_key(name)
     }
 
     /// List all registered agents
-    pub fn list(&self) -> Vec<(&str, &AgentConfig)> {
+    pub(crate) fn list(&self) -> Vec<(&str, &AgentConfig)> {
         self.agents.iter().map(|(k, v)| (k.as_str(), v)).collect()
     }
 
     /// Get command for developer role
-    pub fn developer_cmd(&self, agent_name: &str) -> Option<String> {
+    pub(crate) fn developer_cmd(&self, agent_name: &str) -> Option<String> {
         self.get(agent_name).map(|c| c.build_cmd(true, true, true))
     }
 
     /// Get command for reviewer role
-    pub fn reviewer_cmd(&self, agent_name: &str) -> Option<String> {
+    pub(crate) fn reviewer_cmd(&self, agent_name: &str) -> Option<String> {
         self.get(agent_name).map(|c| c.build_cmd(true, true, false))
     }
 
     /// Get the JSON parser type for an agent
-    pub fn parser_type(&self, agent_name: &str) -> JsonParserType {
+    pub(crate) fn parser_type(&self, agent_name: &str) -> JsonParserType {
         self.get(agent_name)
             .map(|c| c.json_parser)
             .unwrap_or(JsonParserType::Generic)
@@ -455,7 +457,10 @@ impl AgentRegistry {
     ///
     /// Custom agents override built-in defaults if they have the same name.
     /// Returns the number of agents loaded, or an error if the file can't be parsed.
-    pub fn load_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<usize, AgentConfigError> {
+    pub(crate) fn load_from_file<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<usize, AgentConfigError> {
         match AgentsConfigFile::load_from_file(path)? {
             Some(config) => {
                 let count = config.agents.len();
@@ -474,24 +479,24 @@ impl AgentRegistry {
     ///
     /// This is the recommended way to create a registry for production use.
     /// Custom agents in the file will override built-in defaults.
-    pub fn with_config_file<P: AsRef<Path>>(path: P) -> Result<Self, AgentConfigError> {
+    pub(crate) fn with_config_file<P: AsRef<Path>>(path: P) -> Result<Self, AgentConfigError> {
         let mut registry = Self::new()?;
         registry.load_from_file(path)?;
         Ok(registry)
     }
 
     /// Get the fallback configuration
-    pub fn fallback_config(&self) -> &FallbackConfig {
+    pub(crate) fn fallback_config(&self) -> &FallbackConfig {
         &self.fallback
     }
 
     /// Set the fallback configuration
-    pub fn set_fallback(&mut self, fallback: FallbackConfig) {
+    pub(crate) fn set_fallback(&mut self, fallback: FallbackConfig) {
         self.fallback = fallback;
     }
 
     /// Get all fallback agents for a role that are registered in this registry
-    pub fn available_fallbacks(&self, role: AgentRole) -> Vec<&str> {
+    pub(crate) fn available_fallbacks(&self, role: AgentRole) -> Vec<&str> {
         self.fallback
             .get_fallbacks(role)
             .iter()
@@ -501,7 +506,7 @@ impl AgentRegistry {
     }
 
     /// Check if an agent is available (command exists and is executable)
-    pub fn is_agent_available(&self, name: &str) -> bool {
+    pub(crate) fn is_agent_available(&self, name: &str) -> bool {
         if let Some(config) = self.get(name) {
             let Ok(parts) = crate::utils::split_command(&config.cmd) else {
                 return false;
@@ -518,7 +523,7 @@ impl AgentRegistry {
     }
 
     /// List all available (installed) agents
-    pub fn list_available(&self) -> Vec<&str> {
+    pub(crate) fn list_available(&self) -> Vec<&str> {
         self.agents
             .keys()
             .filter(|name| self.is_agent_available(name))
