@@ -74,8 +74,7 @@ EXAMPLES:\n\
     ralph --debug \"debug: investigate\"          Debug mode with raw JSON\n\
     ralph --developer-iters 3                    Fewer iterations\n\
     ralph --preset opencode                      Use opencode for both\n\
-    ralph --developer-agent claude --reviewer-agent codex\n\
-    ralph --use-fallback                         Auto-switch on errors\n\n\
+    ralph --developer-agent claude --reviewer-agent codex\n\n\
 PLUMBING COMMANDS (for scripting):\n\
     ralph --generate-commit-msg                  Generate message only\n\
     ralph --show-commit-msg                      Display generated message\n\
@@ -86,8 +85,7 @@ ENVIRONMENT VARIABLES:\n\
     RALPH_DEVELOPER_ITERS    Developer iterations (default: 5)\n\
     RALPH_REVIEWER_REVIEWS   Re-review passes (default: 2)\n\
     RALPH_VERBOSITY          Verbosity level 0-4 (default: 2)\n\
-    RALPH_AGENTS_CONFIG      Path to agents.toml\n\
-    RALPH_USE_FALLBACK       Enable agent fallback (true/false)")]
+    RALPH_AGENTS_CONFIG      Path to agents.toml")]
 struct Args {
     /// Commit message for the final commit
     #[arg(
@@ -175,14 +173,6 @@ struct Args {
     #[arg(long, conflicts_with = "verbosity", help = "Debug mode (same as -v4)")]
     debug: bool,
 
-    /// Enable automatic agent fallback on errors
-    #[arg(
-        long,
-        env = "RALPH_USE_FALLBACK",
-        help = "Auto-switch agents on rate limits, auth errors, etc."
-    )]
-    use_fallback: bool,
-
     /// List all configured agents and exit
     #[arg(long, help = "Show all agents from registry and config file")]
     list_agents: bool,
@@ -248,13 +238,12 @@ impl Stats {
 }
 
 /// Result of running a command, including stderr for error classification
-#[allow(dead_code)]
 struct CommandResult {
     exit_code: i32,
     stderr: String,
 }
 
-/// Run a command with a prompt argument
+/// Run a command with a prompt argument (internal helper for run_with_fallback)
 #[allow(clippy::too_many_arguments)]
 fn run_with_prompt(
     label: &str,
@@ -464,7 +453,22 @@ fn run_with_fallback(
             continue;
         };
 
-        let cmd_str = agent_config.build_cmd(true, true, role == AgentRole::Developer);
+        // Check for command override from env vars (for primary agent only)
+        let cmd_str = if agent_index == 0 {
+            // For primary agent, respect RALPH_DEVELOPER_CMD/RALPH_REVIEWER_CMD overrides
+            match role {
+                AgentRole::Developer => config
+                    .developer_cmd
+                    .clone()
+                    .unwrap_or_else(|| agent_config.build_cmd(true, true, true)),
+                AgentRole::Reviewer => config
+                    .reviewer_cmd
+                    .clone()
+                    .unwrap_or_else(|| agent_config.build_cmd(true, true, false)),
+            }
+        } else {
+            agent_config.build_cmd(true, true, role == AgentRole::Developer)
+        };
         let parser_type = agent_config.json_parser;
         let label = format!("{} ({})", base_label, agent_name);
         let logfile = format!("{}_{}.log", logfile_prefix, agent_name);
@@ -628,9 +632,6 @@ fn main() -> anyhow::Result<()> {
     if let Some(agent) = args.reviewer_agent {
         config.reviewer_agent = agent;
     }
-    if args.use_fallback {
-        config.use_fallback = true;
-    }
 
     // Handle --init-global flag: create global agents.toml if it doesn't exist and exit
     if args.init_global {
@@ -758,7 +759,7 @@ fn main() -> anyhow::Result<()> {
 
     // Initialize agent registry with merged configs (global + local)
     // Priority: built-in defaults < global config < local config
-    let (mut registry, config_sources) =
+    let (registry, config_sources) =
         match AgentRegistry::with_merged_configs(&agents_config_path) {
             Ok((r, sources, warnings)) => {
                 for warning in warnings {
@@ -824,23 +825,6 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    if config.use_fallback {
-        let mut fallback = registry.fallback_config().clone();
-        let default_chain = [
-            "claude", "codex", "opencode", "aider", "goose", "cline", "continue", "amazon-q",
-            "gemini",
-        ];
-
-        if !fallback.has_fallbacks(AgentRole::Developer) {
-            fallback.developer = default_chain.iter().map(|s| s.to_string()).collect();
-        }
-        if !fallback.has_fallbacks(AgentRole::Reviewer) {
-            fallback.reviewer = default_chain.iter().map(|s| s.to_string()).collect();
-        }
-
-        registry.set_fallback(fallback);
-    }
-
     if args.list_agents {
         let mut items = registry.list();
         items.sort_by(|(a, _), (b, _)| a.cmp(b));
@@ -860,6 +844,26 @@ fn main() -> anyhow::Result<()> {
             println!("{}", name);
         }
         return Ok(());
+    }
+
+    // Validate that agent chains are configured
+    if let Err(msg) = registry.validate_agent_chains() {
+        eprintln!();
+        eprintln!(
+            "{}{}Error:{} {}",
+            colors.bold(),
+            colors.red(),
+            colors.reset(),
+            msg
+        );
+        eprintln!();
+        eprintln!(
+            "{}Hint:{} Run 'ralph --init' to create a default agents.toml configuration.",
+            colors.yellow(),
+            colors.reset()
+        );
+        eprintln!();
+        std::process::exit(1);
     }
 
     // === Plumbing Commands ===
@@ -925,8 +929,8 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Get agent commands and parser types
-    let developer_cmd = if let Some(cmd) = config.developer_cmd.clone() {
+    // Validate agent commands exist (early validation with good error messages)
+    let _developer_cmd = if let Some(cmd) = config.developer_cmd.clone() {
         cmd
     } else {
         registry
@@ -939,7 +943,7 @@ fn main() -> anyhow::Result<()> {
                 )
             })?
     };
-    let reviewer_cmd = if let Some(cmd) = config.reviewer_cmd.clone() {
+    let _reviewer_cmd = if let Some(cmd) = config.reviewer_cmd.clone() {
         cmd
     } else {
         registry
@@ -952,8 +956,6 @@ fn main() -> anyhow::Result<()> {
                 )
             })?
     };
-    let developer_parser = registry.parser_type(&config.developer_agent);
-    let reviewer_parser = registry.parser_type(&config.reviewer_agent);
 
     // Require git repo
     require_git_repo()?;
@@ -978,32 +980,18 @@ fn main() -> anyhow::Result<()> {
             None,
         );
 
-        if config.use_fallback {
-            let _ = run_with_fallback(
-                AgentRole::Reviewer,
-                "generate commit msg",
-                &commit_msg_prompt,
-                ".agent/logs/commit_message",
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-                &registry,
-                &config.reviewer_agent,
-            );
-        } else {
-            let _ = run_with_prompt(
-                &format!("{} generate commit msg", config.reviewer_agent),
-                &reviewer_cmd,
-                &commit_msg_prompt,
-                ".agent/logs/commit_message.log",
-                reviewer_parser,
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-            );
-        }
+        let _ = run_with_fallback(
+            AgentRole::Reviewer,
+            "generate commit msg",
+            &commit_msg_prompt,
+            ".agent/logs/commit_message",
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &config.reviewer_agent,
+        );
 
         // Verify and display the generated message
         match read_commit_message_file() {
@@ -1125,32 +1113,18 @@ fn main() -> anyhow::Result<()> {
             None,
         );
 
-        if config.use_fallback {
-            let _ = run_with_fallback(
-                AgentRole::Developer,
-                &format!("planning #{}", i),
-                &plan_prompt,
-                &format!(".agent/logs/planning_{}", i),
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-                &registry,
-                &config.developer_agent,
-            );
-        } else {
-            let _ = run_with_prompt(
-                &format!("{} planning #{}", config.developer_agent, i),
-                &developer_cmd,
-                &plan_prompt,
-                &format!(".agent/logs/planning_{}.log", i),
-                developer_parser,
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-            );
-        }
+        let _ = run_with_fallback(
+            AgentRole::Developer,
+            &format!("planning #{}", i),
+            &plan_prompt,
+            &format!(".agent/logs/planning_{}", i),
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &config.developer_agent,
+        );
 
         // Verify PLAN.md was created (required)
         let plan_path = std::path::Path::new(".agent/PLAN.md");
@@ -1182,35 +1156,19 @@ fn main() -> anyhow::Result<()> {
             Some(config.developer_iters),
             None,
         );
-        let logfile = format!(".agent/logs/developer_{}.log", i);
 
-        let exit_code = if config.use_fallback {
-            run_with_fallback(
-                AgentRole::Developer,
-                &format!("run #{}", i),
-                &prompt,
-                &format!(".agent/logs/developer_{}", i),
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-                &registry,
-                &config.developer_agent,
-            )?
-        } else {
-            let result = run_with_prompt(
-                &format!("{} run #{}", config.developer_agent, i),
-                &developer_cmd,
-                &prompt,
-                &logfile,
-                developer_parser,
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-            )?;
-            result.exit_code
-        };
+        let exit_code = run_with_fallback(
+            AgentRole::Developer,
+            &format!("run #{}", i),
+            &prompt,
+            &format!(".agent/logs/developer_{}", i),
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &config.developer_agent,
+        )?;
 
         if exit_code != 0 {
             logger.error(&format!(
@@ -1293,32 +1251,18 @@ fn main() -> anyhow::Result<()> {
         None,
         None,
     );
-    if config.use_fallback {
-        let _ = run_with_fallback(
-            AgentRole::Reviewer,
-            "review (initial)",
-            &prompt,
-            ".agent/logs/reviewer_review_1",
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-            &registry,
-            &config.reviewer_agent,
-        );
-    } else {
-        let _ = run_with_prompt(
-            &format!("{} review (initial)", config.reviewer_agent),
-            &reviewer_cmd,
-            &prompt,
-            ".agent/logs/codex_review_1.log",
-            reviewer_parser,
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-        );
-    }
+    let _ = run_with_fallback(
+        AgentRole::Reviewer,
+        "review (initial)",
+        &prompt,
+        ".agent/logs/reviewer_review_1",
+        &mut timer,
+        &logger,
+        &colors,
+        &config,
+        &registry,
+        &config.reviewer_agent,
+    );
     stats.reviewer_runs_completed += 1;
 
     // Applying fixes
@@ -1333,32 +1277,18 @@ fn main() -> anyhow::Result<()> {
         None,
         None,
     );
-    if config.use_fallback {
-        let _ = run_with_fallback(
-            AgentRole::Reviewer,
-            "fix",
-            &prompt,
-            ".agent/logs/reviewer_fix",
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-            &registry,
-            &config.reviewer_agent,
-        );
-    } else {
-        let _ = run_with_prompt(
-            &format!("{} fix", config.reviewer_agent),
-            &reviewer_cmd,
-            &prompt,
-            ".agent/logs/codex_fix.log",
-            reviewer_parser,
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-        );
-    }
+    let _ = run_with_fallback(
+        AgentRole::Reviewer,
+        "fix",
+        &prompt,
+        ".agent/logs/reviewer_fix",
+        &mut timer,
+        &logger,
+        &colors,
+        &config,
+        &registry,
+        &config.reviewer_agent,
+    );
     stats.reviewer_runs_completed += 1;
 
     // Verification reviews
@@ -1379,34 +1309,18 @@ fn main() -> anyhow::Result<()> {
             None,
             None,
         );
-        let logfile = format!(".agent/logs/codex_review_{}.log", j + 1);
-
-        if config.use_fallback {
-            let _ = run_with_fallback(
-                AgentRole::Reviewer,
-                &format!("re-review #{}", j),
-                &prompt,
-                &format!(".agent/logs/reviewer_review_{}", j + 1),
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-                &registry,
-                &config.reviewer_agent,
-            );
-        } else {
-            let _ = run_with_prompt(
-                &format!("{} re-review #{}", config.reviewer_agent, j),
-                &reviewer_cmd,
-                &prompt,
-                &logfile,
-                reviewer_parser,
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-            );
-        }
+        let _ = run_with_fallback(
+            AgentRole::Reviewer,
+            &format!("re-review #{}", j),
+            &prompt,
+            &format!(".agent/logs/reviewer_review_{}", j + 1),
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &config.reviewer_agent,
+        );
         stats.reviewer_runs_completed += 1;
     }
 
@@ -1427,32 +1341,18 @@ fn main() -> anyhow::Result<()> {
         None,
     );
 
-    if config.use_fallback {
-        let _ = run_with_fallback(
-            AgentRole::Reviewer,
-            "generate commit msg",
-            &commit_msg_prompt,
-            ".agent/logs/commit_message",
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-            &registry,
-            &config.reviewer_agent,
-        );
-    } else {
-        let _ = run_with_prompt(
-            &format!("{} generate commit msg", config.reviewer_agent),
-            &reviewer_cmd,
-            &commit_msg_prompt,
-            ".agent/logs/commit_message.log",
-            reviewer_parser,
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-        );
-    }
+    let _ = run_with_fallback(
+        AgentRole::Reviewer,
+        "generate commit msg",
+        &commit_msg_prompt,
+        ".agent/logs/commit_message",
+        &mut timer,
+        &logger,
+        &colors,
+        &config,
+        &registry,
+        &config.reviewer_agent,
+    );
     stats.reviewer_runs_completed += 1;
 
     update_status("Review phase complete", "none", "Awaiting finalization")?;

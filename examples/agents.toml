@@ -52,13 +52,8 @@
 # max_retries = 3                              # Retries per agent before trying next
 # retry_delay_ms = 1000                        # Delay between retries (ms)
 #
-# Enable fallback mode:
-#   ralph --use-fallback
-#   # or
-#   RALPH_USE_FALLBACK=true ralph
-#
-# When fallback is disabled (default), only the first agent is used.
-# When enabled, Ralph automatically switches agents on:
+# The first agent in each list is the primary choice for that role.
+# Ralph automatically switches to fallback agents on:
 #   - Rate limits (429 errors)
 #   - Authentication failures
 #   - Token/context exhaustion
@@ -183,14 +178,13 @@ can_commit = true
 json_parser = "codex"
 
 # =============================================================================
-# AGENT CHAIN CONFIGURATION (recommended)
+# AGENT CHAIN CONFIGURATION (required)
 # =============================================================================
-# The agent chain defines the preferred agent (first in list) and optional
-# fallback agents (rest of the list).
+# The agent chain defines the preferred agent (first in list) and fallback
+# agents (rest of the list). This section is required for Ralph to run.
 #
-# - With fallback disabled (default), Ralph uses only the first agent per role.
-# - With fallback enabled (`--use-fallback` or `RALPH_USE_FALLBACK=1`), Ralph will
-#   automatically switch agents on certain failures (rate limits, auth issues, etc.).
+# Ralph automatically switches to fallback agents on certain failures
+# (rate limits, auth issues, token exhaustion, command not found).
 
 [agent_chain]
 developer = [
