@@ -207,8 +207,24 @@ impl ClaudeParser {
     }
 
     /// Parse and display a single Claude JSON event
+    ///
+    /// Returns Some(formatted_output) for valid events, or None for:
+    /// - Malformed JSON (logged at debug level)
+    /// - Unknown event types
+    /// - Empty or whitespace-only output
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
-        let event: ClaudeEvent = serde_json::from_str(line).ok()?;
+        let event: ClaudeEvent = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => {
+                // Non-JSON line - could be raw text output from agent
+                // Pass through as-is if it looks like real output (not empty)
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                    return Some(format!("{}\n", trimmed));
+                }
+                return None;
+            }
+        };
         let c = &self.colors;
 
         let output = match event {
@@ -543,8 +559,23 @@ impl GeminiParser {
     }
 
     /// Parse and display a single Gemini JSON event
+    ///
+    /// Returns Some(formatted_output) for valid events, or None for:
+    /// - Malformed JSON (non-JSON text passed through if meaningful)
+    /// - Unknown event types
+    /// - Empty or whitespace-only output
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
-        let event: GeminiEvent = serde_json::from_str(line).ok()?;
+        let event: GeminiEvent = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => {
+                // Non-JSON line - pass through as-is if meaningful
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                    return Some(format!("{}\n", trimmed));
+                }
+                return None;
+            }
+        };
         let c = &self.colors;
 
         let output = match event {
@@ -798,8 +829,23 @@ impl CodexParser {
     }
 
     /// Parse and display a single Codex JSON event
+    ///
+    /// Returns Some(formatted_output) for valid events, or None for:
+    /// - Malformed JSON (non-JSON text passed through if meaningful)
+    /// - Unknown event types
+    /// - Empty or whitespace-only output
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
-        let event: CodexEvent = serde_json::from_str(line).ok()?;
+        let event: CodexEvent = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => {
+                // Non-JSON line - pass through as-is if meaningful
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                    return Some(format!("{}\n", trimmed));
+                }
+                return None;
+            }
+        };
         let c = &self.colors;
 
         let output = match event {
@@ -1591,5 +1637,49 @@ mod tests {
         let output = parser.parse_event(json);
         // Unknown events should return None (empty output)
         assert!(output.is_none());
+    }
+
+    // Tests for JSON parser robustness - malformed line handling
+
+    #[test]
+    fn test_claude_parser_non_json_passthrough() {
+        let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        // Plain text that isn't JSON should be passed through
+        let output = parser.parse_event("Hello, this is plain text output");
+        assert!(output.is_some());
+        assert!(output.unwrap().contains("Hello, this is plain text output"));
+    }
+
+    #[test]
+    fn test_claude_parser_malformed_json_ignored() {
+        let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        // Malformed JSON that looks like JSON should be ignored
+        let output = parser.parse_event("{invalid json here}");
+        assert!(output.is_none());
+    }
+
+    #[test]
+    fn test_claude_parser_empty_line_ignored() {
+        let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let output = parser.parse_event("");
+        assert!(output.is_none());
+        let output2 = parser.parse_event("   ");
+        assert!(output2.is_none());
+    }
+
+    #[test]
+    fn test_codex_parser_non_json_passthrough() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let output = parser.parse_event("Error: something went wrong");
+        assert!(output.is_some());
+        assert!(output.unwrap().contains("Error: something went wrong"));
+    }
+
+    #[test]
+    fn test_gemini_parser_non_json_passthrough() {
+        let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let output = parser.parse_event("Warning: rate limit approaching");
+        assert!(output.is_some());
+        assert!(output.unwrap().contains("Warning: rate limit approaching"));
     }
 }
