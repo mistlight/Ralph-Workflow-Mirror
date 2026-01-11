@@ -57,9 +57,13 @@ source "${RALPH_SCRIPT_DIR}/lib/agents.zsh"
 : "${CLAUDE_CMD:=$(agent_developer_cmd)}"
 : "${CODEX_CMD:=$(agent_reviewer_cmd)}"
 
-# Loop counts
+# Loop counts (must be non-negative integers)
 : "${CLAUDE_ITERS:=5}"
-: "${CODEX_REVIEWS:=2}"        # after fix, how many review passes (you asked “review it twice” -> 2)
+: "${CODEX_REVIEWS:=2}"        # after fix, how many review passes (you asked "review it twice" -> 2)
+
+# Validate loop counts to prevent seq from failing under set -e
+[[ "$CLAUDE_ITERS" =~ ^[0-9]+$ ]] || CLAUDE_ITERS=5
+[[ "$CODEX_REVIEWS" =~ ^[0-9]+$ ]] || CODEX_REVIEWS=2
 
 # Optional checks (script-owned). Leave empty to skip.
 : "${FAST_CHECK_CMD:=}"        # e.g. "pytest -q" or "npm test --silent"
@@ -174,10 +178,13 @@ run_with_prompt_arg() {
   fi
 
   if [[ "$exit_code" -ne 0 ]]; then
-    log_warn "Command exited with code $exit_code (continuing anyway)"
-    log_to_file "[$(ts)] [WARN] $label exited with code $exit_code"
+    log_error "Command exited with code $exit_code"
+    log_to_file "[$(ts)] [ERROR] $label exited with code $exit_code"
+    timer_phase_elapsed >/dev/null  # record elapsed time
+    return "$exit_code"
   fi
   log_success "Completed in $(timer_phase_elapsed)"
+  return 0
 }
 
 ############################################
@@ -217,6 +224,7 @@ codex_commit_prompt() {
 typeset -g CHANGES_DETECTED=0
 typeset -g CLAUDE_RUNS_COMPLETED=0
 typeset -g CODEX_RUNS_COMPLETED=0
+typeset -g REVIEWER_COMMITTED=0
 
 ############################################
 # Status file updates (continuous visibility)
@@ -316,8 +324,8 @@ done
 
 # Explicit notification that all Claude iterations are complete (for logs only)
 tlog_info ">>> ALL ${CLAUDE_ITERS} CLAUDE ITERATIONS COMPLETED <<<"
-# NOTE: Status message doesn't reveal that Codex review is next - agent should not know the workflow
-update_status "Development phase complete" "none" "Await review"
+# NOTE: Status message uses generic language - agent should not know the workflow structure
+update_status "Code changes made" "none" "Evaluate codebase"
 
 ############################################
 # Phase 2: Codex review/fix cycle
@@ -334,41 +342,74 @@ fi
 log_info "Running review ${ARROW} fix ${ARROW} review×${BOLD}$CODEX_REVIEWS${RESET} cycle"
 tlog_info ">>> ENTERING CODEX PHASE <<<"
 
-print_subheader "Initial Review"
-# NOTE: Status doesn't reveal review cycle structure - reviewer should not know workflow
-update_status "Starting code review" "none" "Evaluate codebase"
-run_with_prompt_arg "Codex review (initial)" "$CODEX_CMD" "$(codex_review_prompt)" ".agent/logs/codex_review_1.log"
-((CODEX_RUNS_COMPLETED++))
-tlog_info ">>> CODEX INITIAL REVIEW COMPLETED <<<"
+# Wrap each Codex phase in error recovery to ensure pipeline continues
+# This matches the error recovery pattern used in Claude iterations
+{
+  print_subheader "Initial Review"
+  # NOTE: Status doesn't reveal review cycle structure - reviewer should not know workflow
+  update_status "Starting code review" "none" "Evaluate codebase"
+  run_with_prompt_arg "Codex review (initial)" "$CODEX_CMD" "$(codex_review_prompt)" ".agent/logs/codex_review_1.log"
+  ((CODEX_RUNS_COMPLETED++))
+  tlog_info ">>> CODEX INITIAL REVIEW COMPLETED <<<"
+} || {
+  tlog_error ">>> CODEX INITIAL REVIEW FAILED BUT CONTINUING <<<"
+}
 
-print_subheader "Applying Fixes"
-# NOTE: Status doesn't reveal fix/review cycle - agent should just fix issues
-update_status "Applying fixes" "none" "Address issues found"
-run_with_prompt_arg "Codex fix" "$CODEX_CMD" "$(codex_fix_prompt)" ".agent/logs/codex_fix.log"
-((CODEX_RUNS_COMPLETED++))
-tlog_info ">>> CODEX FIX PHASE COMPLETED <<<"
+{
+  print_subheader "Applying Fixes"
+  # NOTE: Status doesn't reveal fix/review cycle - agent should just fix issues
+  update_status "Applying fixes" "none" "Address issues found"
+  run_with_prompt_arg "Codex fix" "$CODEX_CMD" "$(codex_fix_prompt)" ".agent/logs/codex_fix.log"
+  ((CODEX_RUNS_COMPLETED++))
+  tlog_info ">>> CODEX FIX PHASE COMPLETED <<<"
+} || {
+  tlog_error ">>> CODEX FIX PHASE FAILED BUT CONTINUING <<<"
+}
 
 for j in $(seq 1 "$CODEX_REVIEWS"); do
-  print_subheader "Verification Review $j of $CODEX_REVIEWS"
-  print_progress "$j" "$CODEX_REVIEWS" "Review passes"
-  # NOTE: Status doesn't reveal iteration count - reviewer should not know how many reviews remain
-  update_status "Verification review" "none" "Re-evaluate codebase"
-  run_with_prompt_arg "Codex re-review #$j" "$CODEX_CMD" "$(codex_review_again_prompt)" ".agent/logs/codex_review_$((j+1)).log"
-  ((CODEX_RUNS_COMPLETED++))
-  tlog_info ">>> CODEX VERIFICATION REVIEW ${j}/${CODEX_REVIEWS} COMPLETED <<<"
+  {
+    print_subheader "Verification Review $j of $CODEX_REVIEWS"
+    print_progress "$j" "$CODEX_REVIEWS" "Review passes"
+    # NOTE: Status doesn't reveal iteration count - reviewer should not know how many reviews remain
+    update_status "Verification review" "none" "Re-evaluate codebase"
+    run_with_prompt_arg "Codex re-review #$j" "$CODEX_CMD" "$(codex_review_again_prompt)" ".agent/logs/codex_review_$((j+1)).log"
+    ((CODEX_RUNS_COMPLETED++))
+    tlog_info ">>> CODEX VERIFICATION REVIEW ${j}/${CODEX_REVIEWS} COMPLETED <<<"
+  } || {
+    tlog_error ">>> CODEX VERIFICATION REVIEW ${j} FAILED BUT CONTINUING <<<"
+  }
 done
 
 # Reviewer commit phase: let the reviewer (Codex) create the final commit
 if [[ "${RALPH_REVIEWER_COMMITS}" == "1" ]]; then
-  print_subheader "Reviewer Commit"
-  update_status "Reviewer creating commit" "none" "Commit all changes"
+  {
+    print_subheader "Reviewer Commit"
+    update_status "Reviewer creating commit" "none" "Commit all changes"
 
-  # Lift commit block so reviewer can commit
-  allow_reviewer_commit
+    # Capture HEAD before reviewer commit to verify a new commit was created
+    head_before_commit="$(git rev-parse HEAD 2>/dev/null || echo "")"
 
-  run_with_prompt_arg "Codex commit" "$CODEX_CMD" "$(codex_commit_prompt)" ".agent/logs/codex_commit.log"
-  ((CODEX_RUNS_COMPLETED++))
-  tlog_info ">>> CODEX COMMIT PHASE COMPLETED <<<"
+    # Lift commit block so reviewer can commit
+    allow_reviewer_commit
+
+    run_with_prompt_arg "Codex commit" "$CODEX_CMD" "$(codex_commit_prompt)" ".agent/logs/codex_commit.log"
+    ((CODEX_RUNS_COMPLETED++))
+    tlog_info ">>> CODEX COMMIT PHASE COMPLETED <<<"
+
+    # Verify reviewer actually created a new commit
+    head_after_commit="$(git rev-parse HEAD 2>/dev/null || echo "")"
+    if [[ "$head_before_commit" != "$head_after_commit" ]] && [[ -n "$head_after_commit" ]]; then
+      reviewer_commit_msg="$(git log -1 --pretty=%s 2>/dev/null || echo "")"
+      log_success "Reviewer created commit: ${CYAN}${reviewer_commit_msg}${RESET}"
+      REVIEWER_COMMITTED=1
+    else
+      log_warn "Reviewer did not create a new commit"
+      REVIEWER_COMMITTED=0
+    fi
+  } || {
+    tlog_error ">>> CODEX COMMIT PHASE FAILED <<<"
+    REVIEWER_COMMITTED=0
+  }
 fi
 
 tlog_info ">>> ALL CODEX PHASES COMPLETED (total runs: ${CODEX_RUNS_COMPLETED}) <<<"
@@ -382,10 +423,14 @@ if [[ -n "$FULL_CHECK_CMD" ]]; then
   print_header "PHASE 3: Final Validation" "$YELLOW"
   log_to_file "=== PHASE 3: Final Validation ==="
   log_info "Running full check: ${DIM}$FULL_CHECK_CMD${RESET}"
-  if eval "$FULL_CHECK_CMD" 2>&1 | tee -a ".agent/logs/full_check.log"; then
+  check_exit_code=0
+  eval "$FULL_CHECK_CMD" 2>&1 | tee -a ".agent/logs/full_check.log" || check_exit_code=$?
+  if [[ "$check_exit_code" -eq 0 ]]; then
     log_success "Full check passed"
   else
-    log_error "Full check failed"
+    log_error "Full check failed (exit code: $check_exit_code)"
+    log_to_file "[$(ts)] [ERROR] Full check failed with exit code $check_exit_code"
+    exit "$check_exit_code"
   fi
 fi
 
@@ -407,7 +452,7 @@ if [[ "${RALPH_REVIEWER_COMMITS}" != "1" ]]; then
   # Show what we're committing
   print ""
   print "${BOLD}Changes to commit:${RESET}"
-  git status --short | head -20 | while read line; do
+  git status --short | head -20 | while IFS= read -r line; do
     print "  ${DIM}${line}${RESET}"
   done
   print ""
@@ -419,17 +464,15 @@ if [[ "${RALPH_REVIEWER_COMMITS}" != "1" ]]; then
     log_warn "Nothing to commit (working tree clean)"
   fi
 else
-  # Reviewer already committed; show status
+  # Reviewer already committed; verify and fallback if needed
   print_header "PHASE 4: Verify Commit" "$GREEN"
   log_to_file "=== PHASE 4: Verify Commit ==="
 
-  # Check if reviewer made a commit
-  local last_commit_msg
-  last_commit_msg="$(git log -1 --pretty=%s 2>/dev/null || echo "")"
-  if [[ -n "$last_commit_msg" ]]; then
-    log_success "Reviewer created commit: ${CYAN}${last_commit_msg}${RESET}"
+  if [[ "$REVIEWER_COMMITTED" == "1" ]]; then
+    reviewer_commit_msg="$(git log -1 --pretty=%s 2>/dev/null || echo "")"
+    log_success "Verified reviewer commit: ${CYAN}${reviewer_commit_msg}${RESET}"
   else
-    log_warn "No commit found - reviewer may have failed to commit"
+    log_warn "Reviewer did not create a commit - using fallback"
     # Fallback: create commit ourselves
     log_info "Fallback: staging and committing changes..."
     git add -A

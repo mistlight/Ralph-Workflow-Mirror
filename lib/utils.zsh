@@ -124,6 +124,13 @@ print_progress() {
   local current="$1"
   local total="$2"
   local label="${3:-Progress}"
+
+  # Guard against divide by zero
+  if [[ "$total" -le 0 ]]; then
+    print "${DIM}${label}:${RESET} ${YELLOW}[no progress data]${RESET}"
+    return 0
+  fi
+
   local pct=$((current * 100 / total))
   local bar_width=20
   local filled=$((current * bar_width / total))
@@ -195,12 +202,13 @@ clean_context_for_reviewer() {
   archive_context_file ".agent/NOTES.md"
   archive_context_file ".agent/ISSUES.md"
 
-  # Reset STATUS.md to minimal state
+  # Reset STATUS.md to minimal state - DO NOT reveal workflow phases
+  # Use generic language that doesn't hint at "what happens next"
   cat > .agent/STATUS.md <<'EOF'
 # STATUS
-- Last action: Development phase complete
+- Last action: Code changes made
 - Blockers: none
-- Next action: Review phase starting
+- Next action: Evaluate codebase against PROMPT.md goals
 EOF
 
   # Clear NOTES.md (reviewer should not see developer notes)

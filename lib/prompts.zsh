@@ -17,15 +17,10 @@ typeset -g _RALPH_PROMPTS_LOADED=1
 # Configuration
 ############################################
 
-# Context level controls how much history agents see
-# 0 = minimal (fresh eyes - just the goal)
-# 1 = normal (goal + current status)
-# 2 = full (goal + status + notes + issues)
-typeset -g RALPH_CONTEXT_LEVEL="${RALPH_CONTEXT_LEVEL:-1}"
-
 # Role-specific context defaults
 # Developers (Claude) get more context to continue work
 # Reviewers (Codex) get minimal context for unbiased review
+# Values: 0 = minimal (fresh eyes), 1 = normal (with status)
 typeset -g RALPH_DEVELOPER_CONTEXT="${RALPH_DEVELOPER_CONTEXT:-1}"  # normal context
 typeset -g RALPH_REVIEWER_CONTEXT="${RALPH_REVIEWER_CONTEXT:-0}"    # minimal context
 
@@ -44,24 +39,21 @@ prompt_claude_iteration() {
   local context_level="${RALPH_DEVELOPER_CONTEXT}"
 
   # Context level 0: minimal context - only read PROMPT.md, not history
+  # NOTE: No "stop" instruction - agent continues until PROMPT.md is fully addressed
   if [[ "$context_level" -eq 0 ]]; then
     cat <<EOF
 Read PROMPT.md and .agent/STATUS.md.
-Make the next best progress step toward PROMPT.md's Goal and Acceptance checks.
+Work toward PROMPT.md's Goal and Acceptance checks until all are satisfied.
 Update .agent/STATUS.md (last action, blockers, next action).
 Append brief bullets to .agent/NOTES.md.
-
-Then stop.
 EOF
   else
     # Default: normal context with status (but no future context)
     cat <<EOF
 Read PROMPT.md and .agent/STATUS.md.
-Make the next best progress step toward PROMPT.md's Goal and Acceptance checks.
+Work toward PROMPT.md's Goal and Acceptance checks until all are satisfied.
 Update .agent/STATUS.md (last action, blockers, next action).
 Append brief bullets to .agent/NOTES.md.
-
-Then stop.
 EOF
   fi
 }

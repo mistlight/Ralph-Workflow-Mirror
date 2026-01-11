@@ -39,7 +39,8 @@ git_snapshot() {
 install_hook() {
   local hook_name="$1"
   local hook_path="$2"
-  local orig_path="${hook_path}.ralph.orig"
+  # Use absolute path for orig to work from subdirectories
+  local orig_path="${hook_path:A}.ralph.orig"
 
   mkdir -p "${hook_path:h}"
 
@@ -139,4 +140,73 @@ allow_reviewer_commit() {
 block_commits_again() {
   touch .no_agent_commit
   enable_git_wrapper
+}
+
+############################################
+# Hook uninstall / restore
+############################################
+
+# Uninstall a single hook by restoring original or removing
+# Args: $1 = hook path (e.g., .git/hooks/pre-commit)
+uninstall_hook() {
+  local hook_path="$1"
+  local orig_path="${hook_path:A}.ralph.orig"
+
+  # Check if this is a Ralph-managed hook
+  if [[ -f "$hook_path" ]] && file_contains_marker "$hook_path" "$HOOK_MARKER"; then
+    if [[ -f "$orig_path" ]]; then
+      # Restore original hook
+      mv -f "$orig_path" "$hook_path"
+      log_info "Restored original hook: ${hook_path:t}"
+    else
+      # No original to restore, just remove
+      rm -f "$hook_path"
+      log_info "Removed hook: ${hook_path:t}"
+    fi
+    return 0
+  else
+    log_warn "Hook not managed by Ralph: ${hook_path:t}"
+    return 1
+  fi
+}
+
+# Uninstall all Ralph-managed hooks
+uninstall_hooks() {
+  local hooks_dir
+  hooks_dir="$(git rev-parse --git-path hooks 2>/dev/null)" || return 1
+  [[ -d "$hooks_dir" ]] || return 0
+
+  local restored=0
+  for hook_name in pre-commit pre-push; do
+    if [[ -f "$hooks_dir/$hook_name" ]]; then
+      if uninstall_hook "$hooks_dir/$hook_name"; then
+        ((restored++))
+      fi
+    fi
+  done
+
+  if [[ $restored -gt 0 ]]; then
+    log_success "Uninstalled $restored Ralph hook(s)"
+  else
+    log_info "No Ralph hooks to uninstall"
+  fi
+}
+
+# Clean up orphaned .no_agent_commit marker
+# Use this if Ralph was killed and left the marker behind
+cleanup_orphaned_marker() {
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    log_error "Not in a git repository"
+    return 1
+  }
+
+  if [[ -f "$repo_root/.no_agent_commit" ]]; then
+    rm -f "$repo_root/.no_agent_commit"
+    log_success "Removed orphaned .no_agent_commit marker"
+    return 0
+  else
+    log_info "No orphaned marker found"
+    return 0
+  fi
 }
