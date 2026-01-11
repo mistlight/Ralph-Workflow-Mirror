@@ -20,11 +20,15 @@ fn init_git_repo(dir: &TempDir) {
     // Create required files for workflow tests
     fs::write(dir_path.join("PROMPT.md"), "# Test Requirements\nTest task").unwrap();
 
-    // Create .agent directory and minimal agents.toml to skip first-run init
+    // Create .agent directory and minimal agents.toml with required agent_chain
     fs::create_dir_all(dir_path.join(".agent")).unwrap();
     fs::write(
         dir_path.join(".agent/agents.toml"),
-        "# Minimal test config\n",
+        r#"# Minimal test config
+[agent_chain]
+developer = ["claude"]
+reviewer = ["codex"]
+"#,
     )
     .unwrap();
 }
@@ -191,9 +195,14 @@ fn ralph_init_reports_existing_config() {
         .output()
         .unwrap();
 
-    // Create existing config
+    // Create existing config with valid agent_chain
     fs::create_dir_all(dir_path.join(".agent")).unwrap();
-    fs::write(dir_path.join(".agent/agents.toml"), "# Custom config\n").unwrap();
+    let custom_config = r#"# Custom config
+[agent_chain]
+developer = ["claude"]
+reviewer = ["codex"]
+"#;
+    fs::write(dir_path.join(".agent/agents.toml"), custom_config).unwrap();
 
     // Run ralph --init
     let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
@@ -204,7 +213,7 @@ fn ralph_init_reports_existing_config() {
 
     // Config file should still contain original content
     let content = fs::read_to_string(dir_path.join(".agent/agents.toml")).unwrap();
-    assert_eq!(content, "# Custom config\n");
+    assert_eq!(content, custom_config);
 
     // Output should indicate file already exists
     let stdout = String::from_utf8_lossy(&output.stdout);

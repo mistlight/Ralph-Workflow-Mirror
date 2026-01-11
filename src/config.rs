@@ -149,8 +149,6 @@ pub(crate) struct Config {
     pub(crate) verbosity: Verbosity,
     /// Commit message
     pub(crate) commit_msg: String,
-    /// Enable automatic agent fallback on errors
-    pub(crate) use_fallback: bool,
 }
 
 impl Config {
@@ -169,7 +167,7 @@ impl Config {
             .ok()
             .or_else(|| env::var("CODEX_CMD").ok());
 
-        Self {
+        let config = Self {
             developer_agent,
             reviewer_agent,
             developer_cmd,
@@ -212,11 +210,17 @@ impl Config {
                 .map(Verbosity::from)
                 .unwrap_or(Verbosity::Verbose),
             commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
-            use_fallback: env::var("RALPH_USE_FALLBACK")
-                .ok()
-                .and_then(|s| parse_env_bool(&s))
-                .unwrap_or(false),
+        };
+
+        // Deprecation warning for removed flag
+        if env::var("RALPH_USE_FALLBACK").is_ok() {
+            eprintln!(
+                "Warning: RALPH_USE_FALLBACK is deprecated and ignored. \
+                Fallback behavior is now always enabled via [agent_chain] config."
+            );
         }
+
+        config
     }
 
     /// Set the commit message
@@ -263,24 +267,21 @@ mod tests {
 
         // Ensure default behavior when unset
         env::remove_var("RALPH_INTERACTIVE");
-        env::remove_var("RALPH_USE_FALLBACK");
         let cfg = Config::from_env();
         assert!(cfg.interactive);
-        assert!(!cfg.use_fallback);
 
         // Accept common truthy values
         env::set_var("RALPH_INTERACTIVE", "true");
-        env::set_var("RALPH_USE_FALLBACK", "YES");
         let cfg = Config::from_env();
         assert!(cfg.interactive);
-        assert!(cfg.use_fallback);
 
         // Accept common falsy values
         env::set_var("RALPH_INTERACTIVE", "0");
-        env::set_var("RALPH_USE_FALLBACK", "false");
         let cfg = Config::from_env();
         assert!(!cfg.interactive);
-        assert!(!cfg.use_fallback);
+
+        // Clean up
+        env::remove_var("RALPH_INTERACTIVE");
     }
 
     #[test]
@@ -343,12 +344,5 @@ mod tests {
         assert_eq!(config.reviewer_reviews, 2);
         // Default verbosity is now Verbose
         assert_eq!(config.verbosity, Verbosity::Verbose);
-    }
-
-    #[test]
-    fn test_use_fallback_default() {
-        // Default should be false when env var is not set
-        let config = Config::from_env();
-        assert!(!config.use_fallback);
     }
 }
