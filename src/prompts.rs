@@ -525,51 +525,6 @@ GUIDELINES:
         .to_string()
 }
 
-/// Generate reviewer re-review prompt with minimal context
-///
-/// This prompt is agent-agnostic and works with any AI coding assistant.
-/// Instructions are intentionally vague to avoid assumptions about previous
-/// iterations and to prevent context contamination.
-pub(crate) fn prompt_review_again(context: ContextLevel) -> String {
-    match context {
-        ContextLevel::Minimal => r#"You are in VERIFICATION MODE with fresh eyes.
-
-INPUTS TO READ:
-- PROMPT.md - The requirements (Goal and Acceptance checks)
-- .agent/ISSUES.md - Previous issues (if it exists)
-
-YOUR TASK:
-1. Verify all acceptance checks in PROMPT.md are satisfied
-2. Check current state of the codebase
-3. Address any issues found
-
-OUTPUT:
-If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
-- "No issues found." (if everything is satisfied), OR
-- "Issues remain." (if something still fails)
-If .agent/NOTES.md exists, OVERWRITE it with exactly ONE vague sentence (no details).
-
-Be thorough but efficient - focus on verification."#
-            .to_string(),
-        ContextLevel::Normal => r#"You are in VERIFICATION MODE.
-
-INPUTS TO READ:
-- PROMPT.md - Requirements to verify against
-- .agent/ISSUES.md - Previous issues (if it exists)
-
-YOUR TASK:
-Verify all acceptance checks pass.
-If issues remain, fix them.
-
-OUTPUT:
-If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
-- "No issues found." (if everything is satisfied), OR
-- "Issues remain." (if something still fails)
-Do not include any details or additional lines."#
-            .to_string(),
-    }
-}
-
 /// Generate prompt for planning phase
 /// Agent does a deep dive on PROMPT.md and creates a detailed PLAN.md
 ///
@@ -733,7 +688,6 @@ pub(crate) enum Action {
     Iterate,
     Review,
     Fix,
-    ReviewAgain,
     GenerateCommitMessage,
 }
 
@@ -765,7 +719,6 @@ pub(crate) fn prompt_for_agent(
             }
         }
         (_, Action::Fix) => prompt_fix(),
-        (_, Action::ReviewAgain) => prompt_review_again(context),
         (_, Action::GenerateCommitMessage) => prompt_generate_commit_message(),
         // Fallback for Reviewer + Iterate (shouldn't happen but be safe)
         (Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
@@ -824,15 +777,6 @@ mod tests {
         assert!(result.contains("OVERWRITE"));
         assert!(result.contains("exactly ONE vague sentence"));
         assert!(result.contains("FIX MODE"));
-    }
-
-    #[test]
-    fn test_prompt_review_again_fresh_eyes() {
-        let result = prompt_review_again(ContextLevel::Minimal);
-        assert!(result.contains("fresh eyes"));
-        // Removed detailed assumptions about previous iterations (vague prompts)
-        assert!(!result.contains("DO NOT assume"));
-        assert!(result.contains("VERIFICATION MODE"));
     }
 
     #[test]
@@ -974,8 +918,6 @@ mod tests {
             prompt_reviewer_review(ContextLevel::Normal),
             prompt_reviewer_review(ContextLevel::Minimal),
             prompt_fix(),
-            prompt_review_again(ContextLevel::Normal),
-            prompt_review_again(ContextLevel::Minimal),
             prompt_plan(),
             prompt_generate_commit_message(),
         ];
@@ -1012,16 +954,6 @@ mod tests {
     }
 
     #[test]
-    fn test_review_again_normal_context() {
-        let result = prompt_review_again(ContextLevel::Normal);
-        assert!(result.contains("VERIFICATION MODE"));
-        assert!(result.contains("PROMPT.md"));
-        assert!(result.contains("ISSUES.md"));
-        // Normal context doesn't need "fresh eyes" restriction
-        assert!(!result.contains("fresh eyes"));
-    }
-
-    #[test]
     fn test_prompt_for_agent_fix() {
         let result = prompt_for_agent(
             Role::Developer,
@@ -1033,20 +965,6 @@ mod tests {
         );
         assert!(result.contains("FIX MODE"));
         assert!(result.contains("ISSUES.md"));
-    }
-
-    #[test]
-    fn test_prompt_for_agent_review_again() {
-        let result = prompt_for_agent(
-            Role::Reviewer,
-            Action::ReviewAgain,
-            ContextLevel::Minimal,
-            None,
-            None,
-            None,
-        );
-        assert!(result.contains("VERIFICATION MODE"));
-        assert!(result.contains("fresh eyes"));
     }
 
     #[test]
@@ -1335,7 +1253,6 @@ mod tests {
         let prompts_to_check = vec![
             prompt_developer_iteration(1, 5, ContextLevel::Normal),
             prompt_fix(),
-            prompt_review_again(ContextLevel::Normal),
         ];
 
         for prompt in prompts_to_check {
@@ -1368,7 +1285,6 @@ mod tests {
         // NOTES.md references should be minimal or absent (isolation mode removes these files)
         let developer_prompt = prompt_developer_iteration(1, 5, ContextLevel::Normal);
         let fix_prompt = prompt_fix();
-        let review_again_prompt = prompt_review_again(ContextLevel::Minimal);
 
         // Developer prompt should NOT mention NOTES.md at all (isolation mode)
         assert!(
@@ -1376,19 +1292,12 @@ mod tests {
             "Developer prompt should not reference NOTES.md in isolation mode"
         );
 
-        // Fix and review-again prompts may have optional language or no reference
-        // They use "(if it exists)" when they do reference NOTES.md
+        // Fix prompt may have optional language or no reference
+        // It uses "(if it exists)" when referencing NOTES.md
         if fix_prompt.contains("NOTES.md") {
             assert!(
                 fix_prompt.contains("if it exists") || fix_prompt.contains("Optionally"),
                 "Fix prompt NOTES.md reference should be optional"
-            );
-        }
-        if review_again_prompt.contains("NOTES.md") {
-            assert!(
-                review_again_prompt.contains("if it exists")
-                    || review_again_prompt.contains("Optionally"),
-                "Review again prompt NOTES.md reference should be optional"
             );
         }
     }

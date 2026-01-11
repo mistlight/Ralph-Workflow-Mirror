@@ -1015,18 +1015,20 @@ exit 0
 
     // With RALPH_REVIEWER_REVIEWS=3, the reviewer is called:
     // 1. Initial review
-    // 2. Fix
-    // 3-5. ReviewAgain x3 (verification passes)
-    // 6. Commit message generation
-    // = 6 total calls
+    // 2. Initial fix
+    // 3-4. Review-Fix iteration 1 (review + fix)
+    // 5-6. Review-Fix iteration 2 (review + fix)
+    // 7-8. Review-Fix iteration 3 (review + fix)
+    // 9. Commit message generation
+    // = 9 total calls
     let count: u32 = fs::read_to_string(&counter_path)
         .unwrap()
         .trim()
         .parse()
         .unwrap();
     assert_eq!(
-        count, 6,
-        "Expected 6 reviewer calls (1 review + 1 fix + 3 verification + 1 commit msg)"
+        count, 9,
+        "Expected 9 reviewer calls (1 review + 1 fix + 3×(review + fix) + 1 commit msg)"
     );
 }
 
