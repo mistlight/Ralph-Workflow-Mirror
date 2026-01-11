@@ -1,0 +1,55 @@
+[package]
+name = "ralph"
+version = "0.1.0"
+edition = "2021"
+description = "PROMPT-driven multi-agent orchestrator for git repos"
+authors = ["Ralph Authors"]
+license = "MIT"
+
+[[bin]]
+name = "ralph"
+path = "src/main.rs"
+
+[dependencies]
+# CLI argument parsing
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# Async runtime for process management
+tokio = { version = "1.35", features = ["full"] }
+
+# JSON parsing with serde (100x faster than jq spawns)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Terminal colors and formatting
+colored = "2.1"
+
+# Date/time handling
+chrono = "0.4"
+
+# Environment and process management
+which = "6.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Regex for pattern matching
+regex = "1.10"
+
+# Shell escaping
+shell-escape = "0.1"
+
+# Tempfile for creating temporary directories
+tempfile = "3.10"
+
+[dev-dependencies]
+# Testing utilities
+tempfile = "3.10"
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
