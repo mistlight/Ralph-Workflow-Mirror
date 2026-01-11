@@ -1,53 +1,194 @@
-# Example agents config for Ralph
+# Ralph Agents Configuration File
+# ================================
 #
-# Copy this file to `.agent/agents.toml` in your repo to enable it:
+# This file configures AI coding agents for the Ralph orchestrator.
+# Ralph uses a "developer" agent to implement code and a "reviewer" agent
+# to review and improve the code quality.
 #
-#   mkdir -p .agent
-#   cp examples/agents.toml .agent/agents.toml
+# QUICK START
+# -----------
+# If you copied this file from `examples/agents.toml` to `.agent/agents.toml`,
+# you can customize it for your project. Otherwise, Ralph uses built-in defaults.
 #
-# Then select an agent by name:
-#
+# USAGE
+# -----
+# Select agents via CLI:
 #   ralph --developer-agent claude --reviewer-agent codex
-#   # Or use role-friendly aliases (defaults to Claude/Codex unless overridden):
-#   ralph --developer-agent driver --reviewer-agent reviewer
 #
+# Or via environment variables:
+#   RALPH_DEVELOPER_AGENT=claude RALPH_REVIEWER_AGENT=codex ralph
+#
+# Or use presets:
+#   ralph --preset opencode  # Uses opencode for both roles
+#
+# AGENT CONFIGURATION FIELDS
+# --------------------------
+# cmd          - Base command to invoke the agent (required)
+# json_flag    - Flag to enable JSON/streaming output (optional)
+# yolo_flag    - Flag for autonomous mode (no prompts, optional)
+# verbose_flag - Flag for verbose output (optional)
+# can_commit   - Whether agent can create git commits (default: true)
+# json_parser  - Output parser: "claude", "codex", or "generic" (default: "generic")
+#
+# JSON PARSERS
+# ------------
+# - "claude"  : Parses Claude Code's stream-json format
+# - "codex"   : Parses OpenAI Codex CLI JSON format
+# - "generic" : Line-by-line output (no JSON parsing)
+#
+# FALLBACK CONFIGURATION
+# ----------------------
+# Configure automatic agent switching on failures (rate limits, auth errors, etc.):
+#
+# [fallback]
+# developer = ["claude", "codex", "opencode"]  # Fallback chain for developer role
+# reviewer = ["codex", "claude"]               # Fallback chain for reviewer role
+# max_retries = 3                              # Retries before switching agents
+# retry_delay_ms = 1000                        # Delay between retries (ms)
+#
+# Enable fallback mode:
+#   ralph --use-fallback
+#   # or
+#   RALPH_USE_FALLBACK=true ralph
 
-# Override built-in agent command (optional)
+# =============================================================================
+# BUILT-IN AGENTS (defaults shown - uncomment to override)
+# =============================================================================
+
+# Claude Code - Anthropic's AI coding assistant
+# https://claude.ai/code
 [agents.claude]
 cmd = "claude -p"
 json_flag = "--output-format=stream-json"
 yolo_flag = "--dangerously-skip-permissions"
 verbose_flag = "--verbose"
+can_commit = true
 json_parser = "claude"
 
-# Override built-in agent command (optional)
+# OpenAI Codex CLI
+# https://github.com/openai/codex
 [agents.codex]
 cmd = "codex exec"
 json_flag = "--json"
 yolo_flag = "--yolo"
+verbose_flag = ""
+can_commit = true
 json_parser = "codex"
 
-# Role-friendly aliases (optional): redefine these once and keep your CLI stable.
-# Example: use opencode for both developer and reviewer roles:
-#
-# [agents.driver]
-# cmd = "opencode"
-# json_flag = "--json"
-# yolo_flag = "--auto"
-# verbose_flag = "--verbose"
-# json_parser = "generic"
-#
-# [agents.reviewer]
-# cmd = "opencode"
-# json_flag = "--json"
-# yolo_flag = "--auto"
-# json_parser = "generic"
-#
-# Custom agent example
-[agents.myagent]
-cmd = "my-ai-tool run"
-json_flag = "--json-stream"
-yolo_flag = "--auto-fix"
+# OpenCode - Open source AI coding tool
+# https://github.com/opencode-ai/opencode
+[agents.opencode]
+cmd = "opencode"
+json_flag = "--json"
+yolo_flag = "--auto"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "generic"
+
+# Aider - AI pair programming in your terminal
+# https://github.com/paul-gauthier/aider
+[agents.aider]
+cmd = "aider"
+json_flag = ""
+yolo_flag = "--yes"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "generic"
+
+# Goose - Block's open-source AI agent
+# https://github.com/block/goose
+[agents.goose]
+cmd = "goose run"
+json_flag = "--json"
+yolo_flag = "--auto-approve"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "generic"
+
+# Cline - Autonomous coding agent
+# https://github.com/cline/cline
+[agents.cline]
+cmd = "cline"
+json_flag = "--json"
+yolo_flag = "--auto"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "generic"
+
+# Continue.dev CLI (cn)
+# https://docs.continue.dev/guides/cli
+[agents.continue]
+cmd = "cn"
+json_flag = ""
+yolo_flag = "--allow"
+verbose_flag = ""
+can_commit = true
+json_parser = "generic"
+
+# Amazon Q Developer CLI
+# https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html
+[agents.amazon-q]
+cmd = "q chat"
+json_flag = ""
+yolo_flag = "--trust-all-tools"
+verbose_flag = ""
+can_commit = true
+json_parser = "generic"
+
+# Gemini CLI
+# https://github.com/google-gemini/gemini-cli
+[agents.gemini]
+cmd = "gemini"
+json_flag = "--json"
+yolo_flag = "--auto"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "generic"
+
+# =============================================================================
+# ROLE-FRIENDLY ALIASES
+# =============================================================================
+# These aliases let you configure which agent backs each role without changing
+# your CLI commands. Override these to use different agents for each role.
+
+# Default developer role (alias for claude)
+[agents.driver]
+cmd = "claude -p"
+json_flag = "--output-format=stream-json"
+yolo_flag = "--dangerously-skip-permissions"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "claude"
+
+# Default reviewer role (alias for codex)
+[agents.reviewer]
+cmd = "codex exec"
+json_flag = "--json"
+yolo_flag = "--yolo"
+verbose_flag = ""
+can_commit = true
+json_parser = "codex"
+
+# =============================================================================
+# FALLBACK CONFIGURATION (optional)
+# =============================================================================
+# Uncomment to enable automatic agent switching on failures
+
+# [fallback]
+# developer = ["claude", "codex", "opencode", "aider", "goose"]
+# reviewer = ["codex", "claude", "opencode"]
+# max_retries = 3
+# retry_delay_ms = 1000
+
+# =============================================================================
+# CUSTOM AGENT EXAMPLE
+# =============================================================================
+# Add your own agents by defining new sections:
+
+# [agents.myagent]
+# cmd = "my-ai-tool run"
+# json_flag = "--json-stream"
+# yolo_flag = "--auto-fix"
+# verbose_flag = "--verbose"
+# can_commit = true
+# json_parser = "generic"

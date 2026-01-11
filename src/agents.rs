@@ -37,7 +37,11 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::Path;
+
+/// Default agents.toml template embedded at compile time
+pub const DEFAULT_AGENTS_TOML: &str = include_str!("../examples/agents.toml");
 
 /// JSON parser type for agent output
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -144,9 +148,20 @@ pub struct AgentsConfigFile {
 #[derive(Debug, thiserror::Error)]
 pub enum AgentConfigError {
     #[error("Failed to read config file: {0}")]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error("Failed to parse TOML: {0}")]
-    TomlError(#[from] toml::de::Error),
+    Toml(#[from] toml::de::Error),
+    #[error("Built-in agents.toml template is invalid TOML: {0}")]
+    DefaultTemplateToml(toml::de::Error),
+}
+
+/// Result of checking/initializing the agents config file
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigInitResult {
+    /// Config file already exists, no action taken
+    AlreadyExists,
+    /// Config file was just created from template
+    Created,
 }
 
 impl AgentsConfigFile {
@@ -163,6 +178,30 @@ impl AgentsConfigFile {
         let contents = fs::read_to_string(path)?;
         let config: AgentsConfigFile = toml::from_str(&contents)?;
         Ok(Some(config))
+    }
+
+    /// Ensure agents config file exists, creating it from template if needed.
+    ///
+    /// Returns:
+    /// - `Ok(ConfigInitResult::AlreadyExists)` if the file already exists
+    /// - `Ok(ConfigInitResult::Created)` if the file was just created from the default template
+    /// - `Err` if there was an error creating the file or parent directories
+    pub fn ensure_config_exists<P: AsRef<Path>>(path: P) -> io::Result<ConfigInitResult> {
+        let path = path.as_ref();
+
+        if path.exists() {
+            return Ok(ConfigInitResult::AlreadyExists);
+        }
+
+        // Create parent directories if they don't exist
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Write the default template
+        fs::write(path, DEFAULT_AGENTS_TOML)?;
+
+        Ok(ConfigInitResult::Created)
     }
 }
 
@@ -359,159 +398,20 @@ pub struct AgentRegistry {
 
 impl AgentRegistry {
     /// Create a new registry with default agents
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, AgentConfigError> {
+        let AgentsConfigFile { agents, fallback } =
+            toml::from_str(DEFAULT_AGENTS_TOML).map_err(AgentConfigError::DefaultTemplateToml)?;
+
         let mut registry = Self {
             agents: HashMap::new(),
-            fallback: FallbackConfig::default(),
+            fallback,
         };
 
-        // Register default agents
-        registry.register(
-            "claude",
-            AgentConfig {
-                cmd: "claude -p".to_string(),
-                json_flag: "--output-format=stream-json".to_string(),
-                yolo_flag: "--dangerously-skip-permissions".to_string(),
-                verbose_flag: "--verbose".to_string(),
-                can_commit: true,
-                json_parser: JsonParserType::Claude,
-            },
-        );
+        for (name, agent_toml) in agents {
+            registry.register(&name, agent_toml.into());
+        }
 
-        // Role-friendly aliases (so users don't have to hardcode a specific tool name).
-        // These intentionally default to the historical Claude/Codex pipeline, but can be
-        // overridden in `.agent/agents.toml` by redefining `agents.driver` / `agents.reviewer`.
-        registry.register(
-            "driver",
-            AgentConfig {
-                cmd: "claude -p".to_string(),
-                json_flag: "--output-format=stream-json".to_string(),
-                yolo_flag: "--dangerously-skip-permissions".to_string(),
-                verbose_flag: "--verbose".to_string(),
-                can_commit: true,
-                json_parser: JsonParserType::Claude,
-            },
-        );
-
-        registry.register(
-            "codex",
-            AgentConfig {
-                cmd: "codex exec".to_string(),
-                json_flag: "--json".to_string(),
-                yolo_flag: "--yolo".to_string(),
-                verbose_flag: String::new(),
-                can_commit: true,
-                json_parser: JsonParserType::Codex,
-            },
-        );
-
-        registry.register(
-            "reviewer",
-            AgentConfig {
-                cmd: "codex exec".to_string(),
-                json_flag: "--json".to_string(),
-                yolo_flag: "--yolo".to_string(),
-                verbose_flag: String::new(),
-                can_commit: true,
-                json_parser: JsonParserType::Codex,
-            },
-        );
-
-        registry.register(
-            "opencode",
-            AgentConfig {
-                cmd: "opencode".to_string(),
-                json_flag: "--json".to_string(),
-                yolo_flag: "--auto".to_string(),
-                verbose_flag: "--verbose".to_string(),
-                can_commit: true,
-                json_parser: JsonParserType::Generic,
-            },
-        );
-
-        registry.register(
-            "aider",
-            AgentConfig {
-                cmd: "aider".to_string(),
-                json_flag: String::new(),
-                yolo_flag: "--yes".to_string(),
-                verbose_flag: "--verbose".to_string(),
-                can_commit: true,
-                json_parser: JsonParserType::Generic,
-            },
-        );
-
-        // Goose - Block's open-source AI agent
-        // https://github.com/block/goose
-        registry.register(
-            "goose",
-            AgentConfig {
-                cmd: "goose run".to_string(),
-                json_flag: "--json".to_string(),
-                yolo_flag: "--auto-approve".to_string(),
-                verbose_flag: "--verbose".to_string(),
-                can_commit: true,
-                json_parser: JsonParserType::Generic,
-            },
-        );
-
-        // Cline - Autonomous coding agent
-        // https://github.com/cline/cline
-        registry.register(
-            "cline",
-            AgentConfig {
-                cmd: "cline".to_string(),
-                json_flag: "--json".to_string(),
-                yolo_flag: "--auto".to_string(),
-                verbose_flag: "--verbose".to_string(),
-                can_commit: true,
-                json_parser: JsonParserType::Generic,
-            },
-        );
-
-        // Continue.dev CLI (cn)
-        // https://docs.continue.dev/guides/cli
-        registry.register(
-            "continue",
-            AgentConfig {
-                cmd: "cn".to_string(),
-                json_flag: String::new(),
-                yolo_flag: "--allow".to_string(),
-                verbose_flag: String::new(),
-                can_commit: true,
-                json_parser: JsonParserType::Generic,
-            },
-        );
-
-        // Amazon Q Developer CLI
-        // https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html
-        registry.register(
-            "amazon-q",
-            AgentConfig {
-                cmd: "q chat".to_string(),
-                json_flag: String::new(),
-                yolo_flag: "--trust-all-tools".to_string(),
-                verbose_flag: String::new(),
-                can_commit: true,
-                json_parser: JsonParserType::Generic,
-            },
-        );
-
-        // Gemini CLI
-        // https://github.com/google-gemini/gemini-cli
-        registry.register(
-            "gemini",
-            AgentConfig {
-                cmd: "gemini".to_string(),
-                json_flag: "--json".to_string(),
-                yolo_flag: "--auto".to_string(),
-                verbose_flag: "--verbose".to_string(),
-                can_commit: true,
-                json_parser: JsonParserType::Generic,
-            },
-        );
-
-        registry
+        Ok(registry)
     }
 
     /// Register a new agent
@@ -575,7 +475,7 @@ impl AgentRegistry {
     /// This is the recommended way to create a registry for production use.
     /// Custom agents in the file will override built-in defaults.
     pub fn with_config_file<P: AsRef<Path>>(path: P) -> Result<Self, AgentConfigError> {
-        let mut registry = Self::new();
+        let mut registry = Self::new()?;
         registry.load_from_file(path)?;
         Ok(registry)
     }
@@ -622,19 +522,13 @@ impl AgentRegistry {
     }
 }
 
-impl Default for AgentRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_agent_registry_defaults() {
-        let registry = AgentRegistry::new();
+        let registry = AgentRegistry::new().unwrap();
 
         // Original agents
         assert!(registry.is_known("claude"));
@@ -656,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_agent_get_cmd() {
-        let registry = AgentRegistry::new();
+        let registry = AgentRegistry::new().unwrap();
 
         let claude = registry.get("claude").unwrap();
         assert!(claude.cmd.contains("claude"));
@@ -667,7 +561,7 @@ mod tests {
 
     #[test]
     fn test_agent_build_cmd() {
-        let registry = AgentRegistry::new();
+        let registry = AgentRegistry::new().unwrap();
         let claude = registry.get("claude").unwrap();
 
         let cmd = claude.build_cmd(true, true, false);
@@ -679,7 +573,7 @@ mod tests {
 
     #[test]
     fn test_agent_developer_cmd() {
-        let registry = AgentRegistry::new();
+        let registry = AgentRegistry::new().unwrap();
         let cmd = registry.developer_cmd("claude").unwrap();
         assert!(cmd.contains("claude"));
         assert!(cmd.contains("json"));
@@ -687,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_agent_reviewer_cmd() {
-        let registry = AgentRegistry::new();
+        let registry = AgentRegistry::new().unwrap();
         let cmd = registry.reviewer_cmd("codex").unwrap();
         assert!(cmd.contains("codex"));
         assert!(cmd.contains("json"));
@@ -695,7 +589,7 @@ mod tests {
 
     #[test]
     fn test_register_custom_agent() {
-        let mut registry = AgentRegistry::new();
+        let mut registry = AgentRegistry::new().unwrap();
 
         registry.register(
             "testbot",
@@ -717,7 +611,7 @@ mod tests {
 
     #[test]
     fn test_can_commit() {
-        let registry = AgentRegistry::new();
+        let registry = AgentRegistry::new().unwrap();
 
         let claude = registry.get("claude").unwrap();
         assert!(claude.can_commit);
@@ -746,7 +640,7 @@ mod tests {
 
     #[test]
     fn test_default_agent_parser_types() {
-        let registry = AgentRegistry::new();
+        let registry = AgentRegistry::new().unwrap();
 
         assert_eq!(registry.parser_type("claude"), JsonParserType::Claude);
         assert_eq!(registry.parser_type("codex"), JsonParserType::Codex);
@@ -822,7 +716,7 @@ json_parser = "claude"
 
     #[test]
     fn test_load_from_file_nonexistent() {
-        let mut registry = AgentRegistry::new();
+        let mut registry = AgentRegistry::new().unwrap();
         let result = registry.load_from_file("/nonexistent/path/agents.toml");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
@@ -848,7 +742,7 @@ json_parser = "codex"
         )
         .unwrap();
 
-        let mut registry = AgentRegistry::new();
+        let mut registry = AgentRegistry::new().unwrap();
         let loaded = registry.load_from_file(&config_path).unwrap();
 
         assert_eq!(loaded, 1);
@@ -890,7 +784,7 @@ json_parser = "codex"
 
     #[test]
     fn test_new_agent_configs() {
-        let registry = AgentRegistry::new();
+        let registry = AgentRegistry::new().unwrap();
 
         // Test Goose config
         let goose = registry.get("goose").unwrap();
@@ -1032,7 +926,7 @@ json_parser = "codex"
 
     #[test]
     fn test_registry_available_fallbacks() {
-        let mut registry = AgentRegistry::new();
+        let mut registry = AgentRegistry::new().unwrap();
         registry.set_fallback(FallbackConfig {
             developer: vec![
                 "claude".to_string(),
@@ -1086,5 +980,112 @@ cmd = "testbot exec"
     fn test_agent_role_display() {
         assert_eq!(format!("{}", AgentRole::Developer), "developer");
         assert_eq!(format!("{}", AgentRole::Reviewer), "reviewer");
+    }
+
+    #[test]
+    fn test_ensure_config_exists_creates_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join(".agent/agents.toml");
+
+        // File should not exist initially
+        assert!(!config_path.exists());
+
+        // ensure_config_exists should create it
+        let result = AgentsConfigFile::ensure_config_exists(&config_path).unwrap();
+        assert_eq!(result, ConfigInitResult::Created);
+
+        // File should now exist
+        assert!(config_path.exists());
+
+        // Content should match the default template
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains("Ralph Agents Configuration File"));
+        assert!(content.contains("[agents.claude]"));
+        assert!(content.contains("[agents.codex]"));
+    }
+
+    #[test]
+    fn test_ensure_config_exists_already_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent_dir = dir.path().join(".agent");
+        fs::create_dir_all(&agent_dir).unwrap();
+        let config_path = agent_dir.join("agents.toml");
+
+        // Create an existing file
+        fs::write(&config_path, "# Custom config\n").unwrap();
+
+        // ensure_config_exists should return AlreadyExists
+        let result = AgentsConfigFile::ensure_config_exists(&config_path).unwrap();
+        assert_eq!(result, ConfigInitResult::AlreadyExists);
+
+        // Content should be unchanged
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert_eq!(content, "# Custom config\n");
+    }
+
+    #[test]
+    fn test_ensure_config_exists_creates_parent_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("deep/nested/path/.agent/agents.toml");
+
+        // Parent directories don't exist
+        assert!(!config_path.parent().unwrap().exists());
+
+        // ensure_config_exists should create parent directories
+        let result = AgentsConfigFile::ensure_config_exists(&config_path).unwrap();
+        assert_eq!(result, ConfigInitResult::Created);
+
+        // Both file and parent directories should exist
+        assert!(config_path.exists());
+        assert!(config_path.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn test_default_agents_toml_is_valid() {
+        // Verify the embedded default template can be parsed
+        let config: AgentsConfigFile = toml::from_str(DEFAULT_AGENTS_TOML).unwrap();
+
+        // Check that all expected agents are present
+        assert!(config.agents.contains_key("claude"));
+        assert!(config.agents.contains_key("codex"));
+        assert!(config.agents.contains_key("opencode"));
+        assert!(config.agents.contains_key("aider"));
+        assert!(config.agents.contains_key("goose"));
+        assert!(config.agents.contains_key("cline"));
+        assert!(config.agents.contains_key("continue"));
+        assert!(config.agents.contains_key("amazon-q"));
+        assert!(config.agents.contains_key("gemini"));
+        assert!(config.agents.contains_key("driver"));
+        assert!(config.agents.contains_key("reviewer"));
+
+        // Verify Claude config is correct
+        let claude = &config.agents["claude"];
+        assert_eq!(claude.cmd, "claude -p");
+        assert_eq!(claude.json_parser, "claude");
+    }
+
+    #[test]
+    fn test_registry_defaults_come_from_default_toml() {
+        let config: AgentsConfigFile = toml::from_str(DEFAULT_AGENTS_TOML).unwrap();
+        let registry = AgentRegistry::new().unwrap();
+
+        let mut expected_names: Vec<String> = config.agents.keys().cloned().collect();
+        expected_names.sort();
+
+        let mut actual_names: Vec<String> = registry.agents.keys().cloned().collect();
+        actual_names.sort();
+
+        assert_eq!(expected_names, actual_names);
+
+        for (name, cfg_toml) in config.agents {
+            let expected: AgentConfig = cfg_toml.into();
+            let actual = registry.get(&name).unwrap();
+            assert_eq!(actual.cmd, expected.cmd);
+            assert_eq!(actual.json_flag, expected.json_flag);
+            assert_eq!(actual.yolo_flag, expected.yolo_flag);
+            assert_eq!(actual.verbose_flag, expected.verbose_flag);
+            assert_eq!(actual.can_commit, expected.can_commit);
+            assert_eq!(actual.json_parser, expected.json_parser);
+        }
     }
 }
