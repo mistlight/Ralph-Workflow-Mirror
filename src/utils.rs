@@ -373,19 +373,6 @@ pub fn ensure_files() -> io::Result<()> {
         File::create(".agent/ISSUES.md")?;
     }
 
-    if !Path::new(".agent/agents.toml").exists() {
-        fs::write(
-            ".agent/agents.toml",
-            r#"# Ralph agents config
-#
-# This file is optional. If you don't need custom agents, you can delete it.
-#
-# For a full example config, see:
-#   examples/agents.toml
-"#,
-        )?;
-    }
-
     Ok(())
 }
 

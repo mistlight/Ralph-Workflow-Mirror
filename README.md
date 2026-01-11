@@ -7,6 +7,7 @@ Ralph is a **PROMPT-driven, multi-agent orchestrator** inspired by [Geoffrey Hun
 When you run `ralph`, it:
 
 1. Ensures a few working files exist (creates them if missing): `PROMPT.md`, `.agent/STATUS.md`, `.agent/NOTES.md`, `.agent/ISSUES.md`, plus `.agent/logs/`.
+   - If no agents config exists yet, Ralph first creates a full default template at `.agent/agents.toml` (or `RALPH_AGENTS_CONFIG`) and exits so you can review/edit it.
 2. Runs the **developer agent** for `N` iterations (default: 5), prompting it based on `PROMPT.md`.
 3. Runs the **reviewer agent** in a review → fix → review loop (default: 2 review passes).
 4. Optionally runs a fast check after each dev iteration and/or a full check at the end.
@@ -88,6 +89,10 @@ By default, Ralph looks for an agents config file at:
 This is intended to live in your **repository root** (next to `PROMPT.md`).
 
 Note: the config path is read as a normal filesystem path. If you run `ralph` from a subdirectory, relative paths may not resolve the way you expect. The simplest approach is to run `ralph` from the repo root, or set `RALPH_AGENTS_CONFIG` to an absolute path.
+
+To generate the full default template without running the pipeline, use:
+
+`ralph --init`
 
 ### What the config file should look like (`.agent/agents.toml`)
 
