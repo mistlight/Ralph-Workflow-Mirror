@@ -287,6 +287,15 @@ impl AgentConfig {
 /// Ralph automatically switches to the next agent in the chain when encountering
 /// errors like rate limits or auth failures.
 ///
+/// ## Exponential Backoff and Cycling
+///
+/// When all fallbacks are exhausted, Ralph uses exponential backoff and cycles
+/// back to the first agent in the chain:
+/// - Base delay starts at `retry_delay_ms` (default: 1000ms)
+/// - Each cycle multiplies by `backoff_multiplier` (default: 2.0)
+/// - Capped at `max_backoff_ms` (default: 60000ms = 1 minute)
+/// - Maximum cycles controlled by `max_cycles` (default: 3)
+///
 /// Note: For backward compatibility, this section can be named either `[fallback]`
 /// or `[agent_chain]` in the TOML config file.
 #[derive(Debug, Clone, Deserialize)]
@@ -300,9 +309,18 @@ pub(crate) struct FallbackConfig {
     /// Maximum number of retries per agent before moving to next
     #[serde(default = "default_max_retries")]
     pub(crate) max_retries: u32,
-    /// Delay between retries in milliseconds
+    /// Base delay between retries in milliseconds
     #[serde(default = "default_retry_delay_ms")]
     pub(crate) retry_delay_ms: u64,
+    /// Multiplier for exponential backoff (default: 2.0)
+    #[serde(default = "default_backoff_multiplier")]
+    pub(crate) backoff_multiplier: f64,
+    /// Maximum backoff delay in milliseconds (default: 60000 = 1 minute)
+    #[serde(default = "default_max_backoff_ms")]
+    pub(crate) max_backoff_ms: u64,
+    /// Maximum number of cycles through all agents before giving up (default: 3)
+    #[serde(default = "default_max_cycles")]
+    pub(crate) max_cycles: u32,
 }
 
 fn default_max_retries() -> u32 {
@@ -313,6 +331,18 @@ fn default_retry_delay_ms() -> u64 {
     1000
 }
 
+fn default_backoff_multiplier() -> f64 {
+    2.0
+}
+
+fn default_max_backoff_ms() -> u64 {
+    60000 // 1 minute
+}
+
+fn default_max_cycles() -> u32 {
+    3
+}
+
 impl Default for FallbackConfig {
     fn default() -> Self {
         Self {
@@ -320,11 +350,22 @@ impl Default for FallbackConfig {
             reviewer: Vec::new(),
             max_retries: default_max_retries(),
             retry_delay_ms: default_retry_delay_ms(),
+            backoff_multiplier: default_backoff_multiplier(),
+            max_backoff_ms: default_max_backoff_ms(),
+            max_cycles: default_max_cycles(),
         }
     }
 }
 
 impl FallbackConfig {
+    /// Calculate exponential backoff delay for a given cycle
+    ///
+    /// Uses the formula: min(base * multiplier^cycle, max_backoff)
+    pub(crate) fn calculate_backoff(&self, cycle: u32) -> u64 {
+        let delay = self.retry_delay_ms as f64 * self.backoff_multiplier.powi(cycle as i32);
+        (delay as u64).min(self.max_backoff_ms)
+    }
+
     /// Get fallback agents for a role
     pub(crate) fn get_fallbacks(&self, role: AgentRole) -> &[String] {
         match role {
@@ -438,9 +479,12 @@ impl AgentErrorKind {
 
         // Command not found
         if exit_code == 127
+            || exit_code == 126
             || stderr_lower.contains("command not found")
             || stderr_lower.contains("not found")
             || stderr_lower.contains("no such file")
+            || stderr_lower.contains("permission denied")
+            || stderr_lower.contains("operation not permitted")
         {
             return AgentErrorKind::CommandNotFound;
         }
@@ -489,6 +533,7 @@ impl AgentRegistry {
     }
 
     /// Check if agent exists
+    #[allow(dead_code)]
     pub(crate) fn is_known(&self, name: &str) -> bool {
         self.agents.contains_key(name)
     }
@@ -642,7 +687,7 @@ impl AgentRegistry {
         self.fallback
             .get_fallbacks(role)
             .iter()
-            .filter(|name| self.is_known(name))
+            .filter(|name| self.is_agent_available(name))
             .map(|s| s.as_str())
             .collect()
     }
@@ -707,6 +752,26 @@ impl AgentRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn write_stub_executable(dir: &Path, name: &str) {
+        #[cfg(windows)]
+        {
+            let path = dir.join(format!("{}.cmd", name));
+            std::fs::write(&path, "@echo off\r\nexit /b 0\r\n").unwrap();
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join(name);
+            std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+            let mut perms = std::fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&path, perms).unwrap();
+        }
+    }
 
     #[test]
     fn test_agent_registry_defaults() {
@@ -1051,6 +1116,30 @@ json_parser = "codex"
         assert!(config.reviewer.is_empty());
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.retry_delay_ms, 1000);
+        assert!((config.backoff_multiplier - 2.0).abs() < f64::EPSILON);
+        assert_eq!(config.max_backoff_ms, 60000);
+        assert_eq!(config.max_cycles, 3);
+    }
+
+    #[test]
+    fn test_fallback_config_calculate_backoff() {
+        let config = FallbackConfig {
+            retry_delay_ms: 1000,
+            backoff_multiplier: 2.0,
+            max_backoff_ms: 60000,
+            ..Default::default()
+        };
+
+        // Cycle 0: 1000 * 2^0 = 1000
+        assert_eq!(config.calculate_backoff(0), 1000);
+        // Cycle 1: 1000 * 2^1 = 2000
+        assert_eq!(config.calculate_backoff(1), 2000);
+        // Cycle 2: 1000 * 2^2 = 4000
+        assert_eq!(config.calculate_backoff(2), 4000);
+        // Cycle 3: 1000 * 2^3 = 8000
+        assert_eq!(config.calculate_backoff(3), 8000);
+        // Cycle 6: 1000 * 2^6 = 64000, capped at 60000
+        assert_eq!(config.calculate_backoff(6), 60000);
     }
 
     #[test]
@@ -1130,6 +1219,10 @@ json_parser = "codex"
             AgentErrorKind::CommandNotFound
         );
         assert_eq!(
+            AgentErrorKind::classify(126, "permission denied"),
+            AgentErrorKind::CommandNotFound
+        );
+        assert_eq!(
             AgentErrorKind::classify(1, "command not found"),
             AgentErrorKind::CommandNotFound
         );
@@ -1161,6 +1254,20 @@ json_parser = "codex"
 
     #[test]
     fn test_registry_available_fallbacks() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let original_path = std::env::var_os("PATH");
+        let dir = tempfile::tempdir().unwrap();
+
+        write_stub_executable(dir.path(), "claude");
+        write_stub_executable(dir.path(), "codex");
+
+        let mut new_paths = vec![dir.path().to_path_buf()];
+        if let Some(p) = &original_path {
+            new_paths.extend(std::env::split_paths(p));
+        }
+        let joined = std::env::join_paths(new_paths).unwrap();
+        std::env::set_var("PATH", &joined);
+
         let mut registry = AgentRegistry::new().unwrap();
         registry.set_fallback(FallbackConfig {
             developer: vec![
@@ -1169,14 +1276,19 @@ json_parser = "codex"
                 "codex".to_string(),
             ],
             reviewer: vec![],
-            max_retries: 3,
-            retry_delay_ms: 1000,
+            ..Default::default()
         });
 
         let fallbacks = registry.available_fallbacks(AgentRole::Developer);
         assert!(fallbacks.contains(&"claude"));
         assert!(fallbacks.contains(&"codex"));
         assert!(!fallbacks.contains(&"nonexistent"));
+
+        if let Some(p) = original_path {
+            std::env::set_var("PATH", p);
+        } else {
+            std::env::remove_var("PATH");
+        }
     }
 
     #[test]
