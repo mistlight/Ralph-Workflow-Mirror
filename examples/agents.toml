@@ -36,20 +36,33 @@
 # - "codex"   : Parses OpenAI Codex CLI JSON format
 # - "generic" : Line-by-line output (no JSON parsing)
 #
-# FALLBACK CONFIGURATION
-# ----------------------
-# Configure automatic agent switching on failures (rate limits, auth errors, etc.):
+# AGENT CHAIN CONFIGURATION
+# -------------------------
+# Define preferred agents and automatic fallback switching.
 #
-# [fallback]
-# developer = ["claude", "codex", "opencode"]  # Fallback chain for developer role
-# reviewer = ["codex", "claude"]               # Fallback chain for reviewer role
-# max_retries = 3                              # Retries before switching agents
+# The agent chain serves two purposes:
+# 1. **Preferred agent**: The first agent in the list is the primary choice
+# 2. **Fallback agents**: Remaining agents are tried in order if the preferred fails
+#
+# This section can be named either `[agent_chain]` (recommended) or `[fallback]` (legacy).
+#
+# [agent_chain]
+# developer = ["claude", "codex", "opencode"]  # claude is preferred, others are fallbacks
+# reviewer = ["codex", "claude"]               # codex is preferred for reviews
+# max_retries = 3                              # Retries per agent before trying next
 # retry_delay_ms = 1000                        # Delay between retries (ms)
 #
 # Enable fallback mode:
 #   ralph --use-fallback
 #   # or
 #   RALPH_USE_FALLBACK=true ralph
+#
+# When fallback is disabled (default), only the first agent is used.
+# When enabled, Ralph automatically switches agents on:
+#   - Rate limits (429 errors)
+#   - Authentication failures
+#   - Token/context exhaustion
+#   - Command not found
 
 # =============================================================================
 # BUILT-IN AGENTS (defaults shown - uncomment to override)
@@ -170,15 +183,45 @@ can_commit = true
 json_parser = "codex"
 
 # =============================================================================
-# FALLBACK CONFIGURATION (optional)
+# AGENT CHAIN CONFIGURATION (recommended)
 # =============================================================================
-# Uncomment to enable automatic agent switching on failures
+# The agent chain defines the preferred agent (first in list) and optional
+# fallback agents (rest of the list).
+#
+# - With fallback disabled (default), Ralph uses only the first agent per role.
+# - With fallback enabled (`--use-fallback` or `RALPH_USE_FALLBACK=1`), Ralph will
+#   automatically switch agents on certain failures (rate limits, auth issues, etc.).
 
+[agent_chain]
+developer = [
+  "claude",
+  "codex",
+  "opencode",
+  "aider",
+  "goose",
+  "cline",
+  "continue",
+  "amazon-q",
+  "gemini",
+]
+reviewer = [
+  "codex",
+  "claude",
+  "opencode",
+  "aider",
+  "goose",
+  "cline",
+  "continue",
+  "amazon-q",
+  "gemini",
+]
+max_retries = 3
+retry_delay_ms = 1000
+
+# Legacy name also supported for backward compatibility:
 # [fallback]
-# developer = ["claude", "codex", "opencode", "aider", "goose"]
-# reviewer = ["codex", "claude", "opencode"]
-# max_retries = 3
-# retry_delay_ms = 1000
+# developer = ["claude", "codex"]
+# reviewer = ["codex", "claude"]
 
 # =============================================================================
 # CUSTOM AGENT EXAMPLE

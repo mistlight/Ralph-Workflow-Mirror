@@ -78,6 +78,15 @@ pub(crate) enum ContentBlock {
 }
 
 /// Codex event types
+///
+/// Based on OpenAI Codex CLI documentation, events include:
+/// - `thread.started`: Thread initialization with thread_id
+/// - `turn.started`/`turn.completed`/`turn.failed`: Turn lifecycle events
+/// - `item.started`/`item.completed`: Item events for commands, file ops, messages, etc.
+/// - `error`: Error events
+///
+/// Item types include: agent_message, reasoning, command_execution, file_read,
+/// file_write, file_change, mcp_tool_call, web_search, plan_update
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
@@ -106,15 +115,43 @@ pub(crate) enum CodexEvent {
 pub(crate) struct CodexUsage {
     pub(crate) input_tokens: Option<u64>,
     pub(crate) output_tokens: Option<u64>,
+    /// Cached input tokens (for prompt caching)
+    pub(crate) cached_input_tokens: Option<u64>,
 }
 
+/// Codex item structure
+///
+/// Items represent individual operations performed by Codex:
+/// - `command_execution`: Shell command execution
+/// - `agent_message`: Text response from the agent
+/// - `reasoning`: Internal reasoning/thinking content
+/// - `file_read`/`file_write`/`file_change`: File operations
+/// - `mcp_tool_call`: Model Context Protocol tool invocations
+/// - `web_search`: Web search operations
+/// - `plan_update`: Changes to execution plan
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct CodexItem {
+    /// Unique identifier for this item
+    pub(crate) id: Option<String>,
+    /// Item type (command_execution, agent_message, reasoning, file_read, etc.)
     #[serde(rename = "type")]
     pub(crate) item_type: Option<String>,
+    /// Command text (for command_execution)
     pub(crate) command: Option<String>,
+    /// Message/reasoning text (for agent_message, reasoning)
     pub(crate) text: Option<String>,
+    /// File path (for file operations)
     pub(crate) path: Option<String>,
+    /// Item status (in_progress, completed, etc.)
+    pub(crate) status: Option<String>,
+    /// Tool name (for mcp_tool_call)
+    pub(crate) tool: Option<String>,
+    /// Tool arguments (for mcp_tool_call)
+    pub(crate) arguments: Option<serde_json::Value>,
+    /// Search query (for web_search)
+    pub(crate) query: Option<String>,
+    /// Plan content (for plan_update)
+    pub(crate) plan: Option<String>,
 }
 
 /// Format tool input for display
@@ -507,7 +544,7 @@ impl CodexParser {
                 if let Some(item) = item {
                     match item.item_type.as_deref() {
                         Some("command_execution") => {
-                            let cmd = item.command.unwrap_or_default();
+                            let cmd = item.command.clone().unwrap_or_default();
                             let limit = self.verbosity.truncate_limit("command");
                             let preview = truncate_text(&cmd, limit);
                             format!(
@@ -536,6 +573,20 @@ impl CodexParser {
                                 )
                             }
                         }
+                        Some("reasoning") => {
+                            // Show reasoning/thinking in verbose mode
+                            if self.verbosity.is_verbose() {
+                                format!(
+                                    "{}[Codex]{} {}Reasoning...{}\n",
+                                    c.dim(),
+                                    c.reset(),
+                                    c.cyan(),
+                                    c.reset()
+                                )
+                            } else {
+                                String::new()
+                            }
+                        }
                         Some("file_read") | Some("file_write") => {
                             let path = item.path.clone().unwrap_or_default();
                             let action = item.item_type.as_deref().unwrap_or("file");
@@ -547,6 +598,63 @@ impl CodexParser {
                                 action,
                                 c.reset(),
                                 path
+                            )
+                        }
+                        Some("mcp_tool_call") | Some("mcp") => {
+                            let tool_name =
+                                item.tool.clone().unwrap_or_else(|| "unknown".to_string());
+                            let mut out = format!(
+                                "{}[Codex]{} {}MCP Tool{}: {}{}{}\n",
+                                c.dim(),
+                                c.reset(),
+                                c.magenta(),
+                                c.reset(),
+                                c.bold(),
+                                tool_name,
+                                c.reset()
+                            );
+                            // Show tool arguments at Normal+ verbosity
+                            if self.verbosity.show_tool_input() {
+                                if let Some(ref args) = item.arguments {
+                                    let args_str = format_tool_input(args);
+                                    let limit = self.verbosity.truncate_limit("tool_input");
+                                    let preview = truncate_text(&args_str, limit);
+                                    if !preview.is_empty() {
+                                        out.push_str(&format!(
+                                            "{}[Codex]{} {}  └─ {}{}\n",
+                                            c.dim(),
+                                            c.reset(),
+                                            c.dim(),
+                                            preview,
+                                            c.reset()
+                                        ));
+                                    }
+                                }
+                            }
+                            out
+                        }
+                        Some("web_search") => {
+                            let query = item.query.clone().unwrap_or_default();
+                            let limit = self.verbosity.truncate_limit("command");
+                            let preview = truncate_text(&query, limit);
+                            format!(
+                                "{}[Codex]{} {}Search{}: {}{}{}\n",
+                                c.dim(),
+                                c.reset(),
+                                c.cyan(),
+                                c.reset(),
+                                c.white(),
+                                preview,
+                                c.reset()
+                            )
+                        }
+                        Some("plan_update") => {
+                            format!(
+                                "{}[Codex]{} {}Updating plan...{}\n",
+                                c.dim(),
+                                c.reset(),
+                                c.blue(),
+                                c.reset()
                             )
                         }
                         Some(t) => {
@@ -575,9 +683,9 @@ impl CodexParser {
                 if let Some(item) = item {
                     match item.item_type.as_deref() {
                         Some("agent_message") => {
-                            if let Some(text) = item.text {
+                            if let Some(ref text) = item.text {
                                 let limit = self.verbosity.truncate_limit("agent_msg");
-                                let preview = truncate_text(&text, limit);
+                                let preview = truncate_text(text, limit);
                                 format!(
                                     "{}[Codex]{} {}{}{}\n",
                                     c.dim(),
@@ -586,6 +694,29 @@ impl CodexParser {
                                     preview,
                                     c.reset()
                                 )
+                            } else {
+                                String::new()
+                            }
+                        }
+                        Some("reasoning") => {
+                            // Show reasoning content in verbose mode
+                            if self.verbosity.is_verbose() {
+                                if let Some(ref text) = item.text {
+                                    let limit = self.verbosity.truncate_limit("text");
+                                    let preview = truncate_text(text, limit);
+                                    format!(
+                                        "{}[Codex]{} {}Thought:{} {}{}{}\n",
+                                        c.dim(),
+                                        c.reset(),
+                                        c.cyan(),
+                                        c.reset(),
+                                        c.dim(),
+                                        preview,
+                                        c.reset()
+                                    )
+                                } else {
+                                    String::new()
+                                }
                             } else {
                                 String::new()
                             }
@@ -600,8 +731,8 @@ impl CodexParser {
                                 c.reset()
                             )
                         }
-                        Some("file_change") => {
-                            let path = item.path.unwrap_or_else(|| "unknown".to_string());
+                        Some("file_change") | Some("file_write") => {
+                            let path = item.path.clone().unwrap_or_else(|| "unknown".to_string());
                             format!(
                                 "{}[Codex]{} {}File{}: {}\n",
                                 c.dim(),
@@ -610,6 +741,73 @@ impl CodexParser {
                                 c.reset(),
                                 path
                             )
+                        }
+                        Some("file_read") => {
+                            // Only show file read completion in verbose mode
+                            if self.verbosity.is_verbose() {
+                                let path =
+                                    item.path.clone().unwrap_or_else(|| "unknown".to_string());
+                                format!(
+                                    "{}[Codex]{} {}{} Read:{} {}\n",
+                                    c.dim(),
+                                    c.reset(),
+                                    c.green(),
+                                    CHECK,
+                                    c.reset(),
+                                    path
+                                )
+                            } else {
+                                String::new()
+                            }
+                        }
+                        Some("mcp_tool_call") | Some("mcp") => {
+                            let tool_name = item.tool.clone().unwrap_or_else(|| "tool".to_string());
+                            format!(
+                                "{}[Codex]{} {}{} MCP:{} {} done\n",
+                                c.dim(),
+                                c.reset(),
+                                c.green(),
+                                CHECK,
+                                c.reset(),
+                                tool_name
+                            )
+                        }
+                        Some("web_search") => {
+                            format!(
+                                "{}[Codex]{} {}{} Search completed{}\n",
+                                c.dim(),
+                                c.reset(),
+                                c.green(),
+                                CHECK,
+                                c.reset()
+                            )
+                        }
+                        Some("plan_update") => {
+                            if self.verbosity.is_verbose() {
+                                if let Some(ref plan) = item.plan {
+                                    let limit = self.verbosity.truncate_limit("text");
+                                    let preview = truncate_text(plan, limit);
+                                    format!(
+                                        "{}[Codex]{} {}Plan:{} {}\n",
+                                        c.dim(),
+                                        c.reset(),
+                                        c.blue(),
+                                        c.reset(),
+                                        preview
+                                    )
+                                } else {
+                                    format!(
+                                        "{}[Codex]{} {}{} Plan updated{}\n",
+                                        c.dim(),
+                                        c.reset(),
+                                        c.green(),
+                                        CHECK,
+                                        c.reset()
+                                    )
+                                }
+                            } else {
+                                String::new()
+                            }
                         }
                         _ => String::new(),
                     }
@@ -858,5 +1056,115 @@ mod tests {
         assert!(output.is_some());
         let out = output.unwrap();
         assert!(out.contains("Hello 世界! 🌍"));
+    }
+
+    #[test]
+    fn test_codex_reasoning_event() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Verbose);
+        let json = r#"{"type":"item.started","item":{"type":"reasoning","id":"item_1"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        assert!(output.unwrap().contains("Reasoning"));
+    }
+
+    #[test]
+    fn test_codex_reasoning_completed_shows_text() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Verbose);
+        let json = r#"{"type":"item.completed","item":{"type":"reasoning","id":"item_1","text":"I should analyze this file first"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Thought"));
+        assert!(out.contains("analyze"));
+    }
+
+    #[test]
+    fn test_codex_mcp_tool_call() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"item.started","item":{"type":"mcp_tool_call","tool":"search_files","arguments":{"query":"main"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("MCP Tool"));
+        assert!(out.contains("search_files"));
+        assert!(out.contains("query=main"));
+    }
+
+    #[test]
+    fn test_codex_web_search() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json =
+            r#"{"type":"item.started","item":{"type":"web_search","query":"rust async tutorial"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Search"));
+        assert!(out.contains("rust async tutorial"));
+    }
+
+    #[test]
+    fn test_codex_plan_update() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Verbose);
+        let json = r#"{"type":"item.started","item":{"type":"plan_update","id":"item_1"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        assert!(output.unwrap().contains("Updating plan"));
+    }
+
+    #[test]
+    fn test_codex_turn_completed_with_cached_tokens() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Turn completed"));
+        assert!(out.contains("in:24763"));
+        assert!(out.contains("out:122"));
+    }
+
+    #[test]
+    fn test_codex_item_with_status() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls","status":"in_progress"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Exec"));
+        assert!(out.contains("ls"));
+    }
+
+    #[test]
+    fn test_codex_file_write_completed() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json =
+            r#"{"type":"item.completed","item":{"type":"file_write","path":"/src/main.rs"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("File"));
+        assert!(out.contains("/src/main.rs"));
+    }
+
+    #[test]
+    fn test_codex_mcp_completed() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json =
+            r#"{"type":"item.completed","item":{"type":"mcp_tool_call","tool":"read_file"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("MCP"));
+        assert!(out.contains("read_file"));
+        assert!(out.contains("done"));
+    }
+
+    #[test]
+    fn test_codex_web_search_completed() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"item.completed","item":{"type":"web_search"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        assert!(output.unwrap().contains("Search completed"));
     }
 }

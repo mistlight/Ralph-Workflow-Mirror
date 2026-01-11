@@ -5,11 +5,15 @@
 //!
 //! ## Configuration
 //!
-//! Agents can be configured via:
+//! Agents can be configured via (in order of increasing priority):
 //! 1. Built-in defaults (claude, codex, opencode, aider, goose, cline, continue, amazon-q, gemini)
-//! 2. TOML configuration file (`.agent/agents.toml`)
-//! 3. Environment variables (`CLAUDE_CMD`, `CODEX_CMD`)
-//! 4. Programmatic registration via `AgentRegistry::register()`
+//! 2. Global config file (`~/.config/ralph/agents.toml`)
+//! 3. Project config file (default: `.agent/agents.toml`, overridable via `RALPH_AGENTS_CONFIG`)
+//! 4. Environment variables (`RALPH_DEVELOPER_CMD`, `RALPH_REVIEWER_CMD`)
+//! 5. Programmatic registration via `AgentRegistry::register()`
+//!
+//! Config files are merged, with later sources overriding earlier ones.
+//! This allows setting global defaults while customizing per-project.
 //!
 //! ## Agent Switching / Fallback
 //!
@@ -38,7 +42,29 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Get the global config directory for Ralph
+///
+/// Returns `~/.config/ralph` on Unix and `%APPDATA%\ralph` on Windows.
+/// Returns None if the home directory cannot be determined.
+pub(crate) fn global_config_dir() -> Option<PathBuf> {
+    dirs::config_dir().map(|p| p.join("ralph"))
+}
+
+/// Get the global agents.toml path
+///
+/// Returns `~/.config/ralph/agents.toml` on Unix.
+pub(crate) fn global_agents_config_path() -> Option<PathBuf> {
+    global_config_dir().map(|p| p.join("agents.toml"))
+}
+
+/// Config source for tracking where config was loaded from
+#[derive(Debug, Clone)]
+pub(crate) struct ConfigSource {
+    pub(crate) path: PathBuf,
+    pub(crate) agents_loaded: usize,
+}
 
 /// Default agents.toml template embedded at compile time
 pub(crate) const DEFAULT_AGENTS_TOML: &str = include_str!("../examples/agents.toml");
@@ -139,8 +165,9 @@ pub(crate) struct AgentsConfigFile {
     /// Map of agent name to configuration
     #[serde(default)]
     pub(crate) agents: HashMap<String, AgentConfigToml>,
-    /// Fallback configuration for agent switching
-    #[serde(default)]
+    /// Agent chain configuration (preferred agents + fallbacks)
+    /// Supports both `[fallback]` (legacy) and `[agent_chain]` section names
+    #[serde(default, alias = "agent_chain")]
     pub(crate) fallback: FallbackConfig,
 }
 
@@ -226,16 +253,27 @@ impl AgentConfig {
     }
 }
 
-/// Fallback configuration for agent switching
+/// Agent chain configuration for preferred agents and fallback switching
+///
+/// The agent chain defines both:
+/// 1. The **preferred agent** (first in the list) for each role
+/// 2. The **fallback agents** (remaining in the list) to try if the preferred fails
+///
+/// This provides a unified way to configure which agents to use and in what order.
+/// When `--use-fallback` is enabled, Ralph will automatically switch to the next
+/// agent in the chain when encountering errors like rate limits or auth failures.
+///
+/// Note: For backward compatibility, this section can be named either `[fallback]`
+/// or `[agent_chain]` in the TOML config file.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct FallbackConfig {
-    /// Ordered list of fallback agents for developer role
+    /// Ordered list of agents for developer role (first = preferred, rest = fallbacks)
     #[serde(default)]
     pub(crate) developer: Vec<String>,
-    /// Ordered list of fallback agents for reviewer role
+    /// Ordered list of agents for reviewer role (first = preferred, rest = fallbacks)
     #[serde(default)]
     pub(crate) reviewer: Vec<String>,
-    /// Maximum number of retries before giving up
+    /// Maximum number of retries per agent before moving to next
     #[serde(default = "default_max_retries")]
     pub(crate) max_retries: u32,
     /// Delay between retries in milliseconds
@@ -479,10 +517,88 @@ impl AgentRegistry {
     ///
     /// This is the recommended way to create a registry for production use.
     /// Custom agents in the file will override built-in defaults.
+    #[allow(dead_code)]
     pub(crate) fn with_config_file<P: AsRef<Path>>(path: P) -> Result<Self, AgentConfigError> {
         let mut registry = Self::new()?;
         registry.load_from_file(path)?;
         Ok(registry)
+    }
+
+    /// Create a new registry with merged config from multiple sources
+    ///
+    /// Loads config in order of increasing priority:
+    /// 1. Built-in defaults
+    /// 2. Global config (`~/.config/ralph/agents.toml`)
+    /// 3. Per-repository config (`.agent/agents.toml` or `local_path`)
+    ///
+    /// Later sources override earlier ones. Returns a list of loaded config sources.
+    pub(crate) fn with_merged_configs<P: AsRef<Path>>(
+        local_path: P,
+    ) -> Result<(Self, Vec<ConfigSource>, Vec<String>), AgentConfigError> {
+        let mut registry = Self::new()?;
+        let mut sources = Vec::new();
+        let mut warnings = Vec::new();
+
+        // 1. Try global config
+        if let Some(global_path) = global_agents_config_path() {
+            if global_path.exists() {
+                match registry.load_from_file(&global_path) {
+                    Ok(count) => {
+                        sources.push(ConfigSource {
+                            path: global_path,
+                            agents_loaded: count,
+                        });
+                    }
+                    Err(e) => {
+                        // Global config is optional: continue, but return a warning for the caller
+                        warnings.push(format!(
+                            "Failed to load global config from {}: {}",
+                            global_path.display(),
+                            e
+                        ));
+                    }
+                }
+            }
+        }
+
+        // 2. Try local (per-repo) config
+        let local_path = local_path.as_ref();
+        if local_path.exists() {
+            let count = registry.load_from_file(local_path)?;
+            sources.push(ConfigSource {
+                path: local_path.to_path_buf(),
+                agents_loaded: count,
+            });
+        }
+
+        Ok((registry, sources, warnings))
+    }
+
+    /// Merge another config file into this registry
+    ///
+    /// Agents from the new file override existing agents with the same name.
+    /// If the new file has fallback config, it replaces the existing fallback config.
+    #[allow(dead_code)]
+    pub(crate) fn merge_from_file<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<usize, AgentConfigError> {
+        match AgentsConfigFile::load_from_file(path)? {
+            Some(config) => {
+                let count = config.agents.len();
+                for (name, agent_toml) in config.agents {
+                    self.register(&name, agent_toml.into());
+                }
+                // Only update fallback if new config has non-empty fallback
+                if config.fallback.has_fallbacks(AgentRole::Developer)
+                    || config.fallback.has_fallbacks(AgentRole::Reviewer)
+                {
+                    self.fallback = config.fallback;
+                }
+                Ok(count)
+            }
+            None => Ok(0),
+        }
     }
 
     /// Get the fallback configuration
@@ -993,6 +1109,37 @@ cmd = "testbot exec"
     }
 
     #[test]
+    fn test_agent_chain_alias() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("agents.toml");
+
+        // Use the new [agent_chain] section name
+        let mut file = std::fs::File::create(&config_path).unwrap();
+        writeln!(
+            file,
+            r#"
+[agent_chain]
+developer = ["opencode", "claude", "codex"]
+reviewer = ["claude", "codex"]
+max_retries = 2
+retry_delay_ms = 500
+"#
+        )
+        .unwrap();
+
+        let registry = AgentRegistry::with_config_file(&config_path).unwrap();
+        let fallback = registry.fallback_config();
+
+        // Should work with agent_chain alias
+        assert_eq!(fallback.developer, vec!["opencode", "claude", "codex"]);
+        assert_eq!(fallback.reviewer, vec!["claude", "codex"]);
+        assert_eq!(fallback.max_retries, 2);
+        assert_eq!(fallback.retry_delay_ms, 500);
+    }
+
+    #[test]
     fn test_ensure_config_exists_creates_file() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join(".agent/agents.toml");
@@ -1097,5 +1244,90 @@ cmd = "testbot exec"
             assert_eq!(actual.can_commit, expected.can_commit);
             assert_eq!(actual.json_parser, expected.json_parser);
         }
+    }
+
+    #[test]
+    fn test_with_merged_configs_no_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let local_path = dir.path().join("nonexistent/agents.toml");
+
+        let (registry, sources, warnings) =
+            AgentRegistry::with_merged_configs(&local_path).unwrap();
+
+        // Should have built-in defaults
+        assert!(registry.is_known("claude"));
+        assert!(registry.is_known("codex"));
+
+        // No sources loaded (no files existed)
+        assert!(sources.is_empty());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_with_merged_configs_local_only() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let local_path = dir.path().join("agents.toml");
+
+        // Create a local config that overrides claude
+        let mut file = std::fs::File::create(&local_path).unwrap();
+        writeln!(
+            file,
+            r#"
+[agents.claude]
+cmd = "claude-custom"
+json_parser = "generic"
+
+[agents.mybot]
+cmd = "mybot run"
+"#
+        )
+        .unwrap();
+
+        let (registry, sources, warnings) =
+            AgentRegistry::with_merged_configs(&local_path).unwrap();
+        assert!(warnings.is_empty());
+
+        // Should have both built-in and custom agents
+        assert!(registry.is_known("codex")); // Built-in
+        assert!(registry.is_known("mybot")); // Custom
+
+        // Claude should be overridden
+        let claude = registry.get("claude").unwrap();
+        assert_eq!(claude.cmd, "claude-custom");
+        assert_eq!(claude.json_parser, JsonParserType::Generic);
+
+        // One source should be loaded
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].path, local_path);
+        assert_eq!(sources[0].agents_loaded, 2); // claude + mybot
+    }
+
+    #[test]
+    fn test_global_config_dir_returns_some() {
+        // Should return Some on most systems (may fail in very minimal environments)
+        // This is more of a smoke test
+        if let Some(path) = global_config_dir() {
+            assert!(path.ends_with("ralph") || path.to_string_lossy().contains("ralph"));
+        }
+    }
+
+    #[test]
+    fn test_global_agents_config_path() {
+        if let Some(path) = global_agents_config_path() {
+            assert!(path.ends_with("agents.toml"));
+            assert!(path.to_string_lossy().contains("ralph"));
+        }
+    }
+
+    #[test]
+    fn test_config_source_struct() {
+        let source = ConfigSource {
+            path: PathBuf::from("/test/agents.toml"),
+            agents_loaded: 5,
+        };
+        assert_eq!(source.path, PathBuf::from("/test/agents.toml"));
+        assert_eq!(source.agents_loaded, 5);
     }
 }

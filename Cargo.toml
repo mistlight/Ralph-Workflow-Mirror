@@ -27,6 +27,9 @@ chrono = "0.4"
 # Environment and process management
 which = "6.0"
 
+# Cross-platform home/config directory resolution
+dirs = "5.0"
+
 # Error handling
 thiserror = "2.0"
 anyhow = "1.0"
