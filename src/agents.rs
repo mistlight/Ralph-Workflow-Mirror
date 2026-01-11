@@ -260,8 +260,8 @@ impl AgentConfig {
 /// 2. The **fallback agents** (remaining in the list) to try if the preferred fails
 ///
 /// This provides a unified way to configure which agents to use and in what order.
-/// When `--use-fallback` is enabled, Ralph will automatically switch to the next
-/// agent in the chain when encountering errors like rate limits or auth failures.
+/// Ralph automatically switches to the next agent in the chain when encountering
+/// errors like rate limits or auth failures.
 ///
 /// Note: For backward compatibility, this section can be named either `[fallback]`
 /// or `[agent_chain]` in the TOML config file.
@@ -485,6 +485,7 @@ impl AgentRegistry {
     }
 
     /// Get the JSON parser type for an agent
+    #[allow(dead_code)]
     pub(crate) fn parser_type(&self, agent_name: &str) -> JsonParserType {
         self.get(agent_name)
             .map(|c| c.json_parser)
@@ -607,6 +608,7 @@ impl AgentRegistry {
     }
 
     /// Set the fallback configuration
+    #[allow(dead_code)]
     pub(crate) fn set_fallback(&mut self, fallback: FallbackConfig) {
         self.fallback = fallback;
     }
@@ -619,6 +621,42 @@ impl AgentRegistry {
             .filter(|name| self.is_known(name))
             .map(|s| s.as_str())
             .collect()
+    }
+
+    /// Validate that agent chains are configured for both roles.
+    ///
+    /// Returns Ok(()) if both developer and reviewer chains are configured,
+    /// or an Err with a helpful error message if not.
+    pub(crate) fn validate_agent_chains(&self) -> Result<(), String> {
+        let has_developer = self.fallback.has_fallbacks(AgentRole::Developer);
+        let has_reviewer = self.fallback.has_fallbacks(AgentRole::Reviewer);
+
+        if !has_developer && !has_reviewer {
+            return Err(
+                "No agent chain configured.\n\
+                Please add an [agent_chain] section to your agents.toml file.\n\
+                Run 'ralph --init' to create a default configuration."
+                    .to_string(),
+            );
+        }
+
+        if !has_developer {
+            return Err(
+                "No developer agent chain configured.\n\
+                Add 'developer = [\"claude\", ...]' to your [agent_chain] section."
+                    .to_string(),
+            );
+        }
+
+        if !has_reviewer {
+            return Err(
+                "No reviewer agent chain configured.\n\
+                Add 'reviewer = [\"codex\", ...]' to your [agent_chain] section."
+                    .to_string(),
+            );
+        }
+
+        Ok(())
     }
 
     /// Check if an agent is available (command exists and is executable)
@@ -1329,5 +1367,51 @@ cmd = "mybot run"
         };
         assert_eq!(source.path, PathBuf::from("/test/agents.toml"));
         assert_eq!(source.agents_loaded, 5);
+    }
+
+    #[test]
+    fn test_validate_agent_chains_empty() {
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.set_fallback(FallbackConfig::default());
+        assert!(registry.validate_agent_chains().is_err());
+        let err = registry.validate_agent_chains().unwrap_err();
+        assert!(err.contains("No agent chain configured"));
+    }
+
+    #[test]
+    fn test_validate_agent_chains_developer_only() {
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.set_fallback(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec![],
+            ..Default::default()
+        });
+        assert!(registry.validate_agent_chains().is_err());
+        let err = registry.validate_agent_chains().unwrap_err();
+        assert!(err.contains("No reviewer agent chain"));
+    }
+
+    #[test]
+    fn test_validate_agent_chains_reviewer_only() {
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.set_fallback(FallbackConfig {
+            developer: vec![],
+            reviewer: vec!["codex".to_string()],
+            ..Default::default()
+        });
+        assert!(registry.validate_agent_chains().is_err());
+        let err = registry.validate_agent_chains().unwrap_err();
+        assert!(err.contains("No developer agent chain"));
+    }
+
+    #[test]
+    fn test_validate_agent_chains_complete() {
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.set_fallback(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["codex".to_string()],
+            ..Default::default()
+        });
+        assert!(registry.validate_agent_chains().is_ok());
     }
 }
