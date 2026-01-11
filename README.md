@@ -3,286 +3,263 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 
-Ralph is a **PROMPT-driven, multi-agent orchestrator** inspired by [Geoffrey Huntley](https://ghuntley.com/ralph/) for git repositories. It runs a developer agent (default: Claude) to make progress against `PROMPT.md`, then runs a reviewer agent (default: Codex) to review and apply fixes, optionally running your checks and creating a commit.
+**Ralph automates your AI coding workflow.** Write what you want in plain English, and Ralph coordinates AI agents to build it, review it, and commit it - all hands-free.
 
-**Key Features:**
-- Multi-agent workflow: Separate developer and reviewer agents for implementation and quality
-- PROMPT-driven: Define your goals in `PROMPT.md`, let agents do the work
-- Automatic fallback: Switch agents on rate limits or errors
-- Pluggable agents: Use Claude, Codex, OpenCode, Aider, Goose, Cline, and more
-- Streaming output: Real-time JSON parsing for Claude and Codex output
-- Git worktree support: Works correctly in git worktrees
+Inspired by [Geoffrey Huntley's Ralph concept](https://ghuntley.com/ralph/).
 
-## What Ralph does
+## How It Works
 
-When you run `ralph`, it:
+```
+You write PROMPT.md     Ralph runs AI agents      You get working code
+describing what         to implement and          committed to your
+you want built          review the changes        git repository
+       |                       |                        |
+       v                       v                        v
+   "Add a dark            Developer Agent         git commit -m
+    mode toggle"          writes the code         "feat: add dark
+                               |                  mode toggle"
+                               v
+                          Reviewer Agent
+                          checks quality
+                          and fixes issues
+```
 
-1. Ensures a few working files exist (creates them if missing): `PROMPT.md`, `.agent/STATUS.md`, `.agent/NOTES.md`, `.agent/ISSUES.md`, plus `.agent/logs/`.
-   - If no agents config exists yet, Ralph first creates a full default template at `.agent/agents.toml` (or `RALPH_AGENTS_CONFIG`) and exits so you can review/edit it.
-2. Runs the **developer agent** for `N` iterations (default: 5), prompting it based on `PROMPT.md`.
-3. Runs the **reviewer agent** in a review -> fix -> review loop (default: 2 review passes).
-4. Optionally runs a fast check after each dev iteration and/or a full check at the end.
-5. Stages and commits changes (either via the reviewer, or via Ralph as a fallback).
+**That's it.** You describe your goal, Ralph does the coding.
 
-## Prerequisites
+## Who Is This For?
 
-- You must run Ralph inside a git repository (including git worktrees).
-- You must have the agent CLIs you want to use installed and authenticated:
-  - Defaults: `claude` and `codex`
-  - Built-in alternatives: `opencode`, `aider`, `goose`, `cline`, `continue`, `amazon-q`, `gemini`
-- Optional: `pbcopy` (macOS) for clipboard copy of prompts in interactive mode.
+- **Vibecoding enthusiasts** - Let AI write your code while you focus on ideas
+- **Developers** - Automate repetitive implementation tasks
+- **Teams** - Consistent AI-assisted development with built-in code review
+- **Anyone** building software with AI assistants like Claude, Codex, or similar tools
 
-## Install
+## Quick Start
 
-### From source (recommended)
+### 1. Install Ralph
 
 ```bash
-# Clone the repository
+# Option A: From source (requires Rust)
 git clone https://codeberg.org/mistlight/RalphWithReviewer.git
 cd RalphWithReviewer
-
-# Build optimized release
-cargo build --release
-
-# Install to ~/.cargo/bin (or use make install-local)
 cargo install --path .
+
+# Option B: Using Makefile
+git clone https://codeberg.org/mistlight/RalphWithReviewer.git
+cd RalphWithReviewer
+make install-local
 ```
 
-### Via Makefile
+### 2. Install AI Agents
 
-- System install (may require sudo): `make install`
-- User install (no sudo): `make install-local`
+Ralph needs AI coding tools to do the actual work. Install at least one:
 
-### Development build
+| Agent | Install | Notes |
+|-------|---------|-------|
+| **Claude Code** | `npm install -g @anthropic/claude-code` | Recommended developer agent |
+| **Codex** | `npm install -g @openai/codex` | Recommended reviewer agent |
+| **OpenCode** | See [opencode.ai](https://opencode.ai) | Works for both roles |
+| **Aider** | `pip install aider-chat` | Popular alternative |
+
+After installing, make sure you've authenticated with your chosen agent (e.g., `claude auth` or set API keys).
+
+### 3. Run Ralph
+
+Navigate to any git repository and:
 
 ```bash
-cargo build
-./target/debug/ralph --help
+# Create a file describing what you want
+echo "Add a button that says Hello World" > PROMPT.md
+
+# Run Ralph
+ralph "feat: add hello button"
 ```
 
-## Quick start
+Ralph will:
+1. Create working files in `.agent/` (if they don't exist)
+2. Run the developer agent to implement your prompt
+3. Run the reviewer agent to check and fix issues
+4. Commit the changes with your message
 
-1. In your repo root, create or edit `PROMPT.md` to describe what you want done.
-2. Run Ralph:
+## Basic Usage
+
+### The PROMPT.md File
+
+This is where you describe what you want built. Write in plain English:
+
+```markdown
+# What I Want
+
+Add a dark mode toggle to the settings page.
+
+## Requirements
+- Toggle switch in the top-right corner
+- Save preference to localStorage
+- Apply dark theme immediately when toggled
+```
+
+### Running Ralph
 
 ```bash
-ralph "feat: implement the prompt"
+# Basic usage - uses default agents (Claude + Codex)
+ralph "feat: add dark mode"
+
+# Use a different agent preset
+ralph --preset opencode "feat: add dark mode"
+
+# Control how many times agents iterate
+ralph --developer-iters 3 --reviewer-reviews 1 "quick fix"
+
+# See what's happening in detail
+ralph --full "feat: complex feature"
 ```
 
-If you omit the commit message, Ralph uses a default.
-
-Use `--preset opencode` to run `opencode` for both roles:
+### Checking What Agents Are Available
 
 ```bash
-ralph --preset opencode "chore: run with opencode"
+# List all configured agents
+ralph --list-agents
+
+# List only agents you have installed
+ralph --list-available-agents
 ```
-
-## CLI usage
-
-```
-ralph [COMMIT_MSG] [OPTIONS]
-```
-
-Common options:
-
-- `--developer-iters <N>` (alias: `--claude-iters`): number of developer iterations
-- `--reviewer-reviews <N>` (alias: `--codex-reviews`): number of reviewer re-review passes after fixes
-- `--preset <default|opencode>`: pick a common agent combination quickly
-- `--developer-agent <NAME>` (alias: `--driver-agent`): which agent to use for the developer role
-- `--reviewer-agent <NAME>`: which agent to use for the reviewer role
-- `--use-fallback`: enable automatic agent switching on failures (rate limits, token exhaustion, etc.)
-- `-v, --verbosity <0..4>`: output verbosity (0=quiet, 2=default, 3=full, 4=debug; see also `--quiet`, `--full`, `--debug`)
-
-Run `ralph --help` for the authoritative list.
 
 ## Configuration
 
-Ralph's configuration is split across:
+### First Run Setup
 
-- **Environment variables** (core runtime configuration)
-- **Config files** (TOML) for defining and overriding agent commands
+On first run, Ralph creates a `.agent/` folder in your repo with:
+- `agents.toml` - Agent configuration (edit to customize)
+- `STATUS.md`, `NOTES.md`, `ISSUES.md` - Working files for agents
+- `logs/` - Agent output logs
 
-### Config file locations
+### Choosing Agents
 
-Ralph loads config files in order of priority (later overrides earlier):
+Ralph uses two agents with different roles:
 
-1. **Built-in defaults** - All standard agents pre-configured
-2. **Global config** (`~/.config/ralph/agents.toml`) - Your personal defaults
-3. **Project config** (from `RALPH_AGENTS_CONFIG`, default: `.agent/agents.toml`) - Repo-specific settings
+| Role | What It Does | Default |
+|------|--------------|---------|
+| **Developer** | Writes and implements code | Claude |
+| **Reviewer** | Reviews code and suggests fixes | Codex |
 
-Notes:
-- `RALPH_AGENTS_CONFIG` selects the *project config path*; it does not add an extra layer. If you set it, `.agent/agents.toml` is skipped unless you point `RALPH_AGENTS_CONFIG` at `.agent/agents.toml`.
-- Relative `RALPH_AGENTS_CONFIG` paths are resolved against the git repo root (so running from subdirectories and git worktrees behaves consistently).
-
-To generate config files:
-
+Change agents via command line:
 ```bash
-# Create per-repo config
-ralph --init
-
-# Create global config (applies to all repositories)
-ralph --init-global
+ralph --developer-agent opencode --reviewer-agent claude
 ```
 
-### Config file format
-
-```toml
-# ~/.config/ralph/agents.toml or .agent/agents.toml
-
-[agents.myagent]
-cmd = "my-ai-tool run"
-json_flag = "--json-stream"
-yolo_flag = "--auto-fix"
-verbose_flag = "--verbose"
-can_commit = true
-json_parser = "claude"  # "claude" | "codex" | "generic"
+Or via environment variables:
+```bash
+export RALPH_DEVELOPER_AGENT=aider
+export RALPH_REVIEWER_AGENT=claude
+ralph "feat: my feature"
 ```
 
-Fields:
+### Agent Configuration File
 
-- `cmd` (required): base command to run the agent
-- `json_flag` (optional): flag appended when Ralph wants JSON output
-- `yolo_flag` (optional): flag appended for non-interactive/autonomous mode
-- `verbose_flag` (optional): flag appended for verbose output
-- `can_commit` (optional, default `true`): whether this agent is allowed to run `git commit`
-- `json_parser` (optional): how to parse the agent's output (`claude`, `codex`, or `generic`)
-
-### Examples
-
-Override the built-in `claude` agent command:
+Edit `.agent/agents.toml` to customize agents or add new ones:
 
 ```toml
+# Override an existing agent
 [agents.claude]
 cmd = "claude -p"
 json_flag = "--output-format=stream-json"
 yolo_flag = "--dangerously-skip-permissions"
-verbose_flag = "--verbose"
-json_parser = "claude"
+
+# Add a custom agent
+[agents.myagent]
+cmd = "my-ai-tool run"
+json_parser = "generic"  # Use "generic" if agent doesn't output JSON
 ```
 
-Add an agent that prints plain text (no JSON parsing):
-
-```toml
-[agents.my_plain_agent]
-cmd = "some-tool chat"
-json_parser = "generic"
+Create a global config that applies to all your repos:
+```bash
+ralph --init-global
+# Creates ~/.config/ralph/agents.toml
 ```
 
-You can start from `examples/agents.toml` and copy it into `.agent/agents.toml`.
+## Environment Variables
 
-### Agent priority
+Quick reference for the most common settings:
 
-Ralph resolves agents in this order:
+| Variable | What It Does | Default |
+|----------|--------------|---------|
+| `RALPH_DEVELOPER_AGENT` | Which agent writes code | `claude` |
+| `RALPH_REVIEWER_AGENT` | Which agent reviews code | `codex` |
+| `RALPH_DEVELOPER_ITERS` | How many times developer runs | `5` |
+| `RALPH_REVIEWER_REVIEWS` | How many review passes | `2` |
+| `RALPH_VERBOSITY` | Output detail (0-4) | `2` |
+| `FAST_CHECK_CMD` | Run after each iteration | - |
+| `FULL_CHECK_CMD` | Run at the end (e.g., tests) | - |
 
-1. Built-in defaults (`claude`, `codex`, `opencode`, `aider`, `goose`, `cline`, `continue`, `amazon-q`, `gemini`)
-2. Global config (`~/.config/ralph/agents.toml`) overrides by name
-3. Per-repo config (`.agent/agents.toml`) overrides by name
-4. `RALPH_DEVELOPER_CMD` / `RALPH_REVIEWER_CMD` (if set) override the command Ralph runs for those roles
+Example with checks:
+```bash
+export FAST_CHECK_CMD="npm run lint"
+export FULL_CHECK_CMD="npm test"
+ralph "feat: add validation"
+```
 
-Pick agents by name:
+## Advanced Features
+
+### Automatic Fallback
+
+If an agent hits rate limits or errors, Ralph can automatically switch to another:
 
 ```bash
-ralph --developer-agent claude --reviewer-agent codex
-ralph --developer-agent myagent --reviewer-agent my_plain_agent
+ralph --use-fallback "feat: big feature"
 ```
 
-### Agent chains and fallback
-
-Ralph supports configuring preferred agents and automatic fallback switching. The agent chain defines:
-
-1. **Preferred agent** (first in the list): Primary choice for each role
-2. **Fallback agents** (rest of the list): Tried in order if the preferred fails
-
-If you don't pass `--developer-agent` / `--reviewer-agent` and you don't set `RALPH_DEVELOPER_AGENT` / `RALPH_REVIEWER_AGENT`, Ralph uses the first entry in the configured agent chain as the default for that role.
-
-When `--use-fallback` is enabled, Ralph automatically switches agents on:
-
-- Rate limits (429 errors)
-- Token/context exhaustion
-- API unavailability (503, timeout)
-- Authentication failures
-- Command not found
-
-Enable fallback via CLI or environment variable:
-
-```bash
-ralph --use-fallback
-# or
-RALPH_USE_FALLBACK=1 ralph
-```
-
-Configure agent chains in your config file (use either `[agent_chain]` or legacy `[fallback]`):
+Configure fallback chains in `.agent/agents.toml`:
 
 ```toml
 [agent_chain]
-developer = ["claude", "codex", "goose"]  # claude preferred, others are fallbacks
-reviewer = ["codex", "claude"]             # codex preferred for reviews
-max_retries = 3                            # retries per agent before trying next
-retry_delay_ms = 1000                      # delay between retries
+developer = ["claude", "codex", "aider"]  # Try in order
+reviewer = ["codex", "claude"]
+max_retries = 3
 ```
 
-## Environment variables
+### Verbosity Levels
 
-### Agent selection and commands
+Control how much output you see:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RALPH_DEVELOPER_AGENT` | Developer agent name | `claude` |
-| `RALPH_DRIVER_AGENT` | Alias for `RALPH_DEVELOPER_AGENT` | - |
-| `RALPH_REVIEWER_AGENT` | Reviewer agent name | `codex` |
-| `RALPH_DEVELOPER_CMD` | Override developer command | - |
-| `RALPH_REVIEWER_CMD` | Override reviewer command | - |
-| `RALPH_AGENTS_CONFIG` | Project agents TOML path (replaces `.agent/agents.toml`) | `.agent/agents.toml` |
-| `RALPH_PRESET` | Preset agent combo (`default`, `opencode`) | - |
+| Level | Flag | What You See |
+|-------|------|--------------|
+| 0 | `-q` or `--quiet` | Minimal - just results |
+| 1 | `-v1` | Normal output |
+| 2 | `-v2` | Verbose (default) |
+| 3 | `--full` | Everything, no truncation |
+| 4 | `--debug` | Raw JSON, maximum detail |
 
-### Iterations and review passes
+### Plumbing Commands
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RALPH_DEVELOPER_ITERS` | Developer iterations | `5` |
-| `RALPH_REVIEWER_REVIEWS` | Reviewer re-review passes | `2` |
-
-### Checks
-
-| Variable | Description |
-|----------|-------------|
-| `FAST_CHECK_CMD` | Command run after each dev iteration (non-blocking) |
-| `FULL_CHECK_CMD` | Command run at the end (blocking; failure aborts) |
-
-Examples:
+For scripting and CI/CD:
 
 ```bash
-FAST_CHECK_CMD="cargo fmt -- --check && cargo clippy -D warnings"
-FULL_CHECK_CMD="cargo test"
+# Generate commit message without committing
+ralph --generate-commit-msg
+
+# Show the generated message
+ralph --show-commit-msg
+
+# Apply commit using generated message
+ralph --apply-commit
 ```
 
-### Behavior and output
+## Files Ralph Creates
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RALPH_INTERACTIVE` | Keep agents interactive | `1` |
-| `RALPH_PROMPT_PATH` | Where to save last prompt | `.agent/last_prompt.txt` |
-| `RALPH_DEVELOPER_CONTEXT` | Developer context level (0=minimal, 1=normal) | `1` |
-| `RALPH_REVIEWER_CONTEXT` | Reviewer context level (0=minimal/fresh, 1=normal) | `0` |
-| `RALPH_VERBOSITY` | Output verbosity (0-4) | `2` |
-| `RALPH_USE_FALLBACK` | Enable automatic agent fallback | `0` |
+All working files live in `.agent/`:
 
-## Files Ralph creates
+```
+.agent/
+├── agents.toml        # Agent configuration
+├── STATUS.md          # Current status
+├── NOTES.md           # Agent notes/scratchpad
+├── ISSUES.md          # Issues found
+├── commit-message.txt # Generated commit message
+├── last_prompt.txt    # Last prompt sent to agent
+└── logs/              # Agent run logs
+```
 
-Ralph uses a `.agent/` working directory for run state and logs:
-
-- `.agent/logs/`: agent run logs (JSON lines or plain text)
-- `.agent/STATUS.md`: high-level status tracking
-- `.agent/NOTES.md`: scratchpad notes
-- `.agent/ISSUES.md`: issues found / to address
-- `.agent/PLAN.md`: current iteration plan (created then deleted each iteration)
-- `.agent/commit-message.txt`: generated commit message
-- `.agent/archive/`: archives prior status/notes/issues when using "fresh eyes" reviewer context
-- `.agent/last_prompt.txt`: last prompt generated and sent to an agent (configurable)
-
-If you don't want these tracked in git, add this to your repo's `.gitignore`:
-
-```gitignore
+Add to `.gitignore` if you don't want these tracked:
+```
 .agent/
 ```
 
@@ -290,15 +267,44 @@ If you don't want these tracked in git, add this to your repo's `.gitignore`:
 
 | Problem | Solution |
 |---------|----------|
-| "Not a git repository" | Run Ralph inside a repo (or `cd` into the repo root) |
-| Agent command not found | Ensure the CLI is installed and on your `PATH`, or define a custom agent in `.agent/agents.toml` |
-| Garbled output / parsing errors | Set `json_parser = "generic"` for that agent in `.agent/agents.toml` |
-| No commit created | Ralph falls back to `git add -A` + `git commit` if the reviewer doesn't commit |
-| Rate limit errors | Use `--use-fallback` to auto-switch agents, or wait and retry |
+| "Not a git repository" | Run Ralph inside a git repo |
+| "Agent not found" | Install the agent CLI and ensure it's on your PATH |
+| Garbled/broken output | Set `json_parser = "generic"` for that agent |
+| Rate limit errors | Use `--use-fallback` or wait and retry |
+| No commit created | Ralph falls back to `git commit` if the reviewer doesn't |
+| Nothing happening | Try `ralph --debug` to see what's going on |
+
+## Common Workflows
+
+### Simple Feature
+```bash
+echo "Add a logout button to the navbar" > PROMPT.md
+ralph "feat: add logout button"
+```
+
+### Bug Fix with Tests
+```bash
+cat > PROMPT.md << 'EOF'
+Fix the login bug where users get logged out after 5 minutes.
+Add a test to prevent regression.
+EOF
+FULL_CHECK_CMD="npm test" ralph "fix: session timeout bug"
+```
+
+### Iterative Development
+```bash
+# Start with a rough prompt
+echo "Build a todo app" > PROMPT.md
+ralph "feat: initial todo app"
+
+# Refine
+echo "Add due dates and priority levels to the todo app" > PROMPT.md
+ralph "feat: add due dates and priorities"
+```
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions welcome!
 
 1. Fork the repository
 2. Create a feature branch
