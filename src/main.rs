@@ -770,69 +770,7 @@ fn main() -> anyhow::Result<()> {
     ));
     println!();
 
-    // Phase 0: Planning
-    logger.header("PHASE 0: Planning", |c| c.cyan());
-    logger.info("Agent analyzing PROMPT.md and creating implementation plan...");
-
-    update_status(
-        "Starting planning phase",
-        "none",
-        "Analyze PROMPT.md and create PLAN.md",
-    )?;
-
-    let plan_prompt = prompt_for_agent(
-        Role::Developer,
-        Action::Plan,
-        ContextLevel::Normal,
-        None,
-        None,
-        None,
-    );
-
-    if config.use_fallback {
-        let _ = run_with_fallback(
-            AgentRole::Developer,
-            "planning",
-            &plan_prompt,
-            ".agent/logs/planning",
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-            &registry,
-            &config.developer_agent,
-        );
-    } else {
-        let _ = run_with_prompt(
-            &format!("{} planning", config.developer_agent),
-            &developer_cmd,
-            &plan_prompt,
-            ".agent/logs/planning.log",
-            developer_parser,
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-        );
-    }
-
-    // Verify PLAN.md was created (required)
-    let plan_path = std::path::Path::new(".agent/PLAN.md");
-    let plan_ok = plan_path
-        .exists()
-        .then(|| fs::read_to_string(plan_path).ok())
-        .flatten()
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false);
-
-    if !plan_ok {
-        anyhow::bail!("Planning phase did not create a non-empty .agent/PLAN.md");
-    }
-    logger.success("PLAN.md created successfully");
-
-    update_status("Plan created", "none", "Begin implementation")?;
-
-    // Phase 1: Developer iterations
+    // Phase 1: Development (PROMPT → PLAN → Execute → Delete PLAN, repeated X times)
     logger.header("PHASE 1: Development", |c| c.blue());
     logger.info(&format!(
         "Running {}{}{} developer iterations ({})",
@@ -849,6 +787,66 @@ fn main() -> anyhow::Result<()> {
         logger.subheader(&format!("Iteration {} of {}", i, config.developer_iters));
         print_progress(i, config.developer_iters, "Overall");
 
+        // Step 1: Create PLAN from PROMPT
+        logger.info("Creating plan from PROMPT.md...");
+        update_status(
+            "Starting planning phase",
+            "none",
+            "Analyze PROMPT.md and create PLAN.md",
+        )?;
+
+        let plan_prompt = prompt_for_agent(
+            Role::Developer,
+            Action::Plan,
+            ContextLevel::Normal,
+            None,
+            None,
+            None,
+        );
+
+        if config.use_fallback {
+            let _ = run_with_fallback(
+                AgentRole::Developer,
+                &format!("planning #{}", i),
+                &plan_prompt,
+                &format!(".agent/logs/planning_{}", i),
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+                &registry,
+                &config.developer_agent,
+            );
+        } else {
+            let _ = run_with_prompt(
+                &format!("{} planning #{}", config.developer_agent, i),
+                &developer_cmd,
+                &plan_prompt,
+                &format!(".agent/logs/planning_{}.log", i),
+                developer_parser,
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+            );
+        }
+
+        // Verify PLAN.md was created (required)
+        let plan_path = std::path::Path::new(".agent/PLAN.md");
+        let plan_ok = plan_path
+            .exists()
+            .then(|| fs::read_to_string(plan_path).ok())
+            .flatten()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+
+        if !plan_ok {
+            anyhow::bail!("Planning phase did not create a non-empty .agent/PLAN.md");
+        }
+        logger.success("PLAN.md created");
+
+        // Step 2: Execute the PLAN
+        logger.info("Executing plan...");
         update_status(
             "Starting development iteration",
             "none",
@@ -934,6 +932,13 @@ fn main() -> anyhow::Result<()> {
                 logger.warn("Fast check had issues (non-blocking)");
             }
         }
+
+        // Step 3: Delete the PLAN
+        logger.info("Deleting PLAN.md...");
+        if let Err(err) = delete_plan_file() {
+            logger.warn(&format!("Failed to delete PLAN.md: {}", err));
+        }
+        logger.success("PLAN.md deleted");
     }
 
     update_status("Code changes made", "none", "Evaluate codebase")?;
@@ -1156,11 +1161,6 @@ fn main() -> anyhow::Result<()> {
     disable_git_wrapper(agent_phase_guard.git_helpers);
     if let Err(err) = uninstall_hooks(&logger) {
         logger.warn(&format!("Failed to uninstall Ralph hooks: {}", err));
-    }
-
-    // Delete PLAN.md after integration is complete
-    if let Err(err) = delete_plan_file() {
-        logger.warn(&format!("Failed to delete PLAN.md: {}", err));
     }
 
     logger.header("PHASE 4: Commit Changes", |c| c.green());
