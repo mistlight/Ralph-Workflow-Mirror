@@ -246,8 +246,35 @@ impl AgentRegistry {
             },
         );
 
+        // Role-friendly aliases (so users don't have to hardcode a specific tool name).
+        // These intentionally default to the historical Claude/Codex pipeline, but can be
+        // overridden in `.agent/agents.toml` by redefining `agents.driver` / `agents.reviewer`.
+        registry.register(
+            "driver",
+            AgentConfig {
+                cmd: "claude -p".to_string(),
+                json_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+            },
+        );
+
         registry.register(
             "codex",
+            AgentConfig {
+                cmd: "codex exec".to_string(),
+                json_flag: "--json".to_string(),
+                yolo_flag: "--yolo".to_string(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Codex,
+            },
+        );
+
+        registry.register(
+            "reviewer",
             AgentConfig {
                 cmd: "codex exec".to_string(),
                 json_flag: "--json".to_string(),
@@ -366,6 +393,8 @@ mod tests {
 
         assert!(registry.is_known("claude"));
         assert!(registry.is_known("codex"));
+        assert!(registry.is_known("driver"));
+        assert!(registry.is_known("reviewer"));
         assert!(registry.is_known("opencode"));
         assert!(registry.is_known("aider"));
         assert!(!registry.is_known("unknown_agent"));

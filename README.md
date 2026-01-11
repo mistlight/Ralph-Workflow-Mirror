@@ -52,15 +52,20 @@ Run with:
 
 If you omit the commit message, Ralph uses a default.
 
+Use `--preset opencode` to run `opencode` for both roles:
+
+`ralph --preset opencode "chore: run with opencode"`
+
 ## CLI usage
 
 `ralph [COMMIT_MSG] [OPTIONS]`
 
 Common options:
 
-- `--claude-iters <N>`: number of developer iterations
-- `--codex-reviews <N>`: number of reviewer re-review passes after fixes
-- `--developer-agent <NAME>`: which agent to use for the developer role
+- `--developer-iters <N>` (alias: `--claude-iters`): number of developer iterations
+- `--reviewer-reviews <N>` (alias: `--codex-reviews`): number of reviewer re-review passes after fixes
+- `--preset <default|opencode>`: pick a common agent combination quickly
+- `--developer-agent <NAME>` (alias: `--driver-agent`): which agent to use for the developer role
 - `--reviewer-agent <NAME>`: which agent to use for the reviewer role
 - `-v, --verbosity <0..3>`: output verbosity (0=quiet, 3=full)
 
@@ -137,7 +142,7 @@ Ralph loads agents in this order:
 
 1. Built-in defaults (`claude`, `codex`, `opencode`, `aider`)
 2. Agents from `.agent/agents.toml` (or `RALPH_AGENTS_CONFIG`) override defaults by name
-3. `CLAUDE_CMD` / `CODEX_CMD` (if set) override the command Ralph runs for those roles
+3. `RALPH_DEVELOPER_CMD` / `RALPH_REVIEWER_CMD` (if set) override the command Ralph runs for those roles (legacy aliases: `CLAUDE_CMD` / `CODEX_CMD`)
 
 Pick agents by name:
 
@@ -149,15 +154,17 @@ Pick agents by name:
 ### Agent selection and commands
 
 - `RALPH_DEVELOPER_AGENT`: developer agent name (default `claude`)
+- `RALPH_DRIVER_AGENT`: alias for `RALPH_DEVELOPER_AGENT`
 - `RALPH_REVIEWER_AGENT`: reviewer agent name (default `codex`)
-- `CLAUDE_CMD`: override the exact command used for the developer role (highest priority)
-- `CODEX_CMD`: override the exact command used for the reviewer role (highest priority)
+- `RALPH_DEVELOPER_CMD`: override the exact command used for the developer role (highest priority; legacy alias: `CLAUDE_CMD`)
+- `RALPH_REVIEWER_CMD`: override the exact command used for the reviewer role (highest priority; legacy alias: `CODEX_CMD`)
 - `RALPH_AGENTS_CONFIG`: path to the agents TOML file (default `.agent/agents.toml`)
+- `RALPH_PRESET`: preset for common agent combos (`default`, `opencode`)
 
 ### Iterations and review passes
 
-- `CLAUDE_ITERS`: number of developer iterations (default `5`)
-- `CODEX_REVIEWS`: number of reviewer re-review passes after fixes (default `2`)
+- `RALPH_DEVELOPER_ITERS`: number of developer iterations (default `5`; legacy alias: `CLAUDE_ITERS`)
+- `RALPH_REVIEWER_REVIEWS`: number of reviewer re-review passes after fixes (default `2`; legacy alias: `CODEX_REVIEWS`)
 
 ### Checks
 
@@ -206,4 +213,3 @@ If you don’t want these tracked in git, add this to your repo’s `.gitignore`
 ## License
 
 MIT. See `LICENSE`.
-

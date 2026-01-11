@@ -22,11 +22,11 @@ impl From<u8> for ContextLevel {
     }
 }
 
-/// Generate Claude iteration prompt
+/// Generate developer iteration prompt
 /// Note: We do NOT tell the agent how many total iterations exist.
 /// This prevents "context pollution" - the agent should complete their task fully
 /// without knowing when the loop ends.
-pub fn prompt_claude_iteration(_iteration: u32, _total: u32, context: ContextLevel) -> String {
+pub fn prompt_developer_iteration(_iteration: u32, _total: u32, context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal | ContextLevel::Normal => r#"Read PROMPT.md and .agent/STATUS.md.
 Work toward PROMPT.md's Goal and Acceptance checks until all are satisfied.
@@ -36,9 +36,14 @@ Append brief bullets to .agent/NOTES.md."#
     }
 }
 
-/// Generate Codex review prompt with minimal context
+/// Back-compat alias for `prompt_developer_iteration`.
+pub fn prompt_claude_iteration(iteration: u32, total: u32, context: ContextLevel) -> String {
+    prompt_developer_iteration(iteration, total, context)
+}
+
+/// Generate reviewer review prompt with minimal context
 /// Reviewer should NOT see what was done - just evaluate the code against requirements
-pub fn prompt_codex_review(context: ContextLevel) -> String {
+pub fn prompt_reviewer_review(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"You are reviewing this repository with fresh eyes.
 
@@ -61,15 +66,25 @@ Write findings into .agent/ISSUES.md as a prioritized checklist."#
     }
 }
 
-/// Generate Codex fix prompt
-pub fn prompt_codex_fix() -> String {
+/// Back-compat alias for `prompt_reviewer_review`.
+pub fn prompt_codex_review(context: ContextLevel) -> String {
+    prompt_reviewer_review(context)
+}
+
+/// Generate fix prompt (applies to either role)
+pub fn prompt_fix() -> String {
     r#"Fix everything in .agent/ISSUES.md.
 Update .agent/ISSUES.md to mark items resolved.
 Append brief bullets to .agent/NOTES.md."#
         .to_string()
 }
 
-/// Generate Codex re-review prompt with minimal context
+/// Back-compat alias for `prompt_fix`.
+pub fn prompt_codex_fix() -> String {
+    prompt_fix()
+}
+
+/// Generate reviewer re-review prompt with minimal context
 pub fn prompt_codex_review_again(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"Re-review the repository with fresh eyes.
@@ -87,6 +102,11 @@ Be thorough but efficient."#
 If issues remain, fix them and update .agent/ISSUES.md."#
             .to_string(),
     }
+}
+
+/// Back-compat alias for `prompt_codex_review_again`.
+pub fn prompt_reviewer_review_again(context: ContextLevel) -> String {
+    prompt_codex_review_again(context)
 }
 
 /// Generate commit prompt for reviewer
@@ -131,13 +151,13 @@ pub fn prompt_for_agent(
     commit_msg: Option<&str>,
 ) -> String {
     match (role, action) {
-        (Role::Developer, Action::Iterate) => prompt_claude_iteration(
+        (Role::Developer, Action::Iterate) => prompt_developer_iteration(
             iteration.unwrap_or(1),
             total_iterations.unwrap_or(1),
             context,
         ),
-        (Role::Reviewer, Action::Review) => prompt_codex_review(context),
-        (Role::Reviewer, Action::Fix) | (Role::Developer, Action::Fix) => prompt_codex_fix(),
+        (Role::Reviewer, Action::Review) => prompt_reviewer_review(context),
+        (Role::Reviewer, Action::Fix) | (Role::Developer, Action::Fix) => prompt_fix(),
         (Role::Reviewer, Action::ReviewAgain) => prompt_codex_review_again(context),
         (_, Action::Commit) => prompt_commit(commit_msg.unwrap_or("chore: apply changes")),
         _ => "Unknown prompt action".to_string(),
@@ -150,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_prompt_claude_iteration() {
-        let result = prompt_claude_iteration(2, 5, ContextLevel::Normal);
+        let result = prompt_developer_iteration(2, 5, ContextLevel::Normal);
         assert!(result.contains("PROMPT.md"));
         assert!(result.contains("STATUS.md"));
         assert!(result.contains("until all are satisfied"));
@@ -158,21 +178,21 @@ mod tests {
 
     #[test]
     fn test_prompt_codex_review_fresh_eyes() {
-        let result = prompt_codex_review(ContextLevel::Minimal);
+        let result = prompt_reviewer_review(ContextLevel::Minimal);
         assert!(result.contains("fresh eyes"));
         assert!(result.contains("DO NOT read"));
     }
 
     #[test]
     fn test_prompt_codex_review_normal() {
-        let result = prompt_codex_review(ContextLevel::Normal);
+        let result = prompt_reviewer_review(ContextLevel::Normal);
         assert!(result.contains("PROMPT.md"));
         assert!(!result.contains("fresh eyes"));
     }
 
     #[test]
     fn test_prompt_codex_fix() {
-        let result = prompt_codex_fix();
+        let result = prompt_fix();
         assert!(result.contains("ISSUES.md"));
         assert!(result.contains("NOTES.md"));
     }
