@@ -66,6 +66,10 @@ EXAMPLES:\n\
     ralph --preset opencode                      Use opencode for both\n\
     ralph --developer-agent claude --reviewer-agent codex\n\
     ralph --use-fallback                         Auto-switch on errors\n\n\
+PLUMBING COMMANDS (for scripting):\n\
+    ralph --generate-commit-msg                  Generate message only\n\
+    ralph --show-commit-msg                      Display generated message\n\
+    ralph --apply-commit                         Commit using generated message\n\n\
 ENVIRONMENT VARIABLES:\n\
     RALPH_DEVELOPER_AGENT    Developer agent name (default: claude)\n\
     RALPH_REVIEWER_AGENT     Reviewer agent name (default: codex)\n\
@@ -158,6 +162,23 @@ struct Args {
     /// Initialize agents.toml config file and exit
     #[arg(long, help = "Create .agent/agents.toml with default settings")]
     init: bool,
+
+    // === Plumbing Commands ===
+    // These are low-level operations for scripting and automation
+    /// Generate commit message only (writes to .agent/commit-message.txt)
+    #[arg(long, help = "Run only the commit message generation phase, then exit")]
+    generate_commit_msg: bool,
+
+    /// Apply commit using existing .agent/commit-message.txt
+    #[arg(
+        long,
+        help = "Stage all changes and commit using .agent/commit-message.txt"
+    )]
+    apply_commit: bool,
+
+    /// Show the generated commit message and exit
+    #[arg(long, help = "Read and display .agent/commit-message.txt")]
+    show_commit_msg: bool,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -667,6 +688,69 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // === Plumbing Commands ===
+    // These are low-level operations that don't need the full pipeline
+
+    // --show-commit-msg: Just read and display the commit message file
+    if args.show_commit_msg {
+        require_git_repo()?;
+        let repo_root = get_repo_root()?;
+        env::set_current_dir(&repo_root)?;
+
+        match read_commit_message_file() {
+            Ok(msg) => {
+                println!("{}", msg);
+                return Ok(());
+            }
+            Err(e) => {
+                anyhow::bail!("Failed to read commit message: {}", e);
+            }
+        }
+    }
+
+    // --apply-commit: Stage all changes and commit using existing commit message
+    if args.apply_commit {
+        require_git_repo()?;
+        let repo_root = get_repo_root()?;
+        env::set_current_dir(&repo_root)?;
+
+        let commit_msg = read_commit_message_file()?;
+
+        logger.info("Staging all changes...");
+        git_add_all()?;
+
+        // Show what we're committing
+        let status_output = Command::new("git").args(["status", "--short"]).output()?;
+        let status_str = std::str::from_utf8(&status_output.stdout).unwrap_or("");
+        if !status_str.is_empty() {
+            println!("{}Changes to commit:{}", colors.bold(), colors.reset());
+            for line in status_str.lines().take(20) {
+                println!("  {}{}{}", colors.dim(), line, colors.reset());
+            }
+            println!();
+        }
+
+        logger.info(&format!(
+            "Commit message: {}{}{}",
+            colors.cyan(),
+            commit_msg,
+            colors.reset()
+        ));
+
+        logger.info("Creating commit...");
+        if git_commit(&commit_msg)? {
+            logger.success("Commit created successfully");
+            // Clean up the commit message file
+            if let Err(err) = delete_commit_message_file() {
+                logger.warn(&format!("Failed to delete commit-message.txt: {}", err));
+            }
+        } else {
+            logger.warn("Nothing to commit (working tree clean)");
+        }
+
+        return Ok(());
+    }
+
     // Get agent commands and parser types
     let developer_cmd = if let Some(cmd) = config.developer_cmd.clone() {
         cmd
@@ -702,6 +786,68 @@ fn main() -> anyhow::Result<()> {
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
     ensure_files()?;
+
+    // --generate-commit-msg: Run only the commit message generation phase
+    if args.generate_commit_msg {
+        let reviewer_context = ContextLevel::from(config.reviewer_context);
+        let mut timer = Timer::new();
+
+        logger.info("Generating commit message...");
+
+        let commit_msg_prompt = prompt_for_agent(
+            Role::Reviewer,
+            Action::GenerateCommitMessage,
+            reviewer_context,
+            None,
+            None,
+            None,
+        );
+
+        if config.use_fallback {
+            let _ = run_with_fallback(
+                AgentRole::Reviewer,
+                "generate commit msg",
+                &commit_msg_prompt,
+                ".agent/logs/commit_message",
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+                &registry,
+                &config.reviewer_agent,
+            );
+        } else {
+            let _ = run_with_prompt(
+                &format!("{} generate commit msg", config.reviewer_agent),
+                &reviewer_cmd,
+                &commit_msg_prompt,
+                ".agent/logs/commit_message.log",
+                reviewer_parser,
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+            );
+        }
+
+        // Verify and display the generated message
+        match read_commit_message_file() {
+            Ok(msg) => {
+                logger.success("Commit message generated:");
+                println!();
+                println!("{}{}{}", colors.cyan(), msg, colors.reset());
+                println!();
+                logger.info("Message saved to .agent/commit-message.txt");
+                logger.info("Run 'ralph --apply-commit' to create the commit");
+            }
+            Err(e) => {
+                logger.error(&format!("Failed to generate commit message: {}", e));
+                anyhow::bail!("Commit message generation failed");
+            }
+        }
+
+        return Ok(());
+    }
 
     // Set up git helpers
     let mut git_helpers = GitHelpers::new();

@@ -123,16 +123,53 @@ Be thorough but concise. This plan will guide the implementation."#
 /// Generate prompt for agent to generate a commit message
 /// Agent writes the commit message to .agent/commit-message.txt
 pub fn prompt_generate_commit_message() -> String {
-    r#"All work is complete. Generate a commit message for the changes.
+    r#"Generate a commit message for all changes made.
 
-Review the changes made and write a clear, concise commit message to .agent/commit-message.txt
+FIRST, gather context:
+1. Run `git diff HEAD` to see exactly what changed
+2. Read PROMPT.md to understand the original goal
+3. Read .agent/NOTES.md for a summary of work done (if it exists)
 
-The message should:
-1. Start with a type prefix (feat:, fix:, chore:, refactor:, docs:, test:)
-2. Be a single line (50-72 characters ideal)
-3. Describe WHAT was done and WHY
+THEN: Write a Conventional Commits message to .agent/commit-message.txt
 
-Write ONLY the commit message to .agent/commit-message.txt (no other text)."#
+FORMAT:
+<type>[optional scope][!]: <subject>
+
+[optional body]
+
+[optional footer]
+
+RULES:
+- type: feat|fix|docs|refactor|test|chore|perf|build|ci (required)
+- scope: area affected in parentheses, e.g., feat(parser): (optional)
+- !: add before colon for breaking changes, e.g., feat!: or feat(api)!:
+- subject: imperative mood ("add" not "added"), lowercase, no period, max 50 chars
+- body: wrap at 72 chars, explain what/why not how (optional, for complex changes)
+- footer: BREAKING CHANGE: description, or Fixes #123, Refs #456 (optional)
+
+GOOD EXAMPLES:
+feat(auth): add OAuth2 login flow
+fix: prevent null pointer in user lookup
+refactor(api): extract validation into middleware
+
+feat!: drop Python 3.7 support
+
+BREAKING CHANGE: Minimum Python version is now 3.8.
+
+feat: add CSV export for reports
+
+Add ability to export analytics reports as CSV files.
+Supports filtering by date range and custom column selection.
+
+Fixes #42
+
+BAD EXAMPLES (avoid these patterns):
+- "chore: apply changes" (too vague - what changes?)
+- "chore: update code" (meaningless)
+- "Updated the code" (no type, not imperative)
+- "feat: Add new feature." (capitalized, has period, vague)
+
+Write ONLY the commit message to .agent/commit-message.txt (no markdown fences, no extra text)."#
         .to_string()
 }
 
@@ -271,8 +308,51 @@ mod tests {
     #[test]
     fn test_prompt_generate_commit_message() {
         let result = prompt_generate_commit_message();
+        // Basic structure
         assert!(result.contains("commit-message.txt"));
-        assert!(result.contains("feat:"));
+        assert!(result.contains("Conventional Commits"));
+
+        // Context gathering instructions
+        assert!(result.contains("git diff HEAD"));
+        assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("NOTES.md"));
+
+        // Type prefixes
+        assert!(result.contains("feat"));
+        assert!(result.contains("fix"));
+        assert!(result.contains("docs"));
+        assert!(result.contains("refactor"));
+        assert!(result.contains("test"));
+        assert!(result.contains("chore"));
+        assert!(result.contains("perf"));
+
+        // Scope support
+        assert!(result.contains("scope"));
+        assert!(result.contains("feat(parser):"));
+
+        // Breaking change notation
+        assert!(result.contains("!:"));
+        assert!(result.contains("BREAKING CHANGE"));
+
+        // Imperative mood guidance
+        assert!(result.contains("imperative"));
+        assert!(result.contains("\"add\" not \"added\""));
+
+        // Character limits
+        assert!(result.contains("max 50 chars"));
+        assert!(result.contains("72 chars"));
+
+        // Issue references
+        assert!(result.contains("Fixes #"));
+
+        // Good examples
+        assert!(result.contains("feat(auth): add OAuth2 login flow"));
+        assert!(result.contains("fix: prevent null pointer"));
+
+        // Bad examples (anti-patterns to avoid)
+        assert!(result.contains("BAD EXAMPLES"));
+        assert!(result.contains("chore: apply changes"));
+        assert!(result.contains("too vague"));
     }
 
     #[test]
