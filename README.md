@@ -69,7 +69,7 @@ Common options:
 - `--developer-agent <NAME>` (alias: `--driver-agent`): which agent to use for the developer role
 - `--reviewer-agent <NAME>`: which agent to use for the reviewer role
 - `--use-fallback`: enable automatic agent switching on failures (rate limits, token exhaustion, etc.)
-- `-v, --verbosity <0..3>`: output verbosity (0=quiet, 3=full)
+- `-v, --verbosity <0..4>`: output verbosity (0=quiet, 2=default, 3=full, 4=debug; see also `--quiet`, `--full`, `--debug`)
 
 Run `ralph --help` for the authoritative list.
 
@@ -217,7 +217,7 @@ Examples:
 - `RALPH_PROMPT_PATH`: where Ralph writes the last generated prompt (default `.agent/last_prompt.txt`)
 - `RALPH_DEVELOPER_CONTEXT`: `0` minimal, `1` normal (default `1`)
 - `RALPH_REVIEWER_CONTEXT`: `0` minimal/fresh eyes, `1` normal (default `0`)
-- `RALPH_VERBOSITY`: `0..3` (default `1`)
+- `RALPH_VERBOSITY`: `0..4` (default `2`)
 - `RALPH_USE_FALLBACK`: `1` to enable automatic agent fallback on failures (default `0`)
 
 ## Files Ralph creates

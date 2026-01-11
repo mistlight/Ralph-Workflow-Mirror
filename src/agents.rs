@@ -503,8 +503,13 @@ impl AgentRegistry {
     /// Check if an agent is available (command exists and is executable)
     pub fn is_agent_available(&self, name: &str) -> bool {
         if let Some(config) = self.get(name) {
-            // Extract the base command (first word)
-            let base_cmd = config.cmd.split_whitespace().next().unwrap_or(&config.cmd);
+            let Ok(parts) = crate::utils::split_command(&config.cmd) else {
+                return false;
+            };
+            let Some(base_cmd) = parts.first() else {
+                return false;
+            };
+
             // Check if the command exists in PATH (portable; avoids shelling out)
             which::which(base_cmd).is_ok()
         } else {
