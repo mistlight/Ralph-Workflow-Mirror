@@ -1310,4 +1310,67 @@ The acceptance tests should pass.
             assert!(!Path::new(".agent/ISSUES.md").exists());
         });
     }
+
+    #[test]
+    fn test_issues_md_persists_within_review_fix_cycle() {
+        // This test documents the expected behavior for isolation mode:
+        // - ISSUES.md is cleaned at the START of a run (reset_context_for_isolation)
+        // - Within a run, Review creates ISSUES.md and Fix must be able to read it
+        // - No automatic cleanup happens between Review and Fix phases
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            let colors = Colors { enabled: false };
+            let logger = Logger::new(colors);
+
+            // Simulate start of run: isolation mode cleans up from previous run
+            fs::write(".agent/ISSUES.md", "old issues from previous run").unwrap();
+            reset_context_for_isolation(&logger).unwrap();
+            assert!(
+                !Path::new(".agent/ISSUES.md").exists(),
+                "ISSUES.md should be cleaned at start of run"
+            );
+
+            // Simulate Review phase: creates detailed ISSUES.md
+            let review_output = "- [ ] Critical: [src/main.rs:42] Missing error handling\n\
+                                 - [ ] High: [src/utils.rs:100] Potential null pointer";
+            fs::write(".agent/ISSUES.md", review_output).unwrap();
+            assert!(
+                Path::new(".agent/ISSUES.md").exists(),
+                "Review should create ISSUES.md"
+            );
+
+            // Simulate Fix phase: must be able to read ISSUES.md
+            // (no cleanup between Review and Fix - this is the key behavior)
+            let issues_content = fs::read_to_string(".agent/ISSUES.md").unwrap();
+            assert!(
+                issues_content.contains("Critical"),
+                "Fix phase must be able to read detailed issues from Review"
+            );
+            assert!(
+                issues_content.contains("src/main.rs:42"),
+                "Fix phase must see file locations to know where to fix"
+            );
+
+            // After Fix completes, it overwrites with vague sentence (per current design)
+            fs::write(".agent/ISSUES.md", "Issues addressed.").unwrap();
+
+            // Next Review iteration creates fresh detailed ISSUES.md
+            let review_output_2 = "- [ ] Medium: [src/lib.rs:50] Code style issue";
+            fs::write(".agent/ISSUES.md", review_output_2).unwrap();
+
+            // Fix can still read it
+            let issues_content_2 = fs::read_to_string(".agent/ISSUES.md").unwrap();
+            assert!(
+                issues_content_2.contains("Medium"),
+                "Fix phase in iteration 2 must read new issues"
+            );
+
+            // Only at next run start would isolation clean up
+            reset_context_for_isolation(&logger).unwrap();
+            assert!(
+                !Path::new(".agent/ISSUES.md").exists(),
+                "ISSUES.md should only be cleaned at start of next run"
+            );
+        });
+    }
 }
