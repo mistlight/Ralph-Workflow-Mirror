@@ -4,7 +4,10 @@ version = "0.1.3"
 edition = "2021"
 description = "PROMPT-driven multi-agent orchestrator for git repos"
 authors = ["Ralph Authors"]
-license = "MIT"
+license = "AGPL-3.0-only"
+readme = "README.md"
+repository = "https://codeberg.org/mistlight/RalphWithReviewer"
+homepage = "https://codeberg.org/mistlight/RalphWithReviewer"
 
 [[bin]]
 name = "ralph"
