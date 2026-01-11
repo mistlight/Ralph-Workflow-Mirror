@@ -40,21 +40,22 @@ source "${RALPH_SCRIPT_DIR}/lib/timer.zsh"
 source "${RALPH_SCRIPT_DIR}/lib/utils.zsh"
 source "${RALPH_SCRIPT_DIR}/lib/json_parser.zsh"
 source "${RALPH_SCRIPT_DIR}/lib/git_helpers.zsh"
+source "${RALPH_SCRIPT_DIR}/lib/prompts.zsh"
+source "${RALPH_SCRIPT_DIR}/lib/agents.zsh"
 
 ############################################
 # CONFIG: set these to match your CLIs
 ############################################
-# Defaults use --dangerously-skip-permissions for autonomous operation
-# (bypasses all permission checks including plan approval). Override for interactive TUIs:
-# - CLAUDE_CMD=claude
-# - CODEX_CMD=codex
-: "${CLAUDE_CMD:=claude -p --dangerously-skip-permissions --verbose --output-format=stream-json}"
-# Codex requires sandbox + approval flags for autonomous operation:
-#   --full-auto             = --sandbox workspace-write + --ask-for-approval on-request
-#   --sandbox danger-full-access = full filesystem access (needed if editing outside workspace)
-#   --ask-for-approval never     = skip all permission prompts
-# Using --yolo (alias for --dangerously-bypass-approvals-and-sandbox) matches Claude's behavior
-: "${CODEX_CMD:=codex exec --json --yolo}"
+# Agent selection - which AI assistants to use for each role
+# Available agents: claude, codex, opencode, aider (or register custom ones)
+: "${RALPH_DEVELOPER_AGENT:=claude}"
+: "${RALPH_REVIEWER_AGENT:=codex}"
+
+# Commands can be overridden directly, or built from agent configuration
+# The defaults use autonomous mode flags for non-interactive operation.
+# Override for interactive TUIs: CLAUDE_CMD=claude  CODEX_CMD=codex
+: "${CLAUDE_CMD:=$(agent_developer_cmd)}"
+: "${CODEX_CMD:=$(agent_reviewer_cmd)}"
 
 # Loop counts
 : "${CLAUDE_ITERS:=5}"
@@ -70,6 +71,11 @@ source "${RALPH_SCRIPT_DIR}/lib/git_helpers.zsh"
 : "${RALPH_USE_PTY:=0}"
 : "${RALPH_INTERACTIVE:=1}"    # 1 = keep agent in foreground (you can answer prompts), 0 = fire-and-forget
 : "${RALPH_PROMPT_PATH:=.agent/last_prompt.txt}"
+
+# Commit behavior:
+#   RALPH_REVIEWER_COMMITS=1 (default): Reviewer (Codex) creates the final commit
+#   RALPH_REVIEWER_COMMITS=0: Ralph creates the final commit after all phases
+: "${RALPH_REVIEWER_COMMITS:=1}"
 
 COMMIT_MSG="${1:-chore: apply PROMPT loop + Codex review/fix/review/review}"
 
@@ -175,42 +181,34 @@ run_with_prompt_arg() {
 }
 
 ############################################
-# Prompts (script cycles PROMPT.md; agents can update STATUS.md)
+# Prompts (using lib/prompts.zsh module)
+############################################
+# These wrapper functions maintain backward compatibility while
+# delegating to the prompts module for context-controlled output.
+#
+# Configuration (env vars):
+#   RALPH_REVIEWER_CONTEXT  0=fresh eyes (default), 1=normal context
+#   RALPH_DEVELOPER_CONTEXT 0=minimal, 1=normal (default)
 ############################################
 claude_prompt() {
   local i="$1"
-  cat <<EOF
-Iteration ${i}/${CLAUDE_ITERS}.
-
-Read PROMPT.md and .agent/STATUS.md.
-Make the next best progress step toward PROMPT.md's Goal and Acceptance checks.
-Update .agent/STATUS.md (last action, blockers, next action).
-Append brief bullets to .agent/NOTES.md.
-
-Then stop.
-EOF
+  prompt_claude_iteration "$i" "$CLAUDE_ITERS"
 }
 
 codex_review_prompt() {
-  cat <<'EOF'
-Review the repository against PROMPT.md (Goal + Acceptance checks).
-Write findings into .agent/ISSUES.md as a prioritized checklist.
-EOF
+  prompt_codex_review
 }
 
 codex_fix_prompt() {
-  cat <<'EOF'
-Fix everything in .agent/ISSUES.md.
-Update .agent/ISSUES.md to mark items resolved.
-Append brief bullets to .agent/NOTES.md.
-EOF
+  prompt_codex_fix
 }
 
 codex_review_again_prompt() {
-  cat <<'EOF'
-Re-review the repository after fixes against PROMPT.md.
-If issues remain, fix them and update .agent/ISSUES.md.
-EOF
+  prompt_codex_review_again
+}
+
+codex_commit_prompt() {
+  prompt_commit "$COMMIT_MSG"
 }
 
 ############################################
@@ -347,6 +345,19 @@ for j in $(seq 1 "$CODEX_REVIEWS"); do
   tlog_info ">>> CODEX VERIFICATION REVIEW ${j}/${CODEX_REVIEWS} COMPLETED <<<"
 done
 
+# Reviewer commit phase: let the reviewer (Codex) create the final commit
+if [[ "${RALPH_REVIEWER_COMMITS}" == "1" ]]; then
+  print_subheader "Reviewer Commit"
+  update_status "Reviewer creating commit" "none" "Commit all changes"
+
+  # Lift commit block so reviewer can commit
+  allow_reviewer_commit
+
+  run_with_prompt_arg "Codex commit" "$CODEX_CMD" "$(codex_commit_prompt)" ".agent/logs/codex_commit.log"
+  ((CODEX_RUNS_COMPLETED++))
+  tlog_info ">>> CODEX COMMIT PHASE COMPLETED <<<"
+fi
+
 tlog_info ">>> ALL CODEX PHASES COMPLETED (total runs: ${CODEX_RUNS_COMPLETED}) <<<"
 update_status "All Codex phases complete" "none" "Proceed to final checks or commit"
 
@@ -365,32 +376,55 @@ if [[ -n "$FULL_CHECK_CMD" ]]; then
 fi
 
 ############################################
-# Phase 4: Commit
+# Phase 4: Commit (only if Ralph commits, not reviewer)
 ############################################
-# Allow commit now
+# Allow commit now (cleanup for reviewer commit case too)
 end_agent_phase
 disable_git_wrapper
 trap - EXIT
 
-print_header "PHASE 4: Commit Changes" "$GREEN"
-log_to_file "=== PHASE 4: Commit ==="
+if [[ "${RALPH_REVIEWER_COMMITS}" != "1" ]]; then
+  print_header "PHASE 4: Commit Changes" "$GREEN"
+  log_to_file "=== PHASE 4: Commit ==="
 
-log_info "Staging all changes..."
-git add -A
+  log_info "Staging all changes..."
+  git add -A
 
-# Show what we're committing
-print ""
-print "${BOLD}Changes to commit:${RESET}"
-git status --short | head -20 | while read line; do
-  print "  ${DIM}${line}${RESET}"
-done
-print ""
+  # Show what we're committing
+  print ""
+  print "${BOLD}Changes to commit:${RESET}"
+  git status --short | head -20 | while read line; do
+    print "  ${DIM}${line}${RESET}"
+  done
+  print ""
 
-log_info "Creating commit..."
-if git commit -m "$COMMIT_MSG"; then
-  log_success "Commit created successfully"
+  log_info "Creating commit..."
+  if git commit -m "$COMMIT_MSG"; then
+    log_success "Commit created successfully"
+  else
+    log_warn "Nothing to commit (working tree clean)"
+  fi
 else
-  log_warn "Nothing to commit (working tree clean)"
+  # Reviewer already committed; show status
+  print_header "PHASE 4: Verify Commit" "$GREEN"
+  log_to_file "=== PHASE 4: Verify Commit ==="
+
+  # Check if reviewer made a commit
+  local last_commit_msg
+  last_commit_msg="$(git log -1 --pretty=%s 2>/dev/null || echo "")"
+  if [[ -n "$last_commit_msg" ]]; then
+    log_success "Reviewer created commit: ${CYAN}${last_commit_msg}${RESET}"
+  else
+    log_warn "No commit found - reviewer may have failed to commit"
+    # Fallback: create commit ourselves
+    log_info "Fallback: staging and committing changes..."
+    git add -A
+    if git commit -m "$COMMIT_MSG"; then
+      log_success "Fallback commit created"
+    else
+      log_warn "Nothing to commit (working tree clean)"
+    fi
+  fi
 fi
 
 ############################################
