@@ -162,7 +162,7 @@ Edit `.agent/agents.toml` to customize agents or add new ones:
 # Override an existing agent
 [agents.claude]
 cmd = "claude -p"
-json_flag = "--output-format=stream-json"
+output_flag = "--output-format=stream-json"
 yolo_flag = "--dangerously-skip-permissions"
 
 # Add a custom agent
