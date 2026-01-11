@@ -403,8 +403,10 @@ pub(crate) enum AgentErrorKind {
     RateLimited,
     /// Token/context limit exceeded - may need different agent
     TokenExhausted,
-    /// API temporarily unavailable - retry
+    /// API temporarily unavailable (server-side issue) - retry
     ApiUnavailable,
+    /// Network connectivity issue (client-side) - retry
+    NetworkError,
     /// Authentication failure - switch agent
     AuthFailure,
     /// Command not found - switch agent
@@ -422,6 +424,7 @@ impl AgentErrorKind {
             self,
             AgentErrorKind::RateLimited
                 | AgentErrorKind::ApiUnavailable
+                | AgentErrorKind::NetworkError
                 | AgentErrorKind::Transient
         )
     }
@@ -436,35 +439,113 @@ impl AgentErrorKind {
         )
     }
 
+    /// Check if this is a command not found error
+    pub(crate) fn is_command_not_found(&self) -> bool {
+        matches!(self, AgentErrorKind::CommandNotFound)
+    }
+
+    /// Check if this is a network-related error
+    pub(crate) fn is_network_error(&self) -> bool {
+        matches!(self, AgentErrorKind::NetworkError)
+    }
+
+    /// Get a user-friendly description of this error type
+    pub(crate) fn description(&self) -> &'static str {
+        match self {
+            AgentErrorKind::RateLimited => "API rate limit exceeded",
+            AgentErrorKind::TokenExhausted => "Token/context limit exceeded",
+            AgentErrorKind::ApiUnavailable => "API service temporarily unavailable",
+            AgentErrorKind::NetworkError => "Network connectivity issue",
+            AgentErrorKind::AuthFailure => "Authentication failure",
+            AgentErrorKind::CommandNotFound => "Command not found",
+            AgentErrorKind::Transient => "Transient error",
+            AgentErrorKind::Permanent => "Permanent error",
+        }
+    }
+
+    /// Get recovery advice for this error type
+    pub(crate) fn recovery_advice(&self) -> &'static str {
+        match self {
+            AgentErrorKind::RateLimited => {
+                "Will retry after delay. Consider reducing request frequency."
+            }
+            AgentErrorKind::TokenExhausted => {
+                "Switching to alternative agent. Consider reducing context size."
+            }
+            AgentErrorKind::ApiUnavailable => "API server issue. Will retry automatically.",
+            AgentErrorKind::NetworkError => {
+                "Check your internet connection. Will retry automatically."
+            }
+            AgentErrorKind::AuthFailure => "Check API key or run 'agent auth' to authenticate.",
+            AgentErrorKind::CommandNotFound => {
+                "Agent binary not installed. See installation guidance."
+            }
+            AgentErrorKind::Transient => "Temporary issue. Will retry automatically.",
+            AgentErrorKind::Permanent => "Unrecoverable error. Check agent logs for details.",
+        }
+    }
+
     /// Classify an error from exit code and output
     pub(crate) fn classify(exit_code: i32, stderr: &str) -> Self {
         let stderr_lower = stderr.to_lowercase();
 
-        // Rate limiting indicators
+        // Rate limiting indicators (API-side)
         if stderr_lower.contains("rate limit")
             || stderr_lower.contains("too many requests")
             || stderr_lower.contains("429")
+            || stderr_lower.contains("quota exceeded")
         {
             return AgentErrorKind::RateLimited;
         }
 
-        // Token/context exhaustion
+        // Token/context exhaustion (API-side)
         if stderr_lower.contains("token")
             || stderr_lower.contains("context length")
             || stderr_lower.contains("maximum context")
             || stderr_lower.contains("too long")
+            || stderr_lower.contains("input too large")
         {
             return AgentErrorKind::TokenExhausted;
         }
 
-        // API unavailable
+        // Network errors (client-side connectivity issues)
+        // These indicate the request couldn't reach the API at all
+        if stderr_lower.contains("connection refused")
+            || stderr_lower.contains("network unreachable")
+            || stderr_lower.contains("dns resolution")
+            || stderr_lower.contains("name resolution")
+            || stderr_lower.contains("no route to host")
+            || stderr_lower.contains("network is down")
+            || stderr_lower.contains("host unreachable")
+            || stderr_lower.contains("connection reset")
+            || stderr_lower.contains("broken pipe")
+            || stderr_lower.contains("econnrefused")
+            || stderr_lower.contains("enetunreach")
+        {
+            return AgentErrorKind::NetworkError;
+        }
+
+        // API unavailable (server-side issues - the request reached the server but it's having issues)
         if stderr_lower.contains("service unavailable")
             || stderr_lower.contains("503")
             || stderr_lower.contains("502")
-            || stderr_lower.contains("timeout")
-            || stderr_lower.contains("connection refused")
+            || stderr_lower.contains("504")
+            || stderr_lower.contains("500")
+            || stderr_lower.contains("internal server error")
+            || stderr_lower.contains("bad gateway")
+            || stderr_lower.contains("gateway timeout")
+            || stderr_lower.contains("overloaded")
+            || stderr_lower.contains("maintenance")
         {
             return AgentErrorKind::ApiUnavailable;
+        }
+
+        // Request timeout can be either network or server - classify as transient
+        if stderr_lower.contains("timeout")
+            || stderr_lower.contains("timed out")
+            || stderr_lower.contains("request timeout")
+        {
+            return AgentErrorKind::Transient;
         }
 
         // Auth failures
@@ -473,6 +554,9 @@ impl AgentErrorKind {
             || stderr_lower.contains("401")
             || stderr_lower.contains("api key")
             || stderr_lower.contains("invalid token")
+            || stderr_lower.contains("forbidden")
+            || stderr_lower.contains("403")
+            || stderr_lower.contains("access denied")
         {
             return AgentErrorKind::AuthFailure;
         }
@@ -682,13 +766,15 @@ impl AgentRegistry {
 
         if !has_developer {
             return Err("No developer agent chain configured.\n\
-                Add 'developer = [\"claude\", ...]' to your [agent_chain] section."
+                Add 'developer = [\"your-agent\", ...]' to your [agent_chain] section.\n\
+                Use --list-agents to see available agents."
                 .to_string());
         }
 
         if !has_reviewer {
             return Err("No reviewer agent chain configured.\n\
-                Add 'reviewer = [\"codex\", ...]' to your [agent_chain] section."
+                Add 'reviewer = [\"your-agent\", ...]' to your [agent_chain] section.\n\
+                Use --list-agents to see available agents."
                 .to_string());
         }
 
@@ -1153,6 +1239,10 @@ json_parser = "codex"
             AgentErrorKind::classify(1, "Error: 429 Too Many Requests"),
             AgentErrorKind::RateLimited
         );
+        assert_eq!(
+            AgentErrorKind::classify(1, "quota exceeded"),
+            AgentErrorKind::RateLimited
+        );
 
         // Token exhaustion
         assert_eq!(
@@ -1164,14 +1254,42 @@ json_parser = "codex"
             AgentErrorKind::TokenExhausted
         );
 
-        // API unavailable
+        // Network errors (client-side connectivity)
+        assert_eq!(
+            AgentErrorKind::classify(1, "connection refused"),
+            AgentErrorKind::NetworkError
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "network unreachable"),
+            AgentErrorKind::NetworkError
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "DNS resolution failed"),
+            AgentErrorKind::NetworkError
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "ECONNREFUSED"),
+            AgentErrorKind::NetworkError
+        );
+
+        // API unavailable (server-side)
         assert_eq!(
             AgentErrorKind::classify(1, "service unavailable"),
             AgentErrorKind::ApiUnavailable
         );
         assert_eq!(
-            AgentErrorKind::classify(1, "connection refused"),
+            AgentErrorKind::classify(1, "503 Service Unavailable"),
             AgentErrorKind::ApiUnavailable
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "internal server error"),
+            AgentErrorKind::ApiUnavailable
+        );
+
+        // Timeouts are transient (could be either network or server)
+        assert_eq!(
+            AgentErrorKind::classify(1, "request timeout"),
+            AgentErrorKind::Transient
         );
 
         // Auth failures
@@ -1181,6 +1299,10 @@ json_parser = "codex"
         );
         assert_eq!(
             AgentErrorKind::classify(1, "invalid api key"),
+            AgentErrorKind::AuthFailure
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "403 forbidden"),
             AgentErrorKind::AuthFailure
         );
 
@@ -1203,6 +1325,7 @@ json_parser = "codex"
     fn test_agent_error_kind_should_retry() {
         assert!(AgentErrorKind::RateLimited.should_retry());
         assert!(AgentErrorKind::ApiUnavailable.should_retry());
+        assert!(AgentErrorKind::NetworkError.should_retry());
         assert!(AgentErrorKind::Transient.should_retry());
 
         assert!(!AgentErrorKind::TokenExhausted.should_retry());
@@ -1219,8 +1342,35 @@ json_parser = "codex"
 
         assert!(!AgentErrorKind::RateLimited.should_fallback());
         assert!(!AgentErrorKind::ApiUnavailable.should_fallback());
+        assert!(!AgentErrorKind::NetworkError.should_fallback());
         assert!(!AgentErrorKind::Transient.should_fallback());
         assert!(!AgentErrorKind::Permanent.should_fallback());
+    }
+
+    #[test]
+    fn test_agent_error_kind_description_and_advice() {
+        // Verify all error kinds have descriptions and advice
+        let all_kinds = [
+            AgentErrorKind::RateLimited,
+            AgentErrorKind::TokenExhausted,
+            AgentErrorKind::ApiUnavailable,
+            AgentErrorKind::NetworkError,
+            AgentErrorKind::AuthFailure,
+            AgentErrorKind::CommandNotFound,
+            AgentErrorKind::Transient,
+            AgentErrorKind::Permanent,
+        ];
+
+        for kind in all_kinds {
+            assert!(!kind.description().is_empty());
+            assert!(!kind.recovery_advice().is_empty());
+        }
+
+        // Specific checks
+        assert!(AgentErrorKind::NetworkError.is_network_error());
+        assert!(!AgentErrorKind::ApiUnavailable.is_network_error());
+        assert!(AgentErrorKind::CommandNotFound.is_command_not_found());
+        assert!(!AgentErrorKind::NetworkError.is_command_not_found());
     }
 
     #[test]

@@ -158,13 +158,13 @@ pub(crate) struct Config {
     pub(crate) developer_agent: Option<String>,
     /// Reviewer agent (set via CLI, env, or agent_chain)
     pub(crate) reviewer_agent: Option<String>,
-    /// Developer command override (legacy env alias: `CLAUDE_CMD`)
+    /// Developer command override
     pub(crate) developer_cmd: Option<String>,
-    /// Reviewer command override (legacy env alias: `CODEX_CMD`)
+    /// Reviewer command override
     pub(crate) reviewer_cmd: Option<String>,
-    /// Number of developer iterations (legacy env alias: `CLAUDE_ITERS`)
+    /// Number of developer iterations
     pub(crate) developer_iters: u32,
-    /// Number of reviewer re-review passes after fix (legacy env alias: `CODEX_REVIEWS`)
+    /// Number of reviewer re-review passes after fix
     pub(crate) reviewer_reviews: u32,
     /// Fast check command (optional)
     pub(crate) fast_check_cmd: Option<String>,
@@ -198,12 +198,8 @@ impl Config {
             .ok();
         let reviewer_agent = env::var("RALPH_REVIEWER_AGENT").ok();
 
-        let developer_cmd = env::var("RALPH_DEVELOPER_CMD")
-            .ok()
-            .or_else(|| env::var("CLAUDE_CMD").ok());
-        let reviewer_cmd = env::var("RALPH_REVIEWER_CMD")
-            .ok()
-            .or_else(|| env::var("CODEX_CMD").ok());
+        let developer_cmd = env::var("RALPH_DEVELOPER_CMD").ok();
+        let reviewer_cmd = env::var("RALPH_REVIEWER_CMD").ok();
 
         let config = Self {
             developer_agent,
@@ -212,12 +208,10 @@ impl Config {
             reviewer_cmd,
             developer_iters: env::var("RALPH_DEVELOPER_ITERS")
                 .ok()
-                .or_else(|| env::var("CLAUDE_ITERS").ok())
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(5),
             reviewer_reviews: env::var("RALPH_REVIEWER_REVIEWS")
                 .ok()
-                .or_else(|| env::var("CODEX_REVIEWS").ok())
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(2),
             fast_check_cmd: env::var("FAST_CHECK_CMD").ok().filter(|s| !s.is_empty()),
