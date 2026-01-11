@@ -71,14 +71,14 @@ Navigate to any git repository and:
 echo "Add a button that says Hello World" > PROMPT.md
 
 # Run Ralph
-ralph "feat: add hello button"
+ralph
 ```
 
 Ralph will:
 1. Create working files in `.agent/` (if they don't exist)
 2. Run the developer agent to implement your prompt
 3. Run the reviewer agent to check and fix issues
-4. Commit the changes with your message
+4. Generate a commit message and commit the changes
 
 ## Basic Usage
 
@@ -101,16 +101,16 @@ Add a dark mode toggle to the settings page.
 
 ```bash
 # Basic usage - uses default agents (Claude + Codex)
-ralph "feat: add dark mode"
+ralph
 
 # Use a different agent preset
-ralph --preset opencode "feat: add dark mode"
+ralph --preset opencode
 
 # Control how many times agents iterate
-ralph --developer-iters 3 --reviewer-reviews 1 "quick fix"
+ralph --developer-iters 3 --reviewer-reviews 1
 
 # See what's happening in detail
-ralph --full "feat: complex feature"
+ralph --full
 ```
 
 ### Checking What Agents Are Available
@@ -150,7 +150,6 @@ Or via environment variables:
 ```bash
 export RALPH_DEVELOPER_AGENT=aider
 export RALPH_REVIEWER_AGENT=claude
-ralph "feat: my feature"
 ```
 
 ### Agent Configuration File
@@ -194,20 +193,14 @@ Example with checks:
 ```bash
 export FAST_CHECK_CMD="npm run lint"
 export FULL_CHECK_CMD="npm test"
-ralph "feat: add validation"
+ralph
 ```
 
 ## Advanced Features
 
 ### Automatic Fallback
 
-If an agent hits rate limits or errors, Ralph can automatically switch to another:
-
-```bash
-ralph --use-fallback "feat: big feature"
-```
-
-Configure fallback chains in `.agent/agents.toml`:
+If an agent hits rate limits or errors, Ralph automatically switches to the next agent in the chain. Configure fallback chains in `.agent/agents.toml`:
 
 ```toml
 [agent_chain]
@@ -270,7 +263,7 @@ Add to `.gitignore` if you don't want these tracked:
 | "Not a git repository" | Run Ralph inside a git repo |
 | "Agent not found" | Install the agent CLI and ensure it's on your PATH |
 | Garbled/broken output | Set `json_parser = "generic"` for that agent |
-| Rate limit errors | Use `--use-fallback` or wait and retry |
+| Rate limit errors | Configure fallback agents in `[agent_chain]` or wait and retry |
 | No commit created | Ralph falls back to `git commit` if the reviewer doesn't |
 | Nothing happening | Try `ralph --debug` to see what's going on |
 
@@ -279,7 +272,7 @@ Add to `.gitignore` if you don't want these tracked:
 ### Simple Feature
 ```bash
 echo "Add a logout button to the navbar" > PROMPT.md
-ralph "feat: add logout button"
+ralph
 ```
 
 ### Bug Fix with Tests
@@ -288,18 +281,18 @@ cat > PROMPT.md << 'EOF'
 Fix the login bug where users get logged out after 5 minutes.
 Add a test to prevent regression.
 EOF
-FULL_CHECK_CMD="npm test" ralph "fix: session timeout bug"
+FULL_CHECK_CMD="npm test" ralph
 ```
 
 ### Iterative Development
 ```bash
 # Start with a rough prompt
 echo "Build a todo app" > PROMPT.md
-ralph "feat: initial todo app"
+ralph
 
 # Refine
 echo "Add due dates and priority levels to the todo app" > PROMPT.md
-ralph "feat: add due dates and priorities"
+ralph
 ```
 
 ## Contributing
