@@ -25,10 +25,6 @@ impl Colors {
         }
     }
 
-    pub fn disabled() -> Self {
-        Self { enabled: false }
-    }
-
     // Style codes
     pub fn bold(&self) -> &'static str {
         if self.enabled {
@@ -110,39 +106,6 @@ impl Colors {
             ""
         }
     }
-
-    // Background colors
-    pub fn bg_blue(&self) -> &'static str {
-        if self.enabled {
-            "\x1b[44m"
-        } else {
-            ""
-        }
-    }
-
-    pub fn bg_green(&self) -> &'static str {
-        if self.enabled {
-            "\x1b[42m"
-        } else {
-            ""
-        }
-    }
-
-    pub fn bg_yellow(&self) -> &'static str {
-        if self.enabled {
-            "\x1b[43m"
-        } else {
-            ""
-        }
-    }
-
-    pub fn bg_red(&self) -> &'static str {
-        if self.enabled {
-            "\x1b[41m"
-        } else {
-            ""
-        }
-    }
 }
 
 impl Default for Colors {
@@ -172,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_colors_disabled() {
-        let c = Colors::disabled();
+        let c = Colors { enabled: false };
         assert_eq!(c.bold(), "");
         assert_eq!(c.red(), "");
         assert_eq!(c.reset(), "");
