@@ -90,6 +90,8 @@ pub struct Config {
     pub interactive: bool,
     /// Path to save last prompt
     pub prompt_path: PathBuf,
+    /// Path to agents configuration file (default: .agent/agents.toml)
+    pub agents_config_path: PathBuf,
     /// Whether reviewer creates the final commit
     pub reviewer_commits: bool,
     /// Developer context level (0=minimal, 1=normal)
@@ -106,8 +108,10 @@ impl Config {
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
         Self {
-            developer_agent: env::var("RALPH_DEVELOPER_AGENT").unwrap_or_else(|_| "claude".to_string()),
-            reviewer_agent: env::var("RALPH_REVIEWER_AGENT").unwrap_or_else(|_| "codex".to_string()),
+            developer_agent: env::var("RALPH_DEVELOPER_AGENT")
+                .unwrap_or_else(|_| "claude".to_string()),
+            reviewer_agent: env::var("RALPH_REVIEWER_AGENT")
+                .unwrap_or_else(|_| "codex".to_string()),
             claude_cmd: env::var("CLAUDE_CMD").ok(),
             codex_cmd: env::var("CODEX_CMD").ok(),
             claude_iters: env::var("CLAUDE_ITERS")
@@ -120,14 +124,17 @@ impl Config {
                 .unwrap_or(2),
             fast_check_cmd: env::var("FAST_CHECK_CMD").ok().filter(|s| !s.is_empty()),
             full_check_cmd: env::var("FULL_CHECK_CMD").ok().filter(|s| !s.is_empty()),
-            use_pty: env::var("RALPH_USE_PTY")
-                .map(|s| s == "1")
-                .unwrap_or(false),
+            use_pty: env::var("RALPH_USE_PTY").map(|s| s == "1").unwrap_or(false),
             interactive: env::var("RALPH_INTERACTIVE")
                 .map(|s| s == "1")
                 .unwrap_or(true),
             prompt_path: PathBuf::from(
-                env::var("RALPH_PROMPT_PATH").unwrap_or_else(|_| ".agent/last_prompt.txt".to_string()),
+                env::var("RALPH_PROMPT_PATH")
+                    .unwrap_or_else(|_| ".agent/last_prompt.txt".to_string()),
+            ),
+            agents_config_path: PathBuf::from(
+                env::var("RALPH_AGENTS_CONFIG")
+                    .unwrap_or_else(|_| ".agent/agents.toml".to_string()),
             ),
             reviewer_commits: env::var("RALPH_REVIEWER_COMMITS")
                 .map(|s| s == "1")

@@ -31,61 +31,117 @@ impl Colors {
 
     // Style codes
     pub fn bold(&self) -> &'static str {
-        if self.enabled { "\x1b[1m" } else { "" }
+        if self.enabled {
+            "\x1b[1m"
+        } else {
+            ""
+        }
     }
 
     pub fn dim(&self) -> &'static str {
-        if self.enabled { "\x1b[2m" } else { "" }
+        if self.enabled {
+            "\x1b[2m"
+        } else {
+            ""
+        }
     }
 
     pub fn reset(&self) -> &'static str {
-        if self.enabled { "\x1b[0m" } else { "" }
+        if self.enabled {
+            "\x1b[0m"
+        } else {
+            ""
+        }
     }
 
     // Foreground colors
     pub fn red(&self) -> &'static str {
-        if self.enabled { "\x1b[31m" } else { "" }
+        if self.enabled {
+            "\x1b[31m"
+        } else {
+            ""
+        }
     }
 
     pub fn green(&self) -> &'static str {
-        if self.enabled { "\x1b[32m" } else { "" }
+        if self.enabled {
+            "\x1b[32m"
+        } else {
+            ""
+        }
     }
 
     pub fn yellow(&self) -> &'static str {
-        if self.enabled { "\x1b[33m" } else { "" }
+        if self.enabled {
+            "\x1b[33m"
+        } else {
+            ""
+        }
     }
 
     pub fn blue(&self) -> &'static str {
-        if self.enabled { "\x1b[34m" } else { "" }
+        if self.enabled {
+            "\x1b[34m"
+        } else {
+            ""
+        }
     }
 
     pub fn magenta(&self) -> &'static str {
-        if self.enabled { "\x1b[35m" } else { "" }
+        if self.enabled {
+            "\x1b[35m"
+        } else {
+            ""
+        }
     }
 
     pub fn cyan(&self) -> &'static str {
-        if self.enabled { "\x1b[36m" } else { "" }
+        if self.enabled {
+            "\x1b[36m"
+        } else {
+            ""
+        }
     }
 
     pub fn white(&self) -> &'static str {
-        if self.enabled { "\x1b[37m" } else { "" }
+        if self.enabled {
+            "\x1b[37m"
+        } else {
+            ""
+        }
     }
 
     // Background colors
     pub fn bg_blue(&self) -> &'static str {
-        if self.enabled { "\x1b[44m" } else { "" }
+        if self.enabled {
+            "\x1b[44m"
+        } else {
+            ""
+        }
     }
 
     pub fn bg_green(&self) -> &'static str {
-        if self.enabled { "\x1b[42m" } else { "" }
+        if self.enabled {
+            "\x1b[42m"
+        } else {
+            ""
+        }
     }
 
     pub fn bg_yellow(&self) -> &'static str {
-        if self.enabled { "\x1b[43m" } else { "" }
+        if self.enabled {
+            "\x1b[43m"
+        } else {
+            ""
+        }
     }
 
     pub fn bg_red(&self) -> &'static str {
-        if self.enabled { "\x1b[41m" } else { "" }
+        if self.enabled {
+            "\x1b[41m"
+        } else {
+            ""
+        }
     }
 }
 

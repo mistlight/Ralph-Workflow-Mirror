@@ -28,13 +28,11 @@ impl From<u8> for ContextLevel {
 /// without knowing when the loop ends.
 pub fn prompt_claude_iteration(_iteration: u32, _total: u32, context: ContextLevel) -> String {
     match context {
-        ContextLevel::Minimal | ContextLevel::Normal => {
-            r#"Read PROMPT.md and .agent/STATUS.md.
+        ContextLevel::Minimal | ContextLevel::Normal => r#"Read PROMPT.md and .agent/STATUS.md.
 Work toward PROMPT.md's Goal and Acceptance checks until all are satisfied.
 Update .agent/STATUS.md (last action, blockers, next action).
 Append brief bullets to .agent/NOTES.md."#
-                .to_string()
-        }
+            .to_string(),
     }
 }
 
@@ -42,8 +40,7 @@ Append brief bullets to .agent/NOTES.md."#
 /// Reviewer should NOT see what was done - just evaluate the code against requirements
 pub fn prompt_codex_review(context: ContextLevel) -> String {
     match context {
-        ContextLevel::Minimal => {
-            r#"You are reviewing this repository with fresh eyes.
+        ContextLevel::Minimal => r#"You are reviewing this repository with fresh eyes.
 
 Read ONLY PROMPT.md to understand the Goal and Acceptance checks.
 DO NOT read .agent/STATUS.md or .agent/NOTES.md - you need an unbiased perspective.
@@ -55,8 +52,7 @@ Evaluate the codebase against the requirements:
 
 Write your findings into .agent/ISSUES.md as a prioritized checklist.
 Be specific about file paths and line numbers."#
-                .to_string()
-        }
+            .to_string(),
         ContextLevel::Normal => {
             r#"Review the repository against PROMPT.md (Goal + Acceptance checks).
 Write findings into .agent/ISSUES.md as a prioritized checklist."#
@@ -76,8 +72,7 @@ Append brief bullets to .agent/NOTES.md."#
 /// Generate Codex re-review prompt with minimal context
 pub fn prompt_codex_review_again(context: ContextLevel) -> String {
     match context {
-        ContextLevel::Minimal => {
-            r#"Re-review the repository with fresh eyes.
+        ContextLevel::Minimal => r#"Re-review the repository with fresh eyes.
 
 Read ONLY PROMPT.md to verify the Goal and Acceptance checks are met.
 DO NOT assume previous issues were fixed - verify independently.
@@ -87,13 +82,10 @@ If issues remain:
 2. Update .agent/ISSUES.md with what was found and fixed
 
 Be thorough but efficient."#
-                .to_string()
-        }
-        ContextLevel::Normal => {
-            r#"Re-review the repository after fixes against PROMPT.md.
+            .to_string(),
+        ContextLevel::Normal => r#"Re-review the repository after fixes against PROMPT.md.
 If issues remain, fix them and update .agent/ISSUES.md."#
-                .to_string()
-        }
+            .to_string(),
     }
 }
 
@@ -139,13 +131,11 @@ pub fn prompt_for_agent(
     commit_msg: Option<&str>,
 ) -> String {
     match (role, action) {
-        (Role::Developer, Action::Iterate) => {
-            prompt_claude_iteration(
-                iteration.unwrap_or(1),
-                total_iterations.unwrap_or(1),
-                context,
-            )
-        }
+        (Role::Developer, Action::Iterate) => prompt_claude_iteration(
+            iteration.unwrap_or(1),
+            total_iterations.unwrap_or(1),
+            context,
+        ),
         (Role::Reviewer, Action::Review) => prompt_codex_review(context),
         (Role::Reviewer, Action::Fix) | (Role::Developer, Action::Fix) => prompt_codex_fix(),
         (Role::Reviewer, Action::ReviewAgain) => prompt_codex_review_again(context),

@@ -7,7 +7,7 @@
 //! - Final `git add -A` + `git commit -m <msg>`
 
 use clap::Parser;
-use ralph::agents::{AgentRegistry, AgentType};
+use ralph::agents::{AgentRegistry, JsonParserType};
 use ralph::colors::Colors;
 use ralph::config::Config;
 use ralph::git_helpers::{
@@ -15,7 +15,6 @@ use ralph::git_helpers::{
     get_last_commit_message, get_repo_root, git_add_all, git_commit, git_snapshot,
     require_git_repo, start_agent_phase, GitHelpers,
 };
-use ralph::json_parser::detect_agent_type;
 use ralph::prompts::{
     prompt_claude_iteration, prompt_codex_fix, prompt_codex_review, prompt_codex_review_again,
     prompt_commit, ContextLevel,
@@ -87,6 +86,7 @@ fn run_with_prompt(
     cmd_str: &str,
     prompt: &str,
     logfile: &str,
+    parser_type: JsonParserType,
     timer: &mut Timer,
     logger: &Logger,
     colors: &Colors,
@@ -132,12 +132,12 @@ fn run_with_prompt(
         colors.reset()
     ));
 
-    // Detect agent type for parsing
-    let agent_type_str = detect_agent_type(cmd_str);
-    let agent_type = AgentType::from_cmd(cmd_str);
-    let uses_json = cmd_str.contains("--output-format=stream-json") || cmd_str.contains("--json");
+    // Determine if JSON parsing is needed (based on parser type and command flags)
+    let uses_json = parser_type != JsonParserType::Generic
+        || cmd_str.contains("--output-format=stream-json")
+        || cmd_str.contains("--json");
 
-    logger.info(&format!("Parsing {} JSON stream...", agent_type_str));
+    logger.info(&format!("Using {} parser...", parser_type));
 
     // Create log file
     let log_file = File::create(logfile)?;
@@ -150,7 +150,10 @@ fn run_with_prompt(
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let stdout = child.stdout.take().expect("Failed to capture stdout");
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
     let reader = BufReader::new(stdout);
 
     if uses_json {
@@ -160,17 +163,22 @@ fn run_with_prompt(
                 continue;
             }
 
-            // Parse and display
-            if let Some(output) = match agent_type {
-                AgentType::Claude => {
+            // Parse and display based on configured parser type
+            if let Some(output) = match parser_type {
+                JsonParserType::Claude => {
                     let p = ralph::json_parser::ClaudeParser::new(*colors, config.verbosity);
                     p.parse_event(&line)
                 }
-                AgentType::Codex => {
+                JsonParserType::Codex => {
                     let p = ralph::json_parser::CodexParser::new(*colors, config.verbosity);
                     p.parse_event(&line)
                 }
-                _ => Some(format!("{}[Agent]{} {}\n", colors.dim(), colors.reset(), &line.chars().take(100).collect::<String>())),
+                JsonParserType::Generic => Some(format!(
+                    "{}[Agent]{} {}\n",
+                    colors.dim(),
+                    colors.reset(),
+                    &line.chars().take(100).collect::<String>()
+                )),
             } {
                 print!("{}", output);
             }
@@ -222,20 +230,35 @@ fn main() -> anyhow::Result<()> {
         config.reviewer_agent = agent;
     }
 
-    // Initialize agent registry
-    let registry = AgentRegistry::new();
+    // Initialize agent registry (load from config file if present)
+    let registry = match AgentRegistry::with_config_file(&config.agents_config_path) {
+        Ok(r) => r,
+        Err(e) => {
+            logger.warn(&format!(
+                "Failed to load agents config from {}: {}, using defaults",
+                config.agents_config_path.display(),
+                e
+            ));
+            AgentRegistry::new()
+        }
+    };
 
-    // Get agent commands
-    let claude_cmd = config.claude_cmd.clone().unwrap_or_else(|| {
+    // Get agent commands and parser types
+    let developer_cmd = config.claude_cmd.clone().unwrap_or_else(|| {
         registry
             .developer_cmd(&config.developer_agent)
-            .unwrap_or_else(|| "claude -p --output-format=stream-json --dangerously-skip-permissions --verbose".to_string())
+            .unwrap_or_else(|| {
+                "claude -p --output-format=stream-json --dangerously-skip-permissions --verbose"
+                    .to_string()
+            })
     });
-    let codex_cmd = config.codex_cmd.clone().unwrap_or_else(|| {
+    let reviewer_cmd = config.codex_cmd.clone().unwrap_or_else(|| {
         registry
             .reviewer_cmd(&config.reviewer_agent)
             .unwrap_or_else(|| "codex exec --json --yolo".to_string())
     });
+    let developer_parser = registry.parser_type(&config.developer_agent);
+    let reviewer_parser = registry.parser_type(&config.reviewer_agent);
 
     // Require git repo
     require_git_repo()?;
@@ -324,19 +347,27 @@ fn main() -> anyhow::Result<()> {
     let developer_context = ContextLevel::from(config.developer_context);
 
     for i in 1..=config.claude_iters {
-        logger.subheader(&format!("Claude Iteration {} of {}", i, config.claude_iters));
+        logger.subheader(&format!(
+            "Claude Iteration {} of {}",
+            i, config.claude_iters
+        ));
         print_progress(i, config.claude_iters, "Overall");
 
-        update_status("Starting Claude iteration", "none", "Make progress on PROMPT.md goals")?;
+        update_status(
+            "Starting Claude iteration",
+            "none",
+            "Make progress on PROMPT.md goals",
+        )?;
 
         let prompt = prompt_claude_iteration(i, config.claude_iters, developer_context);
         let logfile = format!(".agent/logs/claude_{}.log", i);
 
         let exit_code = run_with_prompt(
-            &format!("Claude run #{}", i),
-            &claude_cmd,
+            &format!("{} run #{}", config.developer_agent, i),
+            &developer_cmd,
             &prompt,
             &logfile,
+            developer_parser,
             &mut timer,
             &logger,
             &colors,
@@ -344,11 +375,18 @@ fn main() -> anyhow::Result<()> {
         )?;
 
         if exit_code != 0 {
-            logger.error(&format!("Iteration {} encountered an error but continuing", i));
+            logger.error(&format!(
+                "Iteration {} encountered an error but continuing",
+                i
+            ));
         }
 
         stats.claude_runs_completed += 1;
-        update_status("Completed progress step", "none", "Continue work on PROMPT.md goals")?;
+        update_status(
+            "Completed progress step",
+            "none",
+            "Continue work on PROMPT.md goals",
+        )?;
 
         let snap = git_snapshot()?;
         if snap == prev_snap {
@@ -369,9 +407,7 @@ fn main() -> anyhow::Result<()> {
             ));
 
             let _fast_logfile = format!(".agent/logs/fast_check_{}.log", i);
-            let status = Command::new("sh")
-                .args(["-c", fast_cmd])
-                .status()?;
+            let status = Command::new("sh").args(["-c", fast_cmd]).status()?;
 
             if status.success() {
                 logger.success("Fast check passed");
@@ -405,10 +441,11 @@ fn main() -> anyhow::Result<()> {
 
     let prompt = prompt_codex_review(reviewer_context);
     let _ = run_with_prompt(
-        "Codex review (initial)",
-        &codex_cmd,
+        &format!("{} review (initial)", config.reviewer_agent),
+        &reviewer_cmd,
         &prompt,
         ".agent/logs/codex_review_1.log",
+        reviewer_parser,
         &mut timer,
         &logger,
         &colors,
@@ -422,10 +459,11 @@ fn main() -> anyhow::Result<()> {
 
     let prompt = prompt_codex_fix();
     let _ = run_with_prompt(
-        "Codex fix",
-        &codex_cmd,
+        &format!("{} fix", config.reviewer_agent),
+        &reviewer_cmd,
         &prompt,
         ".agent/logs/codex_fix.log",
+        reviewer_parser,
         &mut timer,
         &logger,
         &colors,
@@ -435,7 +473,10 @@ fn main() -> anyhow::Result<()> {
 
     // Verification reviews
     for j in 1..=config.codex_reviews {
-        logger.subheader(&format!("Verification Review {} of {}", j, config.codex_reviews));
+        logger.subheader(&format!(
+            "Verification Review {} of {}",
+            j, config.codex_reviews
+        ));
         print_progress(j, config.codex_reviews, "Review passes");
 
         update_status("Verification review", "none", "Re-evaluate codebase")?;
@@ -444,10 +485,11 @@ fn main() -> anyhow::Result<()> {
         let logfile = format!(".agent/logs/codex_review_{}.log", j + 1);
 
         let _ = run_with_prompt(
-            &format!("Codex re-review #{}", j),
-            &codex_cmd,
+            &format!("{} re-review #{}", config.reviewer_agent, j),
+            &reviewer_cmd,
             &prompt,
             &logfile,
+            reviewer_parser,
             &mut timer,
             &logger,
             &colors,
@@ -468,10 +510,11 @@ fn main() -> anyhow::Result<()> {
 
         let prompt = prompt_commit(&config.commit_msg);
         let _ = run_with_prompt(
-            "Codex commit",
-            &codex_cmd,
+            &format!("{} commit", config.reviewer_agent),
+            &reviewer_cmd,
             &prompt,
             ".agent/logs/codex_commit.log",
+            reviewer_parser,
             &mut timer,
             &logger,
             &colors,
@@ -507,9 +550,7 @@ fn main() -> anyhow::Result<()> {
             colors.reset()
         ));
 
-        let status = Command::new("sh")
-            .args(["-c", full_cmd])
-            .status()?;
+        let status = Command::new("sh").args(["-c", full_cmd]).status()?;
 
         if status.success() {
             logger.success("Full check passed");
@@ -533,9 +574,7 @@ fn main() -> anyhow::Result<()> {
         // Show what we're committing
         println!();
         println!("{}Changes to commit:{}", colors.bold(), colors.reset());
-        let status_output = Command::new("git")
-            .args(["status", "--short"])
-            .output()?;
+        let status_output = Command::new("git").args(["status", "--short"]).output()?;
         let lines: Vec<&str> = std::str::from_utf8(&status_output.stdout)
             .unwrap_or("")
             .lines()
@@ -579,8 +618,17 @@ fn main() -> anyhow::Result<()> {
     logger.header("Pipeline Complete", |c| c.green());
 
     println!();
-    println!("{}{}📊 Summary{}", colors.bold(), colors.white(), colors.reset());
-    println!("{}──────────────────────────────────{}", colors.dim(), colors.reset());
+    println!(
+        "{}{}📊 Summary{}",
+        colors.bold(),
+        colors.white(),
+        colors.reset()
+    );
+    println!(
+        "{}──────────────────────────────────{}",
+        colors.dim(),
+        colors.reset()
+    );
     println!(
         "  {}⏱{}  Total time:      {}{}{}",
         colors.cyan(),
@@ -616,8 +664,17 @@ fn main() -> anyhow::Result<()> {
     );
     println!();
 
-    println!("{}{}📁 Output Files{}", colors.bold(), colors.white(), colors.reset());
-    println!("{}──────────────────────────────────{}", colors.dim(), colors.reset());
+    println!(
+        "{}{}📁 Output Files{}",
+        colors.bold(),
+        colors.white(),
+        colors.reset()
+    );
+    println!(
+        "{}──────────────────────────────────{}",
+        colors.dim(),
+        colors.reset()
+    );
     println!(
         "  → {}PROMPT.md{}           Goal definition",
         colors.cyan(),
