@@ -16,6 +16,17 @@ fn init_git_repo(dir: &TempDir) {
         ".agent/\n.no_agent_commit\nPROMPT.md\n",
     )
     .unwrap();
+
+    // Create required files for workflow tests
+    fs::write(dir_path.join("PROMPT.md"), "# Test Requirements\nTest task").unwrap();
+
+    // Create .agent directory and minimal agents.toml to skip first-run init
+    fs::create_dir_all(dir_path.join(".agent")).unwrap();
+    fs::write(
+        dir_path.join(".agent/agents.toml"),
+        "# Minimal test config\n",
+    )
+    .unwrap();
 }
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -92,4 +103,108 @@ fn ralph_cleans_up_on_early_error() {
     let hooks_dir = dir.path().join(".git/hooks");
     assert!(!hooks_dir.join("pre-commit").exists());
     assert!(!hooks_dir.join("pre-push").exists());
+}
+
+#[test]
+fn ralph_init_creates_config_file() {
+    let dir = TempDir::new().unwrap();
+    let dir_path = dir.path();
+
+    // Initialize git repo but don't create agents.toml
+    StdCommand::new("git")
+        .args(["init"])
+        .current_dir(dir_path)
+        .output()
+        .unwrap();
+
+    let config_path = dir_path.join(".agent/agents.toml");
+    assert!(!config_path.exists());
+
+    // Run ralph --init
+    let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
+    cmd.current_dir(dir_path).arg("--init");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+
+    // Config file should now exist
+    assert!(config_path.exists());
+
+    // Verify content contains expected sections
+    let content = fs::read_to_string(&config_path).unwrap();
+    assert!(content.contains("Ralph Agents Configuration File"));
+    assert!(content.contains("[agents.claude]"));
+    assert!(content.contains("[agents.codex]"));
+
+    // Output should indicate file was created
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Created"));
+}
+
+#[test]
+fn ralph_init_reports_existing_config() {
+    let dir = TempDir::new().unwrap();
+    let dir_path = dir.path();
+
+    // Initialize git repo
+    StdCommand::new("git")
+        .args(["init"])
+        .current_dir(dir_path)
+        .output()
+        .unwrap();
+
+    // Create existing config
+    fs::create_dir_all(dir_path.join(".agent")).unwrap();
+    fs::write(dir_path.join(".agent/agents.toml"), "# Custom config\n").unwrap();
+
+    // Run ralph --init
+    let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
+    cmd.current_dir(dir_path).arg("--init");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+
+    // Config file should still contain original content
+    let content = fs::read_to_string(dir_path.join(".agent/agents.toml")).unwrap();
+    assert_eq!(content, "# Custom config\n");
+
+    // Output should indicate file already exists
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("already exists"));
+}
+
+#[test]
+fn ralph_first_run_creates_config_and_exits() {
+    let dir = TempDir::new().unwrap();
+    let dir_path = dir.path();
+
+    // Initialize git repo but don't create agents.toml
+    StdCommand::new("git")
+        .args(["init"])
+        .current_dir(dir_path)
+        .output()
+        .unwrap();
+
+    // Create PROMPT.md (required)
+    fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
+
+    let config_path = dir_path.join(".agent/agents.toml");
+    assert!(!config_path.exists());
+
+    // Run ralph without --init (first run behavior)
+    let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
+    cmd.current_dir(dir_path).env("RALPH_INTERACTIVE", "0");
+
+    let output = cmd.output().unwrap();
+
+    // Should exit successfully (not run the full pipeline)
+    assert!(output.status.success());
+
+    // Config file should now exist
+    assert!(config_path.exists());
+
+    // Output should prompt user to edit or run again
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("No agents.toml found"));
+    assert!(stdout.contains("Options"));
 }

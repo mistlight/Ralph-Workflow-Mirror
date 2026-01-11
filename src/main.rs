@@ -16,7 +16,9 @@ mod prompts;
 mod timer;
 mod utils;
 
-use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole, JsonParserType};
+use crate::agents::{
+    AgentErrorKind, AgentRegistry, AgentRole, AgentsConfigFile, ConfigInitResult, JsonParserType,
+};
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::git_helpers::{
@@ -42,51 +44,120 @@ use std::process::{Command, Stdio};
 #[derive(Parser, Debug)]
 #[command(name = "ralph")]
 #[command(about = "PROMPT-driven multi-agent orchestrator for git repos")]
+#[command(
+    long_about = "Ralph orchestrates AI coding agents to implement changes based on PROMPT.md.\n\n\
+    It runs a developer agent for code implementation, then a reviewer agent for\n\
+    quality assurance, automatically staging and committing the final result."
+)]
 #[command(version)]
+#[command(after_help = "WORKFLOW:\n\
+    1. Create PROMPT.md with your requirements\n\
+    2. Run: ralph \"feat: implement my feature\"\n\
+    3. Ralph runs developer agent (N iterations)\n\
+    4. Ralph runs reviewer agent (review -> fix -> re-review)\n\
+    5. Changes are committed with the provided message\n\n\
+CONFIGURATION:\n\
+    Agents are configured in .agent/agents.toml (created on first run).\n\
+    Run 'ralph --init' to create/view the config file.\n\
+    Run 'ralph --list-agents' to see all configured agents.\n\n\
+EXAMPLES:\n\
+    ralph \"feat: add login button\"              Basic usage\n\
+    ralph --developer-iters 3                    Fewer iterations\n\
+    ralph --preset opencode                      Use opencode for both\n\
+    ralph --developer-agent claude --reviewer-agent codex\n\
+    ralph --use-fallback                         Auto-switch on errors\n\n\
+ENVIRONMENT VARIABLES:\n\
+    RALPH_DEVELOPER_AGENT    Developer agent name (default: claude)\n\
+    RALPH_REVIEWER_AGENT     Reviewer agent name (default: codex)\n\
+    RALPH_DEVELOPER_ITERS    Developer iterations (default: 5)\n\
+    RALPH_REVIEWER_REVIEWS   Re-review passes (default: 2)\n\
+    RALPH_AGENTS_CONFIG      Path to agents.toml\n\
+    RALPH_USE_FALLBACK       Enable agent fallback (true/false)")]
 struct Args {
     /// Commit message for the final commit
-    #[arg(default_value = "chore: apply PROMPT loop + review/fix/review")]
+    #[arg(
+        default_value = "chore: apply PROMPT loop + review/fix/review",
+        help = "Commit message for the final commit"
+    )]
     commit_msg: String,
 
-    /// Number of developer iterations
-    #[arg(long = "developer-iters", env = "RALPH_DEVELOPER_ITERS", aliases = ["claude-iters"])]
+    /// Number of developer iterations (default: 5)
+    #[arg(
+        long = "developer-iters",
+        env = "RALPH_DEVELOPER_ITERS",
+        aliases = ["claude-iters"],
+        value_name = "N",
+        help = "Number of developer agent iterations"
+    )]
     developer_iters: Option<u32>,
 
-    /// Number of reviewer re-review passes after fix
+    /// Number of reviewer re-review passes after fix (default: 2)
     #[arg(
         long = "reviewer-reviews",
         env = "RALPH_REVIEWER_REVIEWS",
-        aliases = ["codex-reviews"]
+        aliases = ["codex-reviews"],
+        value_name = "N",
+        help = "Number of reviewer re-review passes after fix"
     )]
     reviewer_reviews: Option<u32>,
 
-    /// Preset for common agent combinations (e.g. opencode for both roles)
-    #[arg(long, env = "RALPH_PRESET")]
+    /// Preset for common agent combinations
+    #[arg(
+        long,
+        env = "RALPH_PRESET",
+        value_name = "NAME",
+        help = "Use a preset agent combination (default, opencode)"
+    )]
     preset: Option<Preset>,
 
-    /// Driver/developer agent to use
-    #[arg(long, env = "RALPH_DEVELOPER_AGENT", aliases = ["driver-agent"])]
+    /// Developer/driver agent to use (default: claude)
+    #[arg(
+        long,
+        env = "RALPH_DEVELOPER_AGENT",
+        aliases = ["driver-agent"],
+        value_name = "AGENT",
+        help = "Developer agent for code implementation"
+    )]
     developer_agent: Option<String>,
 
-    /// Reviewer agent to use
-    #[arg(long, env = "RALPH_REVIEWER_AGENT")]
+    /// Reviewer agent to use (default: codex)
+    #[arg(
+        long,
+        env = "RALPH_REVIEWER_AGENT",
+        value_name = "AGENT",
+        help = "Reviewer agent for code review"
+    )]
     reviewer_agent: Option<String>,
 
     /// Verbosity level (0=quiet, 1=normal, 2=verbose, 3=full)
-    #[arg(short, long, default_value = "1")]
+    #[arg(
+        short,
+        long,
+        default_value = "1",
+        value_name = "LEVEL",
+        help = "Output verbosity (0=quiet, 1=normal, 2=verbose, 3=full)"
+    )]
     verbosity: u8,
 
-    /// Enable automatic agent fallback on errors (rate limits, token exhaustion, etc.)
-    #[arg(long, env = "RALPH_USE_FALLBACK")]
+    /// Enable automatic agent fallback on errors
+    #[arg(
+        long,
+        env = "RALPH_USE_FALLBACK",
+        help = "Auto-switch agents on rate limits, auth errors, etc."
+    )]
     use_fallback: bool,
 
-    /// List configured agents and exit
-    #[arg(long)]
+    /// List all configured agents and exit
+    #[arg(long, help = "Show all agents from registry and config file")]
     list_agents: bool,
 
-    /// List agents found in PATH and exit
-    #[arg(long)]
+    /// List only agents found in PATH and exit
+    #[arg(long, help = "Show only agents that are installed and available")]
     list_available_agents: bool,
+
+    /// Initialize agents.toml config file and exit
+    #[arg(long, help = "Create .agent/agents.toml with default settings")]
+    init: bool,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -469,6 +540,77 @@ fn main() -> anyhow::Result<()> {
         config.use_fallback = true;
     }
 
+    // Handle --init flag: create agents.toml if it doesn't exist and exit
+    if args.init {
+        match AgentsConfigFile::ensure_config_exists(&config.agents_config_path) {
+            Ok(ConfigInitResult::Created) => {
+                println!(
+                    "{}Created {}{}{}\n",
+                    colors.green(),
+                    colors.bold(),
+                    config.agents_config_path.display(),
+                    colors.reset()
+                );
+                println!("Edit the file to customize agent configurations, then run ralph again.");
+                println!("Or run ralph now to use the default settings.");
+                return Ok(());
+            }
+            Ok(ConfigInitResult::AlreadyExists) => {
+                println!(
+                    "{}Config file already exists:{} {}",
+                    colors.yellow(),
+                    colors.reset(),
+                    config.agents_config_path.display()
+                );
+                println!("Edit the file to customize, or delete it to regenerate from defaults.");
+                return Ok(());
+            }
+            Err(e) => {
+                anyhow::bail!(
+                    "Failed to create config file {}: {}",
+                    config.agents_config_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    // Check if agents.toml exists; if not, create it and prompt user
+    match AgentsConfigFile::ensure_config_exists(&config.agents_config_path) {
+        Ok(ConfigInitResult::Created) => {
+            println!();
+            println!(
+                "{}{}No agents.toml found - created default configuration:{}",
+                colors.bold(),
+                colors.yellow(),
+                colors.reset()
+            );
+            println!(
+                "  {}{}{}",
+                colors.cyan(),
+                config.agents_config_path.display(),
+                colors.reset()
+            );
+            println!();
+            println!("{}Options:{}", colors.bold(), colors.reset());
+            println!("  1. Edit the file to customize agent settings, then run ralph again");
+            println!("  2. Run ralph again now to use the default settings");
+            println!();
+            return Ok(());
+        }
+        Ok(ConfigInitResult::AlreadyExists) => {
+            // Config exists, continue normally
+        }
+        Err(e) => {
+            logger.warn(&format!(
+                "Failed to create agents config at {}: {}",
+                config.agents_config_path.display(),
+                e
+            ));
+            // Continue with built-in defaults
+        }
+    }
+
     // Initialize agent registry (load from config file if present)
     let mut registry = match AgentRegistry::with_config_file(&config.agents_config_path) {
         Ok(r) => r,
@@ -478,7 +620,12 @@ fn main() -> anyhow::Result<()> {
                 config.agents_config_path.display(),
                 e
             ));
-            AgentRegistry::new()
+            AgentRegistry::new().map_err(|defaults_err| {
+                anyhow::anyhow!(
+                    "Failed to load built-in default agents config (examples/agents.toml): {}",
+                    defaults_err
+                )
+            })?
         }
     };
 
@@ -521,19 +668,32 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Get agent commands and parser types
-    let developer_cmd = config.developer_cmd.clone().unwrap_or_else(|| {
+    let developer_cmd = if let Some(cmd) = config.developer_cmd.clone() {
+        cmd
+    } else {
         registry
             .developer_cmd(&config.developer_agent)
-            .unwrap_or_else(|| {
-                "claude -p --output-format=stream-json --dangerously-skip-permissions --verbose"
-                    .to_string()
-            })
-    });
-    let reviewer_cmd = config.reviewer_cmd.clone().unwrap_or_else(|| {
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Unknown developer agent '{}'. Use --list-agents or define it in {}.",
+                    config.developer_agent,
+                    config.agents_config_path.display()
+                )
+            })?
+    };
+    let reviewer_cmd = if let Some(cmd) = config.reviewer_cmd.clone() {
+        cmd
+    } else {
         registry
             .reviewer_cmd(&config.reviewer_agent)
-            .unwrap_or_else(|| "codex exec --json --yolo".to_string())
-    });
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Unknown reviewer agent '{}'. Use --list-agents or define it in {}.",
+                    config.reviewer_agent,
+                    config.agents_config_path.display()
+                )
+            })?
+    };
     let developer_parser = registry.parser_type(&config.developer_agent);
     let reviewer_parser = registry.parser_type(&config.reviewer_agent);
 
