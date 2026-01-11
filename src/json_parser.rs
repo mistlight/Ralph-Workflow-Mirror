@@ -5,6 +5,15 @@
 //!
 //! This module uses serde for JSON parsing, which is ~100x faster
 //! than spawning jq for each event.
+//!
+//! ## Verbosity Levels
+//!
+//! The parsers respect the configured verbosity level:
+//! - **Quiet (0)**: Minimal output, aggressive truncation
+//! - **Normal (1)**: Balanced output with moderate truncation
+//! - **Verbose (2)**: Default - shows more detail including tool inputs
+//! - **Full (3)**: No truncation, show all content
+//! - **Debug (4)**: Maximum verbosity, includes raw JSON output
 
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
@@ -108,6 +117,37 @@ pub struct CodexItem {
     pub path: Option<String>,
 }
 
+/// Format tool input for display
+///
+/// Converts JSON input to a human-readable string, showing key parameters.
+/// Uses character-safe truncation to handle UTF-8 properly.
+fn format_tool_input(input: &serde_json::Value) -> String {
+    match input {
+        serde_json::Value::Object(map) => {
+            let parts: Vec<String> = map
+                .iter()
+                .map(|(k, v)| {
+                    let val_str = match v {
+                        serde_json::Value::String(s) => {
+                            // Use character-safe truncation for strings
+                            truncate_text(s, 100)
+                        }
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::Bool(b) => b.to_string(),
+                        serde_json::Value::Null => "null".to_string(),
+                        serde_json::Value::Array(arr) => format!("[{} items]", arr.len()),
+                        serde_json::Value::Object(_) => "{...}".to_string(),
+                    };
+                    format!("{}={}", k, val_str)
+                })
+                .collect();
+            parts.join(", ")
+        }
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
 /// Claude event parser
 pub struct ClaudeParser {
     colors: Colors,
@@ -196,14 +236,8 @@ impl ClaudeParser {
                                 }
                                 ContentBlock::ToolUse { name, input } => {
                                     let tool_name = name.unwrap_or_else(|| "unknown".to_string());
-                                    let key = input
-                                        .and_then(|v| {
-                                            v.as_object().and_then(|o| o.keys().next().cloned())
-                                        })
-                                        .map(|k| format!(" ({})", k))
-                                        .unwrap_or_default();
                                     out.push_str(&format!(
-                                        "{}[Claude]{} {}Tool{}: {}{}{}{}\n",
+                                        "{}[Claude]{} {}Tool{}: {}{}{}\n",
                                         c.dim(),
                                         c.reset(),
                                         c.magenta(),
@@ -211,8 +245,26 @@ impl ClaudeParser {
                                         c.bold(),
                                         tool_name,
                                         c.reset(),
-                                        key
                                     ));
+                                    // Show tool input details at Normal and above (not just Verbose)
+                                    // Tool inputs provide crucial context for understanding agent actions
+                                    if self.verbosity.show_tool_input() {
+                                        if let Some(ref input_val) = input {
+                                            let input_str = format_tool_input(input_val);
+                                            let limit = self.verbosity.truncate_limit("tool_input");
+                                            let preview = truncate_text(&input_str, limit);
+                                            if !preview.is_empty() {
+                                                out.push_str(&format!(
+                                                    "{}[Claude]{} {}  └─ {}{}\n",
+                                                    c.dim(),
+                                                    c.reset(),
+                                                    c.dim(),
+                                                    preview,
+                                                    c.reset()
+                                                ));
+                                            }
+                                        }
+                                    }
                                 }
                                 ContentBlock::ToolResult { content } => {
                                     if let Some(content) = content {
@@ -329,10 +381,25 @@ impl ClaudeParser {
 
     /// Parse a stream of Claude NDJSON events
     pub fn parse_stream<R: BufRead, W: Write>(&self, reader: R, mut writer: W) -> io::Result<()> {
+        let c = &self.colors;
+
         for line in reader.lines() {
             let line = line?;
             if line.is_empty() {
                 continue;
+            }
+
+            // In debug mode, also show the raw JSON
+            if self.verbosity.is_debug() {
+                writeln!(
+                    writer,
+                    "{}[DEBUG]{} {}{}{}",
+                    c.dim(),
+                    c.reset(),
+                    c.dim(),
+                    &line,
+                    c.reset()
+                )?;
             }
 
             if let Some(output) = self.parse_event(&line) {
@@ -445,29 +512,54 @@ impl CodexParser {
                                 c.reset(),
                                 c.magenta(),
                                 c.reset(),
-                                c.dim(),
+                                c.white(),
                                 preview,
                                 c.reset()
                             )
                         }
                         Some("agent_message") => {
+                            // Show "Thinking..." only in non-verbose mode
+                            // In verbose mode, we'll show the actual message in ItemCompleted
+                            if self.verbosity.is_verbose() {
+                                String::new()
+                            } else {
+                                format!(
+                                    "{}[Codex]{} {}Thinking...{}\n",
+                                    c.dim(),
+                                    c.reset(),
+                                    c.blue(),
+                                    c.reset()
+                                )
+                            }
+                        }
+                        Some("file_read") | Some("file_write") => {
+                            let path = item.path.clone().unwrap_or_default();
+                            let action = item.item_type.as_deref().unwrap_or("file");
                             format!(
-                                "{}[Codex]{} {}Thinking...{}\n",
+                                "{}[Codex]{} {}{}:{} {}\n",
                                 c.dim(),
                                 c.reset(),
-                                c.blue(),
-                                c.reset()
+                                c.yellow(),
+                                action,
+                                c.reset(),
+                                path
                             )
                         }
                         Some(t) => {
-                            format!(
-                                "{}[Codex]{} {}{}{}\n",
-                                c.dim(),
-                                c.reset(),
-                                c.dim(),
-                                t,
-                                c.reset()
-                            )
+                            // Show other types in verbose mode
+                            if self.verbosity.is_verbose() {
+                                format!(
+                                    "{}[Codex]{} {}{}:{} {}\n",
+                                    c.dim(),
+                                    c.reset(),
+                                    c.dim(),
+                                    t,
+                                    c.reset(),
+                                    item.path.clone().unwrap_or_default()
+                                )
+                            } else {
+                                String::new()
+                            }
                         }
                         None => String::new(),
                     }
@@ -547,10 +639,25 @@ impl CodexParser {
 
     /// Parse a stream of Codex NDJSON events
     pub fn parse_stream<R: BufRead, W: Write>(&self, reader: R, mut writer: W) -> io::Result<()> {
+        let c = &self.colors;
+
         for line in reader.lines() {
             let line = line?;
             if line.is_empty() {
                 continue;
+            }
+
+            // In debug mode, also show the raw JSON
+            if self.verbosity.is_debug() {
+                writeln!(
+                    writer,
+                    "{}[DEBUG]{} {}{}{}",
+                    c.dim(),
+                    c.reset(),
+                    c.dim(),
+                    &line,
+                    c.reset()
+                )?;
             }
 
             if let Some(output) = self.parse_event(&line) {
@@ -628,5 +735,120 @@ mod tests {
 
         // Quiet output should be truncated (shorter)
         assert!(quiet_output.len() < full_output.len());
+    }
+
+    #[test]
+    fn test_format_tool_input_object() {
+        let input = serde_json::json!({
+            "file_path": "/path/to/file.rs",
+            "content": "hello world"
+        });
+        let result = format_tool_input(&input);
+        assert!(result.contains("file_path=/path/to/file.rs"));
+        assert!(result.contains("content=hello world"));
+    }
+
+    #[test]
+    fn test_format_tool_input_truncates_long_strings() {
+        let long_content = "x".repeat(150);
+        let input = serde_json::json!({
+            "content": long_content
+        });
+        let result = format_tool_input(&input);
+        assert!(result.contains("..."));
+        assert!(result.len() < 150);
+    }
+
+    #[test]
+    fn test_format_tool_input_handles_arrays() {
+        let input = serde_json::json!({
+            "files": ["a.rs", "b.rs", "c.rs"]
+        });
+        let result = format_tool_input(&input);
+        assert!(result.contains("files=[3 items]"));
+    }
+
+    #[test]
+    fn test_format_tool_input_handles_nested_objects() {
+        let input = serde_json::json!({
+            "options": {"key": "value"}
+        });
+        let result = format_tool_input(&input);
+        assert!(result.contains("options={...}"));
+    }
+
+    #[test]
+    fn test_tool_use_shows_input_in_verbose_mode() {
+        let verbose_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+        let json = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/test.rs"}}]}}"#;
+        let output = verbose_parser.parse_event(json).unwrap();
+        assert!(output.contains("Tool"));
+        assert!(output.contains("Read"));
+        assert!(output.contains("file_path=/test.rs"));
+    }
+
+    #[test]
+    fn test_tool_use_shows_input_in_normal_mode() {
+        // Tool inputs are now shown at Normal level for better usability
+        let normal_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/test.rs"}}]}}"#;
+        let output = normal_parser.parse_event(json).unwrap();
+        assert!(output.contains("Tool"));
+        assert!(output.contains("Read"));
+        // Tool inputs are now visible at Normal level
+        assert!(output.contains("file_path=/test.rs"));
+    }
+
+    #[test]
+    fn test_tool_use_hides_input_in_quiet_mode() {
+        // Only Quiet mode hides tool inputs
+        let quiet_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Quiet);
+        let json = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/test.rs"}}]}}"#;
+        let output = quiet_parser.parse_event(json).unwrap();
+        assert!(output.contains("Tool"));
+        assert!(output.contains("Read"));
+        // In Quiet mode, input details should not be shown
+        assert!(!output.contains("file_path=/test.rs"));
+    }
+
+    #[test]
+    fn test_debug_verbosity_is_recognized() {
+        let debug_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Debug);
+        // Debug mode should be detectable via is_debug()
+        assert!(debug_parser.verbosity.is_debug());
+    }
+
+    #[test]
+    fn test_codex_file_operations_shown() {
+        let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Verbose);
+        let json = r#"{"type":"item.started","item":{"type":"file_read","path":"/src/main.rs"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("file_read"));
+        assert!(out.contains("/src/main.rs"));
+    }
+
+    #[test]
+    fn test_format_tool_input_unicode_safe() {
+        // Ensure Unicode characters don't cause panics
+        let unicode_content = "日本語".to_string() + &"x".repeat(200);
+        let input = serde_json::json!({
+            "content": unicode_content
+        });
+        // Should not panic and should truncate properly
+        let result = format_tool_input(&input);
+        assert!(result.contains("..."));
+        assert!(result.contains("日本語"));
+    }
+
+    #[test]
+    fn test_parse_claude_text_with_unicode() {
+        let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello 世界! 🌍"}]}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Hello 世界! 🌍"));
     }
 }

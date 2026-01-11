@@ -15,12 +15,41 @@ pub fn timestamp() -> String {
     Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+/// Split a shell-like command string into argv parts.
+///
+/// Supports quotes and backslash escapes (e.g. `cmd --flag "a b"`).
+pub fn split_command(cmd: &str) -> io::Result<Vec<String>> {
+    let cmd = cmd.trim();
+    if cmd.is_empty() {
+        return Ok(vec![]);
+    }
+
+    shell_words::split(cmd).map_err(|err| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Failed to parse command string '{}': {}", cmd, err),
+        )
+    })
+}
+
 /// Truncate text to limit with ellipsis
+///
+/// Uses character count rather than byte length to avoid panics on UTF-8 text.
+/// Truncates at character boundaries and appends "..." when truncation occurs.
 pub fn truncate_text(text: &str, limit: usize) -> String {
-    if text.len() > limit {
-        format!("{}...", &text[..limit])
-    } else {
+    // Handle edge case where limit is too small for even "..."
+    if limit <= 3 {
+        return text.chars().take(limit).collect();
+    }
+
+    let char_count = text.chars().count();
+    if char_count <= limit {
         text.to_string()
+    } else {
+        // Leave room for "..."
+        let truncate_at = limit.saturating_sub(3);
+        let truncated: String = text.chars().take(truncate_at).collect();
+        format!("{}...", truncated)
     }
 }
 
@@ -47,6 +76,9 @@ impl Logger {
         if let Some(ref path) = self.log_file {
             // Strip ANSI codes for file logging
             let clean_msg = strip_ansi_codes(msg);
+            if let Some(parent) = Path::new(path).parent() {
+                let _ = fs::create_dir_all(parent);
+            }
             if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
                 let _ = writeln!(file, "{}", clean_msg);
             }
@@ -431,9 +463,13 @@ pub fn cleanup_generated_files() {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
 
     fn with_temp_cwd<F: FnOnce(&TempDir)>(f: F) {
+        static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _cwd_guard = CWD_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
         struct DirGuard(PathBuf);
 
         impl Drop for DirGuard {
@@ -459,9 +495,40 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_text() {
+    fn test_truncate_text_no_truncation() {
         assert_eq!(truncate_text("hello", 10), "hello");
-        assert_eq!(truncate_text("hello world", 5), "hello...");
+        assert_eq!(truncate_text("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_text_with_ellipsis() {
+        // "hello world" is 11 chars, limit 8 means 5 chars + "..."
+        assert_eq!(truncate_text("hello world", 8), "hello...");
+    }
+
+    #[test]
+    fn test_truncate_text_unicode() {
+        // Should not panic on UTF-8 multibyte characters
+        let text = "日本語テスト"; // 6 Japanese characters
+        assert_eq!(truncate_text(text, 10), "日本語テスト");
+        assert_eq!(truncate_text(text, 6), "日本語テスト");
+        assert_eq!(truncate_text(text, 5), "日本...");
+    }
+
+    #[test]
+    fn test_truncate_text_emoji() {
+        // Emojis can be multi-byte but should be handled correctly
+        let text = "Hello 👋 World";
+        assert_eq!(truncate_text(text, 20), "Hello 👋 World");
+        assert_eq!(truncate_text(text, 10), "Hello 👋...");
+    }
+
+    #[test]
+    fn test_truncate_text_edge_cases() {
+        assert_eq!(truncate_text("abc", 3), "abc");
+        assert_eq!(truncate_text("abcd", 3), "abc"); // limit too small for ellipsis
+        assert_eq!(truncate_text("ab", 1), "a");
+        assert_eq!(truncate_text("", 5), "");
     }
 
     #[test]

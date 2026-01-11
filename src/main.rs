@@ -30,8 +30,8 @@ use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use crate::timer::Timer;
 use crate::utils::{
     clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
-    delete_plan_file, ensure_files, print_progress, read_commit_message_file, update_status,
-    Logger,
+    delete_plan_file, ensure_files, print_progress, read_commit_message_file, split_command,
+    update_status, Logger,
 };
 use clap::{Parser, ValueEnum};
 use std::env;
@@ -60,8 +60,17 @@ CONFIGURATION:\n\
     Agents are configured in .agent/agents.toml (created on first run).\n\
     Run 'ralph --init' to create/view the config file.\n\
     Run 'ralph --list-agents' to see all configured agents.\n\n\
+VERBOSITY LEVELS (-v LEVEL):\n\
+    0 = quiet    Minimal output, hide tool inputs (--quiet or -q)\n\
+    1 = normal   Balanced output, show tool inputs\n\
+    2 = verbose  Default - generous limits for full context\n\
+    3 = full     No truncation (--full)\n\
+    4 = debug    Max verbosity with raw JSON (--debug)\n\n\
 EXAMPLES:\n\
     ralph \"feat: add login button\"              Basic usage\n\
+    ralph -q \"fix: typo\"                        Quiet mode (same as -v0)\n\
+    ralph --full \"feat: complex change\"         Full output (same as -v3)\n\
+    ralph --debug \"debug: investigate\"          Debug mode with raw JSON\n\
     ralph --developer-iters 3                    Fewer iterations\n\
     ralph --preset opencode                      Use opencode for both\n\
     ralph --developer-agent claude --reviewer-agent codex\n\
@@ -75,6 +84,7 @@ ENVIRONMENT VARIABLES:\n\
     RALPH_REVIEWER_AGENT     Reviewer agent name (default: codex)\n\
     RALPH_DEVELOPER_ITERS    Developer iterations (default: 5)\n\
     RALPH_REVIEWER_REVIEWS   Re-review passes (default: 2)\n\
+    RALPH_VERBOSITY          Verbosity level 0-4 (default: 2)\n\
     RALPH_AGENTS_CONFIG      Path to agents.toml\n\
     RALPH_USE_FALLBACK       Enable agent fallback (true/false)")]
 struct Args {
@@ -133,15 +143,36 @@ struct Args {
     )]
     reviewer_agent: Option<String>,
 
-    /// Verbosity level (0=quiet, 1=normal, 2=verbose, 3=full)
+    /// Verbosity level (0=quiet, 1=normal, 2=verbose, 3=full, 4=debug)
     #[arg(
         short,
         long,
-        default_value = "1",
         value_name = "LEVEL",
-        help = "Output verbosity (0=quiet, 1=normal, 2=verbose, 3=full)"
+        value_parser = clap::value_parser!(u8).range(0..=4),
+        help = "Output verbosity (0=quiet, 1=normal, 2=verbose [default], 3=full, 4=debug); overrides RALPH_VERBOSITY"
     )]
-    verbosity: u8,
+    verbosity: Option<u8>,
+
+    /// Shorthand for --verbosity=0 (minimal output)
+    #[arg(
+        short,
+        long,
+        conflicts_with = "verbosity",
+        help = "Quiet mode (same as -v0)"
+    )]
+    quiet: bool,
+
+    /// Shorthand for --verbosity=3 (no truncation)
+    #[arg(
+        long,
+        conflicts_with = "verbosity",
+        help = "Full output mode, no truncation (same as -v3)"
+    )]
+    full: bool,
+
+    /// Shorthand for --verbosity=4 (maximum verbosity with raw JSON)
+    #[arg(long, conflicts_with = "verbosity", help = "Debug mode (same as -v4)")]
+    debug: bool,
 
     /// Enable automatic agent fallback on errors
     #[arg(
@@ -259,12 +290,20 @@ fn run_with_prompt(
     }
 
     // Build full command
-    let shell_escaped_prompt = shell_escape::escape(prompt.into());
-    let full_cmd = format!("{} {}", cmd_str, shell_escaped_prompt);
+    let argv = split_command(cmd_str)?;
+    if argv.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Agent command is empty",
+        ));
+    }
     logger.info(&format!(
         "Executing: {}{}...{}",
         colors.dim(),
-        &full_cmd.chars().take(80).collect::<String>(),
+        &format!("{} <PROMPT>", cmd_str)
+            .chars()
+            .take(80)
+            .collect::<String>(),
         colors.reset()
     ));
 
@@ -274,11 +313,15 @@ fn run_with_prompt(
         || cmd_str.contains("--json");
 
     logger.info(&format!("Using {} parser...", parser_type));
+    if let Some(parent) = Path::new(logfile).parent() {
+        fs::create_dir_all(parent)?;
+    }
     File::create(logfile)?;
 
     // Execute command
-    let mut child = Command::new("sh")
-        .args(["-c", &full_cmd])
+    let mut child = Command::new(&argv[0])
+        .args(&argv[1..])
+        .arg(prompt)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
@@ -524,11 +567,24 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     let colors = Colors::new();
-    let logger = Logger::new(colors).with_log_file(".agent/logs/pipeline.log");
+    let mut logger = Logger::new(colors);
 
     // Load configuration
     let mut config = Config::from_env().with_commit_msg(args.commit_msg);
-    config.verbosity = args.verbosity.into();
+
+    // Handle verbosity shorthand flags (--quiet, --full, --debug take precedence)
+    let base_verbosity = config.verbosity;
+    config.verbosity = if args.quiet {
+        crate::config::Verbosity::Quiet
+    } else if args.debug {
+        crate::config::Verbosity::Debug
+    } else if args.full {
+        crate::config::Verbosity::Full
+    } else if let Some(v) = args.verbosity {
+        v.into()
+    } else {
+        base_verbosity
+    };
 
     // Apply preset first (CLI/env preset overrides env-selected agents, but can be overridden by
     // explicit --developer-agent/--reviewer-agent flags below).
@@ -786,6 +842,7 @@ fn main() -> anyhow::Result<()> {
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
     ensure_files()?;
+    logger = logger.with_log_file(".agent/logs/pipeline.log");
 
     // --generate-commit-msg: Run only the commit message generation phase
     if args.generate_commit_msg {
