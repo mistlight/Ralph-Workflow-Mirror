@@ -43,6 +43,9 @@ shell-escape = "0.1"
 # Tempfile for creating temporary directories
 tempfile = "3.10"
 
+# Signal handling for cleanup on Ctrl+C
+ctrlc = "3.4"
+
 [dev-dependencies]
 # Testing utilities
 tempfile = "3.10"
