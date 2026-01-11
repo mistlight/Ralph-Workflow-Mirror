@@ -42,8 +42,8 @@ use crate::timer::Timer;
 use crate::utils::{
     checkpoint_exists, clean_context_for_reviewer, cleanup_generated_files, clear_checkpoint,
     delete_commit_message_file, delete_plan_file, ensure_files, load_checkpoint, print_progress,
-    read_commit_message_file, save_checkpoint, split_command, truncate_text, update_status, Logger,
-    PipelineCheckpoint, PipelinePhase,
+    read_commit_message_file, reset_context_for_isolation, save_checkpoint, split_command,
+    truncate_text, update_status, Logger, PipelineCheckpoint, PipelinePhase,
 };
 use clap::{Parser, ValueEnum};
 use std::env;
@@ -98,6 +98,7 @@ ENVIRONMENT VARIABLES:\n\
     RALPH_DEVELOPER_ITERS    Developer iterations (default: 5)\n\
     RALPH_REVIEWER_REVIEWS   Re-review passes (default: 2)\n\
     RALPH_VERBOSITY          Verbosity level 0-4 (default: 2)\n\
+    RALPH_ISOLATION_MODE     Isolation mode on/off (default: 1=on)\n\
     RALPH_AGENTS_CONFIG      Path to agents.toml")]
 struct Args {
     /// Commit message for the final commit
@@ -191,6 +192,13 @@ struct Args {
         help = "Quick mode: 1 dev iteration + 1 review (for rapid prototyping)"
     )]
     quick: bool,
+
+    /// Disable isolation mode (allow NOTES.md and ISSUES.md to persist)
+    #[arg(
+        long,
+        help = "Disable isolation mode: keep NOTES.md and ISSUES.md between runs"
+    )]
+    no_isolation: bool,
 
     /// List all configured agents and exit
     #[arg(long, help = "Show all agents from registry and config file")]
@@ -878,6 +886,11 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    // Handle --no-isolation flag (CLI overrides env var)
+    if args.no_isolation {
+        config.isolation_mode = false;
+    }
+
     // Handle --init-global flag: create global agents.toml if it doesn't exist and exit
     if args.init_global {
         let global_path = global_agents_config_path().ok_or_else(|| {
@@ -1460,11 +1473,45 @@ fn main() -> anyhow::Result<()> {
         })?
     };
 
+    // Enforce workflow-capable agents unless the user provided a custom command override.
+    // Agents with can_commit=false are chat-only / non-tool agents and will stall Ralph.
+    if config.developer_cmd.is_none() {
+        if let Some(cfg) = registry.get(&developer_agent) {
+            if !cfg.can_commit {
+                anyhow::bail!(
+                    "Developer agent '{}' has can_commit=false and cannot run Ralph's workflow.\n\
+                    Fix: choose a different agent (see --list-agents) or set can_commit=true in {}.",
+                    developer_agent,
+                    agents_config_path.display()
+                );
+            }
+        }
+    }
+    if config.reviewer_cmd.is_none() {
+        if let Some(cfg) = registry.get(&reviewer_agent) {
+            if !cfg.can_commit {
+                anyhow::bail!(
+                    "Reviewer agent '{}' has can_commit=false and cannot run Ralph's workflow.\n\
+                    Fix: choose a different agent (see --list-agents) or set can_commit=true in {}.",
+                    reviewer_agent,
+                    agents_config_path.display()
+                );
+            }
+        }
+    }
+
     // Require git repo
     require_git_repo()?;
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
-    ensure_files()?;
+    ensure_files(config.isolation_mode)?;
+
+    // Reset context for isolation mode (default) - delete NOTES.md and ISSUES.md
+    // to prevent context contamination from previous runs
+    if config.isolation_mode {
+        reset_context_for_isolation(&logger)?;
+    }
+
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
     // --dry-run: Validate setup without running agents
@@ -1782,11 +1829,7 @@ fn main() -> anyhow::Result<()> {
                 }
 
                 logger.info("Creating plan from PROMPT.md...");
-                update_status(
-                    "Starting planning phase",
-                    "none",
-                    "Analyze PROMPT.md and create PLAN.md",
-                )?;
+                update_status("Starting planning phase", config.isolation_mode)?;
 
                 let plan_prompt = prompt_for_agent(
                     Role::Developer,
@@ -1887,11 +1930,7 @@ fn main() -> anyhow::Result<()> {
 
             // Step 2: Execute the PLAN
             logger.info("Executing plan...");
-            update_status(
-                "Starting development iteration",
-                "none",
-                "Make progress on PROMPT.md goals",
-            )?;
+            update_status("Starting development iteration", config.isolation_mode)?;
 
             let prompt = prompt_for_agent(
                 Role::Developer,
@@ -1923,11 +1962,7 @@ fn main() -> anyhow::Result<()> {
             }
 
             stats.developer_runs_completed += 1;
-            update_status(
-                "Completed progress step",
-                "none",
-                "Continue work on PROMPT.md goals",
-            )?;
+            update_status("Completed progress step", config.isolation_mode)?;
 
             let snap = git_snapshot()?;
             if snap == prev_snap {
@@ -1966,7 +2001,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    update_status("Code changes made", "none", "Evaluate codebase")?;
+    update_status("In progress.", config.isolation_mode)?;
 
     // Phase 2: Reviewer review/fix cycle
     logger.header("PHASE 2: Review & Fix", |c| c.magenta());
@@ -1978,7 +2013,7 @@ fn main() -> anyhow::Result<()> {
         || should_run_from(PipelinePhase::ReviewAgain)
         || should_run_from(PipelinePhase::CommitMessage);
     if reviewer_context == ContextLevel::Minimal && run_any_reviewer_phase {
-        clean_context_for_reviewer(&logger)?;
+        clean_context_for_reviewer(&logger, config.isolation_mode)?;
     }
 
     if should_run_from(PipelinePhase::Review) {
@@ -2005,7 +2040,7 @@ fn main() -> anyhow::Result<()> {
 
         // Initial review - select prompt based on review_depth configuration
         logger.subheader("Initial Review");
-        update_status("Starting code review", "none", "Evaluate codebase")?;
+        update_status("Starting code review", config.isolation_mode)?;
 
         let prompt = match config.review_depth {
             ReviewDepth::Security => {
@@ -2081,7 +2116,7 @@ fn main() -> anyhow::Result<()> {
 
         // Applying fixes
         logger.subheader("Applying Fixes");
-        update_status("Applying fixes", "none", "Address issues found")?;
+        update_status("Applying fixes", config.isolation_mode)?;
 
         let prompt = prompt_for_agent(
             Role::Reviewer,
@@ -2140,7 +2175,7 @@ fn main() -> anyhow::Result<()> {
             ));
             print_progress(j, config.reviewer_reviews, "Review passes");
 
-            update_status("Verification review", "none", "Re-evaluate codebase")?;
+            update_status("Verification review", config.isolation_mode)?;
 
             let prompt = prompt_for_agent(
                 Role::Reviewer,
@@ -2184,11 +2219,7 @@ fn main() -> anyhow::Result<()> {
 
         // Commit message generation phase
         logger.subheader("Generating Commit Message");
-        update_status(
-            "Generating commit message",
-            "none",
-            "Agent writes commit message",
-        )?;
+        update_status("Generating commit message", config.isolation_mode)?;
 
         let commit_msg_prompt = prompt_for_agent(
             Role::Reviewer,
@@ -2216,7 +2247,7 @@ fn main() -> anyhow::Result<()> {
         logger.info("Skipping commit message generation (resuming from a later checkpoint phase)");
     }
 
-    update_status("Review phase complete", "none", "Awaiting finalization")?;
+    update_status("In progress.", config.isolation_mode)?;
 
     // Phase 3: Final checks (if configured)
     if let Some(ref full_cmd) = config.full_check_cmd {
@@ -2434,16 +2465,19 @@ fn main() -> anyhow::Result<()> {
         colors.cyan(),
         colors.reset()
     );
-    println!(
-        "  → {}.agent/ISSUES.md{}    Review findings",
-        colors.cyan(),
-        colors.reset()
-    );
-    println!(
-        "  → {}.agent/NOTES.md{}     Progress notes",
-        colors.cyan(),
-        colors.reset()
-    );
+    // Only show ISSUES.md and NOTES.md when NOT in isolation mode
+    if !config.isolation_mode {
+        println!(
+            "  → {}.agent/ISSUES.md{}    Review findings",
+            colors.cyan(),
+            colors.reset()
+        );
+        println!(
+            "  → {}.agent/NOTES.md{}     Progress notes",
+            colors.cyan(),
+            colors.reset()
+        );
+    }
     println!(
         "  → {}.agent/logs/{}        Detailed logs",
         colors.cyan(),
@@ -2486,6 +2520,69 @@ mod tests {
         assert!(formatted.contains('\n'));
         assert!(formatted.contains("\"type\""));
         assert!(formatted.contains("\"message\""));
+    }
+
+    #[test]
+    fn contract_qwen_stream_json_parses_with_claude_parser() {
+        let registry = AgentRegistry::new().unwrap();
+        let qwen = registry.get("qwen").unwrap();
+
+        let cmd = qwen.build_cmd(true, true, true);
+        let argv = split_command(&cmd).unwrap();
+
+        let parser_type = qwen.json_parser;
+        let uses_json = parser_type != JsonParserType::Generic || argv_requests_json(&argv);
+        assert!(uses_json, "Qwen should run in JSON-parsing mode");
+        assert_eq!(parser_type, JsonParserType::Claude);
+
+        // Claude stream-json compatibility (used by qwen-code)
+        let json = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from qwen"}]}}"#;
+        let input = std::io::Cursor::new(format!("{}\n", json));
+        let reader = std::io::BufReader::new(input);
+
+        let mut out = Vec::new();
+        let colors = Colors { enabled: false };
+        let parser = crate::json_parser::ClaudeParser::new(colors, Verbosity::Normal);
+        parser.parse_stream(reader, &mut out).unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("Hello from qwen"));
+    }
+
+    #[test]
+    fn contract_vibe_runs_in_plain_text_mode() {
+        let registry = AgentRegistry::new().unwrap();
+        let vibe = registry.get("vibe").unwrap();
+
+        let cmd = vibe.build_cmd(true, true, true);
+        let argv = split_command(&cmd).unwrap();
+
+        let parser_type = vibe.json_parser;
+        let uses_json = parser_type != JsonParserType::Generic || argv_requests_json(&argv);
+        assert!(!uses_json, "vibe should not enable JSON parsing by default");
+        assert_eq!(parser_type, JsonParserType::Generic);
+    }
+
+    #[test]
+    fn contract_llama_cli_runs_in_plain_text_mode_with_local_model_flag() {
+        let registry = AgentRegistry::new().unwrap();
+        let llama = registry.get("llama-cli").unwrap();
+
+        let cmd = llama.build_cmd(true, true, true);
+        assert!(
+            cmd.contains(" -m "),
+            "llama-cli should default to a local model path"
+        );
+
+        let argv = split_command(&cmd).unwrap();
+
+        let parser_type = llama.json_parser;
+        let uses_json = parser_type != JsonParserType::Generic || argv_requests_json(&argv);
+        assert!(
+            !uses_json,
+            "llama-cli should not enable JSON parsing by default"
+        );
+        assert_eq!(parser_type, JsonParserType::Generic);
     }
 
     #[test]

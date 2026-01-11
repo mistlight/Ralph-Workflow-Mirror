@@ -1013,13 +1013,21 @@ exit 0
 
     cmd.assert().success();
 
-    // Reviewer should be called 3 times
+    // With RALPH_REVIEWER_REVIEWS=3, the reviewer is called:
+    // 1. Initial review
+    // 2. Fix
+    // 3-5. ReviewAgain x3 (verification passes)
+    // 6. Commit message generation
+    // = 6 total calls
     let count: u32 = fs::read_to_string(&counter_path)
         .unwrap()
         .trim()
         .parse()
         .unwrap();
-    assert_eq!(count, 3, "Expected 3 reviewer calls for 3 review passes");
+    assert_eq!(
+        count, 6,
+        "Expected 6 reviewer calls (1 review + 1 fix + 3 verification + 1 commit msg)"
+    );
 }
 
 #[test]
@@ -1044,11 +1052,7 @@ tokio = "1.0"
     fs::create_dir_all(dir.path().join("src")).unwrap();
     fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
     fs::create_dir_all(dir.path().join("tests")).unwrap();
-    fs::write(
-        dir.path().join("tests/test.rs"),
-        "#[test] fn it_works() {}",
-    )
-    .unwrap();
+    fs::write(dir.path().join("tests/test.rs"), "#[test] fn it_works() {}").unwrap();
 
     // Run ralph with verbose output to see stack detection
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
@@ -1089,8 +1093,11 @@ fn ralph_stack_detection_javascript_project() {
     )
     .unwrap();
     fs::create_dir_all(dir.path().join("src")).unwrap();
-    fs::write(dir.path().join("src/App.jsx"), "export default () => <div />")
-        .unwrap();
+    fs::write(
+        dir.path().join("src/App.jsx"),
+        "export default () => <div />",
+    )
+    .unwrap();
 
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
@@ -1314,7 +1321,12 @@ fn ralph_handles_invalid_json_in_config() {
     .unwrap();
 
     let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
-    cmd.current_dir(dir_path).env("RALPH_INTERACTIVE", "0");
+    cmd.current_dir(dir_path)
+        .env("RALPH_INTERACTIVE", "0")
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     let output = cmd.output().unwrap();
 
@@ -1326,6 +1338,207 @@ fn ralph_handles_invalid_json_in_config() {
             || stderr.contains("parse")
             || stderr.contains("TOML")
             || stderr.contains("error")
+    );
+}
+
+// ============================================================================
+// Isolation Mode Tests
+// ============================================================================
+
+#[test]
+fn ralph_isolation_mode_does_not_create_status_notes_issues() {
+    // Isolation mode (default) should NOT create STATUS.md, NOTES.md or ISSUES.md
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: test\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // STATUS.md, NOTES.md and ISSUES.md should NOT exist in isolation mode (default)
+    assert!(
+        !dir.path().join(".agent/STATUS.md").exists(),
+        "STATUS.md should not be created in isolation mode"
+    );
+    assert!(
+        !dir.path().join(".agent/NOTES.md").exists(),
+        "NOTES.md should not be created in isolation mode"
+    );
+    assert!(
+        !dir.path().join(".agent/ISSUES.md").exists(),
+        "ISSUES.md should not be created in isolation mode"
+    );
+}
+
+#[test]
+fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
+    // Isolation mode should DELETE existing STATUS.md, NOTES.md and ISSUES.md
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Pre-create STATUS.md, NOTES.md and ISSUES.md
+    fs::write(dir.path().join(".agent/STATUS.md"), "old status").unwrap();
+    fs::write(dir.path().join(".agent/NOTES.md"), "old notes").unwrap();
+    fs::write(dir.path().join(".agent/ISSUES.md"), "old issues").unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: test\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Files should be deleted
+    assert!(
+        !dir.path().join(".agent/STATUS.md").exists(),
+        "STATUS.md should be deleted in isolation mode"
+    );
+    assert!(
+        !dir.path().join(".agent/NOTES.md").exists(),
+        "NOTES.md should be deleted in isolation mode"
+    );
+    assert!(
+        !dir.path().join(".agent/ISSUES.md").exists(),
+        "ISSUES.md should be deleted in isolation mode"
+    );
+}
+
+#[test]
+fn ralph_no_isolation_creates_status_notes_issues() {
+    // --no-isolation flag should create STATUS.md, NOTES.md and ISSUES.md
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--no-isolation")
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: test\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // STATUS.md, NOTES.md and ISSUES.md should exist when not in isolation mode
+    assert!(
+        dir.path().join(".agent/STATUS.md").exists(),
+        "STATUS.md should be created when --no-isolation is used"
+    );
+    assert!(
+        dir.path().join(".agent/NOTES.md").exists(),
+        "NOTES.md should be created when --no-isolation is used"
+    );
+    assert!(
+        dir.path().join(".agent/ISSUES.md").exists(),
+        "ISSUES.md should be created when --no-isolation is used"
+    );
+}
+
+#[test]
+fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
+    // RALPH_ISOLATION_MODE=0 should create STATUS.md, NOTES.md and ISSUES.md
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_ISOLATION_MODE", "0")
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: test\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // STATUS.md, NOTES.md and ISSUES.md should exist when isolation mode is disabled via env
+    assert!(
+        dir.path().join(".agent/STATUS.md").exists(),
+        "STATUS.md should be created when RALPH_ISOLATION_MODE=0"
+    );
+    assert!(
+        dir.path().join(".agent/NOTES.md").exists(),
+        "NOTES.md should be created when RALPH_ISOLATION_MODE=0"
+    );
+    assert!(
+        dir.path().join(".agent/ISSUES.md").exists(),
+        "ISSUES.md should be created when RALPH_ISOLATION_MODE=0"
+    );
+}
+
+#[test]
+fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
+    // --no-isolation should overwrite/truncate STATUS.md, NOTES.md and ISSUES.md
+    // to a single vague sentence, to prevent detailed context from persisting.
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Pre-create STATUS.md, NOTES.md and ISSUES.md with detailed multi-line content.
+    fs::write(
+        dir.path().join(".agent/STATUS.md"),
+        "Planning.\nDid X.\nDid Y.\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".agent/NOTES.md"),
+        "Lots of context.\nDetails.\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".agent/ISSUES.md"),
+        "Issue A: details.\nIssue B: details.\n",
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--no-isolation")
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: test\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Files should exist (non-isolation mode), but should be overwritten to 1 line.
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".agent/STATUS.md")).unwrap(),
+        "In progress.\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".agent/NOTES.md")).unwrap(),
+        "Notes.\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".agent/ISSUES.md")).unwrap(),
+        "No issues recorded.\n"
+    );
+
+    // No archived context should be left behind.
+    assert!(
+        !dir.path().join(".agent/archive").exists(),
+        ".agent/archive should not be created during cleanup"
     );
 }
 

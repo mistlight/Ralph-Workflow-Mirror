@@ -1298,10 +1298,7 @@ mod tests {
             .security_checks
             .iter()
             .any(|c| c.contains("prepared statements") || c.contains("htmlspecialchars")));
-        assert!(guidelines
-            .quality_checks
-            .iter()
-            .any(|c| c.contains("PSR")));
+        assert!(guidelines.quality_checks.iter().any(|c| c.contains("PSR")));
     }
 
     #[test]
