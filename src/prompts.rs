@@ -74,7 +74,7 @@ Append brief bullets to .agent/NOTES.md."#
 }
 
 /// Generate reviewer re-review prompt with minimal context
-pub(crate) fn prompt_codex_review_again(context: ContextLevel) -> String {
+pub(crate) fn prompt_review_again(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"Re-review the repository with fresh eyes.
 
@@ -215,7 +215,7 @@ pub(crate) fn prompt_for_agent(
         ),
         (_, Action::Review) => prompt_reviewer_review(context),
         (_, Action::Fix) => prompt_fix(),
-        (_, Action::ReviewAgain) => prompt_codex_review_again(context),
+        (_, Action::ReviewAgain) => prompt_review_again(context),
         (_, Action::Commit) => prompt_commit(commit_msg.unwrap_or("chore: apply changes")),
         (_, Action::GenerateCommitMessage) => prompt_generate_commit_message(),
         // Fallback for Reviewer + Iterate (shouldn't happen but be safe)
@@ -261,8 +261,8 @@ mod tests {
     }
 
     #[test]
-    fn test_prompt_codex_review_again_fresh_eyes() {
-        let result = prompt_codex_review_again(ContextLevel::Minimal);
+    fn test_prompt_review_again_fresh_eyes() {
+        let result = prompt_review_again(ContextLevel::Minimal);
         assert!(result.contains("fresh eyes"));
         assert!(result.contains("DO NOT assume"));
     }
