@@ -139,10 +139,44 @@ fn ralph_init_creates_config_file() {
     assert!(content.contains("Ralph Agents Configuration File"));
     assert!(content.contains("[agents.claude]"));
     assert!(content.contains("[agents.codex]"));
+    assert!(content.contains("[agent_chain]"));
 
     // Output should indicate file was created
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Created"));
+}
+
+#[test]
+fn ralph_uses_agent_chain_first_entries_as_defaults() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Ensure no explicit agent selection via env is in play.
+    // base_env doesn't set RALPH_DEVELOPER_AGENT / RALPH_REVIEWER_AGENT.
+    fs::write(
+        dir.path().join(".agent/agents.toml"),
+        r#"[agent_chain]
+developer = ["opencode", "claude"]
+reviewer = ["aider", "codex"]
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: test\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("opencode"))
+        .stdout(predicate::str::contains("aider"));
 }
 
 #[test]
@@ -399,6 +433,36 @@ fn ralph_show_commit_msg_displays_message() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("feat: test commit message"));
+}
+
+#[test]
+fn ralph_show_commit_msg_uses_repo_root_from_subdir() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Root commit message (the one we expect to read)
+    fs::write(
+        dir.path().join(".agent/commit-message.txt"),
+        "feat: root commit message\n",
+    )
+    .unwrap();
+
+    // Subdir has a different file that should NOT be read (we always chdir to repo root)
+    let subdir = dir.path().join("nested/dir");
+    fs::create_dir_all(subdir.join(".agent")).unwrap();
+    fs::write(
+        subdir.join(".agent/commit-message.txt"),
+        "feat: WRONG commit message\n",
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    cmd.current_dir(&subdir).arg("--show-commit-msg");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("feat: root commit message"))
+        .stdout(predicate::str::contains("WRONG").not());
 }
 
 #[test]

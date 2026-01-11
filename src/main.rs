@@ -17,7 +17,8 @@ mod timer;
 mod utils;
 
 use crate::agents::{
-    AgentErrorKind, AgentRegistry, AgentRole, AgentsConfigFile, ConfigInitResult, JsonParserType,
+    global_agents_config_path, AgentErrorKind, AgentRegistry, AgentRole, AgentsConfigFile,
+    ConfigInitResult, JsonParserType,
 };
 use crate::colors::Colors;
 use crate::config::Config;
@@ -193,6 +194,13 @@ struct Args {
     /// Initialize agents.toml config file and exit
     #[arg(long, help = "Create .agent/agents.toml with default settings")]
     init: bool,
+
+    /// Initialize global agents.toml config file and exit
+    #[arg(
+        long,
+        help = "Create ~/.config/ralph/agents.toml with default settings"
+    )]
+    init_global: bool,
 
     // === Plumbing Commands ===
     // These are low-level operations for scripting and automation
@@ -569,6 +577,13 @@ fn main() -> anyhow::Result<()> {
     let colors = Colors::new();
     let mut logger = Logger::new(colors);
 
+    let developer_agent_from_cli = args.developer_agent.is_some();
+    let reviewer_agent_from_cli = args.reviewer_agent.is_some();
+    let preset_from_cli = args.preset.is_some();
+    let developer_agent_from_env =
+        env::var("RALPH_DEVELOPER_AGENT").is_ok() || env::var("RALPH_DRIVER_AGENT").is_ok();
+    let reviewer_agent_from_env = env::var("RALPH_REVIEWER_AGENT").is_ok();
+
     // Load configuration
     let mut config = Config::from_env().with_commit_msg(args.commit_msg);
 
@@ -617,15 +632,68 @@ fn main() -> anyhow::Result<()> {
         config.use_fallback = true;
     }
 
+    // Handle --init-global flag: create global agents.toml if it doesn't exist and exit
+    if args.init_global {
+        let global_path = global_agents_config_path().ok_or_else(|| {
+            anyhow::anyhow!("Cannot determine global config directory (no home directory)")
+        })?;
+
+        match AgentsConfigFile::ensure_config_exists(&global_path) {
+            Ok(ConfigInitResult::Created) => {
+                println!(
+                    "{}Created global config: {}{}{}\n",
+                    colors.green(),
+                    colors.bold(),
+                    global_path.display(),
+                    colors.reset()
+                );
+                println!("This config will be loaded for all repositories.");
+                println!(
+                    "Per-repository configs in .agent/agents.toml will override these settings."
+                );
+                return Ok(());
+            }
+            Ok(ConfigInitResult::AlreadyExists) => {
+                println!(
+                    "{}Global config already exists:{} {}",
+                    colors.yellow(),
+                    colors.reset(),
+                    global_path.display()
+                );
+                println!("Edit the file to customize, or delete it to regenerate from defaults.");
+                return Ok(());
+            }
+            Err(e) => {
+                anyhow::bail!(
+                    "Failed to create global config file {}: {}",
+                    global_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    // Resolve config path relative to repo root (for git worktree support)
+    // This ensures .agent/agents.toml is always in the repo/worktree root
+    let repo_root_for_config = get_repo_root().ok();
+    let agents_config_path = if config.agents_config_path.is_relative() {
+        repo_root_for_config
+            .as_ref()
+            .map(|root| root.join(&config.agents_config_path))
+            .unwrap_or_else(|| config.agents_config_path.clone())
+    } else {
+        config.agents_config_path.clone()
+    };
+
     // Handle --init flag: create agents.toml if it doesn't exist and exit
     if args.init {
-        match AgentsConfigFile::ensure_config_exists(&config.agents_config_path) {
+        match AgentsConfigFile::ensure_config_exists(&agents_config_path) {
             Ok(ConfigInitResult::Created) => {
                 println!(
                     "{}Created {}{}{}\n",
                     colors.green(),
                     colors.bold(),
-                    config.agents_config_path.display(),
+                    agents_config_path.display(),
                     colors.reset()
                 );
                 println!("Edit the file to customize agent configurations, then run ralph again.");
@@ -637,7 +705,7 @@ fn main() -> anyhow::Result<()> {
                     "{}Config file already exists:{} {}",
                     colors.yellow(),
                     colors.reset(),
-                    config.agents_config_path.display()
+                    agents_config_path.display()
                 );
                 println!("Edit the file to customize, or delete it to regenerate from defaults.");
                 return Ok(());
@@ -645,7 +713,7 @@ fn main() -> anyhow::Result<()> {
             Err(e) => {
                 anyhow::bail!(
                     "Failed to create config file {}: {}",
-                    config.agents_config_path.display(),
+                    agents_config_path.display(),
                     e
                 );
             }
@@ -653,7 +721,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Check if agents.toml exists; if not, create it and prompt user
-    match AgentsConfigFile::ensure_config_exists(&config.agents_config_path) {
+    match AgentsConfigFile::ensure_config_exists(&agents_config_path) {
         Ok(ConfigInitResult::Created) => {
             println!();
             println!(
@@ -665,7 +733,7 @@ fn main() -> anyhow::Result<()> {
             println!(
                 "  {}{}{}",
                 colors.cyan(),
-                config.agents_config_path.display(),
+                agents_config_path.display(),
                 colors.reset()
             );
             println!();
@@ -681,30 +749,80 @@ fn main() -> anyhow::Result<()> {
         Err(e) => {
             logger.warn(&format!(
                 "Failed to create agents config at {}: {}",
-                config.agents_config_path.display(),
+                agents_config_path.display(),
                 e
             ));
             // Continue with built-in defaults
         }
     }
 
-    // Initialize agent registry (load from config file if present)
-    let mut registry = match AgentRegistry::with_config_file(&config.agents_config_path) {
-        Ok(r) => r,
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to load agents config from {}: {}, using defaults",
-                config.agents_config_path.display(),
-                e
-            ));
-            AgentRegistry::new().map_err(|defaults_err| {
-                anyhow::anyhow!(
-                    "Failed to load built-in default agents config (examples/agents.toml): {}",
-                    defaults_err
-                )
-            })?
+    // Initialize agent registry with merged configs (global + local)
+    // Priority: built-in defaults < global config < local config
+    let (mut registry, config_sources) =
+        match AgentRegistry::with_merged_configs(&agents_config_path) {
+            Ok((r, sources, warnings)) => {
+                for warning in warnings {
+                    logger.warn(&warning);
+                }
+                // Log which configs were loaded
+                if !sources.is_empty() {
+                    for source in &sources {
+                        logger.info(&format!(
+                            "Loaded {} agents from {}{}{}",
+                            source.agents_loaded,
+                            colors.cyan(),
+                            source.path.display(),
+                            colors.reset()
+                        ));
+                    }
+                }
+                (r, sources)
+            }
+            Err(e) => {
+                logger.warn(&format!(
+                    "Failed to load agents config from {}: {}, using defaults",
+                    agents_config_path.display(),
+                    e
+                ));
+                let registry = AgentRegistry::new().map_err(|defaults_err| {
+                    anyhow::anyhow!(
+                        "Failed to load built-in default agents config (examples/agents.toml): {}",
+                        defaults_err
+                    )
+                })?;
+                (registry, Vec::new())
+            }
+        };
+
+    // Log if no config files were found (but we still have built-in defaults)
+    if config_sources.is_empty() {
+        logger.info(&format!(
+            "Using built-in agent defaults {}(no agents.toml found){}",
+            colors.dim(),
+            colors.reset()
+        ));
+    }
+
+    // If agent_chain / fallback is configured, use its first entry as the default role agent
+    // unless the user explicitly selected an agent via CLI/env (or via --preset).
+    if !preset_from_cli && !developer_agent_from_cli && !developer_agent_from_env {
+        if let Some(primary) = registry
+            .fallback_config()
+            .get_fallbacks(AgentRole::Developer)
+            .first()
+        {
+            config.developer_agent = primary.clone();
         }
-    };
+    }
+    if !preset_from_cli && !reviewer_agent_from_cli && !reviewer_agent_from_env {
+        if let Some(primary) = registry
+            .fallback_config()
+            .get_fallbacks(AgentRole::Reviewer)
+            .first()
+        {
+            config.reviewer_agent = primary.clone();
+        }
+    }
 
     if config.use_fallback {
         let mut fallback = registry.fallback_config().clone();
@@ -817,7 +935,7 @@ fn main() -> anyhow::Result<()> {
                 anyhow::anyhow!(
                     "Unknown developer agent '{}'. Use --list-agents or define it in {}.",
                     config.developer_agent,
-                    config.agents_config_path.display()
+                    agents_config_path.display()
                 )
             })?
     };
@@ -830,7 +948,7 @@ fn main() -> anyhow::Result<()> {
                 anyhow::anyhow!(
                     "Unknown reviewer agent '{}'. Use --list-agents or define it in {}.",
                     config.reviewer_agent,
-                    config.agents_config_path.display()
+                    agents_config_path.display()
                 )
             })?
     };

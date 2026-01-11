@@ -9,6 +9,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
+use which::which;
 
 /// Marker string for Ralph-managed hooks
 pub(crate) const HOOK_MARKER: &str = "RALPH_RUST_MANAGED_HOOK";
@@ -31,12 +32,7 @@ impl GitHelpers {
     /// Find the real git binary path
     fn init_real_git(&mut self) {
         if self.real_git.is_none() {
-            if let Ok(output) = Command::new("which").arg("git").output() {
-                if output.status.success() {
-                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    self.real_git = Some(PathBuf::from(path));
-                }
-            }
+            self.real_git = which("git").ok();
         }
     }
 }
