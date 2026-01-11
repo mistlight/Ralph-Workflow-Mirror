@@ -135,24 +135,40 @@ impl ClaudeParser {
         let c = &self.colors;
 
         let output = match event {
-            ClaudeEvent::System { subtype, session_id, cwd } => {
+            ClaudeEvent::System {
+                subtype,
+                session_id,
+                cwd,
+            } => {
                 if subtype.as_deref() == Some("init") {
                     let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                     let mut out = format!(
                         "{}[Claude]{} {}Session started{} {}({:.8}...){}\n",
-                        c.dim(), c.reset(), c.cyan(), c.reset(), c.dim(), sid, c.reset()
+                        c.dim(),
+                        c.reset(),
+                        c.cyan(),
+                        c.reset(),
+                        c.dim(),
+                        sid,
+                        c.reset()
                     );
                     if let Some(cwd) = cwd {
                         out.push_str(&format!(
                             "{}[Claude]{} {}Working dir: {}{}\n",
-                            c.dim(), c.reset(), c.dim(), cwd, c.reset()
+                            c.dim(),
+                            c.reset(),
+                            c.dim(),
+                            cwd,
+                            c.reset()
                         ));
                     }
                     out
                 } else {
                     format!(
                         "{}[Claude]{} {}{}{}\n",
-                        c.dim(), c.reset(), c.cyan(),
+                        c.dim(),
+                        c.reset(),
+                        c.cyan(),
                         subtype.unwrap_or_else(|| "system".to_string()),
                         c.reset()
                     )
@@ -170,20 +186,32 @@ impl ClaudeParser {
                                         let preview = truncate_text(&text, limit);
                                         out.push_str(&format!(
                                             "{}[Claude]{} {}{}{}\n",
-                                            c.dim(), c.reset(), c.white(), preview, c.reset()
+                                            c.dim(),
+                                            c.reset(),
+                                            c.white(),
+                                            preview,
+                                            c.reset()
                                         ));
                                     }
                                 }
                                 ContentBlock::ToolUse { name, input } => {
                                     let tool_name = name.unwrap_or_else(|| "unknown".to_string());
                                     let key = input
-                                        .and_then(|v| v.as_object().and_then(|o| o.keys().next().cloned()))
+                                        .and_then(|v| {
+                                            v.as_object().and_then(|o| o.keys().next().cloned())
+                                        })
                                         .map(|k| format!(" ({})", k))
                                         .unwrap_or_default();
                                     out.push_str(&format!(
                                         "{}[Claude]{} {}Tool{}: {}{}{}{}\n",
-                                        c.dim(), c.reset(), c.magenta(), c.reset(),
-                                        c.bold(), tool_name, c.reset(), key
+                                        c.dim(),
+                                        c.reset(),
+                                        c.magenta(),
+                                        c.reset(),
+                                        c.bold(),
+                                        tool_name,
+                                        c.reset(),
+                                        key
                                     ));
                                 }
                                 ContentBlock::ToolResult { content } => {
@@ -192,7 +220,11 @@ impl ClaudeParser {
                                         let preview = truncate_text(&content, limit);
                                         out.push_str(&format!(
                                             "{}[Claude]{} {}Result:{} {}\n",
-                                            c.dim(), c.reset(), c.dim(), c.reset(), preview
+                                            c.dim(),
+                                            c.reset(),
+                                            c.dim(),
+                                            c.reset(),
+                                            preview
                                         ));
                                     }
                                 }
@@ -211,14 +243,27 @@ impl ClaudeParser {
                             let preview = truncate_text(text, limit);
                             return Some(format!(
                                 "{}[Claude]{} {}User{}: {}{}{}\n",
-                                c.dim(), c.reset(), c.blue(), c.reset(), c.dim(), preview, c.reset()
+                                c.dim(),
+                                c.reset(),
+                                c.blue(),
+                                c.reset(),
+                                c.dim(),
+                                preview,
+                                c.reset()
                             ));
                         }
                     }
                 }
                 String::new()
             }
-            ClaudeEvent::Result { subtype, duration_ms, total_cost_usd, num_turns, result, error } => {
+            ClaudeEvent::Result {
+                subtype,
+                duration_ms,
+                total_cost_usd,
+                num_turns,
+                result,
+                error,
+            } => {
                 let duration_s = duration_ms.unwrap_or(0) / 1000;
                 let duration_m = duration_s / 60;
                 let duration_s_rem = duration_s % 60;
@@ -228,16 +273,33 @@ impl ClaudeParser {
                 let mut out = if subtype.as_deref() == Some("success") {
                     format!(
                         "{}[Claude]{} {}{} Completed{} {}({}m {}s, {} turns, ${:.4}){}\n",
-                        c.dim(), c.reset(), c.green(), CHECK, c.reset(),
-                        c.dim(), duration_m, duration_s_rem, turns, cost, c.reset()
+                        c.dim(),
+                        c.reset(),
+                        c.green(),
+                        CHECK,
+                        c.reset(),
+                        c.dim(),
+                        duration_m,
+                        duration_s_rem,
+                        turns,
+                        cost,
+                        c.reset()
                     )
                 } else {
                     let err = error.unwrap_or_else(|| "unknown error".to_string());
                     format!(
                         "{}[Claude]{} {}{} {}{}: {} {}({}m {}s){}\n",
-                        c.dim(), c.reset(), c.red(), CROSS,
-                        subtype.unwrap_or_else(|| "error".to_string()), c.reset(),
-                        err, c.dim(), duration_m, duration_s_rem, c.reset()
+                        c.dim(),
+                        c.reset(),
+                        c.red(),
+                        CROSS,
+                        subtype.unwrap_or_else(|| "error".to_string()),
+                        c.reset(),
+                        err,
+                        c.dim(),
+                        duration_m,
+                        duration_s_rem,
+                        c.reset()
                     )
                 };
 
@@ -246,7 +308,11 @@ impl ClaudeParser {
                     let preview = truncate_text(&result, limit);
                     out.push_str(&format!(
                         "\n{}Result summary:{}\n{}{}{}\n",
-                        c.bold(), c.reset(), c.dim(), preview, c.reset()
+                        c.bold(),
+                        c.reset(),
+                        c.dim(),
+                        preview,
+                        c.reset()
                     ));
                 }
                 out
@@ -319,11 +385,23 @@ impl CodexParser {
                 let tid = thread_id.unwrap_or_else(|| "unknown".to_string());
                 format!(
                     "{}[Codex]{} {}Thread started{} {}({:.8}...){}\n",
-                    c.dim(), c.reset(), c.cyan(), c.reset(), c.dim(), tid, c.reset()
+                    c.dim(),
+                    c.reset(),
+                    c.cyan(),
+                    c.reset(),
+                    c.dim(),
+                    tid,
+                    c.reset()
                 )
             }
             CodexEvent::TurnStarted {} => {
-                format!("{}[Codex]{} {}Turn started{}\n", c.dim(), c.reset(), c.blue(), c.reset())
+                format!(
+                    "{}[Codex]{} {}Turn started{}\n",
+                    c.dim(),
+                    c.reset(),
+                    c.blue(),
+                    c.reset()
+                )
             }
             CodexEvent::TurnCompleted { usage } => {
                 let (input, output) = usage
@@ -331,14 +409,27 @@ impl CodexParser {
                     .unwrap_or((0, 0));
                 format!(
                     "{}[Codex]{} {}{} Turn completed{} {}(in:{} out:{}){}\n",
-                    c.dim(), c.reset(), c.green(), CHECK, c.reset(), c.dim(), input, output, c.reset()
+                    c.dim(),
+                    c.reset(),
+                    c.green(),
+                    CHECK,
+                    c.reset(),
+                    c.dim(),
+                    input,
+                    output,
+                    c.reset()
                 )
             }
             CodexEvent::TurnFailed { error } => {
                 let err = error.unwrap_or_else(|| "unknown error".to_string());
                 format!(
                     "{}[Codex]{} {}{} Turn failed:{} {}\n",
-                    c.dim(), c.reset(), c.red(), CROSS, c.reset(), err
+                    c.dim(),
+                    c.reset(),
+                    c.red(),
+                    CROSS,
+                    c.reset(),
+                    err
                 )
             }
             CodexEvent::ItemStarted { item } => {
@@ -350,14 +441,33 @@ impl CodexParser {
                             let preview = truncate_text(&cmd, limit);
                             format!(
                                 "{}[Codex]{} {}Exec{}: {}{}{}\n",
-                                c.dim(), c.reset(), c.magenta(), c.reset(), c.dim(), preview, c.reset()
+                                c.dim(),
+                                c.reset(),
+                                c.magenta(),
+                                c.reset(),
+                                c.dim(),
+                                preview,
+                                c.reset()
                             )
                         }
                         Some("agent_message") => {
-                            format!("{}[Codex]{} {}Thinking...{}\n", c.dim(), c.reset(), c.blue(), c.reset())
+                            format!(
+                                "{}[Codex]{} {}Thinking...{}\n",
+                                c.dim(),
+                                c.reset(),
+                                c.blue(),
+                                c.reset()
+                            )
                         }
                         Some(t) => {
-                            format!("{}[Codex]{} {}{}{}\n", c.dim(), c.reset(), c.dim(), t, c.reset())
+                            format!(
+                                "{}[Codex]{} {}{}{}\n",
+                                c.dim(),
+                                c.reset(),
+                                c.dim(),
+                                t,
+                                c.reset()
+                            )
                         }
                         None => String::new(),
                     }
@@ -374,7 +484,11 @@ impl CodexParser {
                                 let preview = truncate_text(&text, limit);
                                 format!(
                                     "{}[Codex]{} {}{}{}\n",
-                                    c.dim(), c.reset(), c.white(), preview, c.reset()
+                                    c.dim(),
+                                    c.reset(),
+                                    c.white(),
+                                    preview,
+                                    c.reset()
                                 )
                             } else {
                                 String::new()
@@ -383,14 +497,22 @@ impl CodexParser {
                         Some("command_execution") => {
                             format!(
                                 "{}[Codex]{} {}{} Command done{}\n",
-                                c.dim(), c.reset(), c.green(), CHECK, c.reset()
+                                c.dim(),
+                                c.reset(),
+                                c.green(),
+                                CHECK,
+                                c.reset()
                             )
                         }
                         Some("file_change") => {
                             let path = item.path.unwrap_or_else(|| "unknown".to_string());
                             format!(
                                 "{}[Codex]{} {}File{}: {}\n",
-                                c.dim(), c.reset(), c.yellow(), c.reset(), path
+                                c.dim(),
+                                c.reset(),
+                                c.yellow(),
+                                c.reset(),
+                                path
                             )
                         }
                         _ => String::new(),
@@ -400,10 +522,17 @@ impl CodexParser {
                 }
             }
             CodexEvent::Error { message, error } => {
-                let err = message.or(error).unwrap_or_else(|| "unknown error".to_string());
+                let err = message
+                    .or(error)
+                    .unwrap_or_else(|| "unknown error".to_string());
                 format!(
                     "{}[Codex]{} {}{} Error:{} {}\n",
-                    c.dim(), c.reset(), c.red(), CROSS, c.reset(), err
+                    c.dim(),
+                    c.reset(),
+                    c.red(),
+                    CROSS,
+                    c.reset(),
+                    err
                 )
             }
             CodexEvent::Unknown => String::new(),
@@ -515,7 +644,10 @@ mod tests {
         let full_parser = ClaudeParser::new(Colors::disabled(), Verbosity::Full);
 
         let long_text = "a".repeat(200);
-        let json = format!(r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{}"}}]}}}}"#, long_text);
+        let json = format!(
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{}"}}]}}}}"#,
+            long_text
+        );
 
         let quiet_output = quiet_parser.parse_event(&json).unwrap();
         let full_output = full_parser.parse_event(&json).unwrap();

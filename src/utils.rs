@@ -2,7 +2,9 @@
 //!
 //! Common helper functions used throughout Ralph.
 
-use crate::colors::{Colors, ARROW, CHECK, CROSS, INFO, WARN, BOX_H, BOX_TL, BOX_TR, BOX_BL, BOX_BR, BOX_V};
+use crate::colors::{
+    Colors, ARROW, BOX_BL, BOX_BR, BOX_H, BOX_TL, BOX_TR, BOX_V, CHECK, CROSS, INFO, WARN,
+};
 use chrono::Local;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, Write};
@@ -55,8 +57,12 @@ impl Logger {
         let c = &self.colors;
         println!(
             "{}[{}]{} {}{}{} {}",
-            c.dim(), timestamp(), c.reset(),
-            c.blue(), INFO, c.reset(),
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.blue(),
+            INFO,
+            c.reset(),
             msg
         );
         self.log_to_file(&format!("[{}] [INFO] {}", timestamp(), msg));
@@ -66,9 +72,15 @@ impl Logger {
         let c = &self.colors;
         println!(
             "{}[{}]{} {}{}{} {}{}{}",
-            c.dim(), timestamp(), c.reset(),
-            c.green(), CHECK, c.reset(),
-            c.green(), msg, c.reset()
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.green(),
+            CHECK,
+            c.reset(),
+            c.green(),
+            msg,
+            c.reset()
         );
         self.log_to_file(&format!("[{}] [OK] {}", timestamp(), msg));
     }
@@ -77,9 +89,15 @@ impl Logger {
         let c = &self.colors;
         println!(
             "{}[{}]{} {}{}{} {}{}{}",
-            c.dim(), timestamp(), c.reset(),
-            c.yellow(), WARN, c.reset(),
-            c.yellow(), msg, c.reset()
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.yellow(),
+            WARN,
+            c.reset(),
+            c.yellow(),
+            msg,
+            c.reset()
         );
         self.log_to_file(&format!("[{}] [WARN] {}", timestamp(), msg));
     }
@@ -88,9 +106,15 @@ impl Logger {
         let c = &self.colors;
         eprintln!(
             "{}[{}]{} {}{}{} {}{}{}",
-            c.dim(), timestamp(), c.reset(),
-            c.red(), CROSS, c.reset(),
-            c.red(), msg, c.reset()
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.red(),
+            CROSS,
+            c.reset(),
+            c.red(),
+            msg,
+            c.reset()
         );
         self.log_to_file(&format!("[{}] [ERROR] {}", timestamp(), msg));
     }
@@ -99,8 +123,12 @@ impl Logger {
         let c = &self.colors;
         println!(
             "{}[{}]{} {}{}{} {}",
-            c.dim(), timestamp(), c.reset(),
-            c.magenta(), ARROW, c.reset(),
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.magenta(),
+            ARROW,
+            c.reset(),
             msg
         );
         self.log_to_file(&format!("[{}] [STEP] {}", timestamp(), msg));
@@ -117,23 +145,34 @@ impl Logger {
         println!();
         println!(
             "{}{}{}{}{}{}",
-            color, c.bold(), BOX_TL,
+            color,
+            c.bold(),
+            BOX_TL,
             BOX_H.to_string().repeat(width),
-            BOX_TR, c.reset()
+            BOX_TR,
+            c.reset()
         );
         println!(
             "{}{}{}{}{}{}{}{}{}{}",
-            color, c.bold(), BOX_V,
+            color,
+            c.bold(),
+            BOX_V,
             " ".repeat(padding),
-            c.white(), title, color,
+            c.white(),
+            title,
+            color,
             " ".repeat(width - padding - title_len),
-            BOX_V, c.reset()
+            BOX_V,
+            c.reset()
         );
         println!(
             "{}{}{}{}{}{}",
-            color, c.bold(), BOX_BL,
+            color,
+            c.bold(),
+            BOX_BL,
             BOX_H.to_string().repeat(width),
-            BOX_BR, c.reset()
+            BOX_BR,
+            c.reset()
         );
     }
 
@@ -163,7 +202,14 @@ pub fn print_progress(current: u32, total: u32, label: &str) {
     let c = Colors::new();
 
     if total == 0 {
-        println!("{}{}:{} {}[no progress data]{}", c.dim(), label, c.reset(), c.yellow(), c.reset());
+        println!(
+            "{}{}:{} {}[no progress data]{}",
+            c.dim(),
+            label,
+            c.reset(),
+            c.yellow(),
+            c.reset()
+        );
         return;
     }
 
@@ -176,10 +222,17 @@ pub fn print_progress(current: u32, total: u32, label: &str) {
 
     println!(
         "{}{}:{} {}[{}]{} {}{}%{} ({}/{})",
-        c.dim(), label, c.reset(),
-        c.cyan(), bar, c.reset(),
-        c.bold(), pct, c.reset(),
-        current, total
+        c.dim(),
+        label,
+        c.reset(),
+        c.cyan(),
+        bar,
+        c.reset(),
+        c.bold(),
+        pct,
+        c.reset(),
+        current,
+        total
     );
 }
 
@@ -267,7 +320,9 @@ pub fn reset_iteration_context(iteration: u32, next_action: &str) -> io::Result<
 - Next action: {}
 - Updated at: {}
 "#,
-            iteration, next_action, timestamp()
+            iteration,
+            next_action,
+            timestamp()
         ),
     )
 }
@@ -283,7 +338,10 @@ pub fn update_status(last_action: &str, blockers: &str, next_action: &str) -> io
 - Next action: {}
 - Updated at: {}
 "#,
-            last_action, blockers, next_action, timestamp()
+            last_action,
+            blockers,
+            next_action,
+            timestamp()
         ),
     )
 }

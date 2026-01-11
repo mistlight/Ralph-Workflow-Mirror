@@ -60,7 +60,10 @@ pub fn require_git_repo() -> io::Result<()> {
     if output.status.success() {
         Ok(())
     } else {
-        Err(io::Error::new(io::ErrorKind::NotFound, "Not inside a git repo"))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Not inside a git repo",
+        ))
     }
 }
 
@@ -74,7 +77,10 @@ pub fn get_repo_root() -> io::Result<PathBuf> {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(PathBuf::from(path))
     } else {
-        Err(io::Error::new(io::ErrorKind::NotFound, "Not in a git repository"))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Not in a git repository",
+        ))
     }
 }
 
@@ -97,7 +103,10 @@ pub fn get_hooks_dir() -> io::Result<PathBuf> {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(PathBuf::from(path))
     } else {
-        Err(io::Error::new(io::ErrorKind::NotFound, "Unable to resolve git hooks directory"))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Unable to resolve git hooks directory",
+        ))
     }
 }
 
@@ -231,7 +240,9 @@ pub fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
 /// Enable git wrapper that blocks commits during agent phase
 pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<PathBuf> {
     helpers.init_real_git();
-    let real_git = helpers.real_git.as_ref()
+    let real_git = helpers
+        .real_git
+        .as_ref()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "git not found"))?;
 
     #[allow(deprecated)]
@@ -270,7 +281,10 @@ exec "{}" "$@"
 
     // Prepend wrapper dir to PATH
     let current_path = env::var("PATH").unwrap_or_default();
-    env::set_var("PATH", format!("{}:{}", wrapper_dir.display(), current_path));
+    env::set_var(
+        "PATH",
+        format!("{}:{}", wrapper_dir.display(), current_path),
+    );
 
     helpers.wrapper_dir = Some(wrapper_dir.clone());
     Ok(wrapper_dir)
@@ -337,9 +351,7 @@ pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
 
 /// Get current HEAD commit hash
 pub fn get_head_commit() -> io::Result<String> {
-    let output = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output()?;
+    let output = Command::new("git").args(["rev-parse", "HEAD"]).output()?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -363,9 +375,7 @@ pub fn get_last_commit_message() -> io::Result<String> {
 
 /// Stage all changes
 pub fn git_add_all() -> io::Result<()> {
-    let status = Command::new("git")
-        .args(["add", "-A"])
-        .status()?;
+    let status = Command::new("git").args(["add", "-A"]).status()?;
 
     if status.success() {
         Ok(())
@@ -669,7 +679,9 @@ mod tests {
             .current_dir(dir_path)
             .output()
             .unwrap();
-        let head_before = String::from_utf8_lossy(&head_before.stdout).trim().to_string();
+        let head_before = String::from_utf8_lossy(&head_before.stdout)
+            .trim()
+            .to_string();
 
         // Make a new commit
         fs::write(dir_path.join("file.txt"), "changed").unwrap();
@@ -690,7 +702,9 @@ mod tests {
             .current_dir(dir_path)
             .output()
             .unwrap();
-        let head_after = String::from_utf8_lossy(&head_after.stdout).trim().to_string();
+        let head_after = String::from_utf8_lossy(&head_after.stdout)
+            .trim()
+            .to_string();
 
         // Verify detection
         assert_ne!(head_before, head_after);
@@ -739,14 +753,18 @@ mod tests {
             .current_dir(dir_path)
             .output()
             .unwrap();
-        let head_before = String::from_utf8_lossy(&head_before.stdout).trim().to_string();
+        let head_before = String::from_utf8_lossy(&head_before.stdout)
+            .trim()
+            .to_string();
 
         let head_after = Command::new("git")
             .args(["rev-parse", "HEAD"])
             .current_dir(dir_path)
             .output()
             .unwrap();
-        let head_after = String::from_utf8_lossy(&head_after.stdout).trim().to_string();
+        let head_after = String::from_utf8_lossy(&head_after.stdout)
+            .trim()
+            .to_string();
 
         // Verify no change detected
         assert_eq!(head_before, head_after);
