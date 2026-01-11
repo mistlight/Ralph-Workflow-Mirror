@@ -31,7 +31,7 @@ you want built          review the changes        git repository
 - **Vibecoding enthusiasts** - Let AI write your code while you focus on ideas
 - **Developers** - Automate repetitive implementation tasks
 - **Teams** - Consistent AI-assisted development with built-in code review
-- **Anyone** building software with AI assistants like Claude, Codex, or similar tools
+- **Anyone** building software with AI assistants (Claude, Codex, Aider, OpenCode, Goose, and more)
 
 ## Quick Start
 
@@ -100,11 +100,11 @@ Add a dark mode toggle to the settings page.
 ### Running Ralph
 
 ```bash
-# Basic usage - uses default agents (Claude + Codex)
+# Basic usage - uses agents configured in agent_chain
 ralph
 
-# Use a different agent preset
-ralph --preset opencode
+# Quick mode for rapid prototyping (1 dev iteration + 1 review)
+ralph --quick
 
 # Control how many times agents iterate
 ralph --developer-iters 3 --reviewer-reviews 1
@@ -138,18 +138,20 @@ Ralph uses two agents with different roles:
 
 | Role | What It Does | Default |
 |------|--------------|---------|
-| **Developer** | Writes and implements code | Claude |
-| **Reviewer** | Reviews code and suggests fixes | Codex |
+| **Developer** | Writes and implements code | First agent in `agent_chain.developer` |
+| **Reviewer** | Reviews code and suggests fixes | First agent in `agent_chain.reviewer` |
+
+The default agent chains are configured in `.agent/agents.toml`. Edit this file to use your preferred agents.
 
 Change agents via command line:
 ```bash
-ralph --developer-agent opencode --reviewer-agent claude
+ralph --developer-agent aider --reviewer-agent opencode
 ```
 
 Or via environment variables:
 ```bash
 export RALPH_DEVELOPER_AGENT=aider
-export RALPH_REVIEWER_AGENT=claude
+export RALPH_REVIEWER_AGENT=opencode
 ```
 
 ### Agent Configuration File
@@ -181,8 +183,8 @@ Quick reference for the most common settings:
 
 | Variable | What It Does | Default |
 |----------|--------------|---------|
-| `RALPH_DEVELOPER_AGENT` | Which agent writes code | `claude` |
-| `RALPH_REVIEWER_AGENT` | Which agent reviews code | `codex` |
+| `RALPH_DEVELOPER_AGENT` | Which agent writes code | From `agent_chain` |
+| `RALPH_REVIEWER_AGENT` | Which agent reviews code | From `agent_chain` |
 | `RALPH_DEVELOPER_ITERS` | How many times developer runs | `5` |
 | `RALPH_REVIEWER_REVIEWS` | How many review passes | `2` |
 | `RALPH_VERBOSITY` | Output detail (0-4) | `2` |
@@ -261,18 +263,28 @@ Add to `.gitignore` if you don't want these tracked:
 | Problem | Solution |
 |---------|----------|
 | "Not a git repository" | Run Ralph inside a git repo |
-| "Agent not found" | Install the agent CLI and ensure it's on your PATH |
+| "Agent not found" | Install the agent CLI and ensure it's on your PATH. Ralph shows installation hints. |
 | Garbled/broken output | Set `json_parser = "generic"` for that agent |
-| Rate limit errors | Configure fallback agents in `[agent_chain]` or wait and retry |
+| Rate limit errors | Ralph auto-retries with backoff. Configure fallback agents for faster recovery. |
+| Network/connection errors | Check internet, firewall, VPN. Ralph auto-retries network issues. |
+| Authentication errors | Run `<agent> auth` to authenticate, or check your API key. |
 | No commit created | Ralph falls back to `git commit` if the reviewer doesn't |
 | Nothing happening | Try `ralph --debug` to see what's going on |
 
 ## Common Workflows
 
-### Simple Feature
+### Quick Prototyping
 ```bash
+# Use quick mode for fast iteration
 echo "Add a logout button to the navbar" > PROMPT.md
-ralph
+ralph --quick
+```
+
+### Full Feature with Review
+```bash
+# Full pipeline: multiple dev iterations + thorough review
+echo "Implement user authentication with JWT" > PROMPT.md
+ralph --developer-iters 5 --reviewer-reviews 2
 ```
 
 ### Bug Fix with Tests
@@ -288,9 +300,9 @@ FULL_CHECK_CMD="npm test" ralph
 ```bash
 # Start with a rough prompt
 echo "Build a todo app" > PROMPT.md
-ralph
+ralph --quick
 
-# Refine
+# Refine with more thorough review
 echo "Add due dates and priority levels to the todo app" > PROMPT.md
 ralph
 ```

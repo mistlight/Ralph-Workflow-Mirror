@@ -224,21 +224,6 @@ If all resolved, update .agent/ISSUES.md to confirm completion."#
     }
 }
 
-/// Generate commit prompt for reviewer (DEPRECATED: prefer prompt_generate_commit_message)
-pub(crate) fn prompt_commit(message: &str) -> String {
-    format!(
-        r#"All work is complete. Create a git commit with all changes.
-
-Run:
-  git add -A
-  git commit -m "{}"
-
-If commit hooks fail, fix the issues and try again.
-Report success or failure."#,
-        message
-    )
-}
-
 /// Generate prompt for planning phase
 /// Agent does a deep dive on PROMPT.md and creates a detailed PLAN.md
 ///
@@ -396,14 +381,12 @@ pub(crate) enum Role {
 
 /// Action types for prompts
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum Action {
     Plan,
     Iterate,
     Review,
     Fix,
     ReviewAgain,
-    Commit,
     GenerateCommitMessage,
 }
 
@@ -414,7 +397,6 @@ pub(crate) fn prompt_for_agent(
     context: ContextLevel,
     iteration: Option<u32>,
     total_iterations: Option<u32>,
-    commit_msg: Option<&str>,
 ) -> String {
     match (role, action) {
         (_, Action::Plan) => prompt_plan(),
@@ -426,7 +408,6 @@ pub(crate) fn prompt_for_agent(
         (_, Action::Review) => prompt_reviewer_review(context),
         (_, Action::Fix) => prompt_fix(),
         (_, Action::ReviewAgain) => prompt_review_again(context),
-        (_, Action::Commit) => prompt_commit(commit_msg.unwrap_or("chore: apply changes")),
         (_, Action::GenerateCommitMessage) => prompt_generate_commit_message(),
         // Fallback for Reviewer + Iterate (shouldn't happen but be safe)
         (Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
@@ -496,14 +477,6 @@ mod tests {
     }
 
     #[test]
-    fn test_prompt_commit() {
-        let result = prompt_commit("feat: test commit");
-        assert!(result.contains("git add -A"));
-        assert!(result.contains("git commit"));
-        assert!(result.contains("feat: test commit"));
-    }
-
-    #[test]
     fn test_prompt_for_agent_developer() {
         let result = prompt_for_agent(
             Role::Developer,
@@ -511,7 +484,6 @@ mod tests {
             ContextLevel::Normal,
             Some(3),
             Some(10),
-            None,
         );
         assert!(result.contains("PROMPT.md"));
     }
@@ -522,7 +494,6 @@ mod tests {
             Role::Reviewer,
             Action::Review,
             ContextLevel::Minimal,
-            None,
             None,
             None,
         );
@@ -609,7 +580,6 @@ mod tests {
             ContextLevel::Normal,
             None,
             None,
-            None,
         );
         assert!(result.contains("PLAN.md"));
     }
@@ -620,7 +590,6 @@ mod tests {
             Role::Reviewer,
             Action::GenerateCommitMessage,
             ContextLevel::Normal,
-            None,
             None,
             None,
         );
