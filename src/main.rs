@@ -21,7 +21,7 @@ use crate::agents::{
     ConfigInitResult, JsonParserType,
 };
 use crate::colors::Colors;
-use crate::config::Config;
+use crate::config::{Config, Verbosity};
 use crate::git_helpers::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
     get_repo_root, git_add_all, git_commit, git_snapshot, require_git_repo, start_agent_phase,
@@ -32,7 +32,7 @@ use crate::timer::Timer;
 use crate::utils::{
     clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
     delete_plan_file, ensure_files, print_progress, read_commit_message_file, split_command,
-    update_status, Logger,
+    truncate_text, update_status, Logger,
 };
 use clap::{Parser, ValueEnum};
 use std::env;
@@ -243,6 +243,80 @@ struct CommandResult {
     stderr: String,
 }
 
+fn argv_requests_json(argv: &[String]) -> bool {
+    // Skip argv[0] (the executable); scan flags/args only.
+    let mut iter = argv.iter().skip(1).peekable();
+    while let Some(arg) = iter.next() {
+        if arg == "--json" || arg.starts_with("--json=") {
+            return true;
+        }
+
+        if arg == "--output-format" {
+            if let Some(next) = iter.peek() {
+                let next = next.as_str();
+                if next.contains("json") {
+                    return true;
+                }
+            }
+        }
+        if let Some((flag, value)) = arg.split_once('=') {
+            if flag == "--output-format" && value.contains("json") {
+                return true;
+            }
+            if flag == "--format" && value == "json" {
+                return true;
+            }
+        }
+
+        if arg == "--format" {
+            if let Some(next) = iter.peek() {
+                if next.as_str() == "json" {
+                    return true;
+                }
+            }
+        }
+
+        // Some CLIs use short flags like -F json or -o stream-json
+        if arg == "-F" {
+            if let Some(next) = iter.peek() {
+                if next.as_str() == "json" {
+                    return true;
+                }
+            }
+        }
+        if arg.starts_with("-F") && arg != "-F" && arg.trim_start_matches("-F") == "json" {
+            return true;
+        }
+
+        if arg == "-o" {
+            if let Some(next) = iter.peek() {
+                let next = next.as_str();
+                if next.contains("json") {
+                    return true;
+                }
+            }
+        }
+        if arg.starts_with("-o") && arg != "-o" && arg.trim_start_matches("-o").contains("json") {
+            return true;
+        }
+    }
+    false
+}
+
+fn format_generic_json_for_display(line: &str, verbosity: Verbosity) -> String {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return truncate_text(line, verbosity.truncate_limit("agent_msg"));
+    };
+
+    let formatted = match verbosity {
+        Verbosity::Full | Verbosity::Debug => {
+            serde_json::to_string_pretty(&value).unwrap_or_else(|_| line.to_string())
+        }
+        _ => serde_json::to_string(&value).unwrap_or_else(|_| line.to_string()),
+    };
+    truncate_text(&formatted, verbosity.truncate_limit("agent_msg"))
+}
+
 /// Run a command with a prompt argument (internal helper for run_with_fallback)
 #[allow(clippy::too_many_arguments)]
 fn run_with_prompt(
@@ -305,9 +379,7 @@ fn run_with_prompt(
     ));
 
     // Determine if JSON parsing is needed (based on parser type and command flags)
-    let uses_json = parser_type != JsonParserType::Generic
-        || cmd_str.contains("--output-format=stream-json")
-        || cmd_str.contains("--json");
+    let uses_json = parser_type != JsonParserType::Generic || argv_requests_json(&argv);
 
     logger.info(&format!("Using {} parser...", parser_type));
     if let Some(parent) = Path::new(logfile).parent() {
@@ -316,12 +388,32 @@ fn run_with_prompt(
     File::create(logfile)?;
 
     // Execute command
-    let mut child = Command::new(&argv[0])
+    let mut child = match Command::new(&argv[0])
         .args(&argv[1..])
         .arg(prompt)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()?;
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            let exit_code = if e.kind() == io::ErrorKind::NotFound {
+                127
+            } else {
+                126
+            };
+            return Ok(CommandResult {
+                exit_code,
+                stderr: format!("{}: {}", argv[0], e),
+            });
+        }
+        Err(e) => return Err(e),
+    };
 
     let stdout = child
         .stdout
@@ -362,12 +454,13 @@ fn run_with_prompt(
                         continue;
                     }
 
-                    let output = format!(
-                        "{}[Agent]{} {}\n",
-                        colors.dim(),
-                        colors.reset(),
-                        &line.chars().take(100).collect::<String>()
-                    );
+                    let display = if config.verbosity.is_debug() {
+                        line.clone()
+                    } else {
+                        format_generic_json_for_display(&line, config.verbosity)
+                    };
+
+                    let output = format!("{}[Agent]{} {}\n", colors.dim(), colors.reset(), display);
                     write!(out, "{}", output)?;
 
                     writeln!(log_writer, "{}", line)?;
@@ -417,6 +510,15 @@ fn run_with_prompt(
 /// then falls back to alternative agents based on the fallback configuration
 /// if the primary agent fails with specific error types (rate limiting,
 /// token exhaustion, auth failures, command not found).
+///
+/// ## Fault Tolerance Strategy
+///
+/// 1. Try each agent with up to `max_retries` attempts
+/// 2. On retriable errors (rate limit, transient), retry the same agent
+/// 3. On fallback errors (auth, command not found), switch to next agent
+/// 4. When all agents are exhausted, use exponential backoff and cycle back
+///    to the first agent (up to `max_cycles` times)
+/// 5. Exponential backoff: base_delay * multiplier^cycle, capped at max_backoff
 #[allow(clippy::too_many_arguments)]
 fn run_with_fallback(
     role: AgentRole,
@@ -439,105 +541,134 @@ fn run_with_fallback(
         ));
     }
 
-    // Start with primary agent
+    // Build the list of agents to try
     let mut agents_to_try: Vec<&str> = vec![primary_agent];
-
-    // Add configured fallbacks that aren't the primary
     for fb in &fallbacks {
         if *fb != primary_agent && !agents_to_try.contains(fb) {
             agents_to_try.push(fb);
         }
     }
 
-    for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
-        let Some(agent_config) = registry.get(agent_name) else {
-            logger.warn(&format!(
-                "Agent '{}' not found in registry, skipping",
-                agent_name
+    // Track the last error for final reporting
+    let mut last_exit_code = 1;
+
+    // Cycle through all agents with exponential backoff
+    for cycle in 0..fallback_config.max_cycles {
+        if cycle > 0 {
+            let backoff_ms = fallback_config.calculate_backoff(cycle - 1);
+            logger.info(&format!(
+                "Cycle {}/{}: All agents exhausted, waiting {}ms before retry (exponential backoff)...",
+                cycle + 1,
+                fallback_config.max_cycles,
+                backoff_ms
             ));
-            continue;
-        };
-
-        // Check for command override from env vars (for primary agent only)
-        let cmd_str = if agent_index == 0 {
-            // For primary agent, respect RALPH_DEVELOPER_CMD/RALPH_REVIEWER_CMD overrides
-            match role {
-                AgentRole::Developer => config
-                    .developer_cmd
-                    .clone()
-                    .unwrap_or_else(|| agent_config.build_cmd(true, true, true)),
-                AgentRole::Reviewer => config
-                    .reviewer_cmd
-                    .clone()
-                    .unwrap_or_else(|| agent_config.build_cmd(true, true, false)),
-            }
-        } else {
-            agent_config.build_cmd(true, true, role == AgentRole::Developer)
-        };
-        let parser_type = agent_config.json_parser;
-        let label = format!("{} ({})", base_label, agent_name);
-        let logfile = format!("{}_{}.log", logfile_prefix, agent_name);
-
-        // Try with retries
-        for retry in 0..fallback_config.max_retries {
-            if retry > 0 {
-                logger.info(&format!(
-                    "Retry {}/{} for {} after {}ms delay...",
-                    retry, fallback_config.max_retries, agent_name, fallback_config.retry_delay_ms
-                ));
-                std::thread::sleep(std::time::Duration::from_millis(
-                    fallback_config.retry_delay_ms,
-                ));
-            }
-
-            let result = run_with_prompt(
-                &label,
-                &cmd_str,
-                prompt,
-                &logfile,
-                parser_type,
-                timer,
-                logger,
-                colors,
-                config,
-            )?;
-
-            if result.exit_code == 0 {
-                return Ok(0);
-            }
-
-            // Classify the error
-            let error_kind = AgentErrorKind::classify(result.exit_code, &result.stderr);
-
-            logger.warn(&format!(
-                "Agent '{}' failed with {:?} (exit code {})",
-                agent_name, error_kind, result.exit_code
-            ));
-
-            // Decide whether to retry or fallback
-            if error_kind.should_retry() && retry + 1 < fallback_config.max_retries {
-                continue; // Retry same agent
-            }
-
-            if error_kind.should_fallback() && agent_index + 1 < agents_to_try.len() {
-                logger.info(&format!(
-                    "Switching to fallback agent: {}",
-                    agents_to_try[agent_index + 1]
-                ));
-                break; // Try next agent
-            }
-
-            // For permanent errors or no more retries, try next agent or give up
-            if agent_index + 1 >= agents_to_try.len() {
-                logger.error("All agents exhausted, returning last error");
-                return Ok(result.exit_code);
-            }
-            break;
+            std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
         }
+
+        for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
+            let Some(agent_config) = registry.get(agent_name) else {
+                logger.warn(&format!(
+                    "Agent '{}' not found in registry, skipping",
+                    agent_name
+                ));
+                continue;
+            };
+
+            // Check for command override from env vars (for primary agent only)
+            let cmd_str = if agent_index == 0 && cycle == 0 {
+                // For primary agent on first cycle, respect env var overrides
+                match role {
+                    AgentRole::Developer => config
+                        .developer_cmd
+                        .clone()
+                        .unwrap_or_else(|| agent_config.build_cmd(true, true, true)),
+                    AgentRole::Reviewer => config
+                        .reviewer_cmd
+                        .clone()
+                        .unwrap_or_else(|| agent_config.build_cmd(true, true, false)),
+                }
+            } else {
+                agent_config.build_cmd(true, true, role == AgentRole::Developer)
+            };
+            let parser_type = agent_config.json_parser;
+            let label = format!("{} ({})", base_label, agent_name);
+            let logfile = format!("{}_{}.log", logfile_prefix, agent_name);
+
+            // Try with retries
+            for retry in 0..fallback_config.max_retries {
+                if retry > 0 {
+                    logger.info(&format!(
+                        "Retry {}/{} for {} after {}ms delay...",
+                        retry,
+                        fallback_config.max_retries,
+                        agent_name,
+                        fallback_config.retry_delay_ms
+                    ));
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        fallback_config.retry_delay_ms,
+                    ));
+                }
+
+                let result = run_with_prompt(
+                    &label,
+                    &cmd_str,
+                    prompt,
+                    &logfile,
+                    parser_type,
+                    timer,
+                    logger,
+                    colors,
+                    config,
+                )?;
+
+                if result.exit_code == 0 {
+                    return Ok(0);
+                }
+
+                last_exit_code = result.exit_code;
+
+                // Classify the error
+                let error_kind = AgentErrorKind::classify(result.exit_code, &result.stderr);
+
+                logger.warn(&format!(
+                    "Agent '{}' failed with {:?} (exit code {})",
+                    agent_name, error_kind, result.exit_code
+                ));
+
+                // Decide whether to retry or fallback
+                if error_kind.should_retry() && retry + 1 < fallback_config.max_retries {
+                    continue; // Retry same agent
+                }
+
+                if error_kind.should_fallback() && agent_index + 1 < agents_to_try.len() {
+                    logger.info(&format!(
+                        "Switching to fallback agent: {}",
+                        agents_to_try[agent_index + 1]
+                    ));
+                    break; // Try next agent
+                }
+
+                // For permanent errors, we still continue to next agent in the chain
+                // to maximize chances of success
+                if agent_index + 1 < agents_to_try.len() {
+                    logger.info(&format!(
+                        "Trying next agent in chain: {}",
+                        agents_to_try[agent_index + 1]
+                    ));
+                }
+                break;
+            }
+        }
+        // End of this cycle - if we reach here, all agents failed
+        // The outer loop will apply exponential backoff and try again
     }
 
-    // Should not reach here, but return error if we do
-    Ok(1)
+    // All cycles exhausted
+    logger.error(&format!(
+        "All agents exhausted after {} cycles with exponential backoff",
+        fallback_config.max_cycles
+    ));
+    Ok(last_exit_code)
 }
 
 struct AgentPhaseGuard<'a> {
@@ -1520,4 +1651,65 @@ fn main() -> anyhow::Result<()> {
 
     agent_phase_guard.disarm();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn argv_requests_json_detects_common_flags() {
+        assert!(argv_requests_json(&split_command("tool --json").unwrap()));
+        assert!(argv_requests_json(
+            &split_command("tool --output-format=stream-json").unwrap()
+        ));
+        assert!(argv_requests_json(
+            &split_command("tool --output-format stream-json").unwrap()
+        ));
+        assert!(argv_requests_json(
+            &split_command("tool --format json").unwrap()
+        ));
+        assert!(argv_requests_json(&split_command("tool -F json").unwrap()));
+        assert!(argv_requests_json(
+            &split_command("tool -o stream-json").unwrap()
+        ));
+    }
+
+    #[test]
+    fn format_generic_json_for_display_pretty_prints_when_full() {
+        let line = r#"{"type":"message","content":{"text":"hello"}}"#;
+        let formatted = format_generic_json_for_display(line, Verbosity::Full);
+        assert!(formatted.contains('\n'));
+        assert!(formatted.contains("\"type\""));
+        assert!(formatted.contains("\"message\""));
+    }
+
+    #[test]
+    fn run_with_prompt_returns_command_result_for_missing_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let config = Config {
+            interactive: false,
+            prompt_path: dir.path().join("prompt.txt"),
+            ..Config::default()
+        };
+
+        let result = run_with_prompt(
+            "test",
+            "definitely-not-a-real-binary-ralph",
+            "hello",
+            &dir.path().join("log.txt").display().to_string(),
+            JsonParserType::Generic,
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+        )
+        .unwrap();
+
+        assert_eq!(result.exit_code, 127);
+        assert!(!result.stderr.is_empty());
+    }
 }
