@@ -121,3 +121,22 @@ start_agent_phase() {
 end_agent_phase() {
   rm -f .no_agent_commit
 }
+
+############################################
+# Reviewer commit support
+############################################
+# When RALPH_REVIEWER_COMMITS=1, the reviewer (Codex) is allowed
+# to run git commit at the end of its phase
+
+# Allow reviewer to commit by temporarily lifting the block
+# This removes .no_agent_commit and disables the wrapper
+allow_reviewer_commit() {
+  rm -f .no_agent_commit
+  disable_git_wrapper
+}
+
+# Re-enable commit block after reviewer phase (if needed)
+block_commits_again() {
+  touch .no_agent_commit
+  enable_git_wrapper
+}

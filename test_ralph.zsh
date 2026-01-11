@@ -110,6 +110,8 @@ source "${RALPH_SCRIPT_DIR}/lib/timer.zsh"
 source "${RALPH_SCRIPT_DIR}/lib/utils.zsh"
 source "${RALPH_SCRIPT_DIR}/lib/json_parser.zsh"
 source "${RALPH_SCRIPT_DIR}/lib/git_helpers.zsh"
+source "${RALPH_SCRIPT_DIR}/lib/prompts.zsh"
+source "${RALPH_SCRIPT_DIR}/lib/agents.zsh"
 
 ############################################
 # Tests
@@ -406,6 +408,232 @@ test_start_end_agent_phase() {
 }
 
 ############################################
+# Verbosity / Truncation Tests
+############################################
+
+test_verbosity_truncate_limits() {
+  # Test quiet mode (0)
+  RALPH_VERBOSITY=0
+  local limit=$(_get_truncate_limit "text")
+  assert_eq "60" "$limit" "_get_truncate_limit returns 60 for text in quiet mode"
+
+  # Test normal mode (1)
+  RALPH_VERBOSITY=1
+  limit=$(_get_truncate_limit "text")
+  assert_eq "120" "$limit" "_get_truncate_limit returns 120 for text in normal mode"
+
+  # Test verbose mode (2)
+  RALPH_VERBOSITY=2
+  limit=$(_get_truncate_limit "text")
+  assert_eq "500" "$limit" "_get_truncate_limit returns 500 for text in verbose mode"
+
+  # Test full mode (3)
+  RALPH_VERBOSITY=3
+  limit=$(_get_truncate_limit "text")
+  assert_eq "999999" "$limit" "_get_truncate_limit returns 999999 for text in full mode"
+
+  # Reset to default
+  RALPH_VERBOSITY=1
+}
+
+test_truncate_text_function() {
+  local short_text="Hello world"
+  local long_text="This is a very long text that should be truncated when the limit is small"
+
+  # Test no truncation when under limit
+  local result=$(_truncate_text "$short_text" 50)
+  assert_eq "$short_text" "$result" "_truncate_text preserves short text"
+
+  # Test truncation when over limit
+  result=$(_truncate_text "$long_text" 20)
+  assert_eq "This is a very long ..." "$result" "_truncate_text truncates with ellipsis"
+}
+
+test_verbosity_affects_claude_output() {
+  # Test that verbosity setting affects parse output
+  # Use a sample Claude text event
+  local json='{"type":"assistant","message":{"content":[{"type":"text","text":"This is a test message that will be truncated depending on verbosity settings"}]}}'
+
+  RALPH_VERBOSITY=0  # quiet mode - 60 char limit
+  local output=$(print -r -- "$json" | stream_parse_claude)
+  # In quiet mode, text should be shorter
+  ((TESTS_RUN++))
+  if [[ ${#output} -lt 100 ]]; then
+    test_pass "Claude output truncated in quiet mode"
+  else
+    test_fail "Claude output truncated in quiet mode" "Expected shorter output"
+  fi
+
+  RALPH_VERBOSITY=3  # full mode - no truncation
+  output=$(print -r -- "$json" | stream_parse_claude)
+  # In full mode, should contain full text
+  assert_contains "$output" "verbosity settings" "Claude output complete in full mode"
+
+  # Reset to default
+  RALPH_VERBOSITY=1
+}
+
+############################################
+# Prompts Module Tests
+############################################
+
+test_prompt_claude_iteration() {
+  local result=$(prompt_claude_iteration 2 5)
+  assert_contains "$result" "Iteration 2/5" "prompt_claude_iteration shows correct iteration"
+  assert_contains "$result" "PROMPT.md" "prompt_claude_iteration references PROMPT.md"
+  assert_contains "$result" "STATUS.md" "prompt_claude_iteration references STATUS.md"
+}
+
+test_prompt_codex_review_fresh_eyes() {
+  RALPH_REVIEWER_CONTEXT=0
+  local result=$(prompt_codex_review)
+  assert_contains "$result" "fresh eyes" "prompt_codex_review mentions fresh eyes in minimal context"
+  assert_contains "$result" "DO NOT read" "prompt_codex_review warns not to read status in minimal context"
+  RALPH_REVIEWER_CONTEXT=1  # reset
+}
+
+test_prompt_codex_review_normal() {
+  RALPH_REVIEWER_CONTEXT=1
+  local result=$(prompt_codex_review)
+  assert_contains "$result" "PROMPT.md" "prompt_codex_review references PROMPT.md in normal context"
+  # In normal mode, should NOT contain fresh eyes language
+  ((TESTS_RUN++))
+  if [[ "$result" != *"fresh eyes"* ]]; then
+    test_pass "prompt_codex_review omits fresh eyes in normal context"
+  else
+    test_fail "prompt_codex_review omits fresh eyes in normal context"
+  fi
+  RALPH_REVIEWER_CONTEXT=0  # reset to default
+}
+
+test_prompt_codex_fix() {
+  local result=$(prompt_codex_fix)
+  assert_contains "$result" "ISSUES.md" "prompt_codex_fix references ISSUES.md"
+  assert_contains "$result" "NOTES.md" "prompt_codex_fix references NOTES.md"
+}
+
+test_prompt_codex_review_again_fresh_eyes() {
+  RALPH_REVIEWER_CONTEXT=0
+  local result=$(prompt_codex_review_again)
+  assert_contains "$result" "fresh eyes" "prompt_codex_review_again mentions fresh eyes"
+  assert_contains "$result" "DO NOT assume" "prompt_codex_review_again warns not to assume"
+  RALPH_REVIEWER_CONTEXT=1  # reset
+}
+
+test_prompt_commit() {
+  local result=$(prompt_commit "feat: test commit")
+  assert_contains "$result" "git add -A" "prompt_commit includes git add"
+  assert_contains "$result" "git commit" "prompt_commit includes git commit"
+  assert_contains "$result" "feat: test commit" "prompt_commit includes commit message"
+}
+
+test_prompt_for_agent_developer() {
+  local result=$(prompt_for_agent developer iterate 3 10)
+  assert_contains "$result" "Iteration 3/10" "prompt_for_agent developer:iterate works"
+}
+
+test_prompt_for_agent_reviewer() {
+  RALPH_REVIEWER_CONTEXT=0
+  local result=$(prompt_for_agent reviewer review)
+  assert_contains "$result" "fresh eyes" "prompt_for_agent reviewer:review works"
+  RALPH_REVIEWER_CONTEXT=1  # reset
+}
+
+############################################
+# Reviewer Commit Tests
+############################################
+
+test_allow_reviewer_commit() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  # Start agent phase (creates .no_agent_commit)
+  start_agent_phase
+
+  ((TESTS_RUN++))
+  if [[ -f ".no_agent_commit" ]]; then
+    test_pass "start_agent_phase creates .no_agent_commit marker"
+  else
+    test_fail "start_agent_phase creates .no_agent_commit marker"
+  fi
+
+  # Allow reviewer to commit
+  allow_reviewer_commit
+
+  ((TESTS_RUN++))
+  if [[ ! -f ".no_agent_commit" ]]; then
+    test_pass "allow_reviewer_commit removes .no_agent_commit"
+  else
+    test_fail "allow_reviewer_commit removes .no_agent_commit"
+  fi
+
+  # Cleanup
+  disable_git_wrapper
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_block_commits_again() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  # Start with no block
+  rm -f .no_agent_commit
+
+  # Block commits again
+  block_commits_again
+
+  ((TESTS_RUN++))
+  if [[ -f ".no_agent_commit" ]]; then
+    test_pass "block_commits_again creates .no_agent_commit"
+  else
+    test_fail "block_commits_again creates .no_agent_commit"
+  fi
+
+  # Cleanup
+  disable_git_wrapper
+  rm -f .no_agent_commit
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_reviewer_commit_workflow() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  # Simulate reviewer commit workflow
+  start_agent_phase
+
+  # Create a file (simulating work done by reviewer)
+  echo "test content" > testfile.txt
+
+  # Allow reviewer to commit
+  allow_reviewer_commit
+
+  # Verify git commit is now possible (no wrapper blocking)
+  git add testfile.txt
+  ((TESTS_RUN++))
+  if git commit -m "test: reviewer commit" 2>/dev/null; then
+    test_pass "reviewer can commit after allow_reviewer_commit"
+  else
+    test_fail "reviewer can commit after allow_reviewer_commit"
+  fi
+
+  # Verify commit was created
+  local last_msg=$(git log -1 --pretty=%s 2>/dev/null)
+  assert_eq "test: reviewer commit" "$last_msg" "reviewer commit message is correct"
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+############################################
 # Run all tests
 ############################################
 print ""
@@ -436,6 +664,114 @@ run_test "Require git repo - inside repo" test_require_git_repo_in_repo
 run_test "Require git repo - outside repo" test_require_git_repo_outside_repo
 run_test "Install hook - creates file" test_install_hook_creates_file
 run_test "Start/end agent phase" test_start_end_agent_phase
+run_test "Verbosity truncate limits" test_verbosity_truncate_limits
+run_test "Truncate text function" test_truncate_text_function
+run_test "Verbosity affects Claude output" test_verbosity_affects_claude_output
+run_test "Prompt - Claude iteration" test_prompt_claude_iteration
+run_test "Prompt - Codex review fresh eyes" test_prompt_codex_review_fresh_eyes
+run_test "Prompt - Codex review normal" test_prompt_codex_review_normal
+run_test "Prompt - Codex fix" test_prompt_codex_fix
+run_test "Prompt - Codex re-review fresh eyes" test_prompt_codex_review_again_fresh_eyes
+run_test "Prompt - Commit message" test_prompt_commit
+run_test "Prompt - Generic developer prompt" test_prompt_for_agent_developer
+run_test "Prompt - Generic reviewer prompt" test_prompt_for_agent_reviewer
+run_test "Reviewer commit - allow_reviewer_commit" test_allow_reviewer_commit
+run_test "Reviewer commit - block_commits_again" test_block_commits_again
+run_test "Reviewer commit - workflow" test_reviewer_commit_workflow
+
+############################################
+# Agent abstraction tests
+############################################
+
+test_agent_get_cmd_claude() {
+  local result="$(agent_get_cmd claude)"
+  assert_contains "$result" "claude" "agent_get_cmd claude returns claude command"
+}
+
+test_agent_get_cmd_codex() {
+  local result="$(agent_get_cmd codex)"
+  assert_contains "$result" "codex" "agent_get_cmd codex returns codex command"
+}
+
+test_agent_get_json_flag() {
+  local claude_flag="$(agent_get_json_flag claude)"
+  local codex_flag="$(agent_get_json_flag codex)"
+  assert_contains "$claude_flag" "json" "claude JSON flag contains 'json'"
+  assert_contains "$codex_flag" "json" "codex JSON flag contains 'json'"
+}
+
+test_agent_get_parser() {
+  local claude_parser="$(agent_get_parser claude)"
+  local codex_parser="$(agent_get_parser codex)"
+  assert_eq "stream_parse_claude" "$claude_parser" "claude parser is stream_parse_claude"
+  assert_eq "stream_parse_codex" "$codex_parser" "codex parser is stream_parse_codex"
+}
+
+test_agent_can_commit() {
+  agent_can_commit claude && local claude_can=1 || local claude_can=0
+  agent_can_commit codex && local codex_can=1 || local codex_can=0
+  assert_eq "1" "$claude_can" "claude can commit"
+  assert_eq "1" "$codex_can" "codex can commit"
+}
+
+test_agent_is_known() {
+  agent_is_known claude && local known_claude=1 || local known_claude=0
+  agent_is_known codex && local known_codex=1 || local known_codex=0
+  agent_is_known unknown_agent && local known_unknown=1 || local known_unknown=0
+  assert_eq "1" "$known_claude" "claude is known agent"
+  assert_eq "1" "$known_codex" "codex is known agent"
+  assert_eq "0" "$known_unknown" "unknown_agent is not known"
+}
+
+test_agent_build_cmd() {
+  local cmd="$(agent_build_cmd claude --json --yolo)"
+  assert_contains "$cmd" "claude" "built command contains claude"
+  assert_contains "$cmd" "json" "built command contains json flag"
+  assert_contains "$cmd" "skip-permissions" "built command contains yolo flag"
+}
+
+test_agent_developer_cmd() {
+  RALPH_DEVELOPER_AGENT=claude
+  local cmd="$(agent_developer_cmd)"
+  assert_contains "$cmd" "claude" "developer cmd uses claude"
+  assert_contains "$cmd" "json" "developer cmd has json flag"
+}
+
+test_agent_reviewer_cmd() {
+  RALPH_REVIEWER_AGENT=codex
+  local cmd="$(agent_reviewer_cmd)"
+  assert_contains "$cmd" "codex" "reviewer cmd uses codex"
+  assert_contains "$cmd" "json" "reviewer cmd has json flag"
+}
+
+test_detect_agent_from_cmd() {
+  local detected_claude="$(detect_agent_from_cmd 'claude -p --json')"
+  local detected_codex="$(detect_agent_from_cmd 'codex exec --json')"
+  local detected_unknown="$(detect_agent_from_cmd 'some_other_cmd')"
+  assert_eq "claude" "$detected_claude" "detects claude from command"
+  assert_eq "codex" "$detected_codex" "detects codex from command"
+  assert_eq "unknown" "$detected_unknown" "returns unknown for unrecognized"
+}
+
+test_register_agent() {
+  register_agent "testbot" "testbot run" "--output-json" "stream_parse_generic" "1" "--auto"
+  local cmd="$(agent_get_cmd testbot)"
+  assert_eq "testbot run" "$cmd" "registered agent has correct command"
+  agent_is_known testbot && local known=1 || local known=0
+  assert_eq "1" "$known" "registered agent is known"
+}
+
+run_test "Agent - get_cmd claude" test_agent_get_cmd_claude
+run_test "Agent - get_cmd codex" test_agent_get_cmd_codex
+run_test "Agent - get_json_flag" test_agent_get_json_flag
+run_test "Agent - get_parser" test_agent_get_parser
+run_test "Agent - can_commit" test_agent_can_commit
+run_test "Agent - is_known" test_agent_is_known
+run_test "Agent - build_cmd" test_agent_build_cmd
+run_test "Agent - developer_cmd" test_agent_developer_cmd
+run_test "Agent - reviewer_cmd" test_agent_reviewer_cmd
+run_test "Agent - detect_from_cmd" test_detect_agent_from_cmd
+run_test "Agent - register_agent" test_register_agent
 
 ############################################
 # Summary
