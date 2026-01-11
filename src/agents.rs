@@ -411,6 +411,14 @@ pub(crate) enum AgentErrorKind {
     AuthFailure,
     /// Command not found - switch agent
     CommandNotFound,
+    /// Disk space exhausted - cannot continue
+    DiskFull,
+    /// Process killed (OOM, signal) - may retry with smaller context
+    ProcessKilled,
+    /// Invalid JSON response from agent - may retry
+    InvalidResponse,
+    /// Request/response timeout - retry
+    Timeout,
     /// Other transient error - retry
     Transient,
     /// Permanent failure - do not retry
@@ -425,6 +433,8 @@ impl AgentErrorKind {
             AgentErrorKind::RateLimited
                 | AgentErrorKind::ApiUnavailable
                 | AgentErrorKind::NetworkError
+                | AgentErrorKind::Timeout
+                | AgentErrorKind::InvalidResponse
                 | AgentErrorKind::Transient
         )
     }
@@ -436,7 +446,13 @@ impl AgentErrorKind {
             AgentErrorKind::TokenExhausted
                 | AgentErrorKind::AuthFailure
                 | AgentErrorKind::CommandNotFound
+                | AgentErrorKind::ProcessKilled
         )
+    }
+
+    /// Determine if this error is unrecoverable (should abort)
+    pub(crate) fn is_unrecoverable(&self) -> bool {
+        matches!(self, AgentErrorKind::DiskFull | AgentErrorKind::Permanent)
     }
 
     /// Check if this is a command not found error
@@ -446,7 +462,28 @@ impl AgentErrorKind {
 
     /// Check if this is a network-related error
     pub(crate) fn is_network_error(&self) -> bool {
-        matches!(self, AgentErrorKind::NetworkError)
+        matches!(self, AgentErrorKind::NetworkError | AgentErrorKind::Timeout)
+    }
+
+    /// Check if this error might be resolved by reducing context size
+    pub(crate) fn suggests_smaller_context(&self) -> bool {
+        matches!(
+            self,
+            AgentErrorKind::TokenExhausted | AgentErrorKind::ProcessKilled
+        )
+    }
+
+    /// Get suggested wait time in milliseconds before retry
+    pub(crate) fn suggested_wait_ms(&self) -> u64 {
+        match self {
+            AgentErrorKind::RateLimited => 5000, // Rate limit: wait 5 seconds
+            AgentErrorKind::ApiUnavailable => 3000, // Server issue: wait 3 seconds
+            AgentErrorKind::NetworkError => 2000, // Network: wait 2 seconds
+            AgentErrorKind::Timeout => 1000,     // Timeout: short wait
+            AgentErrorKind::InvalidResponse => 500, // Bad response: quick retry
+            AgentErrorKind::Transient => 1000,   // Transient: 1 second
+            _ => 0,                              // No wait for non-retryable errors
+        }
     }
 
     /// Get a user-friendly description of this error type
@@ -458,6 +495,10 @@ impl AgentErrorKind {
             AgentErrorKind::NetworkError => "Network connectivity issue",
             AgentErrorKind::AuthFailure => "Authentication failure",
             AgentErrorKind::CommandNotFound => "Command not found",
+            AgentErrorKind::DiskFull => "Disk space exhausted",
+            AgentErrorKind::ProcessKilled => "Process terminated (possibly OOM)",
+            AgentErrorKind::InvalidResponse => "Invalid response from agent",
+            AgentErrorKind::Timeout => "Request timed out",
             AgentErrorKind::Transient => "Transient error",
             AgentErrorKind::Permanent => "Permanent error",
         }
@@ -480,6 +521,12 @@ impl AgentErrorKind {
             AgentErrorKind::CommandNotFound => {
                 "Agent binary not installed. See installation guidance."
             }
+            AgentErrorKind::DiskFull => "Free up disk space and try again.",
+            AgentErrorKind::ProcessKilled => {
+                "Process was killed (possible OOM). Trying with smaller context."
+            }
+            AgentErrorKind::InvalidResponse => "Received malformed response. Retrying...",
+            AgentErrorKind::Timeout => "Request timed out. Will retry with longer timeout.",
             AgentErrorKind::Transient => "Temporary issue. Will retry automatically.",
             AgentErrorKind::Permanent => "Unrecoverable error. Check agent logs for details.",
         }
@@ -540,12 +587,13 @@ impl AgentErrorKind {
             return AgentErrorKind::ApiUnavailable;
         }
 
-        // Request timeout can be either network or server - classify as transient
+        // Request timeout - specific error type for better handling
         if stderr_lower.contains("timeout")
             || stderr_lower.contains("timed out")
             || stderr_lower.contains("request timeout")
+            || stderr_lower.contains("deadline exceeded")
         {
-            return AgentErrorKind::Transient;
+            return AgentErrorKind::Timeout;
         }
 
         // Auth failures
@@ -559,6 +607,44 @@ impl AgentErrorKind {
             || stderr_lower.contains("access denied")
         {
             return AgentErrorKind::AuthFailure;
+        }
+
+        // Disk space exhaustion
+        if stderr_lower.contains("no space left")
+            || stderr_lower.contains("disk full")
+            || stderr_lower.contains("enospc")
+            || stderr_lower.contains("out of disk")
+            || stderr_lower.contains("insufficient storage")
+        {
+            return AgentErrorKind::DiskFull;
+        }
+
+        // Process killed (OOM or signals)
+        // Exit code 137 = 128 + 9 (SIGKILL), 139 = 128 + 11 (SIGSEGV)
+        if exit_code == 137
+            || exit_code == 139
+            || exit_code == -9
+            || stderr_lower.contains("killed")
+            || stderr_lower.contains("oom")
+            || stderr_lower.contains("out of memory")
+            || stderr_lower.contains("memory exhausted")
+            || stderr_lower.contains("cannot allocate")
+            || stderr_lower.contains("segmentation fault")
+            || stderr_lower.contains("sigsegv")
+            || stderr_lower.contains("sigkill")
+        {
+            return AgentErrorKind::ProcessKilled;
+        }
+
+        // Invalid JSON response
+        if stderr_lower.contains("invalid json")
+            || stderr_lower.contains("json parse")
+            || stderr_lower.contains("unexpected token")
+            || stderr_lower.contains("malformed")
+            || stderr_lower.contains("truncated response")
+            || stderr_lower.contains("incomplete response")
+        {
+            return AgentErrorKind::InvalidResponse;
         }
 
         // Command not found
@@ -1286,10 +1372,48 @@ json_parser = "codex"
             AgentErrorKind::ApiUnavailable
         );
 
-        // Timeouts are transient (could be either network or server)
+        // Timeouts have their own type now
         assert_eq!(
             AgentErrorKind::classify(1, "request timeout"),
-            AgentErrorKind::Transient
+            AgentErrorKind::Timeout
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "deadline exceeded"),
+            AgentErrorKind::Timeout
+        );
+
+        // Disk space exhaustion
+        assert_eq!(
+            AgentErrorKind::classify(1, "no space left on device"),
+            AgentErrorKind::DiskFull
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "ENOSPC"),
+            AgentErrorKind::DiskFull
+        );
+
+        // Process killed (OOM)
+        assert_eq!(
+            AgentErrorKind::classify(137, ""),
+            AgentErrorKind::ProcessKilled
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "out of memory"),
+            AgentErrorKind::ProcessKilled
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "killed by signal"),
+            AgentErrorKind::ProcessKilled
+        );
+
+        // Invalid response
+        assert_eq!(
+            AgentErrorKind::classify(1, "invalid json response"),
+            AgentErrorKind::InvalidResponse
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "truncated response"),
+            AgentErrorKind::InvalidResponse
         );
 
         // Auth failures
@@ -1326,11 +1450,15 @@ json_parser = "codex"
         assert!(AgentErrorKind::RateLimited.should_retry());
         assert!(AgentErrorKind::ApiUnavailable.should_retry());
         assert!(AgentErrorKind::NetworkError.should_retry());
+        assert!(AgentErrorKind::Timeout.should_retry());
+        assert!(AgentErrorKind::InvalidResponse.should_retry());
         assert!(AgentErrorKind::Transient.should_retry());
 
         assert!(!AgentErrorKind::TokenExhausted.should_retry());
         assert!(!AgentErrorKind::AuthFailure.should_retry());
         assert!(!AgentErrorKind::CommandNotFound.should_retry());
+        assert!(!AgentErrorKind::DiskFull.should_retry());
+        assert!(!AgentErrorKind::ProcessKilled.should_retry());
         assert!(!AgentErrorKind::Permanent.should_retry());
     }
 
@@ -1339,12 +1467,43 @@ json_parser = "codex"
         assert!(AgentErrorKind::TokenExhausted.should_fallback());
         assert!(AgentErrorKind::AuthFailure.should_fallback());
         assert!(AgentErrorKind::CommandNotFound.should_fallback());
+        assert!(AgentErrorKind::ProcessKilled.should_fallback());
 
         assert!(!AgentErrorKind::RateLimited.should_fallback());
         assert!(!AgentErrorKind::ApiUnavailable.should_fallback());
         assert!(!AgentErrorKind::NetworkError.should_fallback());
         assert!(!AgentErrorKind::Transient.should_fallback());
+        assert!(!AgentErrorKind::DiskFull.should_fallback());
         assert!(!AgentErrorKind::Permanent.should_fallback());
+    }
+
+    #[test]
+    fn test_agent_error_kind_is_unrecoverable() {
+        assert!(AgentErrorKind::DiskFull.is_unrecoverable());
+        assert!(AgentErrorKind::Permanent.is_unrecoverable());
+
+        assert!(!AgentErrorKind::RateLimited.is_unrecoverable());
+        assert!(!AgentErrorKind::NetworkError.is_unrecoverable());
+        assert!(!AgentErrorKind::CommandNotFound.is_unrecoverable());
+    }
+
+    #[test]
+    fn test_agent_error_kind_suggests_smaller_context() {
+        assert!(AgentErrorKind::TokenExhausted.suggests_smaller_context());
+        assert!(AgentErrorKind::ProcessKilled.suggests_smaller_context());
+
+        assert!(!AgentErrorKind::RateLimited.suggests_smaller_context());
+        assert!(!AgentErrorKind::NetworkError.suggests_smaller_context());
+    }
+
+    #[test]
+    fn test_agent_error_kind_suggested_wait_ms() {
+        assert!(AgentErrorKind::RateLimited.suggested_wait_ms() > 0);
+        assert!(AgentErrorKind::ApiUnavailable.suggested_wait_ms() > 0);
+        assert!(AgentErrorKind::NetworkError.suggested_wait_ms() > 0);
+        assert!(AgentErrorKind::Timeout.suggested_wait_ms() > 0);
+        assert_eq!(AgentErrorKind::DiskFull.suggested_wait_ms(), 0);
+        assert_eq!(AgentErrorKind::Permanent.suggested_wait_ms(), 0);
     }
 
     #[test]
@@ -1357,6 +1516,10 @@ json_parser = "codex"
             AgentErrorKind::NetworkError,
             AgentErrorKind::AuthFailure,
             AgentErrorKind::CommandNotFound,
+            AgentErrorKind::DiskFull,
+            AgentErrorKind::ProcessKilled,
+            AgentErrorKind::InvalidResponse,
+            AgentErrorKind::Timeout,
             AgentErrorKind::Transient,
             AgentErrorKind::Permanent,
         ];
@@ -1368,6 +1531,7 @@ json_parser = "codex"
 
         // Specific checks
         assert!(AgentErrorKind::NetworkError.is_network_error());
+        assert!(AgentErrorKind::Timeout.is_network_error());
         assert!(!AgentErrorKind::ApiUnavailable.is_network_error());
         assert!(AgentErrorKind::CommandNotFound.is_command_not_found());
         assert!(!AgentErrorKind::NetworkError.is_command_not_found());

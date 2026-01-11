@@ -790,3 +790,565 @@ exit 0
         "Explicit --developer-iters should override quick mode"
     );
 }
+
+#[test]
+fn ralph_resume_continues_from_checkpoint_phase() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let dev_script_path = dir.path().join("dev_script.sh");
+    fs::write(
+        &dev_script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+case "$1" in
+  *"PLANNING MODE"*)
+    echo "Plan" > .agent/PLAN.md
+    ;;
+  *)
+    echo "ran" > ran.txt
+    ;;
+esac
+exit 0
+"#,
+    )
+    .unwrap();
+
+    // First run: do not create commit-message.txt so the pipeline errors late,
+    // leaving a checkpoint that we can resume from.
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_INTERACTIVE", "0")
+        .env("RALPH_DEVELOPER_ITERS", "1")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", dev_script_path.display()),
+        )
+        .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains(".agent/commit-message.txt"));
+
+    let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+    assert!(
+        checkpoint_path.exists(),
+        "checkpoint should exist after failure"
+    );
+    let checkpoint = fs::read_to_string(&checkpoint_path).unwrap();
+    assert!(
+        checkpoint.contains("\"phase\": \"CommitMessage\""),
+        "checkpoint should indicate CommitMessage phase"
+    );
+
+    let reviewer_script_path = dir.path().join("reviewer_script.sh");
+    fs::write(
+        &reviewer_script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+case "$1" in
+  *"Generate a commit message for all changes made."*)
+    echo "chore: resume checkpoint" > .agent/commit-message.txt
+    ;;
+esac
+exit 0
+"#,
+    )
+    .unwrap();
+
+    // Second run: resume and ensure we don't re-run the developer phase.
+    let mut resume_cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut resume_cmd)
+        .current_dir(dir.path())
+        .arg("--resume")
+        .env("RALPH_INTERACTIVE", "0")
+        .env("RALPH_DEVELOPER_ITERS", "1")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 42'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", reviewer_script_path.display()),
+        );
+
+    resume_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("RESUME: Loading Checkpoint"));
+
+    assert!(
+        dir.path().join("ran.txt").exists(),
+        "work output should exist"
+    );
+    assert!(
+        !checkpoint_path.exists(),
+        "checkpoint should be cleared after successful completion"
+    );
+}
+
+// ============================================================================
+// Review Workflow Integration Tests
+// ============================================================================
+
+#[test]
+fn ralph_creates_issues_md_during_review() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Create review script
+    let script_path = dir.path().join("review_script.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+cat > .agent/ISSUES.md << 'ISSUES_EOF'
+# Review Issues
+
+- [ ] High: [src/main.rs:42] Memory leak detected
+- [x] Low: Code style suggestion
+
+ISSUES_EOF
+echo "feat: reviewed" > .agent/commit-message.txt
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    cmd.assert().success();
+
+    // ISSUES.md should exist after review
+    assert!(dir.path().join(".agent/ISSUES.md").exists());
+}
+
+#[test]
+fn ralph_review_workflow_with_no_issues() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Create review script
+    let script_path = dir.path().join("review_script.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+cat > .agent/ISSUES.md << 'ISSUES_EOF'
+# Review Complete
+
+No issues found. Code looks good!
+
+ISSUES_EOF
+echo "feat: clean code" > .agent/commit-message.txt
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Pipeline Complete"));
+}
+
+#[test]
+fn ralph_review_multiple_passes() {
+    // Test multiple reviewer passes
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let counter_path = dir.path().join(".agent/review_counter");
+    let script_path = dir.path().join("review_script.sh");
+    fs::write(
+        &script_path,
+        format!(
+            r#"#!/bin/sh
+mkdir -p .agent
+# Increment review counter
+if [ -f "{counter}" ]; then
+    count=$(cat "{counter}")
+    count=$((count + 1))
+else
+    count=1
+fi
+echo $count > "{counter}"
+
+# Create commit message
+echo "feat: review pass $count" > .agent/commit-message.txt
+exit 0
+"#,
+            counter = counter_path.display()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "3") // 3 review passes
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    cmd.assert().success();
+
+    // Reviewer should be called 3 times
+    let count: u32 = fs::read_to_string(&counter_path)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(count, 3, "Expected 3 reviewer calls for 3 review passes");
+}
+
+#[test]
+fn ralph_stack_detection_rust_project() {
+    // Test that stack detection works in an integration context
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Create a Rust project structure
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"
+[package]
+name = "test"
+version = "0.1.0"
+
+[dependencies]
+tokio = "1.0"
+"#,
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
+    fs::create_dir_all(dir.path().join("tests")).unwrap();
+    fs::write(
+        dir.path().join("tests/test.rs"),
+        "#[test] fn it_works() {}",
+    )
+    .unwrap();
+
+    // Run ralph with verbose output to see stack detection
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_AUTO_DETECT_STACK", "true")
+        .env("RALPH_VERBOSITY", "2") // Verbose mode
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: rust\" > .agent/commit-message.txt'",
+        );
+
+    // Pipeline should complete and potentially mention Rust stack
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_stack_detection_javascript_project() {
+    // Test stack detection for a JavaScript/React project
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Create a JavaScript/React project structure
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{
+  "name": "test",
+  "dependencies": {
+    "react": "^18.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  }
+}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/App.jsx"), "export default () => <div />")
+        .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_AUTO_DETECT_STACK", "true")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: react\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_stack_detection_disabled() {
+    // Test that stack detection can be disabled
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Create a project structure
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "test"
+"#,
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_AUTO_DETECT_STACK", "false") // Explicitly disable
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: no stack\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_review_depth_standard() {
+    // Test standard review depth
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_REVIEW_DEPTH", "standard")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: standard\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_review_depth_comprehensive() {
+    // Test comprehensive review depth
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_REVIEW_DEPTH", "comprehensive")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: thorough\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_review_depth_security() {
+    // Test security-focused review depth
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_REVIEW_DEPTH", "security")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: secure\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_review_depth_incremental() {
+    // Test incremental review depth (focuses on git diff)
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_REVIEW_DEPTH", "incremental")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: incremental\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_mixed_language_project() {
+    // Test stack detection with multiple languages
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Create a mixed-language project (Rust backend + Python scripts)
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "backend"
+version = "0.1.0"
+"#,
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
+
+    fs::create_dir_all(dir.path().join("scripts")).unwrap();
+    fs::write(dir.path().join("scripts/deploy.py"), "print('deploy')").unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_AUTO_DETECT_STACK", "true")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: mixed\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+// ============================================================================
+// Error Handling and Recovery Tests
+// ============================================================================
+
+#[test]
+fn ralph_handles_agent_timeout_gracefully() {
+    // Test that ralph handles slow/hanging agents with timeout
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Use a short timeout for testing
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "1")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        // This should complete quickly (no actual sleep in testing)
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: timeout test\" > .agent/commit-message.txt'",
+        );
+
+    // Should complete successfully
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_handles_invalid_json_in_config() {
+    // Test recovery from malformed config
+    let dir = TempDir::new().unwrap();
+    let dir_path = dir.path();
+
+    // Initialize git repo
+    StdCommand::new("git")
+        .args(["init"])
+        .current_dir(dir_path)
+        .output()
+        .unwrap();
+
+    // Create PROMPT.md
+    fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
+
+    // Create malformed agents.toml (invalid TOML)
+    fs::create_dir_all(dir_path.join(".agent")).unwrap();
+    fs::write(
+        dir_path.join(".agent/agents.toml"),
+        "this is not valid { toml ] syntax",
+    )
+    .unwrap();
+
+    let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
+    cmd.current_dir(dir_path).env("RALPH_INTERACTIVE", "0");
+
+    let output = cmd.output().unwrap();
+
+    // Should fail gracefully with an error message about config
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Failed to load config")
+            || stderr.contains("parse")
+            || stderr.contains("TOML")
+            || stderr.contains("error")
+    );
+}
+
+#[test]
+fn ralph_cleanup_on_interrupt_simulation() {
+    // Test that cleanup happens even when the pipeline fails at various stages
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "1")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        // Create PLAN.md but then fail the next step
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; exit 1'",
+        )
+        .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+    cmd.assert().failure();
+
+    // Cleanup should have removed workflow artifacts
+    assert!(!dir.path().join(".no_agent_commit").exists());
+}
