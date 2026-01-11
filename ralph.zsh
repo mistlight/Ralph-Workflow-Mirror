@@ -54,11 +54,10 @@ set -euo pipefail
 : "${FAST_CHECK_CMD:=}"        # e.g. "pytest -q" or "npm test --silent"
 : "${FULL_CHECK_CMD:=}"        # e.g. "pytest" or "npm test"
 
-# Many CLIs (including agent CLIs) heavily buffer and/or degrade UX when stdout/stdin
-# aren't attached to a real TTY. Since we also want logs, prefer `script` which both:
-# - keeps an interactive TTY for the agent process
-# - records a transcript to a file
-: "${RALPH_USE_PTY:=1}"
+# PTY mode: Use `script` to attach agents to a real TTY (good for interactive prompts).
+# When disabled (0), JSON streams are parsed for formatted display.
+# Default is 0 for autonomous operation with JSON parsing.
+: "${RALPH_USE_PTY:=0}"
 : "${RALPH_INTERACTIVE:=1}"    # 1 = keep agent in foreground (you can answer prompts), 0 = fire-and-forget
 : "${RALPH_PROMPT_PATH:=.agent/last_prompt.txt}"
 
@@ -154,59 +153,125 @@ fi
 
 # Parse and display a single Claude JSON event
 # Reads JSON from stdin, outputs formatted text
+#
+# Claude Code stream-json format includes:
+# - {"type":"system", "subtype":"init", ...} - session init
+# - {"type":"assistant", "message":{...}} - assistant messages with content
+# - {"type":"user", ...} - user messages
+# - {"type":"result", "subtype":"success"|"error", ...} - final result with stats
+#
+# Content blocks within messages can be:
+# - {"type":"text", "text":"..."} - plain text
+# - {"type":"tool_use", "name":"...", "input":{...}} - tool invocations
+# - {"type":"tool_result", ...} - tool outputs
 parse_claude_event() {
   local line="$1"
   [[ -z "$line" ]] && return 0
   [[ "$HAS_JQ" != "1" ]] && { print -r -- "$line"; return 0; }
 
-  local event_type
+  local event_type subtype
   event_type=$(print -r -- "$line" | jq -r '.type // empty' 2>/dev/null) || { print -r -- "$line"; return 0; }
+  subtype=$(print -r -- "$line" | jq -r '.subtype // empty' 2>/dev/null)
 
   case "$event_type" in
-    init)
-      local session_id
-      session_id=$(print -r -- "$line" | jq -r '.session_id // "unknown"' 2>/dev/null)
-      print "${DIM}[Claude]${RESET} ${CYAN}Session started${RESET} ${DIM}(${session_id:0:8}...)${RESET}"
-      ;;
-    message)
-      local role content_text
-      role=$(print -r -- "$line" | jq -r '.role // "unknown"' 2>/dev/null)
-      content_text=$(print -r -- "$line" | jq -r '.content[]? | select(.type == "text") | .text // empty' 2>/dev/null | head -1)
-      if [[ -n "$content_text" ]]; then
-        local preview="${content_text:0:100}"
-        [[ ${#content_text} -gt 100 ]] && preview="${preview}..."
-        print "${DIM}[Claude]${RESET} ${BLUE}${role}${RESET}: ${preview}"
+    system)
+      # System events: init, session info
+      if [[ "$subtype" == "init" ]]; then
+        local session_id cwd
+        session_id=$(print -r -- "$line" | jq -r '.session_id // "unknown"' 2>/dev/null)
+        cwd=$(print -r -- "$line" | jq -r '.cwd // ""' 2>/dev/null)
+        print "${DIM}[Claude]${RESET} ${CYAN}Session started${RESET} ${DIM}(${session_id:0:8}...)${RESET}"
+        [[ -n "$cwd" ]] && print "${DIM}[Claude]${RESET} ${DIM}Working dir: ${cwd}${RESET}"
+      else
+        print "${DIM}[Claude]${RESET} ${CYAN}${subtype:-system}${RESET}"
       fi
       ;;
-    tool_use)
-      local tool_name tool_input
-      tool_name=$(print -r -- "$line" | jq -r '.name // "unknown"' 2>/dev/null)
-      tool_input=$(print -r -- "$line" | jq -r '.input | keys[0] // empty' 2>/dev/null)
-      print "${DIM}[Claude]${RESET} ${MAGENTA}Tool${RESET}: ${BOLD}${tool_name}${RESET}${tool_input:+ (${tool_input})}"
+    assistant)
+      # Assistant message with content blocks
+      # Parse each content block: text, tool_use, etc.
+      local content_count
+      content_count=$(print -r -- "$line" | jq -r '.message.content | length // 0' 2>/dev/null)
+      if [[ "$content_count" -gt 0 ]]; then
+        # Iterate through content blocks
+        local idx=0
+        while [[ $idx -lt $content_count ]]; do
+          local block_type block_text tool_name
+          block_type=$(print -r -- "$line" | jq -r ".message.content[$idx].type // empty" 2>/dev/null)
+          case "$block_type" in
+            text)
+              block_text=$(print -r -- "$line" | jq -r ".message.content[$idx].text // empty" 2>/dev/null)
+              if [[ -n "$block_text" ]]; then
+                local preview="${block_text:0:120}"
+                [[ ${#block_text} -gt 120 ]] && preview="${preview}..."
+                print "${DIM}[Claude]${RESET} ${WHITE}${preview}${RESET}"
+              fi
+              ;;
+            tool_use)
+              tool_name=$(print -r -- "$line" | jq -r ".message.content[$idx].name // \"unknown\"" 2>/dev/null)
+              local tool_input_key
+              tool_input_key=$(print -r -- "$line" | jq -r ".message.content[$idx].input | keys[0] // empty" 2>/dev/null)
+              print "${DIM}[Claude]${RESET} ${MAGENTA}Tool${RESET}: ${BOLD}${tool_name}${RESET}${tool_input_key:+ (${tool_input_key})}"
+              ;;
+            tool_result)
+              local result_preview
+              result_preview=$(print -r -- "$line" | jq -r ".message.content[$idx].content // empty" 2>/dev/null | head -1)
+              if [[ -n "$result_preview" ]]; then
+                local preview="${result_preview:0:80}"
+                [[ ${#result_preview} -gt 80 ]] && preview="${preview}..."
+                print "${DIM}[Claude]${RESET} ${DIM}Result:${RESET} ${preview}"
+              fi
+              ;;
+          esac
+          ((idx++))
+        done
+      fi
       ;;
-    tool_result)
-      local output_preview
-      output_preview=$(print -r -- "$line" | jq -r '.output // empty' 2>/dev/null | head -1)
-      if [[ -n "$output_preview" ]]; then
-        local preview="${output_preview:0:80}"
-        [[ ${#output_preview} -gt 80 ]] && preview="${preview}..."
-        print "${DIM}[Claude]${RESET} ${DIM}Result:${RESET} ${preview}"
+    user)
+      # User messages (usually the prompts we send)
+      local user_text
+      user_text=$(print -r -- "$line" | jq -r '.message.content[0].text // empty' 2>/dev/null)
+      if [[ -n "$user_text" ]]; then
+        local preview="${user_text:0:60}"
+        [[ ${#user_text} -gt 60 ]] && preview="${preview}..."
+        print "${DIM}[Claude]${RESET} ${BLUE}User${RESET}: ${DIM}${preview}${RESET}"
       fi
       ;;
     result)
-      local status duration_ms
-      status=$(print -r -- "$line" | jq -r '.status // "unknown"' 2>/dev/null)
+      # Final result with statistics
+      local result_subtype duration_ms cost num_turns
+      result_subtype=$(print -r -- "$line" | jq -r '.subtype // "unknown"' 2>/dev/null)
       duration_ms=$(print -r -- "$line" | jq -r '.duration_ms // 0' 2>/dev/null)
+      cost=$(print -r -- "$line" | jq -r '.total_cost_usd // 0' 2>/dev/null)
+      num_turns=$(print -r -- "$line" | jq -r '.num_turns // 0' 2>/dev/null)
       local duration_s=$((duration_ms / 1000))
-      if [[ "$status" == "success" ]]; then
-        print "${DIM}[Claude]${RESET} ${GREEN}${CHECK} Completed${RESET} ${DIM}(${duration_s}s)${RESET}"
+      local duration_m=$((duration_s / 60))
+      local duration_s_rem=$((duration_s % 60))
+      if [[ "$result_subtype" == "success" ]]; then
+        print "${DIM}[Claude]${RESET} ${GREEN}${CHECK} Completed${RESET} ${DIM}(${duration_m}m ${duration_s_rem}s, ${num_turns} turns, \$${cost})${RESET}"
       else
-        print "${DIM}[Claude]${RESET} ${RED}${CROSS} ${status}${RESET} ${DIM}(${duration_s}s)${RESET}"
+        local error_msg
+        error_msg=$(print -r -- "$line" | jq -r '.error // "unknown error"' 2>/dev/null)
+        print "${DIM}[Claude]${RESET} ${RED}${CROSS} ${result_subtype}${RESET}: ${error_msg} ${DIM}(${duration_m}m ${duration_s_rem}s)${RESET}"
+      fi
+      # Also show the result summary if available
+      local result_text
+      result_text=$(print -r -- "$line" | jq -r '.result // empty' 2>/dev/null)
+      if [[ -n "$result_text" ]]; then
+        print ""
+        print "${BOLD}Result summary:${RESET}"
+        # Show first 500 chars of result
+        local result_preview="${result_text:0:500}"
+        [[ ${#result_text} -gt 500 ]] && result_preview="${result_preview}..."
+        print "${DIM}${result_preview}${RESET}"
       fi
       ;;
     *)
-      # Pass through unknown event types
-      print "${DIM}[Claude]${RESET} ${DIM}${event_type}${RESET}"
+      # Pass through unknown event types with their subtype if available
+      if [[ -n "$subtype" ]]; then
+        print "${DIM}[Claude]${RESET} ${DIM}${event_type}:${subtype}${RESET}"
+      else
+        print "${DIM}[Claude]${RESET} ${DIM}${event_type}${RESET}"
+      fi
       ;;
   esac
 }
@@ -305,7 +370,7 @@ stream_parse_claude() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     # Skip empty lines
     [[ -z "$line" ]] && continue
-    parse_claude_event "$line"
+    parse_claude_event "$line" || true  # Don't fail on parse errors
     # Also write raw JSON to log file if provided
     [[ -n "${STREAM_LOGFILE:-}" ]] && print -r -- "$line" >> "$STREAM_LOGFILE"
   done
@@ -315,7 +380,7 @@ stream_parse_codex() {
   local line
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" ]] && continue
-    parse_codex_event "$line"
+    parse_codex_event "$line" || true  # Don't fail on parse errors
     [[ -n "${STREAM_LOGFILE:-}" ]] && print -r -- "$line" >> "$STREAM_LOGFILE"
   done
 }
@@ -467,35 +532,30 @@ run_with_prompt_arg() {
     # Note: PTY mode cannot easily parse JSON streams; raw output goes to logfile.
     script -aq "$logfile" zsh -c "$full_cmd" || exit_code=$?
   else
-    if [[ "${RALPH_INTERACTIVE}" == "1" ]]; then
-      tlog_warn "\`script\` not found; running without transcript logging"
-      eval "$full_cmd" || exit_code=$?
-    else
-      # Non-interactive mode: parse JSON streams for neat display
-      if [[ "$uses_json" == "1" ]] && [[ "$HAS_JQ" == "1" ]]; then
-        log_info "Parsing ${agent_type} JSON stream..."
-        export STREAM_LOGFILE="$logfile"
-        # Use stdbuf to disable output buffering if available, ensuring
-        # JSON lines are passed to the parser as soon as they're written
-        local stdbuf_prefix=""
-        if command -v stdbuf >/dev/null 2>&1; then
-          stdbuf_prefix="stdbuf -oL "
-        fi
-        case "$agent_type" in
-          claude)
-            eval "${stdbuf_prefix}$full_cmd" 2>&1 | stream_parse_claude || exit_code=$?
-            ;;
-          codex)
-            eval "${stdbuf_prefix}$full_cmd" 2>&1 | stream_parse_codex || exit_code=$?
-            ;;
-          *)
-            eval "${stdbuf_prefix}$full_cmd" 2>&1 | tee -a "$logfile" || exit_code=$?
-            ;;
-        esac
-        unset STREAM_LOGFILE
-      else
-        eval "$full_cmd" 2>&1 | tee -a "$logfile" || exit_code=$?
+    # Non-PTY mode: parse JSON streams for formatted display
+    if [[ "$uses_json" == "1" ]] && [[ "$HAS_JQ" == "1" ]]; then
+      log_info "Parsing ${agent_type} JSON stream..."
+      export STREAM_LOGFILE="$logfile"
+      # Use stdbuf to disable output buffering if available, ensuring
+      # JSON lines are passed to the parser as soon as they're written
+      local stdbuf_prefix=""
+      if command -v stdbuf >/dev/null 2>&1; then
+        stdbuf_prefix="stdbuf -oL "
       fi
+      case "$agent_type" in
+        claude)
+          eval "${stdbuf_prefix}$full_cmd" 2>&1 | stream_parse_claude || exit_code=$?
+          ;;
+        codex)
+          eval "${stdbuf_prefix}$full_cmd" 2>&1 | stream_parse_codex || exit_code=$?
+          ;;
+        *)
+          eval "${stdbuf_prefix}$full_cmd" 2>&1 | tee -a "$logfile" || exit_code=$?
+          ;;
+      esac
+      unset STREAM_LOGFILE
+    else
+      eval "$full_cmd" 2>&1 | tee -a "$logfile" || exit_code=$?
     fi
   fi
 
@@ -650,6 +710,22 @@ typeset -g CLAUDE_RUNS_COMPLETED=0
 typeset -g CODEX_RUNS_COMPLETED=0
 
 ############################################
+# Status file updates (continuous visibility)
+############################################
+update_status() {
+  local last_action="$1"
+  local blockers="${2:-none}"
+  local next_action="${3:-TBD}"
+  cat > .agent/STATUS.md <<EOF
+# STATUS
+- Last action: ${last_action}
+- Blockers: ${blockers}
+- Next action: ${next_action}
+- Updated at: $(ts)
+EOF
+}
+
+############################################
 # Main
 ############################################
 require_git_repo
@@ -686,30 +762,50 @@ log_info "Running ${BOLD}$CLAUDE_ITERS${RESET} Claude iterations"
 
 prev_snap="$(git_snapshot)"
 for i in $(seq 1 "$CLAUDE_ITERS"); do
-  print_subheader "Claude Iteration $i of $CLAUDE_ITERS"
-  print_progress "$i" "$CLAUDE_ITERS" "Overall"
+  # HARD REQUIREMENT: This loop MUST complete all iterations.
+  # Wrap entire iteration body to prevent ANY failure from breaking the loop.
+  {
+    print_subheader "Claude Iteration $i of $CLAUDE_ITERS"
+    print_progress "$i" "$CLAUDE_ITERS" "Overall"
 
-  run_with_prompt_arg "Claude run #$i" "$CLAUDE_CMD" "$(claude_prompt "$i")" ".agent/logs/claude_${i}.log"
-  ((CLAUDE_RUNS_COMPLETED++))
+    # Update status BEFORE starting iteration
+    update_status "Starting Claude iteration ${i}/${CLAUDE_ITERS}" "none" "Complete Claude iteration ${i}"
+    tlog_info ">>> ITERATION ${i}/${CLAUDE_ITERS} STARTING <<<"
 
-  snap="$(git_snapshot)"
-  if [[ "$snap" == "$prev_snap" ]]; then
-    log_warn "No git-status change detected"
-  else
-    log_success "Repository modified"
-    ((CHANGES_DETECTED++))
-  fi
-  prev_snap="$snap"
+    run_with_prompt_arg "Claude run #$i" "$CLAUDE_CMD" "$(claude_prompt "$i")" ".agent/logs/claude_${i}.log"
+    ((CLAUDE_RUNS_COMPLETED++))
 
-  if [[ -n "$FAST_CHECK_CMD" ]]; then
-    log_info "Running fast check: ${DIM}$FAST_CHECK_CMD${RESET}"
-    if (eval "$FAST_CHECK_CMD" 2>&1 | tee -a ".agent/logs/fast_check_${i}.log"); then
-      log_success "Fast check passed"
+    # Update status AFTER completing iteration
+    tlog_info ">>> ITERATION ${i}/${CLAUDE_ITERS} COMPLETED (total completed: ${CLAUDE_RUNS_COMPLETED}) <<<"
+    update_status "Completed Claude iteration ${i}/${CLAUDE_ITERS}" "none" "Continue to iteration $((i+1)) or Phase 2"
+
+    snap="$(git_snapshot)"
+    if [[ "$snap" == "$prev_snap" ]]; then
+      log_warn "No git-status change detected"
     else
-      log_warn "Fast check had issues (non-blocking)"
+      log_success "Repository modified"
+      ((CHANGES_DETECTED++))
     fi
-  fi
+    prev_snap="$snap"
+
+    if [[ -n "$FAST_CHECK_CMD" ]]; then
+      log_info "Running fast check: ${DIM}$FAST_CHECK_CMD${RESET}"
+      if (eval "$FAST_CHECK_CMD" 2>&1 | tee -a ".agent/logs/fast_check_${i}.log"); then
+        log_success "Fast check passed"
+      else
+        log_warn "Fast check had issues (non-blocking)"
+      fi
+    fi
+  } || {
+    # If anything in the iteration block failed, log it but CONTINUE to next iteration
+    log_error "Iteration ${i} encountered an error but loop MUST continue"
+    tlog_error ">>> ITERATION ${i} FAILED BUT CONTINUING <<<"
+  }
 done
+
+# Explicit notification that all Claude iterations are complete
+tlog_info ">>> ALL ${CLAUDE_ITERS} CLAUDE ITERATIONS COMPLETED <<<"
+update_status "All ${CLAUDE_ITERS} Claude iterations complete" "none" "Start Phase 2: Codex review"
 
 ############################################
 # Phase 2: Codex review/fix cycle
@@ -717,21 +813,31 @@ done
 print_header "PHASE 2: Codex Review & Fix" "$MAGENTA"
 log_to_file "=== PHASE 2: Codex Review & Fix ==="
 log_info "Running review ${ARROW} fix ${ARROW} review×${BOLD}$CODEX_REVIEWS${RESET} cycle"
+tlog_info ">>> ENTERING CODEX PHASE <<<"
 
 print_subheader "Initial Review"
+update_status "Starting Codex initial review" "none" "Complete Codex review"
 run_with_prompt_arg "Codex review (initial)" "$CODEX_CMD" "$(codex_review_prompt)" ".agent/logs/codex_review_1.log"
 ((CODEX_RUNS_COMPLETED++))
+tlog_info ">>> CODEX INITIAL REVIEW COMPLETED <<<"
 
 print_subheader "Applying Fixes"
+update_status "Starting Codex fix phase" "none" "Apply fixes from review"
 run_with_prompt_arg "Codex fix" "$CODEX_CMD" "$(codex_fix_prompt)" ".agent/logs/codex_fix.log"
 ((CODEX_RUNS_COMPLETED++))
+tlog_info ">>> CODEX FIX PHASE COMPLETED <<<"
 
 for j in $(seq 1 "$CODEX_REVIEWS"); do
   print_subheader "Verification Review $j of $CODEX_REVIEWS"
   print_progress "$j" "$CODEX_REVIEWS" "Review passes"
+  update_status "Starting Codex verification review ${j}/${CODEX_REVIEWS}" "none" "Complete verification review"
   run_with_prompt_arg "Codex re-review #$j" "$CODEX_CMD" "$(codex_review_again_prompt)" ".agent/logs/codex_review_$((j+1)).log"
   ((CODEX_RUNS_COMPLETED++))
+  tlog_info ">>> CODEX VERIFICATION REVIEW ${j}/${CODEX_REVIEWS} COMPLETED <<<"
 done
+
+tlog_info ">>> ALL CODEX PHASES COMPLETED (total runs: ${CODEX_RUNS_COMPLETED}) <<<"
+update_status "All Codex phases complete" "none" "Proceed to final checks or commit"
 
 ############################################
 # Phase 3: Final checks (if configured)
