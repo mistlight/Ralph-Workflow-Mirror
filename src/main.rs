@@ -12,6 +12,7 @@ mod colors;
 mod config;
 mod git_helpers;
 mod json_parser;
+mod platform;
 mod prompts;
 mod timer;
 mod utils;
@@ -69,19 +70,21 @@ VERBOSITY LEVELS (-v LEVEL):\n\
     4 = debug    Max verbosity with raw JSON (--debug)\n\n\
 EXAMPLES:\n\
     ralph \"feat: add login button\"              Basic usage\n\
+    ralph --quick \"fix: small bug\"              Quick mode (1 dev + 1 review)\n\
+    ralph -Q \"feat: rapid prototype\"            Quick mode (shorthand)\n\
     ralph -q \"fix: typo\"                        Quiet mode (same as -v0)\n\
     ralph --full \"feat: complex change\"         Full output (same as -v3)\n\
     ralph --debug \"debug: investigate\"          Debug mode with raw JSON\n\
-    ralph --developer-iters 3                    Fewer iterations\n\
+    ralph --developer-iters 3                    Custom iterations\n\
     ralph --preset opencode                      Use opencode for both\n\
-    ralph --developer-agent claude --reviewer-agent codex\n\n\
+    ralph --developer-agent aider                Use a different agent\n\n\
 PLUMBING COMMANDS (for scripting):\n\
     ralph --generate-commit-msg                  Generate message only\n\
     ralph --show-commit-msg                      Display generated message\n\
     ralph --apply-commit                         Commit using generated message\n\n\
 ENVIRONMENT VARIABLES:\n\
-    RALPH_DEVELOPER_AGENT    Developer agent name (default: claude)\n\
-    RALPH_REVIEWER_AGENT     Reviewer agent name (default: codex)\n\
+    RALPH_DEVELOPER_AGENT    Developer agent (from agent_chain)\n\
+    RALPH_REVIEWER_AGENT     Reviewer agent (from agent_chain)\n\
     RALPH_DEVELOPER_ITERS    Developer iterations (default: 5)\n\
     RALPH_REVIEWER_REVIEWS   Re-review passes (default: 2)\n\
     RALPH_VERBOSITY          Verbosity level 0-4 (default: 2)\n\
@@ -98,7 +101,6 @@ struct Args {
     #[arg(
         long = "developer-iters",
         env = "RALPH_DEVELOPER_ITERS",
-        aliases = ["claude-iters"],
         value_name = "N",
         help = "Number of developer agent iterations"
     )]
@@ -108,7 +110,6 @@ struct Args {
     #[arg(
         long = "reviewer-reviews",
         env = "RALPH_REVIEWER_REVIEWS",
-        aliases = ["codex-reviews"],
         value_name = "N",
         help = "Number of reviewer re-review passes after fix"
     )]
@@ -123,22 +124,22 @@ struct Args {
     )]
     preset: Option<Preset>,
 
-    /// Developer/driver agent to use (default: claude)
+    /// Developer/driver agent to use (from agent_chain.developer)
     #[arg(
         long,
         env = "RALPH_DEVELOPER_AGENT",
         aliases = ["driver-agent"],
         value_name = "AGENT",
-        help = "Developer agent for code implementation"
+        help = "Developer agent for code implementation (default: first in agent_chain.developer)"
     )]
     developer_agent: Option<String>,
 
-    /// Reviewer agent to use (default: codex)
+    /// Reviewer agent to use (from agent_chain.reviewer)
     #[arg(
         long,
         env = "RALPH_REVIEWER_AGENT",
         value_name = "AGENT",
-        help = "Reviewer agent for code review"
+        help = "Reviewer agent for code review (default: first in agent_chain.reviewer)"
     )]
     reviewer_agent: Option<String>,
 
@@ -172,6 +173,14 @@ struct Args {
     /// Shorthand for --verbosity=4 (maximum verbosity with raw JSON)
     #[arg(long, conflicts_with = "verbosity", help = "Debug mode (same as -v4)")]
     debug: bool,
+
+    /// Quick mode: 1 developer iteration, 1 review pass (fast turnaround)
+    #[arg(
+        long,
+        short = 'Q',
+        help = "Quick mode: 1 dev iteration + 1 review (for rapid prototyping)"
+    )]
+    quick: bool,
 
     /// List all configured agents and exit
     #[arg(long, help = "Show all agents from registry and config file")]
@@ -212,8 +221,7 @@ struct Args {
 
 #[derive(Clone, Debug, ValueEnum)]
 enum Preset {
-    /// Historical default: claude (dev) + codex (review)
-    #[value(alias = "claude-codex")]
+    /// Use agent_chain defaults (no explicit agent override)
     Default,
     /// Use opencode for both developer and reviewer
     #[value(alias = "opencode-both", alias = "opencode-only")]
@@ -631,9 +639,25 @@ fn run_with_fallback(
                 let error_kind = AgentErrorKind::classify(result.exit_code, &result.stderr);
 
                 logger.warn(&format!(
-                    "Agent '{}' failed with {:?} (exit code {})",
-                    agent_name, error_kind, result.exit_code
+                    "Agent '{}' failed: {} (exit code {})",
+                    agent_name,
+                    error_kind.description(),
+                    result.exit_code
                 ));
+                logger.info(error_kind.recovery_advice());
+
+                // Provide installation guidance for command not found errors
+                if error_kind.is_command_not_found() {
+                    // Extract the binary name from the command
+                    let binary = cmd_str.split_whitespace().next().unwrap_or(agent_name);
+                    let guidance = crate::platform::InstallGuidance::for_binary(binary);
+                    logger.info(&guidance.format());
+                }
+
+                // Provide network-specific guidance
+                if error_kind.is_network_error() {
+                    logger.info("Tip: Check your internet connection, firewall, or VPN settings.");
+                }
 
                 // Decide whether to retry or fallback
                 if error_kind.should_retry() && retry + 1 < fallback_config.max_retries {
@@ -734,18 +758,27 @@ fn main() -> anyhow::Result<()> {
         base_verbosity
     };
 
-    // Apply preset first (CLI/env preset overrides env-selected agents, but can be overridden by
+    // Apply preset (CLI/env preset overrides env-selected agents, but can be overridden by
     // explicit --developer-agent/--reviewer-agent flags below).
     if let Some(preset) = args.preset {
         match preset {
             Preset::Default => {
-                config.developer_agent = Some("claude".to_string());
-                config.reviewer_agent = Some("codex".to_string());
+                // No override; use agent_chain defaults from agents.toml
             }
             Preset::Opencode => {
                 config.developer_agent = Some("opencode".to_string());
                 config.reviewer_agent = Some("opencode".to_string());
             }
+        }
+    }
+
+    // Quick mode: 1 developer iteration, 1 review pass (explicit flags override)
+    if args.quick {
+        if args.developer_iters.is_none() {
+            config.developer_iters = 1;
+        }
+        if args.reviewer_reviews.is_none() {
+            config.reviewer_reviews = 1;
         }
     }
 
@@ -1071,28 +1104,24 @@ fn main() -> anyhow::Result<()> {
     let _developer_cmd = if let Some(cmd) = config.developer_cmd.clone() {
         cmd
     } else {
-        registry
-            .developer_cmd(&developer_agent)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Unknown developer agent '{}'. Use --list-agents or define it in {}.",
-                    developer_agent,
-                    agents_config_path.display()
-                )
-            })?
+        registry.developer_cmd(&developer_agent).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown developer agent '{}'. Use --list-agents or define it in {}.",
+                developer_agent,
+                agents_config_path.display()
+            )
+        })?
     };
     let _reviewer_cmd = if let Some(cmd) = config.reviewer_cmd.clone() {
         cmd
     } else {
-        registry
-            .reviewer_cmd(&reviewer_agent)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Unknown reviewer agent '{}'. Use --list-agents or define it in {}.",
-                    reviewer_agent,
-                    agents_config_path.display()
-                )
-            })?
+        registry.reviewer_cmd(&reviewer_agent).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown reviewer agent '{}'. Use --list-agents or define it in {}.",
+                reviewer_agent,
+                agents_config_path.display()
+            )
+        })?
     };
 
     // Require git repo
@@ -1113,7 +1142,6 @@ fn main() -> anyhow::Result<()> {
             Role::Reviewer,
             Action::GenerateCommitMessage,
             reviewer_context,
-            None,
             None,
             None,
         );
@@ -1248,7 +1276,6 @@ fn main() -> anyhow::Result<()> {
             ContextLevel::Normal,
             None,
             None,
-            None,
         );
 
         let _ = run_with_fallback(
@@ -1292,7 +1319,6 @@ fn main() -> anyhow::Result<()> {
             developer_context,
             Some(i),
             Some(config.developer_iters),
-            None,
         );
 
         let exit_code = run_with_fallback(
@@ -1381,14 +1407,7 @@ fn main() -> anyhow::Result<()> {
     logger.subheader("Initial Review");
     update_status("Starting code review", "none", "Evaluate codebase")?;
 
-    let prompt = prompt_for_agent(
-        Role::Reviewer,
-        Action::Review,
-        reviewer_context,
-        None,
-        None,
-        None,
-    );
+    let prompt = prompt_for_agent(Role::Reviewer, Action::Review, reviewer_context, None, None);
     let _ = run_with_fallback(
         AgentRole::Reviewer,
         "review (initial)",
@@ -1407,14 +1426,7 @@ fn main() -> anyhow::Result<()> {
     logger.subheader("Applying Fixes");
     update_status("Applying fixes", "none", "Address issues found")?;
 
-    let prompt = prompt_for_agent(
-        Role::Reviewer,
-        Action::Fix,
-        reviewer_context,
-        None,
-        None,
-        None,
-    );
+    let prompt = prompt_for_agent(Role::Reviewer, Action::Fix, reviewer_context, None, None);
     let _ = run_with_fallback(
         AgentRole::Reviewer,
         "fix",
@@ -1445,7 +1457,6 @@ fn main() -> anyhow::Result<()> {
             reviewer_context,
             None,
             None,
-            None,
         );
         let _ = run_with_fallback(
             AgentRole::Reviewer,
@@ -1474,7 +1485,6 @@ fn main() -> anyhow::Result<()> {
         Role::Reviewer,
         Action::GenerateCommitMessage,
         reviewer_context,
-        None,
         None,
         None,
     );
