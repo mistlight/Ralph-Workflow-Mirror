@@ -479,9 +479,11 @@ test_verbosity_affects_claude_output() {
 
 test_prompt_claude_iteration() {
   local result=$(prompt_claude_iteration 2 5)
-  assert_contains "$result" "Iteration 2/5" "prompt_claude_iteration shows correct iteration"
+  # Note: We intentionally do NOT include iteration count in the prompt
+  # to avoid context pollution - agents should not know loop structure
   assert_contains "$result" "PROMPT.md" "prompt_claude_iteration references PROMPT.md"
   assert_contains "$result" "STATUS.md" "prompt_claude_iteration references STATUS.md"
+  assert_contains "$result" "next best progress" "prompt_claude_iteration asks for progress"
 }
 
 test_prompt_codex_review_fresh_eyes() {
@@ -529,7 +531,8 @@ test_prompt_commit() {
 
 test_prompt_for_agent_developer() {
   local result=$(prompt_for_agent developer iterate 3 10)
-  assert_contains "$result" "Iteration 3/10" "prompt_for_agent developer:iterate works"
+  # Note: Iteration count is intentionally not in prompt to avoid context pollution
+  assert_contains "$result" "PROMPT.md" "prompt_for_agent developer:iterate works"
 }
 
 test_prompt_for_agent_reviewer() {
@@ -634,6 +637,156 @@ test_reviewer_commit_workflow() {
 }
 
 ############################################
+# Context cleanup tests
+############################################
+
+test_archive_context_file() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  mkdir -p .agent
+
+  # Create a context file
+  echo "test content" > .agent/STATUS.md
+
+  # Archive it
+  archive_context_file ".agent/STATUS.md"
+
+  # Check archive was created
+  ((TESTS_RUN++))
+  if [[ -d ".agent/archive" ]]; then
+    test_pass "archive_context_file creates archive directory"
+  else
+    test_fail "archive_context_file creates archive directory"
+  fi
+
+  ((TESTS_RUN++))
+  local archive_count=$(ls .agent/archive/ 2>/dev/null | wc -l)
+  if [[ "$archive_count" -gt 0 ]]; then
+    test_pass "archive_context_file creates archive file"
+  else
+    test_fail "archive_context_file creates archive file"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_clear_context_file() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  mkdir -p .agent
+
+  # Create a context file with content
+  echo "test content" > .agent/NOTES.md
+
+  # Clear it
+  clear_context_file ".agent/NOTES.md"
+
+  # Check file exists but is empty
+  ((TESTS_RUN++))
+  if [[ -f ".agent/NOTES.md" ]]; then
+    test_pass "clear_context_file preserves file"
+  else
+    test_fail "clear_context_file preserves file"
+  fi
+
+  ((TESTS_RUN++))
+  local content=$(cat .agent/NOTES.md)
+  if [[ -z "$content" ]]; then
+    test_pass "clear_context_file empties file"
+  else
+    test_fail "clear_context_file empties file" "expected empty, got '$content'"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_clean_context_for_reviewer() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  mkdir -p .agent/logs
+
+  # Create context files with content
+  echo "Developer notes here" > .agent/NOTES.md
+  echo "Developer status here" > .agent/STATUS.md
+  echo "Stale issues here" > .agent/ISSUES.md
+
+  # Clean context for reviewer
+  clean_context_for_reviewer >/dev/null 2>&1
+
+  # Check NOTES.md is cleared
+  ((TESTS_RUN++))
+  local notes_content=$(cat .agent/NOTES.md)
+  if [[ -z "$notes_content" ]]; then
+    test_pass "clean_context_for_reviewer clears NOTES.md"
+  else
+    test_fail "clean_context_for_reviewer clears NOTES.md" "expected empty, got '$notes_content'"
+  fi
+
+  # Check STATUS.md is reset (not empty, but reset)
+  ((TESTS_RUN++))
+  local status_content=$(cat .agent/STATUS.md)
+  if [[ "$status_content" == *"Development phase complete"* ]]; then
+    test_pass "clean_context_for_reviewer resets STATUS.md"
+  else
+    test_fail "clean_context_for_reviewer resets STATUS.md"
+  fi
+
+  # Check ISSUES.md is cleared (reviewer should find fresh issues)
+  ((TESTS_RUN++))
+  local issues_content=$(cat .agent/ISSUES.md)
+  if [[ -z "$issues_content" ]]; then
+    test_pass "clean_context_for_reviewer clears ISSUES.md"
+  else
+    test_fail "clean_context_for_reviewer clears ISSUES.md" "expected empty, got '$issues_content'"
+  fi
+
+  # Check archive was created
+  ((TESTS_RUN++))
+  if [[ -d ".agent/archive" ]]; then
+    test_pass "clean_context_for_reviewer archives old files"
+  else
+    test_fail "clean_context_for_reviewer archives old files"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_reset_iteration_context() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  mkdir -p .agent
+
+  # Reset iteration context
+  reset_iteration_context 3 "Continue working"
+
+  # Check STATUS.md was created with correct content
+  ((TESTS_RUN++))
+  local status_content=$(cat .agent/STATUS.md)
+  if [[ "$status_content" == *"iteration 3"* ]]; then
+    test_pass "reset_iteration_context sets iteration number"
+  else
+    test_fail "reset_iteration_context sets iteration number"
+  fi
+
+  ((TESTS_RUN++))
+  if [[ "$status_content" == *"Continue working"* ]]; then
+    test_pass "reset_iteration_context sets next action"
+  else
+    test_fail "reset_iteration_context sets next action"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+############################################
 # Run all tests
 ############################################
 print ""
@@ -678,6 +831,10 @@ run_test "Prompt - Generic reviewer prompt" test_prompt_for_agent_reviewer
 run_test "Reviewer commit - allow_reviewer_commit" test_allow_reviewer_commit
 run_test "Reviewer commit - block_commits_again" test_block_commits_again
 run_test "Reviewer commit - workflow" test_reviewer_commit_workflow
+run_test "Context - archive_context_file" test_archive_context_file
+run_test "Context - clear_context_file" test_clear_context_file
+run_test "Context - clean_context_for_reviewer" test_clean_context_for_reviewer
+run_test "Context - reset_iteration_context" test_reset_iteration_context
 
 ############################################
 # Agent abstraction tests

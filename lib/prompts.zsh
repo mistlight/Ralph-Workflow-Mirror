@@ -34,15 +34,18 @@ typeset -g RALPH_REVIEWER_CONTEXT="${RALPH_REVIEWER_CONTEXT:-0}"    # minimal co
 ############################################
 
 # Generate Claude iteration prompt
-# Args: $1 = iteration number, $2 = total iterations
+# Args: $1 = iteration number, $2 = total iterations (for shell tracking only)
+# CRITICAL: We do NOT tell the agent how many total iterations exist.
+# This prevents "context pollution" - the agent should complete their task fully
+# without knowing when the loop ends. Only the shell script knows the loop count.
 prompt_claude_iteration() {
   local i="$1"
-  local total="${2:-5}"
+  # Note: $2 (total) is intentionally ignored - agents should not know this
   local context_level="${RALPH_DEVELOPER_CONTEXT}"
 
-  cat <<EOF
-Iteration ${i}/${total}.
-
+  # Context level 0: minimal context - only read PROMPT.md, not history
+  if [[ "$context_level" -eq 0 ]]; then
+    cat <<EOF
 Read PROMPT.md and .agent/STATUS.md.
 Make the next best progress step toward PROMPT.md's Goal and Acceptance checks.
 Update .agent/STATUS.md (last action, blockers, next action).
@@ -50,6 +53,17 @@ Append brief bullets to .agent/NOTES.md.
 
 Then stop.
 EOF
+  else
+    # Default: normal context with status (but no future context)
+    cat <<EOF
+Read PROMPT.md and .agent/STATUS.md.
+Make the next best progress step toward PROMPT.md's Goal and Acceptance checks.
+Update .agent/STATUS.md (last action, blockers, next action).
+Append brief bullets to .agent/NOTES.md.
+
+Then stop.
+EOF
+  fi
 }
 
 ############################################
