@@ -644,33 +644,6 @@ impl AgentRegistry {
         Ok((registry, sources, warnings))
     }
 
-    /// Merge another config file into this registry
-    ///
-    /// Agents from the new file override existing agents with the same name.
-    /// If the new file has fallback config, it replaces the existing fallback config.
-    #[cfg(test)]
-    pub(crate) fn merge_from_file<P: AsRef<Path>>(
-        &mut self,
-        path: P,
-    ) -> Result<usize, AgentConfigError> {
-        match AgentsConfigFile::load_from_file(path)? {
-            Some(config) => {
-                let count = config.agents.len();
-                for (name, agent_toml) in config.agents {
-                    self.register(&name, agent_toml.into());
-                }
-                // Only update fallback if new config has non-empty fallback
-                if config.fallback.has_fallbacks(AgentRole::Developer)
-                    || config.fallback.has_fallbacks(AgentRole::Reviewer)
-                {
-                    self.fallback = config.fallback;
-                }
-                Ok(count)
-            }
-            None => Ok(0),
-        }
-    }
-
     /// Get the fallback configuration
     pub(crate) fn fallback_config(&self) -> &FallbackConfig {
         &self.fallback

@@ -1071,28 +1071,24 @@ fn main() -> anyhow::Result<()> {
     let _developer_cmd = if let Some(cmd) = config.developer_cmd.clone() {
         cmd
     } else {
-        registry
-            .developer_cmd(&developer_agent)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Unknown developer agent '{}'. Use --list-agents or define it in {}.",
-                    developer_agent,
-                    agents_config_path.display()
-                )
-            })?
+        registry.developer_cmd(&developer_agent).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown developer agent '{}'. Use --list-agents or define it in {}.",
+                developer_agent,
+                agents_config_path.display()
+            )
+        })?
     };
     let _reviewer_cmd = if let Some(cmd) = config.reviewer_cmd.clone() {
         cmd
     } else {
-        registry
-            .reviewer_cmd(&reviewer_agent)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Unknown reviewer agent '{}'. Use --list-agents or define it in {}.",
-                    reviewer_agent,
-                    agents_config_path.display()
-                )
-            })?
+        registry.reviewer_cmd(&reviewer_agent).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown reviewer agent '{}'. Use --list-agents or define it in {}.",
+                reviewer_agent,
+                agents_config_path.display()
+            )
+        })?
     };
 
     // Require git repo
