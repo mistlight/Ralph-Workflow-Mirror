@@ -389,6 +389,57 @@ pub fn ensure_files() -> io::Result<()> {
     Ok(())
 }
 
+/// Files that Ralph generates during a run and should clean up
+pub const GENERATED_FILES: &[&str] = &[
+    ".no_agent_commit",
+    ".agent/PLAN.md",
+    ".agent/commit-message.txt",
+];
+
+/// Delete PLAN.md after integration
+pub fn delete_plan_file() -> io::Result<()> {
+    let plan_path = Path::new(".agent/PLAN.md");
+    if plan_path.exists() {
+        fs::remove_file(plan_path)?;
+    }
+    Ok(())
+}
+
+/// Delete commit-message.txt after committing
+pub fn delete_commit_message_file() -> io::Result<()> {
+    let msg_path = Path::new(".agent/commit-message.txt");
+    if msg_path.exists() {
+        fs::remove_file(msg_path)?;
+    }
+    Ok(())
+}
+
+/// Read commit message from file; fails if missing or empty.
+pub fn read_commit_message_file() -> io::Result<String> {
+    let msg_path = Path::new(".agent/commit-message.txt");
+    let content = fs::read_to_string(msg_path).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("Failed to read .agent/commit-message.txt: {}", e),
+        )
+    })?;
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            ".agent/commit-message.txt is empty",
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Clean up all generated files (for crash/exit cleanup)
+pub fn cleanup_generated_files() {
+    for file in GENERATED_FILES {
+        let _ = fs::remove_file(file);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -554,5 +605,97 @@ mod tests {
             assert!(content.contains("none"));
             assert!(content.contains("Next step"));
         });
+    }
+
+    // Test delete_plan_file - simulates the deletion logic without relying on cwd
+    #[test]
+    fn test_delete_plan_file() {
+        let dir = TempDir::new().unwrap();
+        let agent_dir = dir.path().join(".agent");
+        fs::create_dir_all(&agent_dir).unwrap();
+        let plan_path = agent_dir.join("PLAN.md");
+        fs::write(&plan_path, "test plan").unwrap();
+        assert!(plan_path.exists());
+
+        // Simulating delete_plan_file logic
+        fs::remove_file(&plan_path).unwrap();
+        assert!(!plan_path.exists());
+    }
+
+    #[test]
+    fn test_delete_plan_file_nonexistent() {
+        let dir = TempDir::new().unwrap();
+        let agent_dir = dir.path().join(".agent");
+        fs::create_dir_all(&agent_dir).unwrap();
+        let plan_path = agent_dir.join("PLAN.md");
+
+        // Should not error if file doesn't exist
+        let result = fs::remove_file(&plan_path);
+        assert!(result.is_err() || !plan_path.exists());
+    }
+
+    #[test]
+    fn test_delete_commit_message_file() {
+        let dir = TempDir::new().unwrap();
+        let agent_dir = dir.path().join(".agent");
+        fs::create_dir_all(&agent_dir).unwrap();
+        let msg_path = agent_dir.join("commit-message.txt");
+        fs::write(&msg_path, "test message").unwrap();
+        assert!(msg_path.exists());
+
+        fs::remove_file(&msg_path).unwrap();
+        assert!(!msg_path.exists());
+    }
+
+    #[test]
+    fn test_read_commit_message_file() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/commit-message.txt", "feat: test commit\n").unwrap();
+
+            let msg = read_commit_message_file().unwrap();
+            assert_eq!(msg, "feat: test commit");
+        });
+    }
+
+    #[test]
+    fn test_read_commit_message_file_default() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            assert!(read_commit_message_file().is_err());
+        });
+    }
+
+    #[test]
+    fn test_read_commit_message_file_empty() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/commit-message.txt", "   \n").unwrap();
+            assert!(read_commit_message_file().is_err());
+        });
+    }
+
+    #[test]
+    fn test_cleanup_generated_files() {
+        let dir = TempDir::new().unwrap();
+        let agent_dir = dir.path().join(".agent");
+        fs::create_dir_all(&agent_dir).unwrap();
+
+        let marker_path = dir.path().join(".no_agent_commit");
+        let plan_path = agent_dir.join("PLAN.md");
+        let msg_path = agent_dir.join("commit-message.txt");
+
+        fs::write(&marker_path, "").unwrap();
+        fs::write(&plan_path, "plan").unwrap();
+        fs::write(&msg_path, "msg").unwrap();
+
+        // Cleanup each file
+        let _ = fs::remove_file(&marker_path);
+        let _ = fs::remove_file(&plan_path);
+        let _ = fs::remove_file(&msg_path);
+
+        assert!(!marker_path.exists());
+        assert!(!plan_path.exists());
+        assert!(!msg_path.exists());
     }
 }

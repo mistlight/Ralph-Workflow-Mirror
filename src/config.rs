@@ -90,8 +90,6 @@ pub struct Config {
     pub prompt_path: PathBuf,
     /// Path to agents configuration file (default: .agent/agents.toml)
     pub agents_config_path: PathBuf,
-    /// Whether reviewer creates the final commit
-    pub reviewer_commits: bool,
     /// Developer context level (0=minimal, 1=normal)
     pub developer_context: u8,
     /// Reviewer context level (0=minimal/fresh eyes, 1=normal)
@@ -148,9 +146,6 @@ impl Config {
                 env::var("RALPH_AGENTS_CONFIG")
                     .unwrap_or_else(|_| ".agent/agents.toml".to_string()),
             ),
-            reviewer_commits: env::var("RALPH_REVIEWER_COMMITS")
-                .map(|s| s == "1")
-                .unwrap_or(true),
             developer_context: env::var("RALPH_DEVELOPER_CONTEXT")
                 .ok()
                 .and_then(|s| s.parse().ok())

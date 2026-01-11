@@ -20,14 +20,16 @@ use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole, JsonParserType};
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::git_helpers::{
-    allow_reviewer_commit, block_commits_again, cleanup_orphaned_marker, disable_git_wrapper,
-    end_agent_phase, get_head_commit, get_last_commit_message, get_repo_root, git_add_all,
-    git_commit, git_snapshot, require_git_repo, start_agent_phase, uninstall_hooks, GitHelpers,
+    cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
+    get_repo_root, git_add_all, git_commit, git_snapshot, require_git_repo, start_agent_phase,
+    uninstall_hooks, GitHelpers,
 };
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use crate::timer::Timer;
 use crate::utils::{
-    clean_context_for_reviewer, ensure_files, print_progress, update_status, Logger,
+    clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
+    delete_plan_file, ensure_files, print_progress, read_commit_message_file, update_status,
+    Logger,
 };
 use clap::{Parser, ValueEnum};
 use std::env;
@@ -102,7 +104,6 @@ struct Stats {
     changes_detected: u32,
     developer_runs_completed: u32,
     reviewer_runs_completed: u32,
-    reviewer_committed: bool,
 }
 
 impl Stats {
@@ -111,7 +112,6 @@ impl Stats {
             changes_detected: 0,
             developer_runs_completed: 0,
             reviewer_runs_completed: 0,
-            reviewer_committed: false,
         }
     }
 }
@@ -388,7 +388,48 @@ fn run_with_fallback(
     Ok(1)
 }
 
+struct AgentPhaseGuard<'a> {
+    git_helpers: &'a mut GitHelpers,
+    logger: &'a Logger,
+    active: bool,
+}
+
+impl<'a> AgentPhaseGuard<'a> {
+    fn new(git_helpers: &'a mut GitHelpers, logger: &'a Logger) -> Self {
+        Self {
+            git_helpers,
+            logger,
+            active: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.active = false;
+    }
+}
+
+impl Drop for AgentPhaseGuard<'_> {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+
+        let _ = end_agent_phase();
+        disable_git_wrapper(self.git_helpers);
+        let _ = uninstall_hooks(self.logger);
+        cleanup_generated_files();
+    }
+}
+
 fn main() -> anyhow::Result<()> {
+    // Set up Ctrl+C handler for cleanup on unexpected exit
+    ctrlc::set_handler(move || {
+        eprintln!("\n✋ Interrupted! Cleaning up generated files...");
+        cleanup_agent_phase_silent();
+        std::process::exit(130); // Standard exit code for SIGINT
+    })
+    .ok(); // Ignore errors if handler can't be set (e.g., nested handlers)
+
     let args = Args::parse();
     let colors = Colors::new();
     let logger = Logger::new(colors).with_log_file(".agent/logs/pipeline.log");
@@ -479,18 +520,6 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    if config.reviewer_commits {
-        if let Some(cfg) = registry.get(&config.reviewer_agent) {
-            if !cfg.can_commit {
-                logger.warn(&format!(
-                    "Reviewer agent '{}' is configured as can_commit=false; disabling reviewer commits",
-                    config.reviewer_agent
-                ));
-                config.reviewer_commits = false;
-            }
-        }
-    }
-
     // Get agent commands and parser types
     let developer_cmd = config.developer_cmd.clone().unwrap_or_else(|| {
         registry
@@ -519,13 +548,8 @@ fn main() -> anyhow::Result<()> {
 
     cleanup_orphaned_marker(&logger)?;
 
-    let cleanup = |helpers: &mut GitHelpers| {
-        let _ = end_agent_phase();
-        disable_git_wrapper(helpers);
-        let _ = uninstall_hooks(&logger);
-    };
-
     start_agent_phase(&mut git_helpers)?;
+    let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &logger);
 
     let mut timer = Timer::new();
     let mut stats = Stats::new();
@@ -585,6 +609,68 @@ fn main() -> anyhow::Result<()> {
         colors.reset()
     ));
     println!();
+
+    // Phase 0: Planning
+    logger.header("PHASE 0: Planning", |c| c.cyan());
+    logger.info("Agent analyzing PROMPT.md and creating implementation plan...");
+
+    update_status(
+        "Starting planning phase",
+        "none",
+        "Analyze PROMPT.md and create PLAN.md",
+    )?;
+
+    let plan_prompt = prompt_for_agent(
+        Role::Developer,
+        Action::Plan,
+        ContextLevel::Normal,
+        None,
+        None,
+        None,
+    );
+
+    if config.use_fallback {
+        let _ = run_with_fallback(
+            AgentRole::Developer,
+            "planning",
+            &plan_prompt,
+            ".agent/logs/planning",
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &config.developer_agent,
+        );
+    } else {
+        let _ = run_with_prompt(
+            &format!("{} planning", config.developer_agent),
+            &developer_cmd,
+            &plan_prompt,
+            ".agent/logs/planning.log",
+            developer_parser,
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+        );
+    }
+
+    // Verify PLAN.md was created (required)
+    let plan_path = std::path::Path::new(".agent/PLAN.md");
+    let plan_ok = plan_path
+        .exists()
+        .then(|| fs::read_to_string(plan_path).ok())
+        .flatten()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+
+    if !plan_ok {
+        anyhow::bail!("Planning phase did not create a non-empty .agent/PLAN.md");
+    }
+    logger.success("PLAN.md created successfully");
+
+    update_status("Plan created", "none", "Begin implementation")?;
 
     // Phase 1: Developer iterations
     logger.header("PHASE 1: Development", |c| c.blue());
@@ -838,79 +924,50 @@ fn main() -> anyhow::Result<()> {
         stats.reviewer_runs_completed += 1;
     }
 
-    let mut reviewer_commit_unblocked = false;
+    // Commit message generation phase
+    logger.subheader("Generating Commit Message");
+    update_status(
+        "Generating commit message",
+        "none",
+        "Agent writes commit message",
+    )?;
 
-    // Reviewer commit phase
-    if config.reviewer_commits {
-        logger.subheader("Reviewer Commit");
-        update_status("Reviewer creating commit", "none", "Commit all changes")?;
+    let commit_msg_prompt = prompt_for_agent(
+        Role::Reviewer,
+        Action::GenerateCommitMessage,
+        reviewer_context,
+        None,
+        None,
+        None,
+    );
 
-        let head_before = get_head_commit()?;
-
-        // Allow reviewer to commit
-        allow_reviewer_commit(&mut git_helpers);
-        reviewer_commit_unblocked = true;
-
-        let prompt = prompt_for_agent(
-            Role::Reviewer,
-            Action::Commit,
-            reviewer_context,
-            None,
-            None,
-            Some(&config.commit_msg),
+    if config.use_fallback {
+        let _ = run_with_fallback(
+            AgentRole::Reviewer,
+            "generate commit msg",
+            &commit_msg_prompt,
+            ".agent/logs/commit_message",
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+            &registry,
+            &config.reviewer_agent,
         );
-        if config.use_fallback {
-            let _ = run_with_fallback(
-                AgentRole::Reviewer,
-                "commit",
-                &prompt,
-                ".agent/logs/reviewer_commit",
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-                &registry,
-                &config.reviewer_agent,
-            );
-        } else {
-            let _ = run_with_prompt(
-                &format!("{} commit", config.reviewer_agent),
-                &reviewer_cmd,
-                &prompt,
-                ".agent/logs/codex_commit.log",
-                reviewer_parser,
-                &mut timer,
-                &logger,
-                &colors,
-                &config,
-            );
-        }
-        stats.reviewer_runs_completed += 1;
-
-        // Verify reviewer created a new commit
-        let head_after = get_head_commit()?;
-        if head_before != head_after && !head_after.is_empty() {
-            let msg = get_last_commit_message()?;
-            logger.success(&format!(
-                "Reviewer created commit: {}{}{}",
-                colors.cyan(),
-                msg,
-                colors.reset()
-            ));
-            stats.reviewer_committed = true;
-        } else {
-            logger.warn("Reviewer did not create a new commit");
-        }
+    } else {
+        let _ = run_with_prompt(
+            &format!("{} generate commit msg", config.reviewer_agent),
+            &reviewer_cmd,
+            &commit_msg_prompt,
+            ".agent/logs/commit_message.log",
+            reviewer_parser,
+            &mut timer,
+            &logger,
+            &colors,
+            &config,
+        );
     }
-
-    if reviewer_commit_unblocked {
-        if let Err(err) = block_commits_again(&mut git_helpers) {
-            logger.warn(&format!(
-                "Failed to re-enable commit blocking after reviewer commit: {}",
-                err
-            ));
-        }
-    }
+    stats.reviewer_runs_completed += 1;
 
     update_status("Review phase complete", "none", "Awaiting finalization")?;
 
@@ -930,65 +987,60 @@ fn main() -> anyhow::Result<()> {
             logger.success("Full check passed");
         } else {
             logger.error("Full check failed");
-            cleanup(&mut git_helpers);
-            std::process::exit(1);
+            anyhow::bail!("Full check failed");
         }
     }
 
-    // Phase 4: Commit (only if Ralph commits, not reviewer)
+    // Phase 4: Commit (always done programmatically by Ralph)
     end_agent_phase()?;
-    disable_git_wrapper(&mut git_helpers);
+    disable_git_wrapper(agent_phase_guard.git_helpers);
     if let Err(err) = uninstall_hooks(&logger) {
         logger.warn(&format!("Failed to uninstall Ralph hooks: {}", err));
     }
 
-    if !config.reviewer_commits {
-        logger.header("PHASE 4: Commit Changes", |c| c.green());
+    // Delete PLAN.md after integration is complete
+    if let Err(err) = delete_plan_file() {
+        logger.warn(&format!("Failed to delete PLAN.md: {}", err));
+    }
 
-        logger.info("Staging all changes...");
-        git_add_all()?;
+    logger.header("PHASE 4: Commit Changes", |c| c.green());
 
-        // Show what we're committing
-        println!();
-        println!("{}Changes to commit:{}", colors.bold(), colors.reset());
-        let status_output = Command::new("git").args(["status", "--short"]).output()?;
-        let lines: Vec<&str> = std::str::from_utf8(&status_output.stdout)
-            .unwrap_or("")
-            .lines()
-            .take(20)
-            .collect();
-        for line in lines {
-            println!("  {}{}{}", colors.dim(), line, colors.reset());
-        }
-        println!();
+    logger.info("Staging all changes...");
+    git_add_all()?;
 
-        logger.info("Creating commit...");
-        if git_commit(&config.commit_msg)? {
-            logger.success("Commit created successfully");
-        } else {
-            logger.warn("Nothing to commit (working tree clean)");
-        }
+    // Show what we're committing
+    println!();
+    println!("{}Changes to commit:{}", colors.bold(), colors.reset());
+    let status_output = Command::new("git").args(["status", "--short"]).output()?;
+    let lines: Vec<&str> = std::str::from_utf8(&status_output.stdout)
+        .unwrap_or("")
+        .lines()
+        .take(20)
+        .collect();
+    for line in lines {
+        println!("  {}{}{}", colors.dim(), line, colors.reset());
+    }
+    println!();
+
+    // Read commit message from file (required)
+    let final_commit_msg = read_commit_message_file()?;
+    logger.info(&format!(
+        "Commit message: {}{}{}",
+        colors.cyan(),
+        final_commit_msg,
+        colors.reset()
+    ));
+
+    logger.info("Creating commit...");
+    if git_commit(&final_commit_msg)? {
+        logger.success("Commit created successfully");
     } else {
-        logger.header("PHASE 4: Verify Commit", |c| c.green());
+        logger.warn("Nothing to commit (working tree clean)");
+    }
 
-        if stats.reviewer_committed {
-            let msg = get_last_commit_message()?;
-            logger.success(&format!(
-                "Verified reviewer commit: {}{}{}",
-                colors.cyan(),
-                msg,
-                colors.reset()
-            ));
-        } else {
-            logger.warn("Reviewer did not create a commit - using fallback");
-            logger.info("Fallback: staging and committing changes...");
-            git_add_all()?;
-            if git_commit(&config.commit_msg)? {
-                logger.success("Fallback commit created");
-            } else {
-                logger.warn("Nothing to commit (working tree clean)");
-            }
-        }
+    // Delete commit-message.txt after committing
+    if let Err(err) = delete_commit_message_file() {
+        logger.warn(&format!("Failed to delete commit-message.txt: {}", err));
     }
 
     // Final summary
@@ -1081,5 +1133,6 @@ fn main() -> anyhow::Result<()> {
 
     logger.success("Ralph pipeline completed successfully!");
 
+    agent_phase_guard.disarm();
     Ok(())
 }
