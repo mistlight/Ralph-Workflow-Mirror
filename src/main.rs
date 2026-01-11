@@ -32,8 +32,8 @@ use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use crate::timer::Timer;
 use crate::utils::{
     clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
-    delete_plan_file, ensure_files, print_progress, read_commit_message_file, split_command,
-    truncate_text, update_status, Logger,
+    delete_plan_file, ensure_files, print_progress, read_commit_message_file,
+    reset_context_for_isolation, split_command, truncate_text, update_status, Logger,
 };
 use clap::{Parser, ValueEnum};
 use std::env;
@@ -88,6 +88,7 @@ ENVIRONMENT VARIABLES:\n\
     RALPH_DEVELOPER_ITERS    Developer iterations (default: 5)\n\
     RALPH_REVIEWER_REVIEWS   Re-review passes (default: 2)\n\
     RALPH_VERBOSITY          Verbosity level 0-4 (default: 2)\n\
+    RALPH_ISOLATION_MODE     Isolation mode on/off (default: 1=on)\n\
     RALPH_AGENTS_CONFIG      Path to agents.toml")]
 struct Args {
     /// Commit message for the final commit
@@ -181,6 +182,13 @@ struct Args {
         help = "Quick mode: 1 dev iteration + 1 review (for rapid prototyping)"
     )]
     quick: bool,
+
+    /// Disable isolation mode (allow NOTES.md and ISSUES.md to persist)
+    #[arg(
+        long,
+        help = "Disable isolation mode: keep NOTES.md and ISSUES.md between runs"
+    )]
+    no_isolation: bool,
 
     /// List all configured agents and exit
     #[arg(long, help = "Show all agents from registry and config file")]
@@ -795,6 +803,11 @@ fn main() -> anyhow::Result<()> {
         config.reviewer_agent = Some(agent);
     }
 
+    // Handle --no-isolation flag (CLI overrides env var)
+    if args.no_isolation {
+        config.isolation_mode = false;
+    }
+
     // Handle --init-global flag: create global agents.toml if it doesn't exist and exit
     if args.init_global {
         let global_path = global_agents_config_path().ok_or_else(|| {
@@ -1155,7 +1168,14 @@ fn main() -> anyhow::Result<()> {
     require_git_repo()?;
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
-    ensure_files()?;
+    ensure_files(config.isolation_mode)?;
+
+    // Reset context for isolation mode (default) - delete NOTES.md and ISSUES.md
+    // to prevent context contamination from previous runs
+    if config.isolation_mode {
+        reset_context_for_isolation(&logger)?;
+    }
+
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
     // --generate-commit-msg: Run only the commit message generation phase
@@ -1291,11 +1311,7 @@ fn main() -> anyhow::Result<()> {
 
         // Step 1: Create PLAN from PROMPT
         logger.info("Creating plan from PROMPT.md...");
-        update_status(
-            "Starting planning phase",
-            "none",
-            "Analyze PROMPT.md and create PLAN.md",
-        )?;
+        update_status("In progress.", config.isolation_mode)?;
 
         let plan_prompt = prompt_for_agent(
             Role::Developer,
@@ -1334,11 +1350,7 @@ fn main() -> anyhow::Result<()> {
 
         // Step 2: Execute the PLAN
         logger.info("Executing plan...");
-        update_status(
-            "Starting development iteration",
-            "none",
-            "Make progress on PROMPT.md goals",
-        )?;
+        update_status("In progress.", config.isolation_mode)?;
 
         let prompt = prompt_for_agent(
             Role::Developer,
@@ -1369,11 +1381,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         stats.developer_runs_completed += 1;
-        update_status(
-            "Completed progress step",
-            "none",
-            "Continue work on PROMPT.md goals",
-        )?;
+        update_status("In progress.", config.isolation_mode)?;
 
         let snap = git_snapshot()?;
         if snap == prev_snap {
@@ -1411,7 +1419,7 @@ fn main() -> anyhow::Result<()> {
         logger.success("PLAN.md deleted");
     }
 
-    update_status("Code changes made", "none", "Evaluate codebase")?;
+    update_status("In progress.", config.isolation_mode)?;
 
     // Phase 2: Reviewer review/fix cycle
     logger.header("PHASE 2: Review & Fix", |c| c.magenta());
@@ -1419,7 +1427,7 @@ fn main() -> anyhow::Result<()> {
     // Clean context for reviewer if using minimal context
     let reviewer_context = ContextLevel::from(config.reviewer_context);
     if reviewer_context == ContextLevel::Minimal {
-        clean_context_for_reviewer(&logger)?;
+        clean_context_for_reviewer(&logger, config.isolation_mode)?;
     }
 
     logger.info(&format!(
@@ -1432,7 +1440,7 @@ fn main() -> anyhow::Result<()> {
 
     // Initial review
     logger.subheader("Initial Review");
-    update_status("Starting code review", "none", "Evaluate codebase")?;
+    update_status("In progress.", config.isolation_mode)?;
 
     let prompt = prompt_for_agent(Role::Reviewer, Action::Review, reviewer_context, None, None);
     let _ = run_with_fallback(
@@ -1451,7 +1459,7 @@ fn main() -> anyhow::Result<()> {
 
     // Applying fixes
     logger.subheader("Applying Fixes");
-    update_status("Applying fixes", "none", "Address issues found")?;
+    update_status("In progress.", config.isolation_mode)?;
 
     let prompt = prompt_for_agent(Role::Reviewer, Action::Fix, reviewer_context, None, None);
     let _ = run_with_fallback(
@@ -1476,7 +1484,7 @@ fn main() -> anyhow::Result<()> {
         ));
         print_progress(j, config.reviewer_reviews, "Review passes");
 
-        update_status("Verification review", "none", "Re-evaluate codebase")?;
+        update_status("In progress.", config.isolation_mode)?;
 
         let prompt = prompt_for_agent(
             Role::Reviewer,
@@ -1502,11 +1510,7 @@ fn main() -> anyhow::Result<()> {
 
     // Commit message generation phase
     logger.subheader("Generating Commit Message");
-    update_status(
-        "Generating commit message",
-        "none",
-        "Agent writes commit message",
-    )?;
+    update_status("In progress.", config.isolation_mode)?;
 
     let commit_msg_prompt = prompt_for_agent(
         Role::Reviewer,
@@ -1530,7 +1534,7 @@ fn main() -> anyhow::Result<()> {
     );
     stats.reviewer_runs_completed += 1;
 
-    update_status("Review phase complete", "none", "Awaiting finalization")?;
+    update_status("In progress.", config.isolation_mode)?;
 
     // Phase 3: Final checks (if configured)
     if let Some(ref full_cmd) = config.full_check_cmd {
@@ -1670,16 +1674,19 @@ fn main() -> anyhow::Result<()> {
         colors.cyan(),
         colors.reset()
     );
-    println!(
-        "  → {}.agent/ISSUES.md{}    Review findings",
-        colors.cyan(),
-        colors.reset()
-    );
-    println!(
-        "  → {}.agent/NOTES.md{}     Progress notes",
-        colors.cyan(),
-        colors.reset()
-    );
+    // Only show ISSUES.md and NOTES.md when NOT in isolation mode
+    if !config.isolation_mode {
+        println!(
+            "  → {}.agent/ISSUES.md{}    Review findings",
+            colors.cyan(),
+            colors.reset()
+        );
+        println!(
+            "  → {}.agent/NOTES.md{}     Progress notes",
+            colors.cyan(),
+            colors.reset()
+        );
+    }
     println!(
         "  → {}.agent/logs/{}        Detailed logs",
         colors.cyan(),
