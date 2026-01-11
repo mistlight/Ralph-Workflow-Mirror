@@ -533,7 +533,7 @@ impl AgentRegistry {
     }
 
     /// Check if agent exists
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn is_known(&self, name: &str) -> bool {
         self.agents.contains_key(name)
     }
@@ -554,7 +554,7 @@ impl AgentRegistry {
     }
 
     /// Get the JSON parser type for an agent
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn parser_type(&self, agent_name: &str) -> JsonParserType {
         self.get(agent_name)
             .map(|c| c.json_parser)
@@ -587,7 +587,7 @@ impl AgentRegistry {
     ///
     /// This is the recommended way to create a registry for production use.
     /// Custom agents in the file will override built-in defaults.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn with_config_file<P: AsRef<Path>>(path: P) -> Result<Self, AgentConfigError> {
         let mut registry = Self::new()?;
         registry.load_from_file(path)?;
@@ -648,7 +648,7 @@ impl AgentRegistry {
     ///
     /// Agents from the new file override existing agents with the same name.
     /// If the new file has fallback config, it replaces the existing fallback config.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn merge_from_file<P: AsRef<Path>>(
         &mut self,
         path: P,
@@ -677,7 +677,7 @@ impl AgentRegistry {
     }
 
     /// Set the fallback configuration
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn set_fallback(&mut self, fallback: FallbackConfig) {
         self.fallback = fallback;
     }
@@ -780,8 +780,6 @@ mod tests {
         // Original agents
         assert!(registry.is_known("claude"));
         assert!(registry.is_known("codex"));
-        assert!(registry.is_known("driver"));
-        assert!(registry.is_known("reviewer"));
         assert!(registry.is_known("opencode"));
         assert!(registry.is_known("aider"));
 
@@ -1433,8 +1431,6 @@ retry_delay_ms = 500
         assert!(config.agents.contains_key("continue"));
         assert!(config.agents.contains_key("amazon-q"));
         assert!(config.agents.contains_key("gemini"));
-        assert!(config.agents.contains_key("driver"));
-        assert!(config.agents.contains_key("reviewer"));
 
         // Verify Claude config is correct
         let claude = &config.agents["claude"];

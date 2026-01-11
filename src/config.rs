@@ -5,6 +5,39 @@
 use std::env;
 use std::path::PathBuf;
 
+/// Truncation limits for Quiet verbosity mode
+mod truncate_limits {
+    pub const QUIET_TEXT: usize = 80;
+    pub const QUIET_TOOL_RESULT: usize = 60;
+    pub const QUIET_TOOL_INPUT: usize = 40;
+    pub const QUIET_USER: usize = 40;
+    pub const QUIET_RESULT: usize = 300;
+    pub const QUIET_COMMAND: usize = 60;
+    pub const QUIET_AGENT_MSG: usize = 80;
+    pub const QUIET_DEFAULT: usize = 60;
+
+    pub const NORMAL_TEXT: usize = 400;
+    pub const NORMAL_TOOL_RESULT: usize = 300;
+    pub const NORMAL_TOOL_INPUT: usize = 200;
+    pub const NORMAL_USER: usize = 200;
+    pub const NORMAL_RESULT: usize = 1500;
+    pub const NORMAL_COMMAND: usize = 200;
+    pub const NORMAL_AGENT_MSG: usize = 400;
+    pub const NORMAL_DEFAULT: usize = 300;
+
+    pub const VERBOSE_TEXT: usize = 800;
+    pub const VERBOSE_TOOL_RESULT: usize = 600;
+    pub const VERBOSE_TOOL_INPUT: usize = 500;
+    pub const VERBOSE_USER: usize = 400;
+    pub const VERBOSE_RESULT: usize = 3000;
+    pub const VERBOSE_COMMAND: usize = 400;
+    pub const VERBOSE_AGENT_MSG: usize = 800;
+    pub const VERBOSE_DEFAULT: usize = 600;
+
+    /// Effectively unlimited for Full/Debug modes
+    pub const UNLIMITED: usize = 999_999;
+}
+
 fn parse_env_bool(value: &str) -> Option<bool> {
     let normalized = value.trim().to_ascii_lowercase();
     match normalized.as_str() {
@@ -54,43 +87,45 @@ impl Verbosity {
     /// - "command": Command execution strings
     /// - "agent_msg": Agent messages/thinking
     pub(crate) fn truncate_limit(&self, content_type: &str) -> usize {
+        use truncate_limits::*;
+
         match self {
             Verbosity::Quiet => match content_type {
-                "text" => 80,
-                "tool_result" => 60,
-                "tool_input" => 40,
-                "user" => 40,
-                "result" => 300,
-                "command" => 60,
-                "agent_msg" => 80,
-                _ => 60,
+                "text" => QUIET_TEXT,
+                "tool_result" => QUIET_TOOL_RESULT,
+                "tool_input" => QUIET_TOOL_INPUT,
+                "user" => QUIET_USER,
+                "result" => QUIET_RESULT,
+                "command" => QUIET_COMMAND,
+                "agent_msg" => QUIET_AGENT_MSG,
+                _ => QUIET_DEFAULT,
             },
             // Normal mode: increased limits for better usability
             // Previously too aggressive truncation made debugging difficult
             Verbosity::Normal => match content_type {
-                "text" => 400,
-                "tool_result" => 300,
-                "tool_input" => 200,
-                "user" => 200,
-                "result" => 1500,
-                "command" => 200,
-                "agent_msg" => 400,
-                _ => 300,
+                "text" => NORMAL_TEXT,
+                "tool_result" => NORMAL_TOOL_RESULT,
+                "tool_input" => NORMAL_TOOL_INPUT,
+                "user" => NORMAL_USER,
+                "result" => NORMAL_RESULT,
+                "command" => NORMAL_COMMAND,
+                "agent_msg" => NORMAL_AGENT_MSG,
+                _ => NORMAL_DEFAULT,
             },
             // Verbose is the default - show generous amounts of context
             // Users need to see what's happening to understand agent behavior
             Verbosity::Verbose => match content_type {
-                "text" => 800,
-                "tool_result" => 600,
-                "tool_input" => 500,
-                "user" => 400,
-                "result" => 3000,
-                "command" => 400,
-                "agent_msg" => 800,
-                _ => 600,
+                "text" => VERBOSE_TEXT,
+                "tool_result" => VERBOSE_TOOL_RESULT,
+                "tool_input" => VERBOSE_TOOL_INPUT,
+                "user" => VERBOSE_USER,
+                "result" => VERBOSE_RESULT,
+                "command" => VERBOSE_COMMAND,
+                "agent_msg" => VERBOSE_AGENT_MSG,
+                _ => VERBOSE_DEFAULT,
             },
             // Full shows everything (essentially unlimited)
-            Verbosity::Full | Verbosity::Debug => 999999,
+            Verbosity::Full | Verbosity::Debug => UNLIMITED,
         }
     }
 
@@ -119,17 +154,17 @@ impl Verbosity {
 /// Ralph configuration
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
-    /// Developer (driver) agent (default: claude)
-    pub(crate) developer_agent: String,
-    /// Reviewer agent (default: codex)
-    pub(crate) reviewer_agent: String,
-    /// Developer command override (alias: CLAUDE_CMD)
+    /// Developer (driver) agent (set via CLI, env, or agent_chain)
+    pub(crate) developer_agent: Option<String>,
+    /// Reviewer agent (set via CLI, env, or agent_chain)
+    pub(crate) reviewer_agent: Option<String>,
+    /// Developer command override (legacy env alias: `CLAUDE_CMD`)
     pub(crate) developer_cmd: Option<String>,
-    /// Reviewer command override (alias: CODEX_CMD)
+    /// Reviewer command override (legacy env alias: `CODEX_CMD`)
     pub(crate) reviewer_cmd: Option<String>,
-    /// Number of developer iterations (alias: CLAUDE_ITERS)
+    /// Number of developer iterations (legacy env alias: `CLAUDE_ITERS`)
     pub(crate) developer_iters: u32,
-    /// Number of reviewer re-review passes after fix (alias: CODEX_REVIEWS)
+    /// Number of reviewer re-review passes after fix (legacy env alias: `CODEX_REVIEWS`)
     pub(crate) reviewer_reviews: u32,
     /// Fast check command (optional)
     pub(crate) fast_check_cmd: Option<String>,
@@ -153,12 +188,15 @@ pub(crate) struct Config {
 
 impl Config {
     /// Load configuration from environment variables
+    ///
+    /// Note: developer_agent and reviewer_agent are NOT given hardcoded defaults here.
+    /// The agent_chain configuration in agents.toml is the single source of truth
+    /// for default agent selection. CLI/env vars can override the agent_chain.
     pub(crate) fn from_env() -> Self {
         let developer_agent = env::var("RALPH_DEVELOPER_AGENT")
             .or_else(|_| env::var("RALPH_DRIVER_AGENT"))
-            .unwrap_or_else(|_| "claude".to_string());
-        let reviewer_agent =
-            env::var("RALPH_REVIEWER_AGENT").unwrap_or_else(|_| "codex".to_string());
+            .ok();
+        let reviewer_agent = env::var("RALPH_REVIEWER_AGENT").ok();
 
         let developer_cmd = env::var("RALPH_DEVELOPER_CMD")
             .ok()
@@ -338,8 +376,10 @@ mod tests {
     #[test]
     fn test_config_defaults() {
         let config = Config::from_env();
-        assert_eq!(config.developer_agent, "claude");
-        assert_eq!(config.reviewer_agent, "codex");
+        // Agent selection is NOT hardcoded - it comes from agent_chain in agents.toml
+        // If no env var is set, these should be None
+        assert!(config.developer_agent.is_none());
+        assert!(config.reviewer_agent.is_none());
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
         // Default verbosity is now Verbose
