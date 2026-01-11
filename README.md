@@ -188,6 +188,10 @@ Quick reference for the most common settings:
 | `RALPH_DEVELOPER_ITERS` | How many times developer runs | `5` |
 | `RALPH_REVIEWER_REVIEWS` | How many review passes | `2` |
 | `RALPH_VERBOSITY` | Output detail (0-4) | `2` |
+| `RALPH_AUTO_DETECT_STACK` | Enable language detection | `true` |
+| `RALPH_CHECKPOINT_ENABLED` | Enable checkpoint/resume | `true` |
+| `RALPH_STRICT_VALIDATION` | Strict PROMPT.md validation | `false` |
+| `RALPH_REVIEW_DEPTH` | Review thoroughness level | `standard` |
 | `FAST_CHECK_CMD` | Run after each iteration | - |
 | `FULL_CHECK_CMD` | Run at the end (e.g., tests) | - |
 
@@ -199,6 +203,76 @@ ralph
 ```
 
 ## Advanced Features
+
+### Language-Specific Code Review
+
+Ralph automatically detects your project's technology stack and provides tailored review guidance:
+
+- **Rust**: Memory safety, lifetime annotations, error handling, unsafe code audit
+- **Python**: PEP 8 compliance, type hints, security (eval, SQL injection)
+- **JavaScript/TypeScript**: Strict mode, Promise handling, DOM security
+- **Go**: Error checking, goroutine safety, idiomatic patterns
+- **And more**: Java, Ruby, C/C++, PHP, Swift, Kotlin, Elixir...
+
+Framework-specific checks are also included (React, Django, Rails, Spring, etc.).
+
+Disable with: `RALPH_AUTO_DETECT_STACK=false`
+
+### Review Depth Levels
+
+Control how thorough the code review is:
+
+| Level | Flag | Description |
+|-------|------|-------------|
+| `standard` | `--review-depth standard` | Balanced review (default) |
+| `comprehensive` | `--review-depth comprehensive` | In-depth analysis with priority-ordered checks |
+| `security` | `--review-depth security` | Security-focused (OWASP Top 10) |
+| `incremental` | `--review-depth incremental` | Changed files only (git diff) |
+
+```bash
+# Security-focused review for sensitive code
+ralph --review-depth security
+
+# Quick review of just your changes
+ralph --review-depth incremental
+
+# Set via environment variable
+RALPH_REVIEW_DEPTH=comprehensive ralph
+```
+
+### Checkpoint and Resume
+
+Long pipelines can be interrupted. Ralph saves checkpoints at each phase and can resume from the last saved phase start (the last phase may be re-run):
+
+```bash
+# If Ralph is interrupted, resume from where you left off:
+ralph --resume
+```
+
+Checkpoints are saved in `.agent/checkpoint.json` and cleared on successful completion.
+
+Disable with: `RALPH_CHECKPOINT_ENABLED=false`
+
+### Dry Run Validation
+
+Validate your setup before running agents:
+
+```bash
+ralph --dry-run
+```
+
+This checks:
+- PROMPT.md exists and has content
+- Goal and acceptance check sections (warnings if missing)
+- Agent configuration is valid
+- Project stack detection
+
+### Review Metrics
+
+The final summary now includes issue metrics from the review phase:
+- Issues found by severity (Critical/High/Medium/Low)
+- Resolution rate percentage
+- Warning for unresolved blocking issues
 
 ### Automatic Fallback
 
@@ -236,6 +310,12 @@ ralph --show-commit-msg
 
 # Apply commit using generated message
 ralph --apply-commit
+
+# Validate setup without running agents
+ralph --dry-run
+
+# Resume from last checkpoint
+ralph --resume
 ```
 
 ## Files Ralph Creates
@@ -247,8 +327,10 @@ All working files live in `.agent/`:
 ├── agents.toml        # Agent configuration
 ├── STATUS.md          # Current status
 ├── NOTES.md           # Agent notes/scratchpad
-├── ISSUES.md          # Issues found
+├── ISSUES.md          # Issues found during review
+├── PLAN.md            # Current iteration plan (deleted after each iteration)
 ├── commit-message.txt # Generated commit message
+├── checkpoint.json    # Pipeline checkpoint (for --resume)
 ├── last_prompt.txt    # Last prompt sent to agent
 └── logs/              # Agent run logs
 ```

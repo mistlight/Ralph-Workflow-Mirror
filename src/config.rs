@@ -48,6 +48,45 @@ fn parse_env_bool(value: &str) -> Option<bool> {
     }
 }
 
+/// Review depth levels for controlling review thoroughness
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ReviewDepth {
+    /// Standard review - balanced coverage of functionality, quality, and security
+    #[default]
+    Standard,
+    /// Comprehensive review - in-depth analysis with priority-ordered checks
+    Comprehensive,
+    /// Security-focused review - emphasizes security analysis above all else
+    Security,
+    /// Incremental review - focuses only on changed files (git diff)
+    Incremental,
+}
+
+impl ReviewDepth {
+    /// Parse review depth from string
+    pub(crate) fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "standard" | "default" | "normal" => Some(ReviewDepth::Standard),
+            "comprehensive" | "thorough" | "full" => Some(ReviewDepth::Comprehensive),
+            "security" | "secure" | "security-focused" => Some(ReviewDepth::Security),
+            "incremental" | "diff" | "changed" => Some(ReviewDepth::Incremental),
+            _ => None,
+        }
+    }
+
+    /// Get a description for display
+    pub(crate) fn description(&self) -> &'static str {
+        match self {
+            ReviewDepth::Standard => {
+                "Balanced review covering functionality, quality, and security"
+            }
+            ReviewDepth::Comprehensive => "In-depth analysis with priority-ordered checks",
+            ReviewDepth::Security => "Security-focused analysis emphasizing OWASP Top 10",
+            ReviewDepth::Incremental => "Focused review of changed files only (git diff)",
+        }
+    }
+}
+
 /// Verbosity levels for output
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Verbosity {
@@ -184,6 +223,14 @@ pub(crate) struct Config {
     pub(crate) verbosity: Verbosity,
     /// Commit message
     pub(crate) commit_msg: String,
+    /// Whether to auto-detect project stack for review guidelines
+    pub(crate) auto_detect_stack: bool,
+    /// Whether to enable checkpoint/resume functionality
+    pub(crate) checkpoint_enabled: bool,
+    /// Whether to run strict PROMPT.md validation
+    pub(crate) strict_validation: bool,
+    /// Review depth level (standard, comprehensive, security, incremental)
+    pub(crate) review_depth: ReviewDepth,
 }
 
 impl Config {
@@ -242,6 +289,22 @@ impl Config {
                 .map(Verbosity::from)
                 .unwrap_or(Verbosity::Verbose),
             commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
+            auto_detect_stack: env::var("RALPH_AUTO_DETECT_STACK")
+                .ok()
+                .and_then(|s| parse_env_bool(&s))
+                .unwrap_or(true),
+            checkpoint_enabled: env::var("RALPH_CHECKPOINT_ENABLED")
+                .ok()
+                .and_then(|s| parse_env_bool(&s))
+                .unwrap_or(true),
+            strict_validation: env::var("RALPH_STRICT_VALIDATION")
+                .ok()
+                .and_then(|s| parse_env_bool(&s))
+                .unwrap_or(false),
+            review_depth: env::var("RALPH_REVIEW_DEPTH")
+                .ok()
+                .and_then(|s| ReviewDepth::from_str(&s))
+                .unwrap_or_default(),
         };
 
         // Deprecation warning for removed flag
@@ -369,6 +432,20 @@ mod tests {
 
     #[test]
     fn test_config_defaults() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Clear environment variables that might affect defaults
+        env::remove_var("RALPH_DEVELOPER_AGENT");
+        env::remove_var("RALPH_DRIVER_AGENT");
+        env::remove_var("RALPH_REVIEWER_AGENT");
+        env::remove_var("RALPH_DEVELOPER_ITERS");
+        env::remove_var("RALPH_REVIEWER_REVIEWS");
+        env::remove_var("RALPH_VERBOSITY");
+        env::remove_var("RALPH_AUTO_DETECT_STACK");
+        env::remove_var("RALPH_CHECKPOINT_ENABLED");
+        env::remove_var("RALPH_STRICT_VALIDATION");
+        env::remove_var("RALPH_REVIEW_DEPTH");
+
         let config = Config::from_env();
         // Agent selection is NOT hardcoded - it comes from agent_chain in agents.toml
         // If no env var is set, these should be None
@@ -378,5 +455,146 @@ mod tests {
         assert_eq!(config.reviewer_reviews, 2);
         // Default verbosity is now Verbose
         assert_eq!(config.verbosity, Verbosity::Verbose);
+        // New config options defaults
+        assert!(config.auto_detect_stack);
+        assert!(config.checkpoint_enabled);
+        assert!(!config.strict_validation);
+    }
+
+    #[test]
+    fn test_new_config_options_from_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Test auto_detect_stack
+        env::set_var("RALPH_AUTO_DETECT_STACK", "false");
+        let cfg = Config::from_env();
+        assert!(!cfg.auto_detect_stack);
+        env::remove_var("RALPH_AUTO_DETECT_STACK");
+
+        // Test checkpoint_enabled
+        env::set_var("RALPH_CHECKPOINT_ENABLED", "0");
+        let cfg = Config::from_env();
+        assert!(!cfg.checkpoint_enabled);
+        env::remove_var("RALPH_CHECKPOINT_ENABLED");
+
+        // Test strict_validation
+        env::set_var("RALPH_STRICT_VALIDATION", "true");
+        let cfg = Config::from_env();
+        assert!(cfg.strict_validation);
+        env::remove_var("RALPH_STRICT_VALIDATION");
+    }
+
+    #[test]
+    fn test_review_depth_from_str() {
+        // Standard aliases
+        assert_eq!(
+            ReviewDepth::from_str("standard"),
+            Some(ReviewDepth::Standard)
+        );
+        assert_eq!(
+            ReviewDepth::from_str("default"),
+            Some(ReviewDepth::Standard)
+        );
+        assert_eq!(ReviewDepth::from_str("normal"), Some(ReviewDepth::Standard));
+
+        // Comprehensive aliases
+        assert_eq!(
+            ReviewDepth::from_str("comprehensive"),
+            Some(ReviewDepth::Comprehensive)
+        );
+        assert_eq!(
+            ReviewDepth::from_str("thorough"),
+            Some(ReviewDepth::Comprehensive)
+        );
+        assert_eq!(
+            ReviewDepth::from_str("full"),
+            Some(ReviewDepth::Comprehensive)
+        );
+
+        // Security aliases
+        assert_eq!(
+            ReviewDepth::from_str("security"),
+            Some(ReviewDepth::Security)
+        );
+        assert_eq!(ReviewDepth::from_str("secure"), Some(ReviewDepth::Security));
+        assert_eq!(
+            ReviewDepth::from_str("security-focused"),
+            Some(ReviewDepth::Security)
+        );
+
+        // Incremental aliases
+        assert_eq!(
+            ReviewDepth::from_str("incremental"),
+            Some(ReviewDepth::Incremental)
+        );
+        assert_eq!(
+            ReviewDepth::from_str("diff"),
+            Some(ReviewDepth::Incremental)
+        );
+        assert_eq!(
+            ReviewDepth::from_str("changed"),
+            Some(ReviewDepth::Incremental)
+        );
+
+        // Case insensitivity
+        assert_eq!(
+            ReviewDepth::from_str("SECURITY"),
+            Some(ReviewDepth::Security)
+        );
+        assert_eq!(
+            ReviewDepth::from_str("Comprehensive"),
+            Some(ReviewDepth::Comprehensive)
+        );
+
+        // Invalid values
+        assert_eq!(ReviewDepth::from_str("invalid"), None);
+        assert_eq!(ReviewDepth::from_str(""), None);
+    }
+
+    #[test]
+    fn test_review_depth_default() {
+        assert_eq!(ReviewDepth::default(), ReviewDepth::Standard);
+    }
+
+    #[test]
+    fn test_review_depth_description() {
+        assert!(ReviewDepth::Standard.description().contains("Balanced"));
+        assert!(ReviewDepth::Comprehensive
+            .description()
+            .contains("In-depth"));
+        assert!(ReviewDepth::Security.description().contains("OWASP"));
+        assert!(ReviewDepth::Incremental.description().contains("git diff"));
+    }
+
+    #[test]
+    fn test_review_depth_from_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Default is Standard
+        env::remove_var("RALPH_REVIEW_DEPTH");
+        let cfg = Config::from_env();
+        assert_eq!(cfg.review_depth, ReviewDepth::Standard);
+
+        // Test comprehensive
+        env::set_var("RALPH_REVIEW_DEPTH", "comprehensive");
+        let cfg = Config::from_env();
+        assert_eq!(cfg.review_depth, ReviewDepth::Comprehensive);
+
+        // Test security
+        env::set_var("RALPH_REVIEW_DEPTH", "security");
+        let cfg = Config::from_env();
+        assert_eq!(cfg.review_depth, ReviewDepth::Security);
+
+        // Test incremental
+        env::set_var("RALPH_REVIEW_DEPTH", "incremental");
+        let cfg = Config::from_env();
+        assert_eq!(cfg.review_depth, ReviewDepth::Incremental);
+
+        // Invalid falls back to default
+        env::set_var("RALPH_REVIEW_DEPTH", "invalid_value");
+        let cfg = Config::from_env();
+        assert_eq!(cfg.review_depth, ReviewDepth::Standard);
+
+        env::remove_var("RALPH_REVIEW_DEPTH");
     }
 }
