@@ -8,6 +8,8 @@
 # Then select an agent by name:
 #
 #   ralph --developer-agent claude --reviewer-agent codex
+#   # Or use role-friendly aliases (defaults to Claude/Codex unless overridden):
+#   ralph --developer-agent driver --reviewer-agent reviewer
 #
 
 # Override built-in agent command (optional)
@@ -25,6 +27,22 @@ json_flag = "--json"
 yolo_flag = "--yolo"
 json_parser = "codex"
 
+# Role-friendly aliases (optional): redefine these once and keep your CLI stable.
+# Example: use opencode for both developer and reviewer roles:
+#
+# [agents.driver]
+# cmd = "opencode"
+# json_flag = "--json"
+# yolo_flag = "--auto"
+# verbose_flag = "--verbose"
+# json_parser = "generic"
+#
+# [agents.reviewer]
+# cmd = "opencode"
+# json_flag = "--json"
+# yolo_flag = "--auto"
+# json_parser = "generic"
+#
 # Custom agent example
 [agents.myagent]
 cmd = "my-ai-tool run"
@@ -33,4 +51,3 @@ yolo_flag = "--auto-fix"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "generic"
-
