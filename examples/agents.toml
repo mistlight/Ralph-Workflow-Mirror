@@ -24,10 +24,10 @@
 # AGENT CONFIGURATION FIELDS
 # --------------------------
 # cmd          - Base command to invoke the agent (required)
-# json_flag    - Flag to enable JSON/streaming output (optional)
+# output_flag  - Output-format flag (JSON streaming, text mode, etc.; optional)
 # yolo_flag    - Flag for autonomous mode (no prompts, optional)
 # verbose_flag - Flag for verbose output (optional)
-# can_commit   - Whether agent can create git commits (default: true)
+# can_commit   - Whether agent can make repo changes via tools (default: true)
 # json_parser  - Output parser: "claude", "codex", or "generic" (default: "generic")
 #
 # JSON PARSERS
@@ -67,7 +67,7 @@
 # https://claude.ai/code
 [agents.claude]
 cmd = "claude -p"
-json_flag = "--output-format=stream-json"
+output_flag = "--output-format=stream-json"
 yolo_flag = "--dangerously-skip-permissions"
 verbose_flag = "--verbose"
 can_commit = true
@@ -78,7 +78,7 @@ json_parser = "claude"
 # Uses --full-auto for automatic sandboxed execution
 [agents.codex]
 cmd = "codex exec"
-json_flag = "--json"
+output_flag = "--json"
 yolo_flag = "--full-auto"
 verbose_flag = ""
 can_commit = true
@@ -89,7 +89,7 @@ json_parser = "codex"
 # Uses 'run' command for non-interactive, --format json for raw JSON events output
 [agents.opencode]
 cmd = "opencode run"
-json_flag = "--format json"
+output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
@@ -100,7 +100,7 @@ json_parser = "generic"
 # Uses --message for single-message mode, --yes-always for auto-confirm
 [agents.aider]
 cmd = "aider --message"
-json_flag = ""
+output_flag = ""
 yolo_flag = "--yes-always"
 verbose_flag = "--verbose"
 can_commit = true
@@ -111,7 +111,7 @@ json_parser = "generic"
 # Uses run command with -t for text input, --output-format for JSON streaming
 [agents.goose]
 cmd = "goose run -t"
-json_flag = "--output-format=stream-json"
+output_flag = "--output-format=stream-json"
 yolo_flag = ""
 verbose_flag = "--debug"
 can_commit = true
@@ -122,7 +122,7 @@ json_parser = "generic"
 # Uses -F json for JSON output, -y for autonomous mode
 [agents.cline]
 cmd = "cline -o"
-json_flag = "-F json"
+output_flag = "-F json"
 yolo_flag = "-y"
 verbose_flag = "-v"
 can_commit = true
@@ -133,7 +133,7 @@ json_parser = "generic"
 # Uses -p for headless mode, --format json for JSON output
 [agents.continue]
 cmd = "cn -p"
-json_flag = "--format json"
+output_flag = "--format json"
 yolo_flag = "--auto"
 verbose_flag = "--verbose"
 can_commit = true
@@ -144,7 +144,7 @@ json_parser = "generic"
 # Uses --no-interactive for non-interactive mode
 [agents.amazon-q]
 cmd = "q chat --no-interactive"
-json_flag = ""
+output_flag = ""
 yolo_flag = "--trust-all-tools"
 verbose_flag = ""
 can_commit = true
@@ -156,11 +156,103 @@ json_parser = "generic"
 # -y/--yolo for auto-approve all actions
 [agents.gemini]
 cmd = "gemini"
-json_flag = "-o stream-json"
+output_flag = "-o stream-json"
 yolo_flag = "-y"
 verbose_flag = "-d"
 can_commit = true
 json_parser = "gemini"
+
+# =============================================================================
+# LOWER-COST / OPEN-SOURCE AGENTS
+# =============================================================================
+
+# Qwen Code - Alibaba's open-source CLI coding agent (Qwen3-Coder)
+# https://github.com/QwenLM/qwen-code
+# Uses -p for non-interactive prompt mode, --output-format stream-json for JSON streaming
+# --yolo for auto-approve all tool calls
+# Note: Forked from Gemini CLI, output format compatible with Claude's stream-json
+[agents.qwen]
+cmd = "qwen -p"
+output_flag = "--output-format stream-json"
+yolo_flag = "--yolo"
+verbose_flag = "--debug"
+can_commit = true
+json_parser = "claude"
+
+# Mistral Vibe - Mistral AI's CLI coding assistant (Devstral)
+# https://github.com/mistralai/mistral-vibe
+# https://docs.mistral.ai/mistral-vibe/introduction
+# Uses --prompt <text> for non-interactive mode, --auto-approve for autonomous execution
+# Note: No JSON streaming output format, uses generic line-based parsing
+# Note: If you meant Mistral's API/SDK tooling (not mistral-vibe), add a separate agent.
+[agents.vibe]
+cmd = "vibe --prompt"
+output_flag = ""
+yolo_flag = "--auto-approve"
+verbose_flag = ""
+can_commit = true
+json_parser = "generic"
+
+# llama.cpp CLI - Local LLM inference with llama-cli
+# https://github.com/ggml-org/llama.cpp
+# Uses -m for local model path, -cnv for conversation mode
+# Note: Requires local model setup, no native JSON streaming, uses generic parsing.
+# Not included in the default agent_chain because local models can be heavy to install/run.
+[agents.llama-cli]
+cmd = "llama-cli -m /path/to/model.gguf -cnv -p"
+output_flag = ""
+yolo_flag = ""
+verbose_flag = "-v"
+can_commit = false
+json_parser = "generic"
+
+# AIChat - Multi-provider LLM CLI tool (OpenAI, Claude, Gemini, Ollama, etc.)
+# https://github.com/sigoden/aichat
+# Supports 20+ LLM providers through unified interface
+# Uses -S to disable streaming for scripting, -e for shell command execution
+[agents.aichat]
+cmd = "aichat"
+output_flag = ""
+yolo_flag = ""
+verbose_flag = ""
+can_commit = false
+json_parser = "generic"
+
+# Cursor CLI - Cursor's terminal-based AI coding agent
+# https://cursor.com/docs/cli/overview
+# Uses 'agent' command with -p for non-interactive mode
+# Supports GPT-5, Claude, and other frontier models
+[agents.cursor]
+cmd = "agent -p"
+output_flag = "--output-format text"
+yolo_flag = ""
+verbose_flag = ""
+can_commit = true
+json_parser = "generic"
+
+# Plandex - Terminal-based AI for large codebases
+# https://github.com/plandex-ai/plandex
+# Handles up to 2M tokens of context, tree-sitter project maps
+# Uses --apply for auto-apply, --commit for auto-commit
+[agents.plandex]
+cmd = "plandex tell"
+output_flag = ""
+yolo_flag = "--apply --commit"
+verbose_flag = ""
+can_commit = true
+json_parser = "generic"
+
+# Ollama - Local LLM server with CLI
+# https://github.com/ollama/ollama
+# Run local models like Llama, Mistral, CodeLlama
+# Note: General chat, no agentic tool use - suitable for simple tasks
+[agents.ollama]
+cmd = "ollama run codellama"
+output_flag = ""
+yolo_flag = ""
+verbose_flag = ""
+can_commit = false
+json_parser = "generic"
 
 # =============================================================================
 # AGENT CHAIN CONFIGURATION (required)
@@ -175,6 +267,10 @@ json_parser = "gemini"
 developer = [
   "claude",
   "codex",
+  "cursor",
+  "qwen",
+  "vibe",
+  "plandex",
   "opencode",
   "aider",
   "goose",
@@ -186,6 +282,10 @@ developer = [
 reviewer = [
   "codex",
   "claude",
+  "cursor",
+  "qwen",
+  "vibe",
+  "plandex",
   "opencode",
   "aider",
   "goose",
@@ -209,7 +309,7 @@ retry_delay_ms = 1000
 
 # [agents.myagent]
 # cmd = "my-ai-tool run"
-# json_flag = "--json-stream"
+# output_flag = "--json-stream"
 # yolo_flag = "--auto-fix"
 # verbose_flag = "--verbose"
 # can_commit = true

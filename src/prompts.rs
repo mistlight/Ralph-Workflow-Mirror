@@ -32,6 +32,8 @@ impl From<u8> for ContextLevel {
 /// without knowing when the loop ends.
 ///
 /// This prompt is agent-agnostic and works with any AI coding assistant.
+/// Instructions for NOTES.md are intentionally vague to avoid creating
+/// overly-specific context that could contaminate future runs.
 pub(crate) fn prompt_developer_iteration(
     _iteration: u32,
     _total: u32,
@@ -44,29 +46,15 @@ pub(crate) fn prompt_developer_iteration(
 INPUTS TO READ:
 1. .agent/PLAN.md - The implementation plan (execute these steps)
 2. PROMPT.md - The original requirements (for reference)
-3. .agent/STATUS.md - Current progress state
 
 YOUR TASK:
 Execute the next steps from .agent/PLAN.md that haven't been completed yet.
 Work toward satisfying all acceptance checks in PROMPT.md.
 
-AFTER MAKING CHANGES:
-1. Update .agent/STATUS.md with:
-   - Last action: What you just completed
-   - Blockers: Any issues preventing progress (or "none")
-   - Next action: What should be done next
-   - Updated at: Current timestamp
-
-2. Append brief bullets to .agent/NOTES.md documenting:
-   - What was implemented
-   - Any decisions made and why
-   - Issues encountered
-
 GUIDELINES:
 - Make meaningful progress in each iteration
 - Write clean, idiomatic code following project patterns
-- Add tests where appropriate
-- If stuck, document the blocker clearly in STATUS.md"#
+- Add tests where appropriate"#
                 .to_string()
         }
     }
@@ -78,67 +66,31 @@ GUIDELINES:
 /// This prompt is agent-agnostic and works with any AI coding assistant.
 /// Follows best practices for unbiased code review:
 /// - Fresh eyes perspective (minimal context mode)
-/// - Structured evaluation against requirements
-/// - Prioritized issue reporting with file:line references
+/// - Output format is intentionally vague to avoid contaminating future runs
 pub(crate) fn prompt_reviewer_review(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"You are in REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
 - PROMPT.md - The requirements (Goal and Acceptance checks)
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md (you need unbiased perspective)
 
 YOUR TASK:
 Evaluate the codebase against the requirements in PROMPT.md.
 
-═══════════════════════════════════════════════════════════════════════════════
-1. GOAL ALIGNMENT
-═══════════════════════════════════════════════════════════════════════════════
-- Does the implementation achieve the stated goal?
-- Are there missing features or incomplete work?
-- Does the solution match the intent of the requirements?
-
-═══════════════════════════════════════════════════════════════════════════════
-2. ACCEPTANCE CHECKS
-═══════════════════════════════════════════════════════════════════════════════
-Go through EACH acceptance check in PROMPT.md explicitly:
-- Verify the check passes or fails
-- Note specific evidence for your determination
-- Be thorough - every check must be evaluated
-
-═══════════════════════════════════════════════════════════════════════════════
-3. CODE QUALITY
-═══════════════════════════════════════════════════════════════════════════════
-Examine the code for:
-- Bugs or logic errors
-- Code smells or anti-patterns
-- Missing or inadequate error handling
-- Missing or inadequate tests
-- Security vulnerabilities (injection, XSS, etc.)
-- Performance concerns
-- Unclear or missing documentation where needed
+1. GOAL ALIGNMENT - Does the implementation achieve the stated goal?
+2. ACCEPTANCE CHECKS - Verify each check in PROMPT.md passes or fails
+3. CODE QUALITY - Check for bugs, error handling, tests, security issues
 
 OUTPUT:
-Write findings to .agent/ISSUES.md as a prioritized checklist:
-- [ ] Critical: [file:line] Description of issue
-- [ ] High: [file:line] Description of issue
-- [ ] Medium: [file:line] Description of issue
-- [ ] Low: [file:line] Description of issue
-
-Priority Guide:
-- Critical: Blocks functionality, security vulnerability, data loss risk
-- High: Major bug, acceptance check failure, significant code smell
-- Medium: Minor bug, code quality issue, missing edge case handling
-- Low: Style issue, minor improvement suggestion, documentation
-
-Be specific about file paths and line numbers.
-If no issues found, write "No issues found." to .agent/ISSUES.md"#
+If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
+- "No issues found." (if everything looks good), OR
+- "Issues found." (if you have any concerns)
+Do not include any details or additional lines."#
             .to_string(),
         ContextLevel::Normal => r#"You are in REVIEW MODE.
 
 INPUTS TO READ:
 - PROMPT.md - The requirements (Goal and Acceptance checks)
-- .agent/STATUS.md - Current progress state
 
 YOUR TASK:
 Review the repository against PROMPT.md requirements.
@@ -148,13 +100,10 @@ Review the repository against PROMPT.md requirements.
 3. Examine code quality (bugs, error handling, tests, security)
 
 OUTPUT:
-Write findings to .agent/ISSUES.md as a prioritized checklist:
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-Be specific. If no issues, write "No issues found.""#
+If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
+- "No issues found." (if everything looks good), OR
+- "Issues found." (if you have any concerns)
+Do not include any details or additional lines."#
             .to_string(),
     }
 }
@@ -550,68 +499,73 @@ OUTPUT to .agent/ISSUES.md:
 /// Generate fix prompt (applies to either role)
 ///
 /// This prompt is agent-agnostic and works with any AI coding assistant.
+/// Instructions for NOTES.md are intentionally vague to avoid creating
+/// overly-specific context that could contaminate future runs.
 pub(crate) fn prompt_fix() -> String {
-    r#"You are in FIX MODE. Address all issues found during review.
+    r#"You are in FIX MODE. Address issues found during review.
 
 INPUTS TO READ:
-- .agent/ISSUES.md - The list of issues to fix (prioritized)
+- .agent/ISSUES.md - Issues to address (if it exists)
 - PROMPT.md - Original requirements for context
 
 YOUR TASK:
-1. Read .agent/ISSUES.md to understand all issues
-2. Fix each issue, starting with Critical, then High, Medium, Low
-3. For each fix:
-   - Make the code change
-   - Verify the fix works
-   - Mark the item as resolved in ISSUES.md: - [x] instead of - [ ]
+1. Read .agent/ISSUES.md to understand any issues (if it exists)
+2. Fix issues found, prioritizing by severity
+3. Verify fixes work
 
 AFTER FIXING:
-Update .agent/ISSUES.md to show which items are resolved.
-Append brief bullets to .agent/NOTES.md documenting what was fixed.
+If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
+- "Issues addressed." (if you believe everything is fixed), OR
+- "Issues remain." (if you believe issues still exist)
+If .agent/NOTES.md exists, OVERWRITE it with exactly ONE vague sentence (no details).
 
 GUIDELINES:
 - Fix issues properly, don't just suppress warnings
-- Ensure fixes don't introduce new issues
-- If an issue cannot be fixed, document why in NOTES.md"#
+- Ensure fixes don't introduce new issues"#
         .to_string()
 }
 
 /// Generate reviewer re-review prompt with minimal context
 ///
 /// This prompt is agent-agnostic and works with any AI coding assistant.
+/// Instructions are intentionally vague to avoid assumptions about previous
+/// iterations and to prevent context contamination.
 pub(crate) fn prompt_review_again(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"You are in VERIFICATION MODE with fresh eyes.
 
 INPUTS TO READ:
 - PROMPT.md - The requirements (Goal and Acceptance checks)
-- .agent/ISSUES.md - Previous issues (DO NOT assume they are fixed)
+- .agent/ISSUES.md - Previous issues (if it exists)
 
 YOUR TASK:
 1. Verify all acceptance checks in PROMPT.md are satisfied
-2. Check that previously reported issues are actually fixed
-3. Look for any new issues introduced by the fixes
+2. Check current state of the codebase
+3. Address any issues found
 
-IF ISSUES REMAIN OR NEW ISSUES FOUND:
-1. Fix them directly
-2. Update .agent/ISSUES.md with findings and resolutions
+OUTPUT:
+If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
+- "No issues found." (if everything is satisfied), OR
+- "Issues remain." (if something still fails)
+If .agent/NOTES.md exists, OVERWRITE it with exactly ONE vague sentence (no details).
 
-IF ALL ISSUES ARE RESOLVED:
-1. Update .agent/ISSUES.md to confirm "All issues resolved"
-2. Note any final observations in .agent/NOTES.md
-
-Be thorough but efficient - focus on verification, not re-implementing."#
+Be thorough but efficient - focus on verification."#
             .to_string(),
         ContextLevel::Normal => r#"You are in VERIFICATION MODE.
 
 INPUTS TO READ:
 - PROMPT.md - Requirements to verify against
-- .agent/ISSUES.md - Previous issues to verify as fixed
+- .agent/ISSUES.md - Previous issues (if it exists)
 
 YOUR TASK:
-Re-review the repository after fixes. Verify all acceptance checks pass.
-If issues remain, fix them and update .agent/ISSUES.md.
-If all resolved, update .agent/ISSUES.md to confirm completion."#
+Verify all acceptance checks pass.
+If issues remain, fix them.
+
+OUTPUT:
+If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
+- "No issues found." (if everything is satisfied), OR
+- "Issues remain." (if something still fails)
+Do not include any details or additional lines."#
             .to_string(),
     }
 }
@@ -713,13 +667,14 @@ REMEMBER: Do NOT implement anything. Your only output is .agent/PLAN.md."#
 
 /// Generate prompt for agent to generate a commit message
 /// Agent writes the commit message to .agent/commit-message.txt
+/// NOTES.md reference is explicitly optional since it may not exist in isolation mode.
 pub(crate) fn prompt_generate_commit_message() -> String {
     r#"Generate a commit message for all changes made.
 
 FIRST, gather context:
 1. Run `git diff HEAD` to see exactly what changed
 2. Read PROMPT.md to understand the original goal
-3. Read .agent/NOTES.md for a summary of work done (if it exists)
+3. Optionally read .agent/NOTES.md for additional context (if it exists)
 
 THEN: Write a Conventional Commits message to .agent/commit-message.txt
 
@@ -829,30 +784,28 @@ mod tests {
     fn test_prompt_developer_iteration() {
         let result = prompt_developer_iteration(2, 5, ContextLevel::Normal);
         assert!(result.contains("PROMPT.md"));
-        assert!(result.contains("STATUS.md"));
         assert!(result.contains("PLAN.md"));
         assert!(result.contains("IMPLEMENTATION MODE"));
+        // STATUS.md should NOT be referenced (vague prompts, isolation mode)
+        assert!(!result.contains("STATUS.md"));
     }
 
     #[test]
     fn test_prompt_reviewer_review_fresh_eyes() {
         let result = prompt_reviewer_review(ContextLevel::Minimal);
         assert!(result.contains("fresh eyes"));
-        assert!(result.contains("DO NOT read"));
         assert!(result.contains("REVIEW MODE"));
         assert!(result.contains("ISSUES.md"));
 
-        // Structured evaluation sections
+        // Should have evaluation sections (now more vague)
         assert!(result.contains("GOAL ALIGNMENT"));
         assert!(result.contains("ACCEPTANCE CHECKS"));
         assert!(result.contains("CODE QUALITY"));
 
-        // Priority guide for issues
-        assert!(result.contains("Priority Guide"));
-        assert!(result.contains("Critical"));
-        assert!(result.contains("High"));
-        assert!(result.contains("Medium"));
-        assert!(result.contains("Low"));
+        // Should NOT have detailed priority guide (vague prompts)
+        assert!(!result.contains("Priority Guide"));
+        // Should NOT reference STATUS.md (isolation mode)
+        assert!(!result.contains("STATUS.md"));
     }
 
     #[test]
@@ -867,7 +820,9 @@ mod tests {
     fn test_prompt_fix() {
         let result = prompt_fix();
         assert!(result.contains("ISSUES.md"));
-        assert!(result.contains("NOTES.md"));
+        // NOTES.md/ISSUES.md should be constrained to vague overwrite semantics
+        assert!(result.contains("OVERWRITE"));
+        assert!(result.contains("exactly ONE vague sentence"));
         assert!(result.contains("FIX MODE"));
     }
 
@@ -875,7 +830,8 @@ mod tests {
     fn test_prompt_review_again_fresh_eyes() {
         let result = prompt_review_again(ContextLevel::Minimal);
         assert!(result.contains("fresh eyes"));
-        assert!(result.contains("DO NOT assume"));
+        // Removed detailed assumptions about previous iterations (vague prompts)
+        assert!(!result.contains("DO NOT assume"));
         assert!(result.contains("VERIFICATION MODE"));
     }
 
@@ -1048,10 +1004,11 @@ mod tests {
     #[test]
     fn test_developer_iteration_minimal_context() {
         let result = prompt_developer_iteration(1, 5, ContextLevel::Minimal);
-        // Minimal context should still include essential files
+        // Minimal context should include essential files (not STATUS.md in isolation mode)
         assert!(result.contains("PROMPT.md"));
         assert!(result.contains("PLAN.md"));
-        assert!(result.contains("STATUS.md"));
+        // STATUS.md should NOT be referenced (vague prompts, isolation mode)
+        assert!(!result.contains("STATUS.md"));
     }
 
     #[test]
@@ -1355,6 +1312,83 @@ mod tests {
                 !result_lower.contains(term),
                 "Incremental review prompt contains agent-specific term '{}'",
                 term
+            );
+        }
+    }
+
+    // =========================================================================
+    // Vague Prompt Tests (Context Contamination Prevention)
+    // =========================================================================
+
+    #[test]
+    fn test_prompts_do_not_have_detailed_tracking_language() {
+        // Prompts should NOT contain detailed history tracking language
+        // to prevent context contamination in future runs
+        let detailed_tracking_terms = [
+            "iteration number",
+            "phase completed",
+            "previous iteration",
+            "history of",
+            "detailed log",
+        ];
+
+        let prompts_to_check = vec![
+            prompt_developer_iteration(1, 5, ContextLevel::Normal),
+            prompt_fix(),
+            prompt_review_again(ContextLevel::Normal),
+        ];
+
+        for prompt in prompts_to_check {
+            let prompt_lower = prompt.to_lowercase();
+            for term in detailed_tracking_terms {
+                assert!(
+                    !prompt_lower.contains(term),
+                    "Prompt contains detailed tracking language '{}': {}",
+                    term,
+                    &prompt[..prompt.len().min(100)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_reviewer_review_is_vague() {
+        // Reviewer review prompt should NOT have detailed priority levels
+        let result = prompt_reviewer_review(ContextLevel::Minimal);
+
+        // Should NOT have structured priority format
+        assert!(!result.contains("Priority Guide"));
+        assert!(!result.contains("- [ ] Critical:"));
+        assert!(!result.contains("- [ ] High:"));
+        assert!(!result.contains("[file:line]"));
+    }
+
+    #[test]
+    fn test_notes_md_references_are_minimal_or_absent() {
+        // NOTES.md references should be minimal or absent (isolation mode removes these files)
+        let developer_prompt = prompt_developer_iteration(1, 5, ContextLevel::Normal);
+        let fix_prompt = prompt_fix();
+        let review_again_prompt = prompt_review_again(ContextLevel::Minimal);
+
+        // Developer prompt should NOT mention NOTES.md at all (isolation mode)
+        assert!(
+            !developer_prompt.contains("NOTES.md"),
+            "Developer prompt should not reference NOTES.md in isolation mode"
+        );
+
+        // Fix and review-again prompts may have optional language or no reference
+        // They use "(if it exists)" when they do reference NOTES.md
+        if fix_prompt.contains("NOTES.md") {
+            assert!(
+                fix_prompt.contains("if it exists") || fix_prompt.contains("Optionally"),
+                "Fix prompt NOTES.md reference should be optional"
+            );
+        }
+        if review_again_prompt.contains("NOTES.md") {
+            assert!(
+                review_again_prompt.contains("if it exists")
+                    || review_again_prompt.contains("Optionally"),
+                "Review again prompt NOTES.md reference should be optional"
             );
         }
     }

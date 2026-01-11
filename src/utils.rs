@@ -176,6 +176,11 @@ pub(crate) fn checkpoint_exists() -> bool {
     Path::new(CHECKPOINT_PATH).exists()
 }
 
+// Vague status line constants (for isolation mode)
+const VAGUE_STATUS_LINE: &str = "In progress.";
+const VAGUE_NOTES_LINE: &str = "Notes.";
+const VAGUE_ISSUES_LINE: &str = "No issues recorded.";
+
 /// Get current timestamp in "YYYY-MM-DD HH:MM:SS" format
 pub(crate) fn timestamp() -> String {
     Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
@@ -217,6 +222,17 @@ pub(crate) fn truncate_text(text: &str, limit: usize) -> String {
         let truncated: String = text.chars().take(truncate_at).collect();
         format!("{}...", truncated)
     }
+}
+
+fn overwrite_one_liner(path: &Path, line: &str) -> io::Result<()> {
+    // Enforce "1 sentence, 1 line" semantics by taking only the first line.
+    let first_line = line.lines().next().unwrap_or_default().trim();
+    let content = if first_line.is_empty() {
+        "\n".to_string()
+    } else {
+        format!("{}\n", first_line)
+    };
+    fs::write(path, content)
 }
 
 /// Logger for Ralph output
@@ -457,86 +473,89 @@ pub(crate) fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result
     Ok(false)
 }
 
-/// Archive a context file to .agent/archive/ with timestamp
-pub(crate) fn archive_context_file(file_path: &Path) -> io::Result<()> {
-    if !file_path.exists() {
-        return Ok(());
-    }
-
-    let archive_dir = Path::new(".agent/archive");
-    fs::create_dir_all(archive_dir)?;
-
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-    let basename = file_path.file_stem().unwrap_or_default().to_string_lossy();
-    let ext = file_path.extension().unwrap_or_default().to_string_lossy();
-
-    let archive_path = archive_dir.join(format!("{}_{}.{}", basename, timestamp, ext));
-    fs::copy(file_path, archive_path)?;
-
-    Ok(())
-}
-
-/// Clear context file by truncating it
-pub(crate) fn clear_context_file(file_path: &Path) -> io::Result<()> {
-    if !file_path.exists() {
-        return Ok(());
-    }
-    File::create(file_path)?;
-    Ok(())
-}
-
 /// Clean context before reviewer phase
-pub(crate) fn clean_context_for_reviewer(logger: &Logger) -> io::Result<()> {
+///
+/// When `isolation_mode` is true (the default), this function does nothing
+/// since STATUS.md, NOTES.md and ISSUES.md should not exist in isolation mode.
+pub(crate) fn clean_context_for_reviewer(logger: &Logger, isolation_mode: bool) -> io::Result<()> {
+    if isolation_mode {
+        // In isolation mode, these files don't exist, so nothing to clean
+        logger.info("Isolation mode: skipping context cleanup (files don't exist)");
+        return Ok(());
+    }
+
     logger.info("Cleaning context for reviewer (fresh eyes)...");
 
-    // Archive current context files
-    archive_context_file(Path::new(".agent/STATUS.md"))?;
-    archive_context_file(Path::new(".agent/NOTES.md"))?;
-    archive_context_file(Path::new(".agent/ISSUES.md"))?;
+    // Remove any archived context; preserving it defeats the "fresh eyes" intent.
+    if Path::new(".agent/archive").exists() {
+        // Best-effort: if this fails, proceed with overwriting the live files.
+        let _ = fs::remove_dir_all(".agent/archive");
+    }
 
-    // Reset STATUS.md to minimal state
-    fs::write(
-        ".agent/STATUS.md",
-        r#"# STATUS
-- Last action: Code changes made
-- Blockers: none
-- Next action: Evaluate codebase against PROMPT.md goals
-"#,
-    )?;
-
-    // Clear NOTES.md and ISSUES.md
-    clear_context_file(Path::new(".agent/NOTES.md"))?;
-    clear_context_file(Path::new(".agent/ISSUES.md"))?;
+    // Overwrite live context files with intentionally vague one-liners.
+    overwrite_one_liner(Path::new(".agent/STATUS.md"), VAGUE_STATUS_LINE)?;
+    overwrite_one_liner(Path::new(".agent/NOTES.md"), VAGUE_NOTES_LINE)?;
+    overwrite_one_liner(Path::new(".agent/ISSUES.md"), VAGUE_ISSUES_LINE)?;
 
     logger.success("Context cleaned for reviewer");
     Ok(())
 }
 
-/// Update the status file
-pub(crate) fn update_status(
-    last_action: &str,
-    blockers: &str,
-    next_action: &str,
-) -> io::Result<()> {
-    fs::write(
-        ".agent/STATUS.md",
-        format!(
-            r#"# STATUS
-- Last action: {}
-- Blockers: {}
-- Next action: {}
-- Updated at: {}
-"#,
-            last_action,
-            blockers,
-            next_action,
-            timestamp()
-        ),
-    )
+/// Delete STATUS.md, NOTES.md and ISSUES.md for isolation mode.
+///
+/// This function is called at the start of each Ralph run when isolation mode
+/// is enabled (the default). It prevents context contamination by removing
+/// any stale status, notes, or issues from previous runs.
+///
+/// Unlike `clean_context_for_reviewer()`, this does NOT archive the files -
+/// in isolation mode, the goal is to operate without these files entirely,
+/// so there's no value in preserving them.
+pub(crate) fn reset_context_for_isolation(logger: &Logger) -> io::Result<()> {
+    logger.info("Isolation mode: removing STATUS.md, NOTES.md and ISSUES.md...");
+
+    let status_path = Path::new(".agent/STATUS.md");
+    let notes_path = Path::new(".agent/NOTES.md");
+    let issues_path = Path::new(".agent/ISSUES.md");
+
+    if status_path.exists() {
+        fs::remove_file(status_path)?;
+        logger.info("Deleted .agent/STATUS.md");
+    }
+
+    if notes_path.exists() {
+        fs::remove_file(notes_path)?;
+        logger.info("Deleted .agent/NOTES.md");
+    }
+
+    if issues_path.exists() {
+        fs::remove_file(issues_path)?;
+        logger.info("Deleted .agent/ISSUES.md");
+    }
+
+    logger.success("Context reset for isolation mode");
+    Ok(())
 }
 
-/// Ensure required files exist
-pub(crate) fn ensure_files() -> io::Result<()> {
+/// Update the status file with minimal, vague content.
+///
+/// Status is intentionally kept to 1 sentence to prevent context contamination.
+/// The content should encourage discovery rather than tracking detailed progress.
+///
+/// When `isolation_mode` is true (the default), this function does nothing
+/// since STATUS.md should not exist in isolation mode.
+pub(crate) fn update_status(_status: &str, isolation_mode: bool) -> io::Result<()> {
+    if isolation_mode {
+        // In isolation mode, STATUS.md should not exist
+        return Ok(());
+    }
+    overwrite_one_liner(Path::new(".agent/STATUS.md"), VAGUE_STATUS_LINE)
+}
+
+/// Ensure required files exist.
+///
+/// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
+/// are NOT created. This prevents context contamination from previous runs.
+pub(crate) fn ensure_files(isolation_mode: bool) -> io::Result<()> {
     fs::create_dir_all(".agent/logs")?;
 
     if !Path::new("PROMPT.md").exists() {
@@ -556,23 +575,13 @@ pub(crate) fn ensure_files() -> io::Result<()> {
         )?;
     }
 
-    if !Path::new(".agent/STATUS.md").exists() {
-        fs::write(
-            ".agent/STATUS.md",
-            r#"# STATUS
-- Last action: none
-- Blockers: none
-- Next action: TBD
-"#,
-        )?;
-    }
-
-    if !Path::new(".agent/NOTES.md").exists() {
-        File::create(".agent/NOTES.md")?;
-    }
-
-    if !Path::new(".agent/ISSUES.md").exists() {
-        File::create(".agent/ISSUES.md")?;
+    // Only create STATUS.md, NOTES.md and ISSUES.md when NOT in isolation mode
+    if !isolation_mode {
+        // Always overwrite/truncate these files to a single vague sentence to
+        // avoid detailed context persisting across runs.
+        overwrite_one_liner(Path::new(".agent/STATUS.md"), VAGUE_STATUS_LINE)?;
+        overwrite_one_liner(Path::new(".agent/NOTES.md"), VAGUE_NOTES_LINE)?;
+        overwrite_one_liner(Path::new(".agent/ISSUES.md"), VAGUE_ISSUES_LINE)?;
     }
 
     Ok(())
@@ -822,60 +831,6 @@ mod tests {
         assert!(!result.unwrap());
     }
 
-    #[test]
-    fn test_archive_context_file() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-            fs::write(".agent/STATUS.md", "test content").unwrap();
-
-            archive_context_file(Path::new(".agent/STATUS.md")).unwrap();
-
-            assert!(Path::new(".agent/archive").exists());
-            let entries: Vec<_> = fs::read_dir(".agent/archive").unwrap().collect();
-            assert_eq!(entries.len(), 1);
-        });
-    }
-
-    #[test]
-    fn test_clear_context_file() {
-        let dir = TempDir::new().unwrap();
-        let file_path = dir.path().join("test.txt");
-        fs::write(&file_path, "some content").unwrap();
-
-        clear_context_file(&file_path).unwrap();
-
-        assert!(file_path.exists());
-        assert_eq!(fs::read_to_string(&file_path).unwrap(), "");
-    }
-
-    // NOTE: Tests involving set_current_dir can conflict when run in parallel.
-    // These tests use a serial test approach or avoid set_current_dir.
-
-    #[test]
-    fn test_archive_and_clear_operations() {
-        // Test archive and clear without changing directories
-        let dir = TempDir::new().unwrap();
-        let agent_dir = dir.path().join(".agent");
-        fs::create_dir_all(&agent_dir).unwrap();
-
-        let status_path = agent_dir.join("STATUS.md");
-        fs::write(&status_path, "Developer status here").unwrap();
-
-        // Archive the file
-        let archive_dir = agent_dir.join("archive");
-        fs::create_dir_all(&archive_dir).unwrap();
-        let archive_path = archive_dir.join("STATUS_archived.md");
-        fs::copy(&status_path, &archive_path).unwrap();
-
-        assert!(archive_path.exists());
-
-        // Clear the file
-        clear_context_file(&status_path).unwrap();
-        assert!(status_path.exists());
-        assert_eq!(fs::read_to_string(&status_path).unwrap(), "");
-    }
-
-    // Helper to generate progress bar string for testing
     fn generate_progress_bar(current: u32, total: u32) -> (u32, String) {
         if total == 0 {
             return (0, String::new());
@@ -917,16 +872,27 @@ mod tests {
     }
 
     #[test]
-    fn test_update_status() {
+    fn test_update_status_non_isolation() {
         with_temp_cwd(|_dir| {
             fs::create_dir_all(".agent").unwrap();
 
-            update_status("Testing", "none", "Next step").unwrap();
+            update_status("In progress.", false).unwrap();
 
             let content = fs::read_to_string(".agent/STATUS.md").unwrap();
-            assert!(content.contains("Testing"));
-            assert!(content.contains("none"));
-            assert!(content.contains("Next step"));
+            assert_eq!(content, "In progress.\n");
+        });
+    }
+
+    #[test]
+    fn test_update_status_isolation_mode_does_nothing() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+
+            // In isolation mode, update_status should do nothing
+            update_status("In progress.", true).unwrap();
+
+            // STATUS.md should NOT be created
+            assert!(!Path::new(".agent/STATUS.md").exists());
         });
     }
 
@@ -1022,7 +988,94 @@ mod tests {
         assert!(!msg_path.exists());
     }
 
+    // =========================================================================
+    // Isolation Mode Tests
+    // =========================================================================
+
+    #[test]
+    fn test_ensure_files_isolation_mode_does_not_create_status_notes_issues() {
+        with_temp_cwd(|_dir| {
+            // Run ensure_files with isolation_mode=true
+            ensure_files(true).unwrap();
+
+            // Should create PROMPT.md only
+            assert!(Path::new("PROMPT.md").exists());
+
+            // Should NOT create STATUS.md, NOTES.md and ISSUES.md in isolation mode
+            assert!(!Path::new(".agent/STATUS.md").exists());
+            assert!(!Path::new(".agent/NOTES.md").exists());
+            assert!(!Path::new(".agent/ISSUES.md").exists());
+        });
+    }
+
+    #[test]
+    fn test_ensure_files_non_isolation_mode_creates_all_files() {
+        with_temp_cwd(|_dir| {
+            // Run ensure_files with isolation_mode=false
+            ensure_files(false).unwrap();
+
+            // Should create all files including STATUS.md, NOTES.md and ISSUES.md
+            assert!(Path::new("PROMPT.md").exists());
+            assert!(Path::new(".agent/STATUS.md").exists());
+            assert!(Path::new(".agent/NOTES.md").exists());
+            assert!(Path::new(".agent/ISSUES.md").exists());
+
+            assert_eq!(
+                fs::read_to_string(".agent/STATUS.md").unwrap(),
+                "In progress.\n"
+            );
+            assert_eq!(fs::read_to_string(".agent/NOTES.md").unwrap(), "Notes.\n");
+            assert_eq!(
+                fs::read_to_string(".agent/ISSUES.md").unwrap(),
+                "No issues recorded.\n"
+            );
+        });
+    }
+
+    #[test]
+    fn test_reset_context_for_isolation_deletes_files() {
+        with_temp_cwd(|_dir| {
+            // Create .agent directory and files
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/STATUS.md", "some status").unwrap();
+            fs::write(".agent/NOTES.md", "some notes").unwrap();
+            fs::write(".agent/ISSUES.md", "some issues").unwrap();
+
+            // Verify they exist
+            assert!(Path::new(".agent/STATUS.md").exists());
+            assert!(Path::new(".agent/NOTES.md").exists());
+            assert!(Path::new(".agent/ISSUES.md").exists());
+
+            // Run reset
+            let colors = Colors { enabled: false };
+            let logger = Logger::new(colors);
+            reset_context_for_isolation(&logger).unwrap();
+
+            // Files should be deleted
+            assert!(!Path::new(".agent/STATUS.md").exists());
+            assert!(!Path::new(".agent/NOTES.md").exists());
+            assert!(!Path::new(".agent/ISSUES.md").exists());
+        });
+    }
+
+    #[test]
+    fn test_reset_context_for_isolation_handles_missing_files() {
+        with_temp_cwd(|_dir| {
+            // Create .agent directory but not the files
+            fs::create_dir_all(".agent").unwrap();
+
+            // Should not error when files don't exist
+            let colors = Colors { enabled: false };
+            let logger = Logger::new(colors);
+            let result = reset_context_for_isolation(&logger);
+            assert!(result.is_ok());
+        });
+    }
+
+    // =========================================================================
     // Checkpoint system tests
+    // =========================================================================
+
     #[test]
     fn test_pipeline_phase_display() {
         assert_eq!(format!("{}", PipelinePhase::Planning), "Planning");
@@ -1238,6 +1291,23 @@ The acceptance tests should pass.
             .unwrap();
             let result = validate_prompt_md(false);
             assert!(result.has_acceptance);
+        });
+    }
+
+    #[test]
+    fn test_reset_context_for_isolation_partial_files() {
+        with_temp_cwd(|_dir| {
+            // Create .agent directory and only NOTES.md
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/NOTES.md", "some notes").unwrap();
+
+            let colors = Colors { enabled: false };
+            let logger = Logger::new(colors);
+            reset_context_for_isolation(&logger).unwrap();
+
+            // NOTES.md should be deleted, ISSUES.md should remain non-existent
+            assert!(!Path::new(".agent/NOTES.md").exists());
+            assert!(!Path::new(".agent/ISSUES.md").exists());
         });
     }
 }
