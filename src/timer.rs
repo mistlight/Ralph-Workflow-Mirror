@@ -6,14 +6,14 @@ use std::time::{Duration, Instant};
 
 /// Timer for tracking execution duration
 #[derive(Clone)]
-pub struct Timer {
+pub(crate) struct Timer {
     start_time: Instant,
     phase_start: Instant,
 }
 
 impl Timer {
     /// Create a new timer, starting now
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let now = Instant::now();
         Self {
             start_time: now,
@@ -22,22 +22,22 @@ impl Timer {
     }
 
     /// Start a new phase timer
-    pub fn start_phase(&mut self) {
+    pub(crate) fn start_phase(&mut self) {
         self.phase_start = Instant::now();
     }
 
     /// Get elapsed time since timer start
-    pub fn elapsed(&self) -> Duration {
+    pub(crate) fn elapsed(&self) -> Duration {
         self.start_time.elapsed()
     }
 
     /// Get elapsed time since phase start
-    pub fn phase_elapsed(&self) -> Duration {
+    pub(crate) fn phase_elapsed(&self) -> Duration {
         self.phase_start.elapsed()
     }
 
     /// Format a duration as "Xm YYs"
-    pub fn format_duration(duration: Duration) -> String {
+    pub(crate) fn format_duration(duration: Duration) -> String {
         let total_secs = duration.as_secs();
         let mins = total_secs / 60;
         let secs = total_secs % 60;
@@ -45,12 +45,12 @@ impl Timer {
     }
 
     /// Get formatted elapsed time since start
-    pub fn elapsed_formatted(&self) -> String {
+    pub(crate) fn elapsed_formatted(&self) -> String {
         Self::format_duration(self.elapsed())
     }
 
     /// Get formatted elapsed time since phase start
-    pub fn phase_elapsed_formatted(&self) -> String {
+    pub(crate) fn phase_elapsed_formatted(&self) -> String {
         Self::format_duration(self.phase_elapsed())
     }
 }

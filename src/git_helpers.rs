@@ -11,17 +11,17 @@ use std::process::Command;
 use tempfile::TempDir;
 
 /// Marker string for Ralph-managed hooks
-pub const HOOK_MARKER: &str = "RALPH_RUST_MANAGED_HOOK";
+pub(crate) const HOOK_MARKER: &str = "RALPH_RUST_MANAGED_HOOK";
 const WRAPPER_DIR_TRACK_FILE: &str = ".agent/git-wrapper-dir.txt";
 
 /// Git helper state
-pub struct GitHelpers {
+pub(crate) struct GitHelpers {
     real_git: Option<PathBuf>,
     wrapper_dir: Option<TempDir>,
 }
 
 impl GitHelpers {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             real_git: None,
             wrapper_dir: None,
@@ -48,7 +48,7 @@ impl Default for GitHelpers {
 }
 
 /// Check if we're in a git repository
-pub fn require_git_repo() -> io::Result<()> {
+pub(crate) fn require_git_repo() -> io::Result<()> {
     let output = Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()?;
@@ -64,7 +64,7 @@ pub fn require_git_repo() -> io::Result<()> {
 }
 
 /// Get the git repository root
-pub fn get_repo_root() -> io::Result<PathBuf> {
+pub(crate) fn get_repo_root() -> io::Result<PathBuf> {
     let output = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()?;
@@ -81,7 +81,7 @@ pub fn get_repo_root() -> io::Result<PathBuf> {
 }
 
 /// Get a snapshot of the current git status
-pub fn git_snapshot() -> io::Result<String> {
+pub(crate) fn git_snapshot() -> io::Result<String> {
     let output = Command::new("git")
         .args(["status", "--porcelain=v1"])
         .output()?;
@@ -90,7 +90,7 @@ pub fn git_snapshot() -> io::Result<String> {
 }
 
 /// Get the git hooks directory path
-pub fn get_hooks_dir() -> io::Result<PathBuf> {
+pub(crate) fn get_hooks_dir() -> io::Result<PathBuf> {
     let output = Command::new("git")
         .args(["rev-parse", "--git-path", "hooks"])
         .output()?;
@@ -107,7 +107,7 @@ pub fn get_hooks_dir() -> io::Result<PathBuf> {
 }
 
 /// Install a git hook
-pub fn install_hook(hook_name: &str, hook_path: &Path) -> io::Result<()> {
+pub(crate) fn install_hook(hook_name: &str, hook_path: &Path) -> io::Result<()> {
     // Use absolute path for orig backup
     let hook_path_abs = fs::canonicalize(hook_path.parent().unwrap_or(Path::new(".")))?
         .join(hook_path.file_name().unwrap_or_default());
@@ -168,7 +168,7 @@ exit 0
 }
 
 /// Install pre-commit and pre-push hooks
-pub fn install_hooks() -> io::Result<()> {
+pub(crate) fn install_hooks() -> io::Result<()> {
     let hooks_dir = get_hooks_dir()?;
     fs::create_dir_all(&hooks_dir)?;
 
@@ -179,7 +179,7 @@ pub fn install_hooks() -> io::Result<()> {
 }
 
 /// Uninstall a single hook by restoring original or removing
-pub fn uninstall_hook(hook_path: &Path, logger: &Logger) -> io::Result<bool> {
+pub(crate) fn uninstall_hook(hook_path: &Path, logger: &Logger) -> io::Result<bool> {
     let hook_path_abs = if hook_path.is_absolute() {
         hook_path.to_path_buf()
     } else {
@@ -210,7 +210,7 @@ pub fn uninstall_hook(hook_path: &Path, logger: &Logger) -> io::Result<bool> {
 }
 
 /// Uninstall all Ralph-managed hooks
-pub fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
+pub(crate) fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
     let hooks_dir = get_hooks_dir()?;
     if !hooks_dir.exists() {
         return Ok(());
@@ -235,7 +235,7 @@ pub fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
 
 /// Silently uninstall all Ralph-managed hooks (for signal handlers)
 /// Does not log output; safe to call during cleanup
-pub fn uninstall_hooks_silent() {
+pub(crate) fn uninstall_hooks_silent() {
     let hooks_dir = match get_hooks_dir() {
         Ok(d) => d,
         Err(_) => return,
@@ -262,7 +262,7 @@ pub fn uninstall_hooks_silent() {
 }
 
 /// Enable git wrapper that blocks commits during agent phase
-pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<PathBuf> {
+pub(crate) fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<PathBuf> {
     helpers.init_real_git();
     let real_git = helpers
         .real_git
@@ -321,7 +321,7 @@ exec "{}" "$@"
 }
 
 /// Disable git wrapper
-pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
+pub(crate) fn disable_git_wrapper(helpers: &mut GitHelpers) {
     if let Some(wrapper_dir) = helpers.wrapper_dir.take() {
         let wrapper_dir_path = wrapper_dir.path().to_path_buf();
         let _ = fs::remove_dir_all(&wrapper_dir_path);
@@ -340,7 +340,7 @@ pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
 }
 
 /// Start agent phase (creates marker file, installs hooks, enables wrapper)
-pub fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
+pub(crate) fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
     File::create(".no_agent_commit")?;
     install_hooks()?;
     enable_git_wrapper(helpers)?;
@@ -348,7 +348,7 @@ pub fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
 }
 
 /// End agent phase (removes marker file)
-pub fn end_agent_phase() -> io::Result<()> {
+pub(crate) fn end_agent_phase() -> io::Result<()> {
     let _ = fs::remove_file(".no_agent_commit");
     Ok(())
 }
@@ -366,7 +366,7 @@ fn cleanup_git_wrapper_dir_silent() {
 }
 
 /// Best-effort cleanup for unexpected exits (Ctrl+C, early-return, panics).
-pub fn cleanup_agent_phase_silent() {
+pub(crate) fn cleanup_agent_phase_silent() {
     let _ = end_agent_phase();
     cleanup_git_wrapper_dir_silent();
     uninstall_hooks_silent();
@@ -375,21 +375,21 @@ pub fn cleanup_agent_phase_silent() {
 
 /// Allow reviewer to commit by temporarily lifting the block
 #[allow(dead_code)]
-pub fn allow_reviewer_commit(helpers: &mut GitHelpers) {
+pub(crate) fn allow_reviewer_commit(helpers: &mut GitHelpers) {
     let _ = fs::remove_file(".no_agent_commit");
     disable_git_wrapper(helpers);
 }
 
 /// Re-enable commit block after reviewer phase
 #[allow(dead_code)]
-pub fn block_commits_again(helpers: &mut GitHelpers) -> io::Result<()> {
+pub(crate) fn block_commits_again(helpers: &mut GitHelpers) -> io::Result<()> {
     File::create(".no_agent_commit")?;
     enable_git_wrapper(helpers)?;
     Ok(())
 }
 
 /// Clean up orphaned .no_agent_commit marker
-pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
+pub(crate) fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
     let repo_root = get_repo_root()?;
     let marker_path = repo_root.join(".no_agent_commit");
 
@@ -405,7 +405,7 @@ pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
 
 /// Get current HEAD commit hash
 #[allow(dead_code)]
-pub fn get_head_commit() -> io::Result<String> {
+pub(crate) fn get_head_commit() -> io::Result<String> {
     let output = Command::new("git").args(["rev-parse", "HEAD"]).output()?;
 
     if output.status.success() {
@@ -417,7 +417,7 @@ pub fn get_head_commit() -> io::Result<String> {
 
 /// Get last commit message
 #[allow(dead_code)]
-pub fn get_last_commit_message() -> io::Result<String> {
+pub(crate) fn get_last_commit_message() -> io::Result<String> {
     let output = Command::new("git")
         .args(["log", "-1", "--pretty=%s"])
         .output()?;
@@ -430,7 +430,7 @@ pub fn get_last_commit_message() -> io::Result<String> {
 }
 
 /// Stage all changes
-pub fn git_add_all() -> io::Result<()> {
+pub(crate) fn git_add_all() -> io::Result<()> {
     let status = Command::new("git").args(["add", "-A"]).status()?;
 
     if status.success() {
@@ -441,7 +441,7 @@ pub fn git_add_all() -> io::Result<()> {
 }
 
 /// Create a commit
-pub fn git_commit(message: &str) -> io::Result<bool> {
+pub(crate) fn git_commit(message: &str) -> io::Result<bool> {
     let status = Command::new("git")
         .args(["commit", "-m", message])
         .status()?;

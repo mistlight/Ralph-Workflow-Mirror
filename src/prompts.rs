@@ -5,7 +5,7 @@
 
 /// Context level for agents
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContextLevel {
+pub(crate) enum ContextLevel {
     /// Minimal context (fresh eyes) - only essential info
     Minimal = 0,
     /// Normal context - includes status information
@@ -26,7 +26,11 @@ impl From<u8> for ContextLevel {
 /// Note: We do NOT tell the agent how many total iterations exist.
 /// This prevents "context pollution" - the agent should complete their task fully
 /// without knowing when the loop ends.
-pub fn prompt_developer_iteration(_iteration: u32, _total: u32, context: ContextLevel) -> String {
+pub(crate) fn prompt_developer_iteration(
+    _iteration: u32,
+    _total: u32,
+    context: ContextLevel,
+) -> String {
     match context {
         ContextLevel::Minimal | ContextLevel::Normal => r#"Read PROMPT.md and .agent/STATUS.md.
 Work toward PROMPT.md's Goal and Acceptance checks until all are satisfied.
@@ -38,7 +42,7 @@ Append brief bullets to .agent/NOTES.md."#
 
 /// Generate reviewer review prompt with minimal context
 /// Reviewer should NOT see what was done - just evaluate the code against requirements
-pub fn prompt_reviewer_review(context: ContextLevel) -> String {
+pub(crate) fn prompt_reviewer_review(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"You are reviewing this repository with fresh eyes.
 
@@ -62,7 +66,7 @@ Write findings into .agent/ISSUES.md as a prioritized checklist."#
 }
 
 /// Generate fix prompt (applies to either role)
-pub fn prompt_fix() -> String {
+pub(crate) fn prompt_fix() -> String {
     r#"Fix everything in .agent/ISSUES.md.
 Update .agent/ISSUES.md to mark items resolved.
 Append brief bullets to .agent/NOTES.md."#
@@ -70,7 +74,7 @@ Append brief bullets to .agent/NOTES.md."#
 }
 
 /// Generate reviewer re-review prompt with minimal context
-pub fn prompt_codex_review_again(context: ContextLevel) -> String {
+pub(crate) fn prompt_codex_review_again(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"Re-review the repository with fresh eyes.
 
@@ -90,7 +94,7 @@ If issues remain, fix them and update .agent/ISSUES.md."#
 }
 
 /// Generate commit prompt for reviewer (DEPRECATED: prefer prompt_generate_commit_message)
-pub fn prompt_commit(message: &str) -> String {
+pub(crate) fn prompt_commit(message: &str) -> String {
     format!(
         r#"All work is complete. Create a git commit with all changes.
 
@@ -106,7 +110,7 @@ Report success or failure."#,
 
 /// Generate prompt for planning phase
 /// Agent does a deep dive on PROMPT.md and creates a detailed PLAN.md
-pub fn prompt_plan() -> String {
+pub(crate) fn prompt_plan() -> String {
     r#"Do a deep dive on PROMPT.md to understand the Goal and Acceptance checks.
 
 Create .agent/PLAN.md with:
@@ -122,7 +126,7 @@ Be thorough but concise. This plan will guide the implementation."#
 
 /// Generate prompt for agent to generate a commit message
 /// Agent writes the commit message to .agent/commit-message.txt
-pub fn prompt_generate_commit_message() -> String {
+pub(crate) fn prompt_generate_commit_message() -> String {
     r#"Generate a commit message for all changes made.
 
 FIRST, gather context:
@@ -175,7 +179,7 @@ Write ONLY the commit message to .agent/commit-message.txt (no markdown fences, 
 
 /// Role types for agents
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
+pub(crate) enum Role {
     Developer,
     Reviewer,
 }
@@ -183,7 +187,7 @@ pub enum Role {
 /// Action types for prompts
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
-pub enum Action {
+pub(crate) enum Action {
     Plan,
     Iterate,
     Review,
@@ -194,7 +198,7 @@ pub enum Action {
 }
 
 /// Generate a prompt for any agent type
-pub fn prompt_for_agent(
+pub(crate) fn prompt_for_agent(
     role: Role,
     action: Action,
     context: ContextLevel,

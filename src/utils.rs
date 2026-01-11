@@ -11,14 +11,14 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 /// Get current timestamp in "YYYY-MM-DD HH:MM:SS" format
-pub fn timestamp() -> String {
+pub(crate) fn timestamp() -> String {
     Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 /// Split a shell-like command string into argv parts.
 ///
 /// Supports quotes and backslash escapes (e.g. `cmd --flag "a b"`).
-pub fn split_command(cmd: &str) -> io::Result<Vec<String>> {
+pub(crate) fn split_command(cmd: &str) -> io::Result<Vec<String>> {
     let cmd = cmd.trim();
     if cmd.is_empty() {
         return Ok(vec![]);
@@ -36,7 +36,7 @@ pub fn split_command(cmd: &str) -> io::Result<Vec<String>> {
 ///
 /// Uses character count rather than byte length to avoid panics on UTF-8 text.
 /// Truncates at character boundaries and appends "..." when truncation occurs.
-pub fn truncate_text(text: &str, limit: usize) -> String {
+pub(crate) fn truncate_text(text: &str, limit: usize) -> String {
     // Handle edge case where limit is too small for even "..."
     if limit <= 3 {
         return text.chars().take(limit).collect();
@@ -54,20 +54,20 @@ pub fn truncate_text(text: &str, limit: usize) -> String {
 }
 
 /// Logger for Ralph output
-pub struct Logger {
+pub(crate) struct Logger {
     colors: Colors,
     log_file: Option<String>,
 }
 
 impl Logger {
-    pub fn new(colors: Colors) -> Self {
+    pub(crate) fn new(colors: Colors) -> Self {
         Self {
             colors,
             log_file: None,
         }
     }
 
-    pub fn with_log_file(mut self, path: &str) -> Self {
+    pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
         self
     }
@@ -85,7 +85,7 @@ impl Logger {
         }
     }
 
-    pub fn info(&self, msg: &str) {
+    pub(crate) fn info(&self, msg: &str) {
         let c = &self.colors;
         println!(
             "{}[{}]{} {}{}{} {}",
@@ -100,7 +100,7 @@ impl Logger {
         self.log_to_file(&format!("[{}] [INFO] {}", timestamp(), msg));
     }
 
-    pub fn success(&self, msg: &str) {
+    pub(crate) fn success(&self, msg: &str) {
         let c = &self.colors;
         println!(
             "{}[{}]{} {}{}{} {}{}{}",
@@ -117,7 +117,7 @@ impl Logger {
         self.log_to_file(&format!("[{}] [OK] {}", timestamp(), msg));
     }
 
-    pub fn warn(&self, msg: &str) {
+    pub(crate) fn warn(&self, msg: &str) {
         let c = &self.colors;
         println!(
             "{}[{}]{} {}{}{} {}{}{}",
@@ -134,7 +134,7 @@ impl Logger {
         self.log_to_file(&format!("[{}] [WARN] {}", timestamp(), msg));
     }
 
-    pub fn error(&self, msg: &str) {
+    pub(crate) fn error(&self, msg: &str) {
         let c = &self.colors;
         eprintln!(
             "{}[{}]{} {}{}{} {}{}{}",
@@ -151,7 +151,7 @@ impl Logger {
         self.log_to_file(&format!("[{}] [ERROR] {}", timestamp(), msg));
     }
 
-    pub fn step(&self, msg: &str) {
+    pub(crate) fn step(&self, msg: &str) {
         let c = &self.colors;
         println!(
             "{}[{}]{} {}{}{} {}",
@@ -167,7 +167,7 @@ impl Logger {
     }
 
     /// Print a section header with box drawing
-    pub fn header(&self, title: &str, color_fn: fn(&Colors) -> &'static str) {
+    pub(crate) fn header(&self, title: &str, color_fn: fn(&Colors) -> &'static str) {
         let c = &self.colors;
         let color = color_fn(c);
         let width = 60;
@@ -209,7 +209,7 @@ impl Logger {
     }
 
     /// Print a sub-header (less prominent)
-    pub fn subheader(&self, title: &str) {
+    pub(crate) fn subheader(&self, title: &str) {
         let c = &self.colors;
         println!();
         println!("{}{}{} {}{}", c.bold(), c.blue(), ARROW, title, c.reset());
@@ -224,7 +224,7 @@ impl Default for Logger {
 }
 
 /// Strip ANSI escape sequences from a string
-pub fn strip_ansi_codes(s: &str) -> String {
+pub(crate) fn strip_ansi_codes(s: &str) -> String {
     use once_cell::sync::Lazy;
     static ANSI_RE: Lazy<Result<regex::Regex, regex::Error>> =
         Lazy::new(|| regex::Regex::new(r"\x1b\[[0-9;]*m"));
@@ -235,7 +235,7 @@ pub fn strip_ansi_codes(s: &str) -> String {
 }
 
 /// Print progress bar: [████████░░░░░░░░] 50%
-pub fn print_progress(current: u32, total: u32, label: &str) {
+pub(crate) fn print_progress(current: u32, total: u32, label: &str) {
     let c = Colors::new();
 
     if total == 0 {
@@ -274,7 +274,7 @@ pub fn print_progress(current: u32, total: u32, label: &str) {
 }
 
 /// Check if a file contains a specific marker string
-pub fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> {
+pub(crate) fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> {
     if !file_path.exists() {
         return Ok(false);
     }
@@ -292,7 +292,7 @@ pub fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> 
 }
 
 /// Archive a context file to .agent/archive/ with timestamp
-pub fn archive_context_file(file_path: &Path) -> io::Result<()> {
+pub(crate) fn archive_context_file(file_path: &Path) -> io::Result<()> {
     if !file_path.exists() {
         return Ok(());
     }
@@ -311,7 +311,7 @@ pub fn archive_context_file(file_path: &Path) -> io::Result<()> {
 }
 
 /// Clear context file by truncating it
-pub fn clear_context_file(file_path: &Path) -> io::Result<()> {
+pub(crate) fn clear_context_file(file_path: &Path) -> io::Result<()> {
     if !file_path.exists() {
         return Ok(());
     }
@@ -320,7 +320,7 @@ pub fn clear_context_file(file_path: &Path) -> io::Result<()> {
 }
 
 /// Clean context before reviewer phase
-pub fn clean_context_for_reviewer(logger: &Logger) -> io::Result<()> {
+pub(crate) fn clean_context_for_reviewer(logger: &Logger) -> io::Result<()> {
     logger.info("Cleaning context for reviewer (fresh eyes)...");
 
     // Archive current context files
@@ -347,7 +347,11 @@ pub fn clean_context_for_reviewer(logger: &Logger) -> io::Result<()> {
 }
 
 /// Update the status file
-pub fn update_status(last_action: &str, blockers: &str, next_action: &str) -> io::Result<()> {
+pub(crate) fn update_status(
+    last_action: &str,
+    blockers: &str,
+    next_action: &str,
+) -> io::Result<()> {
     fs::write(
         ".agent/STATUS.md",
         format!(
@@ -366,7 +370,7 @@ pub fn update_status(last_action: &str, blockers: &str, next_action: &str) -> io
 }
 
 /// Ensure required files exist
-pub fn ensure_files() -> io::Result<()> {
+pub(crate) fn ensure_files() -> io::Result<()> {
     fs::create_dir_all(".agent/logs")?;
 
     if !Path::new("PROMPT.md").exists() {
@@ -409,14 +413,14 @@ pub fn ensure_files() -> io::Result<()> {
 }
 
 /// Files that Ralph generates during a run and should clean up
-pub const GENERATED_FILES: &[&str] = &[
+pub(crate) const GENERATED_FILES: &[&str] = &[
     ".no_agent_commit",
     ".agent/PLAN.md",
     ".agent/commit-message.txt",
 ];
 
 /// Delete PLAN.md after integration
-pub fn delete_plan_file() -> io::Result<()> {
+pub(crate) fn delete_plan_file() -> io::Result<()> {
     let plan_path = Path::new(".agent/PLAN.md");
     if plan_path.exists() {
         fs::remove_file(plan_path)?;
@@ -425,7 +429,7 @@ pub fn delete_plan_file() -> io::Result<()> {
 }
 
 /// Delete commit-message.txt after committing
-pub fn delete_commit_message_file() -> io::Result<()> {
+pub(crate) fn delete_commit_message_file() -> io::Result<()> {
     let msg_path = Path::new(".agent/commit-message.txt");
     if msg_path.exists() {
         fs::remove_file(msg_path)?;
@@ -434,7 +438,7 @@ pub fn delete_commit_message_file() -> io::Result<()> {
 }
 
 /// Read commit message from file; fails if missing or empty.
-pub fn read_commit_message_file() -> io::Result<String> {
+pub(crate) fn read_commit_message_file() -> io::Result<String> {
     let msg_path = Path::new(".agent/commit-message.txt");
     let content = fs::read_to_string(msg_path).map_err(|e| {
         io::Error::new(
@@ -453,7 +457,7 @@ pub fn read_commit_message_file() -> io::Result<String> {
 }
 
 /// Clean up all generated files (for crash/exit cleanup)
-pub fn cleanup_generated_files() {
+pub(crate) fn cleanup_generated_files() {
     for file in GENERATED_FILES {
         let _ = fs::remove_file(file);
     }
