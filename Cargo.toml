@@ -34,6 +34,9 @@ which = "6.0"
 thiserror = "2.0"
 anyhow = "1.0"
 
+# TOML parsing for agent configuration files
+toml = "0.8"
+
 # Regex for pattern matching
 regex = "1.10"
 
