@@ -1,0 +1,7 @@
+# Per-worktree prompt (local)
+PROMPT.md
+
+# Agent loop artifacts (local)
+.agent/
+.no_agent_commit
+
