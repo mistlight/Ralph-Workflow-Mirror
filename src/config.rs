@@ -10,12 +10,14 @@ use std::path::PathBuf;
 pub enum Verbosity {
     /// Quiet - minimal output, aggressive truncation
     Quiet = 0,
-    /// Normal - default behavior
+    /// Normal - balanced output with moderate truncation
     Normal = 1,
-    /// Verbose - expanded output limits
+    /// Verbose - expanded output limits (default)
     Verbose = 2,
-    /// Full - no truncation
+    /// Full - no truncation, show all content
     Full = 3,
+    /// Debug - maximum verbosity, includes raw JSON and detailed info
+    Debug = 4,
 }
 
 impl From<u8> for Verbosity {
@@ -24,44 +26,83 @@ impl From<u8> for Verbosity {
             0 => Verbosity::Quiet,
             1 => Verbosity::Normal,
             2 => Verbosity::Verbose,
-            _ => Verbosity::Full,
+            3 => Verbosity::Full,
+            _ => Verbosity::Debug,
         }
     }
 }
 
 impl Verbosity {
     /// Get truncation limit for content type
+    ///
+    /// Content types:
+    /// - "text": Assistant text output
+    /// - "tool_result": Tool execution results
+    /// - "tool_input": Tool input parameters
+    /// - "user": User messages
+    /// - "result": Final result summaries
+    /// - "command": Command execution strings
+    /// - "agent_msg": Agent messages/thinking
     pub fn truncate_limit(&self, content_type: &str) -> usize {
         match self {
             Verbosity::Quiet => match content_type {
-                "text" => 60,
-                "tool_result" => 40,
-                "user" => 30,
-                "result" => 200,
-                "command" => 40,
-                "agent_msg" => 50,
-                _ => 50,
-            },
-            Verbosity::Normal => match content_type {
-                "text" => 120,
-                "tool_result" => 80,
-                "user" => 60,
-                "result" => 500,
+                "text" => 80,
+                "tool_result" => 60,
+                "tool_input" => 40,
+                "user" => 40,
+                "result" => 300,
                 "command" => 60,
-                "agent_msg" => 100,
-                _ => 80,
+                "agent_msg" => 80,
+                _ => 60,
             },
-            Verbosity::Verbose => match content_type {
-                "text" => 500,
+            // Normal mode: increased limits for better usability
+            // Previously too aggressive truncation made debugging difficult
+            Verbosity::Normal => match content_type {
+                "text" => 400,
                 "tool_result" => 300,
+                "tool_input" => 200,
                 "user" => 200,
-                "result" => 2000,
+                "result" => 1500,
                 "command" => 200,
                 "agent_msg" => 400,
                 _ => 300,
             },
-            Verbosity::Full => 999999,
+            // Verbose is the default - show generous amounts of context
+            // Users need to see what's happening to understand agent behavior
+            Verbosity::Verbose => match content_type {
+                "text" => 800,
+                "tool_result" => 600,
+                "tool_input" => 500,
+                "user" => 400,
+                "result" => 3000,
+                "command" => 400,
+                "agent_msg" => 800,
+                _ => 600,
+            },
+            // Full shows everything (essentially unlimited)
+            Verbosity::Full | Verbosity::Debug => 999999,
         }
+    }
+
+    /// Returns true if this verbosity level should show debug information
+    pub fn is_debug(&self) -> bool {
+        matches!(self, Verbosity::Debug)
+    }
+
+    /// Returns true if this verbosity level is at least Verbose
+    pub fn is_verbose(&self) -> bool {
+        matches!(
+            self,
+            Verbosity::Verbose | Verbosity::Full | Verbosity::Debug
+        )
+    }
+
+    /// Returns true if tool inputs should be shown (Normal and above)
+    ///
+    /// Tool inputs provide crucial context for understanding what the agent is doing.
+    /// They are now shown at Normal level and above for better usability.
+    pub fn show_tool_input(&self) -> bool {
+        !matches!(self, Verbosity::Quiet)
     }
 }
 
@@ -158,7 +199,7 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse::<u8>().ok())
                 .map(Verbosity::from)
-                .unwrap_or(Verbosity::Normal),
+                .unwrap_or(Verbosity::Verbose),
             commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
             use_fallback: env::var("RALPH_USE_FALLBACK")
                 .map(|s| s == "1" || s.to_lowercase() == "true")
@@ -189,15 +230,49 @@ mod tests {
         assert_eq!(Verbosity::from(1), Verbosity::Normal);
         assert_eq!(Verbosity::from(2), Verbosity::Verbose);
         assert_eq!(Verbosity::from(3), Verbosity::Full);
-        assert_eq!(Verbosity::from(100), Verbosity::Full);
+        assert_eq!(Verbosity::from(4), Verbosity::Debug);
+        assert_eq!(Verbosity::from(100), Verbosity::Debug);
     }
 
     #[test]
     fn test_truncate_limits() {
-        assert_eq!(Verbosity::Quiet.truncate_limit("text"), 60);
-        assert_eq!(Verbosity::Normal.truncate_limit("text"), 120);
-        assert_eq!(Verbosity::Verbose.truncate_limit("text"), 500);
+        // Quiet has reduced limits
+        assert_eq!(Verbosity::Quiet.truncate_limit("text"), 80);
+        assert_eq!(Verbosity::Quiet.truncate_limit("tool_input"), 40);
+
+        // Normal has increased limits for better usability
+        assert_eq!(Verbosity::Normal.truncate_limit("text"), 400);
+        assert_eq!(Verbosity::Normal.truncate_limit("tool_input"), 200);
+
+        // Verbose (default) has generous limits for understanding agent behavior
+        assert_eq!(Verbosity::Verbose.truncate_limit("text"), 800);
+        assert_eq!(Verbosity::Verbose.truncate_limit("tool_input"), 500);
+
+        // Full and Debug have unlimited
         assert_eq!(Verbosity::Full.truncate_limit("text"), 999999);
+        assert_eq!(Verbosity::Debug.truncate_limit("text"), 999999);
+    }
+
+    #[test]
+    fn test_verbosity_helpers() {
+        assert!(!Verbosity::Quiet.is_debug());
+        assert!(!Verbosity::Normal.is_debug());
+        assert!(!Verbosity::Verbose.is_debug());
+        assert!(!Verbosity::Full.is_debug());
+        assert!(Verbosity::Debug.is_debug());
+
+        assert!(!Verbosity::Quiet.is_verbose());
+        assert!(!Verbosity::Normal.is_verbose());
+        assert!(Verbosity::Verbose.is_verbose());
+        assert!(Verbosity::Full.is_verbose());
+        assert!(Verbosity::Debug.is_verbose());
+
+        // show_tool_input: true for Normal and above, false for Quiet
+        assert!(!Verbosity::Quiet.show_tool_input());
+        assert!(Verbosity::Normal.show_tool_input());
+        assert!(Verbosity::Verbose.show_tool_input());
+        assert!(Verbosity::Full.show_tool_input());
+        assert!(Verbosity::Debug.show_tool_input());
     }
 
     #[test]
@@ -207,6 +282,8 @@ mod tests {
         assert_eq!(config.reviewer_agent, "codex");
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
+        // Default verbosity is now Verbose
+        assert_eq!(config.verbosity, Verbosity::Verbose);
     }
 
     #[test]
