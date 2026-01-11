@@ -33,6 +33,69 @@ fi
 # Log file for raw JSON stream (set externally)
 typeset -g STREAM_LOGFILE="${STREAM_LOGFILE:-}"
 
+# Verbosity level for output display (set externally)
+# 0 = quiet (minimal output)
+# 1 = normal (default, moderate truncation)
+# 2 = verbose (expanded output with higher limits)
+# 3 = full (no truncation, show complete content)
+typeset -g RALPH_VERBOSITY="${RALPH_VERBOSITY:-1}"
+
+# Get truncation limits based on verbosity level
+# Returns the character limit for the given content type
+_get_truncate_limit() {
+  local content_type="$1"
+  case "$RALPH_VERBOSITY" in
+    0)  # quiet - very aggressive truncation
+      case "$content_type" in
+        text)        print 60 ;;
+        tool_result) print 40 ;;
+        user)        print 30 ;;
+        result)      print 200 ;;
+        command)     print 40 ;;
+        agent_msg)   print 50 ;;
+        *)           print 50 ;;
+      esac
+      ;;
+    1)  # normal (default) - current behavior
+      case "$content_type" in
+        text)        print 120 ;;
+        tool_result) print 80 ;;
+        user)        print 60 ;;
+        result)      print 500 ;;
+        command)     print 60 ;;
+        agent_msg)   print 100 ;;
+        *)           print 80 ;;
+      esac
+      ;;
+    2)  # verbose - expanded limits
+      case "$content_type" in
+        text)        print 500 ;;
+        tool_result) print 300 ;;
+        user)        print 200 ;;
+        result)      print 2000 ;;
+        command)     print 200 ;;
+        agent_msg)   print 400 ;;
+        *)           print 300 ;;
+      esac
+      ;;
+    3|*)  # full - no truncation (use very high limit)
+      print 999999
+      ;;
+  esac
+}
+
+# Truncate text to limit with ellipsis indicator
+# Usage: _truncate_text "long text" limit
+_truncate_text() {
+  local text="$1"
+  local limit="$2"
+  if [[ ${#text} -gt $limit ]]; then
+    print "${text:0:$limit}..."
+  else
+    print "$text"
+  fi
+}
+
 ############################################
 # Claude Event Parsing
 ############################################
@@ -88,8 +151,8 @@ parse_claude_event() {
             text)
               block_text=$(print -r -- "$line" | jq -r ".message.content[$idx].text // empty" 2>/dev/null)
               if [[ -n "$block_text" ]]; then
-                local preview="${block_text:0:120}"
-                [[ ${#block_text} -gt 120 ]] && preview="${preview}..."
+                local limit=$(_get_truncate_limit "text")
+                local preview=$(_truncate_text "$block_text" "$limit")
                 print "${DIM}[Claude]${RESET} ${WHITE}${preview}${RESET}"
               fi
               ;;
@@ -103,8 +166,8 @@ parse_claude_event() {
               local result_preview
               result_preview=$(print -r -- "$line" | jq -r ".message.content[$idx].content // empty" 2>/dev/null | head -1)
               if [[ -n "$result_preview" ]]; then
-                local preview="${result_preview:0:80}"
-                [[ ${#result_preview} -gt 80 ]] && preview="${preview}..."
+                local limit=$(_get_truncate_limit "tool_result")
+                local preview=$(_truncate_text "$result_preview" "$limit")
                 print "${DIM}[Claude]${RESET} ${DIM}Result:${RESET} ${preview}"
               fi
               ;;
@@ -118,8 +181,8 @@ parse_claude_event() {
       local user_text
       user_text=$(print -r -- "$line" | jq -r '.message.content[0].text // empty' 2>/dev/null)
       if [[ -n "$user_text" ]]; then
-        local preview="${user_text:0:60}"
-        [[ ${#user_text} -gt 60 ]] && preview="${preview}..."
+        local limit=$(_get_truncate_limit "user")
+        local preview=$(_truncate_text "$user_text" "$limit")
         print "${DIM}[Claude]${RESET} ${BLUE}User${RESET}: ${DIM}${preview}${RESET}"
       fi
       ;;
@@ -146,9 +209,8 @@ parse_claude_event() {
       if [[ -n "$result_text" ]]; then
         print ""
         print "${BOLD}Result summary:${RESET}"
-        # Show first 500 chars of result
-        local result_preview="${result_text:0:500}"
-        [[ ${#result_text} -gt 500 ]] && result_preview="${result_preview}..."
+        local limit=$(_get_truncate_limit "result")
+        local result_preview=$(_truncate_text "$result_text" "$limit")
         print "${DIM}${result_preview}${RESET}"
       fi
       ;;
@@ -212,7 +274,9 @@ parse_codex_event() {
       case "$item_type" in
         command_execution)
           item_cmd=$(print -r -- "$line" | jq -r '.item.command // ""' 2>/dev/null)
-          print "${DIM}[Codex]${RESET} ${MAGENTA}Exec${RESET}: ${DIM}${item_cmd:0:60}${RESET}"
+          local cmd_limit=$(_get_truncate_limit "command")
+          local cmd_preview=$(_truncate_text "$item_cmd" "$cmd_limit")
+          print "${DIM}[Codex]${RESET} ${MAGENTA}Exec${RESET}: ${DIM}${cmd_preview}${RESET}"
           ;;
         agent_message)
           print "${DIM}[Codex]${RESET} ${BLUE}Thinking...${RESET}"
@@ -229,8 +293,8 @@ parse_codex_event() {
         agent_message)
           item_text=$(print -r -- "$line" | jq -r '.item.text // ""' 2>/dev/null)
           if [[ -n "$item_text" ]]; then
-            local preview="${item_text:0:100}"
-            [[ ${#item_text} -gt 100 ]] && preview="${preview}..."
+            local msg_limit=$(_get_truncate_limit "agent_msg")
+            local preview=$(_truncate_text "$item_text" "$msg_limit")
             print "${DIM}[Codex]${RESET} ${WHITE}${preview}${RESET}"
           fi
           ;;
