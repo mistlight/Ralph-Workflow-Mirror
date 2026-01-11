@@ -68,18 +68,18 @@ impl Verbosity {
 /// Ralph configuration
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Developer agent (default: claude)
+    /// Developer (driver) agent (default: claude)
     pub developer_agent: String,
     /// Reviewer agent (default: codex)
     pub reviewer_agent: String,
-    /// Claude command override
-    pub claude_cmd: Option<String>,
-    /// Codex command override
-    pub codex_cmd: Option<String>,
-    /// Number of Claude iterations
-    pub claude_iters: u32,
-    /// Number of Codex review passes after fix
-    pub codex_reviews: u32,
+    /// Developer command override (alias: CLAUDE_CMD)
+    pub developer_cmd: Option<String>,
+    /// Reviewer command override (alias: CODEX_CMD)
+    pub reviewer_cmd: Option<String>,
+    /// Number of developer iterations (alias: CLAUDE_ITERS)
+    pub developer_iters: u32,
+    /// Number of reviewer re-review passes after fix (alias: CODEX_REVIEWS)
+    pub reviewer_reviews: u32,
     /// Fast check command (optional)
     pub fast_check_cmd: Option<String>,
     /// Full check command (optional)
@@ -107,19 +107,32 @@ pub struct Config {
 impl Config {
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
+        let developer_agent = env::var("RALPH_DEVELOPER_AGENT")
+            .or_else(|_| env::var("RALPH_DRIVER_AGENT"))
+            .unwrap_or_else(|_| "claude".to_string());
+        let reviewer_agent =
+            env::var("RALPH_REVIEWER_AGENT").unwrap_or_else(|_| "codex".to_string());
+
+        let developer_cmd = env::var("RALPH_DEVELOPER_CMD")
+            .ok()
+            .or_else(|| env::var("CLAUDE_CMD").ok());
+        let reviewer_cmd = env::var("RALPH_REVIEWER_CMD")
+            .ok()
+            .or_else(|| env::var("CODEX_CMD").ok());
+
         Self {
-            developer_agent: env::var("RALPH_DEVELOPER_AGENT")
-                .unwrap_or_else(|_| "claude".to_string()),
-            reviewer_agent: env::var("RALPH_REVIEWER_AGENT")
-                .unwrap_or_else(|_| "codex".to_string()),
-            claude_cmd: env::var("CLAUDE_CMD").ok(),
-            codex_cmd: env::var("CODEX_CMD").ok(),
-            claude_iters: env::var("CLAUDE_ITERS")
+            developer_agent,
+            reviewer_agent,
+            developer_cmd,
+            reviewer_cmd,
+            developer_iters: env::var("RALPH_DEVELOPER_ITERS")
                 .ok()
+                .or_else(|| env::var("CLAUDE_ITERS").ok())
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(5),
-            codex_reviews: env::var("CODEX_REVIEWS")
+            reviewer_reviews: env::var("RALPH_REVIEWER_REVIEWS")
                 .ok()
+                .or_else(|| env::var("CODEX_REVIEWS").ok())
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(2),
             fast_check_cmd: env::var("FAST_CHECK_CMD").ok().filter(|s| !s.is_empty()),
@@ -152,7 +165,7 @@ impl Config {
                 .and_then(|s| s.parse::<u8>().ok())
                 .map(Verbosity::from)
                 .unwrap_or(Verbosity::Normal),
-            commit_msg: "chore: apply PROMPT loop + Codex review/fix/review/review".to_string(),
+            commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
         }
     }
 
@@ -195,7 +208,7 @@ mod tests {
         let config = Config::from_env();
         assert_eq!(config.developer_agent, "claude");
         assert_eq!(config.reviewer_agent, "codex");
-        assert_eq!(config.claude_iters, 5);
-        assert_eq!(config.codex_reviews, 2);
+        assert_eq!(config.developer_iters, 5);
+        assert_eq!(config.reviewer_reviews, 2);
     }
 }

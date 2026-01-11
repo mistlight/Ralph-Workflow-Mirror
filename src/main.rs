@@ -1,12 +1,12 @@
 //! Ralph: PROMPT-driven agent loop for git repos
 //!
 //! Runs:
-//! - Claude: iterative progress against PROMPT.md
-//! - Codex: review → fix → review passes
+//! - Developer agent: iterative progress against PROMPT.md
+//! - Reviewer agent: review → fix → review passes
 //! - Optional fast/full checks
 //! - Final `git add -A` + `git commit -m <msg>`
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use ralph::agents::{AgentRegistry, JsonParserType};
 use ralph::colors::Colors;
 use ralph::config::Config;
@@ -16,8 +16,8 @@ use ralph::git_helpers::{
     require_git_repo, start_agent_phase, GitHelpers,
 };
 use ralph::prompts::{
-    prompt_claude_iteration, prompt_codex_fix, prompt_codex_review, prompt_codex_review_again,
-    prompt_commit, ContextLevel,
+    prompt_commit, prompt_developer_iteration, prompt_fix, prompt_reviewer_review,
+    prompt_reviewer_review_again, ContextLevel,
 };
 use ralph::timer::Timer;
 use ralph::utils::{
@@ -36,19 +36,27 @@ use std::process::{Command, Stdio};
 #[command(version)]
 struct Args {
     /// Commit message for the final commit
-    #[arg(default_value = "chore: apply PROMPT loop + Codex review/fix/review/review")]
+    #[arg(default_value = "chore: apply PROMPT loop + review/fix/review")]
     commit_msg: String,
 
-    /// Number of Claude iterations
-    #[arg(long, env = "CLAUDE_ITERS")]
-    claude_iters: Option<u32>,
+    /// Number of developer iterations
+    #[arg(long = "developer-iters", env = "RALPH_DEVELOPER_ITERS", aliases = ["claude-iters"])]
+    developer_iters: Option<u32>,
 
-    /// Number of Codex review passes after fix
-    #[arg(long, env = "CODEX_REVIEWS")]
-    codex_reviews: Option<u32>,
+    /// Number of reviewer re-review passes after fix
+    #[arg(
+        long = "reviewer-reviews",
+        env = "RALPH_REVIEWER_REVIEWS",
+        aliases = ["codex-reviews"]
+    )]
+    reviewer_reviews: Option<u32>,
 
-    /// Developer agent to use
-    #[arg(long, env = "RALPH_DEVELOPER_AGENT")]
+    /// Preset for common agent combinations (e.g. opencode for both roles)
+    #[arg(long, env = "RALPH_PRESET")]
+    preset: Option<Preset>,
+
+    /// Driver/developer agent to use
+    #[arg(long, env = "RALPH_DEVELOPER_AGENT", aliases = ["driver-agent"])]
     developer_agent: Option<String>,
 
     /// Reviewer agent to use
@@ -60,11 +68,21 @@ struct Args {
     verbosity: u8,
 }
 
+#[derive(Clone, Debug, ValueEnum)]
+enum Preset {
+    /// Historical default: claude (dev) + codex (review)
+    #[value(alias = "claude-codex")]
+    Default,
+    /// Use opencode for both developer and reviewer
+    #[value(alias = "opencode-both", alias = "opencode-only")]
+    Opencode,
+}
+
 /// Statistics tracking
 struct Stats {
     changes_detected: u32,
-    claude_runs_completed: u32,
-    codex_runs_completed: u32,
+    developer_runs_completed: u32,
+    reviewer_runs_completed: u32,
     reviewer_committed: bool,
 }
 
@@ -72,8 +90,8 @@ impl Stats {
     fn new() -> Self {
         Self {
             changes_detected: 0,
-            claude_runs_completed: 0,
-            codex_runs_completed: 0,
+            developer_runs_completed: 0,
+            reviewer_runs_completed: 0,
             reviewer_committed: false,
         }
     }
@@ -217,11 +235,26 @@ fn main() -> anyhow::Result<()> {
     config.commit_msg = args.commit_msg;
     config.verbosity = args.verbosity.into();
 
-    if let Some(iters) = args.claude_iters {
-        config.claude_iters = iters;
+    // Apply preset first (CLI/env preset overrides env-selected agents, but can be overridden by
+    // explicit --developer-agent/--reviewer-agent flags below).
+    if let Some(preset) = args.preset {
+        match preset {
+            Preset::Default => {
+                config.developer_agent = "claude".to_string();
+                config.reviewer_agent = "codex".to_string();
+            }
+            Preset::Opencode => {
+                config.developer_agent = "opencode".to_string();
+                config.reviewer_agent = "opencode".to_string();
+            }
+        }
     }
-    if let Some(reviews) = args.codex_reviews {
-        config.codex_reviews = reviews;
+
+    if let Some(iters) = args.developer_iters {
+        config.developer_iters = iters;
+    }
+    if let Some(reviews) = args.reviewer_reviews {
+        config.reviewer_reviews = reviews;
     }
     if let Some(agent) = args.developer_agent {
         config.developer_agent = agent;
@@ -244,7 +277,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     // Get agent commands and parser types
-    let developer_cmd = config.claude_cmd.clone().unwrap_or_else(|| {
+    let developer_cmd = config.developer_cmd.clone().unwrap_or_else(|| {
         registry
             .developer_cmd(&config.developer_agent)
             .unwrap_or_else(|| {
@@ -252,7 +285,7 @@ fn main() -> anyhow::Result<()> {
                     .to_string()
             })
     });
-    let reviewer_cmd = config.codex_cmd.clone().unwrap_or_else(|| {
+    let reviewer_cmd = config.reviewer_cmd.clone().unwrap_or_else(|| {
         registry
             .reviewer_cmd(&config.reviewer_agent)
             .unwrap_or_else(|| "codex exec --json --yolo".to_string())
@@ -303,11 +336,13 @@ fn main() -> anyhow::Result<()> {
         colors.reset()
     );
     println!(
-        "{}{}│{}  {}Claude × Codex pipeline for autonomous development{}       {}{}│{}",
+        "{}{}│{}  {}{} × {} pipeline for autonomous development{}                 {}{}│{}",
         colors.bold(),
         colors.cyan(),
         colors.reset(),
         colors.dim(),
+        config.developer_agent,
+        config.reviewer_agent,
         colors.reset(),
         colors.bold(),
         colors.cyan(),
@@ -334,33 +369,34 @@ fn main() -> anyhow::Result<()> {
     ));
     println!();
 
-    // Phase 1: Claude iterations
-    logger.header("PHASE 1: Claude Development", |c| c.blue());
+    // Phase 1: Developer iterations
+    logger.header("PHASE 1: Development", |c| c.blue());
     logger.info(&format!(
-        "Running {}{}{} Claude iterations",
+        "Running {}{}{} developer iterations ({})",
         colors.bold(),
-        config.claude_iters,
-        colors.reset()
+        config.developer_iters,
+        colors.reset(),
+        config.developer_agent
     ));
 
     let mut prev_snap = git_snapshot()?;
     let developer_context = ContextLevel::from(config.developer_context);
 
-    for i in 1..=config.claude_iters {
+    for i in 1..=config.developer_iters {
         logger.subheader(&format!(
-            "Claude Iteration {} of {}",
-            i, config.claude_iters
+            "Iteration {} of {}",
+            i, config.developer_iters
         ));
-        print_progress(i, config.claude_iters, "Overall");
+        print_progress(i, config.developer_iters, "Overall");
 
         update_status(
-            "Starting Claude iteration",
+            "Starting development iteration",
             "none",
             "Make progress on PROMPT.md goals",
         )?;
 
-        let prompt = prompt_claude_iteration(i, config.claude_iters, developer_context);
-        let logfile = format!(".agent/logs/claude_{}.log", i);
+        let prompt = prompt_developer_iteration(i, config.developer_iters, developer_context);
+        let logfile = format!(".agent/logs/developer_{}.log", i);
 
         let exit_code = run_with_prompt(
             &format!("{} run #{}", config.developer_agent, i),
@@ -381,7 +417,7 @@ fn main() -> anyhow::Result<()> {
             ));
         }
 
-        stats.claude_runs_completed += 1;
+        stats.developer_runs_completed += 1;
         update_status(
             "Completed progress step",
             "none",
@@ -419,8 +455,8 @@ fn main() -> anyhow::Result<()> {
 
     update_status("Code changes made", "none", "Evaluate codebase")?;
 
-    // Phase 2: Codex review/fix cycle
-    logger.header("PHASE 2: Codex Review & Fix", |c| c.magenta());
+    // Phase 2: Reviewer review/fix cycle
+    logger.header("PHASE 2: Review & Fix", |c| c.magenta());
 
     // Clean context for reviewer if using minimal context
     let reviewer_context = ContextLevel::from(config.reviewer_context);
@@ -429,17 +465,18 @@ fn main() -> anyhow::Result<()> {
     }
 
     logger.info(&format!(
-        "Running review → fix → review×{}{}{} cycle",
+        "Running review → fix → review×{}{}{} cycle ({})",
         colors.bold(),
-        config.codex_reviews,
-        colors.reset()
+        config.reviewer_reviews,
+        colors.reset(),
+        config.reviewer_agent
     ));
 
     // Initial review
     logger.subheader("Initial Review");
     update_status("Starting code review", "none", "Evaluate codebase")?;
 
-    let prompt = prompt_codex_review(reviewer_context);
+    let prompt = prompt_reviewer_review(reviewer_context);
     let _ = run_with_prompt(
         &format!("{} review (initial)", config.reviewer_agent),
         &reviewer_cmd,
@@ -451,13 +488,13 @@ fn main() -> anyhow::Result<()> {
         &colors,
         &config,
     );
-    stats.codex_runs_completed += 1;
+    stats.reviewer_runs_completed += 1;
 
     // Applying fixes
     logger.subheader("Applying Fixes");
     update_status("Applying fixes", "none", "Address issues found")?;
 
-    let prompt = prompt_codex_fix();
+    let prompt = prompt_fix();
     let _ = run_with_prompt(
         &format!("{} fix", config.reviewer_agent),
         &reviewer_cmd,
@@ -469,19 +506,19 @@ fn main() -> anyhow::Result<()> {
         &colors,
         &config,
     );
-    stats.codex_runs_completed += 1;
+    stats.reviewer_runs_completed += 1;
 
     // Verification reviews
-    for j in 1..=config.codex_reviews {
+    for j in 1..=config.reviewer_reviews {
         logger.subheader(&format!(
             "Verification Review {} of {}",
-            j, config.codex_reviews
+            j, config.reviewer_reviews
         ));
-        print_progress(j, config.codex_reviews, "Review passes");
+        print_progress(j, config.reviewer_reviews, "Review passes");
 
         update_status("Verification review", "none", "Re-evaluate codebase")?;
 
-        let prompt = prompt_codex_review_again(reviewer_context);
+        let prompt = prompt_reviewer_review_again(reviewer_context);
         let logfile = format!(".agent/logs/codex_review_{}.log", j + 1);
 
         let _ = run_with_prompt(
@@ -495,7 +532,7 @@ fn main() -> anyhow::Result<()> {
             &colors,
             &config,
         );
-        stats.codex_runs_completed += 1;
+        stats.reviewer_runs_completed += 1;
     }
 
     // Reviewer commit phase
@@ -520,7 +557,7 @@ fn main() -> anyhow::Result<()> {
             &colors,
             &config,
         );
-        stats.codex_runs_completed += 1;
+        stats.reviewer_runs_completed += 1;
 
         // Verify reviewer created a new commit
         let head_after = get_head_commit()?;
@@ -638,20 +675,20 @@ fn main() -> anyhow::Result<()> {
         colors.reset()
     );
     println!(
-        "  {}🔄{}  Claude runs:     {}{}{}/{}",
+        "  {}🔄{}  Dev runs:        {}{}{}/{}",
         colors.blue(),
         colors.reset(),
         colors.bold(),
-        stats.claude_runs_completed,
+        stats.developer_runs_completed,
         colors.reset(),
-        config.claude_iters
+        config.developer_iters
     );
     println!(
-        "  {}🔍{}  Codex runs:      {}{}{}",
+        "  {}🔍{}  Review runs:     {}{}{}",
         colors.magenta(),
         colors.reset(),
         colors.bold(),
-        stats.codex_runs_completed,
+        stats.reviewer_runs_completed,
         colors.reset()
     );
     println!(
