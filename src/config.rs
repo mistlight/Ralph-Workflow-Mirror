@@ -5,6 +5,16 @@
 use std::env;
 use std::path::PathBuf;
 
+fn parse_env_bool(value: &str) -> Option<bool> {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "" => None,
+        "1" | "true" | "yes" | "y" | "on" => Some(true),
+        "0" | "false" | "no" | "n" | "off" => Some(false),
+        _ => None,
+    }
+}
+
 /// Verbosity levels for output
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Verbosity {
@@ -177,7 +187,8 @@ impl Config {
             fast_check_cmd: env::var("FAST_CHECK_CMD").ok().filter(|s| !s.is_empty()),
             full_check_cmd: env::var("FULL_CHECK_CMD").ok().filter(|s| !s.is_empty()),
             interactive: env::var("RALPH_INTERACTIVE")
-                .map(|s| s == "1")
+                .ok()
+                .and_then(|s| parse_env_bool(&s))
                 .unwrap_or(true),
             prompt_path: PathBuf::from(
                 env::var("RALPH_PROMPT_PATH")
@@ -202,7 +213,8 @@ impl Config {
                 .unwrap_or(Verbosity::Verbose),
             commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
             use_fallback: env::var("RALPH_USE_FALLBACK")
-                .map(|s| s == "1" || s.to_lowercase() == "true")
+                .ok()
+                .and_then(|s| parse_env_bool(&s))
                 .unwrap_or(false),
         }
     }
@@ -223,6 +235,53 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_parse_env_bool() {
+        assert_eq!(parse_env_bool("1"), Some(true));
+        assert_eq!(parse_env_bool("true"), Some(true));
+        assert_eq!(parse_env_bool(" TRUE "), Some(true));
+        assert_eq!(parse_env_bool("on"), Some(true));
+        assert_eq!(parse_env_bool("yes"), Some(true));
+
+        assert_eq!(parse_env_bool("0"), Some(false));
+        assert_eq!(parse_env_bool("false"), Some(false));
+        assert_eq!(parse_env_bool(" FALSE "), Some(false));
+        assert_eq!(parse_env_bool("off"), Some(false));
+        assert_eq!(parse_env_bool("no"), Some(false));
+
+        assert_eq!(parse_env_bool(""), None);
+        assert_eq!(parse_env_bool("maybe"), None);
+    }
+
+    #[test]
+    fn test_config_bool_env_parsing() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Ensure default behavior when unset
+        env::remove_var("RALPH_INTERACTIVE");
+        env::remove_var("RALPH_USE_FALLBACK");
+        let cfg = Config::from_env();
+        assert!(cfg.interactive);
+        assert!(!cfg.use_fallback);
+
+        // Accept common truthy values
+        env::set_var("RALPH_INTERACTIVE", "true");
+        env::set_var("RALPH_USE_FALLBACK", "YES");
+        let cfg = Config::from_env();
+        assert!(cfg.interactive);
+        assert!(cfg.use_fallback);
+
+        // Accept common falsy values
+        env::set_var("RALPH_INTERACTIVE", "0");
+        env::set_var("RALPH_USE_FALLBACK", "false");
+        let cfg = Config::from_env();
+        assert!(!cfg.interactive);
+        assert!(!cfg.use_fallback);
+    }
 
     #[test]
     fn test_verbosity_from_u8() {
