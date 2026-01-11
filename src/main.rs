@@ -1124,6 +1124,33 @@ fn main() -> anyhow::Result<()> {
         })?
     };
 
+    // Enforce workflow-capable agents unless the user provided a custom command override.
+    // Agents with can_commit=false are chat-only / non-tool agents and will stall Ralph.
+    if config.developer_cmd.is_none() {
+        if let Some(cfg) = registry.get(&developer_agent) {
+            if !cfg.can_commit {
+                anyhow::bail!(
+                    "Developer agent '{}' has can_commit=false and cannot run Ralph's workflow.\n\
+                    Fix: choose a different agent (see --list-agents) or set can_commit=true in {}.",
+                    developer_agent,
+                    agents_config_path.display()
+                );
+            }
+        }
+    }
+    if config.reviewer_cmd.is_none() {
+        if let Some(cfg) = registry.get(&reviewer_agent) {
+            if !cfg.can_commit {
+                anyhow::bail!(
+                    "Reviewer agent '{}' has can_commit=false and cannot run Ralph's workflow.\n\
+                    Fix: choose a different agent (see --list-agents) or set can_commit=true in {}.",
+                    reviewer_agent,
+                    agents_config_path.display()
+                );
+            }
+        }
+    }
+
     // Require git repo
     require_git_repo()?;
     let repo_root = get_repo_root()?;
@@ -1695,6 +1722,69 @@ mod tests {
         assert!(formatted.contains('\n'));
         assert!(formatted.contains("\"type\""));
         assert!(formatted.contains("\"message\""));
+    }
+
+    #[test]
+    fn contract_qwen_stream_json_parses_with_claude_parser() {
+        let registry = AgentRegistry::new().unwrap();
+        let qwen = registry.get("qwen").unwrap();
+
+        let cmd = qwen.build_cmd(true, true, true);
+        let argv = split_command(&cmd).unwrap();
+
+        let parser_type = qwen.json_parser;
+        let uses_json = parser_type != JsonParserType::Generic || argv_requests_json(&argv);
+        assert!(uses_json, "Qwen should run in JSON-parsing mode");
+        assert_eq!(parser_type, JsonParserType::Claude);
+
+        // Claude stream-json compatibility (used by qwen-code)
+        let json = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from qwen"}]}}"#;
+        let input = std::io::Cursor::new(format!("{}\n", json));
+        let reader = std::io::BufReader::new(input);
+
+        let mut out = Vec::new();
+        let colors = Colors { enabled: false };
+        let parser = crate::json_parser::ClaudeParser::new(colors, Verbosity::Normal);
+        parser.parse_stream(reader, &mut out).unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("Hello from qwen"));
+    }
+
+    #[test]
+    fn contract_vibe_runs_in_plain_text_mode() {
+        let registry = AgentRegistry::new().unwrap();
+        let vibe = registry.get("vibe").unwrap();
+
+        let cmd = vibe.build_cmd(true, true, true);
+        let argv = split_command(&cmd).unwrap();
+
+        let parser_type = vibe.json_parser;
+        let uses_json = parser_type != JsonParserType::Generic || argv_requests_json(&argv);
+        assert!(!uses_json, "vibe should not enable JSON parsing by default");
+        assert_eq!(parser_type, JsonParserType::Generic);
+    }
+
+    #[test]
+    fn contract_llama_cli_runs_in_plain_text_mode_with_local_model_flag() {
+        let registry = AgentRegistry::new().unwrap();
+        let llama = registry.get("llama-cli").unwrap();
+
+        let cmd = llama.build_cmd(true, true, true);
+        assert!(
+            cmd.contains(" -m "),
+            "llama-cli should default to a local model path"
+        );
+
+        let argv = split_command(&cmd).unwrap();
+
+        let parser_type = llama.json_parser;
+        let uses_json = parser_type != JsonParserType::Generic || argv_requests_json(&argv);
+        assert!(
+            !uses_json,
+            "llama-cli should not enable JSON parsing by default"
+        );
+        assert_eq!(parser_type, JsonParserType::Generic);
     }
 
     #[test]
