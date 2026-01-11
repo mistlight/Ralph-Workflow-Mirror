@@ -117,12 +117,12 @@ struct Args {
     )]
     developer_iters: Option<u32>,
 
-    /// Number of reviewer re-review passes after fix (default: 2)
+    /// Number of review-fix iterations after initial fix (default: 2)
     #[arg(
         long = "reviewer-reviews",
         env = "RALPH_REVIEWER_REVIEWS",
         value_name = "N",
-        help = "Number of reviewer re-review passes after fix"
+        help = "Number of review-fix iterations after initial fix"
     )]
     reviewer_reviews: Option<u32>,
 
@@ -2154,9 +2154,9 @@ fn main() -> anyhow::Result<()> {
             1
         };
 
-        // Verification reviews
+        // Review-Fix iterations (replaces verification loop)
         for j in start_pass..=config.reviewer_reviews {
-            // Save checkpoint at start of each verification review (if enabled)
+            // Save checkpoint at start of each iteration
             if config.checkpoint_enabled {
                 let _ = save_checkpoint(&PipelineCheckpoint::new(
                     PipelinePhase::ReviewAgain,
@@ -2170,26 +2170,61 @@ fn main() -> anyhow::Result<()> {
             }
 
             logger.subheader(&format!(
-                "Verification Review {} of {}",
+                "Review-Fix Iteration {} of {}",
                 j, config.reviewer_reviews
             ));
-            print_progress(j, config.reviewer_reviews, "Review passes");
+            print_progress(j, config.reviewer_reviews, "Review-Fix passes");
 
-            update_status("Verification review", config.isolation_mode)?;
-
-            let prompt = prompt_for_agent(
+            // REVIEW PASS (full review, creates detailed ISSUES.md)
+            update_status("Re-reviewing", config.isolation_mode)?;
+            let review_prompt = prompt_for_agent(
                 Role::Reviewer,
-                Action::ReviewAgain,
+                Action::Review,
                 reviewer_context,
                 None,
                 None,
-                None, // ReviewAgain is a verification pass, no guidelines needed
+                review_guidelines.as_ref(),
             );
             let _ = run_with_fallback(
                 AgentRole::Reviewer,
-                &format!("re-review #{}", j),
-                &prompt,
+                &format!("review #{}", j + 1),
+                &review_prompt,
                 &format!(".agent/logs/reviewer_review_{}", j + 1),
+                &mut timer,
+                &logger,
+                &colors,
+                &config,
+                &registry,
+                &reviewer_agent,
+            );
+            stats.reviewer_runs_completed += 1;
+
+            // EARLY EXIT CHECK: If review found no issues, stop
+            if let Ok(metrics) = ReviewMetrics::from_issues_file() {
+                if metrics.no_issues_declared && metrics.total_issues == 0 {
+                    logger.success(&format!(
+                        "No issues found after iteration {} - stopping early",
+                        j
+                    ));
+                    break;
+                }
+            }
+
+            // FIX PASS (addresses issues found in review)
+            update_status("Applying fixes", config.isolation_mode)?;
+            let fix_prompt = prompt_for_agent(
+                Role::Reviewer,
+                Action::Fix,
+                reviewer_context,
+                None,
+                None,
+                None,
+            );
+            let _ = run_with_fallback(
+                AgentRole::Reviewer,
+                &format!("fix #{}", j + 1),
+                &fix_prompt,
+                &format!(".agent/logs/reviewer_fix_{}", j + 1),
                 &mut timer,
                 &logger,
                 &colors,
@@ -2200,7 +2235,7 @@ fn main() -> anyhow::Result<()> {
             stats.reviewer_runs_completed += 1;
         }
     } else if run_any_reviewer_phase {
-        logger.info("Skipping verification reviews (resuming from a later checkpoint phase)");
+        logger.info("Skipping review-fix iterations (resuming from a later checkpoint phase)");
     }
 
     if should_run_from(PipelinePhase::CommitMessage) {
