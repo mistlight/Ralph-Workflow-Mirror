@@ -19,7 +19,7 @@
       "args": [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "/Users/mistlight/Projects/HireAegisInterviewer"
+        "."
       ]
     },
     "git": {

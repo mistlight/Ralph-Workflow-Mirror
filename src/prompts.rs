@@ -26,86 +26,296 @@ impl From<u8> for ContextLevel {
 /// Note: We do NOT tell the agent how many total iterations exist.
 /// This prevents "context pollution" - the agent should complete their task fully
 /// without knowing when the loop ends.
+///
+/// This prompt is agent-agnostic and works with any AI coding assistant.
 pub(crate) fn prompt_developer_iteration(
     _iteration: u32,
     _total: u32,
     context: ContextLevel,
 ) -> String {
     match context {
-        ContextLevel::Minimal | ContextLevel::Normal => r#"Read PROMPT.md and .agent/STATUS.md.
-Work toward PROMPT.md's Goal and Acceptance checks until all are satisfied.
-Update .agent/STATUS.md (last action, blockers, next action).
-Append brief bullets to .agent/NOTES.md."#
-            .to_string(),
-    }
-}
+        ContextLevel::Minimal | ContextLevel::Normal => {
+            r#"You are in IMPLEMENTATION MODE. Execute the plan and make progress.
 
-/// Generate reviewer review prompt with minimal context
-/// Reviewer should NOT see what was done - just evaluate the code against requirements
-pub(crate) fn prompt_reviewer_review(context: ContextLevel) -> String {
-    match context {
-        ContextLevel::Minimal => r#"You are reviewing this repository with fresh eyes.
+INPUTS TO READ:
+1. .agent/PLAN.md - The implementation plan (execute these steps)
+2. PROMPT.md - The original requirements (for reference)
+3. .agent/STATUS.md - Current progress state
 
-Read ONLY PROMPT.md to understand the Goal and Acceptance checks.
-DO NOT read .agent/STATUS.md or .agent/NOTES.md - you need an unbiased perspective.
+YOUR TASK:
+Execute the next steps from .agent/PLAN.md that haven't been completed yet.
+Work toward satisfying all acceptance checks in PROMPT.md.
 
-Evaluate the codebase against the requirements:
-1. Does the code meet the Goal?
-2. Do all Acceptance checks pass?
-3. Are there quality issues (bugs, code smells, missing tests)?
+AFTER MAKING CHANGES:
+1. Update .agent/STATUS.md with:
+   - Last action: What you just completed
+   - Blockers: Any issues preventing progress (or "none")
+   - Next action: What should be done next
+   - Updated at: Current timestamp
 
-Write your findings into .agent/ISSUES.md as a prioritized checklist.
-Be specific about file paths and line numbers."#
-            .to_string(),
-        ContextLevel::Normal => {
-            r#"Review the repository against PROMPT.md (Goal + Acceptance checks).
-Write findings into .agent/ISSUES.md as a prioritized checklist."#
+2. Append brief bullets to .agent/NOTES.md documenting:
+   - What was implemented
+   - Any decisions made and why
+   - Issues encountered
+
+GUIDELINES:
+- Make meaningful progress in each iteration
+- Write clean, idiomatic code following project patterns
+- Add tests where appropriate
+- If stuck, document the blocker clearly in STATUS.md"#
                 .to_string()
         }
     }
 }
 
+/// Generate reviewer review prompt with minimal context
+/// Reviewer should NOT see what was done - just evaluate the code against requirements
+///
+/// This prompt is agent-agnostic and works with any AI coding assistant.
+/// Follows best practices for unbiased code review:
+/// - Fresh eyes perspective (minimal context mode)
+/// - Structured evaluation against requirements
+/// - Prioritized issue reporting with file:line references
+pub(crate) fn prompt_reviewer_review(context: ContextLevel) -> String {
+    match context {
+        ContextLevel::Minimal => r#"You are in REVIEW MODE with fresh eyes perspective.
+
+INPUTS TO READ:
+- PROMPT.md - The requirements (Goal and Acceptance checks)
+- DO NOT read .agent/STATUS.md or .agent/NOTES.md (you need unbiased perspective)
+
+YOUR TASK:
+Evaluate the codebase against the requirements in PROMPT.md.
+
+═══════════════════════════════════════════════════════════════════════════════
+1. GOAL ALIGNMENT
+═══════════════════════════════════════════════════════════════════════════════
+- Does the implementation achieve the stated goal?
+- Are there missing features or incomplete work?
+- Does the solution match the intent of the requirements?
+
+═══════════════════════════════════════════════════════════════════════════════
+2. ACCEPTANCE CHECKS
+═══════════════════════════════════════════════════════════════════════════════
+Go through EACH acceptance check in PROMPT.md explicitly:
+- Verify the check passes or fails
+- Note specific evidence for your determination
+- Be thorough - every check must be evaluated
+
+═══════════════════════════════════════════════════════════════════════════════
+3. CODE QUALITY
+═══════════════════════════════════════════════════════════════════════════════
+Examine the code for:
+- Bugs or logic errors
+- Code smells or anti-patterns
+- Missing or inadequate error handling
+- Missing or inadequate tests
+- Security vulnerabilities (injection, XSS, etc.)
+- Performance concerns
+- Unclear or missing documentation where needed
+
+OUTPUT:
+Write findings to .agent/ISSUES.md as a prioritized checklist:
+- [ ] Critical: [file:line] Description of issue
+- [ ] High: [file:line] Description of issue
+- [ ] Medium: [file:line] Description of issue
+- [ ] Low: [file:line] Description of issue
+
+Priority Guide:
+- Critical: Blocks functionality, security vulnerability, data loss risk
+- High: Major bug, acceptance check failure, significant code smell
+- Medium: Minor bug, code quality issue, missing edge case handling
+- Low: Style issue, minor improvement suggestion, documentation
+
+Be specific about file paths and line numbers.
+If no issues found, write "No issues found." to .agent/ISSUES.md"#
+            .to_string(),
+        ContextLevel::Normal => r#"You are in REVIEW MODE.
+
+INPUTS TO READ:
+- PROMPT.md - The requirements (Goal and Acceptance checks)
+- .agent/STATUS.md - Current progress state
+
+YOUR TASK:
+Review the repository against PROMPT.md requirements.
+
+1. Check goal alignment - does implementation achieve the stated goal?
+2. Verify each acceptance check passes
+3. Examine code quality (bugs, error handling, tests, security)
+
+OUTPUT:
+Write findings to .agent/ISSUES.md as a prioritized checklist:
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description
+
+Be specific. If no issues, write "No issues found.""#
+            .to_string(),
+    }
+}
+
 /// Generate fix prompt (applies to either role)
+///
+/// This prompt is agent-agnostic and works with any AI coding assistant.
 pub(crate) fn prompt_fix() -> String {
-    r#"Fix everything in .agent/ISSUES.md.
-Update .agent/ISSUES.md to mark items resolved.
-Append brief bullets to .agent/NOTES.md."#
+    r#"You are in FIX MODE. Address all issues found during review.
+
+INPUTS TO READ:
+- .agent/ISSUES.md - The list of issues to fix (prioritized)
+- PROMPT.md - Original requirements for context
+
+YOUR TASK:
+1. Read .agent/ISSUES.md to understand all issues
+2. Fix each issue, starting with Critical, then High, Medium, Low
+3. For each fix:
+   - Make the code change
+   - Verify the fix works
+   - Mark the item as resolved in ISSUES.md: - [x] instead of - [ ]
+
+AFTER FIXING:
+Update .agent/ISSUES.md to show which items are resolved.
+Append brief bullets to .agent/NOTES.md documenting what was fixed.
+
+GUIDELINES:
+- Fix issues properly, don't just suppress warnings
+- Ensure fixes don't introduce new issues
+- If an issue cannot be fixed, document why in NOTES.md"#
         .to_string()
 }
 
 /// Generate reviewer re-review prompt with minimal context
+///
+/// This prompt is agent-agnostic and works with any AI coding assistant.
 pub(crate) fn prompt_review_again(context: ContextLevel) -> String {
     match context {
-        ContextLevel::Minimal => r#"Re-review the repository with fresh eyes.
+        ContextLevel::Minimal => r#"You are in VERIFICATION MODE with fresh eyes.
 
-Read ONLY PROMPT.md to verify the Goal and Acceptance checks are met.
-DO NOT assume previous issues were fixed - verify independently.
+INPUTS TO READ:
+- PROMPT.md - The requirements (Goal and Acceptance checks)
+- .agent/ISSUES.md - Previous issues (DO NOT assume they are fixed)
 
-If issues remain:
+YOUR TASK:
+1. Verify all acceptance checks in PROMPT.md are satisfied
+2. Check that previously reported issues are actually fixed
+3. Look for any new issues introduced by the fixes
+
+IF ISSUES REMAIN OR NEW ISSUES FOUND:
 1. Fix them directly
-2. Update .agent/ISSUES.md with what was found and fixed
+2. Update .agent/ISSUES.md with findings and resolutions
 
-Be thorough but efficient."#
+IF ALL ISSUES ARE RESOLVED:
+1. Update .agent/ISSUES.md to confirm "All issues resolved"
+2. Note any final observations in .agent/NOTES.md
+
+Be thorough but efficient - focus on verification, not re-implementing."#
             .to_string(),
-        ContextLevel::Normal => r#"Re-review the repository after fixes against PROMPT.md.
-If issues remain, fix them and update .agent/ISSUES.md."#
+        ContextLevel::Normal => r#"You are in VERIFICATION MODE.
+
+INPUTS TO READ:
+- PROMPT.md - Requirements to verify against
+- .agent/ISSUES.md - Previous issues to verify as fixed
+
+YOUR TASK:
+Re-review the repository after fixes. Verify all acceptance checks pass.
+If issues remain, fix them and update .agent/ISSUES.md.
+If all resolved, update .agent/ISSUES.md to confirm completion."#
             .to_string(),
     }
 }
 
 /// Generate prompt for planning phase
 /// Agent does a deep dive on PROMPT.md and creates a detailed PLAN.md
+///
+/// This prompt is designed to be agent-agnostic and follows best practices
+/// from Claude Code's plan mode implementation:
+/// - Multi-phase workflow (Understanding → Exploration → Design → Review → Final Plan)
+/// - Strict read-only constraints during planning
+/// - Critical files identification (3-5 files with justifications)
+/// - Verification strategy
+/// - Clear exit criteria
+///
+/// Reference: <https://github.com/Piebald-AI/claude-code-system-prompts>
 pub(crate) fn prompt_plan() -> String {
-    r#"Do a deep dive on PROMPT.md to understand the Goal and Acceptance checks.
+    r#"You are in PLANNING MODE. Create a detailed implementation plan.
 
-Create .agent/PLAN.md with:
-1. A clear understanding of what needs to be done
-2. Step-by-step implementation plan
-3. Identified risks or challenges
-4. Specific files that will need changes
-5. Testing strategy to verify acceptance checks
+CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
+- Creating, modifying, or deleting any files (except .agent/PLAN.md)
+- Running any commands that modify system state
+- Making commits or staging changes
+- Installing dependencies or packages
 
-Be thorough but concise. This plan will guide the implementation."#
+You MAY use read-only operations: reading files, searching code, listing directories,
+running `git status`, `git log`, `git diff`, or similar read-only commands.
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 1: UNDERSTANDING
+═══════════════════════════════════════════════════════════════════════════════
+Read PROMPT.md thoroughly to understand:
+- The Goal: What is the desired end state?
+- Acceptance Checks: What specific conditions must be satisfied?
+- Constraints: Any requirements, limitations, or quality standards mentioned?
+
+If requirements are ambiguous, note them for clarification in the plan.
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 2: EXPLORATION
+═══════════════════════════════════════════════════════════════════════════════
+Explore the codebase using read-only tools to understand:
+- Current architecture and patterns used
+- Relevant existing code that will need changes
+- Dependencies and potential impacts
+- Similar implementations that can serve as reference
+- Test patterns and coverage expectations
+
+Be thorough. Quality exploration leads to better plans.
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 3: DESIGN
+═══════════════════════════════════════════════════════════════════════════════
+Design your implementation approach:
+- What changes need to be made and in what order?
+- Are there multiple valid approaches? Evaluate trade-offs.
+- What are the potential risks or challenges?
+- How does this integrate with existing code patterns?
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 4: REVIEW
+═══════════════════════════════════════════════════════════════════════════════
+Validate your plan against the requirements:
+- Does the approach satisfy ALL acceptance checks in PROMPT.md?
+- Are there edge cases or error scenarios to handle?
+- Is the plan specific enough to implement without ambiguity?
+- Have you identified the correct files to modify?
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 5: WRITE PLAN
+═══════════════════════════════════════════════════════════════════════════════
+Create .agent/PLAN.md with this structure:
+
+## Summary
+One paragraph explaining what will be done and why.
+
+## Implementation Steps
+Numbered, actionable steps. Be specific about:
+- What each step accomplishes
+- Which files are affected
+- Dependencies between steps
+
+## Critical Files for Implementation
+List 3-5 key files that will be created or modified:
+- `path/to/file.rs` - Brief justification for why this file needs changes
+
+## Risks & Mitigations
+Challenges identified during exploration and how to handle them.
+
+## Verification Strategy
+How to verify acceptance checks are met:
+- Specific tests to run
+- Manual verification steps
+- Success criteria
+
+REMEMBER: Do NOT implement anything. Your only output is .agent/PLAN.md."#
         .to_string()
 }
 
@@ -213,32 +423,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_prompt_claude_iteration() {
+    fn test_prompt_developer_iteration() {
         let result = prompt_developer_iteration(2, 5, ContextLevel::Normal);
         assert!(result.contains("PROMPT.md"));
         assert!(result.contains("STATUS.md"));
-        assert!(result.contains("until all are satisfied"));
+        assert!(result.contains("PLAN.md"));
+        assert!(result.contains("IMPLEMENTATION MODE"));
     }
 
     #[test]
-    fn test_prompt_codex_review_fresh_eyes() {
+    fn test_prompt_reviewer_review_fresh_eyes() {
         let result = prompt_reviewer_review(ContextLevel::Minimal);
         assert!(result.contains("fresh eyes"));
         assert!(result.contains("DO NOT read"));
+        assert!(result.contains("REVIEW MODE"));
+        assert!(result.contains("ISSUES.md"));
+
+        // Structured evaluation sections
+        assert!(result.contains("GOAL ALIGNMENT"));
+        assert!(result.contains("ACCEPTANCE CHECKS"));
+        assert!(result.contains("CODE QUALITY"));
+
+        // Priority guide for issues
+        assert!(result.contains("Priority Guide"));
+        assert!(result.contains("Critical"));
+        assert!(result.contains("High"));
+        assert!(result.contains("Medium"));
+        assert!(result.contains("Low"));
     }
 
     #[test]
-    fn test_prompt_codex_review_normal() {
+    fn test_prompt_reviewer_review_normal() {
         let result = prompt_reviewer_review(ContextLevel::Normal);
         assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("REVIEW MODE"));
         assert!(!result.contains("fresh eyes"));
     }
 
     #[test]
-    fn test_prompt_codex_fix() {
+    fn test_prompt_fix() {
         let result = prompt_fix();
         assert!(result.contains("ISSUES.md"));
         assert!(result.contains("NOTES.md"));
+        assert!(result.contains("FIX MODE"));
     }
 
     #[test]
@@ -246,6 +473,7 @@ mod tests {
         let result = prompt_review_again(ContextLevel::Minimal);
         assert!(result.contains("fresh eyes"));
         assert!(result.contains("DO NOT assume"));
+        assert!(result.contains("VERIFICATION MODE"));
     }
 
     #[test]
@@ -277,7 +505,21 @@ mod tests {
         let result = prompt_plan();
         assert!(result.contains("PROMPT.md"));
         assert!(result.contains("PLAN.md"));
-        assert!(result.contains("implementation plan"));
+        assert!(result.contains("PLANNING MODE"));
+        assert!(result.contains("Implementation Steps"));
+        assert!(result.contains("Critical Files"));
+        assert!(result.contains("Verification Strategy"));
+
+        // Ensure strict read-only constraints are present (Claude Code alignment)
+        assert!(result.contains("READ-ONLY"));
+        assert!(result.contains("STRICTLY PROHIBITED"));
+
+        // Ensure 5-phase workflow structure (Claude Code alignment)
+        assert!(result.contains("PHASE 1: UNDERSTANDING"));
+        assert!(result.contains("PHASE 2: EXPLORATION"));
+        assert!(result.contains("PHASE 3: DESIGN"));
+        assert!(result.contains("PHASE 4: REVIEW"));
+        assert!(result.contains("PHASE 5: WRITE PLAN"));
     }
 
     #[test]
@@ -352,5 +594,124 @@ mod tests {
             None,
         );
         assert!(result.contains("commit-message.txt"));
+    }
+
+    #[test]
+    fn test_prompts_are_agent_agnostic() {
+        // All prompts should be free of agent-specific references
+        // to ensure they work with any AI coding assistant
+        let agent_specific_terms = [
+            "claude", "codex", "opencode", "gemini", "aider", "goose", "cline", "continue",
+            "amazon-q", "gpt", "copilot",
+        ];
+
+        let prompts_to_check = vec![
+            prompt_developer_iteration(1, 5, ContextLevel::Normal),
+            prompt_developer_iteration(1, 5, ContextLevel::Minimal),
+            prompt_reviewer_review(ContextLevel::Normal),
+            prompt_reviewer_review(ContextLevel::Minimal),
+            prompt_fix(),
+            prompt_review_again(ContextLevel::Normal),
+            prompt_review_again(ContextLevel::Minimal),
+            prompt_plan(),
+            prompt_generate_commit_message(),
+            prompt_commit("test message"),
+        ];
+
+        for prompt in prompts_to_check {
+            let prompt_lower = prompt.to_lowercase();
+            for term in agent_specific_terms {
+                assert!(
+                    !prompt_lower.contains(term),
+                    "Prompt contains agent-specific term '{}': {}",
+                    term,
+                    &prompt[..prompt.len().min(100)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_context_level_from_u8() {
+        assert_eq!(ContextLevel::from(0), ContextLevel::Minimal);
+        assert_eq!(ContextLevel::from(1), ContextLevel::Normal);
+        assert_eq!(ContextLevel::from(2), ContextLevel::Normal);
+        assert_eq!(ContextLevel::from(255), ContextLevel::Normal);
+    }
+
+    #[test]
+    fn test_developer_iteration_minimal_context() {
+        let result = prompt_developer_iteration(1, 5, ContextLevel::Minimal);
+        // Minimal context should still include essential files
+        assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("PLAN.md"));
+        assert!(result.contains("STATUS.md"));
+    }
+
+    #[test]
+    fn test_review_again_normal_context() {
+        let result = prompt_review_again(ContextLevel::Normal);
+        assert!(result.contains("VERIFICATION MODE"));
+        assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("ISSUES.md"));
+        // Normal context doesn't need "fresh eyes" restriction
+        assert!(!result.contains("fresh eyes"));
+    }
+
+    #[test]
+    fn test_prompt_for_agent_fix() {
+        let result = prompt_for_agent(
+            Role::Developer,
+            Action::Fix,
+            ContextLevel::Normal,
+            None,
+            None,
+            None,
+        );
+        assert!(result.contains("FIX MODE"));
+        assert!(result.contains("ISSUES.md"));
+    }
+
+    #[test]
+    fn test_prompt_for_agent_review_again() {
+        let result = prompt_for_agent(
+            Role::Reviewer,
+            Action::ReviewAgain,
+            ContextLevel::Minimal,
+            None,
+            None,
+            None,
+        );
+        assert!(result.contains("VERIFICATION MODE"));
+        assert!(result.contains("fresh eyes"));
+    }
+
+    #[test]
+    fn test_prompt_for_agent_commit() {
+        let result = prompt_for_agent(
+            Role::Reviewer,
+            Action::Commit,
+            ContextLevel::Normal,
+            None,
+            None,
+            Some("feat: test feature"),
+        );
+        assert!(result.contains("git commit"));
+        assert!(result.contains("feat: test feature"));
+    }
+
+    #[test]
+    fn test_reviewer_can_use_iterate_action() {
+        // Edge case: Reviewer using Iterate action (fallback behavior)
+        let result = prompt_for_agent(
+            Role::Reviewer,
+            Action::Iterate,
+            ContextLevel::Normal,
+            Some(1),
+            Some(3),
+            None,
+        );
+        // Should fall back to developer iteration prompt
+        assert!(result.contains("IMPLEMENTATION MODE"));
     }
 }
