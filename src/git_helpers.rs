@@ -369,21 +369,6 @@ pub(crate) fn cleanup_agent_phase_silent() {
     crate::utils::cleanup_generated_files();
 }
 
-/// Allow reviewer to commit by temporarily lifting the block
-#[allow(dead_code)]
-pub(crate) fn allow_reviewer_commit(helpers: &mut GitHelpers) {
-    let _ = fs::remove_file(".no_agent_commit");
-    disable_git_wrapper(helpers);
-}
-
-/// Re-enable commit block after reviewer phase
-#[allow(dead_code)]
-pub(crate) fn block_commits_again(helpers: &mut GitHelpers) -> io::Result<()> {
-    File::create(".no_agent_commit")?;
-    enable_git_wrapper(helpers)?;
-    Ok(())
-}
-
 /// Clean up orphaned .no_agent_commit marker
 pub(crate) fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
     let repo_root = get_repo_root()?;
@@ -397,32 +382,6 @@ pub(crate) fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
     }
 
     Ok(())
-}
-
-/// Get current HEAD commit hash
-#[allow(dead_code)]
-pub(crate) fn get_head_commit() -> io::Result<String> {
-    let output = Command::new("git").args(["rev-parse", "HEAD"]).output()?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        Ok(String::new())
-    }
-}
-
-/// Get last commit message
-#[allow(dead_code)]
-pub(crate) fn get_last_commit_message() -> io::Result<String> {
-    let output = Command::new("git")
-        .args(["log", "-1", "--pretty=%s"])
-        .output()?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        Ok(String::new())
-    }
 }
 
 /// Stage all changes
@@ -820,103 +779,6 @@ mod tests {
 
         // Verify no change detected
         assert_eq!(head_before, head_after);
-    }
-
-    #[test]
-    fn test_get_head_commit_function() {
-        let dir = TempDir::new().unwrap();
-        let dir_path = dir.path();
-
-        // Init git repo
-        Command::new("git")
-            .arg("init")
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-
-        // Configure git user
-        Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-
-        // Create initial commit
-        fs::write(dir_path.join("file.txt"), "test").unwrap();
-        Command::new("git")
-            .args(["add", "file.txt"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "test commit"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-
-        // Get HEAD using git directly
-        let head = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-        let head_str = String::from_utf8_lossy(&head.stdout).trim().to_string();
-
-        // Should be a valid commit hash (40 characters)
-        assert_eq!(head_str.len(), 40);
-    }
-
-    #[test]
-    fn test_get_last_commit_message_function() {
-        let dir = TempDir::new().unwrap();
-        let dir_path = dir.path();
-
-        // Init git repo
-        Command::new("git")
-            .arg("init")
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-
-        // Configure git user
-        Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-
-        // Create commit with specific message
-        fs::write(dir_path.join("file.txt"), "test").unwrap();
-        Command::new("git")
-            .args(["add", "file.txt"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "feat: test commit message"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-
-        // Get last commit message using git directly
-        let msg = Command::new("git")
-            .args(["log", "-1", "--pretty=%s"])
-            .current_dir(dir_path)
-            .output()
-            .unwrap();
-        let msg_str = String::from_utf8_lossy(&msg.stdout).trim().to_string();
-
-        assert_eq!(msg_str, "feat: test commit message");
     }
 
     #[test]

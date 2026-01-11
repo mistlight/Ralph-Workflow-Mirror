@@ -601,3 +601,192 @@ fn ralph_generate_commit_msg_fails_if_agent_doesnt_create_file() {
         .failure()
         .stderr(predicate::str::contains("Commit message generation failed"));
 }
+
+// ============================================================================
+// Quick Mode Tests
+// ============================================================================
+
+#[test]
+fn ralph_quick_mode_sets_minimal_iterations() {
+    // Quick mode should set developer_iters=1 and reviewer_reviews=1
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    // Create a script that tracks how many times planning is called
+    let counter_path = dir.path().join(".agent/plan_counter");
+    let script_path = dir.path().join("dev_script.sh");
+    fs::write(
+        &script_path,
+        format!(
+            r#"#!/bin/sh
+mkdir -p .agent
+# Only count planning phase calls (when PLAN.md doesn't exist)
+if [ ! -f .agent/PLAN.md ]; then
+    if [ -f "{counter}" ]; then
+        count=$(cat "{counter}")
+        count=$((count + 1))
+    else
+        count=1
+    fi
+    echo $count > "{counter}"
+    echo "Plan for iteration" > .agent/PLAN.md
+fi
+exit 0
+"#,
+            counter = counter_path.display()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    cmd.current_dir(dir.path())
+        .arg("--quick") // Use quick mode
+        .env("RALPH_INTERACTIVE", "0")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: quick test\" > .agent/commit-message.txt'",
+        )
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com");
+
+    cmd.assert().success();
+
+    // Should only have 1 planning call (quick mode = 1 iteration)
+    let count: u32 = fs::read_to_string(&counter_path)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        count, 1,
+        "Quick mode should result in exactly 1 developer iteration"
+    );
+}
+
+#[test]
+fn ralph_quick_mode_short_flag_works() {
+    // -Q should work the same as --quick
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let counter_path = dir.path().join(".agent/plan_counter");
+    let script_path = dir.path().join("dev_script.sh");
+    fs::write(
+        &script_path,
+        format!(
+            r#"#!/bin/sh
+mkdir -p .agent
+if [ ! -f .agent/PLAN.md ]; then
+    if [ -f "{counter}" ]; then
+        count=$(cat "{counter}")
+        count=$((count + 1))
+    else
+        count=1
+    fi
+    echo $count > "{counter}"
+    echo "Plan" > .agent/PLAN.md
+fi
+exit 0
+"#,
+            counter = counter_path.display()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    cmd.current_dir(dir.path())
+        .arg("-Q") // Short flag
+        .env("RALPH_INTERACTIVE", "0")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: short flag\" > .agent/commit-message.txt'",
+        )
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com");
+
+    cmd.assert().success();
+
+    let count: u32 = fs::read_to_string(&counter_path)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        count, 1,
+        "-Q should result in exactly 1 developer iteration"
+    );
+}
+
+#[test]
+fn ralph_quick_mode_explicit_iters_override() {
+    // Explicit --developer-iters should override quick mode
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let counter_path = dir.path().join(".agent/plan_counter");
+    let script_path = dir.path().join("dev_script.sh");
+    fs::write(
+        &script_path,
+        format!(
+            r#"#!/bin/sh
+mkdir -p .agent
+if [ ! -f .agent/PLAN.md ]; then
+    if [ -f "{counter}" ]; then
+        count=$(cat "{counter}")
+        count=$((count + 1))
+    else
+        count=1
+    fi
+    echo $count > "{counter}"
+    echo "Plan" > .agent/PLAN.md
+fi
+exit 0
+"#,
+            counter = counter_path.display()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    cmd.current_dir(dir.path())
+        .arg("--quick")
+        .arg("--developer-iters")
+        .arg("2") // Explicit override
+        .env("RALPH_INTERACTIVE", "0")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: override\" > .agent/commit-message.txt'",
+        )
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com");
+
+    cmd.assert().success();
+
+    let count: u32 = fs::read_to_string(&counter_path)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        count, 2,
+        "Explicit --developer-iters should override quick mode"
+    );
+}
