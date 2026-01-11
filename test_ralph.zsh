@@ -102,63 +102,14 @@ run_test() {
 }
 
 ############################################
-# Source ralph.zsh functions for testing
-# We need to extract just the helper functions without running main
+# Source library modules for testing
 ############################################
-
-# Extract helper functions from ralph.zsh
-# We'll define them inline since sourcing would run the whole script
-
-# Timestamp function
-ts() { date +"%Y-%m-%d %H:%M:%S"; }
-
-# Timer variables
-typeset -g START_TIME=0
-typeset -g PHASE_START=0
-
-timer_start() {
-  START_TIME=$SECONDS
-  PHASE_START=$SECONDS
-}
-
-timer_phase_start() {
-  PHASE_START=$SECONDS
-}
-
-timer_elapsed() {
-  local elapsed=$((SECONDS - START_TIME))
-  local mins=$((elapsed / 60))
-  local secs=$((elapsed % 60))
-  printf "%dm %02ds" "$mins" "$secs"
-}
-
-timer_phase_elapsed() {
-  local elapsed=$((SECONDS - PHASE_START))
-  local mins=$((elapsed / 60))
-  local secs=$((elapsed % 60))
-  printf "%dm %02ds" "$mins" "$secs"
-}
-
-# Progress bar function
-print_progress() {
-  local current="$1" total="$2" label="${3:-Progress}"
-  local pct=$((current * 100 / total))
-  local bar_width=20
-  local filled=$((current * bar_width / total))
-  local empty=$((bar_width - filled))
-
-  local bar=""
-  for ((k=0; k<filled; k++)); do bar+="█"; done
-  for ((k=0; k<empty; k++)); do bar+="░"; done
-
-  printf "%s: [%s] %d%% (%d/%d)" "$label" "$bar" "$pct" "$current" "$total"
-}
-
-# file_contains_marker (simplified for testing)
-file_contains_marker() {
-  local file="$1" marker="$2"
-  grep -Fq -- "$marker" "$file" >/dev/null 2>&1
-}
+RALPH_SCRIPT_DIR="${0:A:h}"
+source "${RALPH_SCRIPT_DIR}/lib/colors.zsh"
+source "${RALPH_SCRIPT_DIR}/lib/timer.zsh"
+source "${RALPH_SCRIPT_DIR}/lib/utils.zsh"
+source "${RALPH_SCRIPT_DIR}/lib/json_parser.zsh"
+source "${RALPH_SCRIPT_DIR}/lib/git_helpers.zsh"
 
 ############################################
 # Tests
@@ -176,12 +127,12 @@ test_ts_format() {
 
 test_timer_start() {
   timer_start
-  assert_numeric "$START_TIME" "START_TIME is numeric after timer_start"
-  assert_numeric "$PHASE_START" "PHASE_START is numeric after timer_start"
+  assert_numeric "$RALPH_START_TIME" "RALPH_START_TIME is numeric after timer_start"
+  assert_numeric "$RALPH_PHASE_START" "RALPH_PHASE_START is numeric after timer_start"
 }
 
 test_timer_elapsed_format() {
-  START_TIME=$((SECONDS - 65))  # 1m 5s ago
+  RALPH_START_TIME=$((SECONDS - 65))  # 1m 5s ago
   local result="$(timer_elapsed)"
   assert_contains "$result" "m" "timer_elapsed contains 'm'"
   assert_contains "$result" "s" "timer_elapsed contains 's'"
@@ -189,13 +140,13 @@ test_timer_elapsed_format() {
 }
 
 test_timer_phase_elapsed() {
-  PHASE_START=$((SECONDS - 30))  # 30s ago
+  RALPH_PHASE_START=$((SECONDS - 30))  # 30s ago
   local result="$(timer_phase_elapsed)"
   assert_eq "0m 30s" "$result" "timer_phase_elapsed formats 30s as '0m 30s'"
 }
 
 test_timer_zero_elapsed() {
-  START_TIME=$SECONDS
+  RALPH_START_TIME=$SECONDS
   local result="$(timer_elapsed)"
   assert_eq "0m 00s" "$result" "timer_elapsed at start is '0m 00s'"
 }
@@ -255,33 +206,8 @@ test_file_contains_marker_missing_file() {
 
 ############################################
 # JSON Stream Parsing Tests
+# (parse_claude_event and stream_parse_claude sourced from lib/json_parser.zsh)
 ############################################
-
-# Check if jq is available
-HAS_JQ=0
-if command -v jq >/dev/null 2>&1; then
-  HAS_JQ=1
-fi
-
-# Minimal Claude event parser for testing
-parse_claude_event() {
-  local line="$1"
-  [[ -z "$line" ]] && return 0
-  [[ "$HAS_JQ" != "1" ]] && { print -r -- "$line"; return 0; }
-
-  local event_type
-  event_type=$(print -r -- "$line" | jq -r '.type // empty' 2>/dev/null) || { print -r -- "$line"; return 0; }
-  print "EVENT:${event_type}"
-}
-
-# Stream parser (from ralph.zsh)
-stream_parse_claude() {
-  local line
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ -z "$line" ]] && continue
-    parse_claude_event "$line"
-  done
-}
 
 test_stream_parse_complete_lines() {
   if [[ "$HAS_JQ" != "1" ]]; then
@@ -290,10 +216,10 @@ test_stream_parse_complete_lines() {
   fi
 
   local result
-  result=$(printf '{"type":"init"}\n{"type":"result"}\n' | stream_parse_claude)
+  result=$(printf '{"type":"system","subtype":"init"}\n{"type":"result","subtype":"success"}\n' | stream_parse_claude)
 
-  assert_contains "$result" "EVENT:init" "stream_parse handles first JSON line"
-  assert_contains "$result" "EVENT:result" "stream_parse handles second JSON line"
+  assert_contains "$result" "Session" "stream_parse handles init event"
+  assert_contains "$result" "Completed" "stream_parse handles result event"
 }
 
 test_stream_parse_chunked_data() {
@@ -302,12 +228,10 @@ test_stream_parse_chunked_data() {
     return 0
   fi
 
-  # Simulate chunked streaming by sending partial data
-  # In a real stream, '{"type":"init"}\n' might arrive as '{"typ' then 'e":"init"}\n'
   local result
-  result=$(printf '{"type":"init"}\n' | stream_parse_claude)
+  result=$(printf '{"type":"system","subtype":"init"}\n' | stream_parse_claude)
 
-  assert_contains "$result" "EVENT:init" "stream_parse handles single JSON line"
+  assert_contains "$result" "Session" "stream_parse handles single JSON line"
 }
 
 test_stream_parse_no_trailing_newline() {
@@ -316,11 +240,10 @@ test_stream_parse_no_trailing_newline() {
     return 0
   fi
 
-  # Test handling of data without trailing newline (common in streams)
   local result
-  result=$(printf '{"type":"init"}' | stream_parse_claude)
+  result=$(printf '{"type":"system","subtype":"init"}' | stream_parse_claude)
 
-  assert_contains "$result" "EVENT:init" "stream_parse handles JSON without trailing newline"
+  assert_contains "$result" "Session" "stream_parse handles JSON without trailing newline"
 }
 
 test_stream_parse_empty_lines() {
@@ -329,12 +252,157 @@ test_stream_parse_empty_lines() {
     return 0
   fi
 
-  # Test handling of empty lines between JSON objects
   local result
-  result=$(printf '{"type":"init"}\n\n{"type":"result"}\n' | stream_parse_claude)
+  result=$(printf '{"type":"system","subtype":"init"}\n\n{"type":"result","subtype":"success"}\n' | stream_parse_claude)
 
-  assert_contains "$result" "EVENT:init" "stream_parse handles JSON with empty lines (init)"
-  assert_contains "$result" "EVENT:result" "stream_parse handles JSON with empty lines (result)"
+  assert_contains "$result" "Session" "stream_parse handles JSON with empty lines (init)"
+  assert_contains "$result" "Completed" "stream_parse handles JSON with empty lines (result)"
+}
+
+test_detect_agent_type_claude() {
+  local result
+  result=$(detect_agent_type "claude -p --dangerously-skip-permissions")
+  assert_eq "claude" "$result" "detect_agent_type identifies claude command"
+}
+
+test_detect_agent_type_codex() {
+  local result
+  result=$(detect_agent_type "codex exec --json --yolo")
+  assert_eq "codex" "$result" "detect_agent_type identifies codex command"
+}
+
+test_detect_agent_type_unknown() {
+  local result
+  result=$(detect_agent_type "some-other-tool --flag")
+  assert_eq "unknown" "$result" "detect_agent_type returns unknown for other commands"
+}
+
+############################################
+# Git Helpers Tests
+############################################
+
+test_git_snapshot() {
+  # Create a temp git repo for testing
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  # Create a file and check status
+  echo "test" > testfile.txt
+  local result
+  result=$(git_snapshot)
+  assert_contains "$result" "??" "git_snapshot shows untracked file"
+
+  # Add file and check status
+  git add testfile.txt
+  result=$(git_snapshot)
+  assert_contains "$result" "A" "git_snapshot shows added file"
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_require_git_repo_in_repo() {
+  # Create a temp git repo for testing
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  # Should not fail
+  ((TESTS_RUN++))
+  if require_git_repo 2>/dev/null; then
+    test_pass "require_git_repo succeeds in a git repo"
+  else
+    test_fail "require_git_repo succeeds in a git repo"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_require_git_repo_outside_repo() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+
+  # Should fail (exit) but we catch it
+  ((TESTS_RUN++))
+  if (require_git_repo 2>/dev/null); then
+    test_fail "require_git_repo fails outside git repo"
+  else
+    test_pass "require_git_repo fails outside git repo"
+  fi
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_install_hook_creates_file() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  local hooks_dir="${tmpdir}/.git/hooks"
+  install_hook "TestHook" "${hooks_dir}/pre-commit"
+
+  ((TESTS_RUN++))
+  if [[ -f "${hooks_dir}/pre-commit" ]]; then
+    test_pass "install_hook creates hook file"
+  else
+    test_fail "install_hook creates hook file"
+  fi
+
+  # Check hook is executable
+  ((TESTS_RUN++))
+  if [[ -x "${hooks_dir}/pre-commit" ]]; then
+    test_pass "install_hook makes hook executable"
+  else
+    test_fail "install_hook makes hook executable"
+  fi
+
+  # Check hook contains marker
+  assert_contains "$(cat ${hooks_dir}/pre-commit)" "$HOOK_MARKER" "install_hook adds marker to hook"
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
+}
+
+test_start_end_agent_phase() {
+  local tmpdir="$(mktemp -d)"
+  cd "$tmpdir"
+  git init -q
+
+  # Start agent phase
+  start_agent_phase
+
+  ((TESTS_RUN++))
+  if [[ -f ".no_agent_commit" ]]; then
+    test_pass "start_agent_phase creates .no_agent_commit"
+  else
+    test_fail "start_agent_phase creates .no_agent_commit"
+  fi
+
+  # End agent phase
+  end_agent_phase
+
+  ((TESTS_RUN++))
+  if [[ ! -f ".no_agent_commit" ]]; then
+    test_pass "end_agent_phase removes .no_agent_commit"
+  else
+    test_fail "end_agent_phase removes .no_agent_commit"
+  fi
+
+  # Clean up wrapper
+  disable_git_wrapper
+
+  # Cleanup
+  cd /
+  rm -rf "$tmpdir"
 }
 
 ############################################
@@ -360,6 +428,14 @@ run_test "Stream parse - complete lines" test_stream_parse_complete_lines
 run_test "Stream parse - chunked data" test_stream_parse_chunked_data
 run_test "Stream parse - no trailing newline" test_stream_parse_no_trailing_newline
 run_test "Stream parse - empty lines" test_stream_parse_empty_lines
+run_test "Detect agent type - claude" test_detect_agent_type_claude
+run_test "Detect agent type - codex" test_detect_agent_type_codex
+run_test "Detect agent type - unknown" test_detect_agent_type_unknown
+run_test "Git snapshot" test_git_snapshot
+run_test "Require git repo - inside repo" test_require_git_repo_in_repo
+run_test "Require git repo - outside repo" test_require_git_repo_outside_repo
+run_test "Install hook - creates file" test_install_hook_creates_file
+run_test "Start/end agent phase" test_start_end_agent_phase
 
 ############################################
 # Summary
