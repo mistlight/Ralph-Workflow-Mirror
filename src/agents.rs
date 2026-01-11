@@ -1,15 +1,26 @@
 //! Agent Abstraction Module
 //!
 //! Provides a pluggable agent system for different
-//! AI coding assistants (Claude, Codex, OpenCode, etc.)
+//! AI coding assistants (Claude, Codex, OpenCode, Goose, Cline, etc.)
 //!
 //! ## Configuration
 //!
 //! Agents can be configured via:
-//! 1. Built-in defaults (claude, codex, opencode, aider)
+//! 1. Built-in defaults (claude, codex, opencode, aider, goose, cline, continue, amazon-q, gemini)
 //! 2. TOML configuration file (`.agent/agents.toml`)
 //! 3. Environment variables (`CLAUDE_CMD`, `CODEX_CMD`)
 //! 4. Programmatic registration via `AgentRegistry::register()`
+//!
+//! ## Agent Switching / Fallback
+//!
+//! Configure fallback agents for automatic switching when primary agent fails:
+//! ```toml
+//! [fallback]
+//! developer = ["claude", "codex", "goose"]
+//! reviewer = ["codex", "claude"]
+//! max_retries = 3
+//! retry_delay_ms = 1000
+//! ```
 //!
 //! ## Example TOML Configuration
 //!
@@ -124,6 +135,9 @@ pub struct AgentsConfigFile {
     /// Map of agent name to configuration
     #[serde(default)]
     pub agents: HashMap<String, AgentConfigToml>,
+    /// Fallback configuration for agent switching
+    #[serde(default)]
+    pub fallback: FallbackConfig,
 }
 
 /// Error type for agent configuration loading
@@ -171,59 +185,176 @@ impl AgentConfig {
     }
 }
 
-/// Known agent type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AgentType {
-    Claude,
-    Codex,
-    OpenCode,
-    Aider,
-    Custom,
+/// Fallback configuration for agent switching
+#[derive(Debug, Clone, Deserialize)]
+pub struct FallbackConfig {
+    /// Ordered list of fallback agents for developer role
+    #[serde(default)]
+    pub developer: Vec<String>,
+    /// Ordered list of fallback agents for reviewer role
+    #[serde(default)]
+    pub reviewer: Vec<String>,
+    /// Maximum number of retries before giving up
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    /// Delay between retries in milliseconds
+    #[serde(default = "default_retry_delay_ms")]
+    pub retry_delay_ms: u64,
 }
 
-impl std::fmt::Display for AgentType {
+fn default_max_retries() -> u32 {
+    3
+}
+
+fn default_retry_delay_ms() -> u64 {
+    1000
+}
+
+impl Default for FallbackConfig {
+    fn default() -> Self {
+        Self {
+            developer: Vec::new(),
+            reviewer: Vec::new(),
+            max_retries: default_max_retries(),
+            retry_delay_ms: default_retry_delay_ms(),
+        }
+    }
+}
+
+impl FallbackConfig {
+    /// Get fallback agents for a role
+    pub fn get_fallbacks(&self, role: AgentRole) -> &[String] {
+        match role {
+            AgentRole::Developer => &self.developer,
+            AgentRole::Reviewer => &self.reviewer,
+        }
+    }
+
+    /// Check if fallback is configured for a role
+    pub fn has_fallbacks(&self, role: AgentRole) -> bool {
+        !self.get_fallbacks(role).is_empty()
+    }
+}
+
+/// Agent role (developer or reviewer)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentRole {
+    Developer,
+    Reviewer,
+}
+
+impl std::fmt::Display for AgentRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AgentType::Claude => write!(f, "claude"),
-            AgentType::Codex => write!(f, "codex"),
-            AgentType::OpenCode => write!(f, "opencode"),
-            AgentType::Aider => write!(f, "aider"),
-            AgentType::Custom => write!(f, "custom"),
+            AgentRole::Developer => write!(f, "developer"),
+            AgentRole::Reviewer => write!(f, "reviewer"),
         }
     }
 }
 
-impl AgentType {
-    /// Parse agent type from string
-    pub fn parse(s: &str) -> Option<AgentType> {
-        match s.to_lowercase().as_str() {
-            "claude" => Some(AgentType::Claude),
-            "codex" => Some(AgentType::Codex),
-            "opencode" => Some(AgentType::OpenCode),
-            "aider" => Some(AgentType::Aider),
-            _ => None,
-        }
+/// Error classification for agent failures (to determine if retry is appropriate)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentErrorKind {
+    /// API rate limit exceeded - retry after delay
+    RateLimited,
+    /// Token/context limit exceeded - may need different agent
+    TokenExhausted,
+    /// API temporarily unavailable - retry
+    ApiUnavailable,
+    /// Authentication failure - switch agent
+    AuthFailure,
+    /// Command not found - switch agent
+    CommandNotFound,
+    /// Other transient error - retry
+    Transient,
+    /// Permanent failure - do not retry
+    Permanent,
+}
+
+impl AgentErrorKind {
+    /// Determine if this error should trigger a retry
+    pub fn should_retry(&self) -> bool {
+        matches!(
+            self,
+            AgentErrorKind::RateLimited
+                | AgentErrorKind::ApiUnavailable
+                | AgentErrorKind::Transient
+        )
     }
 
-    /// Detect agent type from command string
-    pub fn from_cmd(cmd: &str) -> AgentType {
-        if cmd.contains("claude") {
-            AgentType::Claude
-        } else if cmd.contains("codex") {
-            AgentType::Codex
-        } else if cmd.contains("opencode") {
-            AgentType::OpenCode
-        } else if cmd.contains("aider") {
-            AgentType::Aider
-        } else {
-            AgentType::Custom
+    /// Determine if this error should trigger a fallback to another agent
+    pub fn should_fallback(&self) -> bool {
+        matches!(
+            self,
+            AgentErrorKind::TokenExhausted
+                | AgentErrorKind::AuthFailure
+                | AgentErrorKind::CommandNotFound
+        )
+    }
+
+    /// Classify an error from exit code and output
+    pub fn classify(exit_code: i32, stderr: &str) -> Self {
+        let stderr_lower = stderr.to_lowercase();
+
+        // Rate limiting indicators
+        if stderr_lower.contains("rate limit")
+            || stderr_lower.contains("too many requests")
+            || stderr_lower.contains("429")
+        {
+            return AgentErrorKind::RateLimited;
         }
+
+        // Token/context exhaustion
+        if stderr_lower.contains("token")
+            || stderr_lower.contains("context length")
+            || stderr_lower.contains("maximum context")
+            || stderr_lower.contains("too long")
+        {
+            return AgentErrorKind::TokenExhausted;
+        }
+
+        // API unavailable
+        if stderr_lower.contains("service unavailable")
+            || stderr_lower.contains("503")
+            || stderr_lower.contains("502")
+            || stderr_lower.contains("timeout")
+            || stderr_lower.contains("connection refused")
+        {
+            return AgentErrorKind::ApiUnavailable;
+        }
+
+        // Auth failures
+        if stderr_lower.contains("unauthorized")
+            || stderr_lower.contains("authentication")
+            || stderr_lower.contains("401")
+            || stderr_lower.contains("api key")
+            || stderr_lower.contains("invalid token")
+        {
+            return AgentErrorKind::AuthFailure;
+        }
+
+        // Command not found
+        if exit_code == 127
+            || stderr_lower.contains("command not found")
+            || stderr_lower.contains("not found")
+            || stderr_lower.contains("no such file")
+        {
+            return AgentErrorKind::CommandNotFound;
+        }
+
+        // Transient errors (exit codes that might succeed on retry)
+        if exit_code == 1 && stderr_lower.contains("error") {
+            return AgentErrorKind::Transient;
+        }
+
+        AgentErrorKind::Permanent
     }
 }
 
 /// Agent registry
 pub struct AgentRegistry {
     agents: HashMap<String, AgentConfig>,
+    fallback: FallbackConfig,
 }
 
 impl AgentRegistry {
@@ -231,6 +362,7 @@ impl AgentRegistry {
     pub fn new() -> Self {
         let mut registry = Self {
             agents: HashMap::new(),
+            fallback: FallbackConfig::default(),
         };
 
         // Register default agents
@@ -309,6 +441,76 @@ impl AgentRegistry {
             },
         );
 
+        // Goose - Block's open-source AI agent
+        // https://github.com/block/goose
+        registry.register(
+            "goose",
+            AgentConfig {
+                cmd: "goose run".to_string(),
+                json_flag: "--json".to_string(),
+                yolo_flag: "--auto-approve".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+            },
+        );
+
+        // Cline - Autonomous coding agent
+        // https://github.com/cline/cline
+        registry.register(
+            "cline",
+            AgentConfig {
+                cmd: "cline".to_string(),
+                json_flag: "--json".to_string(),
+                yolo_flag: "--auto".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+            },
+        );
+
+        // Continue.dev CLI (cn)
+        // https://docs.continue.dev/guides/cli
+        registry.register(
+            "continue",
+            AgentConfig {
+                cmd: "cn".to_string(),
+                json_flag: String::new(),
+                yolo_flag: "--allow".to_string(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+            },
+        );
+
+        // Amazon Q Developer CLI
+        // https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html
+        registry.register(
+            "amazon-q",
+            AgentConfig {
+                cmd: "q chat".to_string(),
+                json_flag: String::new(),
+                yolo_flag: "--trust-all-tools".to_string(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+            },
+        );
+
+        // Gemini CLI
+        // https://github.com/google-gemini/gemini-cli
+        registry.register(
+            "gemini",
+            AgentConfig {
+                cmd: "gemini".to_string(),
+                json_flag: "--json".to_string(),
+                yolo_flag: "--auto".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+            },
+        );
+
         registry
     }
 
@@ -360,6 +562,8 @@ impl AgentRegistry {
                 for (name, agent_toml) in config.agents {
                     self.register(&name, agent_toml.into());
                 }
+                // Load fallback configuration
+                self.fallback = config.fallback;
                 Ok(count)
             }
             None => Ok(0),
@@ -374,6 +578,47 @@ impl AgentRegistry {
         let mut registry = Self::new();
         registry.load_from_file(path)?;
         Ok(registry)
+    }
+
+    /// Get the fallback configuration
+    pub fn fallback_config(&self) -> &FallbackConfig {
+        &self.fallback
+    }
+
+    /// Set the fallback configuration
+    pub fn set_fallback(&mut self, fallback: FallbackConfig) {
+        self.fallback = fallback;
+    }
+
+    /// Get all fallback agents for a role that are registered in this registry
+    pub fn available_fallbacks(&self, role: AgentRole) -> Vec<&str> {
+        self.fallback
+            .get_fallbacks(role)
+            .iter()
+            .filter(|name| self.is_known(name))
+            .map(|s| s.as_str())
+            .collect()
+    }
+
+    /// Check if an agent is available (command exists and is executable)
+    pub fn is_agent_available(&self, name: &str) -> bool {
+        if let Some(config) = self.get(name) {
+            // Extract the base command (first word)
+            let base_cmd = config.cmd.split_whitespace().next().unwrap_or(&config.cmd);
+            // Check if the command exists in PATH (portable; avoids shelling out)
+            which::which(base_cmd).is_ok()
+        } else {
+            false
+        }
+    }
+
+    /// List all available (installed) agents
+    pub fn list_available(&self) -> Vec<&str> {
+        self.agents
+            .keys()
+            .filter(|name| self.is_agent_available(name))
+            .map(|s| s.as_str())
+            .collect()
     }
 }
 
@@ -391,12 +636,21 @@ mod tests {
     fn test_agent_registry_defaults() {
         let registry = AgentRegistry::new();
 
+        // Original agents
         assert!(registry.is_known("claude"));
         assert!(registry.is_known("codex"));
         assert!(registry.is_known("driver"));
         assert!(registry.is_known("reviewer"));
         assert!(registry.is_known("opencode"));
         assert!(registry.is_known("aider"));
+
+        // New agents
+        assert!(registry.is_known("goose"));
+        assert!(registry.is_known("cline"));
+        assert!(registry.is_known("continue"));
+        assert!(registry.is_known("amazon-q"));
+        assert!(registry.is_known("gemini"));
+
         assert!(!registry.is_known("unknown_agent"));
     }
 
@@ -459,20 +713,6 @@ mod tests {
         let config = registry.get("testbot").unwrap();
         assert_eq!(config.cmd, "testbot run");
         assert_eq!(config.json_parser, JsonParserType::Claude);
-    }
-
-    #[test]
-    fn test_agent_type_parse() {
-        assert_eq!(AgentType::parse("claude"), Some(AgentType::Claude));
-        assert_eq!(AgentType::parse("CODEX"), Some(AgentType::Codex));
-        assert_eq!(AgentType::parse("unknown"), None);
-    }
-
-    #[test]
-    fn test_agent_type_from_cmd() {
-        assert_eq!(AgentType::from_cmd("claude -p --json"), AgentType::Claude);
-        assert_eq!(AgentType::from_cmd("codex exec --json"), AgentType::Codex);
-        assert_eq!(AgentType::from_cmd("some-other-tool"), AgentType::Custom);
     }
 
     #[test]
@@ -646,5 +886,205 @@ json_parser = "codex"
         assert_eq!(config.cmd, "claude-custom -p");
         assert_eq!(config.json_flag, "--custom-json");
         assert_eq!(config.json_parser, JsonParserType::Codex);
+    }
+
+    #[test]
+    fn test_new_agent_configs() {
+        let registry = AgentRegistry::new();
+
+        // Test Goose config
+        let goose = registry.get("goose").unwrap();
+        assert!(goose.cmd.contains("goose"));
+        assert_eq!(goose.json_parser, JsonParserType::Generic);
+
+        // Test Cline config
+        let cline = registry.get("cline").unwrap();
+        assert!(cline.cmd.contains("cline"));
+
+        // Test Continue config
+        let cont = registry.get("continue").unwrap();
+        assert!(cont.cmd.contains("cn"));
+
+        // Test Amazon Q config
+        let q = registry.get("amazon-q").unwrap();
+        assert!(q.cmd.contains("q"));
+        assert!(q.yolo_flag.contains("trust"));
+
+        // Test Gemini config
+        let gemini = registry.get("gemini").unwrap();
+        assert!(gemini.cmd.contains("gemini"));
+    }
+
+    #[test]
+    fn test_fallback_config_defaults() {
+        let config = FallbackConfig::default();
+        assert!(config.developer.is_empty());
+        assert!(config.reviewer.is_empty());
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.retry_delay_ms, 1000);
+    }
+
+    #[test]
+    fn test_fallback_config_get_fallbacks() {
+        let config = FallbackConfig {
+            developer: vec!["claude".to_string(), "codex".to_string()],
+            reviewer: vec!["codex".to_string(), "goose".to_string()],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.get_fallbacks(AgentRole::Developer),
+            &["claude", "codex"]
+        );
+        assert_eq!(
+            config.get_fallbacks(AgentRole::Reviewer),
+            &["codex", "goose"]
+        );
+    }
+
+    #[test]
+    fn test_fallback_config_has_fallbacks() {
+        let mut config = FallbackConfig::default();
+        assert!(!config.has_fallbacks(AgentRole::Developer));
+        assert!(!config.has_fallbacks(AgentRole::Reviewer));
+
+        config.developer = vec!["claude".to_string()];
+        assert!(config.has_fallbacks(AgentRole::Developer));
+        assert!(!config.has_fallbacks(AgentRole::Reviewer));
+    }
+
+    #[test]
+    fn test_agent_error_kind_classify() {
+        // Rate limiting
+        assert_eq!(
+            AgentErrorKind::classify(1, "rate limit exceeded"),
+            AgentErrorKind::RateLimited
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "Error: 429 Too Many Requests"),
+            AgentErrorKind::RateLimited
+        );
+
+        // Token exhaustion
+        assert_eq!(
+            AgentErrorKind::classify(1, "context length exceeded"),
+            AgentErrorKind::TokenExhausted
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "maximum token limit"),
+            AgentErrorKind::TokenExhausted
+        );
+
+        // API unavailable
+        assert_eq!(
+            AgentErrorKind::classify(1, "service unavailable"),
+            AgentErrorKind::ApiUnavailable
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "connection refused"),
+            AgentErrorKind::ApiUnavailable
+        );
+
+        // Auth failures
+        assert_eq!(
+            AgentErrorKind::classify(1, "unauthorized"),
+            AgentErrorKind::AuthFailure
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "invalid api key"),
+            AgentErrorKind::AuthFailure
+        );
+
+        // Command not found
+        assert_eq!(
+            AgentErrorKind::classify(127, ""),
+            AgentErrorKind::CommandNotFound
+        );
+        assert_eq!(
+            AgentErrorKind::classify(1, "command not found"),
+            AgentErrorKind::CommandNotFound
+        );
+    }
+
+    #[test]
+    fn test_agent_error_kind_should_retry() {
+        assert!(AgentErrorKind::RateLimited.should_retry());
+        assert!(AgentErrorKind::ApiUnavailable.should_retry());
+        assert!(AgentErrorKind::Transient.should_retry());
+
+        assert!(!AgentErrorKind::TokenExhausted.should_retry());
+        assert!(!AgentErrorKind::AuthFailure.should_retry());
+        assert!(!AgentErrorKind::CommandNotFound.should_retry());
+        assert!(!AgentErrorKind::Permanent.should_retry());
+    }
+
+    #[test]
+    fn test_agent_error_kind_should_fallback() {
+        assert!(AgentErrorKind::TokenExhausted.should_fallback());
+        assert!(AgentErrorKind::AuthFailure.should_fallback());
+        assert!(AgentErrorKind::CommandNotFound.should_fallback());
+
+        assert!(!AgentErrorKind::RateLimited.should_fallback());
+        assert!(!AgentErrorKind::ApiUnavailable.should_fallback());
+        assert!(!AgentErrorKind::Transient.should_fallback());
+        assert!(!AgentErrorKind::Permanent.should_fallback());
+    }
+
+    #[test]
+    fn test_registry_available_fallbacks() {
+        let mut registry = AgentRegistry::new();
+        registry.set_fallback(FallbackConfig {
+            developer: vec![
+                "claude".to_string(),
+                "nonexistent".to_string(),
+                "codex".to_string(),
+            ],
+            reviewer: vec![],
+            max_retries: 3,
+            retry_delay_ms: 1000,
+        });
+
+        let fallbacks = registry.available_fallbacks(AgentRole::Developer);
+        assert!(fallbacks.contains(&"claude"));
+        assert!(fallbacks.contains(&"codex"));
+        assert!(!fallbacks.contains(&"nonexistent"));
+    }
+
+    #[test]
+    fn test_fallback_config_from_toml() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("agents.toml");
+
+        let mut file = std::fs::File::create(&config_path).unwrap();
+        writeln!(
+            file,
+            r#"
+[fallback]
+developer = ["claude", "codex", "goose"]
+reviewer = ["codex", "claude"]
+max_retries = 5
+retry_delay_ms = 2000
+
+[agents.testbot]
+cmd = "testbot exec"
+"#
+        )
+        .unwrap();
+
+        let registry = AgentRegistry::with_config_file(&config_path).unwrap();
+        let fallback = registry.fallback_config();
+
+        assert_eq!(fallback.developer, vec!["claude", "codex", "goose"]);
+        assert_eq!(fallback.reviewer, vec!["codex", "claude"]);
+        assert_eq!(fallback.max_retries, 5);
+        assert_eq!(fallback.retry_delay_ms, 2000);
+    }
+
+    #[test]
+    fn test_agent_role_display() {
+        assert_eq!(format!("{}", AgentRole::Developer), "developer");
+        assert_eq!(format!("{}", AgentRole::Reviewer), "reviewer");
     }
 }
