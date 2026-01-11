@@ -184,6 +184,10 @@ pub(crate) struct Config {
     pub(crate) verbosity: Verbosity,
     /// Commit message
     pub(crate) commit_msg: String,
+    /// Isolation mode: when true, NOTES.md and ISSUES.md are not generated and
+    /// any existing ones are deleted at the start of each run. This prevents
+    /// context contamination from previous runs. Default: true.
+    pub(crate) isolation_mode: bool,
 }
 
 impl Config {
@@ -242,6 +246,12 @@ impl Config {
                 .map(Verbosity::from)
                 .unwrap_or(Verbosity::Verbose),
             commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
+            // Isolation mode is ON by default to prevent context contamination.
+            // Set RALPH_ISOLATION_MODE=0 to disable (allows NOTES.md/ISSUES.md).
+            isolation_mode: env::var("RALPH_ISOLATION_MODE")
+                .ok()
+                .and_then(|s| parse_env_bool(&s))
+                .unwrap_or(true),
         };
 
         // Deprecation warning for removed flag
@@ -378,5 +388,34 @@ mod tests {
         assert_eq!(config.reviewer_reviews, 2);
         // Default verbosity is now Verbose
         assert_eq!(config.verbosity, Verbosity::Verbose);
+        // Isolation mode is ON by default to prevent context contamination
+        assert!(config.isolation_mode);
+    }
+
+    #[test]
+    fn test_isolation_mode_env_parsing() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Default is true (isolation on)
+        env::remove_var("RALPH_ISOLATION_MODE");
+        let cfg = Config::from_env();
+        assert!(cfg.isolation_mode);
+
+        // Can disable with common falsy values
+        env::set_var("RALPH_ISOLATION_MODE", "0");
+        let cfg = Config::from_env();
+        assert!(!cfg.isolation_mode);
+
+        env::set_var("RALPH_ISOLATION_MODE", "false");
+        let cfg = Config::from_env();
+        assert!(!cfg.isolation_mode);
+
+        // Can explicitly enable
+        env::set_var("RALPH_ISOLATION_MODE", "1");
+        let cfg = Config::from_env();
+        assert!(cfg.isolation_mode);
+
+        // Clean up
+        env::remove_var("RALPH_ISOLATION_MODE");
     }
 }
