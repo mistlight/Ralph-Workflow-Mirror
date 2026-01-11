@@ -1,0 +1,36 @@
+# Example agents config for Ralph
+#
+# Copy this file to `.agent/agents.toml` in your repo to enable it:
+#
+#   mkdir -p .agent
+#   cp examples/agents.toml .agent/agents.toml
+#
+# Then select an agent by name:
+#
+#   ralph --developer-agent claude --reviewer-agent codex
+#
+
+# Override built-in agent command (optional)
+[agents.claude]
+cmd = "claude -p"
+json_flag = "--output-format=stream-json"
+yolo_flag = "--dangerously-skip-permissions"
+verbose_flag = "--verbose"
+json_parser = "claude"
+
+# Override built-in agent command (optional)
+[agents.codex]
+cmd = "codex exec"
+json_flag = "--json"
+yolo_flag = "--yolo"
+json_parser = "codex"
+
+# Custom agent example
+[agents.myagent]
+cmd = "my-ai-tool run"
+json_flag = "--json-stream"
+yolo_flag = "--auto-fix"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "generic"
+
