@@ -717,13 +717,6 @@ fn main() -> anyhow::Result<()> {
     let colors = Colors::new();
     let mut logger = Logger::new(colors);
 
-    let developer_agent_from_cli = args.developer_agent.is_some();
-    let reviewer_agent_from_cli = args.reviewer_agent.is_some();
-    let preset_from_cli = args.preset.is_some();
-    let developer_agent_from_env =
-        env::var("RALPH_DEVELOPER_AGENT").is_ok() || env::var("RALPH_DRIVER_AGENT").is_ok();
-    let reviewer_agent_from_env = env::var("RALPH_REVIEWER_AGENT").is_ok();
-
     // Load configuration
     let mut config = Config::from_env().with_commit_msg(args.commit_msg);
 
@@ -746,12 +739,12 @@ fn main() -> anyhow::Result<()> {
     if let Some(preset) = args.preset {
         match preset {
             Preset::Default => {
-                config.developer_agent = "claude".to_string();
-                config.reviewer_agent = "codex".to_string();
+                config.developer_agent = Some("claude".to_string());
+                config.reviewer_agent = Some("codex".to_string());
             }
             Preset::Opencode => {
-                config.developer_agent = "opencode".to_string();
-                config.reviewer_agent = "opencode".to_string();
+                config.developer_agent = Some("opencode".to_string());
+                config.reviewer_agent = Some("opencode".to_string());
             }
         }
     }
@@ -763,10 +756,10 @@ fn main() -> anyhow::Result<()> {
         config.reviewer_reviews = reviews;
     }
     if let Some(agent) = args.developer_agent {
-        config.developer_agent = agent;
+        config.developer_agent = Some(agent);
     }
     if let Some(agent) = args.reviewer_agent {
-        config.reviewer_agent = agent;
+        config.reviewer_agent = Some(agent);
     }
 
     // Handle --init-global flag: create global agents.toml if it doesn't exist and exit
@@ -939,26 +932,36 @@ fn main() -> anyhow::Result<()> {
         ));
     }
 
-    // If agent_chain / fallback is configured, use its first entry as the default role agent
-    // unless the user explicitly selected an agent via CLI/env (or via --preset).
-    if !preset_from_cli && !developer_agent_from_cli && !developer_agent_from_env {
-        if let Some(primary) = registry
+    // agent_chain is the SINGLE SOURCE OF TRUTH for default agent selection.
+    // If no agent was explicitly selected via CLI/env/preset, use agent_chain first entry.
+    if config.developer_agent.is_none() {
+        config.developer_agent = registry
             .fallback_config()
             .get_fallbacks(AgentRole::Developer)
             .first()
-        {
-            config.developer_agent = primary.clone();
-        }
+            .cloned();
     }
-    if !preset_from_cli && !reviewer_agent_from_cli && !reviewer_agent_from_env {
-        if let Some(primary) = registry
+    if config.reviewer_agent.is_none() {
+        config.reviewer_agent = registry
             .fallback_config()
             .get_fallbacks(AgentRole::Reviewer)
             .first()
-        {
-            config.reviewer_agent = primary.clone();
-        }
+            .cloned();
     }
+
+    // Resolve final agent names - these are required at this point
+    let developer_agent = config.developer_agent.clone().ok_or_else(|| {
+        anyhow::anyhow!(
+            "No developer agent configured.\n\
+            Set via --developer-agent, RALPH_DEVELOPER_AGENT env, or agent_chain in agents.toml."
+        )
+    })?;
+    let reviewer_agent = config.reviewer_agent.clone().ok_or_else(|| {
+        anyhow::anyhow!(
+            "No reviewer agent configured.\n\
+            Set via --reviewer-agent, RALPH_REVIEWER_AGENT env, or agent_chain in agents.toml."
+        )
+    })?;
 
     if args.list_agents {
         let mut items = registry.list();
@@ -1069,11 +1072,11 @@ fn main() -> anyhow::Result<()> {
         cmd
     } else {
         registry
-            .developer_cmd(&config.developer_agent)
+            .developer_cmd(&developer_agent)
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "Unknown developer agent '{}'. Use --list-agents or define it in {}.",
-                    config.developer_agent,
+                    developer_agent,
                     agents_config_path.display()
                 )
             })?
@@ -1082,11 +1085,11 @@ fn main() -> anyhow::Result<()> {
         cmd
     } else {
         registry
-            .reviewer_cmd(&config.reviewer_agent)
+            .reviewer_cmd(&reviewer_agent)
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "Unknown reviewer agent '{}'. Use --list-agents or define it in {}.",
-                    config.reviewer_agent,
+                    reviewer_agent,
                     agents_config_path.display()
                 )
             })?
@@ -1125,7 +1128,7 @@ fn main() -> anyhow::Result<()> {
             &colors,
             &config,
             &registry,
-            &config.reviewer_agent,
+            &reviewer_agent,
         );
 
         // Verify and display the generated message
@@ -1186,8 +1189,8 @@ fn main() -> anyhow::Result<()> {
         colors.cyan(),
         colors.reset(),
         colors.dim(),
-        config.developer_agent,
-        config.reviewer_agent,
+        developer_agent,
+        reviewer_agent,
         colors.reset(),
         colors.bold(),
         colors.cyan(),
@@ -1221,7 +1224,7 @@ fn main() -> anyhow::Result<()> {
         colors.bold(),
         config.developer_iters,
         colors.reset(),
-        config.developer_agent
+        developer_agent
     ));
 
     let mut prev_snap = git_snapshot()?;
@@ -1258,7 +1261,7 @@ fn main() -> anyhow::Result<()> {
             &colors,
             &config,
             &registry,
-            &config.developer_agent,
+            &developer_agent,
         );
 
         // Verify PLAN.md was created (required)
@@ -1302,7 +1305,7 @@ fn main() -> anyhow::Result<()> {
             &colors,
             &config,
             &registry,
-            &config.developer_agent,
+            &developer_agent,
         )?;
 
         if exit_code != 0 {
@@ -1371,7 +1374,7 @@ fn main() -> anyhow::Result<()> {
         colors.bold(),
         config.reviewer_reviews,
         colors.reset(),
-        config.reviewer_agent
+        reviewer_agent
     ));
 
     // Initial review
@@ -1396,7 +1399,7 @@ fn main() -> anyhow::Result<()> {
         &colors,
         &config,
         &registry,
-        &config.reviewer_agent,
+        &reviewer_agent,
     );
     stats.reviewer_runs_completed += 1;
 
@@ -1422,7 +1425,7 @@ fn main() -> anyhow::Result<()> {
         &colors,
         &config,
         &registry,
-        &config.reviewer_agent,
+        &reviewer_agent,
     );
     stats.reviewer_runs_completed += 1;
 
@@ -1454,7 +1457,7 @@ fn main() -> anyhow::Result<()> {
             &colors,
             &config,
             &registry,
-            &config.reviewer_agent,
+            &reviewer_agent,
         );
         stats.reviewer_runs_completed += 1;
     }
@@ -1486,7 +1489,7 @@ fn main() -> anyhow::Result<()> {
         &colors,
         &config,
         &registry,
-        &config.reviewer_agent,
+        &reviewer_agent,
     );
     stats.reviewer_runs_completed += 1;
 

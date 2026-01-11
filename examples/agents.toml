@@ -163,30 +163,6 @@ can_commit = true
 json_parser = "gemini"
 
 # =============================================================================
-# ROLE-FRIENDLY ALIASES
-# =============================================================================
-# These aliases let you configure which agent backs each role without changing
-# your CLI commands. Override these to use different agents for each role.
-
-# Default developer role (alias for claude)
-[agents.driver]
-cmd = "claude -p"
-json_flag = "--output-format=stream-json"
-yolo_flag = "--dangerously-skip-permissions"
-verbose_flag = "--verbose"
-can_commit = true
-json_parser = "claude"
-
-# Default reviewer role (alias for codex)
-[agents.reviewer]
-cmd = "codex exec"
-json_flag = "--json"
-yolo_flag = "--full-auto"
-verbose_flag = ""
-can_commit = true
-json_parser = "codex"
-
-# =============================================================================
 # AGENT CHAIN CONFIGURATION (required)
 # =============================================================================
 # The agent chain defines the preferred agent (first in list) and fallback
