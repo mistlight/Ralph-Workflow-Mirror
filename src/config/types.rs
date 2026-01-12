@@ -187,8 +187,6 @@ pub(crate) struct Config {
     pub(crate) interactive: bool,
     /// Path to save last prompt
     pub(crate) prompt_path: PathBuf,
-    /// Path to agents configuration file (default: .agent/agents.toml)
-    pub(crate) agents_config_path: PathBuf,
     /// Developer context level (0=minimal, 1=normal)
     pub(crate) developer_context: u8,
     /// Reviewer context level (0=minimal/fresh eyes, 1=normal)
@@ -221,6 +219,6 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        super::parser::from_env()
+        super::loader::load_config().0
     }
 }

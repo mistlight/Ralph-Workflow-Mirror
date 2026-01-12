@@ -4,7 +4,7 @@
 //! - [`Args`] struct with clap configuration for command-line argument parsing
 //! - `Preset` enum for preset agent configurations
 //! - CLI handler functions for `--list-agents`, `--list-providers`, `--diagnose`
-//! - Config initialization handlers for `--init`, `--init-global`
+//! - Config initialization handlers for `--init`, `--init-global`, `--init-legacy`
 //!
 //! # Module Structure
 //!
@@ -12,7 +12,7 @@
 //! - [`presets`] - Preset enum and apply_args_to_config
 //! - [`providers`] - Provider listing and info display
 //! - [`handlers`] - Command handlers (list-agents, diagnose, dry-run)
-//! - [`init`] - Config initialization handlers (--init, --init-global)
+//! - [`init`] - Config initialization handlers (--init, --init-global, --init-legacy)
 
 mod args;
 mod handlers;
@@ -25,6 +25,6 @@ pub use args::Args;
 pub use handlers::{
     handle_diagnose, handle_dry_run, handle_list_agents, handle_list_available_agents,
 };
-pub use init::{ensure_config_or_create, handle_init, handle_init_global};
+pub use init::{handle_init_global, handle_init_legacy};
 pub use presets::apply_args_to_config;
 pub use providers::handle_list_providers;

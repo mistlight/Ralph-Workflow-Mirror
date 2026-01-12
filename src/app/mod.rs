@@ -74,13 +74,13 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // Initialize configuration and agent registry
     let init_result = match initialize_config(&args, &colors, &mut logger)? {
         Some(result) => result,
-        None => return Ok(()), // Early exit (--init, --init-global)
+        None => return Ok(()), // Early exit (--init/--init-global/--init-legacy)
     };
 
     let config_init::ConfigInitResult {
         config,
         registry,
-        agents_config_path,
+        config_path,
         config_sources,
     } = init_result;
 
@@ -96,13 +96,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
 
     // Handle --diagnose
     if args.diagnose {
-        handle_diagnose(
-            &colors,
-            &config,
-            &registry,
-            &agents_config_path,
-            &config_sources,
-        );
+        handle_diagnose(&colors, &config, &registry, &config_path, &config_sources);
         return Ok(());
     }
 
@@ -123,7 +117,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         &registry,
         &developer_agent,
         &reviewer_agent,
-        &agents_config_path,
+        &config_path,
     )?;
 
     // Validate agents are workflow-capable
@@ -132,7 +126,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         &registry,
         &developer_agent,
         &reviewer_agent,
-        &agents_config_path,
+        &config_path,
     )?;
 
     // Set up git repo and working directory

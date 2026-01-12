@@ -20,17 +20,8 @@ fn init_git_repo(dir: &TempDir) {
     // Create required files for workflow tests
     fs::write(dir_path.join("PROMPT.md"), "# Test Requirements\nTest task").unwrap();
 
-    // Create .agent directory and minimal agents.toml with required agent_chain
+    // Create .agent directory for workflow artifacts
     fs::create_dir_all(dir_path.join(".agent")).unwrap();
-    fs::write(
-        dir_path.join(".agent/agents.toml"),
-        r#"# Minimal test config
-[agent_chain]
-developer = ["claude"]
-reviewer = ["codex"]
-"#,
-    )
-    .unwrap();
 }
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -128,9 +119,9 @@ fn ralph_init_creates_config_file() {
     let config_path = dir_path.join(".agent/agents.toml");
     assert!(!config_path.exists());
 
-    // Run ralph --init
+    // Run ralph --init-legacy
     let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
-    cmd.current_dir(dir_path).arg("--init");
+    cmd.current_dir(dir_path).arg("--init-legacy");
 
     let output = cmd.output().unwrap();
     assert!(output.status.success());
@@ -157,8 +148,10 @@ fn ralph_uses_agent_chain_first_entries_as_defaults() {
 
     // Ensure no explicit agent selection via env is in play.
     // base_env doesn't set RALPH_DEVELOPER_AGENT / RALPH_REVIEWER_AGENT.
+    let config_home = dir.path().join(".config");
+    fs::create_dir_all(&config_home).unwrap();
     fs::write(
-        dir.path().join(".agent/agents.toml"),
+        config_home.join("ralph-workflow.toml"),
         r#"[agent_chain]
 developer = ["opencode", "claude"]
 reviewer = ["aider", "codex"]
@@ -169,6 +162,7 @@ reviewer = ["aider", "codex"]
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
+        .env("XDG_CONFIG_HOME", &config_home)
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
         .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
@@ -204,9 +198,9 @@ reviewer = ["codex"]
 "#;
     fs::write(dir_path.join(".agent/agents.toml"), custom_config).unwrap();
 
-    // Run ralph --init
+    // Run ralph --init-legacy
     let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
-    cmd.current_dir(dir_path).arg("--init");
+    cmd.current_dir(dir_path).arg("--init-legacy");
 
     let output = cmd.output().unwrap();
     assert!(output.status.success());
@@ -399,25 +393,30 @@ fn ralph_first_run_creates_config_and_exits() {
     // Create PROMPT.md (required)
     fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
 
-    let config_path = dir_path.join(".agent/agents.toml");
-    assert!(!config_path.exists());
+    // Use a temp config dir so the test doesn't touch the real home directory.
+    let config_home = dir_path.join(".config");
+    fs::create_dir_all(&config_home).unwrap();
 
-    // Run ralph without --init (first run behavior)
+    let unified_config_path = config_home.join("ralph-workflow.toml");
+    assert!(!unified_config_path.exists());
+
+    // Run ralph --init-global (unified config)
     let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
-    cmd.current_dir(dir_path).env("RALPH_INTERACTIVE", "0");
+    cmd.current_dir(dir_path)
+        .env("XDG_CONFIG_HOME", &config_home)
+        .arg("--init-global");
 
     let output = cmd.output().unwrap();
 
-    // Should exit successfully (not run the full pipeline)
+    // Should exit successfully after creating the config
     assert!(output.status.success());
 
-    // Config file should now exist
-    assert!(config_path.exists());
+    // Unified config file should now exist
+    assert!(unified_config_path.exists());
 
-    // Output should prompt user to edit or run again
+    // Output should indicate file was created or already exists
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("No agents.toml found"));
-    assert!(stdout.contains("Options"));
+    assert!(stdout.contains("unified config"));
 }
 
 // ============================================================================
