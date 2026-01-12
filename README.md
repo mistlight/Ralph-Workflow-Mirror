@@ -1,30 +1,32 @@
-# Ralph
+# Ralph Workflow 
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 
-**Ralph automates your AI coding workflow.** Write what you want in plain English, and Ralph coordinates AI agents to build it, review it, and commit it - all hands-free.
+**Ralph Workflow automates your AI coding workflow.** Write what you want in plain English, and Ralph coordinates AI agents to build it, review it, and commit it - all hands-free.
 
-Inspired by [Geoffrey Huntley's Ralph concept](https://ghuntley.com/ralph/).
+Inspired by [Geoffrey Huntley's Ralph Workflow concept](https://ghuntley.com/ralph/).
+
+I created Ralph Workflow to enable this workflow with different AI agents, with intelligent fallback when you run out of tokens in Claude for instance, so you can truly run this very flexibly.
 
 ## How It Works
 
 ```
-You write PROMPT.md     Ralph runs AI agents      You get working code
-describing what         to implement and          committed to your
-you want built          review the changes        git repository
-       |                       |                        |
-       v                       v                        v
-   "Add a dark            Developer Agent         git commit -m
-    mode toggle"          writes the code         "feat: add dark
-                               |                  mode toggle"
+You write PROMPT.md     Ralph Workflow runs AI agents      You get working code
+describing what         to implement and                   committed to your
+you want built          review the changes                 git repository
+       |                       |                                |
+       v                       v                                v
+   "Add a dark            Developer Agent                  git commit -m
+    mode toggle"          writes the code                  "feat: add dark
+                               |                            mode toggle"
                                v
                           Reviewer Agent
                           checks quality
                           and fixes issues
 ```
 
-**That's it.** You describe your goal, Ralph does the coding.
+**That's it.** You describe your goal, Ralph Workflow does the coding.
 
 ## Who Is This For?
 
@@ -35,23 +37,23 @@ you want built          review the changes        git repository
 
 ## Quick Start
 
-### 1. Install Ralph
+### 1. Install Ralph Workflow
 
 ```bash
 # Option A: From source (requires Rust)
-git clone https://codeberg.org/mistlight/RalphWithReviewer.git
-cd RalphWithReviewer
+git clone https://codeberg.org/mistlight/Ralph WorkflowWithReviewer.git
+cd Ralph WorkflowWithReviewer
 cargo install --path .
 
 # Option B: Using Makefile
-git clone https://codeberg.org/mistlight/RalphWithReviewer.git
-cd RalphWithReviewer
+git clone https://codeberg.org/mistlight/Ralph WorkflowWithReviewer.git
+cd Ralph WorkflowWithReviewer
 make install-local
 ```
 
 ### 2. Install AI Agents
 
-Ralph needs AI coding tools to do the actual work. Install at least one:
+Ralph Workflow needs AI coding tools to do the actual work. Install at least one:
 
 | Agent | Install | Notes |
 |-------|---------|-------|
@@ -62,7 +64,7 @@ Ralph needs AI coding tools to do the actual work. Install at least one:
 
 After installing, make sure you've authenticated with your chosen agent (e.g., `claude auth` or set API keys).
 
-### 3. Run Ralph
+### 3. Run Ralph Workflow
 
 Navigate to any git repository and:
 
@@ -70,11 +72,11 @@ Navigate to any git repository and:
 # Create a file describing what you want
 echo "Add a button that says Hello World" > PROMPT.md
 
-# Run Ralph
+# Run Ralph Workflow
 ralph
 ```
 
-Ralph will:
+Ralph Workflow will:
 1. Create working files in `.agent/` (if they don't exist)
 2. Run the developer agent to implement your prompt
 3. Run the reviewer agent to check and fix issues
@@ -97,7 +99,7 @@ Add a dark mode toggle to the settings page.
 - Apply dark theme immediately when toggled
 ```
 
-### Running Ralph
+### Running Ralph Workflow
 
 ```bash
 # Basic usage - uses agents configured in agent_chain
@@ -127,14 +129,14 @@ ralph --list-available-agents
 
 ### First Run Setup
 
-On first run, Ralph creates a `.agent/` folder in your repo with:
+On first run, Ralph Workflow creates a `.agent/` folder in your repo with:
 - `agents.toml` - Agent configuration (edit to customize)
 - `STATUS.md`, `NOTES.md`, `ISSUES.md` - Working files for agents
 - `logs/` - Agent output logs
 
 ### Choosing Agents
 
-Ralph uses two agents with different roles:
+Ralph Workflow uses two agents with different roles:
 
 | Role | What It Does | Default |
 |------|--------------|---------|
@@ -210,7 +212,7 @@ ralph
 
 ### Language-Specific Code Review
 
-Ralph automatically detects your project's technology stack and provides tailored review guidance:
+Ralph Workflow automatically detects your project's technology stack and provides tailored review guidance:
 
 - **Rust**: Memory safety, lifetime annotations, error handling, unsafe code audit
 - **Python**: PEP 8 compliance, type hints, security (eval, SQL injection)
@@ -246,10 +248,10 @@ RALPH_REVIEW_DEPTH=comprehensive ralph
 
 ### Checkpoint and Resume
 
-Long pipelines can be interrupted. Ralph saves checkpoints at each phase and can resume from the last saved phase start (the last phase may be re-run):
+Long pipelines can be interrupted. Ralph Workflow saves checkpoints at each phase and can resume from the last saved phase start (the last phase may be re-run):
 
 ```bash
-# If Ralph is interrupted, resume from where you left off:
+# If Ralph Workflow is interrupted, resume from where you left off:
 ralph --resume
 ```
 
@@ -280,7 +282,7 @@ The final summary now includes issue metrics from the review phase:
 
 ### Automatic Fallback
 
-If an agent hits rate limits or errors, Ralph automatically switches to the next agent in the chain. Configure fallback chains in `.agent/agents.toml`:
+If an agent hits rate limits or errors, Ralph Workflow automatically switches to the next agent in the chain. Configure fallback chains in `.agent/agents.toml`:
 
 ```toml
 [agent_chain]
@@ -525,7 +527,7 @@ ralph --dry-run
 ralph --resume
 ```
 
-## Files Ralph Creates
+## Files Ralph Workflow Creates
 
 All working files live in `.agent/`:
 
@@ -553,13 +555,13 @@ Add to `.gitignore` if you don't want these tracked:
 
 | Problem | Solution |
 |---------|----------|
-| "Not a git repository" | Run Ralph inside a git repo |
-| "Agent not found" | Install the agent CLI and ensure it's on your PATH. Ralph shows installation hints. |
+| "Not a git repository" | Run Ralph Workflow inside a git repo |
+| "Agent not found" | Install the agent CLI and ensure it's on your PATH. Ralph Workflow shows installation hints. |
 | Garbled/broken output | Set `json_parser = "generic"` for that agent |
-| Rate limit errors | Ralph auto-retries with backoff. Configure fallback agents for faster recovery. |
-| Network/connection errors | Check internet, firewall, VPN. Ralph auto-retries network issues. |
+| Rate limit errors | Ralph Workflow auto-retries with backoff. Configure fallback agents for faster recovery. |
+| Network/connection errors | Check internet, firewall, VPN. Ralph Workflow auto-retries network issues. |
 | Authentication errors | Run `<agent> auth` to authenticate, or check your API key. See below for provider-specific guidance. |
-| No commit created | Ralph falls back to `git commit` if the reviewer doesn't |
+| No commit created | Ralph Workflow falls back to `git commit` if the reviewer doesn't |
 | Nothing happening | Try `ralph --debug` to see what's going on |
 
 ### OpenCode Provider Authentication
@@ -665,41 +667,41 @@ ralph
 
 ## FAQ
 
-### Can I use Ralph at work / in my Fortune 500 company?
+### Can I use Ralph Workflow at work / in my Fortune 500 company?
 
-**Yes, absolutely.** Ralph is a CLI tool you run locally. Using it doesn't affect the license of your code in any way.
+**Yes, absolutely.** Ralph Workflow is a CLI tool you run locally. Using it doesn't affect the license of your code in any way.
 
-### Does the AGPL license apply to code I generate with Ralph?
+### Does the AGPL license apply to code I generate with Ralph Workflow?
 
-**No.** The AGPL-3.0 license covers *only the Ralph tool itself* — the Rust source code in this repository. It does **not** apply to:
+**No.** The AGPL-3.0 license covers *only the Ralph Workflow tool itself* — the Rust source code in this repository. It does **not** apply to:
 
-- Code generated by AI agents that Ralph orchestrates
+- Code generated by AI agents that Ralph Workflow orchestrates
 - Your PROMPT.md files
 - Your project's source code
-- Any output, commits, or artifacts Ralph creates in your repository
+- Any output, commits, or artifacts Ralph Workflow creates in your repository
 
-The code you create with Ralph is entirely yours, under whatever license you choose.
+The code you create with Ralph Workflow is entirely yours, under whatever license you choose.
 
 ### Common AGPL Misconceptions for CLI Tools
 
 | Misconception | Reality |
 |---------------|---------|
 | "Using an AGPL tool makes my code AGPL" | ❌ False. AGPL covers the tool, not its output. Using `gcc` (GPL) doesn't make your C code GPL. Same principle. |
-| "I can't use AGPL tools in a corporate environment" | ❌ False. You can use Ralph freely. You only need to share source if you *modify and distribute Ralph itself*. |
-| "AI-generated code inherits Ralph's license" | ❌ False. The AI agents (Claude, Codex, etc.) generate the code, not Ralph. Ralph just orchestrates. |
-| "My company's legal team will reject this" | Show them this FAQ! Ralph is a local dev tool like `make` or `git`. |
+| "I can't use AGPL tools in a corporate environment" | ❌ False. You can use Ralph Workflow freely. You only need to share source if you *modify and distribute Ralph itself*. |
+| "AI-generated code inherits Ralph Workflow's license" | ❌ False. The AI agents (Claude, Codex, etc.) generate the code, not Ralph. Ralph just orchestrates. |
+| "My company's legal team will reject this" | Show them this FAQ! Ralph Workflow is a local dev tool like `make` or `git`. |
 
 ### What would require me to share source code?
 
-Only if you **modify Ralph itself** and **distribute your modified version** (or provide it as a network service). Normal usage — running Ralph to build your projects — requires nothing from you.
+Only if you **modify Ralph Workflow itself** and **distribute your modified version** (or provide it as a network service). Normal usage — running Ralph to build your projects — requires nothing from you.
 
 ### Is there a commercial/enterprise license available?
 
-For now, no. The AGPL is the only license. But again, you can freely use Ralph in any commercial setting without concern. If you need a different license for redistribution purposes, open an issue.
+For now, no. The AGPL is the only license. But again, you can freely use Ralph Workflow in any commercial setting without concern. If you need a different license for redistribution purposes, open an issue.
 
 ### TL;DR
 
-**Use Ralph anywhere. Your code stays yours. The AGPL only covers Ralph's source code, not anything you create with it.**
+**Use Ralph Workflow anywhere. Your code stays yours. The AGPL only covers Ralph's source code, not anything you create with it.**
 
 ## Contributing
 
