@@ -15,7 +15,10 @@ use crate::utils::{
     delete_plan_file, print_progress, save_checkpoint, update_status, PipelineCheckpoint,
     PipelinePhase,
 };
-use std::fs;
+use serde_json::Value as JsonValue;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 use std::process::Command;
 
 use super::context::PhaseContext;
@@ -156,6 +159,85 @@ pub fn run_development_phase(
     Ok(DevelopmentResult { had_errors })
 }
 
+/// Extract the plan from the agent's JSON log file.
+///
+/// This is a fallback mechanism for when the agent couldn't create PLAN.md directly
+/// (e.g., due to permission denials from GLM). It parses the JSON log to find
+/// the final result text which contains the plan.
+fn try_extract_plan_from_log(
+    logger: &crate::utils::Logger,
+    iteration: u32,
+    _developer_agent: &str,
+) -> anyhow::Result<Option<String>> {
+    // Note: developer_agent is accepted for future use but currently unused
+    // The log directory structure uses the iteration number, not the agent name
+    let log_dir = Path::new(".agent/logs").join(format!("planning_{}", iteration));
+
+    // Try to find any log file in the planning directory
+    let log_entries = match fs::read_dir(&log_dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(None),
+    };
+
+    for entry in log_entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        // Read the log file and parse JSON lines
+        let file = match File::open(&path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        let reader = BufReader::new(file);
+        let mut last_result: Option<String> = None;
+
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+
+            // Skip non-JSON lines
+            if !line.trim().starts_with('{') {
+                continue;
+            }
+
+            // Parse JSON and look for "result" events
+            if let Ok(value) = serde_json::from_str::<JsonValue>(&line) {
+                if let Some(typ) = value.get("type").and_then(|v| v.as_str()) {
+                    if typ == "result" {
+                        if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
+                            last_result = Some(result.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(result) = last_result {
+            // Check if result looks like a plan (contains markdown headers)
+            let result_clean = result.trim().to_string();
+            if result_clean.contains("#") && result_clean.len() > 100 {
+                logger.info(&format!(
+                    "Extracted plan from agent output log: {}",
+                    path.display()
+                ));
+                return Ok(Some(result_clean));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 /// Run the planning step to create PLAN.md.
 fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
     // Save checkpoint at start of planning phase (if enabled)
@@ -205,7 +287,8 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
 }
 
 /// Verify that PLAN.md exists and is non-empty.
-/// If resuming and plan is missing, re-run planning.
+/// If missing, try to extract from agent log output as fallback.
+/// If resuming and plan is still missing, re-run planning.
 fn verify_plan_exists(
     ctx: &mut PhaseContext<'_>,
     iteration: u32,
@@ -220,17 +303,47 @@ fn verify_plan_exists(
         .map(|s| !s.trim().is_empty())
         .unwrap_or(false);
 
+    // Fallback: try to extract plan from agent's JSON log output
+    // This handles cases where agent succeeded but file writes were denied (e.g., GLM permission denials)
+    if !plan_ok {
+        ctx.logger
+            .info("PLAN.md not found; attempting to extract from agent output log...");
+        if let Ok(Some(extracted_plan)) =
+            try_extract_plan_from_log(ctx.logger, iteration, ctx.developer_agent)
+        {
+            // Ensure .agent directory exists
+            if let Some(parent) = plan_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(plan_path, &extracted_plan)?;
+            ctx.logger.success("Extracted plan and created PLAN.md");
+            plan_ok = true;
+        }
+    }
+
     if !plan_ok && resuming_into_development {
         ctx.logger
             .warn("Missing .agent/PLAN.md; rerunning plan generation to recover");
         run_planning_step(ctx, iteration)?;
 
+        // Check again after rerunning
         plan_ok = plan_path
             .exists()
             .then(|| fs::read_to_string(plan_path).ok())
             .flatten()
             .map(|s| !s.trim().is_empty())
             .unwrap_or(false);
+
+        // Try extraction one more time after rerun
+        if !plan_ok {
+            if let Ok(Some(extracted_plan)) =
+                try_extract_plan_from_log(ctx.logger, iteration, ctx.developer_agent)
+            {
+                fs::write(plan_path, &extracted_plan)?;
+                ctx.logger.success("Extracted plan from second attempt and created PLAN.md");
+                plan_ok = true;
+            }
+        }
     }
 
     Ok(plan_ok)
