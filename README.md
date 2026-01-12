@@ -1,11 +1,13 @@
-# Ralph
+# Ralph Workflow
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 
-**Ralph automates your AI coding workflow.** Write what you want in plain English, and Ralph coordinates AI agents to build it, review it, and commit it - all hands-free.
+**Ralph workflow automates your AI coding workflow.** Write what you want in plain English, and Ralph coordinates AI agents to build it, review it, and commit it - all hands-free.
 
 Inspired by [Geoffrey Huntley's Ralph concept](https://ghuntley.com/ralph/).
+
+I created Ralph Workflow to enable this workflow with different AI agents, with intelligent fallback when you run out of tokens in Claude for instance, so you can truly run this very flexibly.
 
 ## How It Works
 
