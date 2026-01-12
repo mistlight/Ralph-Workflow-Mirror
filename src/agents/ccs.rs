@@ -299,7 +299,8 @@ mod tests {
         );
         assert_eq!(config.cmd, "ccs work");
         assert_eq!(config.output_flag, "--output-format=stream-json");
-        assert_eq!(config.yolo_flag, "");
+        // YOLO mode enabled by default for unattended automation
+        assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
@@ -528,8 +529,8 @@ mod tests {
 
         // CCS wraps Claude Code, so it uses Claude's stream-json format
         assert_eq!(config.output_flag, "--output-format=stream-json");
-        // Safety: opt-in only.
-        assert_eq!(config.yolo_flag, "");
+        // YOLO mode enabled by default for unattended automation
+        assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(config.can_commit);
 
