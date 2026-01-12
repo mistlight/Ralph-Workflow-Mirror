@@ -30,13 +30,13 @@ use std::process::Command;
 /// * `colors` - Color configuration for output formatting
 /// * `config` - The current Ralph configuration
 /// * `registry` - The agent registry
-/// * `agents_config_path` - Path to the agents.toml file
+/// * `config_path` - Path to the unified config file
 /// * `config_sources` - List of configuration sources that were loaded
 pub fn handle_diagnose(
     colors: &Colors,
     config: &Config,
     registry: &AgentRegistry,
-    agents_config_path: &Path,
+    config_path: &Path,
     config_sources: &[ConfigSource],
 ) {
     println!(
@@ -48,7 +48,7 @@ pub fn handle_diagnose(
 
     print_system_info(colors);
     print_git_info(colors);
-    print_config_info(colors, config, agents_config_path, config_sources);
+    print_config_info(colors, config, config_path, config_sources);
     print_agent_chain_info(colors, registry);
     print_agent_availability(colors, registry);
     print_prompt_status(colors);
@@ -115,20 +115,20 @@ fn print_git_info(colors: &Colors) {
 fn print_config_info(
     colors: &Colors,
     config: &Config,
-    agents_config_path: &Path,
+    config_path: &Path,
     config_sources: &[ConfigSource],
 ) {
     println!("{}Configuration:{}", colors.bold(), colors.reset());
-    println!("  Config file: {}", agents_config_path.display());
-    println!("  Config exists: {}", agents_config_path.exists());
+    println!("  Unified config: {}", config_path.display());
+    println!("  Config exists: {}", config_path.exists());
     println!(
         "  Review depth: {:?} ({})",
         config.review_depth,
         config.review_depth.description()
     );
     if let Some(global_path) = global_agents_config_path() {
-        println!("  Global config: {}", global_path.display());
-        println!("  Global exists: {}", global_path.exists());
+        println!("  Legacy global agents.toml: {}", global_path.display());
+        println!("  Legacy global exists: {}", global_path.exists());
     }
     if !config_sources.is_empty() {
         println!("  Loaded sources:");

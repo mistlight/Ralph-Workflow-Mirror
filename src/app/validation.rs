@@ -35,13 +35,13 @@ pub fn resolve_required_agents(config: &Config) -> anyhow::Result<ValidatedAgent
     let developer_agent = config.developer_agent.clone().ok_or_else(|| {
         anyhow::anyhow!(
             "No developer agent configured.\n\
-            Set via --developer-agent, RALPH_DEVELOPER_AGENT env, or agent_chain in agents.toml."
+            Set via --developer-agent, RALPH_DEVELOPER_AGENT env, or [agent_chain] in ~/.config/ralph-workflow.toml."
         )
     })?;
     let reviewer_agent = config.reviewer_agent.clone().ok_or_else(|| {
         anyhow::anyhow!(
             "No reviewer agent configured.\n\
-            Set via --reviewer-agent, RALPH_REVIEWER_AGENT env, or agent_chain in agents.toml."
+            Set via --reviewer-agent, RALPH_REVIEWER_AGENT env, or [agent_chain] in ~/.config/ralph-workflow.toml."
         )
     })?;
 
@@ -62,7 +62,7 @@ pub fn resolve_required_agents(config: &Config) -> anyhow::Result<ValidatedAgent
 /// * `registry` - The agent registry
 /// * `developer_agent` - Name of the developer agent
 /// * `reviewer_agent` - Name of the reviewer agent
-/// * `agents_config_path` - Path to agents.toml for error messages
+/// * `config_path` - Path to the unified config file for error messages
 ///
 /// # Returns
 ///
@@ -72,15 +72,15 @@ pub fn validate_agent_commands(
     registry: &AgentRegistry,
     developer_agent: &str,
     reviewer_agent: &str,
-    agents_config_path: &Path,
+    config_path: &Path,
 ) -> anyhow::Result<()> {
     // Validate developer command exists
     if config.developer_cmd.is_none() {
         registry.developer_cmd(developer_agent).ok_or_else(|| {
             anyhow::anyhow!(
-                "Unknown developer agent '{}'. Use --list-agents or define it in {}.",
+                "Unknown developer agent '{}'. Use --list-agents or define it in {} under [agents].",
                 developer_agent,
-                agents_config_path.display()
+                config_path.display()
             )
         })?;
     }
@@ -89,9 +89,9 @@ pub fn validate_agent_commands(
     if config.reviewer_cmd.is_none() {
         registry.reviewer_cmd(reviewer_agent).ok_or_else(|| {
             anyhow::anyhow!(
-                "Unknown reviewer agent '{}'. Use --list-agents or define it in {}.",
+                "Unknown reviewer agent '{}'. Use --list-agents or define it in {} under [agents].",
                 reviewer_agent,
-                agents_config_path.display()
+                config_path.display()
             )
         })?;
     }
@@ -111,7 +111,7 @@ pub fn validate_agent_commands(
 /// * `registry` - The agent registry
 /// * `developer_agent` - Name of the developer agent
 /// * `reviewer_agent` - Name of the reviewer agent
-/// * `agents_config_path` - Path to agents.toml for error messages
+/// * `config_path` - Path to the unified config file for error messages
 ///
 /// # Returns
 ///
@@ -121,7 +121,7 @@ pub fn validate_can_commit(
     registry: &AgentRegistry,
     developer_agent: &str,
     reviewer_agent: &str,
-    agents_config_path: &Path,
+    config_path: &Path,
 ) -> anyhow::Result<()> {
     // Enforce workflow-capable agents unless custom command override provided
     if config.developer_cmd.is_none() {
@@ -129,9 +129,9 @@ pub fn validate_can_commit(
             if !cfg.can_commit {
                 anyhow::bail!(
                     "Developer agent '{}' has can_commit=false and cannot run Ralph's workflow.\n\
-                    Fix: choose a different agent (see --list-agents) or set can_commit=true in {}.",
+                    Fix: choose a different agent (see --list-agents) or set can_commit=true in {} under [agents].",
                     developer_agent,
-                    agents_config_path.display()
+                    config_path.display()
                 );
             }
         }
@@ -141,9 +141,9 @@ pub fn validate_can_commit(
             if !cfg.can_commit {
                 anyhow::bail!(
                     "Reviewer agent '{}' has can_commit=false and cannot run Ralph's workflow.\n\
-                    Fix: choose a different agent (see --list-agents) or set can_commit=true in {}.",
+                    Fix: choose a different agent (see --list-agents) or set can_commit=true in {} under [agents].",
                     reviewer_agent,
-                    agents_config_path.display()
+                    config_path.display()
                 );
             }
         }
@@ -172,7 +172,7 @@ pub fn validate_agent_chains(registry: &AgentRegistry, colors: &Colors) {
         );
         eprintln!();
         eprintln!(
-            "{}Hint:{} Run 'ralph --init' to create a default agents.toml configuration.",
+            "{}Hint:{} Run 'ralph --init-global' to create ~/.config/ralph-workflow.toml.",
             colors.yellow(),
             colors.reset()
         );

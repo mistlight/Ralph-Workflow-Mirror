@@ -3,19 +3,40 @@
 //! The registry holds all configured agents and provides methods for
 //! looking up agents by name, validating agent chains, and checking
 //! agent availability.
+//!
+//! # CCS (Claude Code Switch) Support
+//!
+//! The registry supports CCS aliases using `ccs/alias` syntax.
+//! CCS aliases are resolved on-the-fly to generate `AgentConfig` instances.
+//!
+//! ```ignore
+//! // Using CCS aliases in agent chains
+//! [ccs_aliases]
+//! work = "ccs work"
+//! personal = "ccs personal"
+//!
+//! [agent_chain]
+//! developer = ["ccs/work", "claude"]
+//! ```
 
-use super::config::{
-    global_agents_config_path, AgentConfig, AgentConfigError, AgentsConfigFile, ConfigSource,
-    DEFAULT_AGENTS_TOML,
-};
+use super::ccs::CcsAliasResolver;
+use super::config::{AgentConfig, AgentConfigError, AgentsConfigFile, DEFAULT_AGENTS_TOML};
 use super::fallback::{AgentRole, FallbackConfig};
+use super::parser::JsonParserType;
+use crate::config::{CcsAliasConfig, CcsConfig};
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Agent registry.
+/// Agent registry with CCS alias support.
+///
+/// CCS aliases are eagerly resolved and registered as regular agents
+/// when set via `set_ccs_aliases()`. This allows `get()` to work
+/// uniformly for both regular agents and CCS aliases.
 pub struct AgentRegistry {
     agents: HashMap<String, AgentConfig>,
     fallback: FallbackConfig,
+    /// CCS alias resolver for `ccs/alias` syntax.
+    ccs_resolver: CcsAliasResolver,
 }
 
 impl AgentRegistry {
@@ -27,6 +48,7 @@ impl AgentRegistry {
         let mut registry = Self {
             agents: HashMap::new(),
             fallback,
+            ccs_resolver: CcsAliasResolver::empty(),
         };
 
         for (name, agent_toml) in agents {
@@ -36,17 +58,59 @@ impl AgentRegistry {
         Ok(registry)
     }
 
+    /// Create a new registry with CCS aliases.
+    #[allow(dead_code)] // Part of CCS API, used in tests
+    pub fn with_ccs_aliases(
+        ccs_aliases: HashMap<String, CcsAliasConfig>,
+        defaults: CcsConfig,
+    ) -> Result<Self, AgentConfigError> {
+        let mut registry = Self::new()?;
+        registry.set_ccs_aliases(ccs_aliases, defaults);
+        Ok(registry)
+    }
+
+    /// Set CCS aliases for the registry.
+    ///
+    /// This eagerly registers CCS aliases as agents so they can be
+    /// looked up with `get()` like regular agents.
+    pub fn set_ccs_aliases(
+        &mut self,
+        aliases: HashMap<String, CcsAliasConfig>,
+        defaults: CcsConfig,
+    ) {
+        self.ccs_resolver = CcsAliasResolver::new(aliases.clone(), defaults);
+        // Eagerly register CCS aliases as agents
+        for alias_name in aliases.keys() {
+            let agent_name = format!("ccs/{}", alias_name);
+            if let Some(config) = self.ccs_resolver.try_resolve(&agent_name) {
+                self.agents.insert(agent_name, config);
+            }
+        }
+    }
+
     /// Register a new agent.
     pub fn register(&mut self, name: &str, config: AgentConfig) {
         self.agents.insert(name.to_string(), config);
     }
 
     /// Get agent configuration.
+    ///
+    /// Looks up agents by name, including CCS aliases that were registered
+    /// via `set_ccs_aliases()`. CCS aliases like `ccs/work` are pre-registered
+    /// and can be looked up like any other agent.
     pub fn get(&self, name: &str) -> Option<&AgentConfig> {
         self.agents.get(name)
     }
 
-    /// Check if agent exists.
+    /// Check if an agent name can be resolved.
+    ///
+    /// Since CCS aliases are eagerly registered, this just checks the agents map.
+    #[allow(dead_code)] // Part of CCS API, used in tests
+    pub fn can_resolve(&self, name: &str) -> bool {
+        self.agents.contains_key(name)
+    }
+
+    /// Check if agent exists (registered only, not CCS aliases).
     #[cfg(test)]
     pub fn is_known(&self, name: &str) -> bool {
         self.agents.contains_key(name)
@@ -83,51 +147,49 @@ impl AgentRegistry {
         }
     }
 
-    /// Create a new registry with merged config from multiple sources.
+    /// Apply settings from the unified config (`~/.config/ralph-workflow.toml`).
     ///
-    /// Loads config in order of increasing priority:
-    /// 1. Built-in defaults
-    /// 2. Global config (`~/.config/ralph/agents.toml`)
-    /// 3. Per-repository config (`.agent/agents.toml` or `local_path`)
-    pub fn with_merged_configs<P: AsRef<Path>>(
-        local_path: P,
-    ) -> Result<(Self, Vec<ConfigSource>, Vec<String>), AgentConfigError> {
-        let mut registry = Self::new()?;
-        let mut sources = Vec::new();
-        let mut warnings = Vec::new();
+    /// This merges (in increasing priority):
+    /// 1. Built-in defaults (embedded `examples/agents.toml`)
+    /// 2. Unified config: `[agents]`, `[ccs_aliases]`, and `[agent_chain]` (if present)
+    ///
+    /// Returns the number of agents loaded from unified config, including CCS aliases.
+    pub fn apply_unified_config(&mut self, unified: &crate::config::UnifiedConfig) -> usize {
+        let mut loaded = 0usize;
 
-        // 1. Try global config
-        if let Some(global_path) = global_agents_config_path() {
-            if global_path.exists() {
-                match registry.load_from_file(&global_path) {
-                    Ok(count) => {
-                        sources.push(ConfigSource {
-                            path: global_path,
-                            agents_loaded: count,
-                        });
-                    }
-                    Err(e) => {
-                        warnings.push(format!(
-                            "Failed to load global config from {}: {}",
-                            global_path.display(),
-                            e
-                        ));
-                    }
-                }
+        if !unified.ccs_aliases.is_empty() {
+            loaded += unified.ccs_aliases.len();
+            let aliases = unified
+                .ccs_aliases
+                .iter()
+                .map(|(name, v)| (name.clone(), v.as_config()))
+                .collect::<HashMap<_, _>>();
+            self.set_ccs_aliases(aliases, unified.ccs.clone());
+        }
+
+        if !unified.agents.is_empty() {
+            loaded += unified.agents.len();
+            for (name, agent_toml) in &unified.agents {
+                self.register(
+                    name,
+                    AgentConfig {
+                        cmd: agent_toml.cmd.clone(),
+                        output_flag: agent_toml.output_flag.clone(),
+                        yolo_flag: agent_toml.yolo_flag.clone(),
+                        verbose_flag: agent_toml.verbose_flag.clone(),
+                        can_commit: agent_toml.can_commit,
+                        json_parser: JsonParserType::parse(&agent_toml.json_parser),
+                        model_flag: agent_toml.model_flag.clone(),
+                    },
+                );
             }
         }
 
-        // 2. Try local (per-repo) config
-        let local_path = local_path.as_ref();
-        if local_path.exists() {
-            let count = registry.load_from_file(local_path)?;
-            sources.push(ConfigSource {
-                path: local_path.to_path_buf(),
-                agents_loaded: count,
-            });
+        if let Some(chain) = &unified.agent_chain {
+            self.fallback = chain.clone();
         }
 
-        Ok((registry, sources, warnings))
+        loaded
     }
 
     /// Get the fallback configuration.
@@ -160,8 +222,8 @@ impl AgentRegistry {
 
         if !has_developer && !has_reviewer {
             return Err("No agent chain configured.\n\
-                Please add an [agent_chain] section to your agents.toml file.\n\
-                Run 'ralph --init' to create a default configuration."
+                Please add an [agent_chain] section to ~/.config/ralph-workflow.toml.\n\
+                Run 'ralph --init-global' to create a default configuration."
                 .to_string());
         }
 
@@ -232,6 +294,10 @@ mod tests {
     use std::sync::Mutex;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn default_ccs() -> CcsConfig {
+        CcsConfig::default()
+    }
 
     fn write_stub_executable(dir: &std::path::Path, name: &str) {
         #[cfg(windows)]
@@ -329,5 +395,151 @@ mod tests {
             ..Default::default()
         });
         assert!(registry.validate_agent_chains().is_ok());
+    }
+
+    #[test]
+    fn test_ccs_aliases_registration() {
+        // Test that CCS aliases are registered correctly
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "work".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs work".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+        aliases.insert(
+            "personal".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs personal".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+        aliases.insert(
+            "gemini".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs gemini".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+
+        registry.set_ccs_aliases(aliases, default_ccs());
+
+        // CCS aliases should be registered as agents
+        assert!(registry.is_known("ccs/work"));
+        assert!(registry.is_known("ccs/personal"));
+        assert!(registry.is_known("ccs/gemini"));
+
+        // Get should return valid config
+        let config = registry.get("ccs/work").unwrap();
+        assert_eq!(config.cmd, "ccs work");
+        assert!(config.can_commit);
+        assert_eq!(config.json_parser, JsonParserType::Claude);
+    }
+
+    #[test]
+    fn test_ccs_in_fallback_chain() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let original_path = std::env::var_os("PATH");
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create stub for ccs command
+        write_stub_executable(dir.path(), "ccs");
+        write_stub_executable(dir.path(), "claude");
+
+        let mut new_paths = vec![dir.path().to_path_buf()];
+        if let Some(p) = &original_path {
+            new_paths.extend(std::env::split_paths(p));
+        }
+        let joined = std::env::join_paths(new_paths).unwrap();
+        std::env::set_var("PATH", &joined);
+
+        let mut registry = AgentRegistry::new().unwrap();
+
+        // Register CCS aliases
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "work".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs work".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+        registry.set_ccs_aliases(aliases, default_ccs());
+
+        // Set fallback chain with CCS alias
+        registry.set_fallback(FallbackConfig {
+            developer: vec!["ccs/work".to_string(), "claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            ..Default::default()
+        });
+
+        // ccs/work should be in available fallbacks (since ccs is in PATH)
+        let fallbacks = registry.available_fallbacks(AgentRole::Developer);
+        assert!(fallbacks.contains(&"ccs/work"));
+        assert!(fallbacks.contains(&"claude"));
+
+        // Validate chains should pass
+        assert!(registry.validate_agent_chains().is_ok());
+
+        if let Some(p) = original_path {
+            std::env::set_var("PATH", p);
+        } else {
+            std::env::remove_var("PATH");
+        }
+    }
+
+    #[test]
+    fn test_ccs_aliases_with_registry_constructor() {
+        let registry = AgentRegistry::with_ccs_aliases(HashMap::new(), default_ccs()).unwrap();
+
+        // Should have built-in agents
+        assert!(registry.is_known("claude"));
+        assert!(registry.is_known("codex"));
+
+        // Now test with actual aliases
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "work".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs work".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+
+        let registry = AgentRegistry::with_ccs_aliases(aliases, default_ccs()).unwrap();
+        assert!(registry.is_known("ccs/work"));
+    }
+
+    #[test]
+    fn test_list_includes_ccs_aliases() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "work".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs work".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+        aliases.insert(
+            "personal".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs personal".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+        registry.set_ccs_aliases(aliases, default_ccs());
+
+        let all_agents = registry.list();
+        let ccs_agents: Vec<_> = all_agents
+            .iter()
+            .filter(|(name, _)| name.starts_with("ccs/"))
+            .collect();
+
+        assert_eq!(ccs_agents.len(), 2);
     }
 }

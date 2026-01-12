@@ -21,8 +21,10 @@ use clap::Parser;
     4. Ralph runs reviewer agent (review -> fix -> re-review)\n\
     5. Changes are committed with the provided message\n\n\
 CONFIGURATION:\n\
-    Agents are configured in .agent/agents.toml (created on first run).\n\
-    Run 'ralph --init' to create/view the config file.\n\
+    Primary config: ~/.config/ralph-workflow.toml (recommended)\n\
+    Environment variables (RALPH_*) override config file settings.\n\
+    CCS aliases can be defined in the config and used as 'ccs/alias-name'.\n\
+    Run 'ralph --init-global' to create the unified config file.\n\
     Run 'ralph --list-agents' to see all configured agents.\n\n\
 VERBOSITY LEVELS (-v LEVEL):\n\
     0 = quiet    Minimal output, hide tool inputs (--quiet or -q)\n\
@@ -50,8 +52,7 @@ ENVIRONMENT VARIABLES:\n\
     RALPH_DEVELOPER_ITERS    Developer iterations (default: 5)\n\
     RALPH_REVIEWER_REVIEWS   Re-review passes (default: 2)\n\
     RALPH_VERBOSITY          Verbosity level 0-4 (default: 2)\n\
-    RALPH_ISOLATION_MODE     Isolation mode on/off (default: 1=on)\n\
-    RALPH_AGENTS_CONFIG      Path to agents.toml")]
+    RALPH_ISOLATION_MODE     Isolation mode on/off (default: 1=on)")]
 pub struct Args {
     /// Commit message for the final commit
     #[arg(
@@ -209,16 +210,29 @@ pub struct Args {
     )]
     pub list_providers: bool,
 
-    /// Initialize agents.toml config file and exit
-    #[arg(long, help = "Create .agent/agents.toml with default settings")]
-    pub init: bool,
-
-    /// Initialize global agents.toml config file and exit
+    /// Initialize unified config file and exit (alias for --init-global)
     #[arg(
         long,
-        help = "Create ~/.config/ralph/agents.toml with default settings"
+        conflicts_with_all = ["init_global", "init_legacy"],
+        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)"
+    )]
+    pub init: bool,
+
+    /// Initialize unified config file and exit
+    #[arg(
+        long,
+        conflicts_with_all = ["init", "init_legacy"],
+        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)"
     )]
     pub init_global: bool,
+
+    /// Initialize legacy per-repo agents.toml and exit
+    #[arg(
+        long,
+        conflicts_with_all = ["init", "init_global"],
+        help = "(Legacy) Create .agent/agents.toml with default settings (not recommended)"
+    )]
+    pub init_legacy: bool,
 
     // === Plumbing Commands ===
     // These are low-level operations for scripting and automation
@@ -266,4 +280,13 @@ pub struct Args {
         help = "Review depth: standard (balanced), comprehensive (thorough), security (OWASP-focused), incremental (changed files only)"
     )]
     pub review_depth: Option<String>,
+
+    /// Path to configuration file (default: ~/.config/ralph-workflow.toml)
+    #[arg(
+        long,
+        short = 'c',
+        value_name = "PATH",
+        help = "Path to configuration file (default: ~/.config/ralph-workflow.toml)"
+    )]
+    pub config: Option<std::path::PathBuf>,
 }

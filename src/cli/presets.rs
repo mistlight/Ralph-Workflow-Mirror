@@ -44,7 +44,7 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: &Co
     if let Some(preset) = args.preset.clone() {
         match preset {
             Preset::Default => {
-                // No override; use agent_chain defaults from agents.toml
+                // No override; use agent_chain defaults from the unified config / built-ins
             }
             Preset::Opencode => {
                 config.developer_agent = Some("opencode".to_string());

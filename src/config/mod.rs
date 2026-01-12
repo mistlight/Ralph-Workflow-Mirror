@@ -6,7 +6,16 @@
 //!
 //! - [`types`]: Core configuration types (Config, ReviewDepth, Verbosity)
 //! - [`truncation`]: Truncation limits for verbosity levels
-//! - [`parser`]: Environment variable parsing
+//! - [`parser`]: Environment variable parsing (legacy)
+//! - [`unified`]: Unified configuration format types
+//! - [`loader`]: Unified configuration loader with env overrides
+//!
+//! # Configuration Sources
+//!
+//! Ralph configuration is loaded from (in order of priority):
+//! 1. `~/.config/ralph-workflow.toml` (primary, unified config)
+//! 2. Environment variables (RALPH_*) as overrides
+//! 3. CLI arguments (final override)
 //!
 //! # Usage
 //!
@@ -17,19 +26,38 @@
 //! println!("Developer iterations: {}", config.developer_iters);
 //! ```
 
+pub mod loader;
 pub mod parser;
 pub mod truncation;
 pub mod types;
+pub mod unified;
 
 // Re-export main types at module level for convenience
 pub(crate) use types::{Config, ReviewDepth, Verbosity};
 
+// Re-export unified config types for --init-global handling
+pub(crate) use unified::{
+    unified_config_path, CcsAliasConfig, CcsConfig, ConfigInitResult as UnifiedConfigInitResult,
+    UnifiedConfig,
+};
+
 impl Config {
-    /// Load configuration from environment variables.
+    /// Load configuration from the unified config file with environment overrides.
     ///
-    /// This is a convenience method that delegates to [`parser::from_env`].
+    /// This loads configuration from `~/.config/ralph-workflow.toml` (if it exists),
+    /// then applies environment variable overrides. Any deprecation warnings from
+    /// legacy config files are silently ignored (use `loader::load_config()` if
+    /// you need warnings).
+    ///
+    /// # Configuration Priority
+    ///
+    /// 1. `~/.config/ralph-workflow.toml` (base configuration)
+    /// 2. Environment variables (RALPH_*) as overrides
+    /// 3. CLI arguments (applied separately after this call)
+    #[allow(dead_code)] // Used in tests and kept for backwards compatibility
     pub(crate) fn from_env() -> Self {
-        parser::from_env()
+        let (config, _unified, _warnings) = loader::load_config();
+        config
     }
 }
 

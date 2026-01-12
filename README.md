@@ -130,9 +130,15 @@ ralph --list-available-agents
 ### First Run Setup
 
 On first run, Ralph Workflow creates a `.agent/` folder in your repo with:
-- `agents.toml` - Agent configuration (edit to customize)
 - `STATUS.md`, `NOTES.md`, `ISSUES.md` - Working files for agents
 - `logs/` - Agent output logs
+
+Ralph Workflow configuration lives in a single unified file:
+
+```bash
+ralph --init-global
+# Creates ~/.config/ralph-workflow.toml
+```
 
 ### Choosing Agents
 
@@ -143,7 +149,7 @@ Ralph Workflow uses two agents with different roles:
 | **Developer** | Writes and implements code | First agent in `agent_chain.developer` |
 | **Reviewer** | Reviews code and suggests fixes | First agent in `agent_chain.reviewer` |
 
-The default agent chains are configured in `.agent/agents.toml`. Edit this file to use your preferred agents.
+The default agent chains are configured in `~/.config/ralph-workflow.toml` under `[agent_chain]`.
 
 Change agents via command line:
 ```bash
@@ -158,7 +164,7 @@ export RALPH_REVIEWER_AGENT=opencode
 
 ### Agent Configuration File
 
-Edit `.agent/agents.toml` to customize agents or add new ones:
+Edit `~/.config/ralph-workflow.toml` to customize agents or add new ones:
 
 ```toml
 # Override an existing agent
@@ -171,12 +177,6 @@ yolo_flag = "--dangerously-skip-permissions"
 [agents.myagent]
 cmd = "my-ai-tool run"
 json_parser = "generic"  # Use "generic" if agent doesn't output JSON
-```
-
-Create a global config that applies to all your repos:
-```bash
-ralph --init-global
-# Creates ~/.config/ralph/agents.toml
 ```
 
 ## Environment Variables
@@ -282,7 +282,7 @@ The final summary now includes issue metrics from the review phase:
 
 ### Automatic Fallback
 
-If an agent hits rate limits or errors, Ralph Workflow automatically switches to the next agent in the chain. Configure fallback chains in `.agent/agents.toml`:
+If an agent hits rate limits or errors, Ralph Workflow automatically switches to the next agent in the chain. Configure fallback chains in `~/.config/ralph-workflow.toml`:
 
 ```toml
 [agent_chain]
@@ -458,7 +458,7 @@ reviewer = ["opencode-groq", "opencode-zen-claude", "claude"]
 For cost optimization, Ralph can try different models *within* the same agent before falling back to the next agent. This works with OpenCode's multi-provider support.
 
 ```toml
-# In .agent/agents.toml
+# In ~/.config/ralph-workflow.toml
 [agents.opencode]
 cmd = "opencode run"
 output_flag = "--format json"
@@ -533,7 +533,6 @@ All working files live in `.agent/`:
 
 ```
 .agent/
-├── agents.toml        # Agent configuration
 ├── STATUS.md          # Current status
 ├── NOTES.md           # Agent notes/scratchpad
 ├── ISSUES.md          # Issues found during review
