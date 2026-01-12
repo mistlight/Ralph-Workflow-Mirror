@@ -201,6 +201,18 @@ pub(crate) struct Config {
     pub(crate) developer_cmd: Option<String>,
     /// Reviewer command override
     pub(crate) reviewer_cmd: Option<String>,
+    /// Developer model override (e.g., "-m opencode/glm-4.7-free")
+    /// Passed to the agent's model_flag parameter
+    pub(crate) developer_model: Option<String>,
+    /// Reviewer model override (e.g., "-m opencode/claude-sonnet-4")
+    /// Passed to the agent's model_flag parameter
+    pub(crate) reviewer_model: Option<String>,
+    /// Developer provider override (e.g., "opencode", "anthropic", "openai")
+    /// When set, constructs the model flag as "-m {provider}/{model_name}"
+    pub(crate) developer_provider: Option<String>,
+    /// Reviewer provider override (e.g., "opencode", "anthropic", "openai")
+    /// When set, constructs the model flag as "-m {provider}/{model_name}"
+    pub(crate) reviewer_provider: Option<String>,
     /// Number of developer iterations
     pub(crate) developer_iters: u32,
     /// Number of reviewer re-review passes after fix
@@ -252,11 +264,21 @@ impl Config {
         let developer_cmd = env::var("RALPH_DEVELOPER_CMD").ok();
         let reviewer_cmd = env::var("RALPH_REVIEWER_CMD").ok();
 
+        let developer_model = env::var("RALPH_DEVELOPER_MODEL").ok();
+        let reviewer_model = env::var("RALPH_REVIEWER_MODEL").ok();
+
+        let developer_provider = env::var("RALPH_DEVELOPER_PROVIDER").ok();
+        let reviewer_provider = env::var("RALPH_REVIEWER_PROVIDER").ok();
+
         let config = Self {
             developer_agent,
             reviewer_agent,
             developer_cmd,
             reviewer_cmd,
+            developer_model,
+            reviewer_model,
+            developer_provider,
+            reviewer_provider,
             developer_iters: env::var("RALPH_DEVELOPER_ITERS")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -316,14 +338,6 @@ impl Config {
                 .and_then(|s| parse_env_bool(&s))
                 .unwrap_or(true),
         };
-
-        // Deprecation warning for removed flag
-        if env::var("RALPH_USE_FALLBACK").is_ok() {
-            eprintln!(
-                "Warning: RALPH_USE_FALLBACK is deprecated and ignored. \
-                Fallback behavior is now always enabled via [agent_chain] config."
-            );
-        }
 
         config
     }

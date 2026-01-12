@@ -19,7 +19,7 @@
 //!
 //! Configure fallback agents for automatic switching when primary agent fails:
 //! ```toml
-//! [fallback]
+//! [agent_chain]
 //! developer = ["claude", "codex", "goose"]
 //! reviewer = ["codex", "claude"]
 //! max_retries = 3
@@ -43,6 +43,47 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+/// Strip a leading model-flag prefix and return the raw `provider/model` string.
+///
+/// Supports common OpenCode CLI forms:
+/// - `-m provider/model`
+/// - `--model provider/model`
+/// - `-m=provider/model`
+/// - `--model=provider/model`
+pub(crate) fn strip_model_flag_prefix(model_flag: &str) -> &str {
+    let s = model_flag.trim();
+
+    // Equals-style flags first.
+    if let Some(rest) = s.strip_prefix("-m=") {
+        return rest.trim();
+    }
+    if let Some(rest) = s.strip_prefix("--model=") {
+        return rest.trim();
+    }
+
+    // Space-style flags.
+    if s == "-m" {
+        return "";
+    }
+    if let Some(rest) = s.strip_prefix("-m ") {
+        return rest.trim();
+    }
+    if let Some(rest) = s.strip_prefix("-m\t") {
+        return rest.trim();
+    }
+    if s == "--model" {
+        return "";
+    }
+    if let Some(rest) = s.strip_prefix("--model ") {
+        return rest.trim();
+    }
+    if let Some(rest) = s.strip_prefix("--model\t") {
+        return rest.trim();
+    }
+
+    s
+}
 
 /// Get the global config directory for Ralph
 ///
@@ -68,6 +109,700 @@ pub(crate) struct ConfigSource {
 
 /// Default agents.toml template embedded at compile time
 pub(crate) const DEFAULT_AGENTS_TOML: &str = include_str!("../examples/agents.toml");
+
+/// OpenCode provider type extracted from model flag
+///
+/// OpenCode supports 75+ providers through the AI SDK and Models.dev.
+/// This enum explicitly lists all major provider categories for clear
+/// identification and provider-specific authentication guidance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OpenCodeProviderType {
+    // === OpenCode Gateway Providers ===
+    /// OpenCode Zen gateway (opencode/*) - routes through opencode.ai/zen
+    OpenCodeZen,
+
+    // === Chinese AI Providers ===
+    /// Z.AI Direct API (zai/* or zhipuai/*) - connects to api.z.ai
+    ZaiDirect,
+    /// Z.AI Coding Plan tier (auth selection in OpenCode; model prefix is still zai/* or zhipuai/*).
+    ZaiCodingPlan,
+    /// Moonshot / Kimi (moonshot/*) - Moonshot AI's Kimi K2 models
+    Moonshot,
+    /// MiniMax (minimax/*) - MiniMax AI models
+    MiniMax,
+
+    // === Major Cloud Providers ===
+    /// Anthropic (anthropic/*) - Claude models via Anthropic API
+    Anthropic,
+    /// OpenAI (openai/*) - GPT models via OpenAI API
+    OpenAI,
+    /// Google AI Studio (google/*) - Gemini models via Google AI
+    Google,
+    /// Google Vertex AI (google-vertex/*) - Gemini via Vertex AI (requires project ID)
+    GoogleVertex,
+    /// Amazon Bedrock (amazon-bedrock/*) - AWS Bedrock (requires AWS credentials)
+    AmazonBedrock,
+    /// Azure OpenAI (azure-openai/*) - Azure-hosted OpenAI (requires Azure config)
+    AzureOpenAI,
+
+    // === Fast Inference Providers ===
+    /// Groq (groq/*) - Ultra-fast inference for Llama, Mixtral
+    Groq,
+    /// Together AI (together/*) - Open-source model hosting
+    Together,
+    /// Fireworks AI (fireworks/*) - Fast inference platform
+    Fireworks,
+
+    // === Gateway/Aggregator Providers ===
+    /// OpenRouter (openrouter/*) - Multi-provider router
+    OpenRouter,
+    /// Cloudflare Workers AI (cloudflare/*) - Edge AI inference
+    Cloudflare,
+
+    // === Specialized Providers ===
+    /// DeepSeek (deepseek/*) - DeepSeek AI models
+    DeepSeek,
+    /// xAI / Grok (xai/*) - Elon Musk's xAI Grok models
+    Xai,
+    /// Mistral AI (mistral/*) - Mistral's models
+    Mistral,
+    /// Cohere (cohere/*) - Cohere's Command models
+    Cohere,
+
+    // === Local Providers ===
+    /// Ollama (ollama/*) - Local LLM server
+    Ollama,
+    /// LM Studio (lmstudio/*) - Local model runner
+    LMStudio,
+
+    // === Additional Providers ===
+    /// GitHub Copilot (copilot/*) - GitHub's AI coding assistant with GPT-4, Claude, Gemini
+    GithubCopilot,
+    /// Deep Infra (deep-infra/*) - Fast inference for open-source models
+    DeepInfra,
+    /// Hugging Face (huggingface/*) - Open-source model hub inference
+    HuggingFace,
+    /// Replicate (replicate/*) - Run ML models in the cloud
+    Replicate,
+    /// Perplexity (perplexity/*) - AI search and reasoning
+    Perplexity,
+    /// AI21 (ai21/*) - Jurassic and Jamba models
+    AI21,
+    /// Cerebras (cerebras/*) - Ultra-fast inference
+    Cerebras,
+    /// SambaNova (sambanova/*) - Enterprise AI platform
+    SambaNova,
+
+    // === Cloud Platform Providers ===
+    /// Baseten (baseten/*) - ML inference infrastructure
+    Baseten,
+    /// Cortecs (cortecs/*) - AI compute platform
+    Cortecs,
+    /// Scaleway (scaleway/*) - European cloud AI
+    Scaleway,
+    /// OVHcloud (ovhcloud/*) - European cloud AI
+    OVHcloud,
+
+    // === AI Gateway Providers ===
+    /// Vercel AI Gateway (vercel/*) - Vercel's AI SDK gateway
+    Vercel,
+    /// Helicone (helicone/*) - AI observability gateway
+    Helicone,
+    /// IO.NET (io-net/*) - Distributed GPU network
+    IONet,
+    /// Nebius (nebius/*) - Cloud AI infrastructure
+    Nebius,
+    /// ZenMux (zenmux/*) - AI multiplexer gateway
+    ZenMux,
+
+    // === Enterprise/Industry Providers ===
+    /// SAP AI Core (sap-ai-core/*) - SAP's enterprise AI platform
+    SapAICore,
+    /// Azure Cognitive Services (azure-cognitive-services/*) - Azure AI services
+    AzureCognitiveServices,
+
+    // === Specialized Inference Providers ===
+    /// Venice AI (venice-ai/*) - Privacy-focused AI
+    VeniceAI,
+    /// Ollama Cloud (ollama-cloud/*) - Cloud-hosted Ollama
+    OllamaCloud,
+    /// llama.cpp (llama.cpp/*) - Native llama.cpp inference
+    LlamaCpp,
+
+    /// Custom/Unknown provider - fallback for unrecognized prefixes
+    Custom,
+}
+
+impl OpenCodeProviderType {
+    /// Parse provider type from model flag (e.g., "opencode/glm-4.7-free" -> OpenCodeZen)
+    ///
+    /// Supports all major OpenCode providers. The prefix before the first '/' determines
+    /// the provider type. Case-insensitive matching is used.
+    pub(crate) fn from_model_flag(model_flag: &str) -> Self {
+        let model = strip_model_flag_prefix(model_flag);
+        let prefix = model.split('/').next().unwrap_or("");
+        match prefix.to_lowercase().as_str() {
+            // OpenCode Gateway
+            "opencode" => OpenCodeProviderType::OpenCodeZen,
+
+            // Chinese AI Providers
+            "zai" | "zhipuai" => OpenCodeProviderType::ZaiDirect,
+            "moonshot" | "kimi" => OpenCodeProviderType::Moonshot,
+            "minimax" => OpenCodeProviderType::MiniMax,
+
+            // Major Cloud Providers
+            "anthropic" => OpenCodeProviderType::Anthropic,
+            "openai" => OpenCodeProviderType::OpenAI,
+            "google" | "gemini" => OpenCodeProviderType::Google,
+            "google-vertex" | "vertex" => OpenCodeProviderType::GoogleVertex,
+            "amazon-bedrock" | "bedrock" | "aws" => OpenCodeProviderType::AmazonBedrock,
+            "azure-openai" | "azure" => OpenCodeProviderType::AzureOpenAI,
+
+            // Fast Inference Providers
+            "groq" => OpenCodeProviderType::Groq,
+            "together" => OpenCodeProviderType::Together,
+            "fireworks" => OpenCodeProviderType::Fireworks,
+
+            // Gateway/Aggregator Providers
+            "openrouter" => OpenCodeProviderType::OpenRouter,
+            "cloudflare" | "cf" => OpenCodeProviderType::Cloudflare,
+
+            // Specialized Providers
+            "deepseek" => OpenCodeProviderType::DeepSeek,
+            "xai" | "grok" => OpenCodeProviderType::Xai,
+            "mistral" => OpenCodeProviderType::Mistral,
+            "cohere" => OpenCodeProviderType::Cohere,
+
+            // Local Providers
+            "ollama" => OpenCodeProviderType::Ollama,
+            "lmstudio" | "lm-studio" => OpenCodeProviderType::LMStudio,
+
+            // Additional Providers
+            "copilot" | "github-copilot" => OpenCodeProviderType::GithubCopilot,
+            "deep-infra" | "deepinfra" => OpenCodeProviderType::DeepInfra,
+            "huggingface" | "hf" => OpenCodeProviderType::HuggingFace,
+            "replicate" => OpenCodeProviderType::Replicate,
+            "perplexity" | "pplx" => OpenCodeProviderType::Perplexity,
+            "ai21" => OpenCodeProviderType::AI21,
+            "cerebras" => OpenCodeProviderType::Cerebras,
+            "sambanova" => OpenCodeProviderType::SambaNova,
+
+            // Cloud Platform Providers
+            "baseten" => OpenCodeProviderType::Baseten,
+            "cortecs" => OpenCodeProviderType::Cortecs,
+            "scaleway" => OpenCodeProviderType::Scaleway,
+            "ovhcloud" | "ovh" => OpenCodeProviderType::OVHcloud,
+
+            // AI Gateway Providers
+            "vercel" => OpenCodeProviderType::Vercel,
+            "helicone" => OpenCodeProviderType::Helicone,
+            "io-net" | "ionet" => OpenCodeProviderType::IONet,
+            "nebius" => OpenCodeProviderType::Nebius,
+            "zenmux" => OpenCodeProviderType::ZenMux,
+
+            // Enterprise/Industry Providers
+            "sap-ai-core" | "sap" => OpenCodeProviderType::SapAICore,
+            "azure-cognitive-services" | "azure-cognitive" => {
+                OpenCodeProviderType::AzureCognitiveServices
+            }
+
+            // Specialized Inference Providers
+            "venice-ai" | "venice" => OpenCodeProviderType::VeniceAI,
+            "ollama-cloud" => OpenCodeProviderType::OllamaCloud,
+            "llama.cpp" | "llamacpp" | "llama-cpp" => OpenCodeProviderType::LlamaCpp,
+
+            // Unknown/Custom
+            _ => OpenCodeProviderType::Custom,
+        }
+    }
+
+    /// Get human-readable name for this provider type
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            // OpenCode Gateway
+            OpenCodeProviderType::OpenCodeZen => "OpenCode Zen",
+
+            // Chinese AI Providers
+            OpenCodeProviderType::ZaiDirect => "Z.AI Direct",
+            OpenCodeProviderType::ZaiCodingPlan => "Z.AI Coding Plan",
+            OpenCodeProviderType::Moonshot => "Moonshot (Kimi)",
+            OpenCodeProviderType::MiniMax => "MiniMax",
+
+            // Major Cloud Providers
+            OpenCodeProviderType::Anthropic => "Anthropic",
+            OpenCodeProviderType::OpenAI => "OpenAI",
+            OpenCodeProviderType::Google => "Google AI Studio",
+            OpenCodeProviderType::GoogleVertex => "Google Vertex AI",
+            OpenCodeProviderType::AmazonBedrock => "Amazon Bedrock",
+            OpenCodeProviderType::AzureOpenAI => "Azure OpenAI",
+
+            // Fast Inference Providers
+            OpenCodeProviderType::Groq => "Groq",
+            OpenCodeProviderType::Together => "Together AI",
+            OpenCodeProviderType::Fireworks => "Fireworks AI",
+
+            // Gateway/Aggregator Providers
+            OpenCodeProviderType::OpenRouter => "OpenRouter",
+            OpenCodeProviderType::Cloudflare => "Cloudflare Workers AI",
+
+            // Specialized Providers
+            OpenCodeProviderType::DeepSeek => "DeepSeek",
+            OpenCodeProviderType::Xai => "xAI (Grok)",
+            OpenCodeProviderType::Mistral => "Mistral AI",
+            OpenCodeProviderType::Cohere => "Cohere",
+
+            // Local Providers
+            OpenCodeProviderType::Ollama => "Ollama",
+            OpenCodeProviderType::LMStudio => "LM Studio",
+
+            // Additional Providers
+            OpenCodeProviderType::GithubCopilot => "GitHub Copilot",
+            OpenCodeProviderType::DeepInfra => "Deep Infra",
+            OpenCodeProviderType::HuggingFace => "Hugging Face",
+            OpenCodeProviderType::Replicate => "Replicate",
+            OpenCodeProviderType::Perplexity => "Perplexity",
+            OpenCodeProviderType::AI21 => "AI21 Labs",
+            OpenCodeProviderType::Cerebras => "Cerebras",
+            OpenCodeProviderType::SambaNova => "SambaNova",
+
+            // Cloud Platform Providers
+            OpenCodeProviderType::Baseten => "Baseten",
+            OpenCodeProviderType::Cortecs => "Cortecs",
+            OpenCodeProviderType::Scaleway => "Scaleway",
+            OpenCodeProviderType::OVHcloud => "OVHcloud",
+
+            // AI Gateway Providers
+            OpenCodeProviderType::Vercel => "Vercel AI Gateway",
+            OpenCodeProviderType::Helicone => "Helicone",
+            OpenCodeProviderType::IONet => "IO.NET",
+            OpenCodeProviderType::Nebius => "Nebius",
+            OpenCodeProviderType::ZenMux => "ZenMux",
+
+            // Enterprise/Industry Providers
+            OpenCodeProviderType::SapAICore => "SAP AI Core",
+            OpenCodeProviderType::AzureCognitiveServices => "Azure Cognitive Services",
+
+            // Specialized Inference Providers
+            OpenCodeProviderType::VeniceAI => "Venice AI",
+            OpenCodeProviderType::OllamaCloud => "Ollama Cloud",
+            OpenCodeProviderType::LlamaCpp => "llama.cpp",
+
+            // Custom
+            OpenCodeProviderType::Custom => "Custom",
+        }
+    }
+
+    /// Get authentication command for this provider type
+    pub(crate) fn auth_command(&self) -> &'static str {
+        match self {
+            // OpenCode Gateway
+            OpenCodeProviderType::OpenCodeZen => "opencode auth login -> select 'OpenCode Zen'",
+
+            // Chinese AI Providers
+            OpenCodeProviderType::ZaiDirect => "opencode auth login -> select 'Z.AI'",
+            OpenCodeProviderType::ZaiCodingPlan => {
+                "opencode auth login -> select 'Z.AI Coding Plan' (model prefix remains zai/* or zhipuai/*)"
+            }
+            OpenCodeProviderType::Moonshot => "opencode auth moonshot (set MOONSHOT_API_KEY)",
+            OpenCodeProviderType::MiniMax => "opencode auth minimax (set MINIMAX_API_KEY)",
+
+            // Major Cloud Providers
+            OpenCodeProviderType::Anthropic => "opencode auth anthropic (set ANTHROPIC_API_KEY)",
+            OpenCodeProviderType::OpenAI => "opencode auth openai (set OPENAI_API_KEY)",
+            OpenCodeProviderType::Google => {
+                "opencode auth google (set GOOGLE_GENERATIVE_AI_API_KEY)"
+            }
+            OpenCodeProviderType::GoogleVertex => {
+                "gcloud auth application-default login + set GOOGLE_VERTEX_PROJECT"
+            }
+            OpenCodeProviderType::AmazonBedrock => "aws configure (set AWS credentials + region)",
+            OpenCodeProviderType::AzureOpenAI => {
+                "set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT"
+            }
+
+            // Fast Inference Providers
+            OpenCodeProviderType::Groq => "opencode auth groq (set GROQ_API_KEY)",
+            OpenCodeProviderType::Together => "opencode auth together (set TOGETHER_API_KEY)",
+            OpenCodeProviderType::Fireworks => "opencode auth fireworks (set FIREWORKS_API_KEY)",
+
+            // Gateway/Aggregator Providers
+            OpenCodeProviderType::OpenRouter => "opencode auth openrouter (set OPENROUTER_API_KEY)",
+            OpenCodeProviderType::Cloudflare => {
+                "set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN"
+            }
+
+            // Specialized Providers
+            OpenCodeProviderType::DeepSeek => "opencode auth deepseek (set DEEPSEEK_API_KEY)",
+            OpenCodeProviderType::Xai => "opencode auth xai (set XAI_API_KEY)",
+            OpenCodeProviderType::Mistral => "opencode auth mistral (set MISTRAL_API_KEY)",
+            OpenCodeProviderType::Cohere => "opencode auth cohere (set COHERE_API_KEY)",
+
+            // Local Providers
+            OpenCodeProviderType::Ollama => "ollama serve (no API key needed, runs locally)",
+            OpenCodeProviderType::LMStudio => "Start LM Studio server (no API key needed)",
+
+            // Additional Providers
+            OpenCodeProviderType::GithubCopilot => {
+                "GitHub Copilot subscription required (via VS Code or gh copilot)"
+            }
+            OpenCodeProviderType::DeepInfra => "set DEEPINFRA_API_KEY from https://deepinfra.com",
+            OpenCodeProviderType::HuggingFace => {
+                "set HF_TOKEN from https://huggingface.co/settings/tokens"
+            }
+            OpenCodeProviderType::Replicate => "set REPLICATE_API_TOKEN from https://replicate.com",
+            OpenCodeProviderType::Perplexity => "set PERPLEXITY_API_KEY from https://perplexity.ai",
+            OpenCodeProviderType::AI21 => "set AI21_API_KEY from https://studio.ai21.com",
+            OpenCodeProviderType::Cerebras => "set CEREBRAS_API_KEY from https://cerebras.ai",
+            OpenCodeProviderType::SambaNova => "set SAMBANOVA_API_KEY from https://sambanova.ai",
+
+            // Cloud Platform Providers
+            OpenCodeProviderType::Baseten => "opencode /connect baseten (API key via /connect)",
+            OpenCodeProviderType::Cortecs => "opencode /connect cortecs (API key via /connect)",
+            OpenCodeProviderType::Scaleway => "opencode /connect scaleway (API key via /connect)",
+            OpenCodeProviderType::OVHcloud => "opencode /connect ovhcloud (API key via /connect)",
+
+            // AI Gateway Providers
+            OpenCodeProviderType::Vercel => "opencode /connect vercel (API key via /connect)",
+            OpenCodeProviderType::Helicone => "opencode /connect helicone (API key via /connect)",
+            OpenCodeProviderType::IONet => "opencode /connect io-net (API key via /connect)",
+            OpenCodeProviderType::Nebius => "opencode /connect nebius (API key via /connect)",
+            OpenCodeProviderType::ZenMux => "opencode /connect zenmux (API key via /connect)",
+
+            // Enterprise/Industry Providers
+            OpenCodeProviderType::SapAICore => {
+                "set AICORE_SERVICE_KEY, AICORE_DEPLOYMENT_ID, AICORE_RESOURCE_GROUP"
+            }
+            OpenCodeProviderType::AzureCognitiveServices => {
+                "set AZURE_COGNITIVE_SERVICES_RESOURCE_NAME"
+            }
+
+            // Specialized Inference Providers
+            OpenCodeProviderType::VeniceAI => "opencode /connect venice-ai (API key via /connect)",
+            OpenCodeProviderType::OllamaCloud => {
+                "opencode /connect ollama-cloud (API key via /connect)"
+            }
+            OpenCodeProviderType::LlamaCpp => "llama-server (no API key needed, runs locally)",
+
+            // Custom
+            OpenCodeProviderType::Custom => "Check provider documentation for authentication",
+        }
+    }
+
+    /// Get model prefix for this provider type
+    pub(crate) fn prefix(&self) -> &'static str {
+        match self {
+            OpenCodeProviderType::OpenCodeZen => "opencode/",
+            OpenCodeProviderType::ZaiDirect => "zai/ or zhipuai/",
+            OpenCodeProviderType::ZaiCodingPlan => "zai/ or zhipuai/",
+            OpenCodeProviderType::Moonshot => "moonshot/",
+            OpenCodeProviderType::MiniMax => "minimax/",
+            OpenCodeProviderType::Anthropic => "anthropic/",
+            OpenCodeProviderType::OpenAI => "openai/",
+            OpenCodeProviderType::Google => "google/",
+            OpenCodeProviderType::GoogleVertex => "google-vertex/",
+            OpenCodeProviderType::AmazonBedrock => "amazon-bedrock/",
+            OpenCodeProviderType::AzureOpenAI => "azure-openai/",
+            OpenCodeProviderType::Groq => "groq/",
+            OpenCodeProviderType::Together => "together/",
+            OpenCodeProviderType::Fireworks => "fireworks/",
+            OpenCodeProviderType::OpenRouter => "openrouter/",
+            OpenCodeProviderType::Cloudflare => "cloudflare/",
+            OpenCodeProviderType::DeepSeek => "deepseek/",
+            OpenCodeProviderType::Xai => "xai/",
+            OpenCodeProviderType::Mistral => "mistral/",
+            OpenCodeProviderType::Cohere => "cohere/",
+            OpenCodeProviderType::Ollama => "ollama/",
+            OpenCodeProviderType::LMStudio => "lmstudio/",
+            OpenCodeProviderType::GithubCopilot => "copilot/",
+            OpenCodeProviderType::DeepInfra => "deep-infra/",
+            OpenCodeProviderType::HuggingFace => "huggingface/",
+            OpenCodeProviderType::Replicate => "replicate/",
+            OpenCodeProviderType::Perplexity => "perplexity/",
+            OpenCodeProviderType::AI21 => "ai21/",
+            OpenCodeProviderType::Cerebras => "cerebras/",
+            OpenCodeProviderType::SambaNova => "sambanova/",
+            OpenCodeProviderType::Baseten => "baseten/",
+            OpenCodeProviderType::Cortecs => "cortecs/",
+            OpenCodeProviderType::Scaleway => "scaleway/",
+            OpenCodeProviderType::OVHcloud => "ovhcloud/",
+            OpenCodeProviderType::Vercel => "vercel/",
+            OpenCodeProviderType::Helicone => "helicone/",
+            OpenCodeProviderType::IONet => "io-net/",
+            OpenCodeProviderType::Nebius => "nebius/",
+            OpenCodeProviderType::ZenMux => "zenmux/",
+            OpenCodeProviderType::SapAICore => "sap-ai-core/",
+            OpenCodeProviderType::AzureCognitiveServices => "azure-cognitive-services/",
+            OpenCodeProviderType::VeniceAI => "venice-ai/",
+            OpenCodeProviderType::OllamaCloud => "ollama-cloud/",
+            OpenCodeProviderType::LlamaCpp => "llama.cpp/",
+            OpenCodeProviderType::Custom => "any other provider/*",
+        }
+    }
+
+    /// Get example models for this provider type
+    pub(crate) fn example_models(&self) -> &'static [&'static str] {
+        match self {
+            OpenCodeProviderType::OpenCodeZen => {
+                &["opencode/glm-4.7-free", "opencode/claude-sonnet-4"]
+            }
+            OpenCodeProviderType::ZaiDirect => &["zai/glm-4.7", "zai/glm-4.5", "zhipuai/glm-4.7"],
+            OpenCodeProviderType::ZaiCodingPlan => {
+                &["zai/glm-4.7", "zai/glm-4.5"]
+            }
+            OpenCodeProviderType::Moonshot => &["moonshot/kimi-k2", "moonshot/moonshot-v1-128k"],
+            OpenCodeProviderType::MiniMax => &["minimax/abab6.5-chat", "minimax/abab5.5-chat"],
+            OpenCodeProviderType::Anthropic => {
+                &["anthropic/claude-sonnet-4", "anthropic/claude-opus-4"]
+            }
+            OpenCodeProviderType::OpenAI => &["openai/gpt-4o", "openai/gpt-4-turbo", "openai/o1"],
+            OpenCodeProviderType::Google => &["google/gemini-2.0-flash", "google/gemini-1.5-pro"],
+            OpenCodeProviderType::GoogleVertex => &[
+                "google-vertex/gemini-2.0-flash",
+                "google-vertex/gemini-1.5-pro",
+            ],
+            OpenCodeProviderType::AmazonBedrock => &[
+                "amazon-bedrock/anthropic.claude-3-5-sonnet",
+                "amazon-bedrock/meta.llama3-70b-instruct",
+            ],
+            OpenCodeProviderType::AzureOpenAI => {
+                &["azure-openai/gpt-4o", "azure-openai/gpt-4-turbo"]
+            }
+            OpenCodeProviderType::Groq => &["groq/llama-3.3-70b-versatile", "groq/mixtral-8x7b"],
+            OpenCodeProviderType::Together => &[
+                "together/meta-llama/Llama-3-70b-chat-hf",
+                "together/mistralai/Mixtral-8x7B",
+            ],
+            OpenCodeProviderType::Fireworks => {
+                &["fireworks/accounts/fireworks/models/llama-v3p1-70b-instruct"]
+            }
+            OpenCodeProviderType::OpenRouter => &[
+                "openrouter/anthropic/claude-3.5-sonnet",
+                "openrouter/openai/gpt-4o",
+            ],
+            OpenCodeProviderType::Cloudflare => &[
+                "cloudflare/@cf/meta/llama-3-8b-instruct",
+                "cloudflare/@cf/mistral/mistral-7b",
+            ],
+            OpenCodeProviderType::DeepSeek => {
+                &["deepseek/deepseek-chat", "deepseek/deepseek-coder"]
+            }
+            OpenCodeProviderType::Xai => &["xai/grok-2", "xai/grok-beta"],
+            OpenCodeProviderType::Mistral => &["mistral/mistral-large", "mistral/codestral"],
+            OpenCodeProviderType::Cohere => &["cohere/command-r-plus", "cohere/command-r"],
+            OpenCodeProviderType::Ollama => {
+                &["ollama/llama3", "ollama/codellama", "ollama/mistral"]
+            }
+            OpenCodeProviderType::LMStudio => &["lmstudio/local-model"],
+            OpenCodeProviderType::GithubCopilot => &[
+                "copilot/gpt-4o",
+                "copilot/claude-3.5-sonnet",
+                "copilot/gemini-2.0-flash",
+            ],
+            OpenCodeProviderType::DeepInfra => &[
+                "deep-infra/meta-llama/Llama-3.3-70B-Instruct",
+                "deep-infra/Qwen/Qwen2.5-Coder-32B",
+            ],
+            OpenCodeProviderType::HuggingFace => &[
+                "huggingface/meta-llama/Llama-3.3-70B-Instruct",
+                "huggingface/Qwen/Qwen2.5-Coder-32B",
+            ],
+            OpenCodeProviderType::Replicate => &["replicate/meta/llama-3-70b-instruct"],
+            OpenCodeProviderType::Perplexity => &["perplexity/sonar-pro", "perplexity/sonar"],
+            OpenCodeProviderType::AI21 => &["ai21/jamba-1.5-large", "ai21/jamba-1.5-mini"],
+            OpenCodeProviderType::Cerebras => &["cerebras/llama3.3-70b"],
+            OpenCodeProviderType::SambaNova => &["sambanova/Meta-Llama-3.3-70B-Instruct"],
+            OpenCodeProviderType::Baseten => &["baseten/llama-3-70b"],
+            OpenCodeProviderType::Cortecs => &["cortecs/llama-3-70b"],
+            OpenCodeProviderType::Scaleway => &["scaleway/llama-3-70b"],
+            OpenCodeProviderType::OVHcloud => &["ovhcloud/llama-3-70b"],
+            OpenCodeProviderType::Vercel => &["vercel/gpt-4o", "vercel/claude-3.5-sonnet"],
+            OpenCodeProviderType::Helicone => &["helicone/gpt-4o"],
+            OpenCodeProviderType::IONet => &["io-net/llama-3-70b"],
+            OpenCodeProviderType::Nebius => &["nebius/llama-3-70b"],
+            OpenCodeProviderType::ZenMux => &["zenmux/gpt-4o", "zenmux/claude-3.5-sonnet"],
+            OpenCodeProviderType::SapAICore => {
+                &["sap-ai-core/gpt-4o", "sap-ai-core/claude-3.5-sonnet"]
+            }
+            OpenCodeProviderType::AzureCognitiveServices => {
+                &["azure-cognitive-services/gpt-4o"]
+            }
+            OpenCodeProviderType::VeniceAI => &["venice-ai/llama-3-70b"],
+            OpenCodeProviderType::OllamaCloud => &["ollama-cloud/llama3", "ollama-cloud/codellama"],
+            OpenCodeProviderType::LlamaCpp => &["llama.cpp/local-model"],
+            OpenCodeProviderType::Custom => &[],
+        }
+    }
+
+    /// Check if this provider requires special cloud configuration
+    pub(crate) fn requires_cloud_config(&self) -> bool {
+        matches!(
+            self,
+            OpenCodeProviderType::GoogleVertex
+                | OpenCodeProviderType::AmazonBedrock
+                | OpenCodeProviderType::AzureOpenAI
+                | OpenCodeProviderType::SapAICore
+                | OpenCodeProviderType::AzureCognitiveServices
+        )
+    }
+
+    /// Check if this is a local provider (no API key needed)
+    pub(crate) fn is_local(&self) -> bool {
+        matches!(
+            self,
+            OpenCodeProviderType::Ollama
+                | OpenCodeProviderType::LMStudio
+                | OpenCodeProviderType::LlamaCpp
+        )
+    }
+
+    /// Get all provider types for enumeration
+    #[cfg(test)]
+    pub(crate) fn all() -> &'static [OpenCodeProviderType] {
+        &[
+            // OpenCode Gateway
+            OpenCodeProviderType::OpenCodeZen,
+            // Chinese AI Providers
+            OpenCodeProviderType::ZaiDirect,
+            OpenCodeProviderType::ZaiCodingPlan,
+            OpenCodeProviderType::Moonshot,
+            OpenCodeProviderType::MiniMax,
+            // Major Cloud Providers
+            OpenCodeProviderType::Anthropic,
+            OpenCodeProviderType::OpenAI,
+            OpenCodeProviderType::Google,
+            OpenCodeProviderType::GoogleVertex,
+            OpenCodeProviderType::AmazonBedrock,
+            OpenCodeProviderType::AzureOpenAI,
+            OpenCodeProviderType::GithubCopilot,
+            // Fast Inference Providers
+            OpenCodeProviderType::Groq,
+            OpenCodeProviderType::Together,
+            OpenCodeProviderType::Fireworks,
+            OpenCodeProviderType::Cerebras,
+            OpenCodeProviderType::SambaNova,
+            OpenCodeProviderType::DeepInfra,
+            // Gateway/Aggregator Providers
+            OpenCodeProviderType::OpenRouter,
+            OpenCodeProviderType::Cloudflare,
+            OpenCodeProviderType::Vercel,
+            OpenCodeProviderType::Helicone,
+            OpenCodeProviderType::ZenMux,
+            // Specialized Providers
+            OpenCodeProviderType::DeepSeek,
+            OpenCodeProviderType::Xai,
+            OpenCodeProviderType::Mistral,
+            OpenCodeProviderType::Cohere,
+            OpenCodeProviderType::Perplexity,
+            OpenCodeProviderType::AI21,
+            OpenCodeProviderType::VeniceAI,
+            // Open-Source Model Providers
+            OpenCodeProviderType::HuggingFace,
+            OpenCodeProviderType::Replicate,
+            // Cloud Platform Providers
+            OpenCodeProviderType::Baseten,
+            OpenCodeProviderType::Cortecs,
+            OpenCodeProviderType::Scaleway,
+            OpenCodeProviderType::OVHcloud,
+            OpenCodeProviderType::IONet,
+            OpenCodeProviderType::Nebius,
+            // Enterprise/Industry Providers
+            OpenCodeProviderType::SapAICore,
+            OpenCodeProviderType::AzureCognitiveServices,
+            // Local Providers
+            OpenCodeProviderType::Ollama,
+            OpenCodeProviderType::LMStudio,
+            OpenCodeProviderType::OllamaCloud,
+            OpenCodeProviderType::LlamaCpp,
+        ]
+    }
+}
+
+/// Validate a model flag and return provider-specific warnings if any issues detected
+///
+/// Returns a vector of warning messages (empty if no issues).
+/// This performs soft validation (warnings, not errors) to help users understand
+/// provider-specific requirements without blocking execution.
+pub(crate) fn validate_model_flag(model_flag: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    // Check for common mistakes
+    let model = strip_model_flag_prefix(model_flag);
+    if model.is_empty() {
+        return warnings;
+    }
+
+    // Ensure model flag has provider prefix
+    if !model.contains('/') {
+        warnings.push(format!(
+            "Model '{}' has no provider prefix. Expected format: 'provider/model' (e.g., 'opencode/glm-4.7-free')",
+            model
+        ));
+        return warnings;
+    }
+
+    let provider_type = OpenCodeProviderType::from_model_flag(model);
+
+    // Warn about Z.AI vs Zen confusion
+    if provider_type == OpenCodeProviderType::OpenCodeZen
+        && model.to_lowercase().contains("zai")
+    {
+        warnings.push(
+            "Model flag uses 'opencode/' prefix but contains 'zai'. \
+             For Z.AI Direct access, use 'zai/' prefix instead."
+                .to_string(),
+        );
+    }
+
+    // Warn about providers requiring cloud configuration
+    if provider_type.requires_cloud_config() {
+        warnings.push(format!(
+            "{} provider requires cloud configuration. {}",
+            provider_type.name(),
+            provider_type.auth_command()
+        ));
+    }
+
+    // Warn about custom/unknown providers
+    if provider_type == OpenCodeProviderType::Custom {
+        let prefix = model.split('/').next().unwrap_or("");
+        warnings.push(format!(
+            "Unknown provider prefix '{}'. This may work if OpenCode supports it. \
+             Run 'ralph --list-providers' to see known providers.",
+            prefix
+        ));
+    }
+
+    // Info about local providers
+    if provider_type.is_local() {
+        warnings.push(format!(
+            "{} is a local provider. {}",
+            provider_type.name(),
+            provider_type.auth_command()
+        ));
+    }
+
+    warnings
+}
+
+/// Get provider-specific authentication failure advice based on model flag
+pub(crate) fn auth_failure_advice(model_flag: Option<&str>) -> String {
+    match model_flag {
+        Some(flag) => {
+            let model = strip_model_flag_prefix(flag);
+            let prefix = model.split('/').next().unwrap_or("").to_lowercase();
+            if matches!(prefix.as_str(), "zai" | "zhipuai") {
+                return "Authentication failed for Z.AI provider. Run: opencode auth login -> select 'Z.AI' or 'Z.AI Coding Plan'".to_string();
+            }
+            let provider = OpenCodeProviderType::from_model_flag(flag);
+            format!(
+                "Authentication failed for {} provider. Run: {}",
+                provider.name(),
+                provider.auth_command()
+            )
+        }
+        None => "Check API key or run 'opencode auth login' to authenticate.".to_string(),
+    }
+}
 
 /// JSON parser type for agent output
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -122,6 +857,9 @@ pub(crate) struct AgentConfig {
     pub(crate) can_commit: bool,
     /// Which JSON parser to use for this agent's output
     pub(crate) json_parser: JsonParserType,
+    /// Model/provider flag for agents that support model selection (e.g., `-m provider/model`)
+    /// Used for provider-level fallback within a single agent
+    pub(crate) model_flag: Option<String>,
 }
 
 /// TOML configuration for an agent (for deserialization)
@@ -130,9 +868,7 @@ pub(crate) struct AgentConfigToml {
     /// Base command to run the agent
     pub(crate) cmd: String,
     /// Output-format flag (optional, defaults to empty)
-    ///
-    /// Backwards compatible with `json_flag` from older configs.
-    #[serde(default, alias = "json_flag")]
+    #[serde(default)]
     pub(crate) output_flag: String,
     /// Flag for autonomous mode (optional, defaults to empty)
     #[serde(default)]
@@ -146,6 +882,10 @@ pub(crate) struct AgentConfigToml {
     /// Which JSON parser to use: "claude", "codex", or "generic" (optional, defaults to "generic")
     #[serde(default)]
     pub(crate) json_parser: String,
+    /// Model/provider flag for model selection (e.g., "-m opencode/glm-4.7-free")
+    /// Used for provider-level fallback within a single agent
+    #[serde(default)]
+    pub(crate) model_flag: Option<String>,
 }
 
 fn default_can_commit() -> bool {
@@ -161,6 +901,7 @@ impl From<AgentConfigToml> for AgentConfig {
             verbose_flag: toml.verbose_flag,
             can_commit: toml.can_commit,
             json_parser: JsonParserType::parse(&toml.json_parser),
+            model_flag: toml.model_flag,
         }
     }
 }
@@ -172,8 +913,7 @@ pub(crate) struct AgentsConfigFile {
     #[serde(default)]
     pub(crate) agents: HashMap<String, AgentConfigToml>,
     /// Agent chain configuration (preferred agents + fallbacks)
-    /// Supports both `[fallback]` (legacy) and `[agent_chain]` section names
-    #[serde(default, alias = "agent_chain")]
+    #[serde(default, rename = "agent_chain")]
     pub(crate) fallback: FallbackConfig,
 }
 
@@ -247,6 +987,24 @@ impl AgentConfig {
     /// the `--verbose` flag is always required. This method automatically adds verbose
     /// when using Claude's stream-json format, regardless of the `verbose` parameter.
     pub(crate) fn build_cmd(&self, output: bool, yolo: bool, verbose: bool) -> String {
+        self.build_cmd_with_model(output, yolo, verbose, None)
+    }
+
+    /// Build full command string with specified flags and optional model override
+    ///
+    /// The `model_override` parameter allows passing a custom model flag at runtime,
+    /// overriding any model_flag configured in agents.toml. This is used for:
+    /// - CLI flags like `--developer-model`
+    /// - Provider-level fallback (trying different providers within the same agent)
+    ///
+    /// Example: `agent.build_cmd_with_model(true, true, true, Some("-m opencode/glm-4.7-free"))`
+    pub(crate) fn build_cmd_with_model(
+        &self,
+        output: bool,
+        yolo: bool,
+        verbose: bool,
+        model_override: Option<&str>,
+    ) -> String {
         let mut parts = vec![self.cmd.clone()];
 
         if output && !self.output_flag.is_empty() {
@@ -262,6 +1020,14 @@ impl AgentConfig {
 
         if needs_verbose && !self.verbose_flag.is_empty() {
             parts.push(self.verbose_flag.clone());
+        }
+
+        // Add model flag: runtime override takes precedence over config
+        let effective_model = model_override.or(self.model_flag.as_deref());
+        if let Some(model) = effective_model {
+            if !model.is_empty() {
+                parts.push(model.to_string());
+            }
         }
 
         parts.join(" ")
@@ -291,6 +1057,21 @@ impl AgentConfig {
 /// Ralph automatically switches to the next agent in the chain when encountering
 /// errors like rate limits or auth failures.
 ///
+/// ## Provider-Level Fallback
+///
+/// In addition to agent-level fallback, you can configure provider-level fallback
+/// within a single agent using the `provider_fallback` field. This is useful for
+/// agents like opencode that support multiple providers/models via the `-m` flag.
+///
+/// Example:
+/// ```toml
+/// [agent_chain]
+/// provider_fallback.opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
+/// ```
+///
+/// When the primary model fails (rate limit, token exhaustion), Ralph tries the
+/// next model in the provider_fallback list before moving to the next agent.
+///
 /// ## Exponential Backoff and Cycling
 ///
 /// When all fallbacks are exhausted, Ralph uses exponential backoff and cycles
@@ -300,8 +1081,6 @@ impl AgentConfig {
 /// - Capped at `max_backoff_ms` (default: 60000ms = 1 minute)
 /// - Maximum cycles controlled by `max_cycles` (default: 3)
 ///
-/// Note: For backward compatibility, this section can be named either `[fallback]`
-/// or `[agent_chain]` in the TOML config file.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct FallbackConfig {
     /// Ordered list of agents for developer role (first = preferred, rest = fallbacks)
@@ -310,6 +1089,11 @@ pub(crate) struct FallbackConfig {
     /// Ordered list of agents for reviewer role (first = preferred, rest = fallbacks)
     #[serde(default)]
     pub(crate) reviewer: Vec<String>,
+    /// Provider-level fallback: maps agent name to list of model flags to try
+    /// Example: `opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]`
+    /// When one model fails (rate limit, token exhaustion), the next is tried.
+    #[serde(default)]
+    pub(crate) provider_fallback: HashMap<String, Vec<String>>,
     /// Maximum number of retries per agent before moving to next
     #[serde(default = "default_max_retries")]
     pub(crate) max_retries: u32,
@@ -352,6 +1136,7 @@ impl Default for FallbackConfig {
         Self {
             developer: Vec::new(),
             reviewer: Vec::new(),
+            provider_fallback: HashMap::new(),
             max_retries: default_max_retries(),
             retry_delay_ms: default_retry_delay_ms(),
             backoff_multiplier: default_backoff_multiplier(),
@@ -381,6 +1166,25 @@ impl FallbackConfig {
     /// Check if fallback is configured for a role
     pub(crate) fn has_fallbacks(&self, role: AgentRole) -> bool {
         !self.get_fallbacks(role).is_empty()
+    }
+
+    /// Get provider-level fallback model flags for an agent
+    ///
+    /// Returns the list of model flags to try for the given agent name.
+    /// Empty slice if no provider fallback is configured for this agent.
+    pub(crate) fn get_provider_fallbacks(&self, agent_name: &str) -> &[String] {
+        self.provider_fallback
+            .get(agent_name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Check if provider-level fallback is configured for an agent
+    #[allow(dead_code)] // Used in tests and may be used in future features
+    pub(crate) fn has_provider_fallbacks(&self, agent_name: &str) -> bool {
+        self.provider_fallback
+            .get(agent_name)
+            .is_some_and(|v| !v.is_empty())
     }
 }
 
@@ -1073,6 +1877,7 @@ mod tests {
                 verbose_flag: String::new(),
                 can_commit: true,
                 json_parser: JsonParserType::Claude,
+                model_flag: None,
             },
         );
 
@@ -1135,6 +1940,7 @@ mod tests {
             verbose_flag: "--verbose".to_string(),
             can_commit: false,
             json_parser: "claude".to_string(),
+            model_flag: Some("-m provider/model".to_string()),
         };
 
         let config: AgentConfig = toml.into();
@@ -1144,6 +1950,7 @@ mod tests {
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(!config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
+        assert_eq!(config.model_flag, Some("-m provider/model".to_string()));
     }
 
     #[test]
@@ -1165,7 +1972,7 @@ mod tests {
         let toml_str = r#"
 [agents.custom1]
 cmd = "custom1-cli"
-json_flag = "--json"
+output_flag = "--json"
 yolo_flag = "--yes"
 can_commit = true
 json_parser = "codex"
@@ -1212,7 +2019,7 @@ json_parser = "claude"
             r#"
 [agents.testbot]
 cmd = "testbot exec"
-json_flag = "--output-json"
+output_flag = "--output-json"
 yolo_flag = "--auto"
 json_parser = "codex"
 "#
@@ -1244,7 +2051,7 @@ json_parser = "codex"
             r#"
 [agents.claude]
 cmd = "claude-custom -p"
-json_flag = "--custom-json"
+output_flag = "--custom-json"
 yolo_flag = "--skip"
 json_parser = "codex"
 "#
@@ -1839,7 +2646,7 @@ json_parser = "codex"
         writeln!(
             file,
             r#"
-[fallback]
+[agent_chain]
 developer = ["claude", "codex", "goose"]
 reviewer = ["codex", "claude"]
 max_retries = 5
@@ -1867,7 +2674,7 @@ cmd = "testbot exec"
     }
 
     #[test]
-    fn test_agent_chain_alias() {
+    fn test_agent_chain_config_loading() {
         use std::io::Write;
 
         let dir = tempfile::tempdir().unwrap();
@@ -1890,7 +2697,7 @@ retry_delay_ms = 500
         let registry = AgentRegistry::with_config_file(&config_path).unwrap();
         let fallback = registry.fallback_config();
 
-        // Should work with agent_chain alias
+        // Loads agent_chain configuration
         assert_eq!(fallback.developer, vec!["opencode", "claude", "codex"]);
         assert_eq!(fallback.reviewer, vec!["claude", "codex"]);
         assert_eq!(fallback.max_retries, 2);
@@ -2168,5 +2975,720 @@ cmd = "mybot run"
             ..Default::default()
         });
         assert!(registry.validate_agent_chains().is_ok());
+    }
+
+    // =========================================================================
+    // Tests for model_flag functionality
+    // =========================================================================
+
+    #[test]
+    fn test_agent_config_with_model_flag() {
+        let agent = AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: "--format json".to_string(),
+            yolo_flag: "".to_string(),
+            verbose_flag: "--log-level DEBUG".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::Generic,
+            model_flag: Some("-m opencode/glm-4.7-free".to_string()),
+        };
+
+        // Build command should include the model flag
+        let cmd = agent.build_cmd(true, true, true);
+        assert!(cmd.contains("opencode run"));
+        assert!(cmd.contains("--format json"));
+        assert!(cmd.contains("-m opencode/glm-4.7-free"));
+    }
+
+    #[test]
+    fn test_agent_config_without_model_flag() {
+        let agent = AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: "--format json".to_string(),
+            yolo_flag: "".to_string(),
+            verbose_flag: "".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::Generic,
+            model_flag: None,
+        };
+
+        // Build command should not include any model flag
+        let cmd = agent.build_cmd(true, true, true);
+        assert!(cmd.contains("opencode run"));
+        assert!(cmd.contains("--format json"));
+        assert!(!cmd.contains("-m"));
+    }
+
+    #[test]
+    fn test_build_cmd_with_model_override() {
+        let agent = AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: "--format json".to_string(),
+            yolo_flag: "".to_string(),
+            verbose_flag: "".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::Generic,
+            model_flag: Some("-m opencode/default-model".to_string()),
+        };
+
+        // Override the configured model_flag with a runtime override
+        let cmd = agent.build_cmd_with_model(true, true, true, Some("-m opencode/override-model"));
+        assert!(cmd.contains("-m opencode/override-model"));
+        // The configured model_flag should NOT be present (override takes precedence)
+        assert!(!cmd.contains("default-model"));
+    }
+
+    #[test]
+    fn test_build_cmd_with_model_no_override() {
+        let agent = AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: "--format json".to_string(),
+            yolo_flag: "".to_string(),
+            verbose_flag: "".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::Generic,
+            model_flag: Some("-m opencode/configured-model".to_string()),
+        };
+
+        // Without an override, the configured model_flag should be used
+        let cmd = agent.build_cmd_with_model(true, true, true, None);
+        assert!(cmd.contains("-m opencode/configured-model"));
+    }
+
+    #[test]
+    fn test_agent_config_toml_model_flag_parsing() {
+        let toml_str = r#"
+cmd = "opencode run"
+output_flag = "--format json"
+model_flag = "-m opencode/glm-4.7-free"
+"#;
+        let config: AgentConfigToml = toml::from_str(toml_str).unwrap();
+
+        assert_eq!(config.cmd, "opencode run");
+        assert_eq!(
+            config.model_flag,
+            Some("-m opencode/glm-4.7-free".to_string())
+        );
+
+        let agent: AgentConfig = config.into();
+        assert_eq!(
+            agent.model_flag,
+            Some("-m opencode/glm-4.7-free".to_string())
+        );
+    }
+
+    #[test]
+    fn test_agent_config_toml_model_flag_default() {
+        // model_flag should default to None when not specified
+        let toml_str = r#"cmd = "opencode run""#;
+        let config: AgentConfigToml = toml::from_str(toml_str).unwrap();
+
+        assert!(config.model_flag.is_none());
+
+        let agent: AgentConfig = config.into();
+        assert!(agent.model_flag.is_none());
+    }
+
+    #[test]
+    fn test_provider_fallback_config() {
+        let mut provider_fallback = HashMap::new();
+        provider_fallback.insert(
+            "opencode".to_string(),
+            vec![
+                "-m opencode/glm-4.7-free".to_string(),
+                "-m opencode/claude-sonnet-4".to_string(),
+            ],
+        );
+
+        let config = FallbackConfig {
+            developer: vec!["opencode".to_string()],
+            reviewer: vec!["opencode".to_string()],
+            provider_fallback,
+            ..Default::default()
+        };
+
+        // Check provider fallback methods
+        assert!(config.has_provider_fallbacks("opencode"));
+        assert!(!config.has_provider_fallbacks("claude"));
+
+        let fallbacks = config.get_provider_fallbacks("opencode");
+        assert_eq!(fallbacks.len(), 2);
+        assert_eq!(fallbacks[0], "-m opencode/glm-4.7-free");
+        assert_eq!(fallbacks[1], "-m opencode/claude-sonnet-4");
+
+        // Non-existent agent returns empty slice
+        let empty = config.get_provider_fallbacks("nonexistent");
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_provider_fallback_from_toml() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("agents.toml");
+
+        let mut file = std::fs::File::create(&config_path).unwrap();
+        writeln!(
+            file,
+            r#"
+[agent_chain]
+developer = ["opencode", "claude"]
+reviewer = ["claude", "opencode"]
+max_retries = 3
+
+[agent_chain.provider_fallback]
+opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
+
+[agents.testbot]
+cmd = "testbot exec"
+"#
+        )
+        .unwrap();
+
+        let registry = AgentRegistry::with_config_file(&config_path).unwrap();
+        let fallback = registry.fallback_config();
+
+        // Check provider fallback was parsed correctly
+        assert!(fallback.has_provider_fallbacks("opencode"));
+        let provider_fallbacks = fallback.get_provider_fallbacks("opencode");
+        assert_eq!(provider_fallbacks.len(), 2);
+        assert!(provider_fallbacks[0].contains("glm-4.7-free"));
+        assert!(provider_fallbacks[1].contains("claude-sonnet-4"));
+    }
+
+    #[test]
+    fn test_fallback_config_defaults_provider_fallback() {
+        let config = FallbackConfig::default();
+        assert!(config.provider_fallback.is_empty());
+        assert!(!config.has_provider_fallbacks("opencode"));
+        assert!(config.get_provider_fallbacks("any").is_empty());
+    }
+
+    #[test]
+    fn test_opencode_provider_type_from_model_flag() {
+        // OpenCode Zen (opencode/*)
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("opencode/glm-4.7-free"),
+            OpenCodeProviderType::OpenCodeZen
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("-m opencode/glm-4.7-free"),
+            OpenCodeProviderType::OpenCodeZen
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("--model opencode/glm-4.7-free"),
+            OpenCodeProviderType::OpenCodeZen
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("opencode/claude-sonnet-4"),
+            OpenCodeProviderType::OpenCodeZen
+        );
+
+        // Z.AI Direct (zai/* or zhipuai/*)
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("zai/glm-4.7"),
+            OpenCodeProviderType::ZaiDirect
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("-m zai/glm-4.7"),
+            OpenCodeProviderType::ZaiDirect
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("zai/glm-4.5"),
+            OpenCodeProviderType::ZaiDirect
+        );
+        // zhipuai is an alias for Z.AI
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("zhipuai/glm-4.7"),
+            OpenCodeProviderType::ZaiDirect
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("zhipuai/glm-4.5"),
+            OpenCodeProviderType::ZaiDirect
+        );
+
+        // Direct API providers - now have distinct types
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("anthropic/claude-sonnet-4"),
+            OpenCodeProviderType::Anthropic
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("openai/gpt-4o"),
+            OpenCodeProviderType::OpenAI
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("google/gemini-pro"),
+            OpenCodeProviderType::Google
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("groq/llama-3.3-70b"),
+            OpenCodeProviderType::Groq
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("deepseek/deepseek-chat"),
+            OpenCodeProviderType::DeepSeek
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("mistral/mistral-large"),
+            OpenCodeProviderType::Mistral
+        );
+
+        // Custom/Unknown provider
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("unknown/some-model"),
+            OpenCodeProviderType::Custom
+        );
+
+        // Case insensitivity
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("OPENCODE/glm-4.7-free"),
+            OpenCodeProviderType::OpenCodeZen
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("ZAI/glm-4.7"),
+            OpenCodeProviderType::ZaiDirect
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("ZHIPUAI/glm-4.7"),
+            OpenCodeProviderType::ZaiDirect
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("ZhipuAI/glm-4.5"),
+            OpenCodeProviderType::ZaiDirect
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("GROQ/llama"),
+            OpenCodeProviderType::Groq
+        );
+    }
+
+    #[test]
+    fn test_opencode_provider_type_names_and_auth() {
+        assert_eq!(OpenCodeProviderType::OpenCodeZen.name(), "OpenCode Zen");
+        assert_eq!(OpenCodeProviderType::ZaiDirect.name(), "Z.AI Direct");
+        assert_eq!(OpenCodeProviderType::Anthropic.name(), "Anthropic");
+        assert_eq!(OpenCodeProviderType::OpenAI.name(), "OpenAI");
+        assert_eq!(OpenCodeProviderType::Groq.name(), "Groq");
+        assert_eq!(OpenCodeProviderType::Custom.name(), "Custom");
+
+        // Auth commands should be non-empty
+        assert!(!OpenCodeProviderType::OpenCodeZen.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::ZaiDirect.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::Anthropic.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::Custom.auth_command().is_empty());
+
+        // Verify specific auth command content
+        assert!(OpenCodeProviderType::OpenCodeZen
+            .auth_command()
+            .contains("OpenCode Zen"));
+        assert!(OpenCodeProviderType::ZaiDirect
+            .auth_command()
+            .contains("Z.AI"));
+        assert!(OpenCodeProviderType::Anthropic
+            .auth_command()
+            .contains("ANTHROPIC_API_KEY"));
+    }
+
+    #[test]
+    fn test_validate_model_flag_valid_flags() {
+        // Valid flags with provider prefix should not warn
+        let warnings = validate_model_flag("opencode/glm-4.7-free");
+        assert!(warnings.is_empty());
+
+        let warnings = validate_model_flag("zai/glm-4.7");
+        assert!(warnings.is_empty());
+
+        // Empty string should not warn
+        let warnings = validate_model_flag("");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_model_flag_missing_prefix() {
+        // Model without provider prefix should warn
+        let warnings = validate_model_flag("glm-4.7-free");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("no provider prefix"));
+    }
+
+    #[test]
+    fn test_validate_model_flag_zai_confusion() {
+        // Using opencode/ prefix with "zai" in the model name should warn
+        let warnings = validate_model_flag("opencode/zai-model");
+        assert!(!warnings.is_empty());
+        assert!(warnings.iter().any(|w| w.contains("zai")));
+    }
+
+    #[test]
+    fn test_validate_model_flag_cloud_config_warning() {
+        // Cloud providers should get a warning about additional config
+        let warnings = validate_model_flag("amazon-bedrock/anthropic.claude-3");
+        assert!(!warnings.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Amazon Bedrock") || w.contains("cloud configuration")));
+
+        let warnings = validate_model_flag("azure-openai/gpt-4o");
+        assert!(!warnings.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Azure") || w.contains("cloud configuration")));
+
+        let warnings = validate_model_flag("google-vertex/gemini-pro");
+        assert!(!warnings.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Vertex") || w.contains("cloud configuration")));
+    }
+
+    #[test]
+    fn test_validate_model_flag_custom_provider_warning() {
+        // Unknown/custom providers should get a warning
+        let warnings = validate_model_flag("unknownprovider/some-model");
+        assert!(!warnings.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Unknown provider") || w.contains("unknownprovider")));
+    }
+
+    #[test]
+    fn test_validate_model_flag_known_providers_no_warning() {
+        // Known providers without special requirements should have no warnings
+        // (Anthropic, OpenAI, Groq, etc. are straightforward API key providers)
+        let warnings = validate_model_flag("anthropic/claude-sonnet-4");
+        assert!(warnings.is_empty());
+        let warnings = validate_model_flag("-m anthropic/claude-sonnet-4");
+        assert!(warnings.is_empty());
+
+        let warnings = validate_model_flag("openai/gpt-4o");
+        assert!(warnings.is_empty());
+
+        let warnings = validate_model_flag("groq/llama-3.3-70b");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_auth_failure_advice_with_model_flag() {
+        // With OpenCode Zen model
+        let advice = auth_failure_advice(Some("opencode/glm-4.7-free"));
+        assert!(advice.contains("OpenCode Zen"));
+
+        // With Z.AI model prefix (tier can't be inferred from the prefix)
+        let advice = auth_failure_advice(Some("zai/glm-4.7"));
+        assert!(advice.contains("Z.AI"));
+        assert!(advice.contains("Coding Plan"));
+
+        // With Anthropic model - now shows specific provider
+        let advice = auth_failure_advice(Some("anthropic/claude-sonnet-4"));
+        assert!(advice.contains("Anthropic"));
+        assert!(advice.contains("ANTHROPIC_API_KEY"));
+
+        // With OpenAI model - now shows specific provider
+        let advice = auth_failure_advice(Some("openai/gpt-4o"));
+        assert!(advice.contains("OpenAI"));
+        assert!(advice.contains("OPENAI_API_KEY"));
+
+        // With Groq model
+        let advice = auth_failure_advice(Some("groq/llama"));
+        assert!(advice.contains("Groq"));
+        assert!(advice.contains("GROQ_API_KEY"));
+
+        // Without model flag
+        let advice = auth_failure_advice(None);
+        assert!(advice.contains("opencode auth login"));
+    }
+
+    #[test]
+    fn test_strip_model_flag_prefix() {
+        assert_eq!(
+            strip_model_flag_prefix("-m opencode/glm-4.7-free"),
+            "opencode/glm-4.7-free"
+        );
+        assert_eq!(
+            strip_model_flag_prefix("--model opencode/glm-4.7-free"),
+            "opencode/glm-4.7-free"
+        );
+        assert_eq!(
+            strip_model_flag_prefix("-m=opencode/glm-4.7-free"),
+            "opencode/glm-4.7-free"
+        );
+        assert_eq!(
+            strip_model_flag_prefix("--model=opencode/glm-4.7-free"),
+            "opencode/glm-4.7-free"
+        );
+        assert_eq!(strip_model_flag_prefix("opencode/glm-4.7-free"), "opencode/glm-4.7-free");
+    }
+
+    #[test]
+    fn test_new_opencode_provider_types_parsing() {
+        // Cloud Platform Providers
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("baseten/llama-3-70b"),
+            OpenCodeProviderType::Baseten
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("cortecs/llama-3-70b"),
+            OpenCodeProviderType::Cortecs
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("scaleway/llama-3-70b"),
+            OpenCodeProviderType::Scaleway
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("ovhcloud/llama-3-70b"),
+            OpenCodeProviderType::OVHcloud
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("ovh/llama-3-70b"),
+            OpenCodeProviderType::OVHcloud
+        );
+
+        // AI Gateway Providers
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("vercel/gpt-4o"),
+            OpenCodeProviderType::Vercel
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("helicone/gpt-4o"),
+            OpenCodeProviderType::Helicone
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("io-net/llama-3-70b"),
+            OpenCodeProviderType::IONet
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("ionet/llama-3-70b"),
+            OpenCodeProviderType::IONet
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("nebius/llama-3-70b"),
+            OpenCodeProviderType::Nebius
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("zenmux/gpt-4o"),
+            OpenCodeProviderType::ZenMux
+        );
+
+        // Enterprise/Industry Providers
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("sap-ai-core/gpt-4o"),
+            OpenCodeProviderType::SapAICore
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("sap/gpt-4o"),
+            OpenCodeProviderType::SapAICore
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("azure-cognitive-services/gpt-4o"),
+            OpenCodeProviderType::AzureCognitiveServices
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("azure-cognitive/gpt-4o"),
+            OpenCodeProviderType::AzureCognitiveServices
+        );
+
+        // Specialized Inference Providers
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("venice-ai/llama-3-70b"),
+            OpenCodeProviderType::VeniceAI
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("venice/llama-3-70b"),
+            OpenCodeProviderType::VeniceAI
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("ollama-cloud/llama3"),
+            OpenCodeProviderType::OllamaCloud
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("llama.cpp/local-model"),
+            OpenCodeProviderType::LlamaCpp
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("llamacpp/local-model"),
+            OpenCodeProviderType::LlamaCpp
+        );
+        assert_eq!(
+            OpenCodeProviderType::from_model_flag("llama-cpp/local-model"),
+            OpenCodeProviderType::LlamaCpp
+        );
+    }
+
+    #[test]
+    fn test_new_provider_types_names() {
+        // Cloud Platform Providers
+        assert_eq!(OpenCodeProviderType::Baseten.name(), "Baseten");
+        assert_eq!(OpenCodeProviderType::Cortecs.name(), "Cortecs");
+        assert_eq!(OpenCodeProviderType::Scaleway.name(), "Scaleway");
+        assert_eq!(OpenCodeProviderType::OVHcloud.name(), "OVHcloud");
+
+        // AI Gateway Providers
+        assert_eq!(OpenCodeProviderType::Vercel.name(), "Vercel AI Gateway");
+        assert_eq!(OpenCodeProviderType::Helicone.name(), "Helicone");
+        assert_eq!(OpenCodeProviderType::IONet.name(), "IO.NET");
+        assert_eq!(OpenCodeProviderType::Nebius.name(), "Nebius");
+        assert_eq!(OpenCodeProviderType::ZenMux.name(), "ZenMux");
+
+        // Enterprise/Industry Providers
+        assert_eq!(OpenCodeProviderType::SapAICore.name(), "SAP AI Core");
+        assert_eq!(
+            OpenCodeProviderType::AzureCognitiveServices.name(),
+            "Azure Cognitive Services"
+        );
+
+        // Specialized Inference Providers
+        assert_eq!(OpenCodeProviderType::VeniceAI.name(), "Venice AI");
+        assert_eq!(OpenCodeProviderType::OllamaCloud.name(), "Ollama Cloud");
+        assert_eq!(OpenCodeProviderType::LlamaCpp.name(), "llama.cpp");
+    }
+
+    #[test]
+    fn test_new_provider_types_auth_commands() {
+        // All new providers should have non-empty auth commands
+        assert!(!OpenCodeProviderType::Baseten.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::Cortecs.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::Scaleway.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::OVHcloud.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::Vercel.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::Helicone.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::IONet.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::Nebius.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::ZenMux.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::SapAICore.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::AzureCognitiveServices.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::VeniceAI.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::OllamaCloud.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::LlamaCpp.auth_command().is_empty());
+
+        // Check specific auth content
+        assert!(OpenCodeProviderType::SapAICore.auth_command().contains("AICORE"));
+        assert!(OpenCodeProviderType::AzureCognitiveServices
+            .auth_command()
+            .contains("AZURE_COGNITIVE"));
+        assert!(OpenCodeProviderType::LlamaCpp.auth_command().contains("locally"));
+    }
+
+    #[test]
+    fn test_new_provider_types_prefixes() {
+        // All new providers should have correct prefixes
+        assert_eq!(OpenCodeProviderType::Baseten.prefix(), "baseten/");
+        assert_eq!(OpenCodeProviderType::Cortecs.prefix(), "cortecs/");
+        assert_eq!(OpenCodeProviderType::Scaleway.prefix(), "scaleway/");
+        assert_eq!(OpenCodeProviderType::OVHcloud.prefix(), "ovhcloud/");
+        assert_eq!(OpenCodeProviderType::Vercel.prefix(), "vercel/");
+        assert_eq!(OpenCodeProviderType::Helicone.prefix(), "helicone/");
+        assert_eq!(OpenCodeProviderType::IONet.prefix(), "io-net/");
+        assert_eq!(OpenCodeProviderType::Nebius.prefix(), "nebius/");
+        assert_eq!(OpenCodeProviderType::ZenMux.prefix(), "zenmux/");
+        assert_eq!(OpenCodeProviderType::SapAICore.prefix(), "sap-ai-core/");
+        assert_eq!(
+            OpenCodeProviderType::AzureCognitiveServices.prefix(),
+            "azure-cognitive-services/"
+        );
+        assert_eq!(OpenCodeProviderType::VeniceAI.prefix(), "venice-ai/");
+        assert_eq!(OpenCodeProviderType::OllamaCloud.prefix(), "ollama-cloud/");
+        assert_eq!(OpenCodeProviderType::LlamaCpp.prefix(), "llama.cpp/");
+        assert_eq!(OpenCodeProviderType::Custom.prefix(), "any other provider/*");
+    }
+
+    #[test]
+    fn test_new_provider_types_example_models() {
+        // All new providers should have at least one example model
+        assert!(!OpenCodeProviderType::Baseten.example_models().is_empty());
+        assert!(!OpenCodeProviderType::Cortecs.example_models().is_empty());
+        assert!(!OpenCodeProviderType::Scaleway.example_models().is_empty());
+        assert!(!OpenCodeProviderType::OVHcloud.example_models().is_empty());
+        assert!(!OpenCodeProviderType::Vercel.example_models().is_empty());
+        assert!(!OpenCodeProviderType::Helicone.example_models().is_empty());
+        assert!(!OpenCodeProviderType::IONet.example_models().is_empty());
+        assert!(!OpenCodeProviderType::Nebius.example_models().is_empty());
+        assert!(!OpenCodeProviderType::ZenMux.example_models().is_empty());
+        assert!(!OpenCodeProviderType::SapAICore.example_models().is_empty());
+        assert!(!OpenCodeProviderType::AzureCognitiveServices.example_models().is_empty());
+        assert!(!OpenCodeProviderType::VeniceAI.example_models().is_empty());
+        assert!(!OpenCodeProviderType::OllamaCloud.example_models().is_empty());
+        assert!(!OpenCodeProviderType::LlamaCpp.example_models().is_empty());
+    }
+
+    #[test]
+    fn test_new_provider_types_requires_cloud_config() {
+        // Enterprise providers require cloud config
+        assert!(OpenCodeProviderType::SapAICore.requires_cloud_config());
+        assert!(OpenCodeProviderType::AzureCognitiveServices.requires_cloud_config());
+
+        // Cloud platform providers do NOT require cloud config (they use /connect)
+        assert!(!OpenCodeProviderType::Baseten.requires_cloud_config());
+        assert!(!OpenCodeProviderType::Cortecs.requires_cloud_config());
+        assert!(!OpenCodeProviderType::Scaleway.requires_cloud_config());
+        assert!(!OpenCodeProviderType::OVHcloud.requires_cloud_config());
+
+        // Gateway providers do NOT require cloud config
+        assert!(!OpenCodeProviderType::Vercel.requires_cloud_config());
+        assert!(!OpenCodeProviderType::Helicone.requires_cloud_config());
+        assert!(!OpenCodeProviderType::ZenMux.requires_cloud_config());
+    }
+
+    #[test]
+    fn test_new_provider_types_is_local() {
+        // llama.cpp is a local provider
+        assert!(OpenCodeProviderType::LlamaCpp.is_local());
+
+        // Ollama Cloud is NOT local (it's cloud-hosted)
+        assert!(!OpenCodeProviderType::OllamaCloud.is_local());
+
+        // Cloud platform providers are NOT local
+        assert!(!OpenCodeProviderType::Baseten.is_local());
+        assert!(!OpenCodeProviderType::Scaleway.is_local());
+        assert!(!OpenCodeProviderType::OVHcloud.is_local());
+    }
+
+    #[test]
+    fn test_all_providers_include_new_types() {
+        let all = OpenCodeProviderType::all();
+
+        // Verify all new providers are in the all() list
+        assert!(all.contains(&OpenCodeProviderType::Baseten));
+        assert!(all.contains(&OpenCodeProviderType::Cortecs));
+        assert!(all.contains(&OpenCodeProviderType::Scaleway));
+        assert!(all.contains(&OpenCodeProviderType::OVHcloud));
+        assert!(all.contains(&OpenCodeProviderType::Vercel));
+        assert!(all.contains(&OpenCodeProviderType::Helicone));
+        assert!(all.contains(&OpenCodeProviderType::IONet));
+        assert!(all.contains(&OpenCodeProviderType::Nebius));
+        assert!(all.contains(&OpenCodeProviderType::ZenMux));
+        assert!(all.contains(&OpenCodeProviderType::SapAICore));
+        assert!(all.contains(&OpenCodeProviderType::AzureCognitiveServices));
+        assert!(all.contains(&OpenCodeProviderType::VeniceAI));
+        assert!(all.contains(&OpenCodeProviderType::OllamaCloud));
+        assert!(all.contains(&OpenCodeProviderType::LlamaCpp));
+
+        // Custom should NOT be in the all() list
+        assert!(!all.contains(&OpenCodeProviderType::Custom));
+    }
+
+    #[test]
+    fn test_validate_model_flag_new_enterprise_providers() {
+        // SAP AI Core should warn about cloud config requirement
+        let warnings = validate_model_flag("sap-ai-core/gpt-4o");
+        assert!(!warnings.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SAP AI Core") || w.contains("cloud configuration")));
+
+        // Azure Cognitive Services should warn about cloud config requirement
+        let warnings = validate_model_flag("azure-cognitive-services/gpt-4o");
+        assert!(!warnings.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Azure Cognitive Services") || w.contains("cloud configuration")));
+    }
+
+    #[test]
+    fn test_validate_model_flag_new_local_providers() {
+        // llama.cpp is local, should give info message
+        let warnings = validate_model_flag("llama.cpp/local-model");
+        assert!(!warnings.is_empty());
+        assert!(warnings.iter().any(|w| w.contains("local provider")));
     }
 }

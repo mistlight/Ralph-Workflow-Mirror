@@ -185,6 +185,10 @@ Quick reference for the most common settings:
 |----------|--------------|---------|
 | `RALPH_DEVELOPER_AGENT` | Which agent writes code | From `agent_chain` |
 | `RALPH_REVIEWER_AGENT` | Which agent reviews code | From `agent_chain` |
+| `RALPH_DEVELOPER_MODEL` | Model flag for developer (e.g., `-m opencode/glm-4.7-free`) | From `model_flag` |
+| `RALPH_REVIEWER_MODEL` | Model flag for reviewer (e.g., `-m opencode/claude-sonnet-4`) | From `model_flag` |
+| `RALPH_DEVELOPER_PROVIDER` | Provider override for developer (e.g., `opencode`, `anthropic`) | - |
+| `RALPH_REVIEWER_PROVIDER` | Provider override for reviewer (e.g., `opencode`, `anthropic`) | - |
 | `RALPH_DEVELOPER_ITERS` | How many times developer runs | `5` |
 | `RALPH_REVIEWER_REVIEWS` | How many review passes | `2` |
 | `RALPH_VERBOSITY` | Output detail (0-4) | `2` |
@@ -285,6 +289,209 @@ reviewer = ["codex", "claude"]
 max_retries = 3
 ```
 
+### OpenCode Provider Types
+
+[OpenCode](https://opencode.ai) supports 45+ backend providers via the AI SDK, giving you maximum flexibility. Ralph recognizes all major providers with dedicated support for authentication and configuration.
+
+> **Important:** OpenCode Zen (`opencode/*`) and Z.AI Direct (`zai/*`) are **separate endpoints** with different authentication!
+> - `opencode/*` routes through OpenCode's Zen gateway at opencode.ai
+> - `zai/*` or `zhipuai/*` connects directly to Z.AI's API at api.z.ai
+> - Z.AI Coding Plan is a separate subscription tier selected during `opencode auth login` (model prefix remains `zai/*`)
+
+Run `ralph --list-providers` to see all supported providers with authentication commands.
+
+#### Provider Categories
+
+**OpenCode Gateway**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `opencode/` | OpenCode Zen | `opencode/glm-4.7-free` | `opencode auth login` → "OpenCode Zen" |
+
+**Chinese AI Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `zai/` | Z.AI (Standard tier) | `zai/glm-4.7` | `opencode auth login` → "Z.AI" |
+| `zai/` | Z.AI (Coding Plan tier) | `zai/glm-4.7` | `opencode auth login` → "Z.AI Coding Plan" |
+| `moonshot/` | Moonshot (Kimi) | `moonshot/kimi-k2` | Set `MOONSHOT_API_KEY` |
+| `minimax/` | MiniMax | `minimax/abab6.5-chat` | Set `MINIMAX_API_KEY` |
+
+**Major Cloud Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `anthropic/` | Anthropic | `anthropic/claude-sonnet-4` | Set `ANTHROPIC_API_KEY` |
+| `openai/` | OpenAI | `openai/gpt-4o` | Set `OPENAI_API_KEY` |
+| `google/` | Google AI Studio | `google/gemini-2.0-flash` | Set `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `google-vertex/` | Google Vertex AI | `google-vertex/gemini-2.0-flash` | `gcloud auth` + set `GOOGLE_VERTEX_PROJECT` |
+| `amazon-bedrock/` | Amazon Bedrock | `amazon-bedrock/anthropic.claude-3-5-sonnet` | `aws configure` |
+| `azure-openai/` | Azure OpenAI | `azure-openai/gpt-4o` | Set `AZURE_OPENAI_*` vars |
+
+**Fast Inference Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `groq/` | Groq | `groq/llama-3.3-70b-versatile` | Set `GROQ_API_KEY` |
+| `together/` | Together AI | `together/meta-llama/Llama-3-70b` | Set `TOGETHER_API_KEY` |
+| `fireworks/` | Fireworks AI | `fireworks/llama-v3p1-70b` | Set `FIREWORKS_API_KEY` |
+| `cerebras/` | Cerebras | `cerebras/llama3.3-70b` | Set `CEREBRAS_API_KEY` |
+| `sambanova/` | SambaNova | `sambanova/Meta-Llama-3.3-70B` | Set `SAMBANOVA_API_KEY` |
+| `deep-infra/` | Deep Infra | `deep-infra/meta-llama/Llama-3.3-70B` | Set `DEEPINFRA_API_KEY` |
+
+**Gateway/Aggregator Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `openrouter/` | OpenRouter | `openrouter/anthropic/claude-3.5-sonnet` | Set `OPENROUTER_API_KEY` |
+| `cloudflare/` | Cloudflare Workers AI | `cloudflare/@cf/meta/llama-3-8b` | Set `CLOUDFLARE_*` vars |
+| `vercel/` | Vercel AI Gateway | `vercel/gpt-4o` | `opencode /connect vercel` |
+| `helicone/` | Helicone | `helicone/gpt-4o` | `opencode /connect helicone` |
+| `zenmux/` | ZenMux | `zenmux/gpt-4o` | `opencode /connect zenmux` |
+
+**Specialized Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `deepseek/` | DeepSeek | `deepseek/deepseek-chat` | Set `DEEPSEEK_API_KEY` |
+| `xai/` | xAI (Grok) | `xai/grok-2` | Set `XAI_API_KEY` |
+| `mistral/` | Mistral AI | `mistral/mistral-large-latest` | Set `MISTRAL_API_KEY` |
+| `cohere/` | Cohere | `cohere/command-r-plus` | Set `COHERE_API_KEY` |
+| `perplexity/` | Perplexity | `perplexity/sonar-pro` | Set `PERPLEXITY_API_KEY` |
+| `ai21/` | AI21 Labs | `ai21/jamba-1.5-large` | Set `AI21_API_KEY` |
+| `copilot/` | GitHub Copilot | `copilot/gpt-4o` | GitHub Copilot subscription |
+| `venice-ai/` | Venice AI | `venice-ai/llama-3-70b` | `opencode /connect venice-ai` |
+
+**Cloud Platform Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `baseten/` | Baseten | `baseten/llama-3-70b` | `opencode /connect baseten` |
+| `cortecs/` | Cortecs | `cortecs/llama-3-70b` | `opencode /connect cortecs` |
+| `scaleway/` | Scaleway | `scaleway/llama-3-70b` | `opencode /connect scaleway` |
+| `ovhcloud/` | OVHcloud | `ovhcloud/llama-3-70b` | `opencode /connect ovhcloud` |
+| `io-net/` | IO.NET | `io-net/llama-3-70b` | `opencode /connect io-net` |
+| `nebius/` | Nebius | `nebius/llama-3-70b` | `opencode /connect nebius` |
+
+**Enterprise/Industry Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `sap-ai-core/` | SAP AI Core | `sap-ai-core/gpt-4o` | Set `AICORE_*` vars |
+| `azure-cognitive-services/` | Azure Cognitive Services | `azure-cognitive-services/gpt-4o` | Set `AZURE_COGNITIVE_SERVICES_*` vars |
+
+**Open-Source Model Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `huggingface/` | Hugging Face | `huggingface/Qwen/Qwen2.5-Coder-32B` | Set `HF_TOKEN` |
+| `replicate/` | Replicate | `replicate/meta/llama-3-70b-instruct` | Set `REPLICATE_API_TOKEN` |
+
+**Local Providers**
+| Prefix | Provider | Example | Authentication |
+|--------|----------|---------|----------------|
+| `ollama/` | Ollama | `ollama/llama3` | Run `ollama serve` locally |
+| `lmstudio/` | LM Studio | `lmstudio/local-model` | Start LM Studio server |
+| `ollama-cloud/` | Ollama Cloud | `ollama-cloud/llama3` | `opencode /connect ollama-cloud` |
+| `llama.cpp/` | llama.cpp | `llama.cpp/local-model` | Run `llama-server` locally |
+
+### Agent Aliases for OpenCode Configurations
+
+Ralph provides 45+ pre-configured agent aliases for different providers:
+
+**Core Aliases**
+| Alias | Provider | Model | Use Case |
+|-------|----------|-------|----------|
+| `opencode-zen-glm` | OpenCode Zen | `opencode/glm-4.7-free` | Free tier, try first |
+| `opencode-zen-claude` | OpenCode Zen | `opencode/claude-sonnet-4` | Premium via OpenCode |
+| `opencode-zai-glm` | Z.AI Direct | `zai/glm-4.7` | Z.AI direct access |
+| `opencode-zai-glm-codingplan` | Z.AI Coding Plan | `zai/glm-4.7` | 3x usage, 1/7 cost (auth selection) |
+| `opencode-direct-claude` | Anthropic | `anthropic/claude-sonnet-4` | Your API key |
+| `opencode-openai` | OpenAI | `openai/gpt-4o` | Your API key |
+
+**Additional Provider Aliases**
+| Alias | Provider | Model |
+|-------|----------|-------|
+| `opencode-google` | Google AI Studio | `google/gemini-2.0-flash` |
+| `opencode-vertex` | Google Vertex AI | `google-vertex/gemini-2.0-flash` |
+| `opencode-groq` | Groq | `groq/llama-3.3-70b-versatile` |
+| `opencode-deepseek` | DeepSeek | `deepseek/deepseek-chat` |
+| `opencode-mistral` | Mistral AI | `mistral/mistral-large-latest` |
+| `opencode-xai` | xAI (Grok) | `xai/grok-2` |
+| `opencode-moonshot` | Moonshot | `moonshot/kimi-k2` |
+| `opencode-openrouter` | OpenRouter | `openrouter/anthropic/claude-3.5-sonnet` |
+| `opencode-bedrock` | Amazon Bedrock | `amazon-bedrock/anthropic.claude-3-5-sonnet` |
+| `opencode-azure` | Azure OpenAI | `azure-openai/gpt-4o` |
+| `opencode-ollama` | Ollama (local) | `ollama/llama3` |
+| `opencode-together` | Together AI | `together/meta-llama/Llama-3-70b` |
+| `opencode-fireworks` | Fireworks AI | `fireworks/llama-v3p1-70b` |
+| `opencode-cohere` | Cohere | `cohere/command-r-plus` |
+| `opencode-copilot` | GitHub Copilot | `copilot/gpt-4o` |
+| `opencode-deepinfra` | Deep Infra | `deep-infra/meta-llama/Llama-3.3-70B` |
+| `opencode-huggingface` | Hugging Face | `huggingface/Qwen/Qwen2.5-Coder-32B` |
+| `opencode-cerebras` | Cerebras | `cerebras/llama3.3-70b` |
+| `opencode-sambanova` | SambaNova | `sambanova/Meta-Llama-3.3-70B` |
+| `opencode-perplexity` | Perplexity | `perplexity/sonar-pro` |
+| `opencode-ai21` | AI21 Labs | `ai21/jamba-1.5-large` |
+| `opencode-replicate` | Replicate | `replicate/meta/llama-3-70b-instruct` |
+| `opencode-cloudflare` | Cloudflare Workers AI | `cloudflare/@cf/meta/llama-3.1-8b` |
+| `opencode-baseten` | Baseten | `baseten/llama-3-70b` |
+| `opencode-cortecs` | Cortecs | `cortecs/llama-3-70b` |
+| `opencode-scaleway` | Scaleway | `scaleway/llama-3-70b` |
+| `opencode-ovhcloud` | OVHcloud | `ovhcloud/llama-3-70b` |
+| `opencode-vercel` | Vercel AI Gateway | `vercel/gpt-4o` |
+| `opencode-helicone` | Helicone | `helicone/gpt-4o` |
+| `opencode-ionet` | IO.NET | `io-net/llama-3-70b` |
+| `opencode-nebius` | Nebius | `nebius/llama-3-70b` |
+| `opencode-zenmux` | ZenMux | `zenmux/gpt-4o` |
+| `opencode-sap` | SAP AI Core | `sap-ai-core/gpt-4o` |
+| `opencode-azure-cognitive` | Azure Cognitive Services | `azure-cognitive-services/gpt-4o` |
+| `opencode-venice` | Venice AI | `venice-ai/llama-3-70b` |
+| `opencode-ollama-cloud` | Ollama Cloud | `ollama-cloud/llama3` |
+| `opencode-llamacpp` | llama.cpp | `llama.cpp/local-model` |
+
+See `examples/agents.toml` for the complete list.
+
+Example agent chain using aliases:
+```toml
+[agent_chain]
+# Try free/cheap providers first, then premium
+developer = ["opencode-zen-glm", "opencode-groq", "opencode-deepseek", "opencode-direct-claude", "claude"]
+reviewer = ["opencode-groq", "opencode-zen-claude", "claude"]
+```
+
+### Provider-Level Fallback (OpenCode)
+
+For cost optimization, Ralph can try different models *within* the same agent before falling back to the next agent. This works with OpenCode's multi-provider support.
+
+```toml
+# In .agent/agents.toml
+[agents.opencode]
+cmd = "opencode run"
+output_flag = "--format json"
+model_flag = "-m zai/glm-4.7"  # Default to Z.AI Direct
+
+[agent_chain]
+developer = ["opencode", "claude"]
+reviewer = ["opencode", "claude"]
+
+# Provider fallback: try these models in order within opencode
+[agent_chain.provider_fallback]
+opencode = [
+  "-m zai/glm-4.7",                 # Z.AI Direct (try first)
+  "-m opencode/glm-4.7-free",       # OpenCode Zen free tier (backup)
+  "-m anthropic/claude-sonnet-4",   # Direct API (last resort)
+]
+```
+
+When `zai/glm-4.7` hits rate limits or token exhaustion, Ralph automatically tries `opencode/glm-4.7-free` (Zen free tier), then direct Anthropic API, then finally falls back to the `claude` agent.
+
+**Override provider or model via CLI or environment:**
+
+```bash
+# Override just the provider (uses agent's model with new provider)
+ralph --developer-provider anthropic
+ralph --developer-provider opencode
+
+# Override the full model string
+ralph --developer-model "-m opencode/claude-sonnet-4"
+
+# Environment variables
+RALPH_DEVELOPER_PROVIDER=anthropic ralph
+RALPH_DEVELOPER_MODEL="-m opencode/glm-4.7-free" ralph
+```
+
 ### Verbosity Levels
 
 Control how much output you see:
@@ -342,6 +549,8 @@ Add to `.gitignore` if you don't want these tracked:
 
 ## Troubleshooting
 
+### Common Issues
+
 | Problem | Solution |
 |---------|----------|
 | "Not a git repository" | Run Ralph inside a git repo |
@@ -349,9 +558,74 @@ Add to `.gitignore` if you don't want these tracked:
 | Garbled/broken output | Set `json_parser = "generic"` for that agent |
 | Rate limit errors | Ralph auto-retries with backoff. Configure fallback agents for faster recovery. |
 | Network/connection errors | Check internet, firewall, VPN. Ralph auto-retries network issues. |
-| Authentication errors | Run `<agent> auth` to authenticate, or check your API key. |
+| Authentication errors | Run `<agent> auth` to authenticate, or check your API key. See below for provider-specific guidance. |
 | No commit created | Ralph falls back to `git commit` if the reviewer doesn't |
 | Nothing happening | Try `ralph --debug` to see what's going on |
+
+### OpenCode Provider Authentication
+
+OpenCode supports many providers, each with its own authentication. Use `ralph --list-providers` for the built-in guidance list.
+
+**Common Provider Authentication:**
+
+| Provider | Authentication |
+|----------|----------------|
+| OpenCode Zen (`opencode/*`) | `opencode auth login` → "OpenCode Zen" |
+| Z.AI Direct (`zai/*`) | `opencode auth login` → "Z.AI" |
+| Z.AI Coding Plan (`zai/*`) | `opencode auth login` → "Z.AI Coding Plan" |
+| Anthropic (`anthropic/*`) | Set `ANTHROPIC_API_KEY` |
+| OpenAI (`openai/*`) | Set `OPENAI_API_KEY` |
+| Google (`google/*`) | Set `GOOGLE_GENERATIVE_AI_API_KEY` |
+| Groq (`groq/*`) | Set `GROQ_API_KEY` |
+| DeepSeek (`deepseek/*`) | Set `DEEPSEEK_API_KEY` |
+| OpenRouter (`openrouter/*`) | Set `OPENROUTER_API_KEY` |
+| Ollama (`ollama/*`) | Run `ollama serve` locally |
+
+**Cloud providers requiring additional setup:**
+- **Google Vertex AI**: `gcloud auth application-default login` + set `GOOGLE_VERTEX_PROJECT`
+- **Amazon Bedrock**: `aws configure` with appropriate IAM permissions
+- **Azure OpenAI**: Set `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`
+
+**Example authentication error messages:**
+
+```
+Error: Authentication failed for OpenCode Zen provider
+→ Run: opencode auth login → select 'OpenCode Zen'
+
+Error: Authentication failed for Anthropic provider
+→ Run: opencode auth anthropic (set ANTHROPIC_API_KEY)
+
+Error: Authentication failed for Groq provider
+→ Run: opencode auth groq (set GROQ_API_KEY)
+```
+
+**Agent naming convention:**
+
+Ralph uses a clear naming convention for OpenCode provider aliases:
+- `opencode-zen-*` - Routes through OpenCode's Zen gateway (e.g., `opencode-zen-glm`)
+- `opencode-zai-*` - Direct Z.AI API access (e.g., `opencode-zai-glm`)
+- `opencode-zai-*-codingplan` - Z.AI Coding Plan tier (auth selection; e.g., `opencode-zai-glm-codingplan`)
+- `opencode-direct-*` - Direct provider API access (e.g., `opencode-direct-claude`)
+- `opencode-{provider}` - Shorthand for common providers (e.g., `opencode-groq`, `opencode-deepseek`)
+
+### Diagnostic Commands
+
+```bash
+# Full diagnostic report
+ralph --diagnose
+
+# List all available providers and their configuration
+ralph --list-providers
+
+# List all configured agents
+ralph --list-agents
+
+# List only installed agents
+ralph --list-available-agents
+
+# Debug mode to see raw agent output
+ralph --debug
+```
 
 ## Common Workflows
 
