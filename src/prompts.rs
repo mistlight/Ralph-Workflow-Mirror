@@ -5,7 +5,7 @@
 //!
 //! Enhanced with language-specific review guidelines based on detected project stack.
 
-use crate::review_guidelines::ReviewGuidelines;
+use crate::guidelines::ReviewGuidelines;
 
 /// Context level for agents
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,13 +60,91 @@ GUIDELINES:
     }
 }
 
-/// Generate reviewer review prompt with minimal context
-/// Reviewer should NOT see what was done - just evaluate the code against requirements
+/// Generate detailed reviewer review prompt without language-specific guidelines.
 ///
-/// This prompt is agent-agnostic and works with any AI coding assistant.
-/// Follows best practices for unbiased code review:
-/// - Fresh eyes perspective (minimal context mode)
-/// - Output format is intentionally vague to avoid contaminating future runs
+/// Use this when the review needs to produce actionable `.agent/ISSUES.md` output
+/// even if stack detection did not produce `ReviewGuidelines`.
+pub(crate) fn prompt_detailed_review_without_guidelines(context: ContextLevel) -> String {
+    match context {
+        ContextLevel::Minimal => r#"You are in DETAILED REVIEW MODE with fresh eyes perspective.
+
+INPUTS TO READ:
+- PROMPT.md - The requirements (Goal and Acceptance checks)
+- DO NOT read .agent/STATUS.md or .agent/NOTES.md (you need unbiased perspective)
+
+YOUR TASK:
+Perform a thorough review against PROMPT.md and produce actionable issues:
+
+═══════════════════════════════════════════════════════════════════════════════
+1. GOAL ALIGNMENT
+═══════════════════════════════════════════════════════════════════════════════
+- Does the implementation achieve the stated goal?
+- Are there missing features or incomplete work?
+
+═══════════════════════════════════════════════════════════════════════════════
+2. ACCEPTANCE CHECKS
+═══════════════════════════════════════════════════════════════════════════════
+Go through EACH acceptance check in PROMPT.md explicitly:
+- Verify the check passes or fails
+- Cite concrete evidence (files, commands, outputs)
+
+═══════════════════════════════════════════════════════════════════════════════
+3. CODE QUALITY & BUGS
+═══════════════════════════════════════════════════════════════════════════════
+- Logic errors, edge cases, error handling gaps
+- Consistency with existing patterns and architecture
+
+═══════════════════════════════════════════════════════════════════════════════
+4. SECURITY & SAFETY
+═══════════════════════════════════════════════════════════════════════════════
+- Input validation and output escaping
+- Hardcoded secrets or credentials
+- Unsafe/destructive operations
+
+═══════════════════════════════════════════════════════════════════════════════
+5. TESTING & VERIFICATION
+═══════════════════════════════════════════════════════════════════════════════
+- Are tests present and meaningful?
+- Are there missing tests for high-risk behavior?
+
+OUTPUT:
+Write findings to .agent/ISSUES.md as a prioritized checklist:
+- [ ] Critical: [file:line] Description (blocks merge)
+- [ ] High: [file:line] Description (should fix before merge)
+- [ ] Medium: [file:line] Description (should address)
+- [ ] Low: [file:line] Description (nice to have)
+
+Be specific about file paths and line numbers.
+If no issues found, write "No issues found." to .agent/ISSUES.md"#
+            .to_string(),
+        ContextLevel::Normal => r#"You are in DETAILED REVIEW MODE.
+
+INPUTS TO READ:
+- PROMPT.md - The requirements (Goal and Acceptance checks)
+- .agent/STATUS.md - Current progress state
+
+YOUR TASK:
+Review the repository against PROMPT.md requirements:
+1. Goal alignment
+2. Each acceptance check (explicit pass/fail)
+3. Code quality, bugs, security, and tests
+
+OUTPUT to .agent/ISSUES.md:
+- [ ] Critical: [file:line] Blocks merge
+- [ ] High: [file:line] Should fix before merge
+- [ ] Medium: [file:line] Should address
+- [ ] Low: [file:line] Nice to have
+
+If no issues found, write "No issues found.""#
+            .to_string(),
+    }
+}
+
+/// Generate a simple/vague reviewer review prompt (without guidelines).
+///
+/// This prompt is intentionally vague to preserve "fresh eyes" perspective
+/// and avoid context pollution. For detailed actionable output, use
+/// `prompt_detailed_review_without_guidelines` instead.
 pub(crate) fn prompt_reviewer_review(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"You are in REVIEW MODE with fresh eyes perspective.
@@ -77,15 +155,33 @@ INPUTS TO READ:
 YOUR TASK:
 Evaluate the codebase against the requirements in PROMPT.md.
 
-1. GOAL ALIGNMENT - Does the implementation achieve the stated goal?
-2. ACCEPTANCE CHECKS - Verify each check in PROMPT.md passes or fails
-3. CODE QUALITY - Check for bugs, error handling, tests, security issues
+═══════════════════════════════════════════════════════════════════════════════
+1. GOAL ALIGNMENT
+═══════════════════════════════════════════════════════════════════════════════
+- Does the implementation achieve the stated goal?
+- Are there missing features or incomplete work?
+- Does the solution match the intent of the requirements?
+
+═══════════════════════════════════════════════════════════════════════════════
+2. ACCEPTANCE CHECKS
+═══════════════════════════════════════════════════════════════════════════════
+Go through EACH acceptance check in PROMPT.md explicitly:
+- Verify the check passes or fails
+- Note specific evidence for your determination
+- Be thorough - every check must be evaluated
+
+═══════════════════════════════════════════════════════════════════════════════
+3. CODE QUALITY
+═══════════════════════════════════════════════════════════════════════════════
+- Bugs or logic errors
+- Missing or inadequate error handling
+- Missing or inadequate tests
+- Security vulnerabilities
+- Performance concerns
 
 OUTPUT:
-If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
-- "No issues found." (if everything looks good), OR
-- "Issues found." (if you have any concerns)
-Do not include any details or additional lines."#
+Write findings to .agent/ISSUES.md in a simple list of issues found.
+If no issues found, write "No issues found." to .agent/ISSUES.md"#
             .to_string(),
         ContextLevel::Normal => r#"You are in REVIEW MODE.
 
@@ -97,13 +193,11 @@ Review the repository against PROMPT.md requirements.
 
 1. Check goal alignment - does implementation achieve the stated goal?
 2. Verify each acceptance check passes
-3. Examine code quality (bugs, error handling, tests, security)
+3. Check for bugs, error handling, tests, security
 
 OUTPUT:
-If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
-- "No issues found." (if everything looks good), OR
-- "Issues found." (if you have any concerns)
-Do not include any details or additional lines."#
+Write findings to .agent/ISSUES.md.
+If no issues, write "No issues found.""#
             .to_string(),
     }
 }
@@ -711,7 +805,8 @@ pub(crate) fn prompt_for_agent(
             total_iterations.unwrap_or(1),
             context,
         ),
-        (_, Action::Review) => {
+        (Role::Reviewer, Action::Review) => {
+            // Use guidelines-enhanced prompt if guidelines are available
             if let Some(g) = guidelines {
                 prompt_reviewer_review_with_guidelines(context, g)
             } else {
@@ -726,6 +821,8 @@ pub(crate) fn prompt_for_agent(
             total_iterations.unwrap_or(1),
             context,
         ),
+        // Fallback for Developer + Review (shouldn't happen but be safe)
+        (Role::Developer, Action::Review) => prompt_reviewer_review(context),
     }
 }
 
@@ -770,6 +867,17 @@ mod tests {
     }
 
     #[test]
+    fn test_prompt_detailed_review_without_guidelines() {
+        let result = prompt_detailed_review_without_guidelines(ContextLevel::Minimal);
+        assert!(result.contains("DETAILED REVIEW MODE"));
+        assert!(result.contains("OUTPUT"));
+        assert!(result.contains("prioritized checklist"));
+        assert!(result.contains(".agent/ISSUES.md"));
+        // Should not instruct a one-line overwrite.
+        assert!(!result.contains("exactly ONE vague sentence"));
+    }
+
+    #[test]
     fn test_prompt_fix() {
         let result = prompt_fix();
         assert!(result.contains("ISSUES.md"));
@@ -794,14 +902,7 @@ mod tests {
 
     #[test]
     fn test_prompt_for_agent_reviewer() {
-        let result = prompt_for_agent(
-            Role::Reviewer,
-            Action::Review,
-            ContextLevel::Minimal,
-            None,
-            None,
-            None,
-        );
+        let result = prompt_reviewer_review(ContextLevel::Minimal);
         assert!(result.contains("fresh eyes"));
     }
 
