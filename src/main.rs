@@ -21,8 +21,9 @@ mod timer;
 mod utils;
 
 use crate::agents::{
-    global_agents_config_path, AgentErrorKind, AgentRegistry, AgentRole, AgentsConfigFile,
-    ConfigInitResult, JsonParserType,
+    auth_failure_advice, global_agents_config_path, strip_model_flag_prefix, validate_model_flag,
+    AgentErrorKind, AgentRegistry, AgentRole, AgentsConfigFile, ConfigInitResult, JsonParserType,
+    OpenCodeProviderType,
 };
 use crate::colors::Colors;
 use crate::config::{Config, ReviewDepth, Verbosity};
@@ -154,6 +155,48 @@ struct Args {
     )]
     reviewer_agent: Option<String>,
 
+    /// Developer model/provider override (e.g., "-m opencode/glm-4.7-free")
+    #[arg(
+        long,
+        env = "RALPH_DEVELOPER_MODEL",
+        value_name = "MODEL_FLAG",
+        help = "Model flag for developer agent (e.g., '-m opencode/glm-4.7-free')"
+    )]
+    developer_model: Option<String>,
+
+    /// Reviewer model/provider override (e.g., "-m opencode/claude-sonnet-4")
+    #[arg(
+        long,
+        env = "RALPH_REVIEWER_MODEL",
+        value_name = "MODEL_FLAG",
+        help = "Model flag for reviewer agent (e.g., '-m opencode/claude-sonnet-4')"
+    )]
+    reviewer_model: Option<String>,
+
+    /// Developer provider override (e.g., "opencode", "zai", "anthropic", "openai")
+    /// Use this to switch providers at runtime without changing agent config.
+    /// Combined with the agent's model to form the full model flag.
+    /// Provider types: 'opencode' (Zen gateway), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)
+    #[arg(
+        long,
+        env = "RALPH_DEVELOPER_PROVIDER",
+        value_name = "PROVIDER",
+        help = "Provider for developer agent: 'opencode' (Zen), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)"
+    )]
+    developer_provider: Option<String>,
+
+    /// Reviewer provider override (e.g., "opencode", "zai", "anthropic", "openai")
+    /// Use this to switch providers at runtime without changing agent config.
+    /// Combined with the agent's model to form the full model flag.
+    /// Provider types: 'opencode' (Zen gateway), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)
+    #[arg(
+        long,
+        env = "RALPH_REVIEWER_PROVIDER",
+        value_name = "PROVIDER",
+        help = "Provider for reviewer agent: 'opencode' (Zen), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)"
+    )]
+    reviewer_provider: Option<String>,
+
     /// Verbosity level (0=quiet, 1=normal, 2=verbose, 3=full, 4=debug)
     #[arg(
         short,
@@ -207,6 +250,13 @@ struct Args {
     /// List only agents found in PATH and exit
     #[arg(long, help = "Show only agents that are installed and available")]
     list_available_agents: bool,
+
+    /// List OpenCode provider types and their configuration
+    #[arg(
+        long,
+        help = "Show OpenCode provider types with model prefixes and auth commands"
+    )]
+    list_providers: bool,
 
     /// Initialize agents.toml config file and exit
     #[arg(long, help = "Create .agent/agents.toml with default settings")]
@@ -272,7 +322,6 @@ enum Preset {
     /// Use agent_chain defaults (no explicit agent override)
     Default,
     /// Use opencode for both developer and reviewer
-    #[value(alias = "opencode-both", alias = "opencode-only")]
     Opencode,
 }
 
@@ -573,6 +622,109 @@ fn run_with_prompt(
     Ok(CommandResult { exit_code, stderr })
 }
 
+/// Extract model name from a model flag or full model string
+///
+/// Examples:
+/// - "-m opencode/glm-4.7-free" -> "glm-4.7-free"
+/// - "anthropic/claude-sonnet-4" -> "claude-sonnet-4"
+/// - "claude-sonnet-4" -> "claude-sonnet-4"
+fn extract_model_name(model_flag: &str) -> &str {
+    let model = strip_model_flag_prefix(model_flag);
+    // Extract model name after provider prefix (provider/model)
+    model.rsplit('/').next().unwrap_or(model)
+}
+
+fn normalize_provider_override(provider: &str) -> Option<String> {
+    let trimmed = provider.trim().trim_matches('/');
+    if trimmed.is_empty() || trimmed.contains('/') {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+#[derive(Clone, Copy)]
+enum ModelFlagStyle {
+    DashMSpace,
+    DashMEquals,
+    DoubleDashModelSpace,
+    DoubleDashModelEquals,
+}
+
+fn detect_model_flag_style(model_flag: &str) -> Option<ModelFlagStyle> {
+    let s = model_flag.trim_start();
+    if s.starts_with("-m=") {
+        return Some(ModelFlagStyle::DashMEquals);
+    }
+    if s.starts_with("--model=") {
+        return Some(ModelFlagStyle::DoubleDashModelEquals);
+    }
+    if s == "-m" || s.starts_with("-m ") || s.starts_with("-m\t") {
+        return Some(ModelFlagStyle::DashMSpace);
+    }
+    if s == "--model" || s.starts_with("--model ") || s.starts_with("--model\t") {
+        return Some(ModelFlagStyle::DoubleDashModelSpace);
+    }
+    None
+}
+
+fn format_model_flag(style: ModelFlagStyle, model: &str) -> String {
+    match style {
+        ModelFlagStyle::DashMSpace => format!("-m {}", model),
+        ModelFlagStyle::DashMEquals => format!("-m={}", model),
+        ModelFlagStyle::DoubleDashModelSpace => format!("--model {}", model),
+        ModelFlagStyle::DoubleDashModelEquals => format!("--model={}", model),
+    }
+}
+
+/// Resolve the effective model flag considering provider override
+///
+/// Priority:
+/// 1. If provider is specified, construct "{provider}/{model_name}"
+/// 2. If model is specified, use it directly
+/// 3. Otherwise, use agent's configured model_flag
+fn resolve_model_with_provider(
+    cli_provider: Option<&str>,
+    cli_model: Option<&str>,
+    agent_model_flag: Option<&str>,
+) -> Option<String> {
+    let style = detect_model_flag_style(cli_model.unwrap_or(""))
+        .or_else(|| detect_model_flag_style(agent_model_flag.unwrap_or("")))
+        .unwrap_or(ModelFlagStyle::DashMSpace);
+
+    let base_model = cli_model
+        .map(|m| strip_model_flag_prefix(m).trim())
+        .filter(|m| !m.is_empty())
+        .or_else(|| {
+            agent_model_flag
+                .map(|m| strip_model_flag_prefix(m).trim())
+                .filter(|m| !m.is_empty())
+        })?;
+
+    let provider_override = cli_provider.and_then(normalize_provider_override);
+    match (provider_override.as_deref(), cli_model) {
+        // Provider + model: construct full model flag
+        (Some(provider), Some(model)) => {
+            let model_name = extract_model_name(model);
+            if model_name.is_empty() {
+                return Some(format_model_flag(style, base_model));
+            }
+            Some(format_model_flag(style, &format!("{}/{}", provider, model_name)))
+        }
+        // Provider only: use provider with agent's default model
+        (Some(provider), None) => {
+            let model_name = extract_model_name(base_model);
+            if model_name.is_empty() {
+                return Some(format_model_flag(style, base_model));
+            }
+            Some(format_model_flag(style, &format!("{}/{}", provider, model_name)))
+        }
+        // Model only: normalize to a full model flag (preserve -m/--model style if present)
+        (None, Some(_model)) => Some(format_model_flag(style, base_model)),
+        // Neither: use agent's configured model (normalized)
+        (None, None) => Some(format_model_flag(style, base_model)),
+    }
+}
+
 /// Run a command with automatic fallback to alternative agents on failure
 ///
 /// This function attempts to run the command with the primary agent first,
@@ -584,10 +736,12 @@ fn run_with_prompt(
 ///
 /// 1. Try each agent with up to `max_retries` attempts
 /// 2. On retriable errors (rate limit, transient), retry the same agent
-/// 3. On fallback errors (auth, command not found), switch to next agent
-/// 4. When all agents are exhausted, use exponential backoff and cycle back
+/// 3. On fallback errors (auth, command not found), switch to next provider or agent
+/// 4. Provider-level fallback: Try different models within the same agent before
+///    switching to another agent (configured via provider_fallback in agent_chain)
+/// 5. When all agents are exhausted, use exponential backoff and cycle back
 ///    to the first agent (up to `max_cycles` times)
-/// 5. Exponential backoff: base_delay * multiplier^cycle, capped at max_backoff
+/// 6. Exponential backoff: base_delay * multiplier^cycle, capped at max_backoff
 #[allow(clippy::too_many_arguments)]
 fn run_with_fallback(
     role: AgentRole,
@@ -621,6 +775,18 @@ fn run_with_fallback(
     // Track the last error for final reporting
     let mut last_exit_code = 1;
 
+    // Get the CLI model and provider overrides based on role (if any)
+    let (cli_model_override, cli_provider_override) = match role {
+        AgentRole::Developer => (
+            config.developer_model.as_deref(),
+            config.developer_provider.as_deref(),
+        ),
+        AgentRole::Reviewer => (
+            config.reviewer_model.as_deref(),
+            config.reviewer_provider.as_deref(),
+        ),
+    };
+
     // Cycle through all agents with exponential backoff
     for cycle in 0..fallback_config.max_cycles {
         if cycle > 0 {
@@ -643,121 +809,204 @@ fn run_with_fallback(
                 continue;
             };
 
-            // Check for command override from env vars (for primary agent only)
-            let cmd_str = if agent_index == 0 && cycle == 0 {
-                // For primary agent on first cycle, respect env var overrides
-                match role {
-                    AgentRole::Developer => config
-                        .developer_cmd
-                        .clone()
-                        .unwrap_or_else(|| agent_config.build_cmd(true, true, true)),
-                    AgentRole::Reviewer => config
-                        .reviewer_cmd
-                        .clone()
-                        .unwrap_or_else(|| agent_config.build_cmd(true, true, false)),
+            // Build the list of model flags to try for this agent:
+            // 1. CLI model/provider override (if provided and this is the primary agent)
+            // 2. Agent's configured model_flag (from agents.toml)
+            // 3. Provider fallback models (from agent_chain.provider_fallback)
+            let mut model_flags_to_try: Vec<Option<String>> = Vec::new();
+
+            // CLI override takes highest priority for primary agent
+            // Provider override can modify the model's provider prefix
+            if agent_index == 0 && (cli_model_override.is_some() || cli_provider_override.is_some())
+            {
+                let resolved = resolve_model_with_provider(
+                    cli_provider_override,
+                    cli_model_override,
+                    agent_config.model_flag.as_deref(),
+                );
+                if resolved.is_some() {
+                    model_flags_to_try.push(resolved);
                 }
-            } else {
-                agent_config.build_cmd(true, true, role == AgentRole::Developer)
-            };
-            let parser_type = agent_config.json_parser;
-            let label = format!("{} ({})", base_label, agent_name);
-            let logfile = format!("{}_{}.log", logfile_prefix, agent_name);
+            }
 
-            // Try with retries
-            for retry in 0..fallback_config.max_retries {
-                if retry > 0 {
-                    logger.info(&format!(
-                        "Retry {}/{} for {}...",
-                        retry, fallback_config.max_retries, agent_name,
-                    ));
-                    // Note: actual sleep with error-specific delay happens before this point
-                }
+            // Add the agent's default model (None means use agent's configured model_flag or no model)
+            if model_flags_to_try.is_empty() {
+                model_flags_to_try.push(None);
+            }
 
-                let result = run_with_prompt(
-                    &label,
-                    &cmd_str,
-                    prompt,
-                    &logfile,
-                    parser_type,
-                    timer,
-                    logger,
-                    colors,
-                    config,
-                )?;
-
-                if result.exit_code == 0 {
-                    return Ok(0);
-                }
-
-                last_exit_code = result.exit_code;
-
-                // Classify the error
-                let error_kind = AgentErrorKind::classify(result.exit_code, &result.stderr);
-
-                logger.warn(&format!(
-                    "Agent '{}' failed: {} (exit code {})",
+            // Add provider fallback models for this agent
+            let provider_fallbacks = fallback_config.get_provider_fallbacks(agent_name);
+            if !provider_fallbacks.is_empty() {
+                logger.info(&format!(
+                    "Agent '{}' has {} provider fallback(s) configured",
                     agent_name,
-                    error_kind.description(),
-                    result.exit_code
+                    provider_fallbacks.len()
                 ));
-                logger.info(error_kind.recovery_advice());
-
-                // Provide installation guidance for command not found errors
-                if error_kind.is_command_not_found() {
-                    // Extract the binary name from the command
-                    let binary = cmd_str.split_whitespace().next().unwrap_or(agent_name);
-                    let guidance = crate::platform::InstallGuidance::for_binary(binary);
-                    logger.info(&guidance.format());
+                for model in provider_fallbacks {
+                    model_flags_to_try.push(Some(model.clone()));
                 }
+            }
 
-                // Provide network-specific guidance
-                if error_kind.is_network_error() {
-                    logger.info("Tip: Check your internet connection, firewall, or VPN settings.");
+            // Validate model flags and emit warnings (only on first try to avoid spam)
+            if agent_index == 0 && cycle == 0 {
+                for model_flag in model_flags_to_try.iter().flatten() {
+                    for warning in validate_model_flag(model_flag) {
+                        logger.warn(&warning);
+                    }
                 }
+            }
 
-                // Provide context reduction hint for memory-related errors
-                if error_kind.suggests_smaller_context() {
-                    logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
-                }
+            // Try each model flag
+            for (model_index, model_flag) in model_flags_to_try.iter().enumerate() {
+                let parser_type = agent_config.json_parser;
 
-                // Check for unrecoverable errors - abort immediately
-                if error_kind.is_unrecoverable() {
-                    logger.error("Unrecoverable error - cannot continue pipeline");
-                    return Ok(last_exit_code);
-                }
-
-                // Use error-specific wait time for retries
-                let suggested_wait = error_kind.suggested_wait_ms();
-                let actual_wait = if suggested_wait > 0 {
-                    suggested_wait
+                // Build command with model override
+                let model_ref = model_flag.as_deref();
+                let cmd_str = if agent_index == 0 && cycle == 0 && model_index == 0 {
+                    // For primary agent on first cycle, respect env var command overrides
+                    match role {
+                        AgentRole::Developer => config.developer_cmd.clone().unwrap_or_else(|| {
+                            agent_config.build_cmd_with_model(true, true, true, model_ref)
+                        }),
+                        AgentRole::Reviewer => config.reviewer_cmd.clone().unwrap_or_else(|| {
+                            agent_config.build_cmd_with_model(true, true, false, model_ref)
+                        }),
+                    }
                 } else {
-                    fallback_config.retry_delay_ms
+                    agent_config.build_cmd_with_model(
+                        true,
+                        true,
+                        role == AgentRole::Developer,
+                        model_ref,
+                    )
                 };
 
-                // Decide whether to retry or fallback
-                if error_kind.should_retry() && retry + 1 < fallback_config.max_retries {
-                    logger.info(&format!("Waiting {}ms before retry...", actual_wait));
-                    std::thread::sleep(std::time::Duration::from_millis(actual_wait));
-                    continue; // Retry same agent
-                }
+                let model_suffix = model_flag
+                    .as_ref()
+                    .map(|m| format!(" [{}]", m))
+                    .unwrap_or_default();
+                let label = format!("{} ({}{})", base_label, agent_name, model_suffix);
+                let logfile = format!("{}_{}_{}.log", logfile_prefix, agent_name, model_index);
 
-                if error_kind.should_fallback() && agent_index + 1 < agents_to_try.len() {
-                    logger.info(&format!(
-                        "Switching to fallback agent: {}",
-                        agents_to_try[agent_index + 1]
-                    ));
-                    break; // Try next agent
-                }
+                // Try with retries
+                for retry in 0..fallback_config.max_retries {
+                    if retry > 0 {
+                        logger.info(&format!(
+                            "Retry {}/{} for {}{}...",
+                            retry, fallback_config.max_retries, agent_name, model_suffix,
+                        ));
+                    }
 
-                // For permanent errors, we still continue to next agent in the chain
-                // to maximize chances of success
-                if agent_index + 1 < agents_to_try.len() {
-                    logger.info(&format!(
-                        "Trying next agent in chain: {}",
-                        agents_to_try[agent_index + 1]
+                    let result = run_with_prompt(
+                        &label,
+                        &cmd_str,
+                        prompt,
+                        &logfile,
+                        parser_type,
+                        timer,
+                        logger,
+                        colors,
+                        config,
+                    )?;
+
+                    if result.exit_code == 0 {
+                        return Ok(0);
+                    }
+
+                    last_exit_code = result.exit_code;
+
+                    // Classify the error
+                    let error_kind = AgentErrorKind::classify(result.exit_code, &result.stderr);
+
+                    logger.warn(&format!(
+                        "Agent '{}'{} failed: {} (exit code {})",
+                        agent_name,
+                        model_suffix,
+                        error_kind.description(),
+                        result.exit_code
                     ));
+
+                    // Provide provider-specific auth advice for auth failures
+                    if matches!(error_kind, AgentErrorKind::AuthFailure) {
+                        logger.info(&auth_failure_advice(model_ref));
+                    } else {
+                        logger.info(error_kind.recovery_advice());
+                    }
+
+                    // Provide installation guidance for command not found errors
+                    if error_kind.is_command_not_found() {
+                        let binary = cmd_str.split_whitespace().next().unwrap_or(agent_name);
+                        let guidance = crate::platform::InstallGuidance::for_binary(binary);
+                        logger.info(&guidance.format());
+                    }
+
+                    // Provide network-specific guidance
+                    if error_kind.is_network_error() {
+                        logger.info(
+                            "Tip: Check your internet connection, firewall, or VPN settings.",
+                        );
+                    }
+
+                    // Provide context reduction hint for memory-related errors
+                    if error_kind.suggests_smaller_context() {
+                        logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
+                    }
+
+                    // Check for unrecoverable errors - abort immediately
+                    if error_kind.is_unrecoverable() {
+                        logger.error("Unrecoverable error - cannot continue pipeline");
+                        return Ok(last_exit_code);
+                    }
+
+                    // Use error-specific wait time for retries
+                    let suggested_wait = error_kind.suggested_wait_ms();
+                    let actual_wait = if suggested_wait > 0 {
+                        suggested_wait
+                    } else {
+                        fallback_config.retry_delay_ms
+                    };
+
+                    // Decide whether to retry, try next provider, or try next agent
+                    if error_kind.should_retry() && retry + 1 < fallback_config.max_retries {
+                        logger.info(&format!("Waiting {}ms before retry...", actual_wait));
+                        std::thread::sleep(std::time::Duration::from_millis(actual_wait));
+                        continue; // Retry same agent/model
+                    }
+
+                    // For rate limits or token exhaustion, try next provider first
+                    if (matches!(
+                        error_kind,
+                        AgentErrorKind::RateLimited | AgentErrorKind::TokenExhausted
+                    )) && model_index + 1 < model_flags_to_try.len()
+                    {
+                        logger.info(&format!(
+                            "Trying next provider/model for {}: {}",
+                            agent_name,
+                            model_flags_to_try[model_index + 1]
+                                .as_deref()
+                                .unwrap_or("(default)")
+                        ));
+                        break; // Try next model flag
+                    }
+
+                    // Otherwise, move to next agent
+                    if error_kind.should_fallback() && agent_index + 1 < agents_to_try.len() {
+                        logger.info(&format!(
+                            "Switching to fallback agent: {}",
+                            agents_to_try[agent_index + 1]
+                        ));
+                        break; // Try next agent
+                    }
+
+                    // For permanent errors, we still continue to next agent in the chain
+                    if agent_index + 1 < agents_to_try.len() {
+                        logger.info(&format!(
+                            "Trying next agent in chain: {}",
+                            agents_to_try[agent_index + 1]
+                        ));
+                    }
+                    break;
                 }
-                break;
             }
         }
         // End of this cycle - if we reach here, all agents failed
@@ -803,6 +1052,21 @@ impl Drop for AgentPhaseGuard<'_> {
         let _ = uninstall_hooks(self.logger);
         cleanup_generated_files();
     }
+}
+
+/// Helper function to print provider information for --list-providers
+fn print_provider_info(colors: &Colors, provider: OpenCodeProviderType, agent_alias: &str) {
+    let examples = provider.example_models();
+    let example_str = if examples.is_empty() {
+        String::new()
+    } else {
+        format!(" (e.g., {})", examples[0])
+    };
+
+    println!("{}{}{}", colors.bold(), provider.name(), colors.reset());
+    println!("  Prefix: {}{}", provider.prefix(), example_str);
+    println!("  Auth: {}", provider.auth_command());
+    println!("  Agent: {}", agent_alias);
 }
 
 fn main() -> anyhow::Result<()> {
@@ -870,6 +1134,18 @@ fn main() -> anyhow::Result<()> {
     }
     if let Some(agent) = args.reviewer_agent {
         config.reviewer_agent = Some(agent);
+    }
+    if let Some(model) = args.developer_model {
+        config.developer_model = Some(model);
+    }
+    if let Some(model) = args.reviewer_model {
+        config.reviewer_model = Some(model);
+    }
+    if let Some(provider) = args.developer_provider {
+        config.developer_provider = Some(provider);
+    }
+    if let Some(provider) = args.reviewer_provider {
+        config.reviewer_provider = Some(provider);
     }
     if let Some(depth) = args.review_depth {
         if let Some(parsed) = ReviewDepth::from_str(&depth) {
@@ -1110,6 +1386,225 @@ fn main() -> anyhow::Result<()> {
         for name in items {
             println!("{}", name);
         }
+        return Ok(());
+    }
+
+    // --list-providers: Show OpenCode provider types and configuration
+    if args.list_providers {
+        println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());
+        println!();
+        println!("Ralph includes built-in guidance for major OpenCode provider prefixes (plus a custom fallback).");
+        println!("OpenCode may support additional providers; consult OpenCode docs for the full set.");
+        println!();
+
+        // Category: OpenCode Gateway
+        println!(
+            "{}═══ OPENCODE GATEWAY ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::OpenCodeZen,
+            "opencode-zen-glm",
+        );
+        println!();
+
+        // Category: Chinese AI Providers
+        println!(
+            "{}═══ CHINESE AI PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(&colors, OpenCodeProviderType::ZaiDirect, "opencode-zai-glm");
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::ZaiCodingPlan,
+            "opencode-zai-glm-codingplan",
+        );
+        print_provider_info(&colors, OpenCodeProviderType::Moonshot, "opencode-moonshot");
+        print_provider_info(&colors, OpenCodeProviderType::MiniMax, "opencode-minimax");
+        println!();
+
+        // Category: Major Cloud Providers
+        println!(
+            "{}═══ MAJOR CLOUD PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::Anthropic,
+            "opencode-direct-claude",
+        );
+        print_provider_info(&colors, OpenCodeProviderType::OpenAI, "opencode-openai");
+        print_provider_info(&colors, OpenCodeProviderType::Google, "opencode-google");
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::GoogleVertex,
+            "opencode-vertex",
+        );
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::AmazonBedrock,
+            "opencode-bedrock",
+        );
+        print_provider_info(&colors, OpenCodeProviderType::AzureOpenAI, "opencode-azure");
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::GithubCopilot,
+            "opencode-copilot",
+        );
+        println!();
+
+        // Category: Fast Inference Providers
+        println!(
+            "{}═══ FAST INFERENCE PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(&colors, OpenCodeProviderType::Groq, "opencode-groq");
+        print_provider_info(&colors, OpenCodeProviderType::Together, "opencode-together");
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::Fireworks,
+            "opencode-fireworks",
+        );
+        print_provider_info(&colors, OpenCodeProviderType::Cerebras, "opencode-cerebras");
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::SambaNova,
+            "opencode-sambanova",
+        );
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::DeepInfra,
+            "opencode-deepinfra",
+        );
+        println!();
+
+        // Category: Gateway/Aggregator Providers
+        println!(
+            "{}═══ GATEWAY PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::OpenRouter,
+            "opencode-openrouter",
+        );
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::Cloudflare,
+            "opencode-cloudflare",
+        );
+        println!();
+
+        // Category: Specialized Providers
+        println!(
+            "{}═══ SPECIALIZED PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(&colors, OpenCodeProviderType::DeepSeek, "opencode-deepseek");
+        print_provider_info(&colors, OpenCodeProviderType::Xai, "opencode-xai");
+        print_provider_info(&colors, OpenCodeProviderType::Mistral, "opencode-mistral");
+        print_provider_info(&colors, OpenCodeProviderType::Cohere, "opencode-cohere");
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::Perplexity,
+            "opencode-perplexity",
+        );
+        print_provider_info(&colors, OpenCodeProviderType::AI21, "opencode-ai21");
+        print_provider_info(&colors, OpenCodeProviderType::VeniceAI, "opencode-venice");
+        println!();
+
+        // Category: Open-Source Model Providers
+        println!(
+            "{}═══ OPEN-SOURCE MODEL PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::HuggingFace,
+            "opencode-huggingface",
+        );
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::Replicate,
+            "opencode-replicate",
+        );
+        println!();
+
+        // Category: Cloud Platform Providers
+        println!(
+            "{}═══ CLOUD PLATFORM PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(&colors, OpenCodeProviderType::Baseten, "opencode-baseten");
+        print_provider_info(&colors, OpenCodeProviderType::Cortecs, "opencode-cortecs");
+        print_provider_info(&colors, OpenCodeProviderType::Scaleway, "opencode-scaleway");
+        print_provider_info(&colors, OpenCodeProviderType::OVHcloud, "opencode-ovhcloud");
+        print_provider_info(&colors, OpenCodeProviderType::IONet, "opencode-ionet");
+        print_provider_info(&colors, OpenCodeProviderType::Nebius, "opencode-nebius");
+        println!();
+
+        // Category: AI Gateway Providers
+        println!(
+            "{}═══ AI GATEWAY PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(&colors, OpenCodeProviderType::Vercel, "opencode-vercel");
+        print_provider_info(&colors, OpenCodeProviderType::Helicone, "opencode-helicone");
+        print_provider_info(&colors, OpenCodeProviderType::ZenMux, "opencode-zenmux");
+        println!();
+
+        // Category: Enterprise/Industry Providers
+        println!(
+            "{}═══ ENTERPRISE PROVIDERS ═══{}",
+            colors.bold(),
+            colors.reset()
+        );
+        print_provider_info(&colors, OpenCodeProviderType::SapAICore, "opencode-sap");
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::AzureCognitiveServices,
+            "opencode-azure-cognitive",
+        );
+        println!();
+
+        // Category: Local Providers
+        println!("{}═══ LOCAL PROVIDERS ═══{}", colors.bold(), colors.reset());
+        print_provider_info(&colors, OpenCodeProviderType::Ollama, "opencode-ollama");
+        print_provider_info(&colors, OpenCodeProviderType::LMStudio, "opencode-lmstudio");
+        print_provider_info(
+            &colors,
+            OpenCodeProviderType::OllamaCloud,
+            "opencode-ollama-cloud",
+        );
+        print_provider_info(&colors, OpenCodeProviderType::LlamaCpp, "opencode-llamacpp");
+        println!();
+
+        // Category: Custom
+        println!("{}═══ CUSTOM ═══{}", colors.bold(), colors.reset());
+        print_provider_info(&colors, OpenCodeProviderType::Custom, "(custom)");
+        println!();
+
+        // Important notes
+        println!("{}═══ IMPORTANT NOTES ═══{}", colors.bold(), colors.reset());
+        println!("• OpenCode Zen (opencode/*) and Z.AI Direct (zai/* or zhipuai/*) are SEPARATE endpoints!");
+        println!("  - opencode/* routes through OpenCode's Zen gateway at opencode.ai");
+        println!("  - zai/* or zhipuai/* connects directly to Z.AI's API at api.z.ai");
+        println!("  - Z.AI Coding Plan is an auth tier; model prefix remains zai/* or zhipuai/*");
+        println!("• Cloud providers (Vertex, Bedrock, Azure, SAP) require additional configuration");
+        println!("• Local providers (Ollama, LM Studio, llama.cpp) run on your hardware - no API key needed");
+        println!("• Use clear naming: opencode-zen-*, opencode-zai-*, opencode-direct-* aliases");
+        println!();
+
         return Ok(());
     }
 
@@ -2529,6 +3024,39 @@ fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_model_with_provider_emits_full_model_flag() {
+        // Provider override should preserve a full -m/--model flag rather than returning provider/model.
+        assert_eq!(
+            resolve_model_with_provider(
+                Some("opencode"),
+                Some("-m zai/glm-4.7"),
+                Some("-m anthropic/claude-sonnet-4")
+            )
+            .as_deref(),
+            Some("-m opencode/glm-4.7")
+        );
+
+        // Provider-only override should use the agent's configured model name.
+        assert_eq!(
+            resolve_model_with_provider(Some("opencode"), None, Some("-m anthropic/claude-sonnet-4"))
+                .as_deref(),
+            Some("-m opencode/claude-sonnet-4")
+        );
+
+        // Model-only overrides normalize bare provider/model to a full flag.
+        assert_eq!(
+            resolve_model_with_provider(None, Some("opencode/glm-4.7-free"), None).as_deref(),
+            Some("-m opencode/glm-4.7-free")
+        );
+
+        // Preserve the user's style when provided.
+        assert_eq!(
+            resolve_model_with_provider(None, Some("--model=opencode/glm-4.7-free"), None).as_deref(),
+            Some("--model=opencode/glm-4.7-free")
+        );
+    }
 
     #[test]
     fn argv_requests_json_detects_common_flags() {
