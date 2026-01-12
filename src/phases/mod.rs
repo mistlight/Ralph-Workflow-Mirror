@@ -1,4 +1,4 @@
-//! Pipeline phase orchestration module.
+//! Pipeline Phase Orchestration Module
 //!
 //! This module contains the execution logic for each phase of the Ralph pipeline:
 //! - Development phase: iterative planning and execution cycles
@@ -8,6 +8,13 @@
 //! Each phase is encapsulated in its own submodule with a clean interface that
 //! takes a shared context and returns results. The phases module coordinates
 //! the overall flow while keeping phase-specific logic separated.
+//!
+//! # Module Structure
+//!
+//! - [`commit`] - Final commit creation phase
+//! - [`context`] - Shared phase context for passing state between phases
+//! - [`development`] - Iterative development cycle execution
+//! - [`review`] - Code review and fix cycle execution
 
 mod commit;
 mod context;

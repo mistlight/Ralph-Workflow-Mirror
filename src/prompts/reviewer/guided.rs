@@ -1,3 +1,16 @@
+//! Guided reviewer prompts with language-specific guidelines.
+//!
+//! This module generates review prompts that incorporate [`ReviewGuidelines`]
+//! tailored to the detected project stack. The guidelines provide language and
+//! framework-specific checks (e.g., Rust unsafe usage, React hooks rules, Django
+//! CSRF protection) that help the reviewer focus on relevant concerns.
+//!
+//! Available prompt types:
+//! - **Standard review**: Basic guideline integration
+//! - **Comprehensive review**: Priority-ordered checks with severity levels
+//! - **Security-focused review**: OWASP Top 10 combined with language-specific
+//!   security checks
+
 use super::super::types::ContextLevel;
 use crate::guidelines::ReviewGuidelines;
 

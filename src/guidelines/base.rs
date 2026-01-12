@@ -333,8 +333,12 @@ impl ReviewGuidelines {
         push_section(&mut sections, "🟢 LOW (nice to have):", low_checks, 10);
 
         // Info: Idioms.
-        let info_checks: Vec<SeverityCheck> =
-            self.idioms.iter().cloned().map(SeverityCheck::info).collect();
+        let info_checks: Vec<SeverityCheck> = self
+            .idioms
+            .iter()
+            .cloned()
+            .map(SeverityCheck::info)
+            .collect();
         push_section(&mut sections, "🔵 INFO (observations):", info_checks, 10);
 
         sections.join("\n\n")

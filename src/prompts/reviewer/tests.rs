@@ -1,7 +1,12 @@
+//! Tests for reviewer prompt generation.
+//!
+//! Verifies that generated prompts contain expected content for various
+//! review modes (standard, detailed, security, incremental).
+
 use super::*;
+use crate::guidelines::ReviewGuidelines;
 use crate::language_detector::ProjectStack;
 use crate::prompts::types::ContextLevel;
-use crate::guidelines::ReviewGuidelines;
 
 #[test]
 fn prompt_reviewer_review_mentions_fresh_eyes_in_minimal() {

@@ -1,7 +1,13 @@
-//! Git helper functions.
+//! Git Helper Functions
 //!
 //! Provides git hooks management, a git wrapper for blocking commits during the
 //! agent phase, and basic repository utilities.
+//!
+//! # Module Structure
+//!
+//! - [`hooks`] - Git hooks installation and removal
+//! - [`repo`] - Basic git repository operations (add, commit, snapshot)
+//! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
 
 #![deny(unsafe_code)]
 

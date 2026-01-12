@@ -201,7 +201,10 @@ pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
     Ok(())
 }
 
-/// Delete PLAN.md after integration.
+/// Delete the PLAN.md file after integration.
+///
+/// Called after the plan has been integrated into the codebase.
+/// Silently succeeds if the file doesn't exist.
 pub fn delete_plan_file() -> io::Result<()> {
     let plan_path = Path::new(".agent/PLAN.md");
     if plan_path.exists() {
@@ -210,7 +213,10 @@ pub fn delete_plan_file() -> io::Result<()> {
     Ok(())
 }
 
-/// Delete commit-message.txt after committing.
+/// Delete the commit-message.txt file after committing.
+///
+/// Called after a successful git commit to clean up the temporary
+/// commit message file. Silently succeeds if the file doesn't exist.
 pub fn delete_commit_message_file() -> io::Result<()> {
     let msg_path = Path::new(".agent/commit-message.txt");
     if msg_path.exists() {
@@ -242,10 +248,14 @@ pub fn read_commit_message_file() -> io::Result<String> {
     Ok(trimmed.to_string())
 }
 
-/// Clean up all generated files (for crash/exit cleanup).
+/// Clean up all generated files.
 ///
-/// Called during cleanup to remove temporary files that may have been
-/// left behind by an interrupted pipeline.
+/// Removes temporary files that may have been left behind by an interrupted
+/// pipeline run. This includes PLAN.md, commit-message.txt, and other
+/// artifacts listed in [`GENERATED_FILES`].
+///
+/// This function is best-effort: individual file deletion failures are
+/// silently ignored since we're in a cleanup context.
 pub fn cleanup_generated_files() {
     for file in GENERATED_FILES {
         let _ = fs::remove_file(file);
