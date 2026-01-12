@@ -34,9 +34,11 @@
 #
 # JSON PARSERS
 # ------------
-# - "claude"  : Parses Claude Code's stream-json format
-# - "codex"   : Parses OpenAI Codex CLI JSON format
-# - "generic" : Line-by-line output (no JSON parsing)
+# - "claude"   : Parses Claude Code's stream-json format
+# - "codex"    : Parses OpenAI Codex CLI JSON format
+# - "gemini"   : Parses Google Gemini CLI JSON format
+# - "opencode" : Parses OpenCode's NDJSON format (step_start, step_finish, tool_use, text)
+# - "generic"  : Line-by-line output (no JSON parsing)
 #
 # AGENT CHAIN CONFIGURATION
 # -------------------------
@@ -107,7 +109,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 # model_flag = "-m opencode/glm-4.7-free"  # Uncomment to set default model
 
 # Aider - AI pair programming in your terminal
@@ -419,7 +421,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m opencode/glm-4.7-free"
 
 # OpenCode with Claude via Zen (premium, routed through OpenCode Zen billing)
@@ -430,7 +432,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m opencode/claude-sonnet-4"
 
 # OpenCode with Zen default routing (intelligent model selection)
@@ -442,7 +444,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 # No model_flag - uses opencode's default model selection
 
 # -------------------------------------------------------------------------
@@ -464,7 +466,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m zai/glm-4.7"
 
 # OpenCode with Z.AI GLM-4.5 Direct (alternative tier)
@@ -475,7 +477,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m zai/glm-4.5"
 
 # -------------------------------------------------------------------------
@@ -496,7 +498,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m zai/glm-4.7"
 
 # OpenCode with Z.AI GLM-4.5 Coding Plan (3x usage, 1/7 cost)
@@ -507,7 +509,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m zai/glm-4.5"
 
 # -------------------------------------------------------------------------
@@ -525,7 +527,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m anthropic/claude-sonnet-4"
 
 # OpenCode with direct OpenAI API (requires OPENAI_API_KEY)
@@ -536,7 +538,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m openai/gpt-4o"
 
 # -------------------------------------------------------------------------
@@ -553,7 +555,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m google/gemini-2.0-flash"
 
 # OpenCode with Google Gemini Pro (requires GOOGLE_GENERATIVE_AI_API_KEY)
@@ -564,7 +566,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m google/gemini-1.5-pro"
 
 # -------------------------------------------------------------------------
@@ -581,7 +583,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m groq/llama-3.3-70b-versatile"
 
 # OpenCode with Groq Mixtral (fast Mixtral 8x7B)
@@ -592,7 +594,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m groq/mixtral-8x7b-32768"
 
 # -------------------------------------------------------------------------
@@ -609,7 +611,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m openrouter/anthropic/claude-3.5-sonnet"
 
 # -------------------------------------------------------------------------
@@ -626,7 +628,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m deepseek/deepseek-chat"
 
 # OpenCode with DeepSeek Coder (optimized for code)
@@ -637,7 +639,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m deepseek/deepseek-coder"
 
 # -------------------------------------------------------------------------
@@ -654,7 +656,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m xai/grok-2"
 
 # Alias for Grok
@@ -664,7 +666,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m xai/grok-2"
 
 # -------------------------------------------------------------------------
@@ -681,7 +683,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m mistral/mistral-large-latest"
 
 # OpenCode with Codestral (code-specialized model)
@@ -692,7 +694,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m mistral/codestral-latest"
 
 # -------------------------------------------------------------------------
@@ -709,7 +711,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m moonshot/kimi-k2"
 
 # Alias for Kimi
@@ -719,7 +721,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m moonshot/kimi-k2"
 
 # -------------------------------------------------------------------------
@@ -736,7 +738,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m minimax/abab6.5-chat"
 
 # -------------------------------------------------------------------------
@@ -753,7 +755,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m amazon-bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0"
 
 # OpenCode with Azure OpenAI (requires Azure configuration)
@@ -765,7 +767,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m azure-openai/gpt-4o"
 
 # -------------------------------------------------------------------------
@@ -781,7 +783,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m ollama/llama3"
 
 # OpenCode with Ollama CodeLlama (local code-specialized model)
@@ -792,7 +794,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m ollama/codellama"
 
 # OpenCode with LM Studio (local model runner)
@@ -803,7 +805,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m lmstudio/local-model"
 
 # -------------------------------------------------------------------------
@@ -820,7 +822,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m together/meta-llama/Llama-3-70b-chat-hf"
 
 # OpenCode with Fireworks AI (optimized inference)
@@ -832,7 +834,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m fireworks/accounts/fireworks/models/llama-v3p1-70b-instruct"
 
 # -------------------------------------------------------------------------
@@ -849,7 +851,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m cohere/command-r-plus"
 
 # -------------------------------------------------------------------------
@@ -866,7 +868,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m copilot/gpt-4o"
 
 # -------------------------------------------------------------------------
@@ -883,7 +885,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m deep-infra/meta-llama/Llama-3.3-70B-Instruct"
 
 # -------------------------------------------------------------------------
@@ -900,7 +902,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m huggingface/Qwen/Qwen2.5-Coder-32B"
 
 # -------------------------------------------------------------------------
@@ -917,7 +919,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m perplexity/sonar-pro"
 
 # -------------------------------------------------------------------------
@@ -934,7 +936,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m cerebras/llama3.3-70b"
 
 # -------------------------------------------------------------------------
@@ -951,7 +953,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m sambanova/Meta-Llama-3.3-70B-Instruct"
 
 # -------------------------------------------------------------------------
@@ -968,7 +970,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m replicate/meta/llama-3-70b-instruct"
 
 # -------------------------------------------------------------------------
@@ -985,7 +987,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m ai21/jamba-1.5-large"
 
 # -------------------------------------------------------------------------
@@ -1002,7 +1004,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m cloudflare/@cf/meta/llama-3.1-8b-instruct"
 
 # -------------------------------------------------------------------------
@@ -1019,7 +1021,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m google-vertex/gemini-2.0-flash"
 
 # -------------------------------------------------------------------------
@@ -1036,7 +1038,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m baseten/llama-3-70b"
 
 # OpenCode with Cortecs (AI compute platform)
@@ -1048,7 +1050,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m cortecs/llama-3-70b"
 
 # OpenCode with Scaleway (European cloud AI)
@@ -1060,7 +1062,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m scaleway/llama-3-70b"
 
 # OpenCode with OVHcloud (European cloud AI)
@@ -1072,7 +1074,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m ovhcloud/llama-3-70b"
 
 # -------------------------------------------------------------------------
@@ -1089,7 +1091,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m vercel/gpt-4o"
 
 # OpenCode with Helicone (AI observability gateway)
@@ -1101,7 +1103,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m helicone/gpt-4o"
 
 # OpenCode with IO.NET (Distributed GPU network)
@@ -1113,7 +1115,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m io-net/llama-3-70b"
 
 # OpenCode with Nebius (Cloud AI infrastructure)
@@ -1125,7 +1127,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m nebius/llama-3-70b"
 
 # OpenCode with ZenMux (AI multiplexer gateway)
@@ -1137,7 +1139,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m zenmux/gpt-4o"
 
 # -------------------------------------------------------------------------
@@ -1154,7 +1156,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m sap-ai-core/gpt-4o"
 
 # OpenCode with Azure Cognitive Services
@@ -1166,7 +1168,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m azure-cognitive-services/gpt-4o"
 
 # -------------------------------------------------------------------------
@@ -1183,7 +1185,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m venice-ai/llama-3-70b"
 
 # OpenCode with Ollama Cloud (Cloud-hosted Ollama)
@@ -1195,7 +1197,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m ollama-cloud/llama3"
 
 # OpenCode with llama.cpp (Native llama.cpp inference)
@@ -1207,7 +1209,7 @@ output_flag = "--format json"
 yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
-json_parser = "generic"
+json_parser = "opencode"
 model_flag = "-m llama.cpp/local-model"
 
 # -------------------------------------------------------------------------

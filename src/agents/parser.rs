@@ -20,6 +20,8 @@ pub enum JsonParserType {
     Codex,
     /// Gemini's stream-json format.
     Gemini,
+    /// OpenCode's NDJSON format.
+    OpenCode,
     /// Generic line-based output (no parsing, pass-through).
     Generic,
 }
@@ -27,13 +29,14 @@ pub enum JsonParserType {
 impl JsonParserType {
     /// Parse parser type from string.
     ///
-    /// Supports common names: "claude", "codex", "gemini", "generic", "none", "raw".
+    /// Supports common names: "claude", "codex", "gemini", "opencode", "generic", "none", "raw".
     /// Unknown strings default to `Generic`.
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "claude" => JsonParserType::Claude,
             "codex" => JsonParserType::Codex,
             "gemini" => JsonParserType::Gemini,
+            "opencode" => JsonParserType::OpenCode,
             "generic" | "none" | "raw" => JsonParserType::Generic,
             _ => JsonParserType::Generic,
         }
@@ -46,6 +49,7 @@ impl std::fmt::Display for JsonParserType {
             JsonParserType::Claude => write!(f, "claude"),
             JsonParserType::Codex => write!(f, "codex"),
             JsonParserType::Gemini => write!(f, "gemini"),
+            JsonParserType::OpenCode => write!(f, "opencode"),
             JsonParserType::Generic => write!(f, "generic"),
         }
     }
@@ -62,6 +66,8 @@ mod tests {
         assert_eq!(JsonParserType::parse("codex"), JsonParserType::Codex);
         assert_eq!(JsonParserType::parse("gemini"), JsonParserType::Gemini);
         assert_eq!(JsonParserType::parse("GEMINI"), JsonParserType::Gemini);
+        assert_eq!(JsonParserType::parse("opencode"), JsonParserType::OpenCode);
+        assert_eq!(JsonParserType::parse("OPENCODE"), JsonParserType::OpenCode);
         assert_eq!(JsonParserType::parse("generic"), JsonParserType::Generic);
         assert_eq!(JsonParserType::parse("none"), JsonParserType::Generic);
         assert_eq!(JsonParserType::parse("raw"), JsonParserType::Generic);
@@ -73,6 +79,7 @@ mod tests {
         assert_eq!(format!("{}", JsonParserType::Claude), "claude");
         assert_eq!(format!("{}", JsonParserType::Codex), "codex");
         assert_eq!(format!("{}", JsonParserType::Gemini), "gemini");
+        assert_eq!(format!("{}", JsonParserType::OpenCode), "opencode");
         assert_eq!(format!("{}", JsonParserType::Generic), "generic");
     }
 }

@@ -1,7 +1,7 @@
 //! JSON Stream Parsing Module
 //!
 //! Functions for parsing NDJSON (newline-delimited JSON)
-//! streams from Claude, Codex, and Gemini CLI tools.
+//! streams from Claude, Codex, Gemini, and OpenCode CLI tools.
 //!
 //! This module uses serde for JSON parsing, which is ~100x faster
 //! than spawning jq for each event.
@@ -12,6 +12,7 @@
 //! - [`claude`] - Claude CLI output parser
 //! - [`codex`] - OpenAI Codex CLI output parser
 //! - [`gemini`] - Google Gemini CLI output parser
+//! - [`opencode`] - OpenCode CLI output parser
 //!
 //! ## Verbosity Levels
 //!
@@ -25,11 +26,13 @@
 mod claude;
 mod codex;
 mod gemini;
+mod opencode;
 mod types;
 
 pub(crate) use claude::ClaudeParser;
 pub(crate) use codex::CodexParser;
 pub(crate) use gemini::GeminiParser;
+pub(crate) use opencode::OpenCodeParser;
 
 // Re-export format_tool_input for tests
 #[cfg(test)]
