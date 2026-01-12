@@ -154,6 +154,86 @@ pub(crate) struct CodexItem {
     pub(crate) plan: Option<String>,
 }
 
+/// OpenCode event types
+///
+/// Based on OpenCode's actual NDJSON output format, events include:
+/// - `step_start`: Step initialization with snapshot info
+/// - `step_finish`: Step completion with reason, cost, tokens
+/// - `tool_use`: Tool invocation with tool name, callID, and state (status, input, output)
+/// - `text`: Streaming text content
+///
+/// The top-level structure is: `{ "type": "...", "timestamp": ..., "sessionID": "...", "part": {...} }`
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct OpenCodeEvent {
+    #[serde(rename = "type")]
+    pub(crate) event_type: String,
+    pub(crate) timestamp: Option<u64>,
+    #[serde(rename = "sessionID")]
+    pub(crate) session_id: Option<String>,
+    pub(crate) part: Option<OpenCodePart>,
+}
+
+/// Nested part object containing the actual event data
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct OpenCodePart {
+    pub(crate) id: Option<String>,
+    #[serde(rename = "sessionID")]
+    pub(crate) session_id: Option<String>,
+    #[serde(rename = "messageID")]
+    pub(crate) message_id: Option<String>,
+    #[serde(rename = "type")]
+    pub(crate) part_type: Option<String>,
+    // For step_start events
+    pub(crate) snapshot: Option<String>,
+    // For step_finish events
+    pub(crate) reason: Option<String>,
+    pub(crate) cost: Option<f64>,
+    pub(crate) tokens: Option<OpenCodeTokens>,
+    // For tool_use events
+    #[serde(rename = "callID")]
+    pub(crate) call_id: Option<String>,
+    pub(crate) tool: Option<String>,
+    pub(crate) state: Option<OpenCodeToolState>,
+    // For text events
+    pub(crate) text: Option<String>,
+    // Time info for text events
+    pub(crate) time: Option<OpenCodeTime>,
+}
+
+/// Tool state containing status, input, and output
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct OpenCodeToolState {
+    pub(crate) status: Option<String>,
+    pub(crate) input: Option<serde_json::Value>,
+    pub(crate) output: Option<String>,
+    pub(crate) title: Option<String>,
+    pub(crate) metadata: Option<serde_json::Value>,
+    pub(crate) time: Option<OpenCodeTime>,
+}
+
+/// Token statistics from step_finish events
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct OpenCodeTokens {
+    pub(crate) input: Option<u64>,
+    pub(crate) output: Option<u64>,
+    pub(crate) reasoning: Option<u64>,
+    pub(crate) cache: Option<OpenCodeCache>,
+}
+
+/// Cache statistics
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct OpenCodeCache {
+    pub(crate) read: Option<u64>,
+    pub(crate) write: Option<u64>,
+}
+
+/// Time information
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct OpenCodeTime {
+    pub(crate) start: Option<u64>,
+    pub(crate) end: Option<u64>,
+}
+
 /// Format tool input for display
 ///
 /// Converts JSON input to a human-readable string, showing key parameters.
@@ -1245,6 +1325,288 @@ impl CodexParser {
     }
 }
 
+/// OpenCode event parser
+pub(crate) struct OpenCodeParser {
+    colors: Colors,
+    verbosity: Verbosity,
+    log_file: Option<String>,
+}
+
+impl OpenCodeParser {
+    pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
+        Self {
+            colors,
+            verbosity,
+            log_file: None,
+        }
+    }
+
+    pub(crate) fn with_log_file(mut self, path: &str) -> Self {
+        self.log_file = Some(path.to_string());
+        self
+    }
+
+    /// Parse and display a single OpenCode JSON event
+    ///
+    /// The OpenCode NDJSON format uses events with:
+    /// - `step_start`: Step initialization with snapshot info
+    /// - `step_finish`: Step completion with reason, cost, tokens
+    /// - `tool_use`: Tool invocation with tool name, callID, and state (status, input, output)
+    /// - `text`: Streaming text content
+    pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
+        let event: OpenCodeEvent = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                    return Some(format!("{}\n", trimmed));
+                }
+                return None;
+            }
+        };
+        let c = &self.colors;
+
+        let output = match event.event_type.as_str() {
+            "step_start" => {
+                let _sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
+                let snapshot = event
+                    .part
+                    .as_ref()
+                    .and_then(|p| p.snapshot.as_ref())
+                    .map(|s| format!("({:.8}...)", s))
+                    .unwrap_or_default();
+                format!(
+                    "{}[OpenCode]{} {}Step started{} {}{}{}\n",
+                    c.dim(),
+                    c.reset(),
+                    c.cyan(),
+                    c.reset(),
+                    c.dim(),
+                    snapshot,
+                    c.reset()
+                )
+            }
+            "step_finish" => {
+                if let Some(ref part) = event.part {
+                    let reason = part.reason.as_deref().unwrap_or("unknown");
+                    let cost = part.cost.unwrap_or(0.0);
+
+                    let tokens_str = if let Some(ref tokens) = part.tokens {
+                        let input = tokens.input.unwrap_or(0);
+                        let output = tokens.output.unwrap_or(0);
+                        let reasoning = tokens.reasoning.unwrap_or(0);
+                        let cache_read = tokens
+                            .cache
+                            .as_ref()
+                            .and_then(|c| c.read)
+                            .unwrap_or(0);
+                        if reasoning > 0 {
+                            format!(
+                                "in:{} out:{} reason:{} cache:{}",
+                                input, output, reasoning, cache_read
+                            )
+                        } else if cache_read > 0 {
+                            format!("in:{} out:{} cache:{}", input, output, cache_read)
+                        } else {
+                            format!("in:{} out:{}", input, output)
+                        }
+                    } else {
+                        String::new()
+                    };
+
+                    let is_success = reason == "tool-calls" || reason == "end_turn";
+                    let icon = if is_success { CHECK } else { CROSS };
+                    let color = if is_success { c.green() } else { c.yellow() };
+
+                    let mut out = format!(
+                        "{}[OpenCode]{} {}{} Step finished{} {}({}",
+                        c.dim(),
+                        c.reset(),
+                        color,
+                        icon,
+                        c.reset(),
+                        c.dim(),
+                        reason
+                    );
+                    if !tokens_str.is_empty() {
+                        out.push_str(&format!(", {}", tokens_str));
+                    }
+                    if cost > 0.0 {
+                        out.push_str(&format!(", ${:.4}", cost));
+                    }
+                    out.push_str(&format!("){}\n", c.reset()));
+                    out
+                } else {
+                    String::new()
+                }
+            }
+            "tool_use" => {
+                if let Some(ref part) = event.part {
+                    let tool_name = part.tool.as_deref().unwrap_or("unknown");
+                    let status = part
+                        .state
+                        .as_ref()
+                        .and_then(|s| s.status.as_deref())
+                        .unwrap_or("pending");
+                    let title = part
+                        .state
+                        .as_ref()
+                        .and_then(|s| s.title.as_deref());
+
+                    let is_completed = status == "completed";
+                    let icon = if is_completed { CHECK } else { '⏳' };
+                    let color = if is_completed { c.green() } else { c.yellow() };
+
+                    let mut out = format!(
+                        "{}[OpenCode]{} {}Tool{}: {}{}{} {}{}{}\n",
+                        c.dim(),
+                        c.reset(),
+                        c.magenta(),
+                        c.reset(),
+                        c.bold(),
+                        tool_name,
+                        c.reset(),
+                        color,
+                        icon,
+                        c.reset()
+                    );
+
+                    // Show title if available
+                    if let Some(t) = title {
+                        let limit = self.verbosity.truncate_limit("text");
+                        let preview = truncate_text(t, limit);
+                        out.push_str(&format!(
+                            "{}[OpenCode]{} {}  └─ {}{}\n",
+                            c.dim(),
+                            c.reset(),
+                            c.dim(),
+                            preview,
+                            c.reset()
+                        ));
+                    }
+
+                    // Show tool input at Normal+ verbosity
+                    if self.verbosity.show_tool_input() {
+                        if let Some(ref state) = part.state {
+                            if let Some(ref input_val) = state.input {
+                                let input_str = format_tool_input(input_val);
+                                let limit = self.verbosity.truncate_limit("tool_input");
+                                let preview = truncate_text(&input_str, limit);
+                                if !preview.is_empty() {
+                                    out.push_str(&format!(
+                                        "{}[OpenCode]{} {}  └─ {}{}\n",
+                                        c.dim(),
+                                        c.reset(),
+                                        c.dim(),
+                                        preview,
+                                        c.reset()
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    // Show tool output in verbose mode if completed
+                    if self.verbosity.is_verbose() && is_completed {
+                        if let Some(ref state) = part.state {
+                            if let Some(ref output_text) = state.output {
+                                let limit = self.verbosity.truncate_limit("tool_result");
+                                let preview = truncate_text(output_text, limit);
+                                if !preview.is_empty() {
+                                    out.push_str(&format!(
+                                        "{}[OpenCode]{} {}  └─ Output: {}{}\n",
+                                        c.dim(),
+                                        c.reset(),
+                                        c.dim(),
+                                        preview,
+                                        c.reset()
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    out
+                } else {
+                    String::new()
+                }
+            }
+            "text" => {
+                if let Some(ref part) = event.part {
+                    if let Some(ref text) = part.text {
+                        let limit = self.verbosity.truncate_limit("text");
+                        let preview = truncate_text(text, limit);
+                        format!(
+                            "{}[OpenCode]{} {}{}{}\n",
+                            c.dim(),
+                            c.reset(),
+                            c.white(),
+                            preview,
+                            c.reset()
+                        )
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                }
+            }
+            _ => {
+                // Unknown event type - ignore silently
+                String::new()
+            }
+        };
+
+        if output.is_empty() {
+            None
+        } else {
+            Some(output)
+        }
+    }
+
+    /// Parse a stream of OpenCode NDJSON events
+    pub(crate) fn parse_stream<R: BufRead, W: Write>(
+        &self,
+        reader: R,
+        mut writer: W,
+    ) -> io::Result<()> {
+        let c = &self.colors;
+
+        for line in reader.lines() {
+            let line = line?;
+            if line.is_empty() {
+                continue;
+            }
+
+            if self.verbosity.is_debug() {
+                writeln!(
+                    writer,
+                    "{}[DEBUG]{} {}{}{}",
+                    c.dim(),
+                    c.reset(),
+                    c.dim(),
+                    &line,
+                    c.reset()
+                )?;
+            }
+
+            if let Some(output) = self.parse_event(&line) {
+                write!(writer, "{}", output)?;
+            }
+
+            if let Some(ref log_path) = self.log_file {
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(log_path)
+                {
+                    writeln!(file, "{}", line)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1681,5 +2043,128 @@ mod tests {
         let output = parser.parse_event("Warning: rate limit approaching");
         assert!(output.is_some());
         assert!(output.unwrap().contains("Warning: rate limit approaching"));
+    }
+
+    // OpenCode parser tests - based on actual OpenCode NDJSON format
+
+    #[test]
+    fn test_opencode_step_start() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"step_start","timestamp":1768191337567,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06aa45c001","sessionID":"ses_44f9562d4ffe","messageID":"msg_bb06a9dc1001","type":"step-start","snapshot":"5d36aa035d4df6edb73a68058733063258114ed5"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Step started"));
+        assert!(out.contains("5d36aa03"));
+    }
+
+    #[test]
+    fn test_opencode_step_finish() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"step_finish","timestamp":1768191347296,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06aca1d001","sessionID":"ses_44f9562d4ffe","messageID":"msg_bb06a9dc1001","type":"step-finish","reason":"tool-calls","snapshot":"5d36aa035d4df6edb73a68058733063258114ed5","cost":0,"tokens":{"input":108,"output":151,"reasoning":0,"cache":{"read":11236,"write":0}}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Step finished"));
+        assert!(out.contains("tool-calls"));
+        assert!(out.contains("in:108"));
+        assert!(out.contains("out:151"));
+        assert!(out.contains("cache:11236"));
+    }
+
+    #[test]
+    fn test_opencode_tool_use_completed() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","sessionID":"ses_44f9562d4ffe","messageID":"msg_bb06a9dc1001","type":"tool","callID":"call_8a2985d92e63","tool":"read","state":{"status":"completed","input":{"filePath":"/test/PLAN.md"},"output":"<file>\n00001| # Implementation Plan\n</file>","title":"PLAN.md"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool"));
+        assert!(out.contains("read"));
+        assert!(out.contains("✓")); // completed icon
+        assert!(out.contains("PLAN.md"));
+    }
+
+    #[test]
+    fn test_opencode_tool_use_pending() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","sessionID":"ses_44f9562d4ffe","messageID":"msg_bb06a9dc1001","type":"tool","callID":"call_8a2985d92e63","tool":"bash","state":{"status":"pending","input":{"command":"ls -la"}}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool"));
+        assert!(out.contains("bash"));
+        assert!(out.contains("⏳")); // pending icon
+    }
+
+    #[test]
+    fn test_opencode_tool_use_shows_input() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","sessionID":"ses_44f9562d4ffe","messageID":"msg_bb06a9dc1001","type":"tool","callID":"call_8a2985d92e63","tool":"read","state":{"status":"completed","input":{"filePath":"/Users/test/file.rs"}}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool"));
+        assert!(out.contains("read"));
+        assert!(out.contains("filePath=/Users/test/file.rs"));
+    }
+
+    #[test]
+    fn test_opencode_text_event() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"text","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","sessionID":"ses_44f9562d4ffe","messageID":"msg_bb06a9dc1001","type":"text","text":"I'll start by reading the plan and requirements to understand what needs to be implemented.","time":{"start":1768191347226,"end":1768191347226}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("I'll start by reading the plan"));
+    }
+
+    #[test]
+    fn test_opencode_unknown_event_ignored() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"unknown_event","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{}}"#;
+        let output = parser.parse_event(json);
+        // Unknown events should return None
+        assert!(output.is_none());
+    }
+
+    #[test]
+    fn test_opencode_parser_non_json_passthrough() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let output = parser.parse_event("Error: something went wrong");
+        assert!(output.is_some());
+        assert!(output.unwrap().contains("Error: something went wrong"));
+    }
+
+    #[test]
+    fn test_opencode_parser_malformed_json_ignored() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let output = parser.parse_event("{invalid json here}");
+        assert!(output.is_none());
+    }
+
+    #[test]
+    fn test_opencode_step_finish_with_cost() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"step_finish","timestamp":1768191347296,"sessionID":"ses_44f9562d4ffe","part":{"type":"step-finish","reason":"end_turn","cost":0.0025,"tokens":{"input":1000,"output":500,"reasoning":0,"cache":{"read":0,"write":0}}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Step finished"));
+        assert!(out.contains("end_turn"));
+        assert!(out.contains("$0.0025"));
+    }
+
+    #[test]
+    fn test_opencode_tool_verbose_shows_output() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"/test.rs"},"output":"fn main() { println!(\"Hello\"); }"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool"));
+        assert!(out.contains("read"));
+        assert!(out.contains("Output"));
+        assert!(out.contains("fn main"));
     }
 }

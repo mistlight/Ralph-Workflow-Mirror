@@ -256,9 +256,7 @@ impl Config {
     /// The agent_chain configuration in agents.toml is the single source of truth
     /// for default agent selection. CLI/env vars can override the agent_chain.
     pub(crate) fn from_env() -> Self {
-        let developer_agent = env::var("RALPH_DEVELOPER_AGENT")
-            .or_else(|_| env::var("RALPH_DRIVER_AGENT"))
-            .ok();
+        let developer_agent = env::var("RALPH_DEVELOPER_AGENT").ok();
         let reviewer_agent = env::var("RALPH_REVIEWER_AGENT").ok();
 
         let developer_cmd = env::var("RALPH_DEVELOPER_CMD").ok();
@@ -460,7 +458,6 @@ mod tests {
 
         // Clear environment variables that might affect defaults
         env::remove_var("RALPH_DEVELOPER_AGENT");
-        env::remove_var("RALPH_DRIVER_AGENT");
         env::remove_var("RALPH_REVIEWER_AGENT");
         env::remove_var("RALPH_DEVELOPER_ITERS");
         env::remove_var("RALPH_REVIEWER_REVIEWS");

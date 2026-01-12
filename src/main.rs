@@ -141,7 +141,6 @@ struct Args {
     #[arg(
         long,
         env = "RALPH_DEVELOPER_AGENT",
-        aliases = ["driver-agent"],
         value_name = "AGENT",
         help = "Developer agent for code implementation (default: first in agent_chain.developer)"
     )]
@@ -557,6 +556,11 @@ fn run_with_prompt(
                     .with_log_file(logfile);
                 p.parse_stream(reader, &mut out)?;
             }
+            JsonParserType::OpenCode => {
+                let p = crate::json_parser::OpenCodeParser::new(*colors, config.verbosity)
+                    .with_log_file(logfile);
+                p.parse_stream(reader, &mut out)?;
+            }
             JsonParserType::Generic => {
                 let log_file = OpenOptions::new().create(true).append(true).open(logfile)?;
                 let mut log_writer = io::BufWriter::new(log_file);
@@ -623,16 +627,18 @@ fn run_with_prompt(
     Ok(CommandResult { exit_code, stderr })
 }
 
-/// Extract model name from a model flag or full model string
+/// Extract the model identifier (everything after the first provider segment) from a model flag.
 ///
 /// Examples:
-/// - "-m opencode/glm-4.7-free" -> "glm-4.7-free"
-/// - "anthropic/claude-sonnet-4" -> "claude-sonnet-4"
-/// - "claude-sonnet-4" -> "claude-sonnet-4"
-fn extract_model_name(model_flag: &str) -> &str {
+/// - `-m opencode/glm-4.7-free` -> `glm-4.7-free`
+/// - `openrouter/anthropic/claude-3.5-sonnet` -> `anthropic/claude-3.5-sonnet`
+/// - `claude-sonnet-4` -> `claude-sonnet-4`
+fn extract_model_id(model_flag: &str) -> &str {
     let model = strip_model_flag_prefix(model_flag);
-    // Extract model name after provider prefix (provider/model)
-    model.rsplit('/').next().unwrap_or(model)
+    match model.split_once('/') {
+        Some((_provider, rest)) => rest,
+        None => model,
+    }
 }
 
 fn normalize_provider_override(provider: &str) -> Option<String> {
@@ -680,7 +686,7 @@ fn format_model_flag(style: ModelFlagStyle, model: &str) -> String {
 /// Resolve the effective model flag considering provider override
 ///
 /// Priority:
-/// 1. If provider is specified, construct "{provider}/{model_name}"
+/// 1. If provider is specified, construct "{provider}/{model_id}"
 /// 2. If model is specified, use it directly
 /// 3. Otherwise, use agent's configured model_flag
 fn resolve_model_with_provider(
@@ -705,19 +711,25 @@ fn resolve_model_with_provider(
     match (provider_override.as_deref(), cli_model) {
         // Provider + model: construct full model flag
         (Some(provider), Some(model)) => {
-            let model_name = extract_model_name(model);
-            if model_name.is_empty() {
+            let model_id = extract_model_id(model);
+            if model_id.is_empty() {
                 return Some(format_model_flag(style, base_model));
             }
-            Some(format_model_flag(style, &format!("{}/{}", provider, model_name)))
+            Some(format_model_flag(
+                style,
+                &format!("{}/{}", provider, model_id),
+            ))
         }
         // Provider only: use provider with agent's default model
         (Some(provider), None) => {
-            let model_name = extract_model_name(base_model);
-            if model_name.is_empty() {
+            let model_id = extract_model_id(base_model);
+            if model_id.is_empty() {
                 return Some(format_model_flag(style, base_model));
             }
-            Some(format_model_flag(style, &format!("{}/{}", provider, model_name)))
+            Some(format_model_flag(
+                style,
+                &format!("{}/{}", provider, model_id),
+            ))
         }
         // Model only: normalize to a full model flag (preserve -m/--model style if present)
         (None, Some(_model)) => Some(format_model_flag(style, base_model)),
@@ -1070,6 +1082,181 @@ fn print_provider_info(colors: &Colors, provider: OpenCodeProviderType, agent_al
     println!("  Agent: {}", agent_alias);
 }
 
+fn print_provider_types(colors: &Colors) {
+    println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());
+    println!();
+    println!("Ralph includes built-in guidance for major OpenCode provider prefixes (plus a custom fallback).");
+    println!("OpenCode may support additional providers; consult OpenCode docs for the full set.");
+    println!();
+
+    // Category: OpenCode Gateway
+    println!("{}═══ OPENCODE GATEWAY ═══{}", colors.bold(), colors.reset());
+    print_provider_info(colors, OpenCodeProviderType::OpenCodeZen, "opencode-zen-glm");
+    println!();
+
+    // Category: Chinese AI Providers
+    println!(
+        "{}═══ CHINESE AI PROVIDERS ═══{}",
+        colors.bold(),
+        colors.reset()
+    );
+    print_provider_info(colors, OpenCodeProviderType::ZaiDirect, "opencode-zai-glm");
+    print_provider_info(colors, OpenCodeProviderType::Moonshot, "opencode-moonshot");
+    print_provider_info(colors, OpenCodeProviderType::MiniMax, "opencode-minimax");
+    println!();
+
+    // Category: Major Cloud Providers
+    println!(
+        "{}═══ MAJOR CLOUD PROVIDERS ═══{}",
+        colors.bold(),
+        colors.reset()
+    );
+    print_provider_info(
+        colors,
+        OpenCodeProviderType::Anthropic,
+        "opencode-direct-claude",
+    );
+    print_provider_info(colors, OpenCodeProviderType::OpenAI, "opencode-openai");
+    print_provider_info(colors, OpenCodeProviderType::Google, "opencode-google");
+    print_provider_info(colors, OpenCodeProviderType::GoogleVertex, "opencode-vertex");
+    print_provider_info(
+        colors,
+        OpenCodeProviderType::AmazonBedrock,
+        "opencode-bedrock",
+    );
+    print_provider_info(colors, OpenCodeProviderType::AzureOpenAI, "opencode-azure");
+    print_provider_info(colors, OpenCodeProviderType::GithubCopilot, "opencode-copilot");
+    println!();
+
+    // Category: Fast Inference Providers
+    println!(
+        "{}═══ FAST INFERENCE PROVIDERS ═══{}",
+        colors.bold(),
+        colors.reset()
+    );
+    print_provider_info(colors, OpenCodeProviderType::Groq, "opencode-groq");
+    print_provider_info(colors, OpenCodeProviderType::Together, "opencode-together");
+    print_provider_info(
+        colors,
+        OpenCodeProviderType::Fireworks,
+        "opencode-fireworks",
+    );
+    print_provider_info(colors, OpenCodeProviderType::Cerebras, "opencode-cerebras");
+    print_provider_info(colors, OpenCodeProviderType::SambaNova, "opencode-sambanova");
+    print_provider_info(colors, OpenCodeProviderType::DeepInfra, "opencode-deepinfra");
+    println!();
+
+    // Category: Gateway/Aggregator Providers
+    println!("{}═══ GATEWAY PROVIDERS ═══{}", colors.bold(), colors.reset());
+    print_provider_info(
+        colors,
+        OpenCodeProviderType::OpenRouter,
+        "opencode-openrouter",
+    );
+    print_provider_info(
+        colors,
+        OpenCodeProviderType::Cloudflare,
+        "opencode-cloudflare",
+    );
+    println!();
+
+    // Category: Specialized Providers
+    println!(
+        "{}═══ SPECIALIZED PROVIDERS ═══{}",
+        colors.bold(),
+        colors.reset()
+    );
+    print_provider_info(colors, OpenCodeProviderType::DeepSeek, "opencode-deepseek");
+    print_provider_info(colors, OpenCodeProviderType::Xai, "opencode-xai");
+    print_provider_info(colors, OpenCodeProviderType::Mistral, "opencode-mistral");
+    print_provider_info(colors, OpenCodeProviderType::Cohere, "opencode-cohere");
+    print_provider_info(colors, OpenCodeProviderType::Perplexity, "opencode-perplexity");
+    print_provider_info(colors, OpenCodeProviderType::AI21, "opencode-ai21");
+    print_provider_info(colors, OpenCodeProviderType::VeniceAI, "opencode-venice");
+    println!();
+
+    // Category: Open-Source Model Providers
+    println!(
+        "{}═══ OPEN-SOURCE MODEL PROVIDERS ═══{}",
+        colors.bold(),
+        colors.reset()
+    );
+    print_provider_info(
+        colors,
+        OpenCodeProviderType::HuggingFace,
+        "opencode-huggingface",
+    );
+    print_provider_info(colors, OpenCodeProviderType::Replicate, "opencode-replicate");
+    println!();
+
+    // Category: Cloud Platform Providers
+    println!(
+        "{}═══ CLOUD PLATFORM PROVIDERS ═══{}",
+        colors.bold(),
+        colors.reset()
+    );
+    print_provider_info(colors, OpenCodeProviderType::Baseten, "opencode-baseten");
+    print_provider_info(colors, OpenCodeProviderType::Cortecs, "opencode-cortecs");
+    print_provider_info(colors, OpenCodeProviderType::Scaleway, "opencode-scaleway");
+    print_provider_info(colors, OpenCodeProviderType::OVHcloud, "opencode-ovhcloud");
+    print_provider_info(colors, OpenCodeProviderType::IONet, "opencode-ionet");
+    print_provider_info(colors, OpenCodeProviderType::Nebius, "opencode-nebius");
+    println!();
+
+    // Category: AI Gateway Providers
+    println!(
+        "{}═══ AI GATEWAY PROVIDERS ═══{}",
+        colors.bold(),
+        colors.reset()
+    );
+    print_provider_info(colors, OpenCodeProviderType::Vercel, "opencode-vercel");
+    print_provider_info(colors, OpenCodeProviderType::Helicone, "opencode-helicone");
+    print_provider_info(colors, OpenCodeProviderType::ZenMux, "opencode-zenmux");
+    println!();
+
+    // Category: Enterprise/Industry Providers
+    println!(
+        "{}═══ ENTERPRISE PROVIDERS ═══{}",
+        colors.bold(),
+        colors.reset()
+    );
+    print_provider_info(colors, OpenCodeProviderType::SapAICore, "opencode-sap");
+    print_provider_info(
+        colors,
+        OpenCodeProviderType::AzureCognitiveServices,
+        "opencode-azure-cognitive",
+    );
+    println!();
+
+    // Category: Local Providers
+    println!("{}═══ LOCAL PROVIDERS ═══{}", colors.bold(), colors.reset());
+    print_provider_info(colors, OpenCodeProviderType::Ollama, "opencode-ollama");
+    print_provider_info(colors, OpenCodeProviderType::LMStudio, "opencode-lmstudio");
+    print_provider_info(
+        colors,
+        OpenCodeProviderType::OllamaCloud,
+        "opencode-ollama-cloud",
+    );
+    print_provider_info(colors, OpenCodeProviderType::LlamaCpp, "opencode-llamacpp");
+    println!();
+
+    // Category: Custom
+    println!("{}═══ CUSTOM ═══{}", colors.bold(), colors.reset());
+    print_provider_info(colors, OpenCodeProviderType::Custom, "(custom)");
+    println!();
+
+    // Important notes
+    println!("{}═══ IMPORTANT NOTES ═══{}", colors.bold(), colors.reset());
+    println!("• OpenCode Zen (opencode/*) and Z.AI Direct (zai/* or zhipuai/*) are SEPARATE endpoints!");
+    println!("  - opencode/* routes through OpenCode's Zen gateway at opencode.ai");
+    println!("  - zai/* or zhipuai/* connects directly to Z.AI's API at api.z.ai");
+    println!("  - Z.AI Coding Plan is an auth tier; model prefix remains zai/* or zhipuai/*");
+    println!("• Cloud providers (Vertex, Bedrock, Azure, SAP) require additional configuration");
+    println!("• Local providers (Ollama, LM Studio, llama.cpp) run on your hardware - no API key needed");
+    println!("• Use clear naming: opencode-zen-*, opencode-zai-*, opencode-direct-* aliases");
+    println!();
+}
+
 fn main() -> anyhow::Result<()> {
     // Set up Ctrl+C handler for cleanup on unexpected exit
     ctrlc::set_handler(move || {
@@ -1166,6 +1353,11 @@ fn main() -> anyhow::Result<()> {
     // Handle --no-isolation flag (CLI overrides env var)
     if args.no_isolation {
         config.isolation_mode = false;
+    }
+
+    if args.list_providers {
+        print_provider_types(&colors);
+        return Ok(());
     }
 
     // Handle --init-global flag: create global agents.toml if it doesn't exist and exit
@@ -1387,225 +1579,6 @@ fn main() -> anyhow::Result<()> {
         for name in items {
             println!("{}", name);
         }
-        return Ok(());
-    }
-
-    // --list-providers: Show OpenCode provider types and configuration
-    if args.list_providers {
-        println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());
-        println!();
-        println!("Ralph includes built-in guidance for major OpenCode provider prefixes (plus a custom fallback).");
-        println!("OpenCode may support additional providers; consult OpenCode docs for the full set.");
-        println!();
-
-        // Category: OpenCode Gateway
-        println!(
-            "{}═══ OPENCODE GATEWAY ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::OpenCodeZen,
-            "opencode-zen-glm",
-        );
-        println!();
-
-        // Category: Chinese AI Providers
-        println!(
-            "{}═══ CHINESE AI PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(&colors, OpenCodeProviderType::ZaiDirect, "opencode-zai-glm");
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::ZaiCodingPlan,
-            "opencode-zai-glm-codingplan",
-        );
-        print_provider_info(&colors, OpenCodeProviderType::Moonshot, "opencode-moonshot");
-        print_provider_info(&colors, OpenCodeProviderType::MiniMax, "opencode-minimax");
-        println!();
-
-        // Category: Major Cloud Providers
-        println!(
-            "{}═══ MAJOR CLOUD PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::Anthropic,
-            "opencode-direct-claude",
-        );
-        print_provider_info(&colors, OpenCodeProviderType::OpenAI, "opencode-openai");
-        print_provider_info(&colors, OpenCodeProviderType::Google, "opencode-google");
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::GoogleVertex,
-            "opencode-vertex",
-        );
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::AmazonBedrock,
-            "opencode-bedrock",
-        );
-        print_provider_info(&colors, OpenCodeProviderType::AzureOpenAI, "opencode-azure");
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::GithubCopilot,
-            "opencode-copilot",
-        );
-        println!();
-
-        // Category: Fast Inference Providers
-        println!(
-            "{}═══ FAST INFERENCE PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(&colors, OpenCodeProviderType::Groq, "opencode-groq");
-        print_provider_info(&colors, OpenCodeProviderType::Together, "opencode-together");
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::Fireworks,
-            "opencode-fireworks",
-        );
-        print_provider_info(&colors, OpenCodeProviderType::Cerebras, "opencode-cerebras");
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::SambaNova,
-            "opencode-sambanova",
-        );
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::DeepInfra,
-            "opencode-deepinfra",
-        );
-        println!();
-
-        // Category: Gateway/Aggregator Providers
-        println!(
-            "{}═══ GATEWAY PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::OpenRouter,
-            "opencode-openrouter",
-        );
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::Cloudflare,
-            "opencode-cloudflare",
-        );
-        println!();
-
-        // Category: Specialized Providers
-        println!(
-            "{}═══ SPECIALIZED PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(&colors, OpenCodeProviderType::DeepSeek, "opencode-deepseek");
-        print_provider_info(&colors, OpenCodeProviderType::Xai, "opencode-xai");
-        print_provider_info(&colors, OpenCodeProviderType::Mistral, "opencode-mistral");
-        print_provider_info(&colors, OpenCodeProviderType::Cohere, "opencode-cohere");
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::Perplexity,
-            "opencode-perplexity",
-        );
-        print_provider_info(&colors, OpenCodeProviderType::AI21, "opencode-ai21");
-        print_provider_info(&colors, OpenCodeProviderType::VeniceAI, "opencode-venice");
-        println!();
-
-        // Category: Open-Source Model Providers
-        println!(
-            "{}═══ OPEN-SOURCE MODEL PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::HuggingFace,
-            "opencode-huggingface",
-        );
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::Replicate,
-            "opencode-replicate",
-        );
-        println!();
-
-        // Category: Cloud Platform Providers
-        println!(
-            "{}═══ CLOUD PLATFORM PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(&colors, OpenCodeProviderType::Baseten, "opencode-baseten");
-        print_provider_info(&colors, OpenCodeProviderType::Cortecs, "opencode-cortecs");
-        print_provider_info(&colors, OpenCodeProviderType::Scaleway, "opencode-scaleway");
-        print_provider_info(&colors, OpenCodeProviderType::OVHcloud, "opencode-ovhcloud");
-        print_provider_info(&colors, OpenCodeProviderType::IONet, "opencode-ionet");
-        print_provider_info(&colors, OpenCodeProviderType::Nebius, "opencode-nebius");
-        println!();
-
-        // Category: AI Gateway Providers
-        println!(
-            "{}═══ AI GATEWAY PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(&colors, OpenCodeProviderType::Vercel, "opencode-vercel");
-        print_provider_info(&colors, OpenCodeProviderType::Helicone, "opencode-helicone");
-        print_provider_info(&colors, OpenCodeProviderType::ZenMux, "opencode-zenmux");
-        println!();
-
-        // Category: Enterprise/Industry Providers
-        println!(
-            "{}═══ ENTERPRISE PROVIDERS ═══{}",
-            colors.bold(),
-            colors.reset()
-        );
-        print_provider_info(&colors, OpenCodeProviderType::SapAICore, "opencode-sap");
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::AzureCognitiveServices,
-            "opencode-azure-cognitive",
-        );
-        println!();
-
-        // Category: Local Providers
-        println!("{}═══ LOCAL PROVIDERS ═══{}", colors.bold(), colors.reset());
-        print_provider_info(&colors, OpenCodeProviderType::Ollama, "opencode-ollama");
-        print_provider_info(&colors, OpenCodeProviderType::LMStudio, "opencode-lmstudio");
-        print_provider_info(
-            &colors,
-            OpenCodeProviderType::OllamaCloud,
-            "opencode-ollama-cloud",
-        );
-        print_provider_info(&colors, OpenCodeProviderType::LlamaCpp, "opencode-llamacpp");
-        println!();
-
-        // Category: Custom
-        println!("{}═══ CUSTOM ═══{}", colors.bold(), colors.reset());
-        print_provider_info(&colors, OpenCodeProviderType::Custom, "(custom)");
-        println!();
-
-        // Important notes
-        println!("{}═══ IMPORTANT NOTES ═══{}", colors.bold(), colors.reset());
-        println!("• OpenCode Zen (opencode/*) and Z.AI Direct (zai/* or zhipuai/*) are SEPARATE endpoints!");
-        println!("  - opencode/* routes through OpenCode's Zen gateway at opencode.ai");
-        println!("  - zai/* or zhipuai/* connects directly to Z.AI's API at api.z.ai");
-        println!("  - Z.AI Coding Plan is an auth tier; model prefix remains zai/* or zhipuai/*");
-        println!("• Cloud providers (Vertex, Bedrock, Azure, SAP) require additional configuration");
-        println!("• Local providers (Ollama, LM Studio, llama.cpp) run on your hardware - no API key needed");
-        println!("• Use clear naming: opencode-zen-*, opencode-zai-*, opencode-direct-* aliases");
-        println!();
-
         return Ok(());
     }
 
@@ -2260,11 +2233,9 @@ fn main() -> anyhow::Result<()> {
             PipelinePhase::Planning => 0,
             PipelinePhase::Development => 1,
             PipelinePhase::Review => 2,
-            PipelinePhase::Fix => 3,
-            PipelinePhase::ReviewAgain => 4,
-            PipelinePhase::CommitMessage => 5,
-            PipelinePhase::FinalValidation => 6,
-            PipelinePhase::Complete => 7,
+            PipelinePhase::CommitMessage => 3,
+            PipelinePhase::FinalValidation => 4,
+            PipelinePhase::Complete => 5,
         }
     };
 
@@ -2504,22 +2475,15 @@ fn main() -> anyhow::Result<()> {
 
     // Clean context for reviewer if using minimal context
     let reviewer_context = ContextLevel::from(config.reviewer_context);
-    // For backward compatibility with old checkpoints, also check Fix and ReviewAgain phases
-    // (they were separate phases in older versions but are now consolidated into Review)
-    let run_any_reviewer_phase = should_run_from(PipelinePhase::Review)
-        || should_run_from(PipelinePhase::Fix)
-        || should_run_from(PipelinePhase::ReviewAgain)
-        || should_run_from(PipelinePhase::CommitMessage);
+    let run_any_reviewer_phase =
+        should_run_from(PipelinePhase::Review) || should_run_from(PipelinePhase::CommitMessage);
     if reviewer_context == ContextLevel::Minimal && run_any_reviewer_phase {
         clean_context_for_reviewer(&logger, config.isolation_mode)?;
     }
 
     // Review-Fix cycles: N cycles means exactly N (review + fix) pairs
     // N=0 skips review entirely, N=1 is one review-fix cycle, N=2 is two cycles, etc.
-    // For backward compatibility, also accept checkpoints at old Fix/ReviewAgain phases
-    let should_run_review_phase = should_run_from(PipelinePhase::Review)
-        || resume_phase == Some(PipelinePhase::Fix)
-        || resume_phase == Some(PipelinePhase::ReviewAgain);
+    let should_run_review_phase = should_run_from(PipelinePhase::Review);
     if should_run_review_phase && config.reviewer_reviews > 0 {
         let build_review_prompt = |guidelines: Option<&ReviewGuidelines>| -> (String, String) {
             match config.review_depth {
@@ -2599,12 +2563,11 @@ fn main() -> anyhow::Result<()> {
             reviewer_agent
         ));
 
-        // For backward compatibility, also handle old Fix/ReviewAgain checkpoints
         let start_pass = match resume_phase {
-            Some(PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain) => {
+            Some(PipelinePhase::Review) => {
                 resume_checkpoint
                     .as_ref()
-                    .map(|c| c.reviewer_pass.max(1)) // Ensure at least 1 for old checkpoints with 0
+                    .map(|c| c.reviewer_pass.max(1)) // Ensure at least 1
                     .unwrap_or(1)
                     .clamp(1, config.reviewer_reviews.max(1))
             }
@@ -3005,10 +2968,25 @@ mod tests {
             Some("-m opencode/glm-4.7")
         );
 
+        // Provider override must preserve multi-segment model identifiers.
+        assert_eq!(
+            resolve_model_with_provider(
+                Some("opencode"),
+                Some("-m openrouter/anthropic/claude-3.5-sonnet"),
+                None
+            )
+            .as_deref(),
+            Some("-m opencode/anthropic/claude-3.5-sonnet")
+        );
+
         // Provider-only override should use the agent's configured model name.
         assert_eq!(
-            resolve_model_with_provider(Some("opencode"), None, Some("-m anthropic/claude-sonnet-4"))
-                .as_deref(),
+            resolve_model_with_provider(
+                Some("opencode"),
+                None,
+                Some("-m anthropic/claude-sonnet-4")
+            )
+            .as_deref(),
             Some("-m opencode/claude-sonnet-4")
         );
 
@@ -3020,7 +2998,8 @@ mod tests {
 
         // Preserve the user's style when provided.
         assert_eq!(
-            resolve_model_with_provider(None, Some("--model=opencode/glm-4.7-free"), None).as_deref(),
+            resolve_model_with_provider(None, Some("--model=opencode/glm-4.7-free"), None)
+                .as_deref(),
             Some("--model=opencode/glm-4.7-free")
         );
     }
