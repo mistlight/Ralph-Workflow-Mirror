@@ -36,8 +36,6 @@ impl std::fmt::Display for CheckSeverity {
 #[derive(Debug, Clone)]
 pub(crate) struct SeverityCheck {
     /// The check description
-    /// Note: populated for future use (e.g., displaying detailed check info)
-    #[allow(dead_code)]
     pub(crate) check: String,
     /// Severity level for this check
     pub(crate) severity: CheckSeverity,
@@ -67,7 +65,6 @@ impl SeverityCheck {
         Self::new(check, CheckSeverity::Low)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn info(check: impl Into<String>) -> Self {
         Self::new(check, CheckSeverity::Info)
     }
@@ -242,9 +239,9 @@ impl ReviewGuidelines {
             checks.push(SeverityCheck::low(check.clone()));
         }
 
-        // Idioms are informational/LOW
+        // Idioms are informational.
         for check in &self.idioms {
-            checks.push(SeverityCheck::low(check.clone()));
+            checks.push(SeverityCheck::info(check.clone()));
         }
 
         checks
@@ -257,91 +254,88 @@ impl ReviewGuidelines {
     pub(crate) fn format_for_prompt_with_priorities(&self) -> String {
         let mut sections = Vec::new();
 
-        // Critical: Security and secrets
-        let critical_checks: Vec<&str> = self
+        fn push_section(
+            sections: &mut Vec<String>,
+            header: &str,
+            checks: Vec<SeverityCheck>,
+            limit: usize,
+        ) {
+            if checks.is_empty() {
+                return;
+            }
+            let mut items: Vec<String> = checks
+                .iter()
+                .take(limit)
+                .map(|c| format!("  - {}", c.check))
+                .collect();
+            if checks.len() > limit {
+                items.push(format!("  - ... (+{} more)", checks.len() - limit));
+            }
+            sections.push(format!("{}\n{}", header, items.join("\n")));
+        }
+
+        // Critical: Security and secrets.
+        let critical_checks: Vec<SeverityCheck> = self
             .security_checks
             .iter()
             .chain(self.secrets_checks.iter())
-            .map(String::as_str)
+            .cloned()
+            .map(SeverityCheck::critical)
             .collect();
-        if !critical_checks.is_empty() {
-            let mut items: Vec<String> = critical_checks
-                .iter()
-                .take(10)
-                .map(|s| format!("  - {}", s))
-                .collect();
-            if critical_checks.len() > 10 {
-                items.push(format!("  - ... (+{} more)", critical_checks.len() - 10));
-            }
-            sections.push(format!(
-                "🔴 CRITICAL (must fix before merge):\n{}",
-                items.join("\n")
-            ));
-        }
+        push_section(
+            &mut sections,
+            "🔴 CRITICAL (must fix before merge):",
+            critical_checks,
+            10,
+        );
 
-        // High: Concurrency and resource management
-        let high_checks: Vec<&str> = self
+        // High: Concurrency and resource management.
+        let high_checks: Vec<SeverityCheck> = self
             .concurrency_checks
             .iter()
             .chain(self.resource_checks.iter())
-            .map(String::as_str)
+            .cloned()
+            .map(SeverityCheck::high)
             .collect();
-        if !high_checks.is_empty() {
-            let mut items: Vec<String> = high_checks
-                .iter()
-                .take(10)
-                .map(|s| format!("  - {}", s))
-                .collect();
-            if high_checks.len() > 10 {
-                items.push(format!("  - ... (+{} more)", high_checks.len() - 10));
-            }
-            sections.push(format!(
-                "🟠 HIGH (should fix before merge):\n{}",
-                items.join("\n")
-            ));
-        }
+        push_section(
+            &mut sections,
+            "🟠 HIGH (should fix before merge):",
+            high_checks,
+            10,
+        );
 
-        // Medium: Quality, anti-patterns, performance, testing, API design
-        let medium_checks: Vec<&str> = self
+        // Medium: Quality, anti-patterns, performance, testing, API design.
+        let medium_checks: Vec<SeverityCheck> = self
             .quality_checks
             .iter()
             .chain(self.anti_patterns.iter())
             .chain(self.performance_checks.iter())
             .chain(self.testing_checks.iter())
             .chain(self.api_design_checks.iter())
-            .map(String::as_str)
+            .cloned()
+            .map(SeverityCheck::medium)
             .collect();
-        if !medium_checks.is_empty() {
-            let mut items: Vec<String> = medium_checks
-                .iter()
-                .take(12)
-                .map(|s| format!("  - {}", s))
-                .collect();
-            if medium_checks.len() > 12 {
-                items.push(format!("  - ... (+{} more)", medium_checks.len() - 12));
-            }
-            sections.push(format!("🟡 MEDIUM (should address):\n{}", items.join("\n")));
-        }
+        push_section(
+            &mut sections,
+            "🟡 MEDIUM (should address):",
+            medium_checks,
+            12,
+        );
 
-        // Low: Documentation, observability, idioms
-        let low_checks: Vec<&str> = self
+        // Low: Documentation, observability.
+        let low_checks: Vec<SeverityCheck> = self
             .documentation_checks
             .iter()
             .chain(self.observability_checks.iter())
-            .chain(self.idioms.iter())
-            .map(String::as_str)
+            .cloned()
+            .map(SeverityCheck::low)
             .collect();
-        if !low_checks.is_empty() {
-            let mut items: Vec<String> = low_checks
-                .iter()
-                .take(10)
-                .map(|s| format!("  - {}", s))
-                .collect();
-            if low_checks.len() > 10 {
-                items.push(format!("  - ... (+{} more)", low_checks.len() - 10));
-            }
-            sections.push(format!("🟢 LOW (nice to have):\n{}", items.join("\n")));
-        }
+        push_section(&mut sections, "🟢 LOW (nice to have):", low_checks, 10);
+
+        // Info: Idioms.
+        let info_checks: Vec<SeverityCheck> =
+            self.idioms.iter().cloned().map(SeverityCheck::info).collect();
+        push_section(&mut sections, "🔵 INFO (observations):", info_checks, 10);
 
         sections.join("\n\n")
     }

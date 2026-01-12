@@ -1,0 +1,81 @@
+//! Agent Abstraction Module
+//!
+//! Provides a pluggable agent system for different AI coding assistants
+//! (Claude, Codex, OpenCode, Goose, Cline, etc.)
+//!
+//! ## Module Structure
+//!
+//! - `config` - Agent configuration types and TOML parsing
+//! - `error` - Error classification for fault-tolerant execution
+//! - `fallback` - Fallback chain configuration for agent switching
+//! - `parser` - JSON parser type definitions
+//! - `providers` - OpenCode provider types and authentication
+//! - `registry` - Agent registry for agent lookup and management
+//!
+//! ## Configuration
+//!
+//! Agents can be configured via (in order of increasing priority):
+//! 1. Built-in defaults (claude, codex, opencode, aider, goose, cline, continue, amazon-q, gemini)
+//! 2. Global config file (`~/.config/ralph/agents.toml`)
+//! 3. Project config file (default: `.agent/agents.toml`, overridable via `RALPH_AGENTS_CONFIG`)
+//! 4. Environment variables (`RALPH_DEVELOPER_CMD`, `RALPH_REVIEWER_CMD`)
+//! 5. Programmatic registration via `AgentRegistry::register()`
+//!
+//! ## Agent Switching / Fallback
+//!
+//! Configure fallback agents for automatic switching when primary agent fails:
+//! ```toml
+//! [agent_chain]
+//! developer = ["claude", "codex", "goose"]
+//! reviewer = ["codex", "claude"]
+//! max_retries = 3
+//! retry_delay_ms = 1000
+//! ```
+//!
+//! ## Example TOML Configuration
+//!
+//! ```toml
+//! [agents.myagent]
+//! cmd = "my-ai-tool run"
+//! output_flag = "--json-stream"
+//! yolo_flag = "--auto-fix"
+//! verbose_flag = "--verbose"
+//! can_commit = true
+//! json_parser = "claude"  # Use Claude's JSON parser
+//! ```
+
+mod config;
+mod error;
+mod fallback;
+mod parser;
+mod providers;
+mod registry;
+
+// Re-export public types for crate-level access
+pub(crate) use config::{
+    global_agents_config_path, AgentsConfigFile, ConfigInitResult, ConfigSource,
+};
+pub(crate) use error::AgentErrorKind;
+pub(crate) use fallback::AgentRole;
+pub(crate) use parser::JsonParserType;
+pub(crate) use providers::{
+    auth_failure_advice, strip_model_flag_prefix, validate_model_flag, OpenCodeProviderType,
+};
+pub(crate) use registry::AgentRegistry;
+
+#[cfg(test)]
+mod tests {
+    use super::fallback::FallbackConfig;
+    use super::*;
+
+    #[test]
+    fn test_module_exports() {
+        // Verify all expected types are accessible through the module
+        let _ = AgentRegistry::new().unwrap();
+        let _ = FallbackConfig::default();
+        let _ = AgentErrorKind::Permanent;
+        let _ = AgentRole::Developer;
+        let _ = JsonParserType::Claude;
+        let _ = OpenCodeProviderType::OpenCodeZen;
+    }
+}

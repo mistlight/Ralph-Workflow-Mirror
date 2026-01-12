@@ -270,7 +270,7 @@ impl Config {
         let developer_provider = env::var("RALPH_DEVELOPER_PROVIDER").ok();
         let reviewer_provider = env::var("RALPH_REVIEWER_PROVIDER").ok();
 
-        let config = Self {
+        Self {
             developer_agent,
             reviewer_agent,
             developer_cmd,
@@ -337,9 +337,7 @@ impl Config {
                 .ok()
                 .and_then(|s| parse_env_bool(&s))
                 .unwrap_or(true),
-        };
-
-        config
+        }
     }
 
     /// Set the commit message

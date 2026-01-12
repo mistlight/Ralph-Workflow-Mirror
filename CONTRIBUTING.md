@@ -95,18 +95,65 @@ Ralph itself uses a multi-agent workflow:
 ```
 ralph/
 ├── src/
-│   ├── main.rs         # Entry point and CLI
-│   ├── config.rs       # Configuration and CLI args
-│   ├── agents.rs       # Agent definitions and execution
-│   ├── prompts.rs      # Prompt generation for agents
-│   ├── json_parser.rs  # Agent output parsing
-│   ├── git_helpers.rs  # Git operations
-│   ├── colors.rs       # Terminal colors
-│   ├── timer.rs        # Timing utilities
-│   └── utils.rs        # Shared utilities
-├── tests/              # Integration tests
-├── examples/           # Example configurations
-└── .agent/             # Agent working directory
+│   ├── main.rs              # Entry point, CLI handling, and orchestration
+│   ├── pipeline.rs          # Agent execution and command result handling
+│   ├── config.rs            # Configuration parsing and CLI args
+│   ├── agents/              # Agent management module
+│   │   ├── mod.rs           # Module exports and re-exports
+│   │   ├── config.rs        # Agent configuration (TOML parsing)
+│   │   ├── registry.rs      # Agent registry and lookup
+│   │   ├── parser.rs        # JSON parser type definitions
+│   │   ├── providers.rs     # AI provider type detection
+│   │   ├── fallback.rs      # Agent chain fallback logic
+│   │   └── error.rs         # Agent error types and classification
+│   ├── prompts/             # Prompt generation module
+│   │   ├── mod.rs           # Module exports
+│   │   ├── types.rs         # Prompt type definitions
+│   │   ├── developer.rs     # Developer agent prompts
+│   │   ├── reviewer.rs      # Reviewer agent prompts
+│   │   └── commit.rs        # Commit message prompts
+│   ├── json_parser/         # Agent output parsing module
+│   │   ├── mod.rs           # Parser interface and selection
+│   │   ├── types.rs         # Parsed output types
+│   │   ├── claude.rs        # Claude-specific JSON parsing
+│   │   ├── gemini.rs        # Gemini-specific JSON parsing
+│   │   └── codex.rs         # Codex-specific JSON parsing
+│   ├── language_detector/   # Project language detection
+│   │   ├── mod.rs           # Detection logic and exports
+│   │   ├── extensions.rs    # File extension mappings
+│   │   ├── signatures.rs    # Framework signature patterns
+│   │   └── scanner.rs       # Directory scanning logic
+│   ├── checkpoint/          # Pipeline state persistence
+│   │   ├── mod.rs           # Checkpoint management
+│   │   └── state.rs         # State serialization
+│   ├── files/               # Agent file management
+│   │   ├── mod.rs           # File operations
+│   │   ├── agent_files.rs   # Agent working files
+│   │   └── validation.rs    # File content validation
+│   ├── logger/              # Logging and progress display
+│   │   ├── mod.rs           # Logger interface
+│   │   ├── output.rs        # Output formatting
+│   │   └── progress.rs      # Progress indicators
+│   ├── cli/                 # CLI argument handling
+│   │   ├── mod.rs           # CLI module exports
+│   │   ├── args.rs          # Argument parsing
+│   │   ├── handlers.rs      # Command handlers
+│   │   ├── presets.rs       # Configuration presets
+│   │   └── providers.rs     # Provider-specific CLI options
+│   ├── guidelines/          # Language-specific coding guidelines
+│   │   ├── mod.rs           # Guidelines module
+│   │   └── *.rs             # Per-language guidelines
+│   ├── git_helpers.rs       # Git operations and utilities
+│   ├── colors.rs            # Terminal color formatting
+│   ├── timer.rs             # Timing and duration utilities
+│   ├── output.rs            # Output formatting utilities
+│   ├── banner.rs            # CLI banner display
+│   ├── platform.rs          # Platform-specific utilities
+│   ├── review_metrics.rs    # Review pass metrics tracking
+│   └── utils.rs             # Shared utility functions
+├── tests/                   # Integration tests
+├── examples/                # Example configurations
+└── .agent/                  # Agent working directory
 ```
 
 ## Reporting Issues
