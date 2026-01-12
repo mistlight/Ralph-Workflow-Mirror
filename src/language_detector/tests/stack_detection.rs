@@ -1,5 +1,5 @@
-use super::create_test_file;
 use super::super::*;
+use super::create_test_file;
 use std::fs;
 use tempfile::TempDir;
 
@@ -116,7 +116,11 @@ fn monorepo_multiple_packages_detects_primary_language_by_prevalence() {
 
     // Backend in Go.
     fs::create_dir_all(root.join("backend")).unwrap();
-    fs::write(root.join("backend/go.mod"), "module example.com/backend\n\ngo 1.21").unwrap();
+    fs::write(
+        root.join("backend/go.mod"),
+        "module example.com/backend\n\ngo 1.21",
+    )
+    .unwrap();
     create_test_file(root, "backend/main.go");
 
     // Frontend in TypeScript (more files => primary).
@@ -156,4 +160,3 @@ fn ignores_node_modules_and_target_like_directories() {
     let stack = detect_stack(root).unwrap();
     assert_eq!(stack.primary_language, "JavaScript");
 }
-

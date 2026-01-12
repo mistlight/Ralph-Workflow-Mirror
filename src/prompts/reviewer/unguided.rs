@@ -1,3 +1,17 @@
+//! Unguided reviewer prompts for general-purpose reviews.
+//!
+//! This module generates review prompts that do not include language-specific
+//! guidelines. These are used when:
+//!
+//! - Stack detection did not identify a recognized language/framework
+//! - A "fresh eyes" perspective is needed without framework-specific bias
+//! - Reviewing general code quality, goal alignment, and acceptance criteria
+//!
+//! Available prompt types:
+//! - **Simple review**: Minimal, vague prompt for unbiased perspective
+//! - **Detailed review**: Actionable output with severity levels
+//! - **Incremental review**: Focus only on recently changed files
+
 use super::super::types::ContextLevel;
 
 /// Generate a simple/vague reviewer review prompt (without guidelines).
@@ -115,4 +129,3 @@ OUTPUT to .agent/ISSUES.md:
             .to_string(),
     }
 }
-

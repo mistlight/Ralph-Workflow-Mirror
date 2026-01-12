@@ -29,7 +29,11 @@ impl ReviewGuidelines {
 }
 
 /// Add guidelines for a specific language.
-fn add_language_guidelines(guidelines: &mut ReviewGuidelines, language: &str, stack: &ProjectStack) {
+fn add_language_guidelines(
+    guidelines: &mut ReviewGuidelines,
+    language: &str,
+    stack: &ProjectStack,
+) {
     match language {
         "Rust" => rust::add_guidelines(guidelines, stack),
         "Python" => python::add_guidelines(guidelines, stack),
@@ -48,4 +52,3 @@ fn add_language_guidelines(guidelines: &mut ReviewGuidelines, language: &str, st
         _ => {} // Use defaults for unknown languages
     }
 }
-

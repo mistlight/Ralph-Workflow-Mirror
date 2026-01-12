@@ -1,3 +1,16 @@
+//! Git wrapper for blocking commits during agent phase.
+//!
+//! This module provides safety mechanisms to prevent accidental commits while
+//! an AI agent is actively modifying files. It works through two mechanisms:
+//!
+//! - **Marker file**: Creates `.no_agent_commit` in the repo root during agent
+//!   execution. Both the git wrapper and hooks check for this file.
+//! - **PATH wrapper**: Installs a temporary `git` wrapper script that intercepts
+//!   `commit`, `push`, and `tag` commands when the marker file exists.
+//!
+//! The wrapper is automatically cleaned up when the agent phase ends, even on
+//! unexpected exits (Ctrl+C, panics) via [`cleanup_agent_phase_silent`].
+
 use super::hooks::{install_hooks, uninstall_hooks_silent};
 use super::repo::get_repo_root;
 use crate::utils::Logger;

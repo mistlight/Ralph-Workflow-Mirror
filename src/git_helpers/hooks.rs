@@ -1,3 +1,16 @@
+//! Git hook installation and management.
+//!
+//! This module handles the lifecycle of Ralph-managed git hooks, including:
+//!
+//! - **Installation**: Creating `pre-commit` and `pre-push` hooks that block
+//!   git operations during the agent phase (when `.no_agent_commit` exists)
+//! - **Backup**: Preserving existing hooks as `.ralph.orig` files before overwriting
+//! - **Restoration**: Restoring original hooks when uninstalling Ralph hooks
+//!
+//! Hooks are identified by a marker string (`RALPH_RUST_MANAGED_HOOK`) embedded
+//! in the hook script, allowing safe detection and removal of Ralph-managed hooks
+//! without affecting user-created hooks.
+
 use crate::utils::{file_contains_marker, Logger};
 use std::fs::{self, File};
 use std::io::{self, Write};

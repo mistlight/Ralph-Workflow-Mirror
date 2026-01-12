@@ -187,7 +187,11 @@ fn print_review_metrics(colors: &Colors, config: &Config, metrics: &ReviewMetric
             // Also show a few unresolved issue summaries (useful when running in verbose mode).
             let samples = metrics.unresolved_issue_summaries(3);
             if !samples.is_empty() {
-                println!("  {}🧾{}  Unresolved samples:", colors.dim(), colors.reset());
+                println!(
+                    "  {}🧾{}  Unresolved samples:",
+                    colors.dim(),
+                    colors.reset()
+                );
                 for s in samples {
                     println!("      {}- {}{}", colors.dim(), s, colors.reset());
                 }

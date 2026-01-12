@@ -42,9 +42,12 @@ pub(crate) fn run_with_prompt(
     runtime: &mut PipelineRuntime<'_>,
 ) -> io::Result<CommandResult> {
     runtime.timer.start_phase();
-    runtime
-        .logger
-        .step(&format!("{}{}{}", runtime.colors.bold(), cmd.label, runtime.colors.reset()));
+    runtime.logger.step(&format!(
+        "{}{}{}",
+        runtime.colors.bold(),
+        cmd.label,
+        runtime.colors.reset()
+    ));
 
     // Save prompt to file
     if let Some(parent) = Path::new(&runtime.config.prompt_path).parent() {
@@ -152,18 +155,25 @@ pub(crate) fn run_with_prompt(
 
         match cmd.parser_type {
             JsonParserType::Claude => {
-                let p = crate::json_parser::ClaudeParser::new(*runtime.colors, runtime.config.verbosity)
-                    .with_log_file(cmd.logfile);
+                let p = crate::json_parser::ClaudeParser::new(
+                    *runtime.colors,
+                    runtime.config.verbosity,
+                )
+                .with_log_file(cmd.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Codex => {
-                let p = crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
-                    .with_log_file(cmd.logfile);
+                let p =
+                    crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
+                        .with_log_file(cmd.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Gemini => {
-                let p = crate::json_parser::GeminiParser::new(*runtime.colors, runtime.config.verbosity)
-                    .with_log_file(cmd.logfile);
+                let p = crate::json_parser::GeminiParser::new(
+                    *runtime.colors,
+                    runtime.config.verbosity,
+                )
+                .with_log_file(cmd.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Generic => {
@@ -173,8 +183,7 @@ pub(crate) fn run_with_prompt(
                     buf.push_str(&line?);
                     buf.push('\n');
                 }
-                let formatted =
-                    format_generic_json_for_display(&buf, runtime.config.verbosity);
+                let formatted = format_generic_json_for_display(&buf, runtime.config.verbosity);
                 out.write_all(formatted.as_bytes())?;
             }
         }
@@ -336,12 +345,16 @@ pub(crate) fn run_with_fallback(
                 let cmd_str = if agent_index == 0 && cycle == 0 && model_index == 0 {
                     // For primary agent on first cycle, respect env var command overrides
                     match role {
-                        AgentRole::Developer => runtime.config.developer_cmd.clone().unwrap_or_else(|| {
-                            agent_config.build_cmd_with_model(true, true, true, model_ref)
-                        }),
-                        AgentRole::Reviewer => runtime.config.reviewer_cmd.clone().unwrap_or_else(|| {
-                            agent_config.build_cmd_with_model(true, true, false, model_ref)
-                        }),
+                        AgentRole::Developer => {
+                            runtime.config.developer_cmd.clone().unwrap_or_else(|| {
+                                agent_config.build_cmd_with_model(true, true, true, model_ref)
+                            })
+                        }
+                        AgentRole::Reviewer => {
+                            runtime.config.reviewer_cmd.clone().unwrap_or_else(|| {
+                                agent_config.build_cmd_with_model(true, true, false, model_ref)
+                            })
+                        }
                     }
                 } else {
                     agent_config.build_cmd_with_model(
@@ -412,9 +425,9 @@ pub(crate) fn run_with_fallback(
 
                     // Provide network-specific guidance
                     if error_kind.is_network_error() {
-                        runtime
-                            .logger
-                            .info("Tip: Check your internet connection, firewall, or VPN settings.");
+                        runtime.logger.info(
+                            "Tip: Check your internet connection, firewall, or VPN settings.",
+                        );
                     }
 
                     // Provide context reduction hint for memory-related errors
@@ -424,7 +437,9 @@ pub(crate) fn run_with_fallback(
 
                     // Check for unrecoverable errors - abort immediately
                     if error_kind.is_unrecoverable() {
-                        runtime.logger.error("Unrecoverable error - cannot continue pipeline");
+                        runtime
+                            .logger
+                            .error("Unrecoverable error - cannot continue pipeline");
                         return Ok(last_exit_code);
                     }
 

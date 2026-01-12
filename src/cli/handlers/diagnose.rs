@@ -1,38 +1,17 @@
-//! CLI command handlers.
+//! Diagnostic command handler.
 //!
-//! Contains handler functions for CLI commands like --list-agents,
-//! --diagnose, and --dry-run.
+//! This module provides comprehensive diagnostic output for troubleshooting
+//! Ralph configuration and environment issues.
 
-use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole};
+use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::language_detector;
-use crate::utils::{load_checkpoint, Logger};
+use crate::utils::load_checkpoint;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-
-/// Handle --list-agents command.
-pub fn handle_list_agents(registry: &AgentRegistry) {
-    let mut items = registry.list();
-    items.sort_by(|(a, _), (b, _)| a.cmp(b));
-    for (name, cfg) in items {
-        println!(
-            "{}\tcmd={}\tparser={}\tcan_commit={}",
-            name, cfg.cmd, cfg.json_parser, cfg.can_commit
-        );
-    }
-}
-
-/// Handle --list-available-agents command.
-pub fn handle_list_available_agents(registry: &AgentRegistry) {
-    let mut items = registry.list_available();
-    items.sort();
-    for name in items {
-        println!("{}", name);
-    }
-}
 
 /// Handle --diagnose command.
 ///
@@ -43,12 +22,22 @@ pub fn handle_list_available_agents(registry: &AgentRegistry) {
 /// - PROMPT.md validation
 /// - Checkpoint status
 /// - Project stack detection
+///
+/// This output is designed to be copy-pasted into bug reports.
+///
+/// # Arguments
+///
+/// * `colors` - Color configuration for output formatting
+/// * `config` - The current Ralph configuration
+/// * `registry` - The agent registry
+/// * `agents_config_path` - Path to the agents.toml file
+/// * `config_sources` - List of configuration sources that were loaded
 pub fn handle_diagnose(
     colors: &Colors,
     config: &Config,
     registry: &AgentRegistry,
     agents_config_path: &Path,
-    config_sources: &[crate::agents::ConfigSource],
+    config_sources: &[ConfigSource],
 ) {
     println!(
         "{}=== Ralph Diagnostic Report ==={}",
@@ -57,7 +46,26 @@ pub fn handle_diagnose(
     );
     println!();
 
-    // System Information
+    print_system_info(colors);
+    print_git_info(colors);
+    print_config_info(colors, config, agents_config_path, config_sources);
+    print_agent_chain_info(colors, registry);
+    print_agent_availability(colors, registry);
+    print_prompt_status(colors);
+    print_checkpoint_status(colors);
+    print_project_stack(colors);
+    print_recent_logs(colors);
+
+    println!();
+    println!(
+        "{}Copy this output for bug reports: https://github.com/anthropics/ralph/issues{}",
+        colors.dim(),
+        colors.reset()
+    );
+}
+
+/// Print system information section.
+fn print_system_info(colors: &Colors) {
     println!("{}System:{}", colors.bold(), colors.reset());
     println!("  OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
     if let Ok(cwd) = std::env::current_dir() {
@@ -67,8 +75,10 @@ pub fn handle_diagnose(
         println!("  Shell: {}", shell);
     }
     println!();
+}
 
-    // Git Information
+/// Print git information section.
+fn print_git_info(colors: &Colors) {
     println!("{}Git:{}", colors.bold(), colors.reset());
     if let Ok(output) = Command::new("git").args(["--version"]).output() {
         if let Ok(version) = std::str::from_utf8(&output.stdout) {
@@ -99,8 +109,15 @@ pub fn handle_diagnose(
         }
     }
     println!();
+}
 
-    // Configuration
+/// Print configuration information section.
+fn print_config_info(
+    colors: &Colors,
+    config: &Config,
+    agents_config_path: &Path,
+    config_sources: &[ConfigSource],
+) {
     println!("{}Configuration:{}", colors.bold(), colors.reset());
     println!("  Config file: {}", agents_config_path.display());
     println!("  Config exists: {}", agents_config_path.exists());
@@ -124,8 +141,10 @@ pub fn handle_diagnose(
         }
     }
     println!();
+}
 
-    // Agent Chain Configuration
+/// Print agent chain configuration section.
+fn print_agent_chain_info(colors: &Colors, registry: &AgentRegistry) {
     println!("{}Agent Chain:{}", colors.bold(), colors.reset());
     let fallback = registry.fallback_config();
     let dev_chain = fallback.get_fallbacks(AgentRole::Developer);
@@ -135,8 +154,10 @@ pub fn handle_diagnose(
     println!("  Max retries: {}", fallback.max_retries);
     println!("  Retry delay: {}ms", fallback.retry_delay_ms);
     println!();
+}
 
-    // Agent Availability
+/// Print agent availability section.
+fn print_agent_availability(colors: &Colors, registry: &AgentRegistry) {
     println!("{}Agent Availability:{}", colors.bold(), colors.reset());
     let all_agents = registry.list();
     let mut sorted_agents: Vec<_> = all_agents.into_iter().collect();
@@ -160,8 +181,10 @@ pub fn handle_diagnose(
         );
     }
     println!();
+}
 
-    // PROMPT.md Status
+/// Print PROMPT.md status section.
+fn print_prompt_status(colors: &Colors) {
     println!("{}PROMPT.md:{}", colors.bold(), colors.reset());
     let prompt_path = Path::new("PROMPT.md");
     if prompt_path.exists() {
@@ -185,8 +208,10 @@ pub fn handle_diagnose(
         println!("  Exists: no");
     }
     println!();
+}
 
-    // Checkpoint Status
+/// Print checkpoint status section.
+fn print_checkpoint_status(colors: &Colors) {
     println!("{}Checkpoint:{}", colors.bold(), colors.reset());
     let checkpoint_path = Path::new(".agent/checkpoint.json");
     if checkpoint_path.exists() {
@@ -204,8 +229,10 @@ pub fn handle_diagnose(
         println!("  Exists: no (no interrupted run to resume)");
     }
     println!();
+}
 
-    // Language Detection
+/// Print project stack detection section.
+fn print_project_stack(colors: &Colors) {
     println!("{}Project Stack:{}", colors.bold(), colors.reset());
     if let Ok(cwd) = std::env::current_dir() {
         match language_detector::detect_stack(&cwd) {
@@ -224,7 +251,7 @@ pub fn handle_diagnose(
                     println!("  Test framework: {}", tf);
                 }
 
-                // Show language type indicators (useful for debugging language detection)
+                // Show language type indicators
                 let language_types: Vec<&str> = [
                     if stack.is_rust() { Some("Rust") } else { None },
                     if stack.is_python() {
@@ -250,7 +277,7 @@ pub fn handle_diagnose(
                 let guidelines = ReviewGuidelines::for_stack(&stack);
                 println!("  Review checks: {} total", guidelines.total_checks());
 
-                // Show severity breakdown from get_all_checks
+                // Show severity breakdown
                 let all_checks = guidelines.get_all_checks();
                 let critical_count = all_checks
                     .iter()
@@ -273,8 +300,10 @@ pub fn handle_diagnose(
         }
     }
     println!();
+}
 
-    // Recent errors (if log exists)
+/// Print recent log entries section.
+fn print_recent_logs(colors: &Colors) {
     let log_path = Path::new(".agent/logs/pipeline.log");
     if log_path.exists() {
         println!(
@@ -290,84 +319,4 @@ pub fn handle_diagnose(
             }
         }
     }
-
-    println!();
-    println!(
-        "{}Copy this output for bug reports: https://github.com/anthropics/ralph/issues{}",
-        colors.dim(),
-        colors.reset()
-    );
-}
-
-/// Handle --dry-run command.
-///
-/// Validates the setup without running any agents:
-/// - Checks PROMPT.md exists and has required sections
-/// - Validates agent configuration
-/// - Reports detected project stack
-pub fn handle_dry_run(
-    logger: &Logger,
-    _colors: &Colors,
-    config: &Config,
-    developer_agent: &str,
-    reviewer_agent: &str,
-    repo_root: &Path,
-) -> anyhow::Result<()> {
-    use crate::language_detector::detect_stack_summary;
-    use crate::utils::{checkpoint_exists, validate_prompt_md};
-
-    logger.header("DRY RUN: Validation", |c| c.cyan());
-
-    // Validate PROMPT.md using the utility function
-    let validation = validate_prompt_md(config.strict_validation);
-
-    // Report errors first
-    for err in &validation.errors {
-        logger.error(err);
-    }
-
-    // Report warnings
-    for warn in &validation.warnings {
-        logger.warn(&format!("{} (recommended)", warn));
-    }
-
-    // Bail if validation failed
-    if !validation.is_valid() {
-        anyhow::bail!("Dry run failed: PROMPT.md validation errors");
-    }
-
-    // Report successes
-    if validation.has_goal {
-        logger.success("PROMPT.md has Goal section");
-    }
-    if validation.has_acceptance {
-        logger.success("PROMPT.md has acceptance checks section");
-    }
-    if validation.is_perfect() {
-        logger.success("PROMPT.md validation passed with no warnings");
-    }
-
-    logger.success(&format!("Developer agent: {}", developer_agent));
-    logger.success(&format!("Reviewer agent: {}", reviewer_agent));
-    logger.success(&format!("Developer iterations: {}", config.developer_iters));
-    logger.success(&format!("Reviewer passes: {}", config.reviewer_reviews));
-
-    // Check for checkpoint
-    if checkpoint_exists() {
-        logger.info("Checkpoint found - can resume with --resume");
-        if let Ok(Some(cp)) = load_checkpoint() {
-            logger.info(&format!("  Phase: {}", cp.phase));
-            logger.info(&format!("  Progress: {}", cp.description()));
-            logger.info(&format!("  Saved at: {}", cp.timestamp));
-        }
-    }
-
-    // Detect stack - use the convenience function for simple display
-    logger.success(&format!(
-        "Detected stack: {}",
-        detect_stack_summary(repo_root)
-    ));
-
-    logger.success("Dry run validation complete");
-    Ok(())
 }

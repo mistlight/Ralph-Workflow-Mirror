@@ -22,4 +22,3 @@ fn extension_matching_is_case_insensitive() {
     assert_eq!(extension_to_language("Py"), Some("Python"));
     assert_eq!(extension_to_language("JS"), Some("JavaScript"));
 }
-

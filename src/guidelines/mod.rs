@@ -23,4 +23,3 @@ pub(crate) use base::{CheckSeverity, ReviewGuidelines};
 
 #[cfg(test)]
 mod tests;
-
