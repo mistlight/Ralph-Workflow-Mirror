@@ -221,19 +221,46 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
     }
 
     // Agent selection
-    if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT").or_else(|_| env::var("RALPH_DRIVER_AGENT")) {
-        config.developer_agent = Some(val);
+    if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT") {
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_DEVELOPER_AGENT is empty; ignoring.".to_string());
+        } else {
+            config.developer_agent = Some(trimmed.to_string());
+        }
+    } else if let Ok(val) = env::var("RALPH_DRIVER_AGENT") {
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_DRIVER_AGENT is empty; ignoring.".to_string());
+        } else {
+            config.developer_agent = Some(trimmed.to_string());
+        }
     }
     if let Ok(val) = env::var("RALPH_REVIEWER_AGENT") {
-        config.reviewer_agent = Some(val);
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_REVIEWER_AGENT is empty; ignoring.".to_string());
+        } else {
+            config.reviewer_agent = Some(trimmed.to_string());
+        }
     }
 
     // Command overrides
     if let Ok(val) = env::var("RALPH_DEVELOPER_CMD") {
-        config.developer_cmd = Some(val);
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_DEVELOPER_CMD is empty; ignoring.".to_string());
+        } else {
+            config.developer_cmd = Some(trimmed.to_string());
+        }
     }
     if let Ok(val) = env::var("RALPH_REVIEWER_CMD") {
-        config.reviewer_cmd = Some(val);
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_REVIEWER_CMD is empty; ignoring.".to_string());
+        } else {
+            config.reviewer_cmd = Some(trimmed.to_string());
+        }
     }
 
     // Model overrides

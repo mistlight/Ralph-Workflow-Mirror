@@ -16,9 +16,6 @@
 //! - [`split_command`] - Parse shell command strings
 //! - [`truncate_text`] - Truncate text with ellipsis
 
-// Allow unused imports for re-exports (backward compatibility layer)
-#![allow(unused_imports)]
-
 use std::io;
 
 // Re-exports from checkpoint module
@@ -28,15 +25,18 @@ pub use crate::checkpoint::{
 };
 
 // Re-exports from logger module
-pub use crate::logger::{print_progress, strip_ansi_codes, timestamp, Logger};
+pub use crate::logger::{print_progress, Logger};
+#[allow(unused_imports)] // Backward-compatibility re-exports for older call sites
+pub use crate::logger::{strip_ansi_codes, timestamp};
 
 // Re-exports from files module
 pub use crate::files::{
     clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
     delete_issues_file_for_isolation, delete_plan_file, ensure_files, file_contains_marker,
     read_commit_message_file, reset_context_for_isolation, update_status, validate_prompt_md,
-    PromptValidationResult, GENERATED_FILES,
 };
+#[allow(unused_imports)] // Backward-compatibility re-exports for older call sites
+pub use crate::files::{PromptValidationResult, GENERATED_FILES};
 
 /// Split a shell-like command string into argv parts.
 ///
