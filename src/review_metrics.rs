@@ -56,17 +56,28 @@ pub(crate) struct Issue {
     /// Whether the issue has been resolved (checked off)
     pub(crate) resolved: bool,
     /// File path mentioned in the issue (if any)
-    /// Note: populated during parsing for future use (e.g., detailed issue display)
-    #[allow(dead_code)]
     pub(crate) file_path: Option<String>,
     /// Line number mentioned in the issue (if any)
-    /// Note: populated during parsing for future use (e.g., detailed issue display)
-    #[allow(dead_code)]
     pub(crate) line_number: Option<u32>,
     /// Description of the issue
-    /// Note: populated during parsing for future use (e.g., detailed issue display)
-    #[allow(dead_code)]
     pub(crate) description: String,
+}
+
+impl Issue {
+    pub(crate) fn summary(&self) -> String {
+        let location = match (&self.file_path, self.line_number) {
+            (Some(path), Some(line)) => format!("{}:{}", path, line),
+            (Some(path), None) => path.clone(),
+            (None, Some(line)) => format!("line {}", line),
+            (None, None) => "unknown location".to_string(),
+        };
+        format!(
+            "{}: {} ({})",
+            self.severity,
+            self.description.trim(),
+            location
+        )
+    }
 }
 
 /// Review metrics collected from a pipeline run
@@ -274,6 +285,16 @@ impl ReviewMetrics {
     /// Check if review found any blocking issues (critical or high severity unresolved)
     pub(crate) fn has_blocking_issues(&self) -> bool {
         self.unresolved_blocking_issues() > 0
+    }
+
+    /// Return up to `limit` unresolved issues as human-readable one-liners.
+    pub(crate) fn unresolved_issue_summaries(&self, limit: usize) -> Vec<String> {
+        self.issues
+            .iter()
+            .filter(|i| !i.resolved)
+            .take(limit)
+            .map(Issue::summary)
+            .collect()
     }
 }
 

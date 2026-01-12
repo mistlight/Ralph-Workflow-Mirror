@@ -1,0 +1,179 @@
+//! Developer prompts.
+//!
+//! Prompts for developer agent actions including iteration and planning.
+
+use super::types::ContextLevel;
+
+/// Generate developer iteration prompt.
+///
+/// Note: We do NOT tell the agent how many total iterations exist.
+/// This prevents "context pollution" - the agent should complete their task fully
+/// without knowing when the loop ends.
+///
+/// This prompt is agent-agnostic and works with any AI coding assistant.
+/// Instructions for NOTES.md are intentionally vague to avoid creating
+/// overly-specific context that could contaminate future runs.
+pub fn prompt_developer_iteration(_iteration: u32, _total: u32, context: ContextLevel) -> String {
+    match context {
+        ContextLevel::Minimal | ContextLevel::Normal => {
+            r#"You are in IMPLEMENTATION MODE. Execute the plan and make progress.
+
+INPUTS TO READ:
+1. .agent/PLAN.md - The implementation plan (execute these steps)
+2. PROMPT.md - The original requirements (for reference)
+
+YOUR TASK:
+Execute the next steps from .agent/PLAN.md that haven't been completed yet.
+Work toward satisfying all acceptance checks in PROMPT.md.
+
+GUIDELINES:
+- Make meaningful progress in each iteration
+- Write clean, idiomatic code following project patterns
+- Add tests where appropriate"#
+                .to_string()
+        }
+    }
+}
+
+/// Generate prompt for planning phase.
+///
+/// Agent does a deep dive on PROMPT.md and creates a detailed PLAN.md.
+///
+/// This prompt is designed to be agent-agnostic and follows best practices
+/// from Claude Code's plan mode implementation:
+/// - Multi-phase workflow (Understanding → Exploration → Design → Review → Final Plan)
+/// - Strict read-only constraints during planning
+/// - Critical files identification (3-5 files with justifications)
+/// - Verification strategy
+/// - Clear exit criteria
+///
+/// Reference: <https://github.com/Piebald-AI/claude-code-system-prompts>
+pub fn prompt_plan() -> String {
+    r#"You are in PLANNING MODE. Create a detailed implementation plan.
+
+CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
+- Creating, modifying, or deleting any files (except .agent/PLAN.md)
+- Running any commands that modify system state
+- Making commits or staging changes
+- Installing dependencies or packages
+
+You MAY use read-only operations: reading files, searching code, listing directories,
+running `git status`, `git log`, `git diff`, or similar read-only commands.
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 1: UNDERSTANDING
+═══════════════════════════════════════════════════════════════════════════════
+Read PROMPT.md thoroughly to understand:
+- The Goal: What is the desired end state?
+- Acceptance Checks: What specific conditions must be satisfied?
+- Constraints: Any requirements, limitations, or quality standards mentioned?
+
+If requirements are ambiguous, note them for clarification in the plan.
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 2: EXPLORATION
+═══════════════════════════════════════════════════════════════════════════════
+Explore the codebase using read-only tools to understand:
+- Current architecture and patterns used
+- Relevant existing code that will need changes
+- Dependencies and potential impacts
+- Similar implementations that can serve as reference
+- Test patterns and coverage expectations
+
+Be thorough. Quality exploration leads to better plans.
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 3: DESIGN
+═══════════════════════════════════════════════════════════════════════════════
+Design your implementation approach:
+- What changes need to be made and in what order?
+- Are there multiple valid approaches? Evaluate trade-offs.
+- What are the potential risks or challenges?
+- How does this integrate with existing code patterns?
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 4: REVIEW
+═══════════════════════════════════════════════════════════════════════════════
+Validate your plan against the requirements:
+- Does the approach satisfy ALL acceptance checks in PROMPT.md?
+- Are there edge cases or error scenarios to handle?
+- Is the plan specific enough to implement without ambiguity?
+- Have you identified the correct files to modify?
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 5: WRITE PLAN
+═══════════════════════════════════════════════════════════════════════════════
+Create .agent/PLAN.md with this structure:
+
+## Summary
+One paragraph explaining what will be done and why.
+
+## Implementation Steps
+Numbered, actionable steps. Be specific about:
+- What each step accomplishes
+- Which files are affected
+- Dependencies between steps
+
+## Critical Files for Implementation
+List 3-5 key files that will be created or modified:
+- `path/to/file.rs` - Brief justification for why this file needs changes
+
+## Risks & Mitigations
+Challenges identified during exploration and how to handle them.
+
+## Verification Strategy
+How to verify acceptance checks are met:
+- Specific tests to run
+- Manual verification steps
+- Success criteria
+
+REMEMBER: Do NOT implement anything. Your only output is .agent/PLAN.md."#
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prompt_developer_iteration() {
+        let result = prompt_developer_iteration(2, 5, ContextLevel::Normal);
+        assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("PLAN.md"));
+        assert!(result.contains("IMPLEMENTATION MODE"));
+        // STATUS.md should NOT be referenced (vague prompts, isolation mode)
+        assert!(!result.contains("STATUS.md"));
+    }
+
+    #[test]
+    fn test_developer_iteration_minimal_context() {
+        let result = prompt_developer_iteration(1, 5, ContextLevel::Minimal);
+        // Minimal context should include essential files (not STATUS.md in isolation mode)
+        assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("PLAN.md"));
+        // STATUS.md should NOT be referenced (vague prompts, isolation mode)
+        assert!(!result.contains("STATUS.md"));
+    }
+
+    #[test]
+    fn test_prompt_plan() {
+        let result = prompt_plan();
+        assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("PLAN.md"));
+        assert!(result.contains("PLANNING MODE"));
+        assert!(result.contains("Implementation Steps"));
+        assert!(result.contains("Critical Files"));
+        assert!(result.contains("Verification Strategy"));
+
+        // Ensure strict read-only constraints are present (Claude Code alignment)
+        assert!(result.contains("READ-ONLY"));
+        assert!(result.contains("STRICTLY PROHIBITED"));
+
+        // Ensure 5-phase workflow structure (Claude Code alignment)
+        assert!(result.contains("PHASE 1: UNDERSTANDING"));
+        assert!(result.contains("PHASE 2: EXPLORATION"));
+        assert!(result.contains("PHASE 3: DESIGN"));
+        assert!(result.contains("PHASE 4: REVIEW"));
+        assert!(result.contains("PHASE 5: WRITE PLAN"));
+    }
+}

@@ -1,0 +1,78 @@
+//! JSON parser type definitions for agent output parsing.
+//!
+//! This module defines the `JsonParserType` enum that determines how
+//! each agent's output stream is parsed. Different agents use different
+//! JSON streaming formats (Claude's stream-json, Codex's format, etc.).
+
+use serde::Deserialize;
+
+/// JSON parser type for agent output.
+///
+/// Different AI coding agents output their streaming JSON in different formats.
+/// This enum determines which parser to use for a given agent's output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JsonParserType {
+    /// Claude's stream-json format (also used by Qwen Code and other compatible CLIs).
+    #[default]
+    Claude,
+    /// Codex's JSON format.
+    Codex,
+    /// Gemini's stream-json format.
+    Gemini,
+    /// Generic line-based output (no parsing, pass-through).
+    Generic,
+}
+
+impl JsonParserType {
+    /// Parse parser type from string.
+    ///
+    /// Supports common names: "claude", "codex", "gemini", "generic", "none", "raw".
+    /// Unknown strings default to `Generic`.
+    pub fn parse(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "claude" => JsonParserType::Claude,
+            "codex" => JsonParserType::Codex,
+            "gemini" => JsonParserType::Gemini,
+            "generic" | "none" | "raw" => JsonParserType::Generic,
+            _ => JsonParserType::Generic,
+        }
+    }
+}
+
+impl std::fmt::Display for JsonParserType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JsonParserType::Claude => write!(f, "claude"),
+            JsonParserType::Codex => write!(f, "codex"),
+            JsonParserType::Gemini => write!(f, "gemini"),
+            JsonParserType::Generic => write!(f, "generic"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_json_parser_type_parse() {
+        assert_eq!(JsonParserType::parse("claude"), JsonParserType::Claude);
+        assert_eq!(JsonParserType::parse("CLAUDE"), JsonParserType::Claude);
+        assert_eq!(JsonParserType::parse("codex"), JsonParserType::Codex);
+        assert_eq!(JsonParserType::parse("gemini"), JsonParserType::Gemini);
+        assert_eq!(JsonParserType::parse("GEMINI"), JsonParserType::Gemini);
+        assert_eq!(JsonParserType::parse("generic"), JsonParserType::Generic);
+        assert_eq!(JsonParserType::parse("none"), JsonParserType::Generic);
+        assert_eq!(JsonParserType::parse("raw"), JsonParserType::Generic);
+        assert_eq!(JsonParserType::parse("unknown"), JsonParserType::Generic);
+    }
+
+    #[test]
+    fn test_json_parser_type_display() {
+        assert_eq!(format!("{}", JsonParserType::Claude), "claude");
+        assert_eq!(format!("{}", JsonParserType::Codex), "codex");
+        assert_eq!(format!("{}", JsonParserType::Gemini), "gemini");
+        assert_eq!(format!("{}", JsonParserType::Generic), "generic");
+    }
+}
