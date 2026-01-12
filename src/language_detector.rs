@@ -316,7 +316,10 @@ fn extension_to_language(ext: &str) -> Option<&'static str> {
 }
 
 fn is_non_primary_language(lang: &str) -> bool {
-    matches!(lang, "YAML" | "JSON" | "HTML" | "CSS" | "SCSS" | "Sass" | "Less")
+    matches!(
+        lang,
+        "YAML" | "JSON" | "HTML" | "CSS" | "SCSS" | "Sass" | "Less"
+    )
 }
 
 /// Detect signature files that indicate specific frameworks or package managers
@@ -334,7 +337,8 @@ fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String>, Option<S
         for path in paths {
             if let Ok(content) = fs::read_to_string(path) {
                 let content_lower = content.to_lowercase();
-                if content_lower.contains("[dev-dependencies]") || content_lower.contains("[[test]]")
+                if content_lower.contains("[dev-dependencies]")
+                    || content_lower.contains("[[test]]")
                 {
                     push_unique(&mut test_frameworks, "cargo test");
                 }
@@ -1112,14 +1116,32 @@ require github.com/gin-gonic/gin v1.9.0
         let stack = detect_stack(root).unwrap();
 
         assert_eq!(stack.primary_language, "PHP");
-        assert!(stack.secondary_languages.contains(&"TypeScript".to_string()));
+        assert!(stack
+            .secondary_languages
+            .contains(&"TypeScript".to_string()));
         assert!(stack.frameworks.contains(&"Laravel".to_string()));
         assert!(stack.frameworks.contains(&"React".to_string()));
         assert!(stack.has_tests);
-        assert!(stack.package_manager.as_deref().unwrap_or("").contains("Composer"));
-        assert!(stack.package_manager.as_deref().unwrap_or("").contains("npm"));
-        assert!(stack.test_framework.as_deref().unwrap_or("").contains("PHPUnit"));
-        assert!(stack.test_framework.as_deref().unwrap_or("").contains("Jest"));
+        assert!(stack
+            .package_manager
+            .as_deref()
+            .unwrap_or("")
+            .contains("Composer"));
+        assert!(stack
+            .package_manager
+            .as_deref()
+            .unwrap_or("")
+            .contains("npm"));
+        assert!(stack
+            .test_framework
+            .as_deref()
+            .unwrap_or("")
+            .contains("PHPUnit"));
+        assert!(stack
+            .test_framework
+            .as_deref()
+            .unwrap_or("")
+            .contains("Jest"));
     }
 
     #[test]

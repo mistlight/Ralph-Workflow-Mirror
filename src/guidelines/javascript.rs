@@ -195,10 +195,7 @@ mod tests {
             .quality_checks
             .iter()
             .any(|c| c.contains("const/let")));
-        assert!(guidelines
-            .anti_patterns
-            .iter()
-            .any(|c| c.contains("===")));
+        assert!(guidelines.anti_patterns.iter().any(|c| c.contains("===")));
     }
 
     #[test]
