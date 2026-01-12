@@ -176,6 +176,14 @@ pub(crate) fn run_with_prompt(
                 .with_log_file(cmd.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
+            JsonParserType::OpenCode => {
+                let p = crate::json_parser::OpenCodeParser::new(
+                    *runtime.colors,
+                    runtime.config.verbosity,
+                )
+                .with_log_file(cmd.logfile);
+                p.parse_stream(reader, &mut out)?;
+            }
             JsonParserType::Generic => {
                 // This branch shouldn't happen when uses_json=true, but keep it safe.
                 let mut buf = String::new();
