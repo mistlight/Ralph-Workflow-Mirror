@@ -1,10 +1,11 @@
 //! Agent Abstraction Module
 //!
 //! Provides a pluggable agent system for different AI coding assistants
-//! (Claude, Codex, OpenCode, Goose, Cline, etc.)
+//! (Claude, Codex, OpenCode, Goose, Cline, CCS, etc.)
 //!
 //! ## Module Structure
 //!
+//! - `ccs` - CCS (Claude Code Switch) alias resolution
 //! - `config` - Agent configuration types and TOML parsing
 //! - `error` - Error classification for fault-tolerant execution
 //! - `fallback` - Fallback chain configuration for agent switching
@@ -15,11 +16,23 @@
 //! ## Configuration
 //!
 //! Agents can be configured via (in order of increasing priority):
-//! 1. Built-in defaults (claude, codex, opencode, aider, goose, cline, continue, amazon-q, gemini)
-//! 2. Global config file (`~/.config/ralph/agents.toml`)
-//! 3. Project config file (default: `.agent/agents.toml`, overridable via `RALPH_AGENTS_CONFIG`)
-//! 4. Environment variables (`RALPH_DEVELOPER_CMD`, `RALPH_REVIEWER_CMD`)
-//! 5. Programmatic registration via `AgentRegistry::register()`
+//! 1. Built-in defaults (claude, codex, opencode, ccs, aider, goose, cline, continue, amazon-q, gemini)
+//! 2. Unified config file (`~/.config/ralph-workflow.toml`)
+//! 3. Environment variables (`RALPH_DEVELOPER_CMD`, `RALPH_REVIEWER_CMD`)
+//! 4. Programmatic registration via `AgentRegistry::register()`
+//!
+//! ## CCS (Claude Code Switch) Support
+//!
+//! CCS aliases can be defined in the unified config and used with `ccs/alias` syntax:
+//! ```toml
+//! [ccs_aliases]
+//! work = "ccs work"
+//! personal = "ccs personal"
+//! gemini = "ccs gemini"
+//!
+//! [agent_chain]
+//! developer = ["ccs/work", "claude"]
+//! ```
 //!
 //! ## Agent Switching / Fallback
 //!
@@ -44,14 +57,16 @@
 //! json_parser = "claude"  # Use Claude's JSON parser
 //! ```
 
+mod ccs;
 mod config;
 mod error;
-mod fallback;
+pub(crate) mod fallback;
 mod parser;
 mod providers;
 mod registry;
 
 // Re-export public types for crate-level access
+pub(crate) use ccs::is_ccs_ref;
 pub(crate) use config::{
     global_agents_config_path, AgentsConfigFile, ConfigInitResult, ConfigSource,
 };

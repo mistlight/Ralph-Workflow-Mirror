@@ -88,6 +88,20 @@ verbose_flag = "--verbose"
 can_commit = true
 json_parser = "claude"
 
+# CCS (Claude Code Switch) - Universal AI profile manager
+# https://github.com/kaitranntt/ccs
+# CCS wraps Claude Code and provides multi-profile/multi-provider support.
+# Use CCS aliases like "ccs/work", "ccs/personal", "ccs/gemini" for different profiles.
+# Configure aliases in ~/.config/ralph-workflow.toml under [ccs_aliases].
+# Note: CCS uses Claude's stream-json format since it wraps Claude Code.
+[agents.ccs]
+cmd = "ccs"
+output_flag = "--output-format=stream-json"
+yolo_flag = "--dangerously-skip-permissions"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "ccs"
+
 # OpenAI Codex CLI
 # https://github.com/openai/codex
 # Uses --full-auto for automatic sandboxed execution
