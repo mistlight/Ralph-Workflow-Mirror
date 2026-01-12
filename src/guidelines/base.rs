@@ -1,0 +1,504 @@
+//! Core types for review guidelines
+//!
+//! Contains the fundamental structures used across all language-specific guideline modules.
+
+/// Severity level for code review checks
+///
+/// Used to prioritize review feedback and help developers focus on
+/// the most important issues first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum CheckSeverity {
+    /// Must fix before merge - security vulnerabilities, data loss, crashes
+    Critical,
+    /// Should fix before merge - bugs, significant functional issues
+    High,
+    /// Should address - code quality, maintainability concerns
+    Medium,
+    /// Nice to have - minor improvements, style suggestions
+    Low,
+    /// Informational - observations, suggestions for future consideration
+    Info,
+}
+
+impl std::fmt::Display for CheckSeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CheckSeverity::Critical => write!(f, "CRITICAL"),
+            CheckSeverity::High => write!(f, "HIGH"),
+            CheckSeverity::Medium => write!(f, "MEDIUM"),
+            CheckSeverity::Low => write!(f, "LOW"),
+            CheckSeverity::Info => write!(f, "INFO"),
+        }
+    }
+}
+
+/// A review check with associated severity
+#[derive(Debug, Clone)]
+pub(crate) struct SeverityCheck {
+    /// The check description
+    /// Note: populated for future use (e.g., displaying detailed check info)
+    #[allow(dead_code)]
+    pub(crate) check: String,
+    /// Severity level for this check
+    pub(crate) severity: CheckSeverity,
+}
+
+impl SeverityCheck {
+    pub(crate) fn new(check: impl Into<String>, severity: CheckSeverity) -> Self {
+        Self {
+            check: check.into(),
+            severity,
+        }
+    }
+
+    pub(crate) fn critical(check: impl Into<String>) -> Self {
+        Self::new(check, CheckSeverity::Critical)
+    }
+
+    pub(crate) fn high(check: impl Into<String>) -> Self {
+        Self::new(check, CheckSeverity::High)
+    }
+
+    pub(crate) fn medium(check: impl Into<String>) -> Self {
+        Self::new(check, CheckSeverity::Medium)
+    }
+
+    pub(crate) fn low(check: impl Into<String>) -> Self {
+        Self::new(check, CheckSeverity::Low)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn info(check: impl Into<String>) -> Self {
+        Self::new(check, CheckSeverity::Info)
+    }
+}
+
+/// Review guidelines for a specific technology stack
+#[derive(Debug, Clone)]
+pub(crate) struct ReviewGuidelines {
+    /// Language-specific code quality checks
+    pub(crate) quality_checks: Vec<String>,
+    /// Security considerations specific to this stack
+    pub(crate) security_checks: Vec<String>,
+    /// Performance considerations
+    pub(crate) performance_checks: Vec<String>,
+    /// Testing expectations
+    pub(crate) testing_checks: Vec<String>,
+    /// Documentation requirements
+    pub(crate) documentation_checks: Vec<String>,
+    /// Common idioms and patterns to follow
+    pub(crate) idioms: Vec<String>,
+    /// Anti-patterns to avoid
+    pub(crate) anti_patterns: Vec<String>,
+    /// Concurrency and thread safety checks
+    pub(crate) concurrency_checks: Vec<String>,
+    /// Resource management checks (file handles, connections, memory)
+    pub(crate) resource_checks: Vec<String>,
+    /// Logging and observability checks
+    pub(crate) observability_checks: Vec<String>,
+    /// Configuration and secrets management checks
+    pub(crate) secrets_checks: Vec<String>,
+    /// API design checks (for libraries/services)
+    pub(crate) api_design_checks: Vec<String>,
+}
+
+impl Default for ReviewGuidelines {
+    fn default() -> Self {
+        Self {
+            quality_checks: vec![
+                "Code follows consistent style and formatting".to_string(),
+                "Functions have single responsibility".to_string(),
+                "Error handling is comprehensive".to_string(),
+                "No dead code or unused imports".to_string(),
+            ],
+            security_checks: vec![
+                "No hardcoded secrets or credentials".to_string(),
+                "Input validation on external data".to_string(),
+                "Proper authentication/authorization checks".to_string(),
+            ],
+            performance_checks: vec![
+                "No obvious performance bottlenecks".to_string(),
+                "Efficient data structures used".to_string(),
+            ],
+            testing_checks: vec![
+                "Tests cover main functionality".to_string(),
+                "Edge cases are tested".to_string(),
+            ],
+            documentation_checks: vec![
+                "Public APIs are documented".to_string(),
+                "Complex logic has explanatory comments".to_string(),
+            ],
+            idioms: vec!["Code follows language conventions".to_string()],
+            anti_patterns: vec!["Avoid code duplication".to_string()],
+            concurrency_checks: vec![
+                "Shared mutable state is properly synchronized".to_string(),
+                "No potential deadlocks (lock ordering)".to_string(),
+            ],
+            resource_checks: vec![
+                "Resources are properly closed/released".to_string(),
+                "No resource leaks in error paths".to_string(),
+            ],
+            observability_checks: vec![
+                "Errors are logged with context".to_string(),
+                "Critical operations have appropriate logging".to_string(),
+            ],
+            secrets_checks: vec![
+                "Secrets loaded from environment/config, not hardcoded".to_string(),
+                "Sensitive data not logged or exposed in errors".to_string(),
+            ],
+            api_design_checks: vec![
+                "API follows consistent naming conventions".to_string(),
+                "Breaking changes are clearly documented".to_string(),
+            ],
+        }
+    }
+}
+
+impl ReviewGuidelines {
+    fn format_section(items: &[String], title: &str, limit: usize) -> Option<String> {
+        if items.is_empty() {
+            return None;
+        }
+        let mut lines: Vec<String> = items
+            .iter()
+            .take(limit)
+            .map(|s| format!("  - {}", s))
+            .collect();
+        if items.len() > limit {
+            lines.push(format!("  - ... (+{} more)", items.len() - limit));
+        }
+        Some(format!("{}:\n{}", title, lines.join("\n")))
+    }
+
+    /// Format guidelines as a prompt section
+    pub(crate) fn format_for_prompt(&self) -> String {
+        let mut sections = Vec::new();
+
+        if let Some(s) = Self::format_section(&self.quality_checks, "CODE QUALITY", 10) {
+            sections.push(s);
+        }
+        if let Some(s) = Self::format_section(&self.security_checks, "SECURITY", 10) {
+            sections.push(s);
+        }
+        if let Some(s) = Self::format_section(&self.performance_checks, "PERFORMANCE", 8) {
+            sections.push(s);
+        }
+        if let Some(s) = Self::format_section(&self.anti_patterns, "AVOID", 8) {
+            sections.push(s);
+        }
+
+        sections.join("\n\n")
+    }
+
+    /// Get all checks with their severity classifications
+    ///
+    /// Returns a comprehensive list of all applicable checks organized by category
+    /// with severity levels. This is useful for generating detailed review reports.
+    pub(crate) fn get_all_checks(&self) -> Vec<SeverityCheck> {
+        let mut checks = Vec::new();
+
+        // Security checks are CRITICAL
+        for check in &self.security_checks {
+            checks.push(SeverityCheck::critical(check.clone()));
+        }
+        for check in &self.secrets_checks {
+            checks.push(SeverityCheck::critical(check.clone()));
+        }
+
+        // Concurrency issues are HIGH severity
+        for check in &self.concurrency_checks {
+            checks.push(SeverityCheck::high(check.clone()));
+        }
+
+        // Concurrency and resource management issues are HIGH
+        for check in &self.resource_checks {
+            checks.push(SeverityCheck::high(check.clone()));
+        }
+
+        // Quality issues are MEDIUM
+        for check in &self.quality_checks {
+            checks.push(SeverityCheck::medium(check.clone()));
+        }
+        for check in &self.anti_patterns {
+            checks.push(SeverityCheck::medium(check.clone()));
+        }
+
+        // Performance, testing, API design are MEDIUM
+        for check in &self.performance_checks {
+            checks.push(SeverityCheck::medium(check.clone()));
+        }
+        for check in &self.testing_checks {
+            checks.push(SeverityCheck::medium(check.clone()));
+        }
+        for check in &self.api_design_checks {
+            checks.push(SeverityCheck::medium(check.clone()));
+        }
+
+        // Observability and documentation are LOW
+        for check in &self.observability_checks {
+            checks.push(SeverityCheck::low(check.clone()));
+        }
+        for check in &self.documentation_checks {
+            checks.push(SeverityCheck::low(check.clone()));
+        }
+
+        // Idioms are informational/LOW
+        for check in &self.idioms {
+            checks.push(SeverityCheck::low(check.clone()));
+        }
+
+        checks
+    }
+
+    /// Format guidelines with severity priorities for the review prompt
+    ///
+    /// This produces a more detailed prompt section that groups checks by priority,
+    /// helping agents focus on the most critical issues first.
+    pub(crate) fn format_for_prompt_with_priorities(&self) -> String {
+        let mut sections = Vec::new();
+
+        // Critical: Security and secrets
+        let critical_checks: Vec<&str> = self
+            .security_checks
+            .iter()
+            .chain(self.secrets_checks.iter())
+            .map(String::as_str)
+            .collect();
+        if !critical_checks.is_empty() {
+            let mut items: Vec<String> = critical_checks
+                .iter()
+                .take(10)
+                .map(|s| format!("  - {}", s))
+                .collect();
+            if critical_checks.len() > 10 {
+                items.push(format!("  - ... (+{} more)", critical_checks.len() - 10));
+            }
+            sections.push(format!(
+                "🔴 CRITICAL (must fix before merge):\n{}",
+                items.join("\n")
+            ));
+        }
+
+        // High: Concurrency and resource management
+        let high_checks: Vec<&str> = self
+            .concurrency_checks
+            .iter()
+            .chain(self.resource_checks.iter())
+            .map(String::as_str)
+            .collect();
+        if !high_checks.is_empty() {
+            let mut items: Vec<String> = high_checks
+                .iter()
+                .take(10)
+                .map(|s| format!("  - {}", s))
+                .collect();
+            if high_checks.len() > 10 {
+                items.push(format!("  - ... (+{} more)", high_checks.len() - 10));
+            }
+            sections.push(format!(
+                "🟠 HIGH (should fix before merge):\n{}",
+                items.join("\n")
+            ));
+        }
+
+        // Medium: Quality, anti-patterns, performance, testing, API design
+        let medium_checks: Vec<&str> = self
+            .quality_checks
+            .iter()
+            .chain(self.anti_patterns.iter())
+            .chain(self.performance_checks.iter())
+            .chain(self.testing_checks.iter())
+            .chain(self.api_design_checks.iter())
+            .map(String::as_str)
+            .collect();
+        if !medium_checks.is_empty() {
+            let mut items: Vec<String> = medium_checks
+                .iter()
+                .take(12)
+                .map(|s| format!("  - {}", s))
+                .collect();
+            if medium_checks.len() > 12 {
+                items.push(format!("  - ... (+{} more)", medium_checks.len() - 12));
+            }
+            sections.push(format!("🟡 MEDIUM (should address):\n{}", items.join("\n")));
+        }
+
+        // Low: Documentation, observability, idioms
+        let low_checks: Vec<&str> = self
+            .documentation_checks
+            .iter()
+            .chain(self.observability_checks.iter())
+            .chain(self.idioms.iter())
+            .map(String::as_str)
+            .collect();
+        if !low_checks.is_empty() {
+            let mut items: Vec<String> = low_checks
+                .iter()
+                .take(10)
+                .map(|s| format!("  - {}", s))
+                .collect();
+            if low_checks.len() > 10 {
+                items.push(format!("  - ... (+{} more)", low_checks.len() - 10));
+            }
+            sections.push(format!("🟢 LOW (nice to have):\n{}", items.join("\n")));
+        }
+
+        sections.join("\n\n")
+    }
+
+    /// Get a brief summary for display
+    pub(crate) fn summary(&self) -> String {
+        format!(
+            "{} quality checks, {} security checks, {} anti-patterns",
+            self.quality_checks.len(),
+            self.security_checks.len(),
+            self.anti_patterns.len()
+        )
+    }
+
+    /// Get a comprehensive count of all checks
+    pub(crate) fn total_checks(&self) -> usize {
+        self.quality_checks.len()
+            + self.security_checks.len()
+            + self.performance_checks.len()
+            + self.testing_checks.len()
+            + self.documentation_checks.len()
+            + self.idioms.len()
+            + self.anti_patterns.len()
+            + self.concurrency_checks.len()
+            + self.resource_checks.len()
+            + self.observability_checks.len()
+            + self.secrets_checks.len()
+            + self.api_design_checks.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_guidelines() {
+        let guidelines = ReviewGuidelines::default();
+        assert!(!guidelines.quality_checks.is_empty());
+        assert!(!guidelines.security_checks.is_empty());
+    }
+
+    #[test]
+    fn test_check_severity_ordering() {
+        // Critical should be less than (higher priority) than High, etc.
+        assert!(CheckSeverity::Critical < CheckSeverity::High);
+        assert!(CheckSeverity::High < CheckSeverity::Medium);
+        assert!(CheckSeverity::Medium < CheckSeverity::Low);
+        assert!(CheckSeverity::Low < CheckSeverity::Info);
+    }
+
+    #[test]
+    fn test_check_severity_display() {
+        assert_eq!(format!("{}", CheckSeverity::Critical), "CRITICAL");
+        assert_eq!(format!("{}", CheckSeverity::High), "HIGH");
+        assert_eq!(format!("{}", CheckSeverity::Medium), "MEDIUM");
+        assert_eq!(format!("{}", CheckSeverity::Low), "LOW");
+        assert_eq!(format!("{}", CheckSeverity::Info), "INFO");
+    }
+
+    #[test]
+    fn test_severity_check_constructors() {
+        let critical = SeverityCheck::critical("test");
+        assert_eq!(critical.severity, CheckSeverity::Critical);
+        assert_eq!(critical.check, "test");
+
+        let high = SeverityCheck::high("high test");
+        assert_eq!(high.severity, CheckSeverity::High);
+
+        let medium = SeverityCheck::medium("medium test");
+        assert_eq!(medium.severity, CheckSeverity::Medium);
+
+        let low = SeverityCheck::low("low test");
+        assert_eq!(low.severity, CheckSeverity::Low);
+    }
+
+    #[test]
+    fn test_get_all_checks() {
+        let guidelines = ReviewGuidelines::default();
+        let all_checks = guidelines.get_all_checks();
+
+        // Should have checks from all categories
+        assert!(!all_checks.is_empty());
+
+        // Security checks should be critical
+        let critical_count = all_checks
+            .iter()
+            .filter(|c| c.severity == CheckSeverity::Critical)
+            .count();
+        assert!(critical_count > 0);
+
+        // Should have some medium severity checks
+        let medium_count = all_checks
+            .iter()
+            .filter(|c| c.severity == CheckSeverity::Medium)
+            .count();
+        assert!(medium_count > 0);
+    }
+
+    #[test]
+    fn test_format_for_prompt_with_priorities() {
+        let guidelines = ReviewGuidelines::default();
+        let formatted = guidelines.format_for_prompt_with_priorities();
+
+        // Should contain priority indicators
+        assert!(formatted.contains("CRITICAL"));
+        assert!(formatted.contains("HIGH"));
+        assert!(formatted.contains("MEDIUM"));
+        assert!(formatted.contains("LOW"));
+
+        // Should not omit new/extended categories
+        assert!(formatted.contains("API follows consistent naming conventions"));
+        assert!(formatted.contains("Code follows language conventions"));
+    }
+
+    #[test]
+    fn test_summary() {
+        let guidelines = ReviewGuidelines::default();
+        let summary = guidelines.summary();
+
+        assert!(summary.contains("quality checks"));
+        assert!(summary.contains("security checks"));
+        assert!(summary.contains("anti-patterns"));
+    }
+
+    #[test]
+    fn test_total_checks() {
+        let guidelines = ReviewGuidelines::default();
+        let total = guidelines.total_checks();
+
+        // Should be the sum of all check categories
+        let expected = guidelines.quality_checks.len()
+            + guidelines.security_checks.len()
+            + guidelines.performance_checks.len()
+            + guidelines.testing_checks.len()
+            + guidelines.documentation_checks.len()
+            + guidelines.idioms.len()
+            + guidelines.anti_patterns.len()
+            + guidelines.concurrency_checks.len()
+            + guidelines.resource_checks.len()
+            + guidelines.observability_checks.len()
+            + guidelines.secrets_checks.len()
+            + guidelines.api_design_checks.len();
+
+        assert_eq!(total, expected);
+        assert!(total > 10); // Should have a reasonable number of checks
+    }
+
+    #[test]
+    fn test_default_has_new_check_categories() {
+        let guidelines = ReviewGuidelines::default();
+
+        // New categories should have defaults
+        assert!(!guidelines.concurrency_checks.is_empty());
+        assert!(!guidelines.resource_checks.is_empty());
+        assert!(!guidelines.observability_checks.is_empty());
+        assert!(!guidelines.secrets_checks.is_empty());
+        assert!(!guidelines.api_design_checks.is_empty());
+    }
+}
