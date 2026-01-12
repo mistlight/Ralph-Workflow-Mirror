@@ -11,11 +11,11 @@ mod agents;
 mod colors;
 mod config;
 mod git_helpers;
+mod guidelines;
 mod json_parser;
 mod language_detector;
 mod platform;
 mod prompts;
-mod review_guidelines;
 mod review_metrics;
 mod timer;
 mod utils;
@@ -34,9 +34,10 @@ use crate::git_helpers::{
 use crate::language_detector::{detect_stack, detect_stack_summary, ProjectStack};
 use crate::prompts::{
     prompt_comprehensive_review, prompt_for_agent, prompt_incremental_review,
-    prompt_security_focused_review, Action, ContextLevel, Role,
+    prompt_detailed_review_without_guidelines, prompt_security_focused_review, Action, ContextLevel,
+    Role,
 };
-use crate::review_guidelines::{CheckSeverity, ReviewGuidelines};
+use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::review_metrics::ReviewMetrics;
 use crate::timer::Timer;
 use crate::utils::{
@@ -1312,7 +1313,7 @@ fn main() -> anyhow::Result<()> {
                     }
 
                     // Show review guidelines summary
-                    let guidelines = review_guidelines::ReviewGuidelines::for_stack(&stack);
+                    let guidelines = guidelines::ReviewGuidelines::for_stack(&stack);
                     println!("  Review checks: {} total", guidelines.total_checks());
 
                     // Show severity breakdown from get_all_checks
@@ -2017,6 +2018,73 @@ fn main() -> anyhow::Result<()> {
     }
 
     if should_run_from(PipelinePhase::Review) {
+        let build_review_prompt = |guidelines: Option<&ReviewGuidelines>| -> (String, String) {
+            match config.review_depth {
+                ReviewDepth::Security => {
+                    if let Some(g) = guidelines {
+                        logger.info("Using security-focused review with language-specific checks");
+                        ("review (security)".to_string(), prompt_security_focused_review(reviewer_context, g))
+                    } else {
+                        logger.info("Using security-focused review");
+                        (
+                            "review (security)".to_string(),
+                            prompt_security_focused_review(
+                                reviewer_context,
+                                &ReviewGuidelines::default(),
+                            ),
+                        )
+                    }
+                }
+                ReviewDepth::Incremental => {
+                    logger.info("Using incremental review (changed files only)");
+                    (
+                        "review (incremental)".to_string(),
+                        prompt_incremental_review(reviewer_context),
+                    )
+                }
+                ReviewDepth::Comprehensive => {
+                    if let Some(g) = guidelines {
+                        logger.info("Using comprehensive review with language-specific checks");
+                        (
+                            "review (comprehensive)".to_string(),
+                            prompt_comprehensive_review(reviewer_context, g),
+                        )
+                    } else {
+                        logger.info("Using comprehensive review");
+                        (
+                            "review (comprehensive)".to_string(),
+                            prompt_comprehensive_review(
+                                reviewer_context,
+                                &ReviewGuidelines::default(),
+                            ),
+                        )
+                    }
+                }
+                ReviewDepth::Standard => {
+                    if let Some(g) = guidelines {
+                        logger.info("Using standard review with language-specific checks");
+                        (
+                            "review (standard)".to_string(),
+                            prompt_for_agent(
+                                Role::Reviewer,
+                                Action::Review,
+                                reviewer_context,
+                                None,
+                                None,
+                                Some(g),
+                            ),
+                        )
+                    } else {
+                        logger.info("Using detailed review without stack-specific checks");
+                        (
+                            "review (standard)".to_string(),
+                            prompt_detailed_review_without_guidelines(reviewer_context),
+                        )
+                    }
+                }
+            }
+        };
+
         logger.info(&format!(
             "Running review → fix → review×{}{}{} cycle ({})",
             colors.bold(),
@@ -2042,50 +2110,10 @@ fn main() -> anyhow::Result<()> {
         logger.subheader("Initial Review");
         update_status("Starting code review", config.isolation_mode)?;
 
-        let prompt = match config.review_depth {
-            ReviewDepth::Security => {
-                if let Some(ref guidelines) = review_guidelines {
-                    logger.info("Using security-focused review with language-specific checks");
-                    prompt_security_focused_review(reviewer_context, guidelines)
-                } else {
-                    logger.info("Using security-focused review");
-                    prompt_security_focused_review(reviewer_context, &ReviewGuidelines::default())
-                }
-            }
-            ReviewDepth::Incremental => {
-                logger.info("Using incremental review (changed files only)");
-                prompt_incremental_review(reviewer_context)
-            }
-            ReviewDepth::Comprehensive => {
-                if let Some(ref guidelines) = review_guidelines {
-                    logger.info("Using comprehensive review with language-specific checks");
-                    prompt_comprehensive_review(reviewer_context, guidelines)
-                } else {
-                    logger.info("Using comprehensive review");
-                    prompt_comprehensive_review(reviewer_context, &ReviewGuidelines::default())
-                }
-            }
-            ReviewDepth::Standard => {
-                // Standard review: use comprehensive if guidelines available, else basic
-                if let Some(ref guidelines) = review_guidelines {
-                    logger.info("Using comprehensive review with language-specific checks");
-                    prompt_comprehensive_review(reviewer_context, guidelines)
-                } else {
-                    // Fall back to standard review prompt
-                    prompt_for_agent(
-                        Role::Reviewer,
-                        Action::Review,
-                        reviewer_context,
-                        None,
-                        None,
-                        None,
-                    )
-                }
-            }
-        };
+        let (review_label, prompt) = build_review_prompt(review_guidelines.as_ref());
         let _ = run_with_fallback(
             AgentRole::Reviewer,
-            "review (comprehensive)",
+            &review_label,
             &prompt,
             ".agent/logs/reviewer_review_1",
             &mut timer,
@@ -2144,6 +2172,34 @@ fn main() -> anyhow::Result<()> {
     }
 
     if should_run_from(PipelinePhase::ReviewAgain) {
+        let build_review_prompt = |guidelines: Option<&ReviewGuidelines>| -> String {
+            match config.review_depth {
+                ReviewDepth::Security => prompt_security_focused_review(
+                    reviewer_context,
+                    guidelines.unwrap_or(&ReviewGuidelines::default()),
+                ),
+                ReviewDepth::Incremental => prompt_incremental_review(reviewer_context),
+                ReviewDepth::Comprehensive => prompt_comprehensive_review(
+                    reviewer_context,
+                    guidelines.unwrap_or(&ReviewGuidelines::default()),
+                ),
+                ReviewDepth::Standard => {
+                    if let Some(g) = guidelines {
+                        prompt_for_agent(
+                            Role::Reviewer,
+                            Action::Review,
+                            reviewer_context,
+                            None,
+                            None,
+                            Some(g),
+                        )
+                    } else {
+                        prompt_detailed_review_without_guidelines(reviewer_context)
+                    }
+                }
+            }
+        };
+
         let start_pass = if resume_phase == Some(PipelinePhase::ReviewAgain) {
             resume_checkpoint
                 .as_ref()
@@ -2177,14 +2233,7 @@ fn main() -> anyhow::Result<()> {
 
             // REVIEW PASS (full review, creates detailed ISSUES.md)
             update_status("Re-reviewing", config.isolation_mode)?;
-            let review_prompt = prompt_for_agent(
-                Role::Reviewer,
-                Action::Review,
-                reviewer_context,
-                None,
-                None,
-                review_guidelines.as_ref(),
-            );
+            let review_prompt = build_review_prompt(review_guidelines.as_ref());
             let _ = run_with_fallback(
                 AgentRole::Reviewer,
                 &format!("review #{}", j + 1),

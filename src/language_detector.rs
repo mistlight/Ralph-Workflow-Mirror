@@ -14,13 +14,25 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Maximum number of files to scan (for performance on large repos)
 const MAX_FILES_TO_SCAN: usize = 2000;
 
 /// Minimum file count to consider a language as present
 const MIN_FILES_FOR_DETECTION: usize = 1;
+
+/// Maximum number of secondary languages to include in the stack summary.
+///
+/// Polyglot repos commonly have more than 3 relevant languages (e.g. PHP + TS + JS + SQL),
+/// but we still cap this to keep prompts/banners readable.
+const MAX_SECONDARY_LANGUAGES: usize = 6;
+
+/// Maximum directory depth to search for signature files (package manifests, etc).
+const MAX_SIGNATURE_SEARCH_DEPTH: usize = 6;
+
+/// Maximum number of signature files to collect (across all types).
+const MAX_SIGNATURE_FILES: usize = 50;
 
 /// Represents the detected technology stack of a project
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +113,137 @@ impl ProjectStack {
     }
 }
 
+fn should_skip_dir_name(name: &str) -> bool {
+    if name.starts_with('.') {
+        return true;
+    }
+    matches!(
+        name,
+        "node_modules"
+            | "target"
+            | "dist"
+            | "build"
+            | "vendor"
+            | "__pycache__"
+            | "venv"
+            | ".venv"
+            | "env"
+    )
+}
+
+fn push_unique(vec: &mut Vec<String>, value: impl Into<String>) {
+    let value = value.into();
+    if !vec.iter().any(|v| v == &value) {
+        vec.push(value);
+    }
+}
+
+fn combine_unique(items: Vec<String>) -> Option<String> {
+    match items.len() {
+        0 => None,
+        1 => Some(items[0].clone()),
+        _ => Some(items.join(" + ")),
+    }
+}
+
+#[derive(Default)]
+struct SignatureFiles {
+    by_name_lower: HashMap<String, Vec<PathBuf>>,
+    by_extension_lower: HashMap<String, Vec<PathBuf>>,
+}
+
+fn collect_signature_files(root: &Path) -> SignatureFiles {
+    use std::collections::{HashMap as StdHashMap, VecDeque};
+
+    let mut targets: StdHashMap<String, ()> = StdHashMap::new();
+    for name in [
+        "cargo.toml",
+        "pyproject.toml",
+        "requirements.txt",
+        "setup.py",
+        "pipfile",
+        "package.json",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "gemfile",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "composer.json",
+        "mix.exs",
+        "pubspec.yaml",
+    ] {
+        let _ = targets.insert(name.to_string(), ());
+    }
+
+    let mut result = SignatureFiles::default();
+    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::new();
+    queue.push_back((root.to_path_buf(), 0));
+
+    let mut scanned_entries: usize = 0;
+    let mut collected: usize = 0;
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        if scanned_entries >= MAX_FILES_TO_SCAN || collected >= MAX_SIGNATURE_FILES {
+            break;
+        }
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            if scanned_entries >= MAX_FILES_TO_SCAN || collected >= MAX_SIGNATURE_FILES {
+                break;
+            }
+            scanned_entries += 1;
+
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let name_lower = name.to_lowercase();
+
+            if path.is_dir() {
+                if should_skip_dir_name(&name_lower) {
+                    continue;
+                }
+                if depth < MAX_SIGNATURE_SEARCH_DEPTH {
+                    queue.push_back((path, depth + 1));
+                }
+                continue;
+            }
+
+            if !path.is_file() {
+                continue;
+            }
+
+            if targets.contains_key(&name_lower) {
+                result
+                    .by_name_lower
+                    .entry(name_lower.clone())
+                    .or_default()
+                    .push(path.clone());
+                collected += 1;
+            }
+
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                let ext_lower = ext.to_lowercase();
+                if ext_lower == "csproj" {
+                    result
+                        .by_extension_lower
+                        .entry(ext_lower)
+                        .or_default()
+                        .push(path.clone());
+                    collected += 1;
+                }
+            }
+        }
+    }
+
+    result
+}
+
 /// Mapping from file extensions to language names
 fn extension_to_language(ext: &str) -> Option<&'static str> {
     match ext.to_lowercase().as_str() {
@@ -136,6 +279,14 @@ fn extension_to_language(ext: &str) -> Option<&'static str> {
         "sh" | "bash" | "zsh" => Some("Shell"),
         // SQL
         "sql" => Some("SQL"),
+        // Common "polyglot" repo file types
+        "yml" | "yaml" => Some("YAML"),
+        "json" => Some("JSON"),
+        "html" | "htm" => Some("HTML"),
+        "css" => Some("CSS"),
+        "scss" => Some("SCSS"),
+        "sass" => Some("Sass"),
+        "less" => Some("Less"),
         // Lua
         "lua" => Some("Lua"),
         // Perl
@@ -164,295 +315,410 @@ fn extension_to_language(ext: &str) -> Option<&'static str> {
     }
 }
 
+fn is_non_primary_language(lang: &str) -> bool {
+    matches!(lang, "YAML" | "JSON" | "HTML" | "CSS" | "SCSS" | "Sass" | "Less")
+}
+
 /// Detect signature files that indicate specific frameworks or package managers
 fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String>, Option<String>) {
-    let mut frameworks = Vec::new();
-    let mut test_framework = None;
-    let mut package_manager = None;
+    let signatures = collect_signature_files(root);
+
+    let mut frameworks: Vec<String> = Vec::new();
+    let mut test_frameworks: Vec<String> = Vec::new();
+    let mut package_managers: Vec<String> = Vec::new();
 
     // Rust
-    if root.join("Cargo.toml").exists() {
-        package_manager = Some("Cargo".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("cargo.toml") {
+        push_unique(&mut package_managers, "Cargo");
 
-        // Check Cargo.toml for test dependencies
-        if let Ok(content) = fs::read_to_string(root.join("Cargo.toml")) {
-            if content.contains("[dev-dependencies]") || content.contains("[[test]]") {
-                test_framework = Some("cargo test".to_string());
-            }
-            // Check for common Rust frameworks
-            if content.contains("actix") {
-                frameworks.push("Actix".to_string());
-            }
-            if content.contains("axum") {
-                frameworks.push("Axum".to_string());
-            }
-            if content.contains("rocket") {
-                frameworks.push("Rocket".to_string());
-            }
-            if content.contains("tokio") {
-                frameworks.push("Tokio".to_string());
-            }
-            if content.contains("warp") {
-                frameworks.push("Warp".to_string());
-            }
-            if content.contains("tauri") {
-                frameworks.push("Tauri".to_string());
-            }
-            if content.contains("leptos") {
-                frameworks.push("Leptos".to_string());
-            }
-            if content.contains("yew") {
-                frameworks.push("Yew".to_string());
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains("[dev-dependencies]") || content_lower.contains("[[test]]")
+                {
+                    push_unique(&mut test_frameworks, "cargo test");
+                }
+                // Common Rust frameworks
+                if content_lower.contains("actix") {
+                    push_unique(&mut frameworks, "Actix");
+                }
+                if content_lower.contains("axum") {
+                    push_unique(&mut frameworks, "Axum");
+                }
+                if content_lower.contains("rocket") {
+                    push_unique(&mut frameworks, "Rocket");
+                }
+                if content_lower.contains("tokio") {
+                    push_unique(&mut frameworks, "Tokio");
+                }
+                if content_lower.contains("warp") {
+                    push_unique(&mut frameworks, "Warp");
+                }
+                if content_lower.contains("tauri") {
+                    push_unique(&mut frameworks, "Tauri");
+                }
+                if content_lower.contains("leptos") {
+                    push_unique(&mut frameworks, "Leptos");
+                }
+                if content_lower.contains("yew") {
+                    push_unique(&mut frameworks, "Yew");
+                }
             }
         }
     }
 
     // Python
-    if root.join("pyproject.toml").exists() {
-        package_manager = Some("Poetry/pip".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("pyproject.toml")) {
-            if content.contains("pytest") {
-                test_framework = Some("pytest".to_string());
-            }
-            if content.contains("django") {
-                frameworks.push("Django".to_string());
-            }
-            if content.contains("fastapi") {
-                frameworks.push("FastAPI".to_string());
-            }
-            if content.contains("flask") {
-                frameworks.push("Flask".to_string());
-            }
-        }
-    } else if root.join("requirements.txt").exists() {
-        package_manager = Some("pip".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("requirements.txt")) {
-            if content.contains("pytest") {
-                test_framework = Some("pytest".to_string());
-            }
-            if content.contains("django") || content.contains("Django") {
-                frameworks.push("Django".to_string());
-            }
-            if content.contains("fastapi") {
-                frameworks.push("FastAPI".to_string());
-            }
-            if content.contains("flask") || content.contains("Flask") {
-                frameworks.push("Flask".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("pyproject.toml") {
+        push_unique(&mut package_managers, "Poetry/pip");
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains("pytest") {
+                    push_unique(&mut test_frameworks, "pytest");
+                }
+                if content_lower.contains("django") {
+                    push_unique(&mut frameworks, "Django");
+                }
+                if content_lower.contains("fastapi") {
+                    push_unique(&mut frameworks, "FastAPI");
+                }
+                if content_lower.contains("flask") {
+                    push_unique(&mut frameworks, "Flask");
+                }
             }
         }
-    } else if root.join("setup.py").exists() {
-        package_manager = Some("setuptools".to_string());
-    } else if root.join("Pipfile").exists() {
-        package_manager = Some("Pipenv".to_string());
+    } else if let Some(paths) = signatures.by_name_lower.get("requirements.txt") {
+        push_unique(&mut package_managers, "pip");
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains("pytest") {
+                    push_unique(&mut test_frameworks, "pytest");
+                }
+                if content_lower.contains("django") {
+                    push_unique(&mut frameworks, "Django");
+                }
+                if content_lower.contains("fastapi") {
+                    push_unique(&mut frameworks, "FastAPI");
+                }
+                if content_lower.contains("flask") {
+                    push_unique(&mut frameworks, "Flask");
+                }
+            }
+        }
+    } else if signatures.by_name_lower.contains_key("setup.py") {
+        push_unique(&mut package_managers, "setuptools");
+    } else if signatures.by_name_lower.contains_key("pipfile") {
+        push_unique(&mut package_managers, "Pipenv");
     }
 
     // JavaScript/TypeScript
-    if root.join("package.json").exists() {
-        package_manager = Some("npm/yarn".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("package.json")) {
-            // Test frameworks
-            if content.contains("\"jest\"") {
-                test_framework = Some("Jest".to_string());
-            } else if content.contains("\"vitest\"") {
-                test_framework = Some("Vitest".to_string());
-            } else if content.contains("\"mocha\"") {
-                test_framework = Some("Mocha".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("package.json") {
+        for path in paths {
+            let pkg_dir = path.parent().unwrap_or(root);
+            if pkg_dir.join("pnpm-lock.yaml").exists() {
+                push_unique(&mut package_managers, "pnpm");
+            } else if pkg_dir.join("yarn.lock").exists() {
+                push_unique(&mut package_managers, "yarn");
+            } else {
+                // Default to npm when package.json exists without pnpm or yarn locks
+                push_unique(&mut package_managers, "npm");
             }
 
-            // Frameworks
-            if content.contains("\"react\"") {
-                frameworks.push("React".to_string());
-            }
-            if content.contains("\"vue\"") {
-                frameworks.push("Vue".to_string());
-            }
-            if content.contains("\"svelte\"") {
-                frameworks.push("Svelte".to_string());
-            }
-            if content.contains("\"angular\"") || content.contains("\"@angular") {
-                frameworks.push("Angular".to_string());
-            }
-            if content.contains("\"next\"") {
-                frameworks.push("Next.js".to_string());
-            }
-            if content.contains("\"nuxt\"") {
-                frameworks.push("Nuxt".to_string());
-            }
-            if content.contains("\"express\"") {
-                frameworks.push("Express".to_string());
-            }
-            if content.contains("\"fastify\"") {
-                frameworks.push("Fastify".to_string());
-            }
-            if content.contains("\"nest\"") || content.contains("\"@nestjs") {
-                frameworks.push("NestJS".to_string());
-            }
-            if content.contains("\"electron\"") {
-                frameworks.push("Electron".to_string());
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                // Test frameworks
+                if content_lower.contains("\"jest\"") {
+                    push_unique(&mut test_frameworks, "Jest");
+                } else if content_lower.contains("\"vitest\"") {
+                    push_unique(&mut test_frameworks, "Vitest");
+                } else if content_lower.contains("\"mocha\"") {
+                    push_unique(&mut test_frameworks, "Mocha");
+                }
+
+                // Frameworks
+                if content_lower.contains("\"react\"") {
+                    push_unique(&mut frameworks, "React");
+                }
+                if content_lower.contains("\"vue\"") {
+                    push_unique(&mut frameworks, "Vue");
+                }
+                if content_lower.contains("\"svelte\"") {
+                    push_unique(&mut frameworks, "Svelte");
+                }
+                if content_lower.contains("\"angular\"") || content_lower.contains("\"@angular") {
+                    push_unique(&mut frameworks, "Angular");
+                }
+                if content_lower.contains("\"next\"") {
+                    push_unique(&mut frameworks, "Next.js");
+                }
+                if content_lower.contains("\"nuxt\"") {
+                    push_unique(&mut frameworks, "Nuxt");
+                }
+                if content_lower.contains("\"express\"") {
+                    push_unique(&mut frameworks, "Express");
+                }
+                if content_lower.contains("\"fastify\"") {
+                    push_unique(&mut frameworks, "Fastify");
+                }
+                if content_lower.contains("\"nest\"") || content_lower.contains("\"@nestjs") {
+                    push_unique(&mut frameworks, "NestJS");
+                }
+                if content_lower.contains("\"electron\"") {
+                    push_unique(&mut frameworks, "Electron");
+                }
             }
         }
     }
 
     // Go
-    if root.join("go.mod").exists() {
-        package_manager = Some("Go modules".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("go.mod")) {
-            if content.contains("gin-gonic/gin") {
-                frameworks.push("Gin".to_string());
-            }
-            if content.contains("go-chi/chi") {
-                frameworks.push("Chi".to_string());
-            }
-            if content.contains("gofiber/fiber") {
-                frameworks.push("Fiber".to_string());
-            }
-            if content.contains("labstack/echo") {
-                frameworks.push("Echo".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("go.mod") {
+        push_unique(&mut package_managers, "Go modules");
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains("gin-gonic/gin") {
+                    push_unique(&mut frameworks, "Gin");
+                }
+                if content_lower.contains("go-chi/chi") {
+                    push_unique(&mut frameworks, "Chi");
+                }
+                if content_lower.contains("gofiber/fiber") {
+                    push_unique(&mut frameworks, "Fiber");
+                }
+                if content_lower.contains("labstack/echo") {
+                    push_unique(&mut frameworks, "Echo");
+                }
             }
         }
         // Go uses built-in testing
-        test_framework = Some("go test".to_string());
+        push_unique(&mut test_frameworks, "go test");
     }
 
     // Ruby
-    if root.join("Gemfile").exists() {
-        package_manager = Some("Bundler".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("Gemfile")) {
-            if content.contains("rspec") {
-                test_framework = Some("RSpec".to_string());
-            } else if content.contains("minitest") {
-                test_framework = Some("Minitest".to_string());
-            }
-            if content.contains("rails") {
-                frameworks.push("Rails".to_string());
-            }
-            if content.contains("sinatra") {
-                frameworks.push("Sinatra".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("gemfile") {
+        push_unique(&mut package_managers, "Bundler");
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains("rspec") {
+                    push_unique(&mut test_frameworks, "RSpec");
+                } else if content_lower.contains("minitest") {
+                    push_unique(&mut test_frameworks, "Minitest");
+                }
+                if content_lower.contains("rails") {
+                    push_unique(&mut frameworks, "Rails");
+                }
+                if content_lower.contains("sinatra") {
+                    push_unique(&mut frameworks, "Sinatra");
+                }
             }
         }
     }
 
     // Java
-    if root.join("pom.xml").exists() {
-        package_manager = Some("Maven".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("pom.xml")) {
-            if content.contains("junit") {
-                test_framework = Some("JUnit".to_string());
-            }
-            if content.contains("spring") {
-                frameworks.push("Spring".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("pom.xml") {
+        push_unique(&mut package_managers, "Maven");
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains("junit") {
+                    push_unique(&mut test_frameworks, "JUnit");
+                }
+                if content_lower.contains("spring") {
+                    push_unique(&mut frameworks, "Spring");
+                }
             }
         }
-    } else if root.join("build.gradle").exists() || root.join("build.gradle.kts").exists() {
-        package_manager = Some("Gradle".to_string());
-        let gradle_file = if root.join("build.gradle.kts").exists() {
-            root.join("build.gradle.kts")
-        } else {
-            root.join("build.gradle")
-        };
-        if let Ok(content) = fs::read_to_string(gradle_file) {
-            if content.contains("junit") {
-                test_framework = Some("JUnit".to_string());
-            }
-            if content.contains("spring") {
-                frameworks.push("Spring".to_string());
+    } else if signatures.by_name_lower.contains_key("build.gradle")
+        || signatures.by_name_lower.contains_key("build.gradle.kts")
+    {
+        push_unique(&mut package_managers, "Gradle");
+        let paths = signatures
+            .by_name_lower
+            .get("build.gradle.kts")
+            .or_else(|| signatures.by_name_lower.get("build.gradle"));
+        if let Some(paths) = paths {
+            for path in paths {
+                if let Ok(content) = fs::read_to_string(path) {
+                    let content_lower = content.to_lowercase();
+                    if content_lower.contains("junit") {
+                        push_unique(&mut test_frameworks, "JUnit");
+                    }
+                    if content_lower.contains("spring") {
+                        push_unique(&mut frameworks, "Spring");
+                    }
+                }
             }
         }
     }
 
     // PHP
-    if root.join("composer.json").exists() {
-        package_manager = Some("Composer".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("composer.json")) {
-            if content.contains("phpunit") {
-                test_framework = Some("PHPUnit".to_string());
-            }
-            if content.contains("laravel") {
-                frameworks.push("Laravel".to_string());
-            }
-            if content.contains("symfony") {
-                frameworks.push("Symfony".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("composer.json") {
+        push_unique(&mut package_managers, "Composer");
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains("phpunit") {
+                    push_unique(&mut test_frameworks, "PHPUnit");
+                }
+                if content_lower.contains("laravel") {
+                    push_unique(&mut frameworks, "Laravel");
+                }
+                if content_lower.contains("symfony") {
+                    push_unique(&mut frameworks, "Symfony");
+                }
             }
         }
     }
 
     // .NET / C#
-    if root.join("*.csproj").exists()
-        || root
-            .read_dir()
-            .map(|d| {
-                d.flatten()
-                    .any(|e| e.path().extension() == Some("csproj".as_ref()))
-            })
-            .unwrap_or(false)
-    {
-        package_manager = Some("NuGet".to_string());
+    if signatures.by_extension_lower.contains_key("csproj") {
+        push_unique(&mut package_managers, "NuGet");
     }
 
     // Elixir
-    if root.join("mix.exs").exists() {
-        package_manager = Some("Mix".to_string());
-        test_framework = Some("ExUnit".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("mix.exs")) {
-            if content.contains(":phoenix") {
-                frameworks.push("Phoenix".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("mix.exs") {
+        push_unique(&mut package_managers, "Mix");
+        push_unique(&mut test_frameworks, "ExUnit");
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains(":phoenix") {
+                    push_unique(&mut frameworks, "Phoenix");
+                }
             }
         }
     }
 
     // Dart/Flutter
-    if root.join("pubspec.yaml").exists() {
-        package_manager = Some("pub".to_string());
-        if let Ok(content) = fs::read_to_string(root.join("pubspec.yaml")) {
-            if content.contains("flutter") {
-                frameworks.push("Flutter".to_string());
-            }
-            if content.contains("test:") {
-                test_framework = Some("dart test".to_string());
+    if let Some(paths) = signatures.by_name_lower.get("pubspec.yaml") {
+        push_unique(&mut package_managers, "pub");
+        for path in paths {
+            if let Ok(content) = fs::read_to_string(path) {
+                let content_lower = content.to_lowercase();
+                if content_lower.contains("flutter") {
+                    push_unique(&mut frameworks, "Flutter");
+                }
+                if content_lower.contains("test:") {
+                    push_unique(&mut test_frameworks, "dart test");
+                }
             }
         }
     }
 
-    (frameworks, test_framework, package_manager)
+    (
+        frameworks,
+        combine_unique(test_frameworks),
+        combine_unique(package_managers),
+    )
 }
 
 /// Detect if tests exist in common test directories
 fn detect_tests(root: &Path, primary_lang: &str) -> bool {
-    let test_patterns = match primary_lang {
-        "Rust" => vec!["tests/", "src/*/tests.rs"],
-        "Python" => vec!["tests/", "test/", "test_*.py", "*_test.py"],
-        "JavaScript" | "TypeScript" => {
-            vec!["__tests__/", "test/", "tests/", "*.test.js", "*.spec.js"]
-        }
-        "Go" => vec!["*_test.go"],
-        "Java" => vec!["src/test/", "test/"],
-        "Ruby" => vec!["spec/", "test/"],
-        _ => vec!["tests/", "test/", "spec/"],
-    };
+    use std::collections::VecDeque;
 
-    for pattern in test_patterns {
-        if pattern.ends_with('/') {
-            // Directory check
-            if root.join(pattern.trim_end_matches('/')).is_dir() {
-                return true;
+    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::new();
+    queue.push_back((root.to_path_buf(), 0));
+
+    let mut scanned_files = 0usize;
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        if scanned_files >= MAX_FILES_TO_SCAN {
+            break;
+        }
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            if scanned_files >= MAX_FILES_TO_SCAN {
+                break;
             }
-        } else if pattern.contains('*') {
-            // Glob pattern - simplified check
-            let parts: Vec<&str> = pattern.split('*').collect();
-            if let Ok(entries) = fs::read_dir(root) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if parts.len() == 2 {
-                        let (prefix, suffix) = (parts[0], parts[1]);
-                        if name_str.starts_with(prefix) && name_str.ends_with(suffix) {
-                            return true;
-                        }
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let name_lower = name.to_lowercase();
+
+            if path.is_dir() {
+                if should_skip_dir_name(&name_lower) {
+                    continue;
+                }
+                // Common test directories (any language)
+                if matches!(name_lower.as_str(), "tests" | "test" | "spec" | "__tests__") {
+                    return true;
+                }
+                if depth < MAX_SIGNATURE_SEARCH_DEPTH {
+                    queue.push_back((path, depth + 1));
+                }
+                continue;
+            }
+
+            if !path.is_file() {
+                continue;
+            }
+            scanned_files += 1;
+
+            let path_components: Vec<String> = path
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+                .collect();
+
+            let file_name = name_lower.as_str();
+            match primary_lang {
+                "Rust" => {
+                    if file_name == "tests.rs" || file_name.ends_with("_test.rs") {
+                        return true;
+                    }
+                    if file_name.ends_with(".rs")
+                        && path_components.windows(1).any(|w| w[0] == "tests")
+                    {
+                        return true;
+                    }
+                }
+                "Python" => {
+                    if (file_name.starts_with("test_") && file_name.ends_with(".py"))
+                        || file_name.ends_with("_test.py")
+                    {
+                        return true;
+                    }
+                }
+                "JavaScript" | "TypeScript" => {
+                    if file_name.ends_with(".test.js")
+                        || file_name.ends_with(".spec.js")
+                        || file_name.ends_with(".test.ts")
+                        || file_name.ends_with(".spec.ts")
+                        || file_name.ends_with(".test.tsx")
+                        || file_name.ends_with(".spec.tsx")
+                    {
+                        return true;
+                    }
+                }
+                "Go" => {
+                    if file_name.ends_with("_test.go") {
+                        return true;
+                    }
+                }
+                "Java" => {
+                    if path_components
+                        .windows(2)
+                        .any(|w| w[0] == "src" && w[1] == "test")
+                        || file_name.ends_with("test.java")
+                    {
+                        return true;
+                    }
+                }
+                "Ruby" => {
+                    if file_name.ends_with("_spec.rb") || file_name.ends_with("_test.rb") {
+                        return true;
+                    }
+                }
+                _ => {
+                    if file_name.contains("test") || file_name.contains("spec") {
+                        return true;
                     }
                 }
             }
-        } else if root.join(pattern).exists() {
-            return true;
         }
     }
 
@@ -489,22 +755,8 @@ fn count_extensions(root: &Path) -> io::Result<HashMap<String, usize>> {
             let file_name_str = file_name.to_string_lossy();
 
             // Skip hidden directories and common non-source directories
-            if file_name_str.starts_with('.') {
-                continue;
-            }
-            if matches!(
-                file_name_str.as_ref(),
-                "node_modules"
-                    | "target"
-                    | "dist"
-                    | "build"
-                    | "vendor"
-                    | "__pycache__"
-                    | ".git"
-                    | "venv"
-                    | ".venv"
-                    | "env"
-            ) {
+            let name_lower = file_name_str.to_ascii_lowercase();
+            if should_skip_dir_name(&name_lower) {
                 continue;
             }
 
@@ -546,16 +798,21 @@ pub(crate) fn detect_stack(root: &Path) -> io::Result<ProjectStack> {
         .collect();
     language_vec.sort_by(|a, b| b.1.cmp(&a.1));
 
-    // Determine primary and secondary languages
+    // Determine primary and secondary languages.
+    //
+    // Prefer "code" languages as primary when present, even if the repo contains lots of
+    // config/markup files (YAML/JSON/CSS/etc).
     let primary_language = language_vec
-        .first()
+        .iter()
+        .find(|(lang, _)| !is_non_primary_language(lang))
+        .or_else(|| language_vec.first())
         .map(|(lang, _)| (*lang).to_string())
         .unwrap_or_else(|| "Unknown".to_string());
 
     let secondary_languages: Vec<String> = language_vec
         .iter()
-        .skip(1)
-        .take(3) // Limit to top 3 secondary languages
+        .filter(|(lang, _)| *lang != primary_language.as_str())
+        .take(MAX_SECONDARY_LANGUAGES)
         .map(|(lang, _)| (*lang).to_string())
         .collect();
 
@@ -606,7 +863,27 @@ mod tests {
         assert_eq!(extension_to_language("go"), Some("Go"));
         assert_eq!(extension_to_language("java"), Some("Java"));
         assert_eq!(extension_to_language("rb"), Some("Ruby"));
+        assert_eq!(extension_to_language("yml"), Some("YAML"));
+        assert_eq!(extension_to_language("json"), Some("JSON"));
+        assert_eq!(extension_to_language("html"), Some("HTML"));
+        assert_eq!(extension_to_language("css"), Some("CSS"));
         assert_eq!(extension_to_language("unknown"), None);
+    }
+
+    #[test]
+    fn test_primary_language_prefers_code_over_config() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+
+        // Create many config/markup files and a single Rust file.
+        for i in 0..10 {
+            create_test_file(root, &format!("config/{i}.yml"));
+        }
+        create_test_file(root, "src/main.rs");
+
+        let stack = detect_stack(root).unwrap();
+        assert_eq!(stack.primary_language, "Rust");
+        assert!(stack.secondary_languages.contains(&"YAML".to_string()));
     }
 
     #[test]
@@ -788,6 +1065,75 @@ require github.com/gin-gonic/gin v1.9.0
 
         assert_eq!(stack.primary_language, "Rust");
         assert!(!stack.secondary_languages.is_empty());
+    }
+
+    #[test]
+    fn test_php_backend_with_react_frontend_in_subdir() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+
+        // PHP backend (root)
+        fs::write(
+            root.join("composer.json"),
+            r#"{
+  "require": {
+    "laravel/framework": "^10.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0"
+  }
+}"#,
+        )
+        .unwrap();
+        create_test_file(root, "app/index.php");
+        create_test_file(root, "app/routes.php");
+        create_test_file(root, "app/bootstrap.php");
+
+        // Embedded frontend (subdir)
+        fs::create_dir_all(root.join("frontend")).unwrap();
+        fs::write(
+            root.join("frontend/package.json"),
+            r#"{
+  "name": "frontend",
+  "dependencies": {
+    "react": "^18.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  }
+}"#,
+        )
+        .unwrap();
+        fs::write(root.join("frontend/package-lock.json"), "{}").unwrap();
+        create_test_file(root, "frontend/src/App.tsx");
+        create_test_file(root, "frontend/src/main.tsx");
+
+        let stack = detect_stack(root).unwrap();
+
+        assert_eq!(stack.primary_language, "PHP");
+        assert!(stack.secondary_languages.contains(&"TypeScript".to_string()));
+        assert!(stack.frameworks.contains(&"Laravel".to_string()));
+        assert!(stack.frameworks.contains(&"React".to_string()));
+        assert!(stack.has_tests);
+        assert!(stack.package_manager.as_deref().unwrap_or("").contains("Composer"));
+        assert!(stack.package_manager.as_deref().unwrap_or("").contains("npm"));
+        assert!(stack.test_framework.as_deref().unwrap_or("").contains("PHPUnit"));
+        assert!(stack.test_framework.as_deref().unwrap_or("").contains("Jest"));
+    }
+
+    #[test]
+    fn test_dotnet_nested_csproj_detection() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+
+        fs::create_dir_all(root.join("src/App")).unwrap();
+        fs::write(root.join("src/App/App.csproj"), "<Project></Project>").unwrap();
+        create_test_file(root, "src/App/Program.cs");
+
+        let stack = detect_stack(root).unwrap();
+        assert_eq!(stack.primary_language, "C#");
+        assert_eq!(stack.package_manager, Some("NuGet".to_string()));
     }
 
     #[test]
@@ -985,6 +1331,17 @@ gem 'rspec-rails', group: :test
 
         // SQL
         assert_eq!(extension_to_language("sql"), Some("SQL"));
+
+        // Common "polyglot" repo file types
+        assert_eq!(extension_to_language("yml"), Some("YAML"));
+        assert_eq!(extension_to_language("yaml"), Some("YAML"));
+        assert_eq!(extension_to_language("json"), Some("JSON"));
+        assert_eq!(extension_to_language("html"), Some("HTML"));
+        assert_eq!(extension_to_language("htm"), Some("HTML"));
+        assert_eq!(extension_to_language("css"), Some("CSS"));
+        assert_eq!(extension_to_language("scss"), Some("SCSS"));
+        assert_eq!(extension_to_language("sass"), Some("Sass"));
+        assert_eq!(extension_to_language("less"), Some("Less"));
 
         // Lua
         assert_eq!(extension_to_language("lua"), Some("Lua"));
