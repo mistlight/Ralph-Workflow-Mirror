@@ -32,20 +32,20 @@ use crate::git_helpers::{
     get_repo_root, git_add_all, git_commit, git_snapshot, require_git_repo, start_agent_phase,
     uninstall_hooks, GitHelpers,
 };
+use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::language_detector::{detect_stack, detect_stack_summary, ProjectStack};
 use crate::prompts::{
-    prompt_comprehensive_review, prompt_for_agent, prompt_incremental_review,
-    prompt_detailed_review_without_guidelines, prompt_security_focused_review, Action, ContextLevel,
-    Role,
+    prompt_comprehensive_review, prompt_detailed_review_without_guidelines, prompt_for_agent,
+    prompt_incremental_review, prompt_security_focused_review, Action, ContextLevel, Role,
 };
-use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::review_metrics::ReviewMetrics;
 use crate::timer::Timer;
 use crate::utils::{
     checkpoint_exists, clean_context_for_reviewer, cleanup_generated_files, clear_checkpoint,
-    delete_commit_message_file, delete_plan_file, ensure_files, load_checkpoint, print_progress,
-    read_commit_message_file, reset_context_for_isolation, save_checkpoint, split_command,
-    truncate_text, update_status, Logger, PipelineCheckpoint, PipelinePhase,
+    delete_commit_message_file, delete_issues_file_for_isolation, delete_plan_file, ensure_files,
+    load_checkpoint, print_progress, read_commit_message_file, reset_context_for_isolation,
+    save_checkpoint, split_command, truncate_text, update_status, Logger, PipelineCheckpoint,
+    PipelinePhase,
 };
 use clap::{Parser, ValueEnum};
 use std::env;
@@ -119,12 +119,12 @@ struct Args {
     )]
     developer_iters: Option<u32>,
 
-    /// Number of review-fix iterations after initial fix (default: 2)
+    /// Number of review-fix cycles (N=0 skips review, N=1 is one review-fix cycle, etc.)
     #[arg(
         long = "reviewer-reviews",
         env = "RALPH_REVIEWER_REVIEWS",
         value_name = "N",
-        help = "Number of review-fix iterations after initial fix"
+        help = "Number of review-fix cycles (0=skip review, 1=one cycle, default: 2)"
     )]
     reviewer_reviews: Option<u32>,
 
@@ -2504,6 +2504,8 @@ fn main() -> anyhow::Result<()> {
 
     // Clean context for reviewer if using minimal context
     let reviewer_context = ContextLevel::from(config.reviewer_context);
+    // For backward compatibility with old checkpoints, also check Fix and ReviewAgain phases
+    // (they were separate phases in older versions but are now consolidated into Review)
     let run_any_reviewer_phase = should_run_from(PipelinePhase::Review)
         || should_run_from(PipelinePhase::Fix)
         || should_run_from(PipelinePhase::ReviewAgain)
@@ -2512,13 +2514,22 @@ fn main() -> anyhow::Result<()> {
         clean_context_for_reviewer(&logger, config.isolation_mode)?;
     }
 
-    if should_run_from(PipelinePhase::Review) {
+    // Review-Fix cycles: N cycles means exactly N (review + fix) pairs
+    // N=0 skips review entirely, N=1 is one review-fix cycle, N=2 is two cycles, etc.
+    // For backward compatibility, also accept checkpoints at old Fix/ReviewAgain phases
+    let should_run_review_phase = should_run_from(PipelinePhase::Review)
+        || resume_phase == Some(PipelinePhase::Fix)
+        || resume_phase == Some(PipelinePhase::ReviewAgain);
+    if should_run_review_phase && config.reviewer_reviews > 0 {
         let build_review_prompt = |guidelines: Option<&ReviewGuidelines>| -> (String, String) {
             match config.review_depth {
                 ReviewDepth::Security => {
                     if let Some(g) = guidelines {
                         logger.info("Using security-focused review with language-specific checks");
-                        ("review (security)".to_string(), prompt_security_focused_review(reviewer_context, g))
+                        (
+                            "review (security)".to_string(),
+                            prompt_security_focused_review(reviewer_context, g),
+                        )
                     } else {
                         logger.info("Using security-focused review");
                         (
@@ -2581,136 +2592,31 @@ fn main() -> anyhow::Result<()> {
         };
 
         logger.info(&format!(
-            "Running review → fix → review×{}{}{} cycle ({})",
+            "Running {}{}{} review → fix cycles ({})",
             colors.bold(),
             config.reviewer_reviews,
             colors.reset(),
             reviewer_agent
         ));
 
-        // Save checkpoint at start of review phase (if enabled)
-        if config.checkpoint_enabled {
-            let _ = save_checkpoint(&PipelineCheckpoint::new(
-                PipelinePhase::Review,
-                config.developer_iters,
-                config.developer_iters,
-                0,
-                config.reviewer_reviews,
-                &developer_agent,
-                &reviewer_agent,
-            ));
-        }
-
-        // Initial review - select prompt based on review_depth configuration
-        logger.subheader("Initial Review");
-        update_status("Starting code review", config.isolation_mode)?;
-
-        let (review_label, prompt) = build_review_prompt(review_guidelines.as_ref());
-        let _ = run_with_fallback(
-            AgentRole::Reviewer,
-            &review_label,
-            &prompt,
-            ".agent/logs/reviewer_review_1",
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-            &registry,
-            &reviewer_agent,
-        );
-        stats.reviewer_runs_completed += 1;
-    } else if run_any_reviewer_phase {
-        logger.info("Skipping initial review (resuming from a later checkpoint phase)");
-    }
-
-    if should_run_from(PipelinePhase::Fix) {
-        // Save checkpoint at start of fix phase (if enabled)
-        if config.checkpoint_enabled {
-            let _ = save_checkpoint(&PipelineCheckpoint::new(
-                PipelinePhase::Fix,
-                config.developer_iters,
-                config.developer_iters,
-                0,
-                config.reviewer_reviews,
-                &developer_agent,
-                &reviewer_agent,
-            ));
-        }
-
-        // Applying fixes
-        logger.subheader("Applying Fixes");
-        update_status("Applying fixes", config.isolation_mode)?;
-
-        let prompt = prompt_for_agent(
-            Role::Reviewer,
-            Action::Fix,
-            reviewer_context,
-            None,
-            None,
-            None, // No guidelines needed for fix phase
-        );
-        let _ = run_with_fallback(
-            AgentRole::Reviewer,
-            "fix",
-            &prompt,
-            ".agent/logs/reviewer_fix",
-            &mut timer,
-            &logger,
-            &colors,
-            &config,
-            &registry,
-            &reviewer_agent,
-        );
-        stats.reviewer_runs_completed += 1;
-    } else if run_any_reviewer_phase {
-        logger.info("Skipping fix phase (resuming from a later checkpoint phase)");
-    }
-
-    if should_run_from(PipelinePhase::ReviewAgain) {
-        let build_review_prompt = |guidelines: Option<&ReviewGuidelines>| -> String {
-            match config.review_depth {
-                ReviewDepth::Security => prompt_security_focused_review(
-                    reviewer_context,
-                    guidelines.unwrap_or(&ReviewGuidelines::default()),
-                ),
-                ReviewDepth::Incremental => prompt_incremental_review(reviewer_context),
-                ReviewDepth::Comprehensive => prompt_comprehensive_review(
-                    reviewer_context,
-                    guidelines.unwrap_or(&ReviewGuidelines::default()),
-                ),
-                ReviewDepth::Standard => {
-                    if let Some(g) = guidelines {
-                        prompt_for_agent(
-                            Role::Reviewer,
-                            Action::Review,
-                            reviewer_context,
-                            None,
-                            None,
-                            Some(g),
-                        )
-                    } else {
-                        prompt_detailed_review_without_guidelines(reviewer_context)
-                    }
-                }
+        // For backward compatibility, also handle old Fix/ReviewAgain checkpoints
+        let start_pass = match resume_phase {
+            Some(PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain) => {
+                resume_checkpoint
+                    .as_ref()
+                    .map(|c| c.reviewer_pass.max(1)) // Ensure at least 1 for old checkpoints with 0
+                    .unwrap_or(1)
+                    .clamp(1, config.reviewer_reviews.max(1))
             }
+            _ => 1,
         };
 
-        let start_pass = if resume_phase == Some(PipelinePhase::ReviewAgain) {
-            resume_checkpoint
-                .as_ref()
-                .map(|c| c.reviewer_pass)
-                .unwrap_or(1)
-                .clamp(1, config.reviewer_reviews.max(1))
-        } else {
-            1
-        };
-
-        // Review-Fix iterations (replaces verification loop)
+        // Review-Fix iterations: exactly N cycles
         for j in start_pass..=config.reviewer_reviews {
             // Save checkpoint at start of each iteration
             if config.checkpoint_enabled {
                 let _ = save_checkpoint(&PipelineCheckpoint::new(
-                    PipelinePhase::ReviewAgain,
+                    PipelinePhase::Review,
                     config.developer_iters,
                     config.developer_iters,
                     j,
@@ -2721,19 +2627,19 @@ fn main() -> anyhow::Result<()> {
             }
 
             logger.subheader(&format!(
-                "Review-Fix Iteration {} of {}",
+                "Review-Fix Cycle {} of {}",
                 j, config.reviewer_reviews
             ));
-            print_progress(j, config.reviewer_reviews, "Review-Fix passes");
+            print_progress(j, config.reviewer_reviews, "Review-Fix cycles");
 
             // REVIEW PASS (full review, creates detailed ISSUES.md)
-            update_status("Re-reviewing", config.isolation_mode)?;
-            let review_prompt = build_review_prompt(review_guidelines.as_ref());
+            update_status("Reviewing code", config.isolation_mode)?;
+            let (review_label, review_prompt) = build_review_prompt(review_guidelines.as_ref());
             let _ = run_with_fallback(
                 AgentRole::Reviewer,
-                &format!("review #{}", j + 1),
+                &format!("{} #{}", review_label, j),
                 &review_prompt,
-                &format!(".agent/logs/reviewer_review_{}", j + 1),
+                &format!(".agent/logs/reviewer_review_{}", j),
                 &mut timer,
                 &logger,
                 &colors,
@@ -2747,9 +2653,13 @@ fn main() -> anyhow::Result<()> {
             if let Ok(metrics) = ReviewMetrics::from_issues_file() {
                 if metrics.no_issues_declared && metrics.total_issues == 0 {
                     logger.success(&format!(
-                        "No issues found after iteration {} - stopping early",
+                        "No issues found after cycle {} - stopping early",
                         j
                     ));
+                    // Clean up ISSUES.md before early exit in isolation mode
+                    if config.isolation_mode {
+                        delete_issues_file_for_isolation(&logger)?;
+                    }
                     break;
                 }
             }
@@ -2766,9 +2676,9 @@ fn main() -> anyhow::Result<()> {
             );
             let _ = run_with_fallback(
                 AgentRole::Reviewer,
-                &format!("fix #{}", j + 1),
+                &format!("fix #{}", j),
                 &fix_prompt,
-                &format!(".agent/logs/reviewer_fix_{}", j + 1),
+                &format!(".agent/logs/reviewer_fix_{}", j),
                 &mut timer,
                 &logger,
                 &colors,
@@ -2777,9 +2687,17 @@ fn main() -> anyhow::Result<()> {
                 &reviewer_agent,
             );
             stats.reviewer_runs_completed += 1;
+
+            // Clean up ISSUES.md after each fix cycle in isolation mode
+            // This prevents context contamination between review-fix cycles
+            if config.isolation_mode {
+                delete_issues_file_for_isolation(&logger)?;
+            }
         }
+    } else if run_any_reviewer_phase && config.reviewer_reviews == 0 {
+        logger.info("Skipping review phase (reviewer_reviews=0)");
     } else if run_any_reviewer_phase {
-        logger.info("Skipping review-fix iterations (resuming from a later checkpoint phase)");
+        logger.info("Skipping review-fix cycles (resuming from a later checkpoint phase)");
     }
 
     if should_run_from(PipelinePhase::CommitMessage) {
