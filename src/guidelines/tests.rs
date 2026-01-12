@@ -1,3 +1,8 @@
+//! Tests for review guidelines generation.
+//!
+//! Validates that language and framework-specific guidelines are correctly
+//! generated for various project stacks (Rust, Python/Django, TypeScript/React).
+
 use super::*;
 use crate::language_detector::ProjectStack;
 
@@ -21,8 +26,14 @@ fn rust_guidelines_include_rust_specific_checks() {
     };
 
     let guidelines = ReviewGuidelines::for_stack(&stack);
-    assert!(guidelines.quality_checks.iter().any(|c| c.contains("unwrap")));
-    assert!(guidelines.security_checks.iter().any(|c| c.contains("unsafe")));
+    assert!(guidelines
+        .quality_checks
+        .iter()
+        .any(|c| c.contains("unwrap")));
+    assert!(guidelines
+        .security_checks
+        .iter()
+        .any(|c| c.contains("unsafe")));
 }
 
 #[test]
@@ -38,7 +49,10 @@ fn python_django_guidelines_include_framework_checks() {
 
     let guidelines = ReviewGuidelines::for_stack(&stack);
     assert!(guidelines.quality_checks.iter().any(|c| c.contains("PEP")));
-    assert!(guidelines.security_checks.iter().any(|c| c.contains("CSRF")));
+    assert!(guidelines
+        .security_checks
+        .iter()
+        .any(|c| c.contains("CSRF")));
 }
 
 #[test]
@@ -55,7 +69,10 @@ fn typescript_react_guidelines_include_ts_and_react_checks() {
 
     let guidelines = ReviewGuidelines::for_stack(&stack);
     assert!(guidelines.quality_checks.iter().any(|c| c.contains("any")));
-    assert!(guidelines.quality_checks.iter().any(|c| c.contains("hooks")));
+    assert!(guidelines
+        .quality_checks
+        .iter()
+        .any(|c| c.contains("hooks")));
 }
 
 #[test]
@@ -104,4 +121,3 @@ fn get_all_checks_has_severity_coverage() {
     assert!(all.iter().any(|c| c.severity == CheckSeverity::Medium));
     assert!(all.iter().any(|c| c.severity == CheckSeverity::Low));
 }
-

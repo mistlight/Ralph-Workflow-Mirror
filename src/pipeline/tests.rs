@@ -1,3 +1,8 @@
+//! Tests for the agent pipeline runner.
+//!
+//! Includes contract tests for agent configurations (qwen, vibe, llama-cli)
+//! and model flag resolution logic.
+
 use super::*;
 use crate::agents::{AgentRegistry, JsonParserType};
 use crate::colors::Colors;
@@ -5,8 +10,8 @@ use crate::config::Config;
 use crate::config::Verbosity;
 use crate::output::argv_requests_json;
 use crate::timer::Timer;
-use crate::utils::Logger;
 use crate::utils::split_command;
+use crate::utils::Logger;
 
 #[test]
 fn resolve_model_with_provider_emits_full_model_flag() {
@@ -23,12 +28,8 @@ fn resolve_model_with_provider_emits_full_model_flag() {
 
     // Provider-only override should use the agent's configured model name.
     assert_eq!(
-        resolve_model_with_provider(
-            Some("opencode"),
-            None,
-            Some("-m anthropic/claude-sonnet-4")
-        )
-        .as_deref(),
+        resolve_model_with_provider(Some("opencode"), None, Some("-m anthropic/claude-sonnet-4"))
+            .as_deref(),
         Some("-m opencode/claude-sonnet-4")
     );
 
@@ -94,7 +95,8 @@ fn contract_qwen_stream_json_parses_with_claude_parser() {
     assert_eq!(parser_type, JsonParserType::Claude);
 
     // Claude stream-json compatibility (used by qwen-code)
-    let json = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from qwen"}]}}"#;
+    let json =
+        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from qwen"}]}}"#;
     let input = std::io::Cursor::new(format!("{}\n", json));
     let reader = std::io::BufReader::new(input);
 

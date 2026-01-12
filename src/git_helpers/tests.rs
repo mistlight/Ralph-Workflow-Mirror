@@ -1,5 +1,10 @@
-use super::*;
+//! Tests for git helper functions.
+//!
+//! Covers hook installation/uninstallation, marker file operations,
+//! and orphaned marker cleanup.
+
 use super::hooks::HOOK_MARKER;
+use super::*;
 use crate::utils::Logger;
 use std::fs::{self, File};
 use std::process::Command;

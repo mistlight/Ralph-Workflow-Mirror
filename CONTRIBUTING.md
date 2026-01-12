@@ -95,65 +95,101 @@ Ralph itself uses a multi-agent workflow:
 ```
 ralph/
 ├── src/
-│   ├── main.rs              # Entry point, CLI handling, and orchestration
-│   ├── pipeline.rs          # Agent execution and command result handling
-│   ├── config.rs            # Configuration parsing and CLI args
-│   ├── agents/              # Agent management module
-│   │   ├── mod.rs           # Module exports and re-exports
-│   │   ├── config.rs        # Agent configuration (TOML parsing)
-│   │   ├── registry.rs      # Agent registry and lookup
-│   │   ├── parser.rs        # JSON parser type definitions
-│   │   ├── providers.rs     # AI provider type detection
-│   │   ├── fallback.rs      # Agent chain fallback logic
-│   │   └── error.rs         # Agent error types and classification
-│   ├── prompts/             # Prompt generation module
-│   │   ├── mod.rs           # Module exports
-│   │   ├── types.rs         # Prompt type definitions
-│   │   ├── developer.rs     # Developer agent prompts
-│   │   ├── reviewer.rs      # Reviewer agent prompts
-│   │   └── commit.rs        # Commit message prompts
-│   ├── json_parser/         # Agent output parsing module
-│   │   ├── mod.rs           # Parser interface and selection
-│   │   ├── types.rs         # Parsed output types
-│   │   ├── claude.rs        # Claude-specific JSON parsing
-│   │   ├── gemini.rs        # Gemini-specific JSON parsing
-│   │   └── codex.rs         # Codex-specific JSON parsing
-│   ├── language_detector/   # Project language detection
-│   │   ├── mod.rs           # Detection logic and exports
-│   │   ├── extensions.rs    # File extension mappings
-│   │   ├── signatures.rs    # Framework signature patterns
-│   │   └── scanner.rs       # Directory scanning logic
-│   ├── checkpoint/          # Pipeline state persistence
-│   │   ├── mod.rs           # Checkpoint management
-│   │   └── state.rs         # State serialization
-│   ├── files/               # Agent file management
-│   │   ├── mod.rs           # File operations
-│   │   ├── agent_files.rs   # Agent working files
-│   │   └── validation.rs    # File content validation
-│   ├── logger/              # Logging and progress display
-│   │   ├── mod.rs           # Logger interface
-│   │   ├── output.rs        # Output formatting
-│   │   └── progress.rs      # Progress indicators
-│   ├── cli/                 # CLI argument handling
-│   │   ├── mod.rs           # CLI module exports
-│   │   ├── args.rs          # Argument parsing
-│   │   ├── handlers.rs      # Command handlers
-│   │   ├── presets.rs       # Configuration presets
-│   │   └── providers.rs     # Provider-specific CLI options
-│   ├── guidelines/          # Language-specific coding guidelines
-│   │   ├── mod.rs           # Guidelines module
-│   │   └── *.rs             # Per-language guidelines
-│   ├── git_helpers.rs       # Git operations and utilities
-│   ├── colors.rs            # Terminal color formatting
-│   ├── timer.rs             # Timing and duration utilities
-│   ├── output.rs            # Output formatting utilities
-│   ├── banner.rs            # CLI banner display
-│   ├── platform.rs          # Platform-specific utilities
-│   ├── review_metrics.rs    # Review pass metrics tracking
-│   └── utils.rs             # Shared utility functions
-├── tests/                   # Integration tests
-├── examples/                # Example configurations
-└── .agent/                  # Agent working directory
+│   ├── main.rs                  # Entry point
+│   ├── app/                     # Application orchestration
+│   │   ├── mod.rs               # Main run() function and pipeline orchestration
+│   │   ├── config_init.rs       # Configuration loading and initialization
+│   │   ├── plumbing.rs          # Low-level git operations (commit messages)
+│   │   └── validation.rs        # Agent validation and chain validation
+│   ├── config/                  # Configuration parsing
+│   │   ├── mod.rs               # Config types and CLI args
+│   │   └── *.rs                 # Configuration components
+│   ├── cli/                     # CLI argument handling
+│   │   ├── mod.rs               # CLI module exports
+│   │   ├── args.rs              # Argument parsing
+│   │   ├── handlers/            # Command handlers (modular)
+│   │   │   ├── mod.rs           # Handler exports
+│   │   │   └── *.rs             # Per-command handlers
+│   │   ├── presets.rs           # Configuration presets
+│   │   └── providers.rs         # Provider-specific CLI options
+│   ├── agents/                  # Agent management module
+│   │   ├── mod.rs               # Module exports and re-exports
+│   │   ├── config.rs            # Agent configuration (TOML parsing)
+│   │   ├── registry.rs          # Agent registry and lookup
+│   │   ├── parser.rs            # JSON parser type definitions
+│   │   ├── providers/           # AI provider type detection (modular)
+│   │   │   ├── mod.rs           # Provider exports
+│   │   │   ├── types.rs         # OpenCodeProviderType enum
+│   │   │   ├── detection.rs     # Model flag parsing and detection
+│   │   │   ├── metadata.rs      # Provider names, auth commands
+│   │   │   ├── models.rs        # Example models per provider
+│   │   │   └── validation.rs    # Model flag validation
+│   │   ├── fallback.rs          # Agent chain fallback logic
+│   │   └── error.rs             # Agent error types and classification
+│   ├── phases/                  # Pipeline phase execution
+│   │   ├── mod.rs               # Phase orchestration
+│   │   ├── context.rs           # Shared phase context
+│   │   ├── development.rs       # Development cycle execution
+│   │   ├── review.rs            # Review cycle execution
+│   │   └── commit.rs            # Commit phase execution
+│   ├── pipeline/                # Pipeline execution infrastructure
+│   │   ├── mod.rs               # Pipeline exports
+│   │   ├── runner.rs            # Command execution with fallback
+│   │   ├── model_flag.rs        # Model flag resolution
+│   │   └── types.rs             # Stats and RAII guards
+│   ├── prompts/                 # Prompt generation module
+│   │   ├── mod.rs               # Module exports
+│   │   ├── types.rs             # Prompt type definitions
+│   │   ├── developer.rs         # Developer agent prompts
+│   │   ├── reviewer/            # Reviewer prompts (modular)
+│   │   │   ├── mod.rs           # Reviewer prompt exports
+│   │   │   └── *.rs             # Guided/unguided prompts
+│   │   └── commit.rs            # Commit message prompts
+│   ├── json_parser/             # Agent output parsing module
+│   │   ├── mod.rs               # Parser interface and selection
+│   │   ├── types.rs             # Parsed output types
+│   │   ├── claude.rs            # Claude-specific JSON parsing
+│   │   ├── gemini.rs            # Gemini-specific JSON parsing
+│   │   └── codex.rs             # Codex-specific JSON parsing
+│   ├── language_detector/       # Project language detection
+│   │   ├── mod.rs               # Detection logic and exports
+│   │   ├── extensions.rs        # File extension mappings
+│   │   ├── signatures.rs        # Framework signature patterns
+│   │   └── scanner.rs           # Directory scanning logic
+│   ├── guidelines/              # Language-specific coding guidelines
+│   │   ├── mod.rs               # Guidelines module and exports
+│   │   ├── base.rs              # Base guidelines structure
+│   │   ├── stack.rs             # Stack-based guideline generation
+│   │   └── *.rs                 # Per-language guidelines
+│   ├── review_metrics/          # Review metrics tracking (modular)
+│   │   ├── mod.rs               # Module exports
+│   │   ├── severity.rs          # Issue severity levels
+│   │   ├── issue.rs             # Issue structure
+│   │   ├── metrics.rs           # Core metrics parsing
+│   │   └── parser.rs            # Parsing helper functions
+│   ├── git_helpers/             # Git operations module
+│   │   ├── mod.rs               # Git helper exports
+│   │   ├── hooks.rs             # Git hooks management
+│   │   ├── repo.rs              # Repository operations
+│   │   └── wrapper.rs           # Agent phase git wrapper
+│   ├── checkpoint/              # Pipeline state persistence
+│   │   └── mod.rs               # Checkpoint management
+│   ├── files/                   # Agent file management
+│   │   └── mod.rs               # File operations
+│   ├── logger/                  # Logging and progress display
+│   │   └── mod.rs               # Logger interface
+│   ├── colors.rs                # Terminal color formatting
+│   ├── timer.rs                 # Timing and duration utilities
+│   ├── output.rs                # Output formatting utilities
+│   ├── banner.rs                # CLI banner display
+│   ├── platform.rs              # Platform-specific utilities
+│   ├── test_utils.rs            # Test utilities
+│   └── utils.rs                 # Shared utility functions
+├── tests/                       # Integration tests
+│   ├── cli_smoke.rs             # CLI smoke tests
+│   └── workflow_requirements.rs # Workflow requirement tests
+├── examples/                    # Example configurations
+└── .agent/                      # Agent working directory
 ```
 
 ## Reporting Issues

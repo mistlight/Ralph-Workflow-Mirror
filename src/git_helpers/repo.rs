@@ -1,3 +1,14 @@
+//! Basic git repository operations.
+//!
+//! Provides fundamental git operations used throughout the application:
+//!
+//! - Repository detection and root path resolution
+//! - Working tree status snapshots (porcelain format)
+//! - Staging and committing changes
+//!
+//! All operations use the `git` CLI directly rather than libgit2 for simplicity
+//! and to ensure behavior matches user expectations from the command line.
+
 use std::io;
 use std::path::PathBuf;
 use std::process::Command;
@@ -63,4 +74,3 @@ pub(crate) fn git_commit(message: &str) -> io::Result<bool> {
 
     Ok(status.success())
 }
-

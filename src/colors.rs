@@ -1,7 +1,7 @@
 //! Colors & Formatting Module
 //!
 //! Provides ANSI escape codes for terminal coloring.
-//! Respects NO_COLOR env var (https://no-color.org/).
+//! Respects NO_COLOR env var (<https://no-color.org/>).
 //! Falls back to no colors if terminal doesn't support them.
 
 use std::env;

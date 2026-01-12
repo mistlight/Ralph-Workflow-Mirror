@@ -80,4 +80,3 @@ impl Drop for AgentPhaseGuard<'_> {
         cleanup_generated_files();
     }
 }
-

@@ -2,7 +2,7 @@
 //!
 //! This module contains all CLI-related types and functions:
 //! - [`Args`] struct with clap configuration for command-line argument parsing
-//! - [`Preset`] enum for preset agent configurations
+//! - `Preset` enum for preset agent configurations
 //! - CLI handler functions for `--list-agents`, `--list-providers`, `--diagnose`
 //! - Config initialization handlers for `--init`, `--init-global`
 //!

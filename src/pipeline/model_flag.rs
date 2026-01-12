@@ -115,4 +115,3 @@ pub(crate) fn resolve_model_with_provider(
         (None, None) => Some(format_model_flag(style, base_model)),
     }
 }
-

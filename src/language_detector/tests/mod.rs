@@ -13,4 +13,3 @@ fn create_test_file(dir: &Path, name: &str) {
     }
     File::create(path).unwrap();
 }
-

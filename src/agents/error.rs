@@ -11,7 +11,7 @@
 /// - `should_fallback()` - Switch to next agent in the chain
 /// - `is_unrecoverable()` - Abort the pipeline
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentErrorKind {
+pub(crate) enum AgentErrorKind {
     /// API rate limit exceeded - retry after delay.
     RateLimited,
     /// Token/context limit exceeded - may need different agent.
