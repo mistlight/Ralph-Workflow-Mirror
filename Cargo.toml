@@ -1,6 +1,6 @@
 [package]
 name = "ralph"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 description = "PROMPT-driven multi-agent orchestrator for git repos"
 authors = ["Ralph Authors"]
