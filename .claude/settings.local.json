@@ -1,0 +1,9 @@
+{
+  "enabledMcpjsonServers": [
+    "sequential-thinking",
+    "memory",
+    "filesystem",
+    "git"
+  ],
+  "enableAllProjectMcpServers": true
+}
