@@ -127,7 +127,7 @@ pub type CcsAliases = HashMap<String, CcsAliasToml>;
 pub struct CcsConfig {
     /// Output-format flag for CCS (often Claude-compatible stream JSON).
     pub output_flag: String,
-    /// Flag for autonomous mode. Safety: empty by default (opt-in).
+    /// Flag for autonomous mode. Defaults to --dangerously-skip-permissions for unattended setups.
     pub yolo_flag: String,
     /// Flag for verbose output.
     pub verbose_flag: String,
@@ -141,7 +141,8 @@ impl Default for CcsConfig {
     fn default() -> Self {
         Self {
             output_flag: "--output-format=stream-json".to_string(),
-            yolo_flag: "".to_string(),
+            // Default to --dangerously-skip-permissions since Ralph is designed for unattended setups
+            yolo_flag: "--dangerously-skip-permissions".to_string(),
             verbose_flag: "--verbose".to_string(),
             json_parser: "claude".to_string(),
             can_commit: true,

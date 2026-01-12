@@ -1,9 +1,14 @@
 {
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "sequential-thinking",
     "memory",
     "filesystem",
     "git"
   ],
-  "enableAllProjectMcpServers": true
+  "permissions": {
+    "allow": [
+      "Bash(ccs:*)"
+    ]
+  }
 }
