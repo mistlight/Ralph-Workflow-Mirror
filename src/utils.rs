@@ -22,11 +22,11 @@ pub(crate) enum PipelinePhase {
     Planning,
     /// Development/implementation phase
     Development,
-    /// Initial review phase
+    /// Review-fix cycles phase (N iterations of review + fix)
     Review,
-    /// Fix phase
+    /// Fix phase (deprecated: kept for backward compatibility with old checkpoints)
     Fix,
-    /// Verification review phase
+    /// Verification review phase (deprecated: kept for backward compatibility with old checkpoints)
     ReviewAgain,
     /// Commit message generation
     CommitMessage,
@@ -533,6 +533,26 @@ pub(crate) fn reset_context_for_isolation(logger: &Logger) -> io::Result<()> {
     }
 
     logger.success("Context reset for isolation mode");
+    Ok(())
+}
+
+/// Delete ISSUES.md after the final fix iteration completes in isolation mode.
+///
+/// This function is called at the end of the review-fix cycle when isolation mode
+/// is enabled. Between Review and Fix phases, ISSUES.md must persist so the Fix
+/// agent knows what to fix. But after all cycles complete, ISSUES.md should be
+/// deleted to prevent context contamination for subsequent runs.
+///
+/// Unlike `reset_context_for_isolation()`, this only deletes ISSUES.md (not
+/// STATUS.md or NOTES.md) since this is specifically for post-fix cleanup.
+pub(crate) fn delete_issues_file_for_isolation(logger: &Logger) -> io::Result<()> {
+    let issues_path = Path::new(".agent/ISSUES.md");
+
+    if issues_path.exists() {
+        fs::remove_file(issues_path)?;
+        logger.info("Isolation mode: deleted .agent/ISSUES.md after final fix");
+    }
+
     Ok(())
 }
 
@@ -1370,6 +1390,112 @@ The acceptance tests should pass.
             assert!(
                 !Path::new(".agent/ISSUES.md").exists(),
                 "ISSUES.md should only be cleaned at start of next run"
+            );
+        });
+    }
+
+    // =========================================================================
+    // delete_issues_file_for_isolation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_delete_issues_file_removes_existing_file() {
+        with_temp_cwd(|_dir| {
+            // Create .agent directory and ISSUES.md
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/ISSUES.md", "some issues from review").unwrap();
+
+            // Verify it exists
+            assert!(Path::new(".agent/ISSUES.md").exists());
+
+            // Run delete_issues_file_for_isolation
+            let colors = Colors { enabled: false };
+            let logger = Logger::new(colors);
+            delete_issues_file_for_isolation(&logger).unwrap();
+
+            // File should be deleted
+            assert!(!Path::new(".agent/ISSUES.md").exists());
+        });
+    }
+
+    #[test]
+    fn test_delete_issues_file_no_error_when_missing() {
+        with_temp_cwd(|_dir| {
+            // Create .agent directory but NOT ISSUES.md
+            fs::create_dir_all(".agent").unwrap();
+
+            // Verify it doesn't exist
+            assert!(!Path::new(".agent/ISSUES.md").exists());
+
+            // Should not error when file doesn't exist
+            let colors = Colors { enabled: false };
+            let logger = Logger::new(colors);
+            let result = delete_issues_file_for_isolation(&logger);
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_delete_issues_file_preserves_other_files() {
+        with_temp_cwd(|_dir| {
+            // Create .agent directory and multiple files
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/STATUS.md", "status content").unwrap();
+            fs::write(".agent/NOTES.md", "notes content").unwrap();
+            fs::write(".agent/ISSUES.md", "issues content").unwrap();
+
+            // Run delete_issues_file_for_isolation
+            let colors = Colors { enabled: false };
+            let logger = Logger::new(colors);
+            delete_issues_file_for_isolation(&logger).unwrap();
+
+            // Only ISSUES.md should be deleted
+            assert!(!Path::new(".agent/ISSUES.md").exists());
+            assert!(Path::new(".agent/STATUS.md").exists());
+            assert!(Path::new(".agent/NOTES.md").exists());
+        });
+    }
+
+    #[test]
+    fn test_isolation_mode_full_cycle_with_cleanup() {
+        // This test simulates a complete isolation mode run:
+        // 1. Start of run: old ISSUES.md is cleaned
+        // 2. Review creates ISSUES.md
+        // 3. Fix reads and processes it
+        // 4. End of run: ISSUES.md is cleaned
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            let colors = Colors { enabled: false };
+            let logger = Logger::new(colors);
+
+            // Simulate start of run with old ISSUES.md from previous run
+            fs::write(".agent/ISSUES.md", "old issues from yesterday").unwrap();
+            reset_context_for_isolation(&logger).unwrap();
+            assert!(
+                !Path::new(".agent/ISSUES.md").exists(),
+                "Old ISSUES.md should be cleaned at run start"
+            );
+
+            // Simulate Review phase creating detailed ISSUES.md
+            let review_output = "- [ ] Critical: [src/main.rs:42] Security vulnerability";
+            fs::write(".agent/ISSUES.md", review_output).unwrap();
+            assert!(
+                Path::new(".agent/ISSUES.md").exists(),
+                "Review should create ISSUES.md"
+            );
+
+            // Simulate Fix phase reading it
+            let content = fs::read_to_string(".agent/ISSUES.md").unwrap();
+            assert!(
+                content.contains("Critical"),
+                "Fix should be able to read issues"
+            );
+
+            // Simulate end of review-fix cycle: cleanup
+            delete_issues_file_for_isolation(&logger).unwrap();
+            assert!(
+                !Path::new(".agent/ISSUES.md").exists(),
+                "ISSUES.md should be cleaned after final fix"
             );
         });
     }
