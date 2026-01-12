@@ -1,0 +1,141 @@
+//! Ruby-specific review guidelines
+//!
+//! Contains guidelines for Ruby projects including Rails and Sinatra frameworks.
+
+use super::base::ReviewGuidelines;
+use crate::language_detector::ProjectStack;
+
+/// Add Ruby-specific guidelines to the review
+pub(crate) fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+    // Core Ruby guidelines
+    guidelines.quality_checks.extend([
+        "Follow Ruby style guide (rubocop)".to_string(),
+        "Use meaningful variable names".to_string(),
+        "Keep methods under 10 lines when possible".to_string(),
+        "Use symbols instead of strings for keys".to_string(),
+    ]);
+
+    guidelines.security_checks.extend([
+        "Use parameterized queries (avoid string interpolation in SQL)".to_string(),
+        "Escape output in views".to_string(),
+        "Validate strong parameters".to_string(),
+    ]);
+
+    guidelines.anti_patterns.extend([
+        "Avoid monkey patching core classes".to_string(),
+        "Don't use eval with user input".to_string(),
+        "Avoid deeply nested conditionals".to_string(),
+    ]);
+
+    // Add framework-specific guidelines
+    if stack.frameworks.contains(&"Rails".to_string()) {
+        add_rails_guidelines(guidelines);
+    }
+    if stack.frameworks.contains(&"Sinatra".to_string()) {
+        add_sinatra_guidelines(guidelines);
+    }
+}
+
+/// Add Rails-specific guidelines
+fn add_rails_guidelines(guidelines: &mut ReviewGuidelines) {
+    guidelines.quality_checks.extend([
+        "Follow Rails conventions".to_string(),
+        "Use Active Record validations".to_string(),
+        "Keep controllers thin".to_string(),
+    ]);
+
+    guidelines.security_checks.extend([
+        "Use strong parameters".to_string(),
+        "Protect against mass assignment".to_string(),
+        "Use Rails' built-in CSRF protection".to_string(),
+    ]);
+}
+
+/// Add Sinatra-specific guidelines
+fn add_sinatra_guidelines(guidelines: &mut ReviewGuidelines) {
+    guidelines.quality_checks.extend([
+        "Use modular Sinatra style for larger apps".to_string(),
+        "Organize routes logically".to_string(),
+    ]);
+
+    guidelines.security_checks.extend([
+        "Enable rack protection".to_string(),
+        "Set session secret securely".to_string(),
+    ]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ruby_guidelines() {
+        let stack = ProjectStack {
+            primary_language: "Ruby".to_string(),
+            secondary_languages: vec![],
+            frameworks: vec![],
+            has_tests: false,
+            test_framework: None,
+            package_manager: Some("Bundler".to_string()),
+        };
+
+        let mut guidelines = ReviewGuidelines::default();
+        add_guidelines(&mut guidelines, &stack);
+
+        // Should have Ruby-specific checks
+        assert!(guidelines
+            .quality_checks
+            .iter()
+            .any(|c| c.contains("rubocop") || c.contains("Ruby")));
+        assert!(guidelines
+            .anti_patterns
+            .iter()
+            .any(|c| c.contains("monkey patching")));
+    }
+
+    #[test]
+    fn test_rails_guidelines() {
+        let stack = ProjectStack {
+            primary_language: "Ruby".to_string(),
+            secondary_languages: vec![],
+            frameworks: vec!["Rails".to_string()],
+            has_tests: true,
+            test_framework: Some("RSpec".to_string()),
+            package_manager: Some("Bundler".to_string()),
+        };
+
+        let mut guidelines = ReviewGuidelines::default();
+        add_guidelines(&mut guidelines, &stack);
+
+        // Should have Rails-specific security checks
+        assert!(guidelines
+            .security_checks
+            .iter()
+            .any(|c| c.contains("strong parameters") || c.contains("CSRF")));
+        assert!(guidelines
+            .quality_checks
+            .iter()
+            .any(|c| c.contains("Rails conventions")));
+    }
+
+    #[test]
+    fn test_sinatra_guidelines() {
+        let stack = ProjectStack {
+            primary_language: "Ruby".to_string(),
+            secondary_languages: vec![],
+            frameworks: vec!["Sinatra".to_string()],
+            has_tests: false,
+            test_framework: None,
+            package_manager: Some("Bundler".to_string()),
+        };
+
+        let mut guidelines = ReviewGuidelines::default();
+        add_guidelines(&mut guidelines, &stack);
+
+        // Should have Sinatra-specific checks
+        assert!(guidelines
+            .quality_checks
+            .iter()
+            .any(|c| c.contains("modular") || c.contains("routes")));
+    }
+}
