@@ -24,10 +24,6 @@ pub(crate) enum PipelinePhase {
     Development,
     /// Review-fix cycles phase (N iterations of review + fix)
     Review,
-    /// Fix phase (deprecated: kept for backward compatibility with old checkpoints)
-    Fix,
-    /// Verification review phase (deprecated: kept for backward compatibility with old checkpoints)
-    ReviewAgain,
     /// Commit message generation
     CommitMessage,
     /// Final validation phase
@@ -42,8 +38,6 @@ impl std::fmt::Display for PipelinePhase {
             PipelinePhase::Planning => write!(f, "Planning"),
             PipelinePhase::Development => write!(f, "Development"),
             PipelinePhase::Review => write!(f, "Review"),
-            PipelinePhase::Fix => write!(f, "Fix"),
-            PipelinePhase::ReviewAgain => write!(f, "Verification Review"),
             PipelinePhase::CommitMessage => write!(f, "Commit Message Generation"),
             PipelinePhase::FinalValidation => write!(f, "Final Validation"),
             PipelinePhase::Complete => write!(f, "Complete"),
@@ -110,14 +104,10 @@ impl PipelineCheckpoint {
                     self.iteration, self.total_iterations
                 )
             }
-            PipelinePhase::Review => "Initial review".to_string(),
-            PipelinePhase::Fix => "Applying fixes".to_string(),
-            PipelinePhase::ReviewAgain => {
-                format!(
-                    "Verification review {}/{}",
-                    self.reviewer_pass, self.total_reviewer_passes
-                )
-            }
+            PipelinePhase::Review => format!(
+                "Review-fix cycle {}/{}",
+                self.reviewer_pass, self.total_reviewer_passes
+            ),
             PipelinePhase::CommitMessage => "Commit message generation".to_string(),
             PipelinePhase::FinalValidation => "Final validation".to_string(),
             PipelinePhase::Complete => "Pipeline complete".to_string(),
@@ -1101,11 +1091,6 @@ mod tests {
         assert_eq!(format!("{}", PipelinePhase::Planning), "Planning");
         assert_eq!(format!("{}", PipelinePhase::Development), "Development");
         assert_eq!(format!("{}", PipelinePhase::Review), "Review");
-        assert_eq!(format!("{}", PipelinePhase::Fix), "Fix");
-        assert_eq!(
-            format!("{}", PipelinePhase::ReviewAgain),
-            "Verification Review"
-        );
         assert_eq!(
             format!("{}", PipelinePhase::CommitMessage),
             "Commit Message Generation"
@@ -1139,8 +1124,8 @@ mod tests {
         assert_eq!(checkpoint.description(), "Development iteration 3/5");
 
         let checkpoint =
-            PipelineCheckpoint::new(PipelinePhase::ReviewAgain, 5, 5, 2, 3, "claude", "codex");
-        assert_eq!(checkpoint.description(), "Verification review 2/3");
+            PipelineCheckpoint::new(PipelinePhase::Review, 5, 5, 2, 3, "claude", "codex");
+        assert_eq!(checkpoint.description(), "Review-fix cycle 2/3");
     }
 
     #[test]
@@ -1191,10 +1176,10 @@ mod tests {
     #[test]
     fn test_checkpoint_serialization() {
         let checkpoint =
-            PipelineCheckpoint::new(PipelinePhase::Fix, 3, 5, 1, 2, "aider", "opencode");
+            PipelineCheckpoint::new(PipelinePhase::Review, 3, 5, 1, 2, "aider", "opencode");
 
         let json = serde_json::to_string(&checkpoint).unwrap();
-        assert!(json.contains("Fix"));
+        assert!(json.contains("Review"));
         assert!(json.contains("aider"));
         assert!(json.contains("opencode"));
 

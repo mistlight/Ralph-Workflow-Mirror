@@ -124,8 +124,6 @@ pub(crate) enum OpenCodeProviderType {
     // === Chinese AI Providers ===
     /// Z.AI Direct API (zai/* or zhipuai/*) - connects to api.z.ai
     ZaiDirect,
-    /// Z.AI Coding Plan tier (auth selection in OpenCode; model prefix is still zai/* or zhipuai/*).
-    ZaiCodingPlan,
     /// Moonshot / Kimi (moonshot/*) - Moonshot AI's Kimi K2 models
     Moonshot,
     /// MiniMax (minimax/*) - MiniMax AI models
@@ -324,7 +322,6 @@ impl OpenCodeProviderType {
 
             // Chinese AI Providers
             OpenCodeProviderType::ZaiDirect => "Z.AI Direct",
-            OpenCodeProviderType::ZaiCodingPlan => "Z.AI Coding Plan",
             OpenCodeProviderType::Moonshot => "Moonshot (Kimi)",
             OpenCodeProviderType::MiniMax => "MiniMax",
 
@@ -399,9 +396,8 @@ impl OpenCodeProviderType {
             OpenCodeProviderType::OpenCodeZen => "opencode auth login -> select 'OpenCode Zen'",
 
             // Chinese AI Providers
-            OpenCodeProviderType::ZaiDirect => "opencode auth login -> select 'Z.AI'",
-            OpenCodeProviderType::ZaiCodingPlan => {
-                "opencode auth login -> select 'Z.AI Coding Plan' (model prefix remains zai/* or zhipuai/*)"
+            OpenCodeProviderType::ZaiDirect => {
+                "opencode auth login -> select 'Z.AI' or 'Z.AI Coding Plan' (model prefix remains zai/* or zhipuai/*)"
             }
             OpenCodeProviderType::Moonshot => "opencode auth moonshot (set MOONSHOT_API_KEY)",
             OpenCodeProviderType::MiniMax => "opencode auth minimax (set MINIMAX_API_KEY)",
@@ -493,7 +489,6 @@ impl OpenCodeProviderType {
         match self {
             OpenCodeProviderType::OpenCodeZen => "opencode/",
             OpenCodeProviderType::ZaiDirect => "zai/ or zhipuai/",
-            OpenCodeProviderType::ZaiCodingPlan => "zai/ or zhipuai/",
             OpenCodeProviderType::Moonshot => "moonshot/",
             OpenCodeProviderType::MiniMax => "minimax/",
             OpenCodeProviderType::Anthropic => "anthropic/",
@@ -546,9 +541,6 @@ impl OpenCodeProviderType {
                 &["opencode/glm-4.7-free", "opencode/claude-sonnet-4"]
             }
             OpenCodeProviderType::ZaiDirect => &["zai/glm-4.7", "zai/glm-4.5", "zhipuai/glm-4.7"],
-            OpenCodeProviderType::ZaiCodingPlan => {
-                &["zai/glm-4.7", "zai/glm-4.5"]
-            }
             OpenCodeProviderType::Moonshot => &["moonshot/kimi-k2", "moonshot/moonshot-v1-128k"],
             OpenCodeProviderType::MiniMax => &["minimax/abab6.5-chat", "minimax/abab5.5-chat"],
             OpenCodeProviderType::Anthropic => {
@@ -623,9 +615,7 @@ impl OpenCodeProviderType {
             OpenCodeProviderType::SapAICore => {
                 &["sap-ai-core/gpt-4o", "sap-ai-core/claude-3.5-sonnet"]
             }
-            OpenCodeProviderType::AzureCognitiveServices => {
-                &["azure-cognitive-services/gpt-4o"]
-            }
+            OpenCodeProviderType::AzureCognitiveServices => &["azure-cognitive-services/gpt-4o"],
             OpenCodeProviderType::VeniceAI => &["venice-ai/llama-3-70b"],
             OpenCodeProviderType::OllamaCloud => &["ollama-cloud/llama3", "ollama-cloud/codellama"],
             OpenCodeProviderType::LlamaCpp => &["llama.cpp/local-model"],
@@ -663,7 +653,6 @@ impl OpenCodeProviderType {
             OpenCodeProviderType::OpenCodeZen,
             // Chinese AI Providers
             OpenCodeProviderType::ZaiDirect,
-            OpenCodeProviderType::ZaiCodingPlan,
             OpenCodeProviderType::Moonshot,
             OpenCodeProviderType::MiniMax,
             // Major Cloud Providers
@@ -743,9 +732,7 @@ pub(crate) fn validate_model_flag(model_flag: &str) -> Vec<String> {
     let provider_type = OpenCodeProviderType::from_model_flag(model);
 
     // Warn about Z.AI vs Zen confusion
-    if provider_type == OpenCodeProviderType::OpenCodeZen
-        && model.to_lowercase().contains("zai")
-    {
+    if provider_type == OpenCodeProviderType::OpenCodeZen && model.to_lowercase().contains("zai") {
         warnings.push(
             "Model flag uses 'opencode/' prefix but contains 'zai'. \
              For Z.AI Direct access, use 'zai/' prefix instead."
@@ -814,7 +801,9 @@ pub(crate) enum JsonParserType {
     Codex,
     /// Gemini's stream-json format
     Gemini,
-    /// Generic line-based output (no parsing)
+    /// OpenCode's JSON format
+    OpenCode,
+    /// Generic line-based output (no JSON parsing)
     Generic,
 }
 
@@ -825,6 +814,7 @@ impl JsonParserType {
             "claude" => JsonParserType::Claude,
             "codex" => JsonParserType::Codex,
             "gemini" => JsonParserType::Gemini,
+            "opencode" => JsonParserType::OpenCode,
             "generic" | "none" | "raw" => JsonParserType::Generic,
             _ => JsonParserType::Generic,
         }
@@ -837,6 +827,7 @@ impl std::fmt::Display for JsonParserType {
             JsonParserType::Claude => write!(f, "claude"),
             JsonParserType::Codex => write!(f, "codex"),
             JsonParserType::Gemini => write!(f, "gemini"),
+            JsonParserType::OpenCode => write!(f, "opencode"),
             JsonParserType::Generic => write!(f, "generic"),
         }
     }
@@ -1926,7 +1917,7 @@ mod tests {
         assert_eq!(registry.parser_type("claude"), JsonParserType::Claude);
         assert_eq!(registry.parser_type("codex"), JsonParserType::Codex);
         assert_eq!(registry.parser_type("gemini"), JsonParserType::Gemini);
-        assert_eq!(registry.parser_type("opencode"), JsonParserType::Generic);
+        assert_eq!(registry.parser_type("opencode"), JsonParserType::OpenCode);
         assert_eq!(registry.parser_type("aider"), JsonParserType::Generic);
         assert_eq!(registry.parser_type("unknown"), JsonParserType::Generic);
     }
@@ -3417,7 +3408,10 @@ cmd = "testbot exec"
             strip_model_flag_prefix("--model=opencode/glm-4.7-free"),
             "opencode/glm-4.7-free"
         );
-        assert_eq!(strip_model_flag_prefix("opencode/glm-4.7-free"), "opencode/glm-4.7-free");
+        assert_eq!(
+            strip_model_flag_prefix("opencode/glm-4.7-free"),
+            "opencode/glm-4.7-free"
+        );
     }
 
     #[test]
@@ -3556,17 +3550,23 @@ cmd = "testbot exec"
         assert!(!OpenCodeProviderType::Nebius.auth_command().is_empty());
         assert!(!OpenCodeProviderType::ZenMux.auth_command().is_empty());
         assert!(!OpenCodeProviderType::SapAICore.auth_command().is_empty());
-        assert!(!OpenCodeProviderType::AzureCognitiveServices.auth_command().is_empty());
+        assert!(!OpenCodeProviderType::AzureCognitiveServices
+            .auth_command()
+            .is_empty());
         assert!(!OpenCodeProviderType::VeniceAI.auth_command().is_empty());
         assert!(!OpenCodeProviderType::OllamaCloud.auth_command().is_empty());
         assert!(!OpenCodeProviderType::LlamaCpp.auth_command().is_empty());
 
         // Check specific auth content
-        assert!(OpenCodeProviderType::SapAICore.auth_command().contains("AICORE"));
+        assert!(OpenCodeProviderType::SapAICore
+            .auth_command()
+            .contains("AICORE"));
         assert!(OpenCodeProviderType::AzureCognitiveServices
             .auth_command()
             .contains("AZURE_COGNITIVE"));
-        assert!(OpenCodeProviderType::LlamaCpp.auth_command().contains("locally"));
+        assert!(OpenCodeProviderType::LlamaCpp
+            .auth_command()
+            .contains("locally"));
     }
 
     #[test]
@@ -3589,7 +3589,10 @@ cmd = "testbot exec"
         assert_eq!(OpenCodeProviderType::VeniceAI.prefix(), "venice-ai/");
         assert_eq!(OpenCodeProviderType::OllamaCloud.prefix(), "ollama-cloud/");
         assert_eq!(OpenCodeProviderType::LlamaCpp.prefix(), "llama.cpp/");
-        assert_eq!(OpenCodeProviderType::Custom.prefix(), "any other provider/*");
+        assert_eq!(
+            OpenCodeProviderType::Custom.prefix(),
+            "any other provider/*"
+        );
     }
 
     #[test]
@@ -3605,9 +3608,13 @@ cmd = "testbot exec"
         assert!(!OpenCodeProviderType::Nebius.example_models().is_empty());
         assert!(!OpenCodeProviderType::ZenMux.example_models().is_empty());
         assert!(!OpenCodeProviderType::SapAICore.example_models().is_empty());
-        assert!(!OpenCodeProviderType::AzureCognitiveServices.example_models().is_empty());
+        assert!(!OpenCodeProviderType::AzureCognitiveServices
+            .example_models()
+            .is_empty());
         assert!(!OpenCodeProviderType::VeniceAI.example_models().is_empty());
-        assert!(!OpenCodeProviderType::OllamaCloud.example_models().is_empty());
+        assert!(!OpenCodeProviderType::OllamaCloud
+            .example_models()
+            .is_empty());
         assert!(!OpenCodeProviderType::LlamaCpp.example_models().is_empty());
     }
 
