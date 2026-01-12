@@ -41,13 +41,13 @@ you want built          review the changes                 git repository
 
 ```bash
 # Option A: From source (requires Rust)
-git clone https://codeberg.org/mistlight/Ralph WorkflowWithReviewer.git
-cd Ralph WorkflowWithReviewer
+git clone https://codeberg.org/mistlight/RalphWithReviewer.git
+cd RalphWithReviewer
 cargo install --path .
 
 # Option B: Using Makefile
-git clone https://codeberg.org/mistlight/Ralph WorkflowWithReviewer.git
-cd Ralph WorkflowWithReviewer
+git clone https://codeberg.org/mistlight/RalphWithReviewer.git
+cd RalphWithReviewer
 make install-local
 ```
 

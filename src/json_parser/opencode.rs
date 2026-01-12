@@ -189,11 +189,7 @@ impl OpenCodeParser {
                         let input = tokens.input.unwrap_or(0);
                         let output = tokens.output.unwrap_or(0);
                         let reasoning = tokens.reasoning.unwrap_or(0);
-                        let cache_read = tokens
-                            .cache
-                            .as_ref()
-                            .and_then(|c| c.read)
-                            .unwrap_or(0);
+                        let cache_read = tokens.cache.as_ref().and_then(|c| c.read).unwrap_or(0);
                         if reasoning > 0 {
                             format!(
                                 "in:{} out:{} reason:{} cache:{}",
@@ -242,10 +238,7 @@ impl OpenCodeParser {
                         .as_ref()
                         .and_then(|s| s.status.as_deref())
                         .unwrap_or("pending");
-                    let title = part
-                        .state
-                        .as_ref()
-                        .and_then(|s| s.title.as_deref());
+                    let title = part.state.as_ref().and_then(|s| s.title.as_deref());
 
                     let is_completed = status == "completed";
                     let icon = if is_completed { CHECK } else { '⏳' };
