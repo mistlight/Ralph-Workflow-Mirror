@@ -9,6 +9,17 @@ Inspired by [Geoffrey Huntley's Ralph Workflow concept](https://ghuntley.com/ral
 
 I created Ralph Workflow to enable this workflow with different AI agents, with intelligent fallback when you run out of tokens in Claude for instance, so you can truly run this very flexibly.
 
+## Features
+
+- **AI-Powered Development** - Automatically runs AI agents (Claude, Codex, OpenCode, Aider, etc.) to implement your features
+- **Built-in Code Review** - Runs a reviewer agent to check quality and fix issues before committing
+- **Automatic Git Commits** - Generates meaningful commit messages and commits your changes
+- **Intelligent Fallback** - Automatically switches to backup agents when rate limits or errors occur
+- **Language-Specific Reviews** - Detects your tech stack and provides tailored guidance (Rust, Python, JS/TS, Go, and more)
+- **Checkpoint/Resume** - Recover from interruptions without losing progress
+- **45+ Provider Support** - Works with OpenAI, Anthropic, Google, Groq, DeepSeek, and many more via OpenCode
+- **Flexible Configuration** - Configure agents, models, and fallback chains via config file or environment variables
+
 ## How It Works
 
 ```
@@ -137,7 +148,14 @@ Ralph Workflow configuration lives in a single unified file:
 
 ```bash
 ralph --init-global
+# Or: ralph --init
 # Creates ~/.config/ralph-workflow.toml
+```
+
+Use a custom config file path:
+```bash
+ralph --config /path/to/custom-config.toml
+# Or: ralph -c /path/to/custom-config.toml
 ```
 
 ### Choosing Agents
@@ -154,6 +172,11 @@ The default agent chains are configured in `~/.config/ralph-workflow.toml` under
 Change agents via command line:
 ```bash
 ralph --developer-agent aider --reviewer-agent opencode
+```
+
+Or use a preset for common agent combinations:
+```bash
+ralph --preset opencode  # Use OpenCode for both developer and reviewer
 ```
 
 Or via environment variables:
@@ -505,6 +528,14 @@ Control how much output you see:
 | 2 | `-v2` | Verbose (default) |
 | 3 | `--full` | Everything, no truncation |
 | 4 | `--debug` | Raw JSON, maximum detail |
+
+### Isolation Mode
+
+By default, Ralph Workflow runs in isolation mode, which clears NOTES.md and ISSUES.md between runs. Disable this to preserve these files:
+
+```bash
+ralph --no-isolation
+```
 
 ### Plumbing Commands
 
