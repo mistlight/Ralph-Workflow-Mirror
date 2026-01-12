@@ -24,7 +24,6 @@
 //! reviewer = ["claude"]
 //! ```
 
-use super::types::{ReviewDepth, Verbosity};
 use crate::agents::fallback::FallbackConfig;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -193,33 +192,35 @@ impl CcsAliasToml {
 /// Agent TOML configuration (compatible with `examples/agents.toml`).
 ///
 /// Fields are used via serde deserialization.
-#[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)] // Fields are read via serde, not directly accessed
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
 pub struct AgentConfigToml {
     /// Base command to run the agent.
-    pub cmd: String,
+    ///
+    /// When overriding a built-in agent, this may be omitted to keep the built-in command.
+    pub cmd: Option<String>,
     /// Output-format flag.
-    #[serde(default)]
-    pub output_flag: String,
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly disables output flag.
+    pub output_flag: Option<String>,
     /// Flag for autonomous mode.
-    #[serde(default)]
-    pub yolo_flag: String,
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly disables yolo mode.
+    pub yolo_flag: Option<String>,
     /// Flag for verbose output.
-    #[serde(default)]
-    pub verbose_flag: String,
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly disables verbose flag.
+    pub verbose_flag: Option<String>,
     /// Whether the agent can run git commit.
-    #[serde(default = "default_can_commit")]
-    pub can_commit: bool,
+    ///
+    /// Omitted means "keep built-in default". For new agents, this defaults to true when omitted.
+    pub can_commit: Option<bool>,
     /// Which JSON parser to use.
-    #[serde(default)]
-    pub json_parser: String,
+    ///
+    /// Omitted means "keep built-in default". For new agents, defaults to "generic" when omitted.
+    pub json_parser: Option<String>,
     /// Model/provider flag.
-    #[serde(default)]
     pub model_flag: Option<String>,
-}
-
-fn default_can_commit() -> bool {
-    true
 }
 
 /// Unified configuration file structure.
@@ -265,30 +266,6 @@ impl UnifiedConfig {
         let contents = std::fs::read_to_string(path)?;
         let config: UnifiedConfig = toml::from_str(&contents)?;
         Ok(config)
-    }
-
-    /// Get the verbosity level.
-    #[allow(dead_code)] // Public API for future use
-    pub fn verbosity(&self) -> Verbosity {
-        Verbosity::from(self.general.verbosity)
-    }
-
-    /// Get the review depth.
-    #[allow(dead_code)] // Public API for future use
-    pub fn review_depth(&self) -> ReviewDepth {
-        ReviewDepth::from_str(&self.general.review_depth).unwrap_or_default()
-    }
-
-    /// Check if a CCS alias exists.
-    #[allow(dead_code)] // Public API for future use
-    pub fn has_ccs_alias(&self, alias: &str) -> bool {
-        self.ccs_aliases.contains_key(alias)
-    }
-
-    /// Get a CCS alias command.
-    #[allow(dead_code)] // Public API for future use
-    pub fn get_ccs_alias_cmd(&self, alias: &str) -> Option<String> {
-        self.ccs_aliases.get(alias).map(|v| v.as_config().cmd)
     }
 
     /// Ensure unified config file exists, creating it from template if needed.
@@ -339,6 +316,11 @@ pub enum ConfigLoadError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::types::Verbosity;
+
+    fn get_ccs_alias_cmd(config: &UnifiedConfig, alias: &str) -> Option<String> {
+        config.ccs_aliases.get(alias).map(|v| v.as_config().cmd)
+    }
 
     #[test]
     fn test_general_config_defaults() {
@@ -396,8 +378,8 @@ reviewer = ["claude"]
             config.ccs_aliases.get("personal").unwrap().as_config().cmd,
             "ccs personal"
         );
-        assert!(config.has_ccs_alias("work"));
-        assert!(!config.has_ccs_alias("nonexistent"));
+        assert!(config.ccs_aliases.contains_key("work"));
+        assert!(!config.ccs_aliases.contains_key("nonexistent"));
         let chain = config.agent_chain.expect("agent_chain should parse");
         assert_eq!(
             chain.developer,
@@ -419,23 +401,23 @@ reviewer = ["claude"]
         );
 
         assert_eq!(
-            config.get_ccs_alias_cmd("work"),
+            get_ccs_alias_cmd(&config, "work"),
             Some("ccs work".to_string())
         );
         assert_eq!(
-            config.get_ccs_alias_cmd("gemini"),
+            get_ccs_alias_cmd(&config, "gemini"),
             Some("ccs gemini".to_string())
         );
-        assert_eq!(config.get_ccs_alias_cmd("nonexistent"), None);
+        assert_eq!(get_ccs_alias_cmd(&config, "nonexistent"), None);
     }
 
     #[test]
     fn test_verbosity_conversion() {
         let mut config = UnifiedConfig::default();
         config.general.verbosity = 0;
-        assert_eq!(config.verbosity(), Verbosity::Quiet);
+        assert_eq!(Verbosity::from(config.general.verbosity), Verbosity::Quiet);
         config.general.verbosity = 4;
-        assert_eq!(config.verbosity(), Verbosity::Debug);
+        assert_eq!(Verbosity::from(config.general.verbosity), Verbosity::Debug);
     }
 
     #[test]

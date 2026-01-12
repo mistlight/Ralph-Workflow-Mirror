@@ -120,7 +120,7 @@ json_parser = "codex"
 [agents.opencode]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -140,6 +140,10 @@ json_parser = "generic"
 # Goose - Block's open-source AI agent
 # https://github.com/block/goose
 # Uses run command with -t for text input, --output-format for JSON streaming
+# Note: yolo_flag intentionally empty - goose is designed as an interactive,
+# session-based agent and doesn't support unattended auto-approval mode.
+# The --no-session flag only skips session file storage, not tool approval prompts.
+# For unattended automation, consider using other agents with explicit yolo support.
 [agents.goose]
 cmd = "goose run -t"
 output_flag = "--output-format=stream-json"
@@ -229,6 +233,8 @@ json_parser = "generic"
 # Uses -m for local model path, -cnv for conversation mode
 # Note: Requires local model setup, no native JSON streaming, uses generic parsing.
 # Not included in the default agent_chain because local models can be heavy to install/run.
+# CHAT-ONLY AGENT: yolo_flag is intentionally empty. This is a simple chat tool without
+# agentic tool use capabilities. It doesn't have autonomous mode or file operations.
 [agents.llama-cli]
 cmd = "llama-cli -m /path/to/model.gguf -cnv -p"
 output_flag = ""
@@ -241,6 +247,9 @@ json_parser = "generic"
 # https://github.com/sigoden/aichat
 # Supports 20+ LLM providers through unified interface
 # Uses -S to disable streaming for scripting, -e for shell command execution
+# CHAT-ONLY AGENT: yolo_flag is intentionally empty. This is primarily a chat interface
+# with limited tool use. While it supports shell execution via -e, it lacks comprehensive
+# agentic capabilities like autonomous file operations.
 [agents.aichat]
 cmd = "aichat"
 output_flag = ""
@@ -251,10 +260,12 @@ json_parser = "generic"
 
 # Cursor CLI - Cursor's terminal-based AI coding agent
 # https://cursor.com/docs/cli/overview
-# Uses 'agent' command with -p for non-interactive mode
+# Uses 'agent' command with -p for print/non-interactive mode, -f for force-allow commands
 # Supports GPT-5, Claude, and other frontier models
+# Note: The -p flag enables non-interactive mode (for scripts/automation), and -f forces
+# command execution unless explicitly denied, enabling autonomous operation.
 [agents.cursor]
-cmd = "agent -p"
+cmd = "cursor agent -p -f"
 output_flag = "--output-format text"
 yolo_flag = ""
 verbose_flag = ""
@@ -276,7 +287,9 @@ json_parser = "generic"
 # Ollama - Local LLM server with CLI
 # https://github.com/ollama/ollama
 # Run local models like Llama, Mistral, CodeLlama
-# Note: General chat, no agentic tool use - suitable for simple tasks
+# CHAT-ONLY AGENT: yolo_flag is intentionally empty. This is a general-purpose chat
+# interface for running local models. It lacks agentic tool use capabilities like
+# autonomous file operations. Suitable for simple Q&A and chat tasks.
 [agents.ollama]
 cmd = "ollama run codellama"
 output_flag = ""
@@ -432,7 +445,7 @@ retry_delay_ms = 1000
 [agents.opencode-zen-glm]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -443,7 +456,7 @@ model_flag = "-m opencode/glm-4.7-free"
 [agents.opencode-zen-claude]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -455,7 +468,7 @@ model_flag = "-m opencode/claude-sonnet-4"
 [agents.opencode-zen]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -477,7 +490,7 @@ json_parser = "opencode"
 [agents.opencode-zai-glm]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -488,7 +501,7 @@ model_flag = "-m zai/glm-4.7"
 [agents.opencode-zai-glm45]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -509,7 +522,7 @@ model_flag = "-m zai/glm-4.5"
 [agents.opencode-zai-glm-codingplan]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -520,7 +533,7 @@ model_flag = "-m zai/glm-4.7"
 [agents.opencode-zai-glm45-codingplan]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -538,7 +551,7 @@ model_flag = "-m zai/glm-4.5"
 [agents.opencode-direct-claude]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -549,7 +562,7 @@ model_flag = "-m anthropic/claude-sonnet-4"
 [agents.opencode-openai]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -566,7 +579,7 @@ model_flag = "-m openai/gpt-4o"
 [agents.opencode-google]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -577,7 +590,7 @@ model_flag = "-m google/gemini-2.0-flash"
 [agents.opencode-gemini-pro]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -594,7 +607,7 @@ model_flag = "-m google/gemini-1.5-pro"
 [agents.opencode-groq]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -605,7 +618,7 @@ model_flag = "-m groq/llama-3.3-70b-versatile"
 [agents.opencode-groq-mixtral]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -622,7 +635,7 @@ model_flag = "-m groq/mixtral-8x7b-32768"
 [agents.opencode-openrouter]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -639,7 +652,7 @@ model_flag = "-m openrouter/anthropic/claude-3.5-sonnet"
 [agents.opencode-deepseek]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -650,7 +663,7 @@ model_flag = "-m deepseek/deepseek-chat"
 [agents.opencode-deepseek-coder]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -667,7 +680,7 @@ model_flag = "-m deepseek/deepseek-coder"
 [agents.opencode-xai]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -677,7 +690,7 @@ model_flag = "-m xai/grok-2"
 [agents.opencode-grok]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -694,7 +707,7 @@ model_flag = "-m xai/grok-2"
 [agents.opencode-mistral]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -705,7 +718,7 @@ model_flag = "-m mistral/mistral-large-latest"
 [agents.opencode-codestral]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -722,7 +735,7 @@ model_flag = "-m mistral/codestral-latest"
 [agents.opencode-moonshot]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -732,7 +745,7 @@ model_flag = "-m moonshot/kimi-k2"
 [agents.opencode-kimi]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -749,7 +762,7 @@ model_flag = "-m moonshot/kimi-k2"
 [agents.opencode-minimax]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -766,7 +779,7 @@ model_flag = "-m minimax/abab6.5-chat"
 [agents.opencode-bedrock]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -778,7 +791,7 @@ model_flag = "-m amazon-bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0"
 [agents.opencode-azure]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -794,7 +807,7 @@ model_flag = "-m azure-openai/gpt-4o"
 [agents.opencode-ollama]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -805,7 +818,7 @@ model_flag = "-m ollama/llama3"
 [agents.opencode-ollama-code]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -816,7 +829,7 @@ model_flag = "-m ollama/codellama"
 [agents.opencode-lmstudio]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -833,7 +846,7 @@ model_flag = "-m lmstudio/local-model"
 [agents.opencode-together]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -845,7 +858,7 @@ model_flag = "-m together/meta-llama/Llama-3-70b-chat-hf"
 [agents.opencode-fireworks]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -862,7 +875,7 @@ model_flag = "-m fireworks/accounts/fireworks/models/llama-v3p1-70b-instruct"
 [agents.opencode-cohere]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -879,7 +892,7 @@ model_flag = "-m cohere/command-r-plus"
 [agents.opencode-copilot]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -896,7 +909,7 @@ model_flag = "-m copilot/gpt-4o"
 [agents.opencode-deepinfra]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -913,7 +926,7 @@ model_flag = "-m deep-infra/meta-llama/Llama-3.3-70B-Instruct"
 [agents.opencode-huggingface]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -930,7 +943,7 @@ model_flag = "-m huggingface/Qwen/Qwen2.5-Coder-32B"
 [agents.opencode-perplexity]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -947,7 +960,7 @@ model_flag = "-m perplexity/sonar-pro"
 [agents.opencode-cerebras]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -964,7 +977,7 @@ model_flag = "-m cerebras/llama3.3-70b"
 [agents.opencode-sambanova]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -981,7 +994,7 @@ model_flag = "-m sambanova/Meta-Llama-3.3-70B-Instruct"
 [agents.opencode-replicate]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -998,7 +1011,7 @@ model_flag = "-m replicate/meta/llama-3-70b-instruct"
 [agents.opencode-ai21]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1015,7 +1028,7 @@ model_flag = "-m ai21/jamba-1.5-large"
 [agents.opencode-cloudflare]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1032,7 +1045,7 @@ model_flag = "-m cloudflare/@cf/meta/llama-3.1-8b-instruct"
 [agents.opencode-vertex]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1049,7 +1062,7 @@ model_flag = "-m google-vertex/gemini-2.0-flash"
 [agents.opencode-baseten]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1061,7 +1074,7 @@ model_flag = "-m baseten/llama-3-70b"
 [agents.opencode-cortecs]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1073,7 +1086,7 @@ model_flag = "-m cortecs/llama-3-70b"
 [agents.opencode-scaleway]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1085,7 +1098,7 @@ model_flag = "-m scaleway/llama-3-70b"
 [agents.opencode-ovhcloud]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1102,7 +1115,7 @@ model_flag = "-m ovhcloud/llama-3-70b"
 [agents.opencode-vercel]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1114,7 +1127,7 @@ model_flag = "-m vercel/gpt-4o"
 [agents.opencode-helicone]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1126,7 +1139,7 @@ model_flag = "-m helicone/gpt-4o"
 [agents.opencode-ionet]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1138,7 +1151,7 @@ model_flag = "-m io-net/llama-3-70b"
 [agents.opencode-nebius]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1150,7 +1163,7 @@ model_flag = "-m nebius/llama-3-70b"
 [agents.opencode-zenmux]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1167,7 +1180,7 @@ model_flag = "-m zenmux/gpt-4o"
 [agents.opencode-sap]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1179,7 +1192,7 @@ model_flag = "-m sap-ai-core/gpt-4o"
 [agents.opencode-azure-cognitive]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1196,7 +1209,7 @@ model_flag = "-m azure-cognitive-services/gpt-4o"
 [agents.opencode-venice]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1208,7 +1221,7 @@ model_flag = "-m venice-ai/llama-3-70b"
 [agents.opencode-ollama-cloud]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
@@ -1220,7 +1233,7 @@ model_flag = "-m ollama-cloud/llama3"
 [agents.opencode-llamacpp]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = ""
+yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"

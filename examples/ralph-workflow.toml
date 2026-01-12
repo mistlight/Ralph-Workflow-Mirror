@@ -73,9 +73,10 @@ strict_validation = false
 output_flag = "--output-format=stream-json"
 verbose_flag = "--verbose"
 #
-# Safety: opt-in only. Set this if you explicitly want to bypass agent
-# permission/confirmation prompts in the downstream CLI (if supported).
-yolo_flag = ""
+# YOLO (autonomous) mode: Skip permission/confirmation prompts for unattended operation.
+# Ralph is designed for unattended automation, so this is enabled by default.
+# Set to "" to disable and require confirmation for each action.
+yolo_flag = "--dangerously-skip-permissions"
 json_parser = "claude"
 can_commit = true
 
@@ -91,6 +92,37 @@ can_commit = true
 
 # OpenRouter profile - uses OpenRouter for model access
 # openrouter = "ccs openrouter"
+
+# =============================================================================
+# YOLO MODE AND UNATTENDED OPERATION
+# =============================================================================
+#
+# Ralph is designed for UNATTENDED automation. Agents run with auto-approval
+# (yolo mode) by default, meaning:
+# - No prompts for file operations
+# - No confirmation for tool calls
+# - Fully autonomous code changes
+#
+# This is deliberate: permission is given upfront when you run Ralph.
+#
+# To DISABLE yolo mode (require confirmation for each action):
+# - For CCS aliases (ccs/work, ccs/personal, etc.):
+#   [ccs]
+#   yolo_flag = ""  # Empty = disable yolo mode
+#
+# - For built-in non-CCS agents (claude, codex, aider, etc.):
+#   [agents.claude]
+#   yolo_flag = ""  # Empty = disable yolo mode for that agent
+#
+# Different agents use different yolo flags:
+# - Claude/CCS: --dangerously-skip-permissions
+# - Codex: --full-auto
+# - Aider: --yes-always
+# - Cline: -y
+# - etc.
+#
+# The pipeline runner automatically adds the appropriate flag when building
+# agent commands, ensuring consistent unattended behavior across all agents.
 
 # =============================================================================
 # CUSTOM AGENT DEFINITIONS (optional)
