@@ -6,7 +6,7 @@
 //! - Selecting default agents from fallback chains
 //! - Loading agent registry data from unified config
 
-use crate::agents::{AgentRegistry, AgentRole, ConfigSource};
+use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{apply_args_to_config, handle_init_global, handle_init_legacy, Args};
 use crate::colors::Colors;
 use crate::config::{loader, unified_config_path, Config, UnifiedConfig};
@@ -117,6 +117,44 @@ fn load_agent_registry(
     })?;
 
     let mut sources = Vec::new();
+
+    // Backwards compatibility: load legacy agent config files only when unified config
+    // isn't present (this matches the deprecation warning behavior in config loader).
+    if unified.is_none() {
+        if let Some(global_path) = global_agents_config_path() {
+            if global_path.exists() {
+                let loaded = registry.load_from_file(&global_path).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to load legacy global agent config {}: {}",
+                        global_path.display(),
+                        e
+                    )
+                })?;
+                sources.push(ConfigSource {
+                    path: global_path,
+                    agents_loaded: loaded,
+                });
+            }
+        }
+
+        let repo_root = get_repo_root().ok();
+        let project_path = repo_root
+            .map(|root| root.join(".agent/agents.toml"))
+            .unwrap_or_else(|| PathBuf::from(".agent/agents.toml"));
+        if project_path.exists() {
+            let loaded = registry.load_from_file(&project_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to load legacy per-repo agent config {}: {}",
+                    project_path.display(),
+                    e
+                )
+            })?;
+            sources.push(ConfigSource {
+                path: project_path,
+                agents_loaded: loaded,
+            });
+        }
+    }
 
     if let Some(unified_cfg) = unified {
         let loaded = registry.apply_unified_config(unified_cfg);
