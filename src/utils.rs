@@ -52,7 +52,7 @@ pub use crate::files::{
 /// # Errors
 ///
 /// Returns an error if the command string has unmatched quotes.
-pub fn split_command(cmd: &str) -> io::Result<Vec<String>> {
+pub(crate) fn split_command(cmd: &str) -> io::Result<Vec<String>> {
     let cmd = cmd.trim();
     if cmd.is_empty() {
         return Ok(vec![]);
@@ -77,7 +77,7 @@ pub fn split_command(cmd: &str) -> io::Result<Vec<String>> {
 /// assert_eq!(truncate_text("hello world", 8), "hello...");
 /// assert_eq!(truncate_text("short", 10), "short");
 /// ```
-pub fn truncate_text(text: &str, limit: usize) -> String {
+pub(crate) fn truncate_text(text: &str, limit: usize) -> String {
     // Handle edge case where limit is too small for even "..."
     if limit <= 3 {
         return text.chars().take(limit).collect();
