@@ -112,24 +112,22 @@ pub fn resolve_ccs_agent(
 /// CCS wraps Claude Code, so it uses Claude's stream-json format
 /// and similar flags.
 ///
-/// # CRITICAL: JSON Parser Selection
+/// # JSON Parser Selection
 ///
-/// CCS (Claude Code Switcher) MUST ALWAYS use the Claude parser (`json_parser = "claude"`),
-/// regardless of which underlying provider it's switching to (Claude, GLM, Gemini, OpenRouter, etc.).
+/// CCS (Claude Code Switcher) defaults to the Claude parser (`json_parser = "claude"`)
+/// because CCS wraps the `claude` CLI tool and uses Claude's stream-json output format.
 ///
-/// **Why?** CCS is a wrapper around the `claude` CLI tool. It intercepts API calls but still
-/// uses Claude Code's CLI interface and output format. The `--output-format=stream-json` flag
-/// produces Claude's NDJSON format, which only the Claude parser can parse.
+/// **Why Claude parser by default?** CCS uses Claude Code's CLI interface and output format.
+/// The `--output-format=stream-json` flag produces Claude's NDJSON format, which the
+/// Claude parser is designed to handle.
 ///
-/// Even when using `ccs glm` or `ccs gemini`, the OUTPUT FORMAT is still Claude's stream-json.
-/// Only the API endpoint/provider changes, not the CLI output format.
+/// **Parser override:** Users can override the parser via `json_parser` in their config.
+/// The alias-specific `json_parser` takes precedence over the CCS default. This allows
+/// advanced users to use alternative parsers if needed for specific providers.
 ///
-/// **DO NOT** add heuristics like "if cmd contains 'glm', use generic parser" - this will break
-/// parsing entirely. Users must explicitly override via config if they need a different parser.
-///
-/// Example: `ccs glm` → still uses Claude parser
-///          `ccs gemini` → still uses Claude parser
-///          `ccs openrouter` → still uses Claude parser
+/// Example: `ccs glm` → uses Claude parser by default (from defaults.json_parser)
+///          `ccs gemini` → uses Claude parser by default
+///          With override: `json_parser = "generic"` in alias config overrides default
 ///
 /// Display name format: CCS aliases are shown as "ccs-{alias}" (e.g., "ccs-glm", "ccs-gemini")
 /// in output/logs to make it clearer which provider is actually being used, while still using
@@ -151,8 +149,23 @@ fn build_ccs_agent_config(
         .verbose_flag
         .clone()
         .unwrap_or_else(|| defaults.verbose_flag.clone());
+    // CRITICAL: CCS always requires -p flag for non-interactive mode.
+    // If defaults.print_flag is empty (missing config), fall back to "-p".
+    let print_flag = alias
+        .print_flag
+        .clone()
+        .unwrap_or_else(|| {
+            let pf = defaults.print_flag.clone();
+            if pf.is_empty() {
+                // Hardcoded safety fallback: CCS commands need -p for non-interactive mode
+                "-p".to_string()
+            } else {
+                pf
+            }
+        });
 
-    // CRITICAL: Always use Claude parser for CCS, regardless of provider.
+    // Parser selection: alias-specific override takes precedence over CCS default.
+    // This allows users to customize parser per CCS alias if needed.
     // See function docstring above for detailed explanation.
     let json_parser = alias
         .json_parser
@@ -168,6 +181,7 @@ fn build_ccs_agent_config(
         can_commit,
         json_parser: JsonParserType::parse(json_parser),
         model_flag: alias.model_flag.clone(),
+        print_flag, // CCS requires -p for non-interactive mode (from defaults or alias override)
         display_name: Some(display_name),
     }
 }
@@ -570,6 +584,8 @@ mod tests {
         // YOLO mode enabled by default for unattended automation
         assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
         assert_eq!(config.verbose_flag, "--verbose");
+        // CCS requires -p for non-interactive mode
+        assert_eq!(config.print_flag, "-p");
         assert!(config.can_commit);
 
         // CCS always outputs stream-json format, so always use Claude parser
@@ -673,5 +689,102 @@ mod tests {
         // Default CCS (no alias) should just be "ccs"
         let default_config = resolver.try_resolve("ccs").unwrap();
         assert_eq!(default_config.display_name, Some("ccs".to_string()));
+    }
+
+    // Step 7: Test coverage for GLM command building
+
+    #[test]
+    fn test_ccs_glm_command_has_print_flag() {
+        // Verify that GLM commands include the -p flag for non-interactive mode
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "glm".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs glm".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+
+        let resolver = CcsAliasResolver::new(aliases, default_ccs());
+        let glm_config = resolver.try_resolve("ccs/glm").unwrap();
+
+        // Verify print_flag is set to "-p" (from defaults)
+        assert_eq!(glm_config.print_flag, "-p");
+
+        // Build the command and verify -p is included
+        let cmd = glm_config.build_cmd(true, true, true);
+        assert!(cmd.contains(" -p"), "GLM command must include -p flag");
+        assert!(cmd.contains("ccs glm"), "Command must start with ccs glm");
+    }
+
+    #[test]
+    fn test_ccs_glm_flag_ordering() {
+        // Verify that flags are in the correct order for CCS GLM
+        // The -p flag must come AFTER the alias name (e.g., "ccs glm -p" not "-p ccs glm")
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "glm".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs glm".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+
+        let resolver = CcsAliasResolver::new(aliases, default_ccs());
+        let glm_config = resolver.try_resolve("ccs/glm").unwrap();
+
+        let cmd = glm_config.build_cmd(true, true, true);
+
+        // Split command into parts and verify ordering
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+
+        // First two parts should be "ccs" and "glm"
+        assert_eq!(parts[0], "ccs");
+        assert_eq!(parts[1], "glm");
+
+        // -p flag should come after the alias name
+        let p_index = parts.iter().position(|&s| s == "-p");
+        assert!(p_index.is_some(), "-p flag must be present");
+        assert!(p_index.unwrap() > 1, "-p flag must come after alias name");
+    }
+
+    #[test]
+    fn test_ccs_glm_with_empty_print_override() {
+        // Test that if user explicitly sets print_flag to empty, it stays empty
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "glm".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs glm".to_string(),
+                print_flag: Some("".to_string()), // Explicit empty override
+                ..CcsAliasConfig::default()
+            },
+        );
+
+        let resolver = CcsAliasResolver::new(aliases, default_ccs());
+        let glm_config = resolver.try_resolve("ccs/glm").unwrap();
+
+        // User override should take precedence
+        assert_eq!(glm_config.print_flag, "");
+
+        // Command should NOT include -p (user explicitly disabled it)
+        let cmd = glm_config.build_cmd(true, true, true);
+        assert!(!cmd.contains(" -p"), "Command should not include -p when explicitly disabled");
+    }
+
+    #[test]
+    fn test_glm_error_classification() {
+        // Verify that GLM exit code 1 is classified as AgentSpecificQuirk
+        use crate::agents::error::AgentErrorKind;
+
+        let error = AgentErrorKind::classify_with_agent(1, "", Some("ccs/glm"), None);
+        assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
+
+        let error = AgentErrorKind::classify_with_agent(1, "some error", Some("glm"), None);
+        assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
+
+        let error =
+            AgentErrorKind::classify_with_agent(1, "glm failed", Some("ccs"), Some("glm"));
+        assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
     }
 }

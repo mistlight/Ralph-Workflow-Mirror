@@ -126,6 +126,28 @@ These agents have known compatibility issues with Ralph's review process:
 - **Universal Prompt**: Ralph automatically uses a simplified review prompt for GLM
 - **Fast Fallback**: GLM exit code 1 errors now trigger immediate fallback (no indefinite retries)
 - **Pre-flight Warning**: Ralph warns you before running review with GLM
+- **Hardcoded print_flag fallback**: Ralph automatically adds `-p` flag for CCS agents even if missing from config
+
+**Configuration Requirements**:
+CCS agents require `print_flag = "-p"` in your `~/.config/ralph-workflow.toml`:
+
+```toml
+[ccs]
+# REQUIRED: print_flag enables non-interactive mode for Claude CLI
+print_flag = "-p"
+output_flag = "--output-format=stream-json"
+yolo_flag = "--dangerously-skip-permissions"
+verbose_flag = "--verbose"
+json_parser = "claude"
+can_commit = true
+
+[ccs_aliases]
+glm = "ccs glm"
+```
+
+**Note**: As of Ralph v0.2.7+, if `print_flag` is missing from your config, Ralph will
+automatically use `-p` as a fallback. However, it's still recommended to explicitly
+configure it to avoid warnings.
 
 **Manual Workaround Configuration**:
 ```toml
@@ -134,6 +156,7 @@ name = "ccs/glm"
 command = "ccs"
 args = ["glm", "--output-format=stream-json", "--dangerously-skip-permissions", "<PROMPT>"]
 json_parser = "generic"  # Use generic parser as fallback
+print_flag = "-p"  # Required for non-interactive mode
 ```
 
 **Alternative - Use Different Reviewer**:

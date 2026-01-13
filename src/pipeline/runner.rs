@@ -1,8 +1,8 @@
 //! Command execution helpers and fallback orchestration.
 
 use crate::agents::{
-    auth_failure_advice, validate_model_flag, AgentErrorKind, AgentRegistry, AgentRole,
-    JsonParserType,
+    auth_failure_advice, is_glm_like_agent, validate_model_flag, AgentErrorKind, AgentRegistry,
+    AgentRole, JsonParserType,
 };
 use crate::colors::Colors;
 use crate::config::Config;
@@ -93,6 +93,20 @@ pub(crate) fn run_with_prompt(
             .collect::<String>(),
         runtime.colors.reset()
     ));
+
+    // GLM-specific debug logging
+    // Check for GLM-like agents using the shared detection function
+    let is_glm_cmd = is_glm_like_agent(&cmd.cmd_str);
+
+    if is_glm_cmd && runtime.config.verbosity.is_debug() {
+        runtime.logger.info(&format!("GLM command details: {}", cmd.cmd_str));
+        // Verify -p flag is present
+        if cmd.cmd_str.contains(" -p") {
+            runtime.logger.info("GLM command includes '-p' flag (correct)");
+        } else {
+            runtime.logger.warn("GLM command may be missing '-p' flag");
+        }
+    }
 
     // Determine if JSON parsing is needed (based on parser type and command flags)
     let uses_json = cmd.parser_type != JsonParserType::Generic || argv_requests_json(&argv);
@@ -406,6 +420,40 @@ pub(crate) fn run_with_fallback(
                     )
                 };
 
+                // GLM-specific diagnostic output
+                // Check for GLM-like agents using the shared detection function
+                let is_glm_agent = is_glm_like_agent(agent_name);
+
+                if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
+                    if runtime.config.verbosity.is_debug() {
+                        runtime.logger.info(&format!(
+                            "GLM agent '{}' command configuration:",
+                            agent_name
+                        ));
+                        runtime.logger.info(&format!("  Base command: {}", agent_config.cmd));
+                        runtime.logger.info(&format!("  Print flag: '{}'", agent_config.print_flag));
+                        runtime.logger.info(&format!("  Output flag: '{}'", agent_config.output_flag));
+                        runtime.logger.info(&format!("  YOLO flag: '{}'", agent_config.yolo_flag));
+                        runtime.logger.info(&format!("  JSON parser: {:?}", agent_config.json_parser));
+                        runtime.logger.info(&format!("  Full command: {}", cmd_str));
+                    }
+                    // Validate -p flag is present (warn if missing regardless of print_flag value)
+                    if !cmd_str.contains(" -p") {
+                        if agent_config.print_flag.is_empty() {
+                            runtime.logger.warn(&format!(
+                                "GLM agent '{}' is missing '-p' flag: print_flag is empty in configuration. \
+                                 Add 'print_flag = \"-p\"' to [ccs] section in ~/.config/ralph-workflow.toml",
+                                agent_name
+                            ));
+                        } else {
+                            runtime.logger.warn(&format!(
+                                "GLM agent '{}' may be missing '-p' flag in command. Check configuration.",
+                                agent_name
+                            ));
+                        }
+                    }
+                }
+
                 let model_suffix = model_flag
                     .as_ref()
                     .map(|m| format!(" [{}]", m))
@@ -457,10 +505,7 @@ pub(crate) fn run_with_fallback(
 
                     // GLM-specific diagnostics
                     // GLM (via CCS) has known issues that deserve special guidance
-                    let is_glm_agent = agent_name.contains("glm")
-                        || agent_name.contains("zhipuai")
-                        || agent_name.contains("zai")
-                        || (agent_name.starts_with("ccs/") && agent_name.contains("glm"));
+                    let is_glm_agent = is_glm_like_agent(agent_name);
 
                     if is_glm_agent
                         && matches!(

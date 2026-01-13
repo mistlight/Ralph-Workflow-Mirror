@@ -219,6 +219,7 @@ impl AgentRegistry {
                             can_commit: overrides.can_commit.unwrap_or(true),
                             json_parser: JsonParserType::parse(json_parser),
                             model_flag: overrides.model_flag.clone(),
+                            print_flag: overrides.print_flag.clone().unwrap_or_default(),
                             display_name: None,
                         },
                     );
@@ -256,6 +257,7 @@ impl AgentRegistry {
                     } else {
                         existing.model_flag
                     },
+                    print_flag: overrides.print_flag.clone().unwrap_or(existing.print_flag),
                     display_name: existing.display_name, // Preserve existing display name
                 };
 
@@ -415,6 +417,7 @@ mod tests {
                 can_commit: true,
                 json_parser: JsonParserType::Generic,
                 model_flag: None,
+                print_flag: String::new(),
                 display_name: None,
             },
         );
@@ -436,6 +439,7 @@ mod tests {
                 can_commit: true,
                 json_parser: JsonParserType::Claude,
                 model_flag: None,
+                print_flag: String::new(),
                 display_name: None,
             },
         );
@@ -451,6 +455,7 @@ mod tests {
                 can_commit: true,
                 json_parser: JsonParserType::Claude,
                 model_flag: None,
+                print_flag: "-p".to_string(),
                 display_name: Some("ccs-glm".to_string()),
             },
         );

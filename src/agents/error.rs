@@ -4,6 +4,28 @@
 //! recovery strategies when agents fail. Different error types warrant
 //! different responses: retry, fallback to another agent, or abort.
 
+/// Check if an agent name or command string indicates a GLM-like agent.
+///
+/// GLM-like agents include GLM, ZhipuAI, ZAI, Qwen, and DeepSeek.
+/// These agents have known compatibility issues with review tasks and may
+/// require special handling or fallback logic.
+///
+/// # Arguments
+///
+/// * `s` - The agent name or command string to check
+///
+/// # Returns
+///
+/// `true` if the string indicates a GLM-like agent, `false` otherwise
+pub(crate) fn is_glm_like_agent(s: &str) -> bool {
+    let s_lower = s.to_lowercase();
+    s_lower.contains("glm")
+        || s_lower.contains("zhipuai")
+        || s_lower.contains("zai")
+        || s_lower.contains("qwen")
+        || s_lower.contains("deepseek")
+}
+
 /// Error classification for agent failures.
 ///
 /// Used to determine appropriate recovery strategy when an agent fails:
@@ -190,19 +212,8 @@ impl AgentErrorKind {
 
         // If we know this is a GLM-like agent and it failed with exit code 1,
         // classify it as AgentSpecificQuirk to trigger fallback instead of retry
-        let is_problematic_agent = agent_name.map(|a| a.to_lowercase()).is_some_and(|a| {
-            a.contains("glm")
-                || a.contains("zhipuai")
-                || a.contains("zai")
-                || a.contains("qwen")
-                || a.contains("deepseek")
-        }) || model_flag.map(|m| m.to_lowercase()).is_some_and(|m| {
-            m.contains("glm")
-                || m.contains("zhipuai")
-                || m.contains("zai")
-                || m.contains("qwen")
-                || m.contains("deepseek")
-        });
+        let is_problematic_agent = agent_name.is_some_and(is_glm_like_agent)
+            || model_flag.is_some_and(is_glm_like_agent);
 
         if is_problematic_agent && exit_code == 1 {
             // GLM and similar agents often exit with code 1 for various issues.
