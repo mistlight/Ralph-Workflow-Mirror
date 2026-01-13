@@ -12,6 +12,7 @@ use crate::output::argv_requests_json;
 use crate::timer::Timer;
 use crate::utils::split_command;
 use crate::utils::Logger;
+use std::collections::HashMap;
 
 #[test]
 fn resolve_model_with_provider_emits_full_model_flag() {
@@ -79,6 +80,116 @@ fn run_with_prompt_returns_command_result_for_missing_binary() {
 
     assert_eq!(result.exit_code, 127);
     assert!(!result.stderr.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn run_with_fallback_does_not_retry_problematic_glm_reviewer() {
+    let dir = tempfile::tempdir().unwrap();
+    let fail_count = dir.path().join("fail_count.txt");
+    let ok_count = dir.path().join("ok_count.txt");
+
+    let fail_script = dir.path().join("fail.sh");
+    std::fs::write(
+        &fail_script,
+        format!(
+            r#"#!/bin/sh
+echo x >> "{}"
+exit 1
+"#,
+            fail_count.display()
+        ),
+    )
+    .unwrap();
+
+    let ok_script = dir.path().join("ok.sh");
+    std::fs::write(
+        &ok_script,
+        format!(
+            r#"#!/bin/sh
+echo x >> "{}"
+exit 0
+"#,
+            ok_count.display()
+        ),
+    )
+    .unwrap();
+
+    let mut registry = AgentRegistry::new().unwrap();
+    let defaults = crate::config::CcsConfig {
+        output_flag: String::new(),
+        yolo_flag: String::new(),
+        verbose_flag: String::new(),
+        json_parser: "generic".to_string(),
+        can_commit: true,
+    };
+
+    let mut aliases = HashMap::new();
+    aliases.insert(
+        "glm".to_string(),
+        crate::config::CcsAliasConfig {
+            cmd: format!("sh {}", fail_script.display()),
+            ..Default::default()
+        },
+    );
+    aliases.insert(
+        "ok".to_string(),
+        crate::config::CcsAliasConfig {
+            cmd: format!("sh {}", ok_script.display()),
+            ..Default::default()
+        },
+    );
+    registry.set_ccs_aliases(aliases, defaults);
+
+    registry.set_fallback(crate::agents::fallback::FallbackConfig {
+        reviewer: vec!["ccs/glm".to_string(), "ccs/ok".to_string()],
+        max_retries: 3,
+        max_cycles: 1,
+        ..Default::default()
+    });
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config {
+        interactive: false,
+        verbosity: Verbosity::Quiet,
+        prompt_path: dir.path().join("prompt.txt"),
+        ..Config::default()
+    };
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+    };
+
+    let exit = run_with_fallback(
+        crate::agents::AgentRole::Reviewer,
+        "test",
+        "hello",
+        &dir.path().join("logs").display().to_string(),
+        &mut runtime,
+        &registry,
+        "ccs/glm",
+    )
+    .unwrap();
+
+    assert_eq!(exit, 0, "fallback agent should succeed");
+    assert_eq!(
+        std::fs::read_to_string(&fail_count)
+            .unwrap()
+            .lines()
+            .count(),
+        1,
+        "problematic agent should not be retried"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&ok_count).unwrap().lines().count(),
+        1,
+        "fallback agent should run once"
+    );
 }
 
 #[test]

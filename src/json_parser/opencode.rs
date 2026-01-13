@@ -8,6 +8,8 @@ use crate::utils::truncate_text;
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Write};
 
+use super::health::HealthMonitor;
+
 /// OpenCode event types
 ///
 /// Based on OpenCode's actual NDJSON output format, events include:
@@ -357,10 +359,19 @@ impl OpenCodeParser {
         mut writer: W,
     ) -> io::Result<()> {
         let c = &self.colors;
+        let monitor = HealthMonitor::new("OpenCode");
 
         for line in reader.lines() {
             let line = line?;
-            if line.is_empty() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if trimmed.starts_with('{')
+                && serde_json::from_str::<serde_json::Value>(trimmed).is_err()
+            {
+                monitor.record_parse_error();
                 continue;
             }
 
@@ -376,8 +387,14 @@ impl OpenCodeParser {
                 )?;
             }
 
-            if let Some(output) = self.parse_event(&line) {
-                write!(writer, "{}", output)?;
+            match self.parse_event(&line) {
+                Some(output) => {
+                    monitor.record_parsed();
+                    write!(writer, "{}", output)?;
+                }
+                None => {
+                    monitor.record_ignored();
+                }
             }
 
             if let Some(ref log_path) = self.log_file {
@@ -389,6 +406,10 @@ impl OpenCodeParser {
                     writeln!(file, "{}", line)?;
                 }
             }
+        }
+
+        if let Some(warning) = monitor.check_and_warn(c) {
+            writeln!(writer, "{}", warning)?;
         }
         Ok(())
     }

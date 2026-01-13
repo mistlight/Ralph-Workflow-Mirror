@@ -87,6 +87,9 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: &Co
     if let Some(provider) = args.reviewer_provider.clone() {
         config.reviewer_provider = Some(provider);
     }
+    if let Some(parser) = args.reviewer_json_parser.clone() {
+        config.reviewer_json_parser = Some(parser);
+    }
     if let Some(depth) = args.review_depth.clone() {
         if let Some(parsed) = ReviewDepth::from_str(&depth) {
             config.review_depth = parsed;

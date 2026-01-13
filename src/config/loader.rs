@@ -113,6 +113,8 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         reviewer_model: None,
         developer_provider: None,
         reviewer_provider: None,
+        reviewer_json_parser: None, // Set from env var or CLI
+        force_universal_prompt: general.force_universal_prompt,
         developer_iters: general.developer_iters,
         reviewer_reviews: general.reviewer_reviews,
         fast_check_cmd: None,
@@ -146,6 +148,8 @@ fn default_config() -> Config {
         reviewer_model: None,
         developer_provider: None,
         reviewer_provider: None,
+        reviewer_json_parser: None,
+        force_universal_prompt: false,
         developer_iters: 5,
         reviewer_reviews: 2,
         fast_check_cmd: None,
@@ -250,6 +254,21 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
     }
     if let Ok(val) = env::var("RALPH_REVIEWER_PROVIDER") {
         config.reviewer_provider = Some(val);
+    }
+
+    // JSON parser override for reviewer (useful for testing different parsers)
+    if let Ok(val) = env::var("RALPH_REVIEWER_JSON_PARSER") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            config.reviewer_json_parser = Some(trimmed.to_string());
+        }
+    }
+
+    // Force universal review prompt (useful for problematic agents)
+    if let Ok(val) = env::var("RALPH_REVIEWER_UNIVERSAL_PROMPT") {
+        if let Some(b) = parse_env_bool(&val) {
+            config.force_universal_prompt = b;
+        }
     }
 
     // Iteration counts

@@ -23,7 +23,7 @@ pub(crate) use developer::{prompt_developer_iteration, prompt_plan};
 pub(crate) use reviewer::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines,
     prompt_incremental_review, prompt_reviewer_review, prompt_reviewer_review_with_guidelines,
-    prompt_security_focused_review,
+    prompt_security_focused_review, prompt_universal_review,
 };
 pub(crate) use types::{Action, ContextLevel, Role};
 
