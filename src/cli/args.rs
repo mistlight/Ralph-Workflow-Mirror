@@ -73,7 +73,8 @@ pub struct Args {
         long = "developer-iters",
         env = "RALPH_DEVELOPER_ITERS",
         value_name = "N",
-        help = "Number of developer agent iterations"
+        help = "Number of developer agent iterations",
+        aliases = ["developer-iteration", "dev-iter", "d-iters"]
     )]
     pub developer_iters: Option<u32>,
 
@@ -82,7 +83,8 @@ pub struct Args {
         long = "reviewer-reviews",
         env = "RALPH_REVIEWER_REVIEWS",
         value_name = "N",
-        help = "Number of review-fix cycles (0=skip review, 1=one cycle, default: 2)"
+        help = "Number of review-fix cycles (0=skip review, 1=one cycle, default: 2)",
+        aliases = ["reviewer-count", "reviewer-review"]
     )]
     pub reviewer_reviews: Option<u32>,
 
@@ -99,7 +101,7 @@ pub struct Args {
     #[arg(
         long,
         env = "RALPH_DEVELOPER_AGENT",
-        aliases = ["driver-agent"],
+        aliases = ["driver-agent", "dev-agent", "developer"],
         value_name = "AGENT",
         help = "Developer agent for code implementation (default: first in agent_chain.developer)"
     )]
@@ -109,6 +111,7 @@ pub struct Args {
     #[arg(
         long,
         env = "RALPH_REVIEWER_AGENT",
+        aliases = ["rev-agent", "reviewer"],
         value_name = "AGENT",
         help = "Reviewer agent for code review (default: first in agent_chain.reviewer)"
     )]

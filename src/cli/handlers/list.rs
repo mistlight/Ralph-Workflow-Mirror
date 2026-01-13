@@ -26,9 +26,10 @@ pub fn handle_list_agents(registry: &AgentRegistry) {
     if !regular_agents.is_empty() {
         println!("Agents:");
         for (name, cfg) in regular_agents {
+            let display_name = registry.display_name(&name);
             println!(
                 "  {}\tcmd={}\tparser={}\tcan_commit={}",
-                name, cfg.cmd, cfg.json_parser, cfg.can_commit
+                display_name, cfg.cmd, cfg.json_parser, cfg.can_commit
             );
         }
     }
@@ -37,7 +38,8 @@ pub fn handle_list_agents(registry: &AgentRegistry) {
     if !ccs_aliases.is_empty() {
         println!("\nCCS Aliases:");
         for (name, cfg) in ccs_aliases {
-            println!("  {}\t→ \"{}\"", name, cfg.cmd);
+            let display_name = registry.display_name(&name);
+            println!("  {}\t→ \"{}\"", display_name, cfg.cmd);
         }
     }
 }
@@ -62,7 +64,8 @@ pub fn handle_list_available_agents(registry: &AgentRegistry) {
     if !regular_agents.is_empty() {
         println!("Available agents:");
         for name in regular_agents {
-            println!("  {}", name);
+            let display_name = registry.display_name(&name);
+            println!("  {}", display_name);
         }
     }
 
@@ -70,7 +73,8 @@ pub fn handle_list_available_agents(registry: &AgentRegistry) {
     if !ccs_aliases.is_empty() {
         println!("\nAvailable CCS aliases:");
         for name in ccs_aliases {
-            println!("  {}", name);
+            let display_name = registry.display_name(&name);
+            println!("  {}", display_name);
         }
     }
 }
