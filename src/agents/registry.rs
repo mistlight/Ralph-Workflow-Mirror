@@ -52,7 +52,7 @@ impl AgentRegistry {
         };
 
         for (name, agent_toml) in agents {
-            registry.register(&name, AgentConfig::try_from(agent_toml)?);
+            registry.register(&name, AgentConfig::from(agent_toml));
         }
 
         Ok(registry)
@@ -263,7 +263,7 @@ impl AgentRegistry {
             Some(config) => {
                 let count = config.agents.len();
                 for (name, agent_toml) in config.agents {
-                    self.register(&name, AgentConfig::try_from(agent_toml)?);
+                    self.register(&name, AgentConfig::from(agent_toml));
                 }
                 // Load fallback configuration
                 self.fallback = config.fallback;

@@ -188,8 +188,11 @@ fn parse_ccs_profiles_from_config_yaml(content: &str) -> HashMap<String, String>
             break;
         }
 
-        // Profile entry line: "  name:" (or with inline mapping).
-        if indent == profiles_indent + 2 {
+        // Profile entry line: "<indent> name:" (or with inline mapping).
+        //
+        // CCS writes YAML with two-space indentation, but be tolerant of other indentation
+        // styles to reduce surprising `ProfileNotFound` behavior.
+        if indent > profiles_indent && current_profile.is_none() {
             if let Some((name, rest)) = trimmed.split_once(':') {
                 let profile_name = name.trim().to_string();
                 let rest = rest.trim();
@@ -420,7 +423,7 @@ pub fn find_ccs_profile_suggestions(input: &str) -> Vec<String> {
 ///
 /// # Arguments
 ///
-/// * `profile` - The CCS profile name (e.g., "glm" for a matching `~/.ccs/*.json` file)
+/// * `profile` - The CCS profile name (e.g., "glm" for a matching `~/.ccs/glm.settings.json` file)
 ///
 /// # Returns
 ///
@@ -588,7 +591,12 @@ impl AgentConfig {
         // Both `claude` and CCS (`ccs ...`) require verbose mode when using stream-json output.
         // CCS is a wrapper around the Claude CLI and inherits its stream-json quirks.
         let base = self.cmd.split_whitespace().next().unwrap_or("");
-        matches!(base, "claude" | "ccs")
+        // Extract just the file name from the path to handle cases like "/usr/local/bin/claude"
+        let exe_name = Path::new(base)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(base);
+        matches!(exe_name, "claude" | "ccs")
     }
 }
 
@@ -623,9 +631,12 @@ pub struct AgentConfigToml {
     pub streaming_flag: String,
     /// CCS profile to load env vars from (e.g., "glm").
     ///
-    /// Ralph scans `~/.ccs/*.json` to find a matching profile file, then extracts an
-    /// environment-variable map from the JSON. The resulting values are injected into
-    /// the agent process only (they are not persisted).
+    /// Ralph resolves the CCS profile to a settings file using CCS config mappings
+    /// (`~/.ccs/config.json` and/or `~/.ccs/config.yaml`) and common settings file
+    /// naming (`~/.ccs/{profile}.settings.json` / `~/.ccs/{profile}.setting.json`).
+    ///
+    /// The resulting values are injected into the agent process only (they are not
+    /// persisted).
     #[serde(default)]
     pub ccs_profile: Option<String>,
     /// Environment variables to set when running this agent (optional).
@@ -645,13 +656,20 @@ fn default_streaming_flag() -> String {
     "--include-partial-messages".to_string()
 }
 
-impl TryFrom<AgentConfigToml> for AgentConfig {
-    type Error = CcsEnvVarsError;
-
-    fn try_from(toml: AgentConfigToml) -> Result<Self, Self::Error> {
-        // Load env vars from CCS if ccs_profile is set
+impl From<AgentConfigToml> for AgentConfig {
+    fn from(toml: AgentConfigToml) -> Self {
+        // Loading CCS env vars is best-effort: registry initialization should not fail
+        // just because a CCS profile is missing or misconfigured.
         let ccs_env_vars = match toml.ccs_profile.as_deref() {
-            Some(profile) => load_ccs_env_vars(profile)?,
+            Some(profile) => match load_ccs_env_vars(profile) {
+                Ok(vars) => vars,
+                Err(err) => {
+                    eprintln!(
+                        "Warning: failed to load CCS env vars for profile '{profile}': {err}"
+                    );
+                    HashMap::new()
+                }
+            },
             None => HashMap::new(),
         };
 
@@ -662,7 +680,7 @@ impl TryFrom<AgentConfigToml> for AgentConfig {
             merged_env_vars.insert(key, value);
         }
 
-        Ok(AgentConfig {
+        AgentConfig {
             cmd: toml.cmd,
             output_flag: toml.output_flag,
             yolo_flag: toml.yolo_flag,
@@ -674,7 +692,7 @@ impl TryFrom<AgentConfigToml> for AgentConfig {
             streaming_flag: toml.streaming_flag,
             env_vars: merged_env_vars,
             display_name: toml.display_name,
-        })
+        }
     }
 }
 
@@ -682,6 +700,9 @@ impl TryFrom<AgentConfigToml> for AgentConfig {
 mod ccs_env_tests {
     use super::*;
     use std::fs;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     struct EnvGuard {
         key: &'static str,
@@ -707,6 +728,7 @@ mod ccs_env_tests {
 
     #[test]
     fn load_ccs_env_vars_uses_config_json_mapping_and_env_key() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -730,6 +752,219 @@ mod ccs_env_tests {
         let env_vars = load_ccs_env_vars("glm").unwrap();
         assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://example");
         assert_eq!(env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "token");
+    }
+
+    #[test]
+    fn load_ccs_env_vars_from_yaml_config() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        let settings_path = ccs_dir.join("custom.settings.json");
+        fs::write(
+            &settings_path,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://yaml-test","ANTHROPIC_MODEL":"test-model"}}"#,
+        )
+        .unwrap();
+
+        fs::write(
+            ccs_dir.join("config.yaml"),
+            format!(
+                r#"version: 7
+profiles:
+  custom:
+    type: api
+    settings: "{}"
+"#,
+                settings_path.to_string_lossy()
+            ),
+        )
+        .unwrap();
+
+        let env_vars = load_ccs_env_vars("custom").unwrap();
+        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://yaml-test");
+        assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "test-model");
+    }
+
+    #[test]
+    fn load_ccs_env_vars_from_yaml_config_with_nonstandard_indent() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        let settings_path = ccs_dir.join("indent.settings.json");
+        fs::write(
+            &settings_path,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://indent-test","ANTHROPIC_MODEL":"indent-model"}}"#,
+        )
+        .unwrap();
+
+        // Same structure as CCS config.yaml, but with 4-space indentation.
+        fs::write(
+            ccs_dir.join("config.yaml"),
+            format!(
+                r#"version: 7
+profiles:
+    indent:
+        type: api
+        settings: "{}"
+"#,
+                settings_path.to_string_lossy()
+            ),
+        )
+        .unwrap();
+
+        let env_vars = load_ccs_env_vars("indent").unwrap();
+        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://indent-test");
+        assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "indent-model");
+    }
+
+    #[test]
+    fn load_ccs_env_vars_from_direct_settings_file() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        // Create settings file directly without config.yaml or config.json
+        fs::write(
+            ccs_dir.join("direct.settings.json"),
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://direct","ANTHROPIC_AUTH_TOKEN":"direct-token"}}"#,
+        )
+        .unwrap();
+
+        let env_vars = load_ccs_env_vars("direct").unwrap();
+        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://direct");
+        assert_eq!(env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "direct-token");
+    }
+
+    #[test]
+    fn load_ccs_env_vars_profile_not_found() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        // Don't create any config files - profile should not be found
+        let result = load_ccs_env_vars("nonexistent");
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            CcsEnvVarsError::ProfileNotFound { profile, .. } => {
+                assert_eq!(profile, "nonexistent");
+            }
+            _ => panic!("Expected ProfileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn load_ccs_env_vars_alternate_spelling_setting_json() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        // Test alternate spelling .setting.json (without 's')
+        fs::write(
+            ccs_dir.join("alternate.setting.json"),
+            r#"{"env":{"TEST_KEY":"test_value"}}"#,
+        )
+        .unwrap();
+
+        let env_vars = load_ccs_env_vars("alternate").unwrap();
+        assert_eq!(env_vars.get("TEST_KEY").unwrap(), "test_value");
+    }
+
+    #[test]
+    fn load_ccs_env_vars_missing_env_object() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        // Create settings file without env object
+        fs::write(
+            ccs_dir.join("noenv.settings.json"),
+            r#"{"other_key":"other_value"}"#,
+        )
+        .unwrap();
+
+        let result = load_ccs_env_vars("noenv");
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            CcsEnvVarsError::MissingEnv { .. } => {}
+            _ => panic!("Expected MissingEnv error"),
+        }
+    }
+
+    #[test]
+    fn load_ccs_env_vars_empty_profile_name() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let result = load_ccs_env_vars("");
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            CcsEnvVarsError::InvalidProfile { profile } => {
+                assert_eq!(profile, "");
+            }
+            _ => panic!("Expected InvalidProfile error"),
+        }
+    }
+
+    #[test]
+    fn load_ccs_env_vars_expands_tilde_path() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        let settings_path = ccs_dir.join("expand.settings.json");
+        fs::write(
+            &settings_path,
+            r#"{"env":{"FROM_EXPAND":"success"}}"#,
+        )
+        .unwrap();
+
+        // Config with ~/ path that needs expansion
+        fs::write(
+            ccs_dir.join("config.yaml"),
+            format!(
+                r#"version: 7
+profiles:
+  expand:
+    type: api
+    settings: "~/.ccs/expand.settings.json"
+"#,
+            ),
+        )
+        .unwrap();
+
+        let env_vars = load_ccs_env_vars("expand").unwrap();
+        assert_eq!(env_vars.get("FROM_EXPAND").unwrap(), "success");
     }
 }
 
@@ -843,7 +1078,7 @@ mod tests {
             display_name: Some("My Custom Agent".to_string()),
         };
 
-        let config: AgentConfig = AgentConfig::try_from(toml).unwrap();
+        let config: AgentConfig = AgentConfig::from(toml);
         assert_eq!(config.cmd, "myagent run");
         assert!(!config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
