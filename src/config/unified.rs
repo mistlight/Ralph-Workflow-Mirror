@@ -236,6 +236,10 @@ pub struct AgentConfigToml {
     pub json_parser: Option<String>,
     /// Model/provider flag.
     pub model_flag: Option<String>,
+    /// Human-readable display name for UI/UX.
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly clears the display name.
+    pub display_name: Option<String>,
 }
 
 /// Unified configuration file structure.

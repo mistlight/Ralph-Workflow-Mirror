@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Write};
 
 use super::health::HealthMonitor;
+use super::types::format_tool_input;
 
 /// OpenCode event types
 ///
@@ -61,7 +62,7 @@ pub(crate) struct OpenCodePart {
 pub(crate) struct OpenCodeToolState {
     pub(crate) status: Option<String>,
     pub(crate) input: Option<serde_json::Value>,
-    pub(crate) output: Option<String>,
+    pub(crate) output: Option<serde_json::Value>,
     pub(crate) title: Option<String>,
     pub(crate) metadata: Option<serde_json::Value>,
     pub(crate) time: Option<OpenCodeTime>,
@@ -90,42 +91,12 @@ pub(crate) struct OpenCodeTime {
     pub(crate) end: Option<u64>,
 }
 
-/// Format tool input for display
-///
-/// Converts JSON input to a human-readable string, showing key parameters.
-/// Uses character-safe truncation to handle UTF-8 properly.
-fn format_tool_input(input: &serde_json::Value) -> String {
-    match input {
-        serde_json::Value::Object(map) => {
-            let parts: Vec<String> = map
-                .iter()
-                .map(|(k, v)| {
-                    let val_str = match v {
-                        serde_json::Value::String(s) => {
-                            // Use character-safe truncation for strings
-                            truncate_text(s, 100)
-                        }
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::Bool(b) => b.to_string(),
-                        serde_json::Value::Null => "null".to_string(),
-                        serde_json::Value::Array(arr) => format!("[{} items]", arr.len()),
-                        serde_json::Value::Object(_) => "{...}".to_string(),
-                    };
-                    format!("{}={}", k, val_str)
-                })
-                .collect();
-            parts.join(", ")
-        }
-        serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
-    }
-}
-
 /// OpenCode event parser
 pub(crate) struct OpenCodeParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
+    display_name: String,
 }
 
 impl OpenCodeParser {
@@ -134,7 +105,13 @@ impl OpenCodeParser {
             colors,
             verbosity,
             log_file: None,
+            display_name: "OpenCode".to_string(),
         }
+    }
+
+    pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
+        self.display_name = display_name.to_string();
+        self
     }
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
@@ -161,6 +138,7 @@ impl OpenCodeParser {
             }
         };
         let c = &self.colors;
+        let prefix = &self.display_name;
 
         let output = match event.event_type.as_str() {
             "step_start" => {
@@ -172,8 +150,9 @@ impl OpenCodeParser {
                     .map(|s| format!("({:.8}...)", s))
                     .unwrap_or_default();
                 format!(
-                    "{}[OpenCode]{} {}Step started{} {}{}{}\n",
+                    "{}[{}]{} {}Step started{} {}{}{}\n",
                     c.dim(),
+                    prefix,
                     c.reset(),
                     c.cyan(),
                     c.reset(),
@@ -211,8 +190,9 @@ impl OpenCodeParser {
                     let color = if is_success { c.green() } else { c.yellow() };
 
                     let mut out = format!(
-                        "{}[OpenCode]{} {}{} Step finished{} {}({}",
+                        "{}[{}]{} {}{} Step finished{} {}({}",
                         c.dim(),
+                        prefix,
                         c.reset(),
                         color,
                         icon,
@@ -247,8 +227,9 @@ impl OpenCodeParser {
                     let color = if is_completed { c.green() } else { c.yellow() };
 
                     let mut out = format!(
-                        "{}[OpenCode]{} {}Tool{}: {}{}{} {}{}{}\n",
+                        "{}[{}]{} {}Tool{}: {}{}{} {}{}{}\n",
                         c.dim(),
+                        prefix,
                         c.reset(),
                         c.magenta(),
                         c.reset(),
@@ -265,8 +246,9 @@ impl OpenCodeParser {
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(t, limit);
                         out.push_str(&format!(
-                            "{}[OpenCode]{} {}  └─ {}{}\n",
+                            "{}[{}]{} {}  └─ {}{}\n",
                             c.dim(),
+                            prefix,
                             c.reset(),
                             c.dim(),
                             preview,
@@ -283,8 +265,9 @@ impl OpenCodeParser {
                                 let preview = truncate_text(&input_str, limit);
                                 if !preview.is_empty() {
                                     out.push_str(&format!(
-                                        "{}[OpenCode]{} {}  └─ {}{}\n",
+                                        "{}[{}]{} {}  └─ {}{}\n",
                                         c.dim(),
+                                        prefix,
                                         c.reset(),
                                         c.dim(),
                                         preview,
@@ -298,13 +281,23 @@ impl OpenCodeParser {
                     // Show tool output in verbose mode if completed
                     if self.verbosity.is_verbose() && is_completed {
                         if let Some(ref state) = part.state {
-                            if let Some(ref output_text) = state.output {
+                            if let Some(ref output_val) = state.output {
+                                let output_str = match output_val {
+                                    serde_json::Value::String(s) => s.as_str(),
+                                    _ => "",
+                                };
+                                let output_str = if !output_str.is_empty() {
+                                    output_str.to_string()
+                                } else {
+                                    output_val.to_string()
+                                };
                                 let limit = self.verbosity.truncate_limit("tool_result");
-                                let preview = truncate_text(output_text, limit);
+                                let preview = truncate_text(&output_str, limit);
                                 if !preview.is_empty() {
                                     out.push_str(&format!(
-                                        "{}[OpenCode]{} {}  └─ Output: {}{}\n",
+                                        "{}[{}]{} {}  └─ Output: {}{}\n",
                                         c.dim(),
+                                        prefix,
                                         c.reset(),
                                         c.dim(),
                                         preview,
@@ -325,8 +318,9 @@ impl OpenCodeParser {
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(text, limit);
                         format!(
-                            "{}[OpenCode]{} {}{}{}\n",
+                            "{}[{}]{} {}{}{}\n",
                             c.dim(),
+                            prefix,
                             c.reset(),
                             c.white(),
                             preview,
@@ -360,6 +354,14 @@ impl OpenCodeParser {
     ) -> io::Result<()> {
         let c = &self.colors;
         let monitor = HealthMonitor::new("OpenCode");
+        let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+                .ok()
+                .map(std::io::BufWriter::new)
+        });
 
         for line in reader.lines() {
             let line = line?;
@@ -397,17 +399,14 @@ impl OpenCodeParser {
                 }
             }
 
-            if let Some(ref log_path) = self.log_file {
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(log_path)
-                {
-                    writeln!(file, "{}", line)?;
-                }
+            if let Some(ref mut file) = log_writer {
+                writeln!(file, "{}", line)?;
             }
         }
 
+        if let Some(ref mut file) = log_writer {
+            file.flush()?;
+        }
         if let Some(warning) = monitor.check_and_warn(c) {
             writeln!(writer, "{}", warning)?;
         }
