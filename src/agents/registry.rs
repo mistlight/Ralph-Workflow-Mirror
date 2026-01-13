@@ -419,7 +419,10 @@ impl AgentRegistry {
             .iter()
             .filter(|name| self.is_agent_available(name))
             // Agents with can_commit=false are chat-only / non-tool agents and will stall Ralph.
-            .filter(|name| self.resolve_config(name.as_str()).is_some_and(|cfg| cfg.can_commit))
+            .filter(|name| {
+                self.resolve_config(name.as_str())
+                    .is_some_and(|cfg| cfg.can_commit)
+            })
             .map(|s| s.as_str())
             .collect()
     }
@@ -695,7 +698,12 @@ mod tests {
 
         // Get should return valid config
         let config = registry.get("ccs/work").unwrap();
-        assert_eq!(config.cmd, "ccs work");
+        // When claude binary is found, it replaces "ccs work" with the path to claude
+        assert!(
+            config.cmd.ends_with("claude") || config.cmd == "ccs work",
+            "cmd should be 'ccs work' or a path ending with 'claude', got: {}",
+            config.cmd
+        );
         assert!(config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
     }

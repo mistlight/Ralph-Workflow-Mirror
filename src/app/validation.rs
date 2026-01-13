@@ -141,7 +141,9 @@ pub fn validate_can_commit(
 ) -> anyhow::Result<()> {
     // Enforce workflow-capable agents unless custom command override provided
     if config.developer_cmd.is_none() {
-        let resolved = registry.resolve_fuzzy(developer_agent).unwrap_or_else(|| developer_agent.to_string());
+        let resolved = registry
+            .resolve_fuzzy(developer_agent)
+            .unwrap_or_else(|| developer_agent.to_string());
         if let Some(cfg) = registry.resolve_config(&resolved) {
             if !cfg.can_commit {
                 let resolved_note = if resolved != developer_agent {
@@ -160,7 +162,9 @@ pub fn validate_can_commit(
         }
     }
     if config.reviewer_cmd.is_none() {
-        let resolved = registry.resolve_fuzzy(reviewer_agent).unwrap_or_else(|| reviewer_agent.to_string());
+        let resolved = registry
+            .resolve_fuzzy(reviewer_agent)
+            .unwrap_or_else(|| reviewer_agent.to_string());
         if let Some(cfg) = registry.resolve_config(&resolved) {
             if !cfg.can_commit {
                 let resolved_note = if resolved != reviewer_agent {
@@ -244,8 +248,10 @@ mod tests {
     #[test]
     fn validate_can_commit_uses_resolve_config_for_ccs_refs() {
         let mut registry = AgentRegistry::new().unwrap();
-        let mut defaults = CcsConfig::default();
-        defaults.can_commit = false;
+        let defaults = CcsConfig {
+            can_commit: false,
+            ..CcsConfig::default()
+        };
         registry.set_ccs_aliases(HashMap::new(), defaults);
 
         let config = Config {
