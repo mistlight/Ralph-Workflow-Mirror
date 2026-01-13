@@ -70,7 +70,7 @@ pub(crate) use ccs::is_ccs_ref;
 pub(crate) use config::{
     global_agents_config_path, AgentsConfigFile, ConfigInitResult, ConfigSource,
 };
-pub(crate) use error::AgentErrorKind;
+pub(crate) use error::{is_glm_like_agent, AgentErrorKind};
 pub(crate) use fallback::AgentRole;
 pub(crate) use parser::JsonParserType;
 pub(crate) use providers::{

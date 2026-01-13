@@ -53,6 +53,8 @@ pub struct AgentConfig {
     pub json_parser: JsonParserType,
     /// Model/provider flag for agents that support model selection.
     pub model_flag: Option<String>,
+    /// Print/non-interactive mode flag (e.g., "-p" for Claude/CCS).
+    pub print_flag: String,
     /// Display name for UI/logging (e.g., "ccs-glm" instead of raw agent name).
     /// If None, the agent name from the registry is used.
     pub display_name: Option<String>,
@@ -73,6 +75,11 @@ impl AgentConfig {
         model_override: Option<&str>,
     ) -> String {
         let mut parts = vec![self.cmd.clone()];
+
+        // Add print flag first (for CCS that needs -p after the profile name)
+        if !self.print_flag.is_empty() {
+            parts.push(self.print_flag.clone());
+        }
 
         if output && !self.output_flag.is_empty() {
             parts.push(self.output_flag.clone());
@@ -128,6 +135,9 @@ pub struct AgentConfigToml {
     /// Model/provider flag for model selection.
     #[serde(default)]
     pub model_flag: Option<String>,
+    /// Print/non-interactive mode flag (optional, defaults to empty).
+    #[serde(default)]
+    pub print_flag: String,
 }
 
 fn default_can_commit() -> bool {
@@ -144,6 +154,7 @@ impl From<AgentConfigToml> for AgentConfig {
             can_commit: toml.can_commit,
             json_parser: JsonParserType::parse(&toml.json_parser),
             model_flag: toml.model_flag,
+            print_flag: toml.print_flag,
             display_name: None, // Regular agents use their registry name
         }
     }
@@ -227,6 +238,7 @@ mod tests {
             can_commit: true,
             json_parser: JsonParserType::Generic,
             model_flag: None,
+            print_flag: String::new(),
             display_name: None,
         };
 
@@ -247,6 +259,7 @@ mod tests {
             can_commit: false,
             json_parser: "claude".to_string(),
             model_flag: Some("-m provider/model".to_string()),
+            print_flag: String::new(),
         };
 
         let config: AgentConfig = toml.into();
@@ -264,6 +277,25 @@ mod tests {
         assert_eq!(config.cmd, "myagent");
         assert_eq!(config.output_flag, "");
         assert!(config.can_commit); // default is true
+    }
+
+    #[test]
+    fn test_agent_config_with_print_flag() {
+        let agent = AgentConfig {
+            cmd: "ccs glm".to_string(),
+            output_flag: "--output-format=stream-json".to_string(),
+            yolo_flag: "--dangerously-skip-permissions".to_string(),
+            verbose_flag: "--verbose".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::Claude,
+            model_flag: None,
+            print_flag: "-p".to_string(),
+            display_name: None,
+        };
+
+        let cmd = agent.build_cmd(true, true, true);
+        assert!(cmd.contains("ccs glm -p"));
+        assert!(cmd.contains("--output-format=stream-json"));
     }
 
     #[test]

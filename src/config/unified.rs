@@ -134,6 +134,9 @@ pub struct CcsConfig {
     pub yolo_flag: String,
     /// Flag for verbose output.
     pub verbose_flag: String,
+    /// Print flag for non-interactive mode (required by Claude CLI).
+    /// Default: "-p"
+    pub print_flag: String,
     /// Which JSON parser to use for CCS output.
     pub json_parser: String,
     /// Whether CCS can run workflow tools (git commit, etc.).
@@ -148,6 +151,7 @@ impl Default for CcsConfig {
             // autonomous operation. Users can override per-alias or globally with "" if needed.
             yolo_flag: "--dangerously-skip-permissions".to_string(),
             verbose_flag: "--verbose".to_string(),
+            print_flag: "-p".to_string(),
             json_parser: "claude".to_string(),
             can_commit: true,
         }
@@ -166,6 +170,8 @@ pub struct CcsAliasConfig {
     pub yolo_flag: Option<String>,
     /// Optional verbose flag override for this alias. Use "" to disable.
     pub verbose_flag: Option<String>,
+    /// Optional print flag override for this alias (e.g., "-p" for Claude/CCS).
+    pub print_flag: Option<String>,
     /// Optional JSON parser override (e.g., "claude", "generic").
     pub json_parser: Option<String>,
     /// Optional can_commit override for this alias.
@@ -216,6 +222,10 @@ pub struct AgentConfigToml {
     ///
     /// Omitted means "keep built-in default". Empty string explicitly disables verbose flag.
     pub verbose_flag: Option<String>,
+    /// Print/non-interactive mode flag (e.g., "-p" for Claude/CCS).
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly disables print mode.
+    pub print_flag: Option<String>,
     /// Whether the agent can run git commit.
     ///
     /// Omitted means "keep built-in default". For new agents, this defaults to true when omitted.

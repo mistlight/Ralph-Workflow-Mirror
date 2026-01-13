@@ -6,7 +6,7 @@
 //! 2. Fixes the issues found
 //! 3. Cleans up ISSUES.md (in isolation mode)
 
-use crate::agents::AgentRole;
+use crate::agents::{AgentRole, is_glm_like_agent};
 use crate::config::ReviewDepth;
 use crate::guidelines::ReviewGuidelines;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
@@ -54,16 +54,13 @@ enum PostflightResult {
 }
 
 fn is_problematic_prompt_target(agent: &str, model_flag: Option<&str>) -> bool {
-    fn contains_problematic_hint(s: &str) -> bool {
-        let s = s.to_lowercase();
-        s.contains("glm")
-            || s.contains("zhipuai")
-            || s.contains("zai")
-            || s.contains("qwen")
-            || s.contains("deepseek")
-    }
+    is_glm_like_agent(agent) || model_flag.is_some_and(is_glm_like_agent)
+}
 
-    contains_problematic_hint(agent) || model_flag.is_some_and(contains_problematic_hint)
+/// Check if an agent is GLM-based (for validation purposes).
+/// NOTE: This function is deprecated. Use `is_glm_like_agent` instead.
+fn is_glm_agent(agent: &str) -> bool {
+    is_glm_like_agent(agent)
 }
 
 /// Run pre-flight validation checks before starting a review pass.
@@ -93,6 +90,16 @@ fn pre_flight_review_check(
         logger.info("  2. Try generic parser: ralph --reviewer-json-parser generic");
         logger.info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
         // Continue anyway - don't block execution
+    }
+
+    // Check 0.1: GLM-specific command validation (diagnostic only)
+    if is_glm_agent(reviewer_agent) {
+        // Log diagnostic info about GLM agent configuration
+        logger.info(&format!(
+            "GLM agent detected: '{}'. Command will include '-p' flag for non-interactive mode.",
+            reviewer_agent
+        ));
+        logger.info("Tip: Use --verbosity debug to see the full command being executed");
     }
 
     // Check 0.5: Check for existing ISSUES.md from previous failed run

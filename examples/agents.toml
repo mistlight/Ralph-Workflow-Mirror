@@ -101,6 +101,7 @@ yolo_flag = "--dangerously-skip-permissions"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "ccs"
+print_flag = "-p"  # Required for non-interactive mode (Claude CLI requirement)
 
 # OpenAI Codex CLI
 # https://github.com/openai/codex
