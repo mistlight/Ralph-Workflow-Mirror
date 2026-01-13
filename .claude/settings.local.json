@@ -1,14 +1,35 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(ccs:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(timeout 5 ccs glm:*)",
+      "Bash(git checkout:*)",
+      "Bash(cat:*)",
+      "Bash(timeout 10 ccs glm:*)",
+      "Bash(timeout 30 ccs glm:*)",
+      "Bash(timeout 60 cargo run:*)",
+      "Bash(cargo run:*)",
+      "Bash(claude:*)",
+      "Bash(env:*)",
+      "Bash(export ANTHROPIC_BASE_URL=\"https://api.z.ai/api/anthropic\")",
+      "Bash(export ANTHROPIC_AUTH_TOKEN=\"a4d6f16518d342269bcc353b3c7d4991.57s8rjBwoggpmmod\")",
+      "Bash(export ANTHROPIC_MODEL=\"glm-4.7\")",
+      "Bash(grep:*)",
+      "Bash(./target/release/ralph:*)",
+      "Bash(pkill:*)"
+    ]
+  },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "sequential-thinking",
     "memory",
     "filesystem",
     "git"
-  ],
-  "permissions": {
-    "allow": [
-      "Bash(ccs:*)"
-    ]
-  }
+  ]
 }

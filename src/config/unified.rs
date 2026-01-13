@@ -130,10 +130,18 @@ pub type CcsAliases = HashMap<String, CcsAliasToml>;
 pub struct CcsConfig {
     /// Output-format flag for CCS (often Claude-compatible stream JSON).
     pub output_flag: String,
-    /// Flag for autonomous mode. Defaults to --dangerously-skip-permissions for unattended setups.
+    /// Flag for autonomous mode (skip permission/confirmation prompts).
+    /// Ralph is designed for unattended automation, so this is enabled by default.
+    /// Set to empty string ("") to disable and require confirmations.
     pub yolo_flag: String,
     /// Flag for verbose output.
     pub verbose_flag: String,
+    /// Print flag for non-interactive mode (required by Claude CLI).
+    /// Default: "-p"
+    pub print_flag: String,
+    /// Streaming flag for JSON output with -p (required for Claude/CCS to stream).
+    /// Default: "--include-partial-messages"
+    pub streaming_flag: String,
     /// Which JSON parser to use for CCS output.
     pub json_parser: String,
     /// Whether CCS can run workflow tools (git commit, etc.).
@@ -144,10 +152,11 @@ impl Default for CcsConfig {
     fn default() -> Self {
         Self {
             output_flag: "--output-format=stream-json".to_string(),
-            // YOLO mode enabled by default for unattended automation. Ralph is designed for
-            // autonomous operation. Users can override per-alias or globally with "" if needed.
+            // Default to unattended automation (config can override to disable).
             yolo_flag: "--dangerously-skip-permissions".to_string(),
             verbose_flag: "--verbose".to_string(),
+            print_flag: "-p".to_string(),
+            streaming_flag: "--include-partial-messages".to_string(),
             json_parser: "claude".to_string(),
             can_commit: true,
         }
@@ -166,6 +175,10 @@ pub struct CcsAliasConfig {
     pub yolo_flag: Option<String>,
     /// Optional verbose flag override for this alias. Use "" to disable.
     pub verbose_flag: Option<String>,
+    /// Optional print flag override for this alias (e.g., "-p" for Claude/CCS).
+    pub print_flag: Option<String>,
+    /// Optional streaming flag override for this alias (e.g., "--include-partial-messages").
+    pub streaming_flag: Option<String>,
     /// Optional JSON parser override (e.g., "claude", "generic").
     pub json_parser: Option<String>,
     /// Optional can_commit override for this alias.
@@ -216,6 +229,14 @@ pub struct AgentConfigToml {
     ///
     /// Omitted means "keep built-in default". Empty string explicitly disables verbose flag.
     pub verbose_flag: Option<String>,
+    /// Print/non-interactive mode flag (e.g., "-p" for Claude/CCS).
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly disables print mode.
+    pub print_flag: Option<String>,
+    /// Include partial messages flag for streaming with -p (e.g., "--include-partial-messages").
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly disables streaming flag.
+    pub streaming_flag: Option<String>,
     /// Whether the agent can run git commit.
     ///
     /// Omitted means "keep built-in default". For new agents, this defaults to true when omitted.
@@ -226,6 +247,10 @@ pub struct AgentConfigToml {
     pub json_parser: Option<String>,
     /// Model/provider flag.
     pub model_flag: Option<String>,
+    /// Human-readable display name for UI/UX.
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly clears the display name.
+    pub display_name: Option<String>,
 }
 
 /// Unified configuration file structure.

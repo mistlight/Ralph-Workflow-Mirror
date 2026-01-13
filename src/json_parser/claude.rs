@@ -15,6 +15,7 @@ pub(crate) struct ClaudeParser {
     colors: Colors,
     pub(crate) verbosity: Verbosity,
     log_file: Option<String>,
+    display_name: String,
 }
 
 impl ClaudeParser {
@@ -23,7 +24,13 @@ impl ClaudeParser {
             colors,
             verbosity,
             log_file: None,
+            display_name: "Claude".to_string(),
         }
+    }
+
+    pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
+        self.display_name = display_name.to_string();
+        self
     }
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
@@ -51,6 +58,7 @@ impl ClaudeParser {
             }
         };
         let c = &self.colors;
+        let prefix = &self.display_name;
 
         let output = match event {
             ClaudeEvent::System {
@@ -61,8 +69,9 @@ impl ClaudeParser {
                 if subtype.as_deref() == Some("init") {
                     let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                     let mut out = format!(
-                        "{}[Claude]{} {}Session started{} {}({:.8}...){}\n",
+                        "{}[{}]{} {}Session started{} {}({:.8}...){}\n",
                         c.dim(),
+                        prefix,
                         c.reset(),
                         c.cyan(),
                         c.reset(),
@@ -72,8 +81,9 @@ impl ClaudeParser {
                     );
                     if let Some(cwd) = cwd {
                         out.push_str(&format!(
-                            "{}[Claude]{} {}Working dir: {}{}\n",
+                            "{}[{}]{} {}Working dir: {}{}\n",
                             c.dim(),
+                            prefix,
                             c.reset(),
                             c.dim(),
                             cwd,
@@ -83,8 +93,9 @@ impl ClaudeParser {
                     out
                 } else {
                     format!(
-                        "{}[Claude]{} {}{}{}\n",
+                        "{}[{}]{} {}{}{}\n",
                         c.dim(),
+                        prefix,
                         c.reset(),
                         c.cyan(),
                         subtype.unwrap_or_else(|| "system".to_string()),
@@ -103,8 +114,9 @@ impl ClaudeParser {
                                         let limit = self.verbosity.truncate_limit("text");
                                         let preview = truncate_text(&text, limit);
                                         out.push_str(&format!(
-                                            "{}[Claude]{} {}{}{}\n",
+                                            "{}[{}]{} {}{}{}\n",
                                             c.dim(),
+                                            prefix,
                                             c.reset(),
                                             c.white(),
                                             preview,
@@ -112,11 +124,12 @@ impl ClaudeParser {
                                         ));
                                     }
                                 }
-                                ContentBlock::ToolUse { name, input } => {
-                                    let tool_name = name.unwrap_or_else(|| "unknown".to_string());
+                                ContentBlock::ToolUse { name: tool, input } => {
+                                    let tool_name = tool.unwrap_or_else(|| "unknown".to_string());
                                     out.push_str(&format!(
-                                        "{}[Claude]{} {}Tool{}: {}{}{}\n",
+                                        "{}[{}]{} {}Tool{}: {}{}{}\n",
                                         c.dim(),
+                                        prefix,
                                         c.reset(),
                                         c.magenta(),
                                         c.reset(),
@@ -133,8 +146,9 @@ impl ClaudeParser {
                                             let preview = truncate_text(&input_str, limit);
                                             if !preview.is_empty() {
                                                 out.push_str(&format!(
-                                                    "{}[Claude]{} {}  └─ {}{}\n",
+                                                    "{}[{}]{} {}  └─ {}{}\n",
                                                     c.dim(),
+                                                    prefix,
                                                     c.reset(),
                                                     c.dim(),
                                                     preview,
@@ -146,11 +160,16 @@ impl ClaudeParser {
                                 }
                                 ContentBlock::ToolResult { content } => {
                                     if let Some(content) = content {
+                                        let content_str = match content {
+                                            serde_json::Value::String(s) => s,
+                                            other => other.to_string(),
+                                        };
                                         let limit = self.verbosity.truncate_limit("tool_result");
-                                        let preview = truncate_text(&content, limit);
+                                        let preview = truncate_text(&content_str, limit);
                                         out.push_str(&format!(
-                                            "{}[Claude]{} {}Result:{} {}\n",
+                                            "{}[{}]{} {}Result:{} {}\n",
                                             c.dim(),
+                                            prefix,
                                             c.reset(),
                                             c.dim(),
                                             c.reset(),
@@ -172,8 +191,9 @@ impl ClaudeParser {
                             let limit = self.verbosity.truncate_limit("user");
                             let preview = truncate_text(text, limit);
                             return Some(format!(
-                                "{}[Claude]{} {}User{}: {}{}{}\n",
+                                "{}[{}]{} {}User{}: {}{}{}\n",
                                 c.dim(),
+                                prefix,
                                 c.reset(),
                                 c.blue(),
                                 c.reset(),
@@ -202,8 +222,9 @@ impl ClaudeParser {
 
                 let mut out = if subtype.as_deref() == Some("success") {
                     format!(
-                        "{}[Claude]{} {}{} Completed{} {}({}m {}s, {} turns, ${:.4}){}\n",
+                        "{}[{}]{} {}{} Completed{} {}({}m {}s, {} turns, ${:.4}){}\n",
                         c.dim(),
+                        prefix,
                         c.reset(),
                         c.green(),
                         CHECK,
@@ -218,8 +239,9 @@ impl ClaudeParser {
                 } else {
                     let err = error.unwrap_or_else(|| "unknown error".to_string());
                     format!(
-                        "{}[Claude]{} {}{} {}{}: {} {}({}m {}s){}\n",
+                        "{}[{}]{} {}{} {}{}: {} {}({}m {}s){}\n",
                         c.dim(),
+                        prefix,
                         c.reset(),
                         c.red(),
                         CROSS,
@@ -265,6 +287,14 @@ impl ClaudeParser {
     ) -> io::Result<()> {
         let c = &self.colors;
         let monitor = HealthMonitor::new("Claude");
+        let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+                .ok()
+                .map(std::io::BufWriter::new)
+        });
 
         for line in reader.lines() {
             let line = line?;
@@ -304,17 +334,14 @@ impl ClaudeParser {
             }
 
             // Log raw JSON to file if configured
-            if let Some(ref log_path) = self.log_file {
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(log_path)
-                {
-                    writeln!(file, "{}", line)?;
-                }
+            if let Some(ref mut file) = log_writer {
+                writeln!(file, "{}", line)?;
             }
         }
 
+        if let Some(ref mut file) = log_writer {
+            file.flush()?;
+        }
         if let Some(warning) = monitor.check_and_warn(c) {
             writeln!(writer, "{}", warning)?;
         }

@@ -170,12 +170,13 @@ fn print_agent_availability(colors: &Colors, registry: &AgentRegistry) {
             colors.red()
         };
         let status_icon = if available { "✓" } else { "✗" };
+        let display_name = registry.display_name(name);
         println!(
             "  {}{}{} {} (parser: {}, cmd: {})",
             status_color,
             status_icon,
             colors.reset(),
-            name,
+            display_name,
             cfg.json_parser,
             cfg.cmd.split_whitespace().next().unwrap_or(&cfg.cmd)
         );

@@ -99,6 +99,34 @@ fn test_format_tool_input_handles_nested_objects() {
 }
 
 #[test]
+fn test_format_tool_input_redacts_sensitive_keys() {
+    let fake_key = format!("sk-{}", "a".repeat(24));
+    let input = serde_json::json!({
+        "api_key": fake_key,
+        "access_token": format!("{}{}", "sk-", "b".repeat(24)),
+        "Authorization": format!("Bearer {}", format!("{}{}", "sk-", "c".repeat(24))),
+        "file_path": "/safe/path.rs"
+    });
+    let result = format_tool_input(&input);
+    assert!(result.contains("api_key=<redacted>"));
+    assert!(result.contains("access_token=<redacted>"));
+    assert!(result.contains("Authorization=<redacted>"));
+    assert!(result.contains("file_path=/safe/path.rs"));
+    assert!(!result.contains("sk-"));
+}
+
+#[test]
+fn test_format_tool_input_redacts_secret_like_string_values() {
+    let fake_key = format!("{}{}", "sk-", "d".repeat(24));
+    let input = serde_json::json!({
+        "query": format!("please use {} for this", fake_key)
+    });
+    let result = format_tool_input(&input);
+    assert!(result.contains("query=<redacted>"));
+    assert!(!result.contains("sk-"));
+}
+
+#[test]
 fn test_tool_use_shows_input_in_verbose_mode() {
     let verbose_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
     let json = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/test.rs"}}]}}"#;
@@ -130,6 +158,33 @@ fn test_tool_use_hides_input_in_quiet_mode() {
     assert!(output.contains("Read"));
     // In Quiet mode, input details should not be shown
     assert!(!output.contains("file_path=/test.rs"));
+}
+
+#[test]
+fn test_parser_uses_custom_display_name_prefix() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_display_name("ccs-glm");
+    let json = r#"{"type":"system","subtype":"init","session_id":"abc123"}"#;
+    let output = parser.parse_event(json).unwrap();
+    assert!(output.contains("[ccs-glm]"));
+}
+
+#[test]
+fn test_parse_claude_tool_result_object_payload() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let json = r#"{"type":"assistant","message":{"content":[{"type":"tool_result","content":{"ok":true,"n":1}}]}}"#;
+    let output = parser.parse_event(json).unwrap();
+    assert!(output.contains("Result"));
+    assert!(output.contains("ok"));
+}
+
+#[test]
+fn test_parse_opencode_tool_output_object_payload() {
+    let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+    let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"/test.rs"},"output":{"ok":true,"bytes":123}}}}"#;
+    let output = parser.parse_event(json).unwrap();
+    assert!(output.contains("Output"));
+    assert!(output.contains("ok"));
 }
 
 #[test]

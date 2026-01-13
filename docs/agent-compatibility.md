@@ -128,6 +128,28 @@ These agents have known compatibility issues with Ralph's review process:
 - **Universal Prompt**: Ralph automatically uses a simplified review prompt for GLM
 - **Fast Fallback**: GLM exit code 1 errors now trigger immediate fallback (no indefinite retries)
 - **Pre-flight Warning**: Ralph warns you before running review with GLM
+- **Hardcoded print_flag fallback**: Ralph automatically adds `-p` flag for CCS agents even if missing from config
+
+**Configuration Requirements**:
+CCS agents require `print_flag = "-p"` in your `~/.config/ralph-workflow.toml`:
+
+```toml
+[ccs]
+# REQUIRED: print_flag enables non-interactive mode for Claude CLI
+print_flag = "-p"
+output_flag = "--output-format=stream-json"
+yolo_flag = "--dangerously-skip-permissions"
+verbose_flag = "--verbose"
+json_parser = "claude"
+can_commit = true
+
+[ccs_aliases]
+glm = "ccs glm"
+```
+
+**Note**: As of Ralph v0.2.7+, if `print_flag` is missing from your config, Ralph will
+automatically use `-p` as a fallback. However, it's still recommended to explicitly
+configure it to avoid warnings.
 
 **Manual Workaround Configuration**:
 ```toml
@@ -135,8 +157,11 @@ These agents have known compatibility issues with Ralph's review process:
 name = "ccs/glm"
 command = "ccs"
 args = ["glm", "--output-format=stream-json", "--dangerously-skip-permissions", "<PROMPT>"]
-json_parser = "generic"  # Use generic parser as fallback
+json_parser = "claude"  # CCS always uses Claude parser (outputs stream-json format)
+print_flag = "-p"  # Required for non-interactive mode
 ```
+
+> **IMPORTANT**: CCS (Claude Code Switcher) ALWAYS outputs Claude's stream-json format, regardless of which provider you're using (GLM, Gemini, etc.). The Claude parser is the correct parser for all CCS agents. If `ccs/glm` is not using the Claude parser, **this is a bug** and should be reported.
 
 **Alternative - Use Different Reviewer**:
 ```bash
@@ -152,6 +177,55 @@ RALPH_REVIEWER_REVIEWS=0 ralph
 - Consider using GLM as developer only, not reviewer
 - The `--dangerously-skip-permissions` flag is often required
 - Exit code 1 errors with GLM are now classified as `AgentSpecificQuirk` (triggers fallback)
+
+### GLM-Direct - Stream-JSON Workaround
+
+**Status**: ✅ Usually Not Needed
+
+**Issue with `ccs/glm`**:
+Older Ralph versions could run `ccs glm -p ...` directly, which can cause CCS to intercept/reformat output (breaking stream-json parsing).
+
+**Current behavior**:
+Ralph now bypasses the CCS wrapper for `ccs/<alias>` by loading the profile’s env vars from CCS config/settings and invoking `claude` directly. This preserves Claude CLI flag passthrough and stream-json output for `ccs/glm`.
+
+**Optional - `glm-direct` Agent**:
+If you prefer an explicit non-CCS agent (or want `glm` without `ccs/`), you can still configure `glm-direct` to call `claude` directly with `ccs_profile = "glm"`.
+
+**Configuration**:
+```toml
+[agents.glm-direct]
+cmd = "claude"
+output_flag = "--output-format=stream-json"
+yolo_flag = "--dangerously-skip-permissions"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "claude"
+ccs_profile = "glm"  # Auto-loads env vars from CCS
+print_flag = "-p"
+display_name = "GLM (Direct via Claude)"
+```
+
+**Usage**:
+```bash
+# Use glm-direct instead of ccs/glm
+ralph --developer-agent glm-direct
+
+# Add to agent chain for automatic fallback
+# In ~/.config/ralph/agents.toml:
+[agent_chain]
+developer = ["glm-direct", "claude", "codex"]
+```
+
+**Requirements**:
+- GLM profile must be configured in CCS (`ccs api create --preset glm`)
+- CCS settings file at `~/.ccs/glm.settings.json` must exist
+- Claude CLI must be installed
+
+**Why This Works**:
+1. Claude CLI with GLM env vars outputs proper stream-json format
+2. No CCS delegation wrapper = no output formatting interference
+3. Ralph gets raw `{"type":"stream_event","event":{"type":"text_delta","text":"Hello"}}` events
+4. Real-time streaming works as expected
 
 ### ZhipuAI / ZAI
 
@@ -256,14 +330,16 @@ force_universal_prompt = true
 
 #### Option 2: Override JSON Parser
 
-Use a different parser for the reviewer agent:
+> **Note**: For CCS agents (ccs/glm, ccs/gemini, etc.), the Claude parser should always be used since CCS outputs Claude's stream-json format. If a CCS agent is not using the Claude parser, **this is a bug**.
+
+The parser override option is primarily for non-CCS agents that have compatibility issues:
 
 ```bash
-# Use generic parser with any agent
-ralph --reviewer-agent ccs/glm --reviewer-json-parser generic
+# Use generic parser with agents that don't output stream-json
+ralph --reviewer-agent aider --reviewer-json-parser generic
 
 # Or via environment variable
-RALPH_REVIEWER_JSON_PARSER=generic ralph --reviewer-agent ccs/glm
+RALPH_REVIEWER_JSON_PARSER=generic ralph --reviewer-agent aider
 ```
 
 #### Option 3: Use a Different Reviewer
@@ -427,6 +503,29 @@ Ralph includes several automatic mitigations:
 
 ## Troubleshooting Guide
 
+### GLM/CCS Agent Fails with "When using --print, --output-format=stream-json requires --verbose"
+
+**Symptoms**: Agent fails with error message about `--verbose` being required when using `--print` with `--output-format=stream-json`.
+
+**Root Cause**: When the Claude CLI is invoked with `-p` (print flag) and `--output-format=stream-json`, it also requires `--verbose`. This was a bug in Ralph v0.2.7 and earlier where the `--verbose` flag was not automatically added when using a full path to the claude binary (e.g., `/usr/local/bin/claude`).
+
+**Fixed in**: Ralph v0.2.8+
+
+**Workarounds** (if using older version):
+
+1. **Upgrade Ralph**: The fix has been applied - `requires_verbose_for_json` now correctly checks the file name portion of the path, not just the full path string.
+
+2. **Use "claude" directly in PATH** (temporary workaround): Ensure `claude` is in PATH as just "claude" rather than using a full path.
+
+**Verification**:
+```bash
+# Check that the command includes --verbose
+ralph --reviewer-agent ccs/glm --verbosity debug 2>&1 | grep -i "verbose"
+
+# Should see something like:
+# Executing: /usr/local/bin/claude -p --output-format=stream-json --include-partial-messages --verbose --dangerously-skip-permissions <PROMPT>
+```
+
 ### Review Agent Fails with Exit Code 1
 
 **Symptoms**: Agent exits with code 1 repeatedly with "AgentSpecificQuirk" error message.
@@ -471,6 +570,15 @@ Ralph includes several automatic mitigations:
    ```bash
    ralph --verbosity debug
    ```
+
+7. **Enable CCS-specific debug logging** (v0.2.8+):
+   ```bash
+   RALPH_CCS_DEBUG=1 ralph --reviewer-agent ccs/glm --verbosity debug
+   ```
+   This will show detailed information about:
+   - Claude binary detection
+   - Environment variable loading
+   - Command construction and bypass logic
 
 **Note**: As of Ralph v0.2.5, GLM and similar agents with exit code 1 errors now trigger immediate fallback to the next agent instead of retrying indefinitely.
 

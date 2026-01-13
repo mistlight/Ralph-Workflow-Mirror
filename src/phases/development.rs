@@ -460,9 +460,11 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
         ctx.colors.reset()
     ));
 
-    let (program, args) = argv
-        .split_first()
-        .expect("argv is non-empty after empty check");
+    let Some((program, args)) = argv.split_first() else {
+        ctx.logger
+            .warn("FAST_CHECK_CMD is empty after parsing; skipping fast check");
+        return Ok(());
+    };
     let status = Command::new(program).args(args).status()?;
 
     if status.success() {

@@ -52,7 +52,7 @@ impl AgentRegistry {
         };
 
         for (name, agent_toml) in agents {
-            registry.register(&name, agent_toml.into());
+            registry.register(&name, AgentConfig::from(agent_toml));
         }
 
         Ok(registry)
@@ -98,8 +98,132 @@ impl AgentRegistry {
     /// Looks up agents by name, including CCS aliases that were registered
     /// via `set_ccs_aliases()`. CCS aliases like `ccs/work` are pre-registered
     /// and can be looked up like any other agent.
+    #[allow(dead_code)] // Kept for API clarity; prefer resolve_config() for dynamic CCS refs.
     pub fn get(&self, name: &str) -> Option<&AgentConfig> {
         self.agents.get(name)
+    }
+
+    /// Resolve an agent's configuration, including on-the-fly CCS references.
+    ///
+    /// This differs from `get()` which only returns agents registered in the map.
+    /// CCS supports direct execution via `ccs/<alias>` even when the alias isn't
+    /// pre-registered in config; those are resolved lazily here.
+    pub fn resolve_config(&self, name: &str) -> Option<AgentConfig> {
+        self.agents
+            .get(name)
+            .cloned()
+            .or_else(|| self.ccs_resolver.try_resolve(name))
+    }
+
+    /// Get display name for an agent.
+    ///
+    /// Returns the agent's custom display name if set (e.g., "ccs-glm" for CCS aliases),
+    /// otherwise returns the agent's registry name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The agent's registry name (e.g., "ccs/glm", "claude")
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// assert_eq!(registry.display_name("ccs/glm"), "ccs-glm");
+    /// assert_eq!(registry.display_name("claude"), "claude");
+    /// ```
+    pub fn display_name(&self, name: &str) -> String {
+        self.resolve_config(name)
+            .and_then(|config| config.display_name)
+            .unwrap_or_else(|| name.to_string())
+    }
+
+    /// Resolve a fuzzy agent name to a canonical agent name.
+    ///
+    /// This handles common typos and alternative forms:
+    /// - `ccs/<unregistered>`: Returns the name as-is for direct CCS execution
+    /// - Other fuzzy matches: Returns the canonical name if a match is found
+    /// - Exact matches: Returns the name as-is
+    ///
+    /// Returns `None` if the name cannot be resolved to any known agent.
+    pub fn resolve_fuzzy(&self, name: &str) -> Option<String> {
+        // First check if it's an exact match
+        if self.agents.contains_key(name) {
+            return Some(name.to_string());
+        }
+
+        // Handle ccs/<unregistered> pattern - return as-is for direct CCS execution
+        if name.starts_with("ccs/") {
+            return Some(name.to_string());
+        }
+
+        // Handle common typos/alternatives
+        let normalized = name.to_lowercase();
+        let alternatives = self.get_fuzzy_alternatives(&normalized);
+
+        for alt in alternatives {
+            // If it's a ccs/ pattern, return it for direct CCS execution
+            if alt.starts_with("ccs/") {
+                return Some(alt);
+            }
+            // Otherwise check if it exists in the registry
+            if self.agents.contains_key(&alt) {
+                return Some(alt);
+            }
+        }
+
+        None
+    }
+
+    /// Get fuzzy alternatives for a given agent name.
+    ///
+    /// Returns a list of potential canonical names to try, in order of preference.
+    pub(crate) fn get_fuzzy_alternatives(&self, name: &str) -> Vec<String> {
+        let mut alternatives = Vec::new();
+
+        // Add exact match first
+        alternatives.push(name.to_string());
+
+        // Handle common typos and variations
+        match name {
+            // ccs variations
+            n if n.starts_with("ccs-") => {
+                alternatives.push(name.replace("ccs-", "ccs/"));
+            }
+            n if n.contains("_") => {
+                alternatives.push(name.replace('_', "-"));
+                alternatives.push(name.replace('_', "/"));
+            }
+
+            // claude variations
+            "claud" | "cloud" => alternatives.push("claude".to_string()),
+
+            // codex variations
+            "codeex" | "code-x" => alternatives.push("codex".to_string()),
+
+            // cursor variations
+            "crusor" => alternatives.push("cursor".to_string()),
+
+            // opencode variations
+            "opencode" | "open-code" => alternatives.push("opencode".to_string()),
+
+            // gemini variations
+            "gemeni" | "gemni" => alternatives.push("gemini".to_string()),
+
+            // qwen variations
+            "quen" | "quwen" => alternatives.push("qwen".to_string()),
+
+            // aider variations
+            "ader" => alternatives.push("aider".to_string()),
+
+            // vibe variations
+            "vib" => alternatives.push("vibe".to_string()),
+
+            // cline variations
+            "kline" => alternatives.push("cline".to_string()),
+
+            _ => {}
+        }
+
+        alternatives
     }
 
     /// Check if an agent name can be resolved.
@@ -123,12 +247,14 @@ impl AgentRegistry {
 
     /// Get command for developer role.
     pub fn developer_cmd(&self, agent_name: &str) -> Option<String> {
-        self.get(agent_name).map(|c| c.build_cmd(true, true, true))
+        self.resolve_config(agent_name)
+            .map(|c| c.build_cmd(true, true, true))
     }
 
     /// Get command for reviewer role.
     pub fn reviewer_cmd(&self, agent_name: &str) -> Option<String> {
-        self.get(agent_name).map(|c| c.build_cmd(true, true, false))
+        self.resolve_config(agent_name)
+            .map(|c| c.build_cmd(true, true, false))
     }
 
     /// Load custom agents from a TOML configuration file.
@@ -137,7 +263,7 @@ impl AgentRegistry {
             Some(config) => {
                 let count = config.agents.len();
                 for (name, agent_toml) in config.agents {
-                    self.register(&name, agent_toml.into());
+                    self.register(&name, AgentConfig::from(agent_toml));
                 }
                 // Load fallback configuration
                 self.fallback = config.fallback;
@@ -197,6 +323,21 @@ impl AgentRegistry {
                             can_commit: overrides.can_commit.unwrap_or(true),
                             json_parser: JsonParserType::parse(json_parser),
                             model_flag: overrides.model_flag.clone(),
+                            print_flag: overrides.print_flag.clone().unwrap_or_default(),
+                            streaming_flag: overrides.streaming_flag.clone().unwrap_or_else(|| {
+                                // Default to "--include-partial-messages" for Claude/CCS agents
+                                if cmd.starts_with("claude") || cmd.starts_with("ccs") {
+                                    "--include-partial-messages".to_string()
+                                } else {
+                                    String::new()
+                                }
+                            }),
+                            env_vars: std::collections::HashMap::new(),
+                            display_name: overrides
+                                .display_name
+                                .as_ref()
+                                .filter(|s| !s.is_empty())
+                                .cloned(),
                         },
                     );
                     loaded += 1;
@@ -233,6 +374,19 @@ impl AgentRegistry {
                     } else {
                         existing.model_flag
                     },
+                    print_flag: overrides.print_flag.clone().unwrap_or(existing.print_flag),
+                    streaming_flag: overrides
+                        .streaming_flag
+                        .clone()
+                        .unwrap_or(existing.streaming_flag),
+                    env_vars: existing.env_vars.clone(),
+                    // Preserve existing display name unless explicitly overridden
+                    // Empty string explicitly clears the display name
+                    display_name: match &overrides.display_name {
+                        Some(s) if s.is_empty() => None,
+                        Some(s) => Some(s.clone()),
+                        None => existing.display_name,
+                    },
                 };
 
                 self.register(name, merged);
@@ -265,7 +419,10 @@ impl AgentRegistry {
             .iter()
             .filter(|name| self.is_agent_available(name))
             // Agents with can_commit=false are chat-only / non-tool agents and will stall Ralph.
-            .filter(|name| self.get(name.as_str()).is_some_and(|cfg| cfg.can_commit))
+            .filter(|name| {
+                self.resolve_config(name.as_str())
+                    .is_some_and(|cfg| cfg.can_commit)
+            })
             .map(|s| s.as_str())
             .collect()
     }
@@ -301,7 +458,7 @@ impl AgentRegistry {
             let chain = self.fallback.get_fallbacks(role);
             let has_capable = chain
                 .iter()
-                .any(|name| self.get(name).is_some_and(|cfg| cfg.can_commit));
+                .any(|name| self.resolve_config(name).is_some_and(|cfg| cfg.can_commit));
             if !has_capable {
                 return Err(format!(
                     "No workflow-capable agents found for {}.\n\
@@ -317,7 +474,7 @@ impl AgentRegistry {
 
     /// Check if an agent is available (command exists and is executable).
     pub fn is_agent_available(&self, name: &str) -> bool {
-        if let Some(config) = self.get(name) {
+        if let Some(config) = self.resolve_config(name) {
             let Ok(parts) = crate::utils::split_command(&config.cmd) else {
                 return false;
             };
@@ -391,9 +548,61 @@ mod tests {
                 can_commit: true,
                 json_parser: JsonParserType::Generic,
                 model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: None,
             },
         );
         assert!(registry.is_known("testbot"));
+    }
+
+    #[test]
+    fn test_registry_display_name() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        // Agent without custom display name uses registry key
+        registry.register(
+            "claude",
+            AgentConfig {
+                cmd: "claude -p".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: "--include-partial-messages".to_string(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: None,
+            },
+        );
+
+        // Agent with custom display name uses that
+        registry.register(
+            "ccs/glm",
+            AgentConfig {
+                cmd: "ccs glm".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                print_flag: "-p".to_string(),
+                streaming_flag: "--include-partial-messages".to_string(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("ccs-glm".to_string()),
+            },
+        );
+
+        // Test display names
+        assert_eq!(registry.display_name("claude"), "claude");
+        assert_eq!(registry.display_name("ccs/glm"), "ccs-glm");
+
+        // Unknown agent returns the key as-is
+        assert_eq!(registry.display_name("unknown"), "unknown");
     }
 
     #[test]
@@ -489,7 +698,12 @@ mod tests {
 
         // Get should return valid config
         let config = registry.get("ccs/work").unwrap();
-        assert_eq!(config.cmd, "ccs work");
+        // When claude binary is found, it replaces "ccs work" with the path to claude
+        assert!(
+            config.cmd.ends_with("claude") || config.cmd == "ccs work",
+            "cmd should be 'ccs work' or a path ending with 'claude', got: {}",
+            config.cmd
+        );
         assert!(config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
     }
@@ -596,5 +810,125 @@ mod tests {
             .collect();
 
         assert_eq!(ccs_agents.len(), 2);
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_exact_match() {
+        let registry = AgentRegistry::new().unwrap();
+        assert_eq!(registry.resolve_fuzzy("claude"), Some("claude".to_string()));
+        assert_eq!(registry.resolve_fuzzy("codex"), Some("codex".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_ccs_unregistered() {
+        let registry = AgentRegistry::new().unwrap();
+        // ccs/<unregistered> should return as-is for direct execution
+        assert_eq!(
+            registry.resolve_fuzzy("ccs/random"),
+            Some("ccs/random".to_string())
+        );
+        assert_eq!(
+            registry.resolve_fuzzy("ccs/unregistered"),
+            Some("ccs/unregistered".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_typos() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test common typos
+        assert_eq!(registry.resolve_fuzzy("claud"), Some("claude".to_string()));
+        assert_eq!(registry.resolve_fuzzy("CLAUD"), Some("claude".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_codex_variations() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test codex variations
+        assert_eq!(registry.resolve_fuzzy("codeex"), Some("codex".to_string()));
+        assert_eq!(registry.resolve_fuzzy("code-x"), Some("codex".to_string()));
+        assert_eq!(registry.resolve_fuzzy("CODEEX"), Some("codex".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_cursor_variations() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test cursor variations
+        assert_eq!(registry.resolve_fuzzy("crusor"), Some("cursor".to_string()));
+        assert_eq!(registry.resolve_fuzzy("CRUSOR"), Some("cursor".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_gemini_variations() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test gemini variations
+        assert_eq!(registry.resolve_fuzzy("gemeni"), Some("gemini".to_string()));
+        assert_eq!(registry.resolve_fuzzy("gemni"), Some("gemini".to_string()));
+        assert_eq!(registry.resolve_fuzzy("GEMENI"), Some("gemini".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_qwen_variations() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test qwen variations
+        assert_eq!(registry.resolve_fuzzy("quen"), Some("qwen".to_string()));
+        assert_eq!(registry.resolve_fuzzy("quwen"), Some("qwen".to_string()));
+        assert_eq!(registry.resolve_fuzzy("QUEN"), Some("qwen".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_aider_variations() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test aider variations
+        assert_eq!(registry.resolve_fuzzy("ader"), Some("aider".to_string()));
+        assert_eq!(registry.resolve_fuzzy("ADER"), Some("aider".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_vibe_variations() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test vibe variations
+        assert_eq!(registry.resolve_fuzzy("vib"), Some("vibe".to_string()));
+        assert_eq!(registry.resolve_fuzzy("VIB"), Some("vibe".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_cline_variations() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test cline variations
+        assert_eq!(registry.resolve_fuzzy("kline"), Some("cline".to_string()));
+        assert_eq!(registry.resolve_fuzzy("KLINE"), Some("cline".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_ccs_dash_to_slash() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test ccs- to ccs/ conversion (even for unregistered aliases)
+        assert_eq!(
+            registry.resolve_fuzzy("ccs-random"),
+            Some("ccs/random".to_string())
+        );
+        assert_eq!(
+            registry.resolve_fuzzy("ccs-test"),
+            Some("ccs/test".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_underscore_replacement() {
+        let registry = AgentRegistry::new().unwrap();
+        // Test underscore to dash/slash replacement
+        // Note: These test the pattern, actual agents may not exist
+        let result = registry.get_fuzzy_alternatives("my_agent");
+        assert!(result.contains(&"my_agent".to_string()));
+        assert!(result.contains(&"my-agent".to_string()));
+        assert!(result.contains(&"my/agent".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_unknown() {
+        let registry = AgentRegistry::new().unwrap();
+        // Unknown agent should return None
+        assert_eq!(registry.resolve_fuzzy("totally-unknown"), None);
     }
 }

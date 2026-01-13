@@ -15,6 +15,7 @@ pub(crate) struct CodexParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
+    display_name: String,
 }
 
 impl CodexParser {
@@ -23,7 +24,13 @@ impl CodexParser {
             colors,
             verbosity,
             log_file: None,
+            display_name: "Codex".to_string(),
         }
+    }
+
+    pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
+        self.display_name = display_name.to_string();
+        self
     }
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
@@ -50,13 +57,15 @@ impl CodexParser {
             }
         };
         let c = &self.colors;
+        let name = &self.display_name;
 
         let output = match event {
             CodexEvent::ThreadStarted { thread_id } => {
                 let tid = thread_id.unwrap_or_else(|| "unknown".to_string());
                 format!(
-                    "{}[Codex]{} {}Thread started{} {}({:.8}...){}\n",
+                    "{}[{}]{} {}Thread started{} {}({:.8}...){}\n",
                     c.dim(),
+                    name,
                     c.reset(),
                     c.cyan(),
                     c.reset(),
@@ -67,8 +76,9 @@ impl CodexParser {
             }
             CodexEvent::TurnStarted {} => {
                 format!(
-                    "{}[Codex]{} {}Turn started{}\n",
+                    "{}[{}]{} {}Turn started{}\n",
                     c.dim(),
+                    name,
                     c.reset(),
                     c.blue(),
                     c.reset()
@@ -79,8 +89,9 @@ impl CodexParser {
                     .map(|u| (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0)))
                     .unwrap_or((0, 0));
                 format!(
-                    "{}[Codex]{} {}{} Turn completed{} {}(in:{} out:{}){}\n",
+                    "{}[{}]{} {}{} Turn completed{} {}(in:{} out:{}){}\n",
                     c.dim(),
+                    name,
                     c.reset(),
                     c.green(),
                     CHECK,
@@ -94,8 +105,9 @@ impl CodexParser {
             CodexEvent::TurnFailed { error } => {
                 let err = error.unwrap_or_else(|| "unknown error".to_string());
                 format!(
-                    "{}[Codex]{} {}{} Turn failed:{} {}\n",
+                    "{}[{}]{} {}{} Turn failed:{} {}\n",
                     c.dim(),
+                    name,
                     c.reset(),
                     c.red(),
                     CROSS,
@@ -111,8 +123,9 @@ impl CodexParser {
                             let limit = self.verbosity.truncate_limit("command");
                             let preview = truncate_text(&cmd, limit);
                             format!(
-                                "{}[Codex]{} {}Exec{}: {}{}{}\n",
+                                "{}[{}]{} {}Exec{}: {}{}{}\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.magenta(),
                                 c.reset(),
@@ -128,8 +141,9 @@ impl CodexParser {
                                 String::new()
                             } else {
                                 format!(
-                                    "{}[Codex]{} {}Thinking...{}\n",
+                                    "{}[{}]{} {}Thinking...{}\n",
                                     c.dim(),
+                                    name,
                                     c.reset(),
                                     c.blue(),
                                     c.reset()
@@ -140,8 +154,9 @@ impl CodexParser {
                             // Show reasoning/thinking in verbose mode
                             if self.verbosity.is_verbose() {
                                 format!(
-                                    "{}[Codex]{} {}Reasoning...{}\n",
+                                    "{}[{}]{} {}Reasoning...{}\n",
                                     c.dim(),
+                                    name,
                                     c.reset(),
                                     c.cyan(),
                                     c.reset()
@@ -154,8 +169,9 @@ impl CodexParser {
                             let path = item.path.clone().unwrap_or_default();
                             let action = item.item_type.as_deref().unwrap_or("file");
                             format!(
-                                "{}[Codex]{} {}{}:{} {}\n",
+                                "{}[{}]{} {}{}:{} {}\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.yellow(),
                                 action,
@@ -167,8 +183,9 @@ impl CodexParser {
                             let tool_name =
                                 item.tool.clone().unwrap_or_else(|| "unknown".to_string());
                             let mut out = format!(
-                                "{}[Codex]{} {}MCP Tool{}: {}{}{}\n",
+                                "{}[{}]{} {}MCP Tool{}: {}{}{}\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.magenta(),
                                 c.reset(),
@@ -184,8 +201,9 @@ impl CodexParser {
                                     let preview = truncate_text(&args_str, limit);
                                     if !preview.is_empty() {
                                         out.push_str(&format!(
-                                            "{}[Codex]{} {}  └─ {}{}\n",
+                                            "{}[{}]{} {}  └─ {}{}\n",
                                             c.dim(),
+                                            name,
                                             c.reset(),
                                             c.dim(),
                                             preview,
@@ -201,8 +219,9 @@ impl CodexParser {
                             let limit = self.verbosity.truncate_limit("command");
                             let preview = truncate_text(&query, limit);
                             format!(
-                                "{}[Codex]{} {}Search{}: {}{}{}\n",
+                                "{}[{}]{} {}Search{}: {}{}{}\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.cyan(),
                                 c.reset(),
@@ -213,8 +232,9 @@ impl CodexParser {
                         }
                         Some("plan_update") => {
                             format!(
-                                "{}[Codex]{} {}Updating plan...{}\n",
+                                "{}[{}]{} {}Updating plan...{}\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.blue(),
                                 c.reset()
@@ -224,8 +244,9 @@ impl CodexParser {
                             // Show other types in verbose mode
                             if self.verbosity.is_verbose() {
                                 format!(
-                                    "{}[Codex]{} {}{}:{} {}\n",
+                                    "{}[{}]{} {}{}:{} {}\n",
                                     c.dim(),
+                                    name,
                                     c.reset(),
                                     c.dim(),
                                     t,
@@ -250,8 +271,9 @@ impl CodexParser {
                                 let limit = self.verbosity.truncate_limit("agent_msg");
                                 let preview = truncate_text(text, limit);
                                 format!(
-                                    "{}[Codex]{} {}{}{}\n",
+                                    "{}[{}]{} {}{}{}\n",
                                     c.dim(),
+                                    name,
                                     c.reset(),
                                     c.white(),
                                     preview,
@@ -268,8 +290,9 @@ impl CodexParser {
                                     let limit = self.verbosity.truncate_limit("text");
                                     let preview = truncate_text(text, limit);
                                     format!(
-                                        "{}[Codex]{} {}Thought:{} {}{}{}\n",
+                                        "{}[{}]{} {}Thought:{} {}{}{}\n",
                                         c.dim(),
+                                        name,
                                         c.reset(),
                                         c.cyan(),
                                         c.reset(),
@@ -286,8 +309,9 @@ impl CodexParser {
                         }
                         Some("command_execution") => {
                             format!(
-                                "{}[Codex]{} {}{} Command done{}\n",
+                                "{}[{}]{} {}{} Command done{}\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.green(),
                                 CHECK,
@@ -297,8 +321,9 @@ impl CodexParser {
                         Some("file_change") | Some("file_write") => {
                             let path = item.path.clone().unwrap_or_else(|| "unknown".to_string());
                             format!(
-                                "{}[Codex]{} {}File{}: {}\n",
+                                "{}[{}]{} {}File{}: {}\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.yellow(),
                                 c.reset(),
@@ -311,8 +336,9 @@ impl CodexParser {
                                 let path =
                                     item.path.clone().unwrap_or_else(|| "unknown".to_string());
                                 format!(
-                                    "{}[Codex]{} {}{} Read:{} {}\n",
+                                    "{}[{}]{} {}{} Read:{} {}\n",
                                     c.dim(),
+                                    name,
                                     c.reset(),
                                     c.green(),
                                     CHECK,
@@ -326,8 +352,9 @@ impl CodexParser {
                         Some("mcp_tool_call") | Some("mcp") => {
                             let tool_name = item.tool.clone().unwrap_or_else(|| "tool".to_string());
                             format!(
-                                "{}[Codex]{} {}{} MCP:{} {} done\n",
+                                "{}[{}]{} {}{} MCP:{} {} done\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.green(),
                                 CHECK,
@@ -337,8 +364,9 @@ impl CodexParser {
                         }
                         Some("web_search") => {
                             format!(
-                                "{}[Codex]{} {}{} Search completed{}\n",
+                                "{}[{}]{} {}{} Search completed{}\n",
                                 c.dim(),
+                                name,
                                 c.reset(),
                                 c.green(),
                                 CHECK,
@@ -351,8 +379,9 @@ impl CodexParser {
                                     let limit = self.verbosity.truncate_limit("text");
                                     let preview = truncate_text(plan, limit);
                                     format!(
-                                        "{}[Codex]{} {}Plan:{} {}\n",
+                                        "{}[{}]{} {}Plan:{} {}\n",
                                         c.dim(),
+                                        name,
                                         c.reset(),
                                         c.blue(),
                                         c.reset(),
@@ -360,8 +389,9 @@ impl CodexParser {
                                     )
                                 } else {
                                     format!(
-                                        "{}[Codex]{} {}{} Plan updated{}\n",
+                                        "{}[{}]{} {}{} Plan updated{}\n",
                                         c.dim(),
+                                        name,
                                         c.reset(),
                                         c.green(),
                                         CHECK,
@@ -383,8 +413,9 @@ impl CodexParser {
                     .or(error)
                     .unwrap_or_else(|| "unknown error".to_string());
                 format!(
-                    "{}[Codex]{} {}{} Error:{} {}\n",
+                    "{}[{}]{} {}{} Error:{} {}\n",
                     c.dim(),
+                    name,
                     c.reset(),
                     c.red(),
                     CROSS,
@@ -410,6 +441,14 @@ impl CodexParser {
     ) -> io::Result<()> {
         let c = &self.colors;
         let monitor = HealthMonitor::new("Codex");
+        let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+                .ok()
+                .map(std::io::BufWriter::new)
+        });
 
         for line in reader.lines() {
             let line = line?;
@@ -449,17 +488,14 @@ impl CodexParser {
             }
 
             // Log raw JSON to file if configured
-            if let Some(ref log_path) = self.log_file {
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(log_path)
-                {
-                    writeln!(file, "{}", line)?;
-                }
+            if let Some(ref mut file) = log_writer {
+                writeln!(file, "{}", line)?;
             }
         }
 
+        if let Some(ref mut file) = log_writer {
+            file.flush()?;
+        }
         if let Some(warning) = monitor.check_and_warn(c) {
             writeln!(writer, "{}", warning)?;
         }
