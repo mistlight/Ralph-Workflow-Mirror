@@ -225,19 +225,46 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
     }
 
     // Agent selection
-    if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT").or_else(|_| env::var("RALPH_DRIVER_AGENT")) {
-        config.developer_agent = Some(val);
+    if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT") {
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_DEVELOPER_AGENT is empty; ignoring.".to_string());
+        } else {
+            config.developer_agent = Some(trimmed.to_string());
+        }
+    } else if let Ok(val) = env::var("RALPH_DRIVER_AGENT") {
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_DRIVER_AGENT is empty; ignoring.".to_string());
+        } else {
+            config.developer_agent = Some(trimmed.to_string());
+        }
     }
     if let Ok(val) = env::var("RALPH_REVIEWER_AGENT") {
-        config.reviewer_agent = Some(val);
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_REVIEWER_AGENT is empty; ignoring.".to_string());
+        } else {
+            config.reviewer_agent = Some(trimmed.to_string());
+        }
     }
 
     // Command overrides
     if let Ok(val) = env::var("RALPH_DEVELOPER_CMD") {
-        config.developer_cmd = Some(val);
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_DEVELOPER_CMD is empty; ignoring.".to_string());
+        } else {
+            config.developer_cmd = Some(trimmed.to_string());
+        }
     }
     if let Ok(val) = env::var("RALPH_REVIEWER_CMD") {
-        config.reviewer_cmd = Some(val);
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            warnings.push("Env var RALPH_REVIEWER_CMD is empty; ignoring.".to_string());
+        } else {
+            config.reviewer_cmd = Some(trimmed.to_string());
+        }
     }
 
     // Model overrides
@@ -383,7 +410,7 @@ fn check_legacy_configs(warnings: &mut Vec<String>) {
 
     // Check for project-level config
     let project_config = PathBuf::from(".agent/agents.toml");
-    if project_config.exists() && unified_config_path().is_some_and(|p| !p.exists()) {
+    if project_config.exists() && unified_config_path().is_some() && !unified_config_exists() {
         warnings.push(
             "DEPRECATION: Found legacy per-repo config at .agent/agents.toml. \
              Please migrate to ~/.config/ralph-workflow.toml."
@@ -393,7 +420,6 @@ fn check_legacy_configs(warnings: &mut Vec<String>) {
 }
 
 /// Check if the unified config file exists.
-#[allow(dead_code)] // Public API for future use
 pub fn unified_config_exists() -> bool {
     unified_config_path().is_some_and(|p| p.exists())
 }
@@ -434,6 +460,25 @@ mod tests {
         // Clean up
         env::remove_var("RALPH_DEVELOPER_ITERS");
         env::remove_var("RALPH_ISOLATION_MODE");
+    }
+
+    #[test]
+    fn test_unified_config_exists_respects_xdg_config_home() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let path = unified_config_path().unwrap();
+        if path.exists() {
+            std::fs::remove_file(&path).unwrap();
+        }
+        assert!(!unified_config_exists());
+
+        std::fs::write(&path, "").unwrap();
+        assert!(unified_config_exists());
+
+        env::remove_var("XDG_CONFIG_HOME");
     }
 
     #[test]

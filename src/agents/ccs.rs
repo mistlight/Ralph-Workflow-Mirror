@@ -22,8 +22,9 @@
 //! # If your CCS version doesn't support these Claude CLI flags, set them to "".
 //! output_flag = "--output-format=stream-json"
 //! verbose_flag = "--verbose"
-//! # Safety: this is intentionally empty by default (opt-in).
-//! yolo_flag = ""
+//! # YOLO mode is enabled by default for unattended automation.
+//! # Set to "" to explicitly disable (interactive / manual approval workflows).
+//! yolo_flag = "--dangerously-skip-permissions"
 //! json_parser = "claude"
 //!
 //! [ccs_aliases]
@@ -319,7 +320,8 @@ mod tests {
         );
         assert_eq!(config.cmd, "ccs work");
         assert_eq!(config.output_flag, "--output-format=stream-json");
-        assert_eq!(config.yolo_flag, "");
+        // YOLO mode enabled by default for unattended automation
+        assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
@@ -548,8 +550,8 @@ mod tests {
 
         // CCS wraps Claude Code, so it uses Claude's stream-json format
         assert_eq!(config.output_flag, "--output-format=stream-json");
-        // Safety: opt-in only by default.
-        assert_eq!(config.yolo_flag, "");
+        // YOLO mode enabled by default for unattended automation
+        assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(config.can_commit);
 

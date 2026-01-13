@@ -352,15 +352,31 @@ fn verify_plan_exists(
 
 /// Run fast check command.
 fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> anyhow::Result<()> {
+    let argv = crate::utils::split_command(fast_cmd).map_err(|e| {
+        anyhow::anyhow!(
+            "FAST_CHECK_CMD parse error (iteration {}): {}",
+            iteration,
+            e
+        )
+    })?;
+    if argv.is_empty() {
+        ctx.logger
+            .warn("FAST_CHECK_CMD is empty; skipping fast check");
+        return Ok(());
+    }
+
+    let display_cmd = crate::utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running fast check: {}{}{}",
         ctx.colors.dim(),
-        fast_cmd,
+        display_cmd,
         ctx.colors.reset()
     ));
 
-    let _fast_logfile = format!(".agent/logs/fast_check_{}.log", iteration);
-    let status = Command::new("sh").args(["-c", fast_cmd]).status()?;
+    let (program, args) = argv
+        .split_first()
+        .expect("argv is non-empty after empty check");
+    let status = Command::new(program).args(args).status()?;
 
     if status.success() {
         ctx.logger.success("Fast check passed");

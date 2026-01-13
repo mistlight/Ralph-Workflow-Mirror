@@ -190,24 +190,19 @@ impl AgentErrorKind {
 
         // If we know this is a GLM-like agent and it failed with exit code 1,
         // classify it as AgentSpecificQuirk to trigger fallback instead of retry
-        let is_problematic_agent = agent_name
-            .map(|a| a.to_lowercase())
-            .is_some_and(|a| {
-                a.contains("glm")
-                    || a.contains("zhipuai")
-                    || a.contains("zai")
-                    || a.contains("qwen")
-                    || a.contains("deepseek")
-            })
-            || model_flag
-                .map(|m| m.to_lowercase())
-                .is_some_and(|m| {
-                    m.contains("glm")
-                        || m.contains("zhipuai")
-                        || m.contains("zai")
-                        || m.contains("qwen")
-                        || m.contains("deepseek")
-                });
+        let is_problematic_agent = agent_name.map(|a| a.to_lowercase()).is_some_and(|a| {
+            a.contains("glm")
+                || a.contains("zhipuai")
+                || a.contains("zai")
+                || a.contains("qwen")
+                || a.contains("deepseek")
+        }) || model_flag.map(|m| m.to_lowercase()).is_some_and(|m| {
+            m.contains("glm")
+                || m.contains("zhipuai")
+                || m.contains("zai")
+                || m.contains("qwen")
+                || m.contains("deepseek")
+        });
 
         if is_problematic_agent && exit_code == 1 {
             // GLM and similar agents often exit with code 1 for various issues.
@@ -515,7 +510,7 @@ mod tests {
         assert_eq!(classify(1, "some random error"), AgentErrorKind::Transient);
 
         assert_eq!(
-            AgentErrorKind::classify_with_agent(1, "some random error", Some("ccs/glm")),
+            AgentErrorKind::classify_with_agent(1, "some random error", Some("ccs/glm"), None),
             AgentErrorKind::AgentSpecificQuirk
         );
     }

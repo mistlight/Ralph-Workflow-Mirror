@@ -25,6 +25,7 @@ use super::fallback::{AgentRole, FallbackConfig};
 use super::parser::JsonParserType;
 use crate::config::{CcsAliasConfig, CcsConfig};
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Agent registry with CCS alias support.
 ///
@@ -130,6 +131,22 @@ impl AgentRegistry {
         self.get(agent_name).map(|c| c.build_cmd(true, true, false))
     }
 
+    /// Load custom agents from a TOML configuration file.
+    pub fn load_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<usize, AgentConfigError> {
+        match AgentsConfigFile::load_from_file(path)? {
+            Some(config) => {
+                let count = config.agents.len();
+                for (name, agent_toml) in config.agents {
+                    self.register(&name, agent_toml.into());
+                }
+                // Load fallback configuration
+                self.fallback = config.fallback;
+                Ok(count)
+            }
+            None => Ok(0),
+        }
+    }
+
     /// Apply settings from the unified config (`~/.config/ralph-workflow.toml`).
     ///
     /// This merges (in increasing priority):
@@ -151,20 +168,75 @@ impl AgentRegistry {
         }
 
         if !unified.agents.is_empty() {
-            loaded += unified.agents.len();
-            for (name, agent_toml) in &unified.agents {
-                self.register(
-                    name,
-                    AgentConfig {
-                        cmd: agent_toml.cmd.clone(),
-                        output_flag: agent_toml.output_flag.clone(),
-                        yolo_flag: agent_toml.yolo_flag.clone(),
-                        verbose_flag: agent_toml.verbose_flag.clone(),
-                        can_commit: agent_toml.can_commit,
-                        json_parser: JsonParserType::parse(&agent_toml.json_parser),
-                        model_flag: agent_toml.model_flag.clone(),
+            for (name, overrides) in &unified.agents {
+                let Some(existing) = self.agents.get(name).cloned() else {
+                    // New agent definition: require a non-empty command.
+                    let Some(cmd) = overrides
+                        .cmd
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                    else {
+                        continue;
+                    };
+
+                    let json_parser = overrides
+                        .json_parser
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("generic");
+
+                    self.register(
+                        name,
+                        AgentConfig {
+                            cmd: cmd.to_string(),
+                            output_flag: overrides.output_flag.clone().unwrap_or_default(),
+                            yolo_flag: overrides.yolo_flag.clone().unwrap_or_default(),
+                            verbose_flag: overrides.verbose_flag.clone().unwrap_or_default(),
+                            can_commit: overrides.can_commit.unwrap_or(true),
+                            json_parser: JsonParserType::parse(json_parser),
+                            model_flag: overrides.model_flag.clone(),
+                        },
+                    );
+                    loaded += 1;
+                    continue;
+                };
+
+                let merged = AgentConfig {
+                    cmd: overrides
+                        .cmd
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .unwrap_or(existing.cmd),
+                    output_flag: overrides
+                        .output_flag
+                        .clone()
+                        .unwrap_or(existing.output_flag),
+                    yolo_flag: overrides.yolo_flag.clone().unwrap_or(existing.yolo_flag),
+                    verbose_flag: overrides
+                        .verbose_flag
+                        .clone()
+                        .unwrap_or(existing.verbose_flag),
+                    can_commit: overrides.can_commit.unwrap_or(existing.can_commit),
+                    json_parser: overrides
+                        .json_parser
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(JsonParserType::parse)
+                        .unwrap_or(existing.json_parser),
+                    model_flag: if overrides.model_flag.is_some() {
+                        overrides.model_flag.clone()
+                    } else {
+                        existing.model_flag
                     },
-                );
+                };
+
+                self.register(name, merged);
+                loaded += 1;
             }
         }
 

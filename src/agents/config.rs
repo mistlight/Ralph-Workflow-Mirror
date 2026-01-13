@@ -177,6 +177,18 @@ pub enum ConfigInitResult {
 }
 
 impl AgentsConfigFile {
+    /// Load agents config from a file, returning None if file doesn't exist.
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Option<Self>, AgentConfigError> {
+        let path = path.as_ref();
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let contents = fs::read_to_string(path)?;
+        let config: AgentsConfigFile = toml::from_str(&contents)?;
+        Ok(Some(config))
+    }
+
     /// Ensure agents config file exists, creating it from template if needed.
     pub fn ensure_config_exists<P: AsRef<Path>>(path: P) -> io::Result<ConfigInitResult> {
         let path = path.as_ref();

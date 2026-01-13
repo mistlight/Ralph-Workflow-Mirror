@@ -6,6 +6,27 @@
 use std::fs;
 use std::path::Path;
 
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.len() > haystack.len() {
+        return false;
+    }
+
+    let needle = needle.as_bytes();
+    for window in haystack.as_bytes().windows(needle.len()) {
+        if window
+            .iter()
+            .zip(needle.iter())
+            .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// Result of PROMPT.md validation.
 ///
 /// Contains flags indicating what was found and any errors or warnings.
@@ -98,7 +119,7 @@ pub fn validate_prompt_md(strict: bool) -> PromptValidationResult {
     result.has_acceptance = content.contains("## Acceptance")
         || content.contains("# Acceptance")
         || content.contains("Acceptance Criteria")
-        || content.to_lowercase().contains("acceptance");
+        || contains_ascii_case_insensitive(&content, "acceptance");
     if !result.has_acceptance {
         let msg = "PROMPT.md missing acceptance checks section".to_string();
         if strict {
