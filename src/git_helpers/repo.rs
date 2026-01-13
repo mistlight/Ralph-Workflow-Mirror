@@ -209,7 +209,9 @@ pub(crate) fn git_add_all() -> io::Result<bool> {
         .include_untracked(true)
         .recurse_untracked_dirs(true)
         .include_ignored(false);
-    let statuses = repo.statuses(Some(&mut status_opts)).map_err(git2_to_io_error)?;
+    let statuses = repo
+        .statuses(Some(&mut status_opts))
+        .map_err(git2_to_io_error)?;
     for entry in statuses.iter() {
         if entry.status().contains(git2::Status::WT_DELETED) {
             if let Some(path) = entry.path() {
@@ -478,20 +480,72 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
                     ));
                 }
 
-                // Parse the output to extract the commit message
-                // The agent might return JSON or plain text
-                let raw_output = String::from_utf8_lossy(&stdout);
+                // Extract commit message using the robust LLM output extraction module.
+                // This handles multiple output formats: Claude, Codex, Gemini, OpenCode, and plain text.
+                use crate::files::llm_output_extraction::{
+                    extract_llm_output, validate_commit_message, OutputFormat,
+                };
 
-                // Try to extract from JSON if it looks like JSON
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw_output) {
-                    // Handle Claude-style JSON output
-                    if let Some(result) = json.get("result").and_then(|v| v.as_str()) {
-                        return Ok(clean_commit_message(result));
+                let raw_output = String::from_utf8_lossy(&stdout);
+                let format_hint = agent_cmd
+                    .split_whitespace()
+                    .find_map(|tok| {
+                        let tok = tok.to_lowercase();
+                        if tok.contains("codex") {
+                            Some("codex")
+                        } else if tok.contains("claude")
+                            || tok.contains("ccs")
+                            || tok.contains("qwen")
+                        {
+                            Some("claude")
+                        } else if tok.contains("gemini") {
+                            Some("gemini")
+                        } else if tok.contains("opencode") {
+                            Some("opencode")
+                        } else {
+                            None
+                        }
+                    })
+                    .map(OutputFormat::from_str);
+
+                let extraction = extract_llm_output(&raw_output, format_hint);
+                if let Some(warning) = &extraction.warning {
+                    eprintln!(
+                        "Warning: LLM output extraction warning (format={:?}): {}",
+                        extraction.format, warning
+                    );
+                } else if !extraction.was_structured {
+                    eprintln!(
+                        "Warning: LLM output extraction fell back to plain text (format={:?})",
+                        extraction.format
+                    );
+                }
+
+                // Clean the extracted content
+                let commit_message = clean_commit_message(&extraction.content);
+
+                // Validate the commit message to catch extraction failures early
+                if let Err(validation_error) = validate_commit_message(&commit_message) {
+                    // Log warning but don't fail - validation is advisory
+                    // The commit message might still be usable even if it doesn't pass validation
+                    eprintln!(
+                        "Warning: commit message validation failed: {}",
+                        validation_error
+                    );
+
+                    // If the message looks like raw JSON (extraction totally failed), return error
+                    if commit_message.starts_with('{') && commit_message.contains(r#""type":"#) {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!(
+                                "Failed to extract commit message from LLM output: {}. Raw output appears to be JSON.",
+                                validation_error
+                            ),
+                        ));
                     }
                 }
 
-                // Otherwise, treat as plain text and clean it
-                return Ok(clean_commit_message(&raw_output));
+                return Ok(commit_message);
             }
             Ok(None) => {
                 // Process still running - check timeout before sleeping
@@ -501,10 +555,7 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
                     let _ = child.wait();
                     return Err(io::Error::new(
                         io::ErrorKind::TimedOut,
-                        format!(
-                            "LLM agent timed out after {} seconds",
-                            timeout.as_secs()
-                        ),
+                        format!("LLM agent timed out after {} seconds", timeout.as_secs()),
                     ));
                 }
                 // Sleep a bit and try again
@@ -788,31 +839,6 @@ pub enum CommitResult {
     /// permission issues, merge conflicts). LLM failures for commit message generation
     /// are handled internally with fallback messages and do not result in this variant.
     Failed(String),
-}
-
-impl CommitResult {
-    /// Returns true if a commit was successfully created.
-    pub fn is_success(&self) -> bool {
-        matches!(self, CommitResult::Success(_))
-    }
-
-    /// Returns true if no commit was created due to lack of changes.
-    pub fn is_no_changes(&self) -> bool {
-        matches!(self, CommitResult::NoChanges)
-    }
-
-    /// Returns true if the commit operation failed.
-    pub fn is_failed(&self) -> bool {
-        matches!(self, CommitResult::Failed(_))
-    }
-
-    /// Returns the OID if successful, None otherwise.
-    pub fn oid(&self) -> Option<git2::Oid> {
-        match self {
-            CommitResult::Success(oid) => Some(*oid),
-            _ => None,
-        }
-    }
 }
 
 /// Create a commit with an automatically generated commit message, returning a detailed result.
