@@ -36,3 +36,24 @@ Write clean, maintainable tests:
 - Arrange-Act-Assert pattern for clarity
 - Tests should be independent and can run in any order
 - Use fixtures for common test setup
+
+**Test Coverage Goals:**
+- Aim for >80% line coverage on critical paths
+- Cover happy path, edge cases, and error conditions
+- Test boundary conditions (empty, null, max values)
+- Include property-based tests for data transformation logic
+- Use integration tests for multi-component workflows
+
+**Testing Best Practices:**
+- Mock external dependencies (network, filesystem, databases)
+- Make tests deterministic (avoid reliance on random data or timing)
+- Keep tests fast - slow tests should be marked or separated
+- Use test builders or factories for complex test data
+- Document non-obvious test scenarios with comments
+
+**For Rust specifically:**
+- Use `cargo test` for unit tests, `cargo integration-test` for integration tests
+- Leverage `proptest` or `quickcheck` for property-based testing
+- Use `#[should_panic]` for expected panic conditions
+- Prefer `assert_eq!` / `assert_ne!` over `assert!` for better error messages
+- Use `Result`-based tests for fallible test code

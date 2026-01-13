@@ -63,3 +63,18 @@ Write clean, maintainable code:
 - DRY: extract duplicated logic
 - Validate at boundaries; trust internal data
 - Test behavior, not implementation
+
+**Bug Fix Best Practices:**
+- Fix the root cause, not just the symptom
+- Add a regression test before fixing the bug (test should fail, then pass after fix)
+- Consider similar code paths that may have the same vulnerability
+- Ensure error messages are clear and actionable
+- Handle edge cases that may have led to the bug
+- Document the fix if the bug was subtle or non-obvious
+
+**Testing Strategy for Bug Fixes:**
+- Write a test case that reproduces the exact bug
+- Test the fix with valid inputs to ensure no regression
+- Test edge cases around the bug (boundary values, null/empty, etc.)
+- Verify error handling paths are robust
+- Consider adding property-based tests for related logic
