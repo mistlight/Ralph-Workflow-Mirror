@@ -1,17 +1,41 @@
 # Refactor: [What is being refactored]
 
+> **How to use this template:** This template is for improving existing code without changing its behavior. Refactoring is about changing code structure to make it more maintainable while preserving functionality.
+
 ## Goal
 [What improvement you want to achieve]
 [Why the current code needs refactoring]
 
+**Common refactoring goals:**
+- Reduce complexity or improve readability
+- Eliminate code duplication
+- Improve performance without changing behavior
+- Make code easier to test or maintain
+- Update to use newer patterns or APIs
+
 ## Questions to Consider
 Before refactoring:
+
+**Scope & Risk:**
 - What specific problems exist with the current code? (complexity, duplication, coupling)
 - What is the scope of this refactoring? (single function, module, or system-wide)
-- How will you verify behavior is unchanged?
-- Are there performance implications of the refactoring?
-- Will this affect public APIs or interfaces?
 - Is the risk justified by the benefit?
+- Will this affect public APIs or interfaces?
+
+**Verification:**
+- How will you verify behavior is unchanged?
+- Are there existing tests that cover the affected code?
+- What tests should be added before refactoring?
+
+**Impact:**
+- Are there performance implications of the refactoring?
+- Could this introduce new bugs or edge cases?
+
+## Refactor vs. Rewrite
+- **Refactor:** Change structure, keep behavior. Small, incremental steps.
+- **Rewrite:** Build from scratch. Higher risk, harder to verify.
+
+When in doubt, prefer refactoring with small incremental changes.
 
 ## Acceptance
 - [Code is cleaner/more maintainable]
@@ -19,3 +43,16 @@ Before refactoring:
 - [No changes to public APIs without deprecation]
 - [Documentation updated if needed]
 - [Code follows project style guidelines]
+
+## Code Quality Specifications
+
+Write clean, maintainable code:
+- Single responsibility: one reason to change per function/class
+- Small units: functions < 30 lines, classes < 300 lines
+- Clear names that reveal intent
+- Early returns; minimize nesting depth
+- Explicit error handling; no silent failures
+- No magic numbers; extract constants
+- DRY: extract duplicated logic
+- Validate at boundaries; trust internal data
+- Test behavior, not implementation
