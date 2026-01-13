@@ -8,6 +8,8 @@ use super::parser::JsonParserType;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -15,14 +17,29 @@ use std::path::{Path, PathBuf};
 /// Default agents.toml template embedded at compile time.
 pub const DEFAULT_AGENTS_TOML: &str = include_str!("../../examples/agents.toml");
 
+/// Subset of CCS' legacy `~/.ccs/config.json` format.
+///
+/// Source (CCS): `dist/types/config.d.ts` and `dist/utils/config-manager.js`.
+#[derive(Debug, Deserialize)]
+struct CcsConfigJson {
+    profiles: HashMap<String, String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CcsEnvVarsError {
-    #[error(
-        "Invalid CCS profile name '{profile}' (allowed characters: A-Z a-z 0-9 '_' '-')"
-    )]
+    #[error("Invalid CCS profile name '{profile}' (must be non-empty)")]
     InvalidProfile { profile: String },
     #[error("Could not determine home directory for CCS settings")]
     MissingHomeDir,
+    #[error("No CCS settings file found for profile '{profile}' in {ccs_dir}")]
+    ProfileNotFound { profile: String, ccs_dir: PathBuf },
+    #[error("Failed to read CCS config at {path}: {source}")]
+    ReadConfig { path: PathBuf, source: io::Error },
+    #[error("Failed to parse CCS config JSON at {path}: {source}")]
+    ParseConfigJson {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
     #[error("Failed to read CCS settings file at {path}: {source}")]
     ReadFile { path: PathBuf, source: io::Error },
     #[error("Failed to parse CCS settings JSON at {path}: {source}")]
@@ -30,7 +47,7 @@ pub enum CcsEnvVarsError {
         path: PathBuf,
         source: serde_json::Error,
     },
-    #[error("CCS settings JSON at {path} is missing required 'env' object")]
+    #[error("Could not find an environment-variable map in CCS settings JSON at {path}")]
     MissingEnv { path: PathBuf },
     #[error("CCS settings JSON at {path} contains invalid env var name '{key}'")]
     InvalidEnvVarName { path: PathBuf, key: String },
@@ -38,30 +55,267 @@ pub enum CcsEnvVarsError {
     NonStringEnvVarValue { path: PathBuf, key: String },
 }
 
-const CCS_ALLOWED_ENV_VARS: &[&str] = &[
-    // Direct Anthropic API usage
-    "ANTHROPIC_API_KEY",
-    // Claude-compatible "auth token" mode used by some CCS presets
-    "ANTHROPIC_AUTH_TOKEN",
-    // Non-default Anthropic-compatible endpoints (e.g., proxy / ZAI)
-    "ANTHROPIC_BASE_URL",
-    // Default model for Claude CLI when using Anthropic-compatible providers
-    "ANTHROPIC_MODEL",
-];
-
-fn is_valid_env_var_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_uppercase() || first == '_') {
+fn is_valid_env_var_name_portable(name: &str) -> bool {
+    if name.is_empty() {
         return false;
     }
-    chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    if name.contains('\0') || name.contains('=') {
+        return false;
+    }
+    // On Windows, environment variable names cannot start with '='.
+    #[cfg(windows)]
+    {
+        if name.starts_with('=') {
+            return false;
+        }
+    }
+    true
 }
 
-fn is_allowed_ccs_env_var(name: &str) -> bool {
-    CCS_ALLOWED_ENV_VARS.contains(&name)
+fn derive_ccs_profile_name_from_filename(filename: &str) -> Option<String> {
+    filename
+        .strip_suffix(".settings.json")
+        .or_else(|| filename.strip_suffix(".setting.json"))
+        .or_else(|| filename.strip_suffix(".json"))
+        .map(|s| s.to_string())
+}
+
+fn is_ccs_settings_filename(name: &str) -> bool {
+    name.ends_with(".settings.json") || name.ends_with(".setting.json")
+}
+
+fn is_safe_profile_filename_stem(stem: &str) -> bool {
+    !stem.is_empty()
+        && stem
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+}
+
+fn list_ccs_json_files(ccs_dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
+    let entries = fs::read_dir(ccs_dir)?;
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        if !ft.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.ends_with(".json") {
+            files.push(entry.path());
+        }
+    }
+    Ok(files)
+}
+
+fn ccs_home_dir() -> Option<PathBuf> {
+    // Matches CCS behavior: respects CCS_HOME env var for test isolation.
+    env::var_os("CCS_HOME").map(PathBuf::from).or_else(dirs::home_dir)
+}
+
+fn ccs_dir() -> Option<PathBuf> {
+    ccs_home_dir().map(|home| home.join(".ccs"))
+}
+
+fn ccs_config_json_path() -> Option<PathBuf> {
+    // Matches CCS behavior: CCS_CONFIG overrides config.json path.
+    // Source (CCS): `dist/utils/config-manager.js` getConfigPath().
+    env::var_os("CCS_CONFIG").map(PathBuf::from).or_else(|| ccs_dir().map(|d| d.join("config.json")))
+}
+
+fn ccs_config_yaml_path() -> Option<PathBuf> {
+    ccs_dir().map(|d| d.join("config.yaml"))
+}
+
+fn load_ccs_profiles_from_config_json() -> Result<HashMap<String, String>, CcsEnvVarsError> {
+    let Some(path) = ccs_config_json_path() else {
+        return Err(CcsEnvVarsError::MissingHomeDir);
+    };
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+    let content = fs::read_to_string(&path).map_err(|source| CcsEnvVarsError::ReadConfig {
+        path: path.clone(),
+        source,
+    })?;
+    let parsed: CcsConfigJson =
+        serde_json::from_str(&content).map_err(|source| CcsEnvVarsError::ParseConfigJson {
+            path: path.clone(),
+            source,
+        })?;
+    Ok(parsed.profiles)
+}
+
+fn parse_ccs_profiles_from_config_yaml(content: &str) -> HashMap<String, String> {
+    // Minimal YAML extractor for CCS `config.yaml`.
+    // Source (CCS): `dist/config/unified-config-types.d.ts` and
+    // `dist/utils/config-manager.js` getSettingsPath() uses `profiles.<name>.settings`.
+    //
+    // CCS writes this file via js-yaml with quotingType='"', producing a predictable shape:
+    // profiles:
+    //   glm:
+    //     type: api
+    //     settings: "~/.ccs/glm.settings.json"
+    let mut in_profiles = false;
+    let mut profiles_indent = 0usize;
+    let mut current_profile: Option<(String, usize)> = None;
+    let mut out: HashMap<String, String> = HashMap::new();
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim_end();
+        if line.trim().is_empty() {
+            continue;
+        }
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+
+        let indent = line.len().saturating_sub(trimmed.len());
+
+        if !in_profiles {
+            if trimmed == "profiles:" {
+                in_profiles = true;
+                profiles_indent = indent;
+                continue;
+            }
+            continue;
+        }
+
+        // End of `profiles:` block when indentation drops back.
+        if indent <= profiles_indent {
+            break;
+        }
+
+        // Profile entry line: "  name:" (or with inline mapping).
+        if indent == profiles_indent + 2 {
+            if let Some((name, rest)) = trimmed.split_once(':') {
+                let profile_name = name.trim().to_string();
+                let rest = rest.trim();
+                current_profile = Some((profile_name.clone(), indent));
+
+                // Inline mapping form: name: { ..., settings: "..." }
+                if rest.contains("settings:") {
+                    if let Some(settings) = extract_yaml_inline_settings_value(rest) {
+                        out.insert(profile_name, settings);
+                    }
+                }
+                continue;
+            }
+        }
+
+        // Nested under a profile. Look for "settings:".
+        if let Some((profile_name, profile_indent)) = current_profile.as_ref() {
+            if indent <= *profile_indent {
+                // We've left the current profile's block.
+                current_profile = None;
+                continue;
+            }
+            if let Some(value) = trimmed.strip_prefix("settings:") {
+                let settings = unquote_yaml_scalar(value.trim());
+                if !settings.is_empty() {
+                    out.insert(profile_name.clone(), settings);
+                }
+            }
+        }
+    }
+
+    out
+}
+
+fn extract_yaml_inline_settings_value(inline: &str) -> Option<String> {
+    // Very small parser for "{ ..., settings: \"...\" }" emitted by yaml.dump().
+    let needle = "settings:";
+    let idx = inline.find(needle)?;
+    let after = inline[idx + needle.len()..].trim_start();
+    let token = after
+        .split(',')
+        .next()
+        .unwrap_or(after)
+        .trim()
+        .trim_end_matches('}')
+        .trim();
+    let value = unquote_yaml_scalar(token);
+    if value.is_empty() { None } else { Some(value) }
+}
+
+fn unquote_yaml_scalar(value: &str) -> String {
+    let v = value.trim();
+    if v.len() >= 2 && ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\''))) {
+        let inner = &v[1..v.len() - 1];
+        // CCS uses js-yaml with double quotes; keep unescaping minimal for paths.
+        inner.replace("\\\"", "\"").replace("\\\\", "\\")
+    } else {
+        v.to_string()
+    }
+}
+
+fn load_ccs_profiles_from_config_yaml() -> Result<HashMap<String, String>, CcsEnvVarsError> {
+    let Some(path) = ccs_config_yaml_path() else {
+        return Err(CcsEnvVarsError::MissingHomeDir);
+    };
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+    let content = fs::read_to_string(&path).map_err(|source| CcsEnvVarsError::ReadConfig {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(parse_ccs_profiles_from_config_yaml(&content))
+}
+
+fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> {
+    let Some(ccs_dir) = ccs_dir() else {
+        return Err(CcsEnvVarsError::MissingHomeDir);
+    };
+
+    // 1) Unified YAML config (preferred by CCS when present).
+    let yaml_profiles = load_ccs_profiles_from_config_yaml()?;
+    if let Some(settings) = yaml_profiles.get(profile) {
+        return Ok(expand_user_path(settings));
+    }
+
+    // 2) Legacy config.json.
+    let json_profiles = load_ccs_profiles_from_config_json()?;
+    if let Some(settings) = json_profiles.get(profile) {
+        return Ok(expand_user_path(settings));
+    }
+
+    // 3) Fallback: direct profile settings file in ~/.ccs/ (common default path).
+    // Source (CCS): unified config docs and type comments use "~/.ccs/<profile>.settings.json".
+    if is_safe_profile_filename_stem(profile) {
+        let candidates = [
+            ccs_dir.join(format!("{profile}.settings.json")),
+            ccs_dir.join(format!("{profile}.setting.json")),
+        ];
+        for candidate in candidates {
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    Err(CcsEnvVarsError::ProfileNotFound {
+        profile: profile.to_string(),
+        ccs_dir,
+    })
+}
+
+fn expand_user_path(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = ccs_home_dir() {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(path)
+}
+
+fn find_env_object(json: &JsonValue) -> Option<&serde_json::Map<String, JsonValue>> {
+    // Source (CCS): `dist/types/config.d.ts` defines Settings as:
+    //   { env?: Record<string, string>, ... }
+    // and `dist/types/config.js` validates env values are strings.
+    json.as_object()?.get("env")?.as_object()
 }
 
 /// Get the global config directory for Ralph.
@@ -79,19 +333,94 @@ pub fn global_agents_config_path() -> Option<PathBuf> {
     global_config_dir().map(|d| d.join("agents.toml"))
 }
 
-/// Load environment variables from a CCS settings file.
+/// Find the claude CLI binary path.
 ///
-/// CCS stores provider configuration in `~/.ccs/{profile}.settings.json` files.
-/// This function reads that file and extracts the `env` object containing
-/// environment variables like ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, etc.
+/// Returns the path to the claude command if found in PATH.
+/// Returns None if claude is not installed or not in PATH.
+pub fn find_claude_binary() -> Option<PathBuf> {
+    which::which("claude").ok()
+}
+
+/// List all available CCS profile names from JSON files under `~/.ccs/`.
 ///
-/// For safety, this function only imports a conservative allowlist of env vars
-/// required for Anthropic/Claude-compatible credentials. All other keys in the
-/// CCS `env` object are ignored to prevent unintended environment injection.
+/// Returns a Vec of profile names (derived from file names like
+/// `{profile}.settings.json`, `{profile}.setting.json`, or `{profile}.json`).
+/// Returns an empty Vec if the .ccs directory doesn't exist or cannot be read.
+pub fn list_available_ccs_profiles() -> Vec<String> {
+    let Some(ccs_dir) = ccs_dir() else {
+        return Vec::new();
+    };
+
+    let mut unique = HashSet::new();
+
+    if let Ok(yaml_profiles) = load_ccs_profiles_from_config_yaml() {
+        unique.extend(yaml_profiles.keys().cloned());
+    }
+    if let Ok(json_profiles) = load_ccs_profiles_from_config_json() {
+        unique.extend(json_profiles.keys().cloned());
+    }
+
+    // Also include any *.settings.json files in ~/.ccs (common default path).
+    if let Ok(files) = list_ccs_json_files(&ccs_dir) {
+        for path in files {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if is_ccs_settings_filename(name) {
+                    if let Some(profile) = derive_ccs_profile_name_from_filename(name) {
+                        unique.insert(profile);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut profiles = unique.into_iter().collect::<Vec<_>>();
+    profiles.sort();
+    profiles
+}
+
+/// Find suggestions for a CCS profile name using case-insensitive matching.
+///
+/// Returns profile names from ~/.ccs that match the input case-insensitively,
+/// or contain the input as a substring.
 ///
 /// # Arguments
 ///
-/// * `profile` - The CCS profile name (e.g., "glm" for ~/.ccs/glm.settings.json)
+/// * `input` - The profile name the user tried to use
+///
+/// # Returns
+///
+/// A Vec of suggested profile names. Empty if no matches found.
+pub fn find_ccs_profile_suggestions(input: &str) -> Vec<String> {
+    let available = list_available_ccs_profiles();
+    let input_lower = input.to_lowercase();
+
+    available
+        .into_iter()
+        .filter(|profile| {
+            let profile_lower = profile.to_lowercase();
+            // Exact case-insensitive match
+            profile_lower == input_lower ||
+            // Substring match (user typed part of the name)
+            profile_lower.contains(&input_lower) ||
+            input_lower.contains(&profile_lower)
+        })
+        .collect()
+}
+
+/// Load environment variables from a CCS settings file.
+///
+/// CCS stores profile -> settings file mapping in `~/.ccs/config.json` and/or
+/// `~/.ccs/config.yaml`, and stores environment variables inside the settings file
+/// under the `env` key (values must be strings).
+///
+/// Source (CCS): `dist/utils/config-manager.js` and `dist/types/config.d.ts`.
+///
+/// All key/value pairs found in the env map are imported as temporary process
+/// environment variables for the agent invocation (they are not persisted).
+///
+/// # Arguments
+///
+/// * `profile` - The CCS profile name (e.g., "glm" for a matching `~/.ccs/*.json` file)
 ///
 /// # Returns
 ///
@@ -109,27 +438,20 @@ pub fn global_agents_config_path() -> Option<PathBuf> {
 /// // }
 /// ```
 pub fn load_ccs_env_vars(profile: &str) -> Result<HashMap<String, String>, CcsEnvVarsError> {
-    if profile.is_empty()
-        || !profile
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
-    {
+    if profile.is_empty() {
         return Err(CcsEnvVarsError::InvalidProfile {
             profile: profile.to_string(),
         });
     }
 
-    // Build path to CCS settings file
-    let home = dirs::home_dir().ok_or(CcsEnvVarsError::MissingHomeDir)?;
-    let settings_path = home
-        .join(".ccs")
-        .join(format!("{}.settings.json", profile));
+    let settings_path = resolve_ccs_settings_path(profile)?;
 
     // Read and parse the settings file
-    let content = fs::read_to_string(&settings_path).map_err(|source| CcsEnvVarsError::ReadFile {
-        path: settings_path.clone(),
-        source,
-    })?;
+    let content =
+        fs::read_to_string(&settings_path).map_err(|source| CcsEnvVarsError::ReadFile {
+            path: settings_path.clone(),
+            source,
+        })?;
 
     // Parse JSON
     let json: JsonValue =
@@ -138,30 +460,25 @@ pub fn load_ccs_env_vars(profile: &str) -> Result<HashMap<String, String>, CcsEn
             source,
         })?;
 
-    // Extract env object
-    let env_obj = json
-        .get("env")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| CcsEnvVarsError::MissingEnv {
-            path: settings_path.clone(),
-        })?;
+    let env_obj = find_env_object(&json).ok_or_else(|| CcsEnvVarsError::MissingEnv {
+        path: settings_path.clone(),
+    })?;
 
     // Convert to HashMap<String, String>
     let mut env_vars = HashMap::new();
     for (key, value) in env_obj {
-        if !is_allowed_ccs_env_var(key) {
-            continue;
-        }
-        if !is_valid_env_var_name(key) {
+        if !is_valid_env_var_name_portable(key) {
             return Err(CcsEnvVarsError::InvalidEnvVarName {
                 path: settings_path.clone(),
                 key: key.clone(),
             });
         }
-        let str_value = value.as_str().ok_or_else(|| CcsEnvVarsError::NonStringEnvVarValue {
-            path: settings_path.clone(),
-            key: key.clone(),
-        })?;
+        let str_value = value
+            .as_str()
+            .ok_or_else(|| CcsEnvVarsError::NonStringEnvVarValue {
+                path: settings_path.clone(),
+                key: key.clone(),
+            })?;
         env_vars.insert(key.clone(), str_value.to_string());
     }
 
@@ -232,10 +549,12 @@ impl AgentConfig {
 
         // Add streaming flag when using stream-json output with -p
         // Claude/CCS require --include-partial-messages to stream JSON in -p mode
-        if output && !self.output_flag.is_empty()
+        if output
+            && !self.output_flag.is_empty()
             && self.output_flag.contains("stream-json")
             && !self.print_flag.is_empty()
-            && !self.streaming_flag.is_empty() {
+            && !self.streaming_flag.is_empty()
+        {
             parts.push(self.streaming_flag.clone());
         }
         if yolo && !self.yolo_flag.is_empty() {
@@ -302,9 +621,11 @@ pub struct AgentConfigToml {
     /// Include partial messages flag for streaming with -p (optional, defaults to "--include-partial-messages").
     #[serde(default = "default_streaming_flag")]
     pub streaming_flag: String,
-    /// CCS profile to load env vars from (e.g., "glm" for ~/.ccs/glm.settings.json).
-    /// If set, Ralph reads the CCS settings file and loads a conservative allowlist
-    /// of supported env vars from it (Anthropic/Claude-compatible credentials only).
+    /// CCS profile to load env vars from (e.g., "glm").
+    ///
+    /// Ralph scans `~/.ccs/*.json` to find a matching profile file, then extracts an
+    /// environment-variable map from the JSON. The resulting values are injected into
+    /// the agent process only (they are not persisted).
     #[serde(default)]
     pub ccs_profile: Option<String>,
     /// Environment variables to set when running this agent (optional).
@@ -354,6 +675,61 @@ impl TryFrom<AgentConfigToml> for AgentConfig {
             env_vars: merged_env_vars,
             display_name: toml.display_name,
         })
+    }
+}
+
+#[cfg(test)]
+mod ccs_env_tests {
+    use super::*;
+    use std::fs;
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let prev = env::var_os(key);
+            env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match self.prev.take() {
+                Some(v) => env::set_var(self.key, v),
+                None => env::remove_var(self.key),
+            }
+        }
+    }
+
+    #[test]
+    fn load_ccs_env_vars_uses_config_json_mapping_and_env_key() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        let settings_path = ccs_dir.join("glm.settings.json");
+        fs::write(
+            &settings_path,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://example","ANTHROPIC_AUTH_TOKEN":"token"}}"#,
+        )
+        .unwrap();
+
+        fs::write(
+            ccs_dir.join("config.json"),
+            format!(r#"{{"profiles":{{"glm":"{}"}}}}"#, settings_path.to_string_lossy()),
+        )
+        .unwrap();
+
+        let env_vars = load_ccs_env_vars("glm").unwrap();
+        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://example");
+        assert_eq!(env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "token");
     }
 }
 

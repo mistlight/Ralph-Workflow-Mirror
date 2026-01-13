@@ -6,7 +6,7 @@
 //! 2. Fixes the issues found
 //! 3. Cleans up ISSUES.md (in isolation mode)
 
-use crate::agents::{AgentRole, is_glm_like_agent};
+use crate::agents::{is_glm_like_agent, AgentRole};
 use crate::config::ReviewDepth;
 use crate::guidelines::ReviewGuidelines;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};

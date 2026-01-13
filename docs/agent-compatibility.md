@@ -178,21 +178,16 @@ RALPH_REVIEWER_REVIEWS=0 ralph
 
 ### GLM-Direct - Stream-JSON Workaround
 
-**Status**: ✅ Recommended Alternative
+**Status**: ✅ Usually Not Needed
 
 **Issue with `ccs/glm`**:
-When using `ccs glm -p`, CCS's headless delegation mode intercepts and reformats the output. Instead of passing through raw stream-json, CCS displays:
-- "Delegating to GLM-4.6..." progress messages
-- Summary tables
-- Plain text output
+Older Ralph versions could run `ccs glm -p ...` directly, which can cause CCS to intercept/reformat output (breaking stream-json parsing).
 
-This means Ralph's Claude parser doesn't receive the expected stream-json events (`{"type":"stream_event",...}`).
+**Current behavior**:
+Ralph now bypasses the CCS wrapper for `ccs/<alias>` by loading the profile’s env vars from CCS config/settings and invoking `claude` directly. This preserves Claude CLI flag passthrough and stream-json output for `ccs/glm`.
 
-**Solution - `glm-direct` Agent**:
-Ralph includes a `glm-direct` agent that bypasses the CCS wrapper entirely:
-- Calls Claude CLI directly (`claude -p`)
-- Automatically loads GLM environment variables from CCS settings (`~/.ccs/glm.settings.json`)
-- Gets raw stream-json output that works with Claude parser
+**Optional - `glm-direct` Agent**:
+If you prefer an explicit non-CCS agent (or want `glm` without `ccs/`), you can still configure `glm-direct` to call `claude` directly with `ccs_profile = "glm"`.
 
 **Configuration**:
 ```toml

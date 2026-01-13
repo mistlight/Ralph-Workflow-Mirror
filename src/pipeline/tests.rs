@@ -291,7 +291,9 @@ fn test_glm_reviewer_command_includes_print_flag() {
     registry.set_ccs_aliases(aliases, defaults);
 
     // Get the GLM agent config
-    let glm_config = registry.get("ccs/glm").expect("GLM agent should be available");
+    let glm_config = registry
+        .get("ccs/glm")
+        .expect("GLM agent should be available");
 
     // Build the command as it would be built for reviewer role
     let cmd = glm_config.build_cmd_with_model(true, true, false, None);
@@ -303,19 +305,21 @@ fn test_glm_reviewer_command_includes_print_flag() {
         cmd
     );
 
-    // Verify the command structure is correct: "ccs glm -p ..."
+    // Verify the command structure is correct: "claude -p ..." (not "ccs glm -p ..." anymore)
+    // When claude binary is found, it replaces "ccs glm" with the path to claude
+    let first_word = cmd.split_whitespace().next().unwrap_or("");
     assert!(
-        cmd.starts_with("ccs glm"),
-        "GLM command must start with 'ccs glm'. Command was: {}",
+        first_word.ends_with("claude") || cmd.starts_with("ccs glm"),
+        "GLM command must start with a path ending in 'claude' or with 'ccs glm'. Command was: {}",
         cmd
     );
 
-    // Verify flag ordering: -p must come after the alias name
+    // Verify flag ordering: -p must come after the command name
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if let Some(p_index) = parts.iter().position(|&s| s == "-p") {
         assert!(
-            p_index > 1,
-            "-p flag must come after alias name (ccs glm). Command was: {}",
+            p_index > 0,
+            "-p flag must come after command name. Command was: {}",
             cmd
         );
     } else {

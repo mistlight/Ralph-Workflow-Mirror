@@ -107,7 +107,9 @@ pub(crate) fn run_with_prompt(
             .info(&format!("GLM command details: {}", display_cmd));
         // Verify -p flag is present
         if argv.iter().any(|arg| arg == "-p") {
-            runtime.logger.info("GLM command includes '-p' flag (correct)");
+            runtime
+                .logger
+                .info("GLM command includes '-p' flag (correct)");
         } else {
             runtime.logger.warn("GLM command may be missing '-p' flag");
         }
@@ -491,12 +493,23 @@ pub(crate) fn run_with_fallback(
                             "GLM agent '{}' command configuration:",
                             agent_name
                         ));
-                        runtime.logger.info(&format!("  Base command: {}", agent_config.cmd));
-                        runtime.logger.info(&format!("  Print flag: '{}'", agent_config.print_flag));
-                        runtime.logger.info(&format!("  Output flag: '{}'", agent_config.output_flag));
-                        runtime.logger.info(&format!("  YOLO flag: '{}'", agent_config.yolo_flag));
-                        runtime.logger.info(&format!("  JSON parser: {:?}", agent_config.json_parser));
-                        runtime.logger
+                        runtime
+                            .logger
+                            .info(&format!("  Base command: {}", agent_config.cmd));
+                        runtime
+                            .logger
+                            .info(&format!("  Print flag: '{}'", agent_config.print_flag));
+                        runtime
+                            .logger
+                            .info(&format!("  Output flag: '{}'", agent_config.output_flag));
+                        runtime
+                            .logger
+                            .info(&format!("  YOLO flag: '{}'", agent_config.yolo_flag));
+                        runtime
+                            .logger
+                            .info(&format!("  JSON parser: {:?}", agent_config.json_parser));
+                        runtime
+                            .logger
                             .info(&format!("  Full command: {}", full_cmd_log));
                     }
                     // Validate -p flag is present (warn if missing regardless of print_flag value)
