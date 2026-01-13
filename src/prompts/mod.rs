@@ -18,12 +18,15 @@ mod reviewer;
 mod types;
 
 // Re-export all public items for backward compatibility
-pub(crate) use commit::{prompt_fix, prompt_generate_commit_message};
+pub(crate) use commit::{
+    prompt_fix, prompt_generate_commit_message_with_diff,
+};
 pub(crate) use developer::{prompt_developer_iteration, prompt_plan};
 pub(crate) use reviewer::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines,
-    prompt_incremental_review, prompt_reviewer_review, prompt_reviewer_review_with_guidelines,
-    prompt_security_focused_review, prompt_universal_review,
+    prompt_incremental_review_with_diff, prompt_reviewer_review,
+    prompt_reviewer_review_with_guidelines, prompt_security_focused_review,
+    prompt_universal_review,
 };
 pub(crate) use types::{Action, ContextLevel, Role};
 
@@ -61,7 +64,6 @@ pub(crate) fn prompt_for_agent(
             }
         }
         (_, Action::Fix) => prompt_fix(),
-        (_, Action::GenerateCommitMessage) => prompt_generate_commit_message(),
         // Fallback for Reviewer + Iterate (shouldn't happen but be safe)
         (Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
             iteration.unwrap_or(1),
@@ -107,20 +109,9 @@ mod tests {
             None,
             None,
         );
-        assert!(result.contains("PLAN.md"));
-    }
-
-    #[test]
-    fn test_prompt_for_agent_generate_commit_message() {
-        let result = prompt_for_agent(
-            Role::Reviewer,
-            Action::GenerateCommitMessage,
-            ContextLevel::Normal,
-            None,
-            None,
-            None,
-        );
-        assert!(result.contains("commit-message.txt"));
+        // Plan is now returned as structured output, not written to file
+        assert!(result.contains("PLANNING MODE"));
+        assert!(result.contains("Implementation Steps"));
     }
 
     #[test]
@@ -139,7 +130,7 @@ mod tests {
             prompt_reviewer_review(ContextLevel::Minimal),
             prompt_fix(),
             prompt_plan(),
-            prompt_generate_commit_message(),
+            prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
         ];
 
         for prompt in prompts_to_check {
@@ -268,5 +259,63 @@ mod tests {
             !developer_prompt.contains("NOTES.md"),
             "Developer prompt should not reference NOTES.md in isolation mode"
         );
+    }
+
+    #[test]
+    fn test_all_prompts_isolate_agents_from_git() {
+        // AC3: "AI agent does not know that we have previous committed change"
+        // All prompts should NOT tell agents to run git commands
+        // Git operations are handled by the orchestrator via libgit2
+        let git_command_patterns = [
+            "git diff HEAD",
+            "git status",
+            "git commit",
+            "git add",
+            "git log",
+            "git show",
+            "git reset",
+            "git checkout",
+            "git branch",
+            "Run `git",
+            "execute git",
+        ];
+
+        let prompts_to_check = vec![
+            prompt_developer_iteration(1, 5, ContextLevel::Normal),
+            prompt_developer_iteration(1, 5, ContextLevel::Minimal),
+            prompt_reviewer_review(ContextLevel::Normal),
+            prompt_reviewer_review(ContextLevel::Minimal),
+            prompt_fix(),
+            prompt_plan(),
+            prompt_generate_commit_message_with_diff("diff --git a/a b/b\n"),
+        ];
+
+        for prompt in prompts_to_check {
+            for pattern in git_command_patterns {
+                assert!(
+                    !prompt.contains(pattern),
+                    "Prompt contains git command pattern '{}': {}",
+                    pattern,
+                    &prompt[..prompt.len().min(100)]
+                );
+            }
+        }
+
+        // Verify the orchestrator-specific function for commit message generation
+        // DOES contain the diff content (orchestrator receives diff, not git commands).
+        // The orchestrator uses this function to pass diff to the LLM via stdin.
+        let orchestrator_prompt = prompt_generate_commit_message_with_diff("some diff");
+        assert!(
+            orchestrator_prompt.contains("DIFF:") || orchestrator_prompt.contains("diff"),
+            "Orchestrator prompt should contain the diff content for commit message generation"
+        );
+        // But the prompt should NOT tell the agent to run git commands (orchestrator handles git)
+        for pattern in git_command_patterns {
+            assert!(
+                !orchestrator_prompt.contains(pattern),
+                "Orchestrator prompt contains git command pattern '{}'",
+                pattern
+            );
+        }
     }
 }

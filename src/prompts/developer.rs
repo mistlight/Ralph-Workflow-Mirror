@@ -37,7 +37,9 @@ GUIDELINES:
 
 /// Generate prompt for planning phase.
 ///
-/// Agent does a deep dive on PROMPT.md and creates a detailed PLAN.md.
+/// Agent does a deep dive on PROMPT.md and creates a detailed plan.
+/// The plan content is returned as structured output (captured by JSON parser)
+/// and the orchestrator writes it to .agent/PLAN.md.
 ///
 /// This prompt is designed to be agent-agnostic and follows best practices
 /// from Claude Code's plan mode implementation:
@@ -52,13 +54,11 @@ pub fn prompt_plan() -> String {
     r#"You are in PLANNING MODE. Create a detailed implementation plan.
 
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
-- Creating, modifying, or deleting any files (except .agent/PLAN.md)
+- Creating, modifying, or deleting any files
 - Running any commands that modify system state
-- Making commits or staging changes
 - Installing dependencies or packages
 
-You MAY use read-only operations: reading files, searching code, listing directories,
-running `git status`, `git log`, `git diff`, or similar read-only commands.
+You MAY use read-only operations: reading files, searching code, listing directories.
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 1: UNDERSTANDING
@@ -103,7 +103,7 @@ Validate your plan against the requirements:
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 5: WRITE PLAN
 ═══════════════════════════════════════════════════════════════════════════════
-Create .agent/PLAN.md with this structure:
+OUTPUT your plan with this exact structure:
 
 ## Summary
 One paragraph explaining what will be done and why.
@@ -127,7 +127,7 @@ How to verify acceptance checks are met:
 - Manual verification steps
 - Success criteria
 
-REMEMBER: Do NOT implement anything. Your only output is .agent/PLAN.md."#
+IMPORTANT: Output ONLY the plan content above. Do NOT write to any files."#
         .to_string()
 }
 
@@ -159,7 +159,7 @@ mod tests {
     fn test_prompt_plan() {
         let result = prompt_plan();
         assert!(result.contains("PROMPT.md"));
-        assert!(result.contains("PLAN.md"));
+        // Plan is now returned as structured output, not written to file
         assert!(result.contains("PLANNING MODE"));
         assert!(result.contains("Implementation Steps"));
         assert!(result.contains("Critical Files"));
@@ -175,5 +175,34 @@ mod tests {
         assert!(result.contains("PHASE 3: DESIGN"));
         assert!(result.contains("PHASE 4: REVIEW"));
         assert!(result.contains("PHASE 5: WRITE PLAN"));
+    }
+
+    #[test]
+    fn all_developer_prompts_isolate_agents_from_git() {
+        // Verify developer prompts don't tell agents to run git commands
+        let prompts = vec![
+            prompt_developer_iteration(1, 3, ContextLevel::Minimal),
+            prompt_developer_iteration(2, 3, ContextLevel::Normal),
+            prompt_plan(),
+        ];
+
+        for prompt in prompts {
+            assert!(
+                !prompt.contains("git diff"),
+                "Developer prompt should not tell agent to run git diff"
+            );
+            assert!(
+                !prompt.contains("git status"),
+                "Developer prompt should not tell agent to run git status"
+            );
+            assert!(
+                !prompt.contains("git commit"),
+                "Developer prompt should not tell agent to run git commit"
+            );
+            assert!(
+                !prompt.contains("git add"),
+                "Developer prompt should not tell agent to run git add"
+            );
+        }
     }
 }

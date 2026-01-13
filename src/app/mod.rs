@@ -26,19 +26,17 @@ use crate::cli::{
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::git_helpers::{
-    cleanup_orphaned_marker, get_repo_root, require_git_repo, start_agent_phase,
+    cleanup_orphaned_marker, get_repo_root, require_git_repo, reset_start_commit,
+    save_start_commit, start_agent_phase,
 };
 use crate::guidelines::ReviewGuidelines;
 use crate::language_detector::{detect_stack, ProjectStack};
-use crate::phases::{
-    generate_commit_message, run_commit_phase, run_development_phase, run_review_phase,
-    PhaseContext,
-};
+use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use crate::pipeline::{AgentPhaseGuard, Stats};
 use crate::timer::Timer;
 use crate::utils::{
-    ensure_files, load_checkpoint, reset_context_for_isolation, save_checkpoint, update_status,
-    validate_prompt_md, Logger, PipelineCheckpoint, PipelinePhase,
+    clear_checkpoint, ensure_files, load_checkpoint, reset_context_for_isolation, save_checkpoint,
+    update_status, validate_prompt_md, Logger, PipelineCheckpoint, PipelinePhase,
 };
 use std::env;
 use std::process::Command;
@@ -109,6 +107,23 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
     if args.apply_commit {
         return handle_apply_commit(&logger, &colors);
+    }
+    if args.reset_start_commit {
+        require_git_repo()?;
+        let repo_root = get_repo_root()?;
+        env::set_current_dir(&repo_root)?;
+
+        match reset_start_commit() {
+            Ok(()) => {
+                logger.success("Starting commit reference reset to current HEAD");
+                logger.info(".agent/start_commit has been updated");
+                return Ok(());
+            }
+            Err(e) => {
+                logger.error(&format!("Failed to reset starting commit: {}", e));
+                anyhow::bail!("Failed to reset starting commit");
+            }
+        }
     }
 
     // Validate agent commands exist
@@ -278,6 +293,29 @@ fn run_pipeline(
         reviewer_agent: &reviewer_agent,
         review_guidelines: review_guidelines.as_ref(),
     };
+
+    // Save the starting commit reference for incremental diff generation
+    // This enables reviewers to see changes since pipeline start without git context
+    //
+    // If saving fails (e.g., due to filesystem issues), we log a warning but continue.
+    // This may reduce incremental review quality (diffs may be empty after auto-commits).
+    match save_start_commit() {
+        Ok(()) => {
+            if config.verbosity.is_debug() {
+                logger.info("Saved starting commit for incremental diff generation");
+            }
+        }
+        Err(e) => {
+            logger.warn(&format!(
+                "Failed to save starting commit: {}. \
+                 Incremental diffs may be unavailable as a result.",
+                e
+            ));
+            logger.info(
+                "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
+            );
+        }
+    }
 
     // Run phases
     run_development(&mut ctx, &args, resume_checkpoint.as_ref())?;
@@ -483,13 +521,8 @@ fn run_review_and_fix(
             .info("Skipping review-fix cycles (resuming from a later checkpoint phase)");
     }
 
-    // Generate commit message
-    if should_run_from(PipelinePhase::CommitMessage, resume_checkpoint) {
-        generate_commit_message(ctx)?;
-    } else if run_any_reviewer_phase {
-        ctx.logger
-            .info("Skipping commit message generation (resuming from a later checkpoint phase)");
-    }
+    // Note: The old dedicated commit phase has been removed.
+    // Commits now happen automatically per-iteration during development and per-cycle during review.
 
     Ok(())
 }
@@ -556,7 +589,10 @@ fn run_final_validation(
     Ok(())
 }
 
-/// Finalizes the pipeline: commits changes and prints summary.
+/// Finalizes the pipeline: cleans up and prints summary.
+///
+/// Commits now happen per-iteration during development and per-cycle during review,
+/// so this function only handles cleanup and final summary.
 fn finalize_pipeline(
     agent_phase_guard: &mut AgentPhaseGuard,
     logger: &Logger,
@@ -572,20 +608,17 @@ fn finalize_pipeline(
         logger.warn(&format!("Failed to uninstall Ralph hooks: {}", err));
     }
 
-    // Commit phase
-    logger.header("PHASE 4: Commit Changes", |c| c.green());
-    let commit_result = run_commit_phase(logger, colors)?;
-    if commit_result.commit_created {
-        logger.success(&format!(
-            "Committed with message: {}{}{}",
-            colors.cyan(),
-            commit_result.commit_message,
-            colors.reset()
-        ));
-    }
+    // Note: Individual commits were created per-iteration during development
+    // and per-cycle during review. The final commit phase has been removed.
 
     // Final summary
     print_final_summary(colors, config, timer, stats, logger);
+
+    if config.checkpoint_enabled {
+        if let Err(err) = clear_checkpoint() {
+            logger.warn(&format!("Failed to clear checkpoint: {}", err));
+        }
+    }
 
     agent_phase_guard.disarm();
     Ok(())

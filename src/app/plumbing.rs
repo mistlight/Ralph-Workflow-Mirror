@@ -9,13 +9,12 @@
 use crate::agents::AgentRegistry;
 use crate::colors::Colors;
 use crate::config::Config;
-use crate::git_helpers::{get_repo_root, git_add_all, git_commit, require_git_repo};
-use crate::phases::{generate_commit_message, PhaseContext};
-use crate::pipeline::Stats;
-use crate::timer::Timer;
-use crate::utils::{delete_commit_message_file, read_commit_message_file, Logger};
+use crate::git_helpers::{
+    generate_commit_message_with_llm, get_repo_root, git_add_all, git_commit, git_diff,
+    git_snapshot, require_git_repo,
+};
+use crate::utils::{delete_commit_message_file, read_commit_message_file, write_commit_message_file, Logger};
 use std::env;
-use std::process::Command;
 
 /// Handles the `--show-commit-msg` command.
 ///
@@ -63,15 +62,15 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
     logger.info("Staging all changes...");
     git_add_all()?;
 
-    // Show what we're committing
-    let status_output = Command::new("git").args(["status", "--short"]).output()?;
-    let status_str = std::str::from_utf8(&status_output.stdout).unwrap_or("");
-    if !status_str.is_empty() {
-        println!("{}Changes to commit:{}", colors.bold(), colors.reset());
-        for line in status_str.lines().take(20) {
-            println!("  {}{}{}", colors.dim(), line, colors.reset());
+    // Show what we're committing (using libgit2 via git_snapshot)
+    if let Ok(status) = git_snapshot() {
+        if !status.is_empty() {
+            println!("{}Changes to commit:{}", colors.bold(), colors.reset());
+            for line in status.lines().take(20) {
+                println!("  {}{}{}", colors.dim(), line, colors.reset());
+            }
+            println!();
         }
-        println!();
     }
 
     logger.info(&format!(
@@ -82,8 +81,8 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
     ));
 
     logger.info("Creating commit...");
-    if git_commit(&commit_msg)? {
-        logger.success("Commit created successfully");
+    if let Some(oid) = git_commit(&commit_msg)? {
+        logger.success(&format!("Commit created successfully: {}", oid));
         // Clean up the commit message file
         if let Err(err) = delete_commit_message_file() {
             logger.warn(&format!("Failed to delete commit-message.txt: {}", err));
@@ -97,8 +96,9 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
 
 /// Handles the `--generate-commit-msg` command.
 ///
-/// Runs only the commit message generation phase using the developer agent.
-/// Generates a commit message for currently staged changes.
+/// Generates a commit message for current changes using the LLM directly.
+/// The diff is passed inline to the LLM, which generates a commit message
+/// without any git context or file I/O.
 ///
 /// # Arguments
 ///
@@ -107,7 +107,7 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
 /// * `logger` - Logger for info/warning messages
 /// * `colors` - Color configuration for output
 /// * `developer_agent` - Name of the developer agent to use
-/// * `reviewer_agent` - Name of the reviewer agent (for context)
+/// * `reviewer_agent` - Name of the reviewer agent (not used, kept for API compatibility)
 ///
 /// # Returns
 ///
@@ -118,40 +118,44 @@ pub fn handle_generate_commit_msg(
     logger: &Logger,
     colors: &Colors,
     developer_agent: &str,
-    reviewer_agent: &str,
+    _reviewer_agent: &str,
 ) -> anyhow::Result<()> {
-    let mut timer = Timer::new();
-    let mut stats = Stats::new();
-
     logger.info("Generating commit message...");
 
-    let mut ctx = PhaseContext {
-        config,
-        registry,
-        logger,
-        colors,
-        timer: &mut timer,
-        stats: &mut stats,
-        developer_agent,
-        reviewer_agent,
-        review_guidelines: None,
+    // Get the developer agent command for LLM invocation
+    // Use config override if available (e.g., RALPH_DEVELOPER_CMD env var)
+    let agent_cmd = if let Some(cmd_override) = &config.developer_cmd {
+        cmd_override.clone()
+    } else {
+        registry
+            .developer_cmd(developer_agent)
+            .ok_or_else(|| anyhow::anyhow!("Developer agent '{}' not found", developer_agent))?
     };
-    generate_commit_message(&mut ctx)?;
 
-    // Verify and display the generated message
-    match read_commit_message_file() {
-        Ok(msg) => {
-            logger.success("Commit message generated:");
-            println!();
-            println!("{}{}{}", colors.cyan(), msg, colors.reset());
-            println!();
-            logger.info("Message saved to .agent/commit-message.txt");
-            logger.info("Run 'ralph --apply-commit' to create the commit");
-            Ok(())
-        }
-        Err(e) => {
-            logger.error(&format!("Failed to generate commit message: {}", e));
-            anyhow::bail!("Commit message generation failed");
-        }
+    // Generate the commit message using the new approach (LLM with diff inline)
+    // Note: This generates the message but doesn't create the commit yet
+    // The user must run --apply-commit to create the actual commit
+    let diff = git_diff()?;
+    if diff.trim().is_empty() {
+        logger.warn("No changes detected to generate a commit message for");
+        anyhow::bail!("No changes to commit");
     }
+
+    // Use the internal commit message generation function
+    // This calls the LLM with the diff inline and returns the message
+    let commit_message = generate_commit_message_with_llm(&diff, &agent_cmd)
+        .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {}", e))?;
+
+    logger.success("Commit message generated:");
+    println!();
+    println!("{}{}{}", colors.cyan(), commit_message, colors.reset());
+    println!();
+
+    // Write the message to file for use with --apply-commit
+    write_commit_message_file(&commit_message)?;
+
+    logger.info("Message saved to .agent/commit-message.txt");
+    logger.info("Run 'ralph --apply-commit' to create the commit");
+
+    Ok(())
 }

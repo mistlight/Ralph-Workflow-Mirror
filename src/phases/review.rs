@@ -8,12 +8,13 @@
 
 use crate::agents::AgentRole;
 use crate::config::ReviewDepth;
+use crate::git_helpers::{commit_with_auto_message_result, get_git_diff_from_start, git_snapshot};
 use crate::guidelines::ReviewGuidelines;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines, prompt_for_agent,
-    prompt_incremental_review, prompt_security_focused_review, prompt_universal_review, Action,
-    ContextLevel, Role,
+    prompt_incremental_review_with_diff, prompt_security_focused_review, prompt_universal_review,
+    Action, ContextLevel, Role,
 };
 use crate::review_metrics::ReviewMetrics;
 use crate::utils::{
@@ -22,8 +23,10 @@ use crate::utils::{
 };
 
 use super::context::PhaseContext;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
+use serde_json::Value as JsonValue;
 
 /// Result of the review phase.
 pub struct ReviewResult {
@@ -317,6 +320,11 @@ pub fn run_review_phase(
         ctx.reviewer_agent
     ));
 
+    // Track git snapshots for detecting changes during review
+    let mut prev_snap = git_snapshot()?;
+    // Track how many review cycles were skipped due to diff retrieval failures
+    let mut skipped_cycles = 0;
+
     // Review-Fix iterations
     for j in start_pass..=ctx.config.reviewer_reviews {
         // Save checkpoint at start of each iteration
@@ -367,6 +375,56 @@ pub fn run_review_phase(
         let (review_label, review_prompt) =
             build_review_prompt(ctx, reviewer_context, ctx.review_guidelines);
 
+        // Check if the review prompt is empty (e.g., due to diff retrieval failure)
+        // If so, skip the review and fix passes but still check for git changes
+        if review_prompt.is_empty() {
+            ctx.logger.warn(&format!(
+                "Skipping review cycle {} due to: {}",
+                j, review_label
+            ));
+            skipped_cycles += 1;
+
+            // Even though review/fix are skipped, we still check for external git changes.
+            // This ensures that manual edits or external tool changes are committed,
+            // maintaining the invariant that every iteration with changes gets a commit.
+            // The check here is independent of whether review ran - it's about detecting
+            // any modifications to the working directory since the last snapshot.
+            let snap = git_snapshot()?;
+            if snap != prev_snap {
+                ctx.logger.success("Repository modified (external changes detected)");
+                ctx.stats.changes_detected += 1;
+
+                let agent_cmd = ctx
+                    .config
+                    .developer_cmd
+                    .clone()
+                    .or_else(|| ctx.registry.developer_cmd(ctx.developer_agent));
+                if let Some(agent_cmd) = agent_cmd {
+                    ctx.logger
+                        .info("Creating commit with auto-generated message...");
+                    match commit_with_auto_message_result(&agent_cmd) {
+                        crate::git_helpers::CommitResult::Success(oid) => {
+                            ctx.logger.success(&format!("Commit created successfully: {}", oid));
+                            ctx.stats.commits_created += 1;
+                        }
+                        crate::git_helpers::CommitResult::NoChanges => {
+                            ctx.logger.info("No commit created (no meaningful changes)");
+                        }
+                        crate::git_helpers::CommitResult::Failed(err) => {
+                            ctx.logger
+                                .error(&format!("Failed to create commit: {}", err));
+                            return Err(anyhow::anyhow!(err));
+                        }
+                    }
+                } else {
+                    ctx.logger
+                        .warn("Unable to get developer agent command for commit");
+                }
+            }
+            prev_snap = snap;
+            continue;
+        }
+
         // Log the specific review prompt variant for debugging (when verbose)
         if ctx.config.verbosity.is_debug() {
             ctx.logger.info(&format!(
@@ -378,6 +436,13 @@ pub fn run_review_phase(
                 review_prompt.len()
             ));
         }
+
+        // Capture ISSUES.md modification time before agent runs for later verification
+        let issues_path = Path::new(".agent/ISSUES.md");
+        let issues_mod_time_before = issues_path
+            .exists()
+            .then(|| fs::metadata(issues_path).and_then(|m| m.modified()).ok())
+            .flatten();
 
         let _ = {
             let mut runtime = PipelineRuntime {
@@ -397,6 +462,45 @@ pub fn run_review_phase(
             )
         };
         ctx.stats.reviewer_runs_completed += 1;
+
+        // After reviewer agent completes, check if ISSUES.md was created
+        // or extract from JSON log (similar to PLAN.md extraction)
+        // The orchestrator (not the agent) handles file I/O for production agents
+        // For tests/legacy agents that write ISSUES.md directly, we accept that too
+
+        // Verify ISSUES.md was actually modified by this agent run (not an old file)
+        let issues_modified_this_run = issues_path
+            .exists()
+            .then(|| {
+                fs::metadata(issues_path)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .map(|mod_time| {
+                        issues_mod_time_before
+                            .map(|before| mod_time > before)
+                            .unwrap_or(true) // File didn't exist before, so it's new
+                    })
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+
+        let issues_existed = issues_path.exists();
+        let issues_was_empty = issues_existed
+            .then(|| fs::metadata(issues_path).ok().map(|m| m.len() == 0).unwrap_or(false))
+            .unwrap_or(false);
+
+        // If ISSUES.md doesn't exist or is empty, try extracting from JSON log
+        if !issues_existed || issues_was_empty {
+            ctx.logger.info("ISSUES.md not found or empty, attempting extraction from agent output log...");
+            if let Some(issues_content) = try_extract_issues_from_log(ctx.logger, j)? {
+                // Create .agent directory if needed
+                if let Some(parent) = issues_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::write(issues_path, &issues_content)?;
+                ctx.logger.success("Extracted issues from agent output and created ISSUES.md");
+            }
+        }
 
         // POST-FLIGHT VALIDATION: Check review output after agent completes
         let postflight_result = post_flight_review_check(ctx.logger, j);
@@ -447,8 +551,10 @@ pub fn run_review_phase(
         }
 
         // EARLY EXIT CHECK: If review found no issues, stop
+        // We verify that ISSUES.md was actually modified during this run (not an old file)
+        // to prevent exiting early due to a stale ISSUES.md from a crashed agent.
         if let Ok(metrics) = ReviewMetrics::from_issues_file() {
-            if metrics.no_issues_declared && metrics.total_issues == 0 {
+            if metrics.no_issues_declared && metrics.total_issues == 0 && issues_modified_this_run {
                 ctx.logger.success(&format!(
                     "No issues found after cycle {} - stopping early",
                     j
@@ -497,6 +603,64 @@ pub fn run_review_phase(
         if ctx.config.isolation_mode {
             delete_issues_file_for_isolation(ctx.logger)?;
         }
+
+        // Check for changes and create commit if modified
+        let snap = git_snapshot()?;
+        if snap != prev_snap {
+            ctx.logger.success("Repository modified during fix pass");
+            ctx.stats.changes_detected += 1;
+
+            // Create a commit with auto-generated message
+            // This is done by the orchestrator, not the agent
+            // Note: commit_with_auto_message has fallback behavior if LLM fails
+            let agent_cmd = ctx
+                .config
+                .developer_cmd
+                .clone()
+                .or_else(|| ctx.registry.developer_cmd(ctx.developer_agent));
+            if let Some(agent_cmd) = agent_cmd {
+                ctx.logger
+                    .info("Creating commit with auto-generated message...");
+                match commit_with_auto_message_result(&agent_cmd) {
+                    crate::git_helpers::CommitResult::Success(oid) => {
+                        ctx.logger.success(&format!("Commit created successfully: {}", oid));
+                        ctx.stats.commits_created += 1;
+                    }
+                    crate::git_helpers::CommitResult::NoChanges => {
+                        // No meaningful changes to commit
+                        ctx.logger.info("No commit created (no meaningful changes)");
+                    }
+                    crate::git_helpers::CommitResult::Failed(err) => {
+                        // Actual git operation failed - this is critical
+                        // The commit_with_auto_message function handles LLM failures internally
+                        // So this error indicates a real git problem
+                        ctx.logger
+                            .error(&format!("Failed to create commit (git operation failed): {}", err));
+                        // Don't continue - this is a real error that needs attention
+                        return Err(anyhow::anyhow!(err));
+                    }
+                }
+            } else {
+                ctx.logger
+                    .warn("Unable to get developer agent command for commit");
+            }
+        }
+        prev_snap = snap;
+    }
+
+    // Provide feedback if any review cycles were skipped
+    if skipped_cycles > 0 {
+        let total_cycles = ctx.config.reviewer_reviews;
+        ctx.logger.warn(&format!(
+            "{} of {} review cycle(s) were skipped due to diff retrieval failures.",
+            skipped_cycles, total_cycles
+        ));
+        ctx.logger.info(
+            "This may indicate a git repository issue or that no changes have been made yet.",
+        );
+        if skipped_cycles == total_cycles {
+            ctx.logger.warn("No review cycles were completed. Consider checking your git repository state.");
+        }
     }
 
     Ok(ReviewResult {
@@ -504,64 +668,101 @@ pub fn run_review_phase(
     })
 }
 
-/// Generate commit message using the reviewer agent.
+/// Extract the issues from the reviewer's JSON log file.
 ///
-/// # Arguments
-///
-/// * `ctx` - The phase context containing shared state
-///
-/// # Returns
-///
-/// Returns `Ok(())` on success, or an error if the generation fails.
-pub fn generate_commit_message(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
-    let reviewer_context = ContextLevel::from(ctx.config.reviewer_context);
+/// This is a fallback mechanism for when the reviewer agent couldn't create
+/// ISSUES.md directly (e.g., due to permission denials from certain agents).
+/// It parses the JSON log to find the final result text which contains the issues.
+fn try_extract_issues_from_log(
+    logger: &crate::logger::Logger,
+    cycle: u32,
+) -> anyhow::Result<Option<String>> {
+    let log_dir = Path::new(".agent/logs").join(format!("reviewer_review_{}", cycle));
 
-    // Save checkpoint at start of commit message phase (if enabled)
-    if ctx.config.checkpoint_enabled {
-        let _ = save_checkpoint(&PipelineCheckpoint::new(
-            PipelinePhase::CommitMessage,
-            ctx.config.developer_iters,
-            ctx.config.developer_iters,
-            ctx.config.reviewer_reviews,
-            ctx.config.reviewer_reviews,
-            ctx.developer_agent,
-            ctx.reviewer_agent,
-        ));
+    // Try to find any log file in the review directory
+    let log_entries = match fs::read_dir(&log_dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(None),
+    };
+
+    for entry in log_entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        // Read the log file and parse JSON lines
+        let file = match File::open(&path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        let reader = BufReader::new(file);
+        let mut last_result: Option<String> = None;
+
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+
+            // Skip non-JSON lines
+            if !line.trim().starts_with('{') {
+                continue;
+            }
+
+            // Parse JSON and look for "result" events
+            if let Ok(value) = serde_json::from_str::<JsonValue>(&line) {
+                if let Some(typ) = value.get("type").and_then(|v| v.as_str()) {
+                    if typ == "result" {
+                        if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
+                            last_result = Some(result.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(result) = last_result {
+            // Check if result looks like issues using more robust validation:
+            // 1. Contains issue list markers like "- [", "- [x]", or "- [ ]"
+            // 2. Contains severity headers like "Critical:", "High:", "Medium:", "Low:"
+            // 3. Contains "No issues" or "no issues found" declarations
+            // 4. Has reasonable minimum length
+            let result_clean = result.trim().to_string();
+            let has_checkbox = result_clean.contains("- [")
+                || result_clean.contains("- [x]")
+                || result_clean.contains("- [ ]");
+            let has_severity = result_clean.contains("Critical:")
+                || result_clean.contains("High:")
+                || result_clean.contains("Medium:")
+                || result_clean.contains("Low:");
+            let has_no_issues = result_clean.contains("No issues")
+                || result_clean.contains("no issues")
+                || result_clean.contains("no issues found");
+            let has_min_length = result_clean.len() > 10;
+
+            if (has_checkbox || has_severity || has_no_issues) && has_min_length {
+                logger.info(&format!(
+                    "Extracted issues from agent output log: {}",
+                    path.display()
+                ));
+                return Ok(Some(result_clean));
+            }
+        }
     }
 
-    ctx.logger.subheader("Generating Commit Message");
-    update_status("Generating commit message", ctx.config.isolation_mode)?;
-
-    let commit_msg_prompt = prompt_for_agent(
-        Role::Reviewer,
-        Action::GenerateCommitMessage,
-        reviewer_context,
-        None,
-        None,
-        None, // No guidelines needed for commit message generation
-    );
-
-    let _ = {
-        let mut runtime = PipelineRuntime {
-            timer: ctx.timer,
-            logger: ctx.logger,
-            colors: ctx.colors,
-            config: ctx.config,
-        };
-        run_with_fallback(
-            AgentRole::Reviewer,
-            "generate commit msg",
-            &commit_msg_prompt,
-            ".agent/logs/commit_message",
-            &mut runtime,
-            ctx.registry,
-            ctx.reviewer_agent,
-        )
-    };
-    ctx.stats.reviewer_runs_completed += 1;
-
-    Ok(())
+    Ok(None)
 }
+
+// Note: generate_commit_message function was removed.
+// Commit messages are now generated inline by the orchestrator using
+// commit_with_auto_message() in git_helpers/repo.rs.
 
 /// Check if the reviewer agent should use the universal/simplified prompt.
 ///
@@ -631,9 +832,46 @@ fn build_review_prompt(
         ReviewDepth::Incremental => {
             ctx.logger
                 .info("Using incremental review (changed files only)");
+
+            // Get the diff from the starting commit to pass directly to the reviewer
+            // This keeps agents isolated from git operations
+            let diff = match get_git_diff_from_start() {
+                Ok(d) if !d.trim().is_empty() => d,
+                Ok(_) => {
+                    ctx.logger
+                        .warn("No diff found from starting commit; review will be skipped for this cycle");
+                    // Return empty prompt to signal no review should be done
+                    return (
+                        "review (incremental - skipped)".to_string(),
+                        String::new(),
+                    );
+                }
+                Err(e) => {
+                    // Diff retrieval failed - this is a more serious issue
+                    // Return an error result to signal the caller should skip this cycle
+                    ctx.logger.error(&format!(
+                        "Failed to get diff from starting commit: {}; skipping review cycle",
+                        e
+                    ));
+                    ctx.logger.info(
+                        "This may indicate a git repository issue. The review cycle will be skipped.",
+                    );
+                    // Return empty prompt to signal no review should be done
+                    return (
+                        "review (incremental - error)".to_string(),
+                        String::new(),
+                    );
+                }
+            };
+
+            if ctx.config.verbosity.is_debug() {
+                ctx.logger
+                    .info(&format!("Diff size for review: {} bytes", diff.len()));
+            }
+
             (
                 "review (incremental)".to_string(),
-                prompt_incremental_review(reviewer_context),
+                prompt_incremental_review_with_diff(reviewer_context, &diff),
             )
         }
         ReviewDepth::Comprehensive => {

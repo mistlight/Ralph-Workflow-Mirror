@@ -18,8 +18,10 @@ use clap::Parser;
     1. Create PROMPT.md with your requirements\n\
     2. Run: ralph \"feat: implement my feature\"\n\
     3. Ralph runs developer agent (N iterations)\n\
+       - Each iteration creates a commit automatically if changes detected\n\
     4. Ralph runs reviewer agent (review -> fix -> re-review)\n\
-    5. Changes are committed with the provided message\n\n\
+       - Each fix cycle creates a commit automatically if changes detected\n\
+    5. All commits use auto-generated messages based on actual changes\n\n\
 CONFIGURATION:\n\
     Primary config: ~/.config/ralph-workflow.toml (recommended)\n\
     Environment variables (RALPH_*) override config file settings.\n\
@@ -262,6 +264,13 @@ pub struct Args {
     /// Show the generated commit message and exit
     #[arg(long, help = "Read and display .agent/commit-message.txt")]
     pub show_commit_msg: bool,
+
+    /// Reset the starting commit reference to current HEAD
+    #[arg(
+        long,
+        help = "Reset .agent/start_commit to current HEAD (for incremental diff generation)"
+    )]
+    pub reset_start_commit: bool,
 
     // === Recovery Commands ===
     /// Resume from last checkpoint after an interruption

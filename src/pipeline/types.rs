@@ -11,6 +11,8 @@ pub struct Stats {
     pub developer_runs_completed: u32,
     /// Number of reviewer agent runs completed
     pub reviewer_runs_completed: u32,
+    /// Number of commits created by the orchestrator
+    pub commits_created: u32,
 }
 
 impl Stats {
@@ -20,6 +22,7 @@ impl Stats {
             changes_detected: 0,
             developer_runs_completed: 0,
             reviewer_runs_completed: 0,
+            commits_created: 0,
         }
     }
 }

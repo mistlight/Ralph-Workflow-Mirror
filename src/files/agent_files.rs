@@ -248,6 +248,27 @@ pub fn read_commit_message_file() -> io::Result<String> {
     Ok(trimmed.to_string())
 }
 
+/// Write commit message to file.
+///
+/// Creates the .agent directory if it doesn't exist and writes the
+/// commit message to .agent/commit-message.txt.
+///
+/// # Arguments
+///
+/// * `message` - The commit message to write
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be created or written.
+pub fn write_commit_message_file(message: &str) -> io::Result<()> {
+    let msg_path = Path::new(".agent/commit-message.txt");
+    if let Some(parent) = msg_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(msg_path, message)?;
+    Ok(())
+}
+
 /// Clean up all generated files.
 ///
 /// Removes temporary files that may have been left behind by an interrupted

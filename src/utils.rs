@@ -36,6 +36,7 @@ pub use crate::files::{
     clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
     delete_issues_file_for_isolation, delete_plan_file, ensure_files, file_contains_marker,
     read_commit_message_file, reset_context_for_isolation, update_status, validate_prompt_md,
+    write_commit_message_file,
 };
 pub use crate::files::{PromptValidationResult, GENERATED_FILES};
 
