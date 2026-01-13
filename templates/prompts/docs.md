@@ -43,3 +43,25 @@ Before documenting:
 - Explain how to set up the development environment
 - Document the code structure and architecture
 - Provide guidelines for submitting changes
+
+## Code Quality Specifications
+
+**Documentation Completeness Checklist:**
+- All public functions/types have doc comments
+- Parameters, return values, and errors are documented
+- Examples are provided for non-trivial APIs
+- `# Panics`, `# Errors`, `# Safety` sections where applicable
+- Configuration options and environment variables are documented
+
+**For Rust Documentation:**
+- Use `///` for item docs, `//!` for module-level docs
+- Include code examples that `cargo test --doc` can verify
+- Use `#[doc]` attributes for advanced documentation control
+- Cross-reference related items with intra-doc links (`[`TypeName`]`)
+- Document safety invariants for `unsafe` code
+
+**Testing Documentation:**
+- Document test coverage expectations
+- Explain how to run the test suite
+- Include examples of testing patterns used in the project
+- Document any test utilities or helpers available

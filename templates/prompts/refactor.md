@@ -56,3 +56,19 @@ Write clean, maintainable code:
 - DRY: extract duplicated logic
 - Validate at boundaries; trust internal data
 - Test behavior, not implementation
+
+**Refactoring Best Practices:**
+- Make small, incremental changes - commit after each logical step
+- Run tests after every change to catch behavior regressions immediately
+- Use the compiler/linter as your safety net (let Rust guide you)
+- Preserve error handling behavior - don't swallow errors
+- Keep performance characteristics in mind - some refactorings can be slower
+- Update documentation as you go, not as an afterthought
+
+**Behavior Preservation Verification:**
+- Before starting, ensure comprehensive test coverage of the affected code
+- If tests don't exist, write them first (test-driven refactoring)
+- Use `git diff` to review changes before committing
+- Consider using mutation testing or fuzzing for critical code paths
+- Verify logging and monitoring still work as expected
+- Check that error messages remain helpful and accurate

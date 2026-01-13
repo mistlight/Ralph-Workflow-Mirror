@@ -28,6 +28,17 @@ Before implementing, think through:
 - Are there breaking changes or migration considerations?
 - What dependencies (internal or external) are involved?
 
+**Security & Error Handling:**
+- Are there potential security vulnerabilities (injection, XSS, authentication)?
+- How should errors be handled and communicated to users?
+- What sensitive data is involved and how should it be protected?
+- Are there rate limiting or resource exhaustion concerns?
+
+**Compatibility:**
+- Will this require database migrations or schema changes?
+- Are backward compatibility requirements (APIs, file formats)?
+- Will this require changes to dependent services or clients?
+
 ## Acceptance Checks
 - [Specific, testable condition 1]
 - [Specific, testable condition 2]
@@ -65,3 +76,19 @@ Write clean, maintainable code:
 - DRY: extract duplicated logic
 - Validate at boundaries; trust internal data
 - Test behavior, not implementation
+
+**Feature Implementation Best Practices:**
+- Start with the simplest working solution, optimize only if needed
+- Prefer standard library solutions over external dependencies
+- Add logging at key points (entry/exit of major functions, errors)
+- Use types to make invalid states unrepresentable
+- Document non-obvious design decisions in comments
+- Consider the API ergonomics - is it pleasant to use?
+
+**Security Considerations:**
+- Validate all user input at system boundaries
+- Sanitize data before display (prevent XSS)
+- Use parameterized queries to prevent SQL injection
+- Follow the principle of least privilege for permissions
+- Never log sensitive data (passwords, tokens, PII)
+- Consider rate limiting for public-facing features
