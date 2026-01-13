@@ -89,26 +89,56 @@ pub fn resolve_ccs_agent(
     defaults: &CcsConfig,
 ) -> Option<AgentConfig> {
     // Empty alias means use default CCS
-    let cmd = if alias.is_empty() {
-        CcsAliasConfig {
-            cmd: "ccs".to_string(),
-            ..CcsAliasConfig::default()
-        }
+    let (cmd, display_name) = if alias.is_empty() {
+        (
+            CcsAliasConfig {
+                cmd: "ccs".to_string(),
+                ..CcsAliasConfig::default()
+            },
+            "ccs".to_string(),
+        )
     } else if let Some(cfg) = aliases.get(alias) {
-        cfg.clone()
+        (cfg.clone(), format!("ccs-{}", alias))
     } else {
         // Unknown alias - return None so caller can fall back
         return None;
     };
 
-    Some(build_ccs_agent_config(&cmd, defaults))
+    Some(build_ccs_agent_config(&cmd, defaults, display_name))
 }
 
 /// Build an AgentConfig for a CCS command.
 ///
 /// CCS wraps Claude Code, so it uses Claude's stream-json format
 /// and similar flags.
-fn build_ccs_agent_config(alias: &CcsAliasConfig, defaults: &CcsConfig) -> AgentConfig {
+///
+/// # CRITICAL: JSON Parser Selection
+///
+/// CCS (Claude Code Switcher) MUST ALWAYS use the Claude parser (`json_parser = "claude"`),
+/// regardless of which underlying provider it's switching to (Claude, GLM, Gemini, OpenRouter, etc.).
+///
+/// **Why?** CCS is a wrapper around the `claude` CLI tool. It intercepts API calls but still
+/// uses Claude Code's CLI interface and output format. The `--output-format=stream-json` flag
+/// produces Claude's NDJSON format, which only the Claude parser can parse.
+///
+/// Even when using `ccs glm` or `ccs gemini`, the OUTPUT FORMAT is still Claude's stream-json.
+/// Only the API endpoint/provider changes, not the CLI output format.
+///
+/// **DO NOT** add heuristics like "if cmd contains 'glm', use generic parser" - this will break
+/// parsing entirely. Users must explicitly override via config if they need a different parser.
+///
+/// Example: `ccs glm` → still uses Claude parser
+///          `ccs gemini` → still uses Claude parser
+///          `ccs openrouter` → still uses Claude parser
+///
+/// Display name format: CCS aliases are shown as "ccs-{alias}" (e.g., "ccs-glm", "ccs-gemini")
+/// in output/logs to make it clearer which provider is actually being used, while still using
+/// the Claude parser under the hood.
+fn build_ccs_agent_config(
+    alias: &CcsAliasConfig,
+    defaults: &CcsConfig,
+    display_name: String,
+) -> AgentConfig {
     let output_flag = alias
         .output_flag
         .clone()
@@ -121,16 +151,13 @@ fn build_ccs_agent_config(alias: &CcsAliasConfig, defaults: &CcsConfig) -> Agent
         .verbose_flag
         .clone()
         .unwrap_or_else(|| defaults.verbose_flag.clone());
-    let json_parser = match alias.json_parser.as_deref() {
-        // Explicit per-alias override always wins.
-        Some(p) => p,
-        // If the alias looks like it's targeting a non-Claude provider (e.g. GLM/Gemini),
-        // default to a safer parser to avoid hard failures when the output format differs.
-        None if is_likely_non_claude_ccs_profile(&alias.cmd, alias.model_flag.as_deref()) => {
-            "generic"
-        }
-        None => &defaults.json_parser,
-    };
+
+    // CRITICAL: Always use Claude parser for CCS, regardless of provider.
+    // See function docstring above for detailed explanation.
+    let json_parser = alias
+        .json_parser
+        .as_deref()
+        .unwrap_or(&defaults.json_parser);
     let can_commit = alias.can_commit.unwrap_or(defaults.can_commit);
 
     AgentConfig {
@@ -141,21 +168,8 @@ fn build_ccs_agent_config(alias: &CcsAliasConfig, defaults: &CcsConfig) -> Agent
         can_commit,
         json_parser: JsonParserType::parse(json_parser),
         model_flag: alias.model_flag.clone(),
+        display_name: Some(display_name),
     }
-}
-
-fn is_likely_non_claude_ccs_profile(cmd: &str, model_flag: Option<&str>) -> bool {
-    fn has_hint(s: &str) -> bool {
-        let s = s.to_lowercase();
-        s.contains("glm")
-            || s.contains("zhipuai")
-            || s.contains("zai")
-            || s.contains("qwen")
-            || s.contains("deepseek")
-            || s.contains("gemini")
-    }
-
-    has_hint(cmd) || model_flag.is_some_and(has_hint)
 }
 
 /// CCS alias resolver that can be used by the agent registry.
@@ -317,6 +331,7 @@ mod tests {
                 ..CcsAliasConfig::default()
             },
             &default_ccs(),
+            "ccs-work".to_string(),
         );
         assert_eq!(config.cmd, "ccs work");
         assert_eq!(config.output_flag, "--output-format=stream-json");
@@ -326,6 +341,7 @@ mod tests {
         assert!(config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
         assert!(config.model_flag.is_none());
+        assert_eq!(config.display_name, Some("ccs-work".to_string()));
     }
 
     #[test]
@@ -546,6 +562,7 @@ mod tests {
                 ..CcsAliasConfig::default()
             },
             &default_ccs(),
+            "ccs-gemini".to_string(),
         );
 
         // CCS wraps Claude Code, so it uses Claude's stream-json format
@@ -555,8 +572,9 @@ mod tests {
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(config.can_commit);
 
-        // For non-Claude CCS providers, default to a safer parser unless overridden.
-        assert_eq!(config.json_parser, JsonParserType::Generic);
+        // CCS always outputs stream-json format, so always use Claude parser
+        assert_eq!(config.json_parser, JsonParserType::Claude);
+        assert_eq!(config.display_name, Some("ccs-gemini".to_string()));
     }
 
     #[test]
@@ -612,5 +630,48 @@ mod tests {
         let config = resolver.try_resolve(chain[0]).unwrap();
         assert!(config.can_commit);
         assert!(!config.cmd.is_empty());
+    }
+
+    #[test]
+    fn test_ccs_display_names() {
+        // Test that CCS aliases get proper display names like "ccs-glm", "ccs-gemini"
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "glm".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs glm".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+        aliases.insert(
+            "gemini".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs gemini".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+        aliases.insert(
+            "work".to_string(),
+            CcsAliasConfig {
+                cmd: "ccs work".to_string(),
+                ..CcsAliasConfig::default()
+            },
+        );
+
+        let resolver = CcsAliasResolver::new(aliases, default_ccs());
+
+        // Test display names for various aliases
+        let glm_config = resolver.try_resolve("ccs/glm").unwrap();
+        assert_eq!(glm_config.display_name, Some("ccs-glm".to_string()));
+
+        let gemini_config = resolver.try_resolve("ccs/gemini").unwrap();
+        assert_eq!(gemini_config.display_name, Some("ccs-gemini".to_string()));
+
+        let work_config = resolver.try_resolve("ccs/work").unwrap();
+        assert_eq!(work_config.display_name, Some("ccs-work".to_string()));
+
+        // Default CCS (no alias) should just be "ccs"
+        let default_config = resolver.try_resolve("ccs").unwrap();
+        assert_eq!(default_config.display_name, Some("ccs".to_string()));
     }
 }
