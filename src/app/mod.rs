@@ -38,7 +38,7 @@ use crate::pipeline::{AgentPhaseGuard, Stats};
 use crate::timer::Timer;
 use crate::utils::{
     ensure_files, load_checkpoint, reset_context_for_isolation, save_checkpoint, update_status,
-    Logger, PipelineCheckpoint, PipelinePhase,
+    validate_prompt_md, Logger, PipelineCheckpoint, PipelinePhase,
 };
 use std::env;
 use std::process::Command;
@@ -236,6 +236,20 @@ fn run_pipeline(
         config.commit_msg,
         colors.reset()
     ));
+
+    // Validate PROMPT.md early so we don't run a "review" against an ill-formed prompt.
+    // In non-strict mode this is warning-only for missing sections, but still surfaced
+    // loudly because it impacts the review workflow.
+    let prompt_validation = validate_prompt_md(config.strict_validation);
+    for err in &prompt_validation.errors {
+        logger.error(err);
+    }
+    for warn in &prompt_validation.warnings {
+        logger.warn(warn);
+    }
+    if !prompt_validation.is_valid() {
+        anyhow::bail!("PROMPT.md validation errors");
+    }
 
     // Detect project stack and generate review guidelines
     let (_project_stack, review_guidelines) =
@@ -497,6 +511,14 @@ fn run_final_validation(
         return Ok(());
     }
 
+    let argv = crate::utils::split_command(full_cmd)
+        .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {}", e))?;
+    if argv.is_empty() {
+        ctx.logger
+            .warn("FULL_CHECK_CMD is empty; skipping final validation");
+        return Ok(());
+    }
+
     if ctx.config.checkpoint_enabled {
         let _ = save_checkpoint(&PipelineCheckpoint::new(
             PipelinePhase::FinalValidation,
@@ -511,14 +533,18 @@ fn run_final_validation(
 
     ctx.logger
         .header("PHASE 3: Final Validation", |c| c.yellow());
+    let display_cmd = crate::utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running full check: {}{}{}",
         ctx.colors.dim(),
-        full_cmd,
+        display_cmd,
         ctx.colors.reset()
     ));
 
-    let status = Command::new("sh").args(["-c", full_cmd]).status()?;
+    let (program, args) = argv
+        .split_first()
+        .expect("argv is non-empty after empty check");
+    let status = Command::new(program).args(args).status()?;
 
     if status.success() {
         ctx.logger.success("Full check passed");

@@ -444,6 +444,7 @@ pub(crate) fn run_with_fallback(
                         result.exit_code,
                         &result.stderr,
                         Some(agent_name),
+                        model_flag.as_deref(),
                     );
 
                     runtime.logger.warn(&format!(
