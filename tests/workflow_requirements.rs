@@ -905,7 +905,7 @@ fn ralph_review_multiple_passes() {
     fs::write(
         &script_path,
         format!(
-            r#"#!/bin/sh
+            r##"#!/bin/sh
 mkdir -p .agent
 # Increment review counter
 if [ -f "{counter}" ]; then
@@ -916,10 +916,17 @@ else
 fi
 echo $count > "{counter}"
 
-# Create commit message
-echo "feat: review pass $count" > .agent/commit-message.txt
+# On odd calls (review phases): create ISSUES.md with issues
+# On even calls (fix phases): just run
+if [ $((count % 2)) -ne 0 ]; then
+    echo "# Issues" > .agent/ISSUES.md
+    echo "" >> .agent/ISSUES.md
+    echo "Critical:" >> .agent/ISSUES.md
+    echo "- [ ] Issue found" >> .agent/ISSUES.md
+fi
+
 exit 0
-"#,
+"##,
             counter = counter_path.display()
         ),
     )
@@ -1573,7 +1580,7 @@ fn ralph_reviewer_reviews_one_runs_single_cycle() {
     fs::write(
         &script_path,
         format!(
-            r#"#!/bin/sh
+            r##"#!/bin/sh
 mkdir -p .agent
 # Increment review counter
 if [ -f "{counter}" ]; then
@@ -1584,10 +1591,17 @@ else
 fi
 echo $count > "{counter}"
 
-# Create commit message
-echo "feat: cycle $count" > .agent/commit-message.txt
+# On odd calls (review phases): create ISSUES.md with issues
+# On even calls (fix phases): just run
+if [ $((count % 2)) -ne 0 ]; then
+    echo "# Issues" > .agent/ISSUES.md
+    echo "" >> .agent/ISSUES.md
+    echo "Critical:" >> .agent/ISSUES.md
+    echo "- [ ] Issue found" >> .agent/ISSUES.md
+fi
+
 exit 0
-"#,
+"##,
             counter = counter_path.display()
         ),
     )

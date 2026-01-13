@@ -8,6 +8,7 @@
 //! 4. Optionally runs fast checks
 
 use crate::agents::AgentRole;
+use crate::files::extract_plan;
 use crate::git_helpers::{commit_with_auto_message_result, git_snapshot};
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
@@ -15,9 +16,7 @@ use crate::utils::{
     delete_plan_file, print_progress, save_checkpoint, update_status, PipelineCheckpoint,
     PipelinePhase,
 };
-use serde_json::Value as JsonValue;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -196,101 +195,10 @@ pub fn run_development_phase(
     Ok(DevelopmentResult { had_errors })
 }
 
-/// Extract the plan from the agent's JSON log file.
-///
-/// This is a fallback mechanism for when the agent couldn't create PLAN.md directly
-/// (e.g., due to permission denials from GLM). It parses the JSON log to find
-/// the final result text which contains the plan.
-fn try_extract_plan_from_log(
-    logger: &crate::utils::Logger,
-    iteration: u32,
-    _developer_agent: &str,
-) -> anyhow::Result<Option<String>> {
-    // Note: developer_agent is accepted for future use but currently unused
-    // The log directory structure uses the iteration number, not the agent name
-    let log_dir = Path::new(".agent/logs").join(format!("planning_{}", iteration));
-
-    // Try to find any log file in the planning directory
-    let log_entries = match fs::read_dir(&log_dir) {
-        Ok(entries) => entries,
-        Err(_) => return Ok(None),
-    };
-
-    for entry in log_entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        // Read the log file and parse JSON lines
-        let file = match File::open(&path) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
-
-        let reader = BufReader::new(file);
-        let mut last_result: Option<String> = None;
-
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
-
-            // Skip non-JSON lines
-            if !line.trim().starts_with('{') {
-                continue;
-            }
-
-            // Parse JSON and look for "result" events
-            if let Ok(value) = serde_json::from_str::<JsonValue>(&line) {
-                if let Some(typ) = value.get("type").and_then(|v| v.as_str()) {
-                    if typ == "result" {
-                        if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
-                            last_result = Some(result.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(result) = last_result {
-            // Check if result looks like a plan using more robust validation:
-            // 1. Contains markdown headers (lines starting with #)
-            // 2. Has reasonable length (> 50 chars minimum for a meaningful plan)
-            // 3. Contains plan-like structure indicators (steps, tasks, phases, etc.)
-            let result_clean = result.trim().to_string();
-            let has_header = result_clean.lines().any(|line| line.trim().starts_with('#'));
-            let has_min_length = result_clean.len() > 50;
-            let has_structure = result_clean.contains("step")
-                || result_clean.contains("task")
-                || result_clean.contains("phase")
-                || result_clean.contains("implement")
-                || result_clean.contains("create")
-                || result_clean.contains("add");
-
-            if has_header && has_min_length && has_structure {
-                logger.info(&format!(
-                    "Extracted plan from agent output log: {}",
-                    path.display()
-                ));
-                return Ok(Some(result_clean));
-            }
-        }
-    }
-
-    Ok(None)
-}
-
 /// Run the planning step to create PLAN.md.
 ///
-/// The agent returns structured plan content (captured by JSON parser),
-/// and the orchestrator writes it to .agent/PLAN.md.
+/// The orchestrator ALWAYS extracts and writes PLAN.md from agent JSON output.
+/// Agent file writes are ignored - the orchestrator is the sole writer.
 fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
     // Save checkpoint at start of planning phase (if enabled)
     if ctx.config.checkpoint_enabled {
@@ -318,7 +226,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
     );
 
     let log_dir = format!(".agent/logs/planning_{}", iteration);
-    let exit_code = {
+    let _exit_code = {
         let mut runtime = PipelineRuntime {
             timer: ctx.timer,
             logger: ctx.logger,
@@ -336,102 +244,94 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         )
     }?;
 
-    // After agent completes, check if PLAN.md was created or extract from JSON log
-    // The orchestrator (not the agent) handles file I/O for production agents
-    // For tests/legacy agents that write PLAN.md directly, we accept that too
+    // ORCHESTRATOR-CONTROLLED FILE I/O:
+    // Prefer extraction from JSON log (orchestrator write), but fall back to
+    // agent-written file if extraction fails (legacy/test compatibility).
     let plan_path = Path::new(".agent/PLAN.md");
-    let plan_exists = plan_path
-        .exists()
-        .then(|| fs::read_to_string(plan_path).ok())
-        .flatten()
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false);
+    let log_dir_path = Path::new(&log_dir);
 
-    if !plan_exists {
-        // Try to extract plan from JSON log (for production agents)
-        if let Some(plan_content) = try_extract_plan_from_log(ctx.logger, iteration, ctx.developer_agent)?
-        {
-            if let Some(parent) = plan_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(plan_path, &plan_content)?;
-            ctx.logger.success("Extracted plan from agent output and created PLAN.md");
-        } else if exit_code == 0 {
-            // Agent succeeded but we couldn't extract a plan and no PLAN.md exists
-            anyhow::bail!(
-                "Planning agent completed successfully but no plan was found in output"
-            );
+    // Ensure .agent directory exists
+    if let Some(parent) = plan_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let extraction = extract_plan(log_dir_path)?;
+
+    if let Some(content) = extraction.raw_content {
+        // Extraction succeeded - orchestrator writes the file
+        fs::write(plan_path, &content)?;
+
+        if extraction.is_valid {
+            ctx.logger.success("Plan extracted from agent output");
+        } else {
+            ctx.logger.warn(&format!(
+                "Plan written but validation failed: {}",
+                extraction.validation_warning.unwrap_or_default()
+            ));
         }
     } else {
-        ctx.logger.success("PLAN.md created by agent");
-    }
-    // If exit_code != 0, the error will be propagated by the caller
-
-    Ok(())
-}
-
-/// Verify that PLAN.md exists and is non-empty.
-///
-/// With the new architecture, the orchestrator writes PLAN.md after extracting
-/// the plan content from the agent's JSON output. If PLAN.md is missing,
-/// we attempt to extract it from the log as a fallback.
-/// If resuming and plan is still missing, re-run planning.
-fn verify_plan_exists(
-    ctx: &mut PhaseContext<'_>,
-    iteration: u32,
-    resuming_into_development: bool,
-) -> anyhow::Result<bool> {
-    let plan_path = std::path::Path::new(".agent/PLAN.md");
-
-    let mut plan_ok = plan_path
-        .exists()
-        .then(|| fs::read_to_string(plan_path).ok())
-        .flatten()
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false);
-
-    // Fallback: try to extract plan from agent's JSON log output
-    // This handles edge cases where the orchestrator failed to write the file
-    if !plan_ok {
-        ctx.logger
-            .info("PLAN.md not found; attempting to extract from agent output log...");
-        if let Ok(Some(extracted_plan)) =
-            try_extract_plan_from_log(ctx.logger, iteration, ctx.developer_agent)
-        {
-            // Ensure .agent directory exists
-            if let Some(parent) = plan_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(plan_path, &extracted_plan)?;
-            ctx.logger.success("Extracted plan and created PLAN.md");
-            plan_ok = true;
-        }
-    }
-
-    if !plan_ok && resuming_into_development {
-        ctx.logger
-            .warn("Missing .agent/PLAN.md; rerunning plan generation to recover");
-        run_planning_step(ctx, iteration)?;
-
-        // Check again after rerunning
-        plan_ok = plan_path
+        // Extraction failed - check if agent wrote the file directly (legacy fallback)
+        let agent_wrote_file = plan_path
             .exists()
             .then(|| fs::read_to_string(plan_path).ok())
             .flatten()
             .map(|s| !s.trim().is_empty())
             .unwrap_or(false);
 
-        // Try extraction one more time after rerun
-        if !plan_ok {
-            if let Ok(Some(extracted_plan)) =
-                try_extract_plan_from_log(ctx.logger, iteration, ctx.developer_agent)
-            {
-                fs::write(plan_path, &extracted_plan)?;
-                ctx.logger
-                    .success("Extracted plan from second attempt and created PLAN.md");
-                plan_ok = true;
-            }
+        if agent_wrote_file {
+            ctx.logger.info("Using agent-written PLAN.md (legacy mode)");
+        } else {
+            // No content from extraction or agent - write placeholder and fail
+            // The placeholder serves as a recovery mechanism (file exists for debugging)
+            // but the pipeline should still fail because we can't proceed without a plan
+            let placeholder = "# Plan\n\nAgent produced no extractable plan content.\n";
+            fs::write(plan_path, placeholder)?;
+            ctx.logger
+                .error("No plan content found in agent output - wrote placeholder");
+            anyhow::bail!(
+                "Planning agent completed successfully but no plan was found in output"
+            );
         }
+    }
+
+    Ok(())
+}
+
+/// Verify that PLAN.md exists and is non-empty.
+///
+/// With orchestrator-controlled file I/O, run_planning_step always writes
+/// PLAN.md (even if just a placeholder). This function checks if the file
+/// exists and has meaningful content. If resuming and plan is missing,
+/// re-run planning.
+fn verify_plan_exists(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+    resuming_into_development: bool,
+) -> anyhow::Result<bool> {
+    let plan_path = Path::new(".agent/PLAN.md");
+
+    let plan_ok = plan_path
+        .exists()
+        .then(|| fs::read_to_string(plan_path).ok())
+        .flatten()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+
+    // If resuming and plan is missing, re-run planning to recover
+    if !plan_ok && resuming_into_development {
+        ctx.logger
+            .warn("Missing .agent/PLAN.md; rerunning plan generation to recover");
+        run_planning_step(ctx, iteration)?;
+
+        // Check again after rerunning - orchestrator guarantees file exists
+        let plan_ok = plan_path
+            .exists()
+            .then(|| fs::read_to_string(plan_path).ok())
+            .flatten()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+
+        return Ok(plan_ok);
     }
 
     Ok(plan_ok)
