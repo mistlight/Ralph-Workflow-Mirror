@@ -8,7 +8,7 @@
 //! 4. Optionally runs fast checks
 
 use crate::agents::AgentRole;
-use crate::files::extract_plan;
+use crate::files::{extract_plan, extract_plan_from_logs_text};
 use crate::git_helpers::{commit_with_auto_message_result, git_snapshot};
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
@@ -262,7 +262,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         fs::write(plan_path, &content)?;
 
         if extraction.is_valid {
-            ctx.logger.success("Plan extracted from agent output");
+            ctx.logger.success("Plan extracted from agent output (JSON)");
         } else {
             ctx.logger.warn(&format!(
                 "Plan written but validation failed: {}",
@@ -270,27 +270,37 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
             ));
         }
     } else {
-        // Extraction failed - check if agent wrote the file directly (legacy fallback)
-        let agent_wrote_file = plan_path
-            .exists()
-            .then(|| fs::read_to_string(plan_path).ok())
-            .flatten()
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+        // JSON extraction failed - try text-based fallback
+        ctx.logger
+            .info("No JSON result event found, trying text-based extraction...");
 
-        if agent_wrote_file {
-            ctx.logger.info("Using agent-written PLAN.md (legacy mode)");
-        } else {
-            // No content from extraction or agent - write placeholder and fail
-            // The placeholder serves as a recovery mechanism (file exists for debugging)
-            // but the pipeline should still fail because we can't proceed without a plan
-            let placeholder = "# Plan\n\nAgent produced no extractable plan content.\n";
-            fs::write(plan_path, placeholder)?;
+        if let Some(text_plan) = extract_plan_from_logs_text(log_dir_path)? {
+            fs::write(plan_path, &text_plan)?;
             ctx.logger
-                .error("No plan content found in agent output - wrote placeholder");
-            anyhow::bail!(
-                "Planning agent completed successfully but no plan was found in output"
-            );
+                .success("Plan extracted from agent output (text fallback)");
+        } else {
+            // Text extraction also failed - check if agent wrote the file directly (legacy fallback)
+            let agent_wrote_file = plan_path
+                .exists()
+                .then(|| fs::read_to_string(plan_path).ok())
+                .flatten()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
+
+            if agent_wrote_file {
+                ctx.logger.info("Using agent-written PLAN.md (legacy mode)");
+            } else {
+                // No content from any source - write placeholder and fail
+                // The placeholder serves as a recovery mechanism (file exists for debugging)
+                // but the pipeline should still fail because we can't proceed without a plan
+                let placeholder = "# Plan\n\nAgent produced no extractable plan content.\n";
+                fs::write(plan_path, placeholder)?;
+                ctx.logger
+                    .error("No plan content found in agent output - wrote placeholder");
+                anyhow::bail!(
+                    "Planning agent completed successfully but no plan was found in output"
+                );
+            }
         }
     }
 
