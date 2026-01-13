@@ -218,10 +218,7 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
 
     // Strategy 2: Treat log_path as a prefix and search parent directory
     let parent = log_path.parent().unwrap_or(Path::new("."));
-    let prefix = log_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let prefix = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     if prefix.is_empty() {
         return Ok(None);
@@ -348,10 +345,7 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
 
     // Strategy 2: Treat log_path as a prefix and search parent directory
     let parent = log_path.parent().unwrap_or(Path::new("."));
-    let prefix = log_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let prefix = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     if prefix.is_empty() {
         return Ok(None);
@@ -388,7 +382,9 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
 fn validate_plan_content(content: &str) -> (bool, Option<String>) {
     let content_clean = content.trim();
 
-    let has_header = content_clean.lines().any(|line| line.trim().starts_with('#'));
+    let has_header = content_clean
+        .lines()
+        .any(|line| line.trim().starts_with('#'));
     let has_min_length = content_clean.len() > 50;
     let has_structure = content_clean.contains("step")
         || content_clean.contains("task")
@@ -599,7 +595,8 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let log_dir = temp.path().join("reviewer_1");
 
-        let json_log = r##"{"type": "result", "result": "# Issues\n\nCritical:\n- [ ] Fix security bug"}"##;
+        let json_log =
+            r##"{"type": "result", "result": "# Issues\n\nCritical:\n- [ ] Fix security bug"}"##;
         create_log_file(&log_dir, "output.log", json_log);
 
         let result = extract_issues(&log_dir).unwrap();
@@ -710,7 +707,8 @@ mod tests {
         let log_dir = temp.path().join("planning_1");
         fs::create_dir(&log_dir).unwrap();
 
-        let json_log = r##"{"type": "result", "result": "# Plan\n\n## Summary\nTest from directory"}"##;
+        let json_log =
+            r##"{"type": "result", "result": "# Plan\n\n## Summary\nTest from directory"}"##;
         fs::write(log_dir.join("output.log"), json_log).unwrap();
 
         // Should work with actual directory (backwards compatible)
