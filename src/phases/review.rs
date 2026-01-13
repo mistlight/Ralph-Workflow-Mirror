@@ -8,6 +8,7 @@
 
 use crate::agents::{is_glm_like_agent, AgentRole};
 use crate::config::ReviewDepth;
+use crate::files::extract_issues;
 use crate::git_helpers::{commit_with_auto_message_result, get_git_diff_from_start, git_snapshot};
 use crate::guidelines::ReviewGuidelines;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
@@ -23,10 +24,8 @@ use crate::utils::{
 };
 
 use super::context::PhaseContext;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::fs;
 use std::path::Path;
-use serde_json::Value as JsonValue;
 
 /// Result of the review phase.
 pub struct ReviewResult {
@@ -444,12 +443,8 @@ pub fn run_review_phase(
             ));
         }
 
-        // Capture ISSUES.md modification time before agent runs for later verification
         let issues_path = Path::new(".agent/ISSUES.md");
-        let issues_mod_time_before = issues_path
-            .exists()
-            .then(|| fs::metadata(issues_path).and_then(|m| m.modified()).ok())
-            .flatten();
+        let log_dir = format!(".agent/logs/reviewer_review_{}", j);
 
         let _ = {
             let mut runtime = PipelineRuntime {
@@ -462,7 +457,7 @@ pub fn run_review_phase(
                 AgentRole::Reviewer,
                 &format!("{} #{}", review_label, j),
                 &review_prompt,
-                &format!(".agent/logs/reviewer_review_{}", j),
+                &log_dir,
                 &mut runtime,
                 ctx.registry,
                 ctx.reviewer_agent,
@@ -470,42 +465,46 @@ pub fn run_review_phase(
         };
         ctx.stats.reviewer_runs_completed += 1;
 
-        // After reviewer agent completes, check if ISSUES.md was created
-        // or extract from JSON log (similar to PLAN.md extraction)
-        // The orchestrator (not the agent) handles file I/O for production agents
-        // For tests/legacy agents that write ISSUES.md directly, we accept that too
+        // ORCHESTRATOR-CONTROLLED FILE I/O:
+        // Prefer extraction from JSON log (orchestrator write), but fall back to
+        // agent-written file if extraction fails (legacy/test compatibility).
 
-        // Verify ISSUES.md was actually modified by this agent run (not an old file)
-        let issues_modified_this_run = issues_path
-            .exists()
-            .then(|| {
-                fs::metadata(issues_path)
-                    .and_then(|m| m.modified())
-                    .ok()
-                    .map(|mod_time| {
-                        issues_mod_time_before
-                            .map(|before| mod_time > before)
-                            .unwrap_or(true) // File didn't exist before, so it's new
-                    })
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false);
+        // Ensure .agent directory exists
+        if let Some(parent) = issues_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
 
-        let issues_existed = issues_path.exists();
-        let issues_was_empty = issues_existed
-            .then(|| fs::metadata(issues_path).ok().map(|m| m.len() == 0).unwrap_or(false))
-            .unwrap_or(false);
+        let extraction = extract_issues(Path::new(&log_dir))?;
 
-        // If ISSUES.md doesn't exist or is empty, try extracting from JSON log
-        if !issues_existed || issues_was_empty {
-            ctx.logger.info("ISSUES.md not found or empty, attempting extraction from agent output log...");
-            if let Some(issues_content) = try_extract_issues_from_log(ctx.logger, j)? {
-                // Create .agent directory if needed
-                if let Some(parent) = issues_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::write(issues_path, &issues_content)?;
-                ctx.logger.success("Extracted issues from agent output and created ISSUES.md");
+        if let Some(content) = &extraction.raw_content {
+            // Extraction succeeded - orchestrator writes the file
+            fs::write(issues_path, content)?;
+
+            if extraction.is_valid {
+                ctx.logger.success("Issues extracted from agent output");
+            } else {
+                ctx.logger.warn(&format!(
+                    "Issues written but validation failed: {}",
+                    extraction.validation_warning.clone().unwrap_or_default()
+                ));
+            }
+        } else {
+            // Extraction failed - check if agent wrote the file directly (legacy fallback)
+            let agent_wrote_file = issues_path
+                .exists()
+                .then(|| fs::read_to_string(issues_path).ok())
+                .flatten()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
+
+            if agent_wrote_file {
+                ctx.logger.info("Using agent-written ISSUES.md (legacy mode)");
+            } else {
+                // No content from extraction or agent - write "no issues" marker
+                let no_issues_marker = "# Issues\n\nNo issues identified by reviewer.\n";
+                fs::write(issues_path, no_issues_marker)?;
+                ctx.logger
+                    .info("No issues content found in agent output - assuming no issues");
             }
         }
 
@@ -558,10 +557,9 @@ pub fn run_review_phase(
         }
 
         // EARLY EXIT CHECK: If review found no issues, stop
-        // We verify that ISSUES.md was actually modified during this run (not an old file)
-        // to prevent exiting early due to a stale ISSUES.md from a crashed agent.
+        // Orchestrator always writes ISSUES.md, so we check its content
         if let Ok(metrics) = ReviewMetrics::from_issues_file() {
-            if metrics.no_issues_declared && metrics.total_issues == 0 && issues_modified_this_run {
+            if metrics.no_issues_declared && metrics.total_issues == 0 {
                 ctx.logger.success(&format!(
                     "No issues found after cycle {} - stopping early",
                     j
@@ -675,97 +673,9 @@ pub fn run_review_phase(
     })
 }
 
-/// Extract the issues from the reviewer's JSON log file.
-///
-/// This is a fallback mechanism for when the reviewer agent couldn't create
-/// ISSUES.md directly (e.g., due to permission denials from certain agents).
-/// It parses the JSON log to find the final result text which contains the issues.
-fn try_extract_issues_from_log(
-    logger: &crate::logger::Logger,
-    cycle: u32,
-) -> anyhow::Result<Option<String>> {
-    let log_dir = Path::new(".agent/logs").join(format!("reviewer_review_{}", cycle));
-
-    // Try to find any log file in the review directory
-    let log_entries = match fs::read_dir(&log_dir) {
-        Ok(entries) => entries,
-        Err(_) => return Ok(None),
-    };
-
-    for entry in log_entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        // Read the log file and parse JSON lines
-        let file = match File::open(&path) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
-
-        let reader = BufReader::new(file);
-        let mut last_result: Option<String> = None;
-
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
-
-            // Skip non-JSON lines
-            if !line.trim().starts_with('{') {
-                continue;
-            }
-
-            // Parse JSON and look for "result" events
-            if let Ok(value) = serde_json::from_str::<JsonValue>(&line) {
-                if let Some(typ) = value.get("type").and_then(|v| v.as_str()) {
-                    if typ == "result" {
-                        if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
-                            last_result = Some(result.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(result) = last_result {
-            // Check if result looks like issues using more robust validation:
-            // 1. Contains issue list markers like "- [", "- [x]", or "- [ ]"
-            // 2. Contains severity headers like "Critical:", "High:", "Medium:", "Low:"
-            // 3. Contains "No issues" or "no issues found" declarations
-            // 4. Has reasonable minimum length
-            let result_clean = result.trim().to_string();
-            let has_checkbox = result_clean.contains("- [")
-                || result_clean.contains("- [x]")
-                || result_clean.contains("- [ ]");
-            let has_severity = result_clean.contains("Critical:")
-                || result_clean.contains("High:")
-                || result_clean.contains("Medium:")
-                || result_clean.contains("Low:");
-            let has_no_issues = result_clean.contains("No issues")
-                || result_clean.contains("no issues")
-                || result_clean.contains("no issues found");
-            let has_min_length = result_clean.len() > 10;
-
-            if (has_checkbox || has_severity || has_no_issues) && has_min_length {
-                logger.info(&format!(
-                    "Extracted issues from agent output log: {}",
-                    path.display()
-                ));
-                return Ok(Some(result_clean));
-            }
-        }
-    }
-
-    Ok(None)
-}
+// Note: try_extract_issues_from_log function was removed.
+// Issues extraction is now handled by the centralized result_extraction module.
+// The orchestrator always writes ISSUES.md using extract_issues().
 
 // Note: generate_commit_message function was removed.
 // Commit messages are now generated inline by the orchestrator using
