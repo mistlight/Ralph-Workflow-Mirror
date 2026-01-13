@@ -100,10 +100,11 @@ fn test_format_tool_input_handles_nested_objects() {
 
 #[test]
 fn test_format_tool_input_redacts_sensitive_keys() {
+    let fake_key = format!("sk-{}", "a".repeat(24));
     let input = serde_json::json!({
-        "api_key": "sk-abcdefghijklmnopqrstuvwxyz123456",
-        "access_token": "sk-abcdefghijklmnopqrstuvwxyz123456",
-        "Authorization": "Bearer sk-abcdefghijklmnopqrstuvwxyz123456",
+        "api_key": fake_key,
+        "access_token": format!("{}{}", "sk-", "b".repeat(24)),
+        "Authorization": format!("Bearer {}", format!("{}{}", "sk-", "c".repeat(24))),
         "file_path": "/safe/path.rs"
     });
     let result = format_tool_input(&input);
@@ -116,8 +117,9 @@ fn test_format_tool_input_redacts_sensitive_keys() {
 
 #[test]
 fn test_format_tool_input_redacts_secret_like_string_values() {
+    let fake_key = format!("{}{}", "sk-", "d".repeat(24));
     let input = serde_json::json!({
-        "query": "please use sk-abcdefghijklmnopqrstuvwxyz123456 for this"
+        "query": format!("please use {} for this", fake_key)
     });
     let result = format_tool_input(&input);
     assert!(result.contains("query=<redacted>"));

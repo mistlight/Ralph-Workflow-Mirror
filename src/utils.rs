@@ -75,7 +75,7 @@ pub(crate) fn split_command(cmd: &str) -> io::Result<Vec<String>> {
     })
 }
 
-static SECRET_LIKE_RE: Lazy<Regex> = Lazy::new(|| {
+static SECRET_LIKE_RE: Lazy<Option<Regex>> = Lazy::new(|| {
     Regex::new(
         r"(?ix)
         \b(
@@ -87,7 +87,7 @@ static SECRET_LIKE_RE: Lazy<Regex> = Lazy::new(|| {
         )\b
         ",
     )
-    .expect("valid redaction regex")
+    .ok()
 });
 
 fn is_sensitive_key(key: &str) -> bool {
@@ -123,7 +123,10 @@ fn redact_arg_value(key: &str, value: &str) -> String {
     if is_sensitive_key(key) {
         return "<redacted>".to_string();
     }
-    SECRET_LIKE_RE.replace_all(value, "<redacted>").to_string()
+    match SECRET_LIKE_RE.as_ref() {
+        Some(re) => re.replace_all(value, "<redacted>").to_string(),
+        None => value.to_string(),
+    }
 }
 
 fn shell_quote_for_log(arg: &str) -> String {
@@ -176,7 +179,10 @@ pub(crate) fn format_argv_for_log(argv: &[String]) -> String {
             continue;
         }
 
-        let redacted = SECRET_LIKE_RE.replace_all(arg, "<redacted>").to_string();
+        let redacted = match SECRET_LIKE_RE.as_ref() {
+            Some(re) => re.replace_all(arg, "<redacted>").to_string(),
+            None => arg.to_string(),
+        };
         out.push(shell_quote_for_log(&redacted));
     }
 

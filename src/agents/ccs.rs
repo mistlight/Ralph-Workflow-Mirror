@@ -22,8 +22,8 @@
 //! # If your CCS version doesn't support these Claude CLI flags, set them to "".
 //! output_flag = "--output-format=stream-json"
 //! verbose_flag = "--verbose"
-//! # YOLO mode is enabled by default for unattended automation.
-//! # Set to "" to explicitly disable (interactive / manual approval workflows).
+//! # YOLO (autonomous) mode: enabled by default (skip permission/confirmation prompts).
+//! # Set to "" to disable and require confirmations.
 //! yolo_flag = "--dangerously-skip-permissions"
 //! json_parser = "claude"
 //!
@@ -189,6 +189,7 @@ fn build_ccs_agent_config(
         model_flag: alias.model_flag.clone(),
         print_flag, // CCS requires -p for non-interactive mode (from defaults or alias override)
         streaming_flag, // Required for JSON streaming when using -p
+        env_vars: std::collections::HashMap::new(), // CCS doesn't use env_vars directly
         display_name: Some(display_name),
     }
 }
@@ -363,7 +364,6 @@ mod tests {
         );
         assert_eq!(config.cmd, "ccs work");
         assert_eq!(config.output_flag, "--output-format=stream-json");
-        // YOLO mode enabled by default for unattended automation
         assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(config.can_commit);
@@ -597,7 +597,6 @@ mod tests {
 
         // CCS wraps Claude Code, so it uses Claude's stream-json format
         assert_eq!(config.output_flag, "--output-format=stream-json");
-        // YOLO mode enabled by default for unattended automation
         assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
         assert_eq!(config.verbose_flag, "--verbose");
         // CCS requires -p for non-interactive mode

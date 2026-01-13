@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-static SECRET_VALUE_RE: Lazy<Regex> = Lazy::new(|| {
+static SECRET_VALUE_RE: Lazy<Option<Regex>> = Lazy::new(|| {
     // Keep this intentionally conservative to reduce false positives in normal text.
     // Primary goal: avoid leaking common API key formats to stdout/logs.
     Regex::new(
@@ -18,7 +18,7 @@ static SECRET_VALUE_RE: Lazy<Regex> = Lazy::new(|| {
         | \bxox[baprs]-[a-z0-9-]{10,}\b # Slack tokens
         ",
     )
-    .expect("valid secret regex")
+    .ok()
 });
 
 fn is_sensitive_key(key: &str) -> bool {
@@ -39,7 +39,9 @@ fn is_sensitive_key(key: &str) -> bool {
 }
 
 fn looks_like_secret_value(value: &str) -> bool {
-    SECRET_VALUE_RE.is_match(value)
+    SECRET_VALUE_RE
+        .as_ref()
+        .is_some_and(|re| re.is_match(value))
 }
 
 /// Claude event types

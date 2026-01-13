@@ -8,7 +8,7 @@ use crate::colors::Colors;
 use crate::config::Config;
 use crate::output::{argv_requests_json, format_generic_json_for_display};
 use crate::timer::Timer;
-use crate::utils::{split_command, Logger};
+use crate::utils::{format_argv_for_log, split_command, truncate_text, Logger};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
@@ -33,6 +33,7 @@ pub(crate) struct PromptCommand<'a> {
     pub(crate) prompt: &'a str,
     pub(crate) logfile: &'a str,
     pub(crate) parser_type: JsonParserType,
+    pub(crate) env_vars: &'a std::collections::HashMap<String, String>,
 }
 
 /// Run a command with a prompt argument.
@@ -85,13 +86,14 @@ pub(crate) fn run_with_prompt(
             "Agent command is empty",
         ));
     }
+
+    let mut argv_for_log = argv.clone();
+    argv_for_log.push("<PROMPT>".to_string());
+    let display_cmd = truncate_text(&format_argv_for_log(&argv_for_log), 160);
     runtime.logger.info(&format!(
-        "Executing: {}{}...{}",
+        "Executing: {}{}{}",
         runtime.colors.dim(),
-        &format!("{} <PROMPT>", cmd.cmd_str)
-            .chars()
-            .take(80)
-            .collect::<String>(),
+        display_cmd,
         runtime.colors.reset()
     ));
 
@@ -100,9 +102,11 @@ pub(crate) fn run_with_prompt(
     let is_glm_cmd = is_glm_like_agent(cmd.cmd_str);
 
     if is_glm_cmd && runtime.config.verbosity.is_debug() {
-        runtime.logger.info(&format!("GLM command details: {}", cmd.cmd_str));
+        runtime
+            .logger
+            .info(&format!("GLM command details: {}", display_cmd));
         // Verify -p flag is present
-        if cmd.cmd_str.contains(" -p") {
+        if argv.iter().any(|arg| arg == "-p") {
             runtime.logger.info("GLM command includes '-p' flag (correct)");
         } else {
             runtime.logger.warn("GLM command may be missing '-p' flag");
@@ -121,9 +125,16 @@ pub(crate) fn run_with_prompt(
     File::create(cmd.logfile)?;
 
     // Execute command
-    let mut child = match Command::new(&argv[0])
-        .args(&argv[1..])
-        .arg(cmd.prompt)
+    let mut command = Command::new(&argv[0]);
+    command.args(&argv[1..]);
+    command.arg(cmd.prompt);
+
+    // Inject environment variables from agent config
+    for (key, value) in cmd.env_vars {
+        command.env(key, value);
+    }
+
+    let mut child = match command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -157,9 +168,41 @@ pub(crate) fn run_with_prompt(
     // Drain stderr concurrently to avoid deadlocks when stderr output is large.
     let stderr_join_handle = child.stderr.take().map(|stderr| {
         std::thread::spawn(move || -> io::Result<String> {
-            let mut stderr_output = String::new();
+            const STDERR_MAX_BYTES: usize = 512 * 1024;
+
             let mut reader = BufReader::new(stderr);
-            reader.read_to_string(&mut stderr_output)?;
+            let mut buf = [0u8; 8192];
+            let mut collected = Vec::<u8>::new();
+            let mut truncated = false;
+
+            loop {
+                let n = reader.read(&mut buf)?;
+                if n == 0 {
+                    break;
+                }
+
+                let remaining = STDERR_MAX_BYTES.saturating_sub(collected.len());
+                if remaining == 0 {
+                    truncated = true;
+                    break;
+                }
+
+                let to_take = remaining.min(n);
+                collected.extend_from_slice(&buf[..to_take]);
+                if to_take < n {
+                    truncated = true;
+                    break;
+                }
+            }
+
+            let mut stderr_output = String::from_utf8_lossy(&collected).into_owned();
+            if truncated {
+                if !stderr_output.ends_with('\n') {
+                    stderr_output.push('\n');
+                }
+                stderr_output.push_str("<stderr truncated>");
+            }
+
             Ok(stderr_output)
         })
     });
@@ -433,6 +476,16 @@ pub(crate) fn run_with_fallback(
                 let is_glm_agent = is_glm_like_agent(agent_name);
 
                 if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
+                    let cmd_argv = split_command(&cmd_str).ok();
+                    let full_cmd_log = cmd_argv
+                        .as_ref()
+                        .map(|argv| {
+                            let mut argv_for_log = argv.clone();
+                            argv_for_log.push("<PROMPT>".to_string());
+                            truncate_text(&format_argv_for_log(&argv_for_log), 160)
+                        })
+                        .unwrap_or_else(|| "<unparseable command>".to_string());
+
                     if runtime.config.verbosity.is_debug() {
                         runtime.logger.info(&format!(
                             "GLM agent '{}' command configuration:",
@@ -443,10 +496,15 @@ pub(crate) fn run_with_fallback(
                         runtime.logger.info(&format!("  Output flag: '{}'", agent_config.output_flag));
                         runtime.logger.info(&format!("  YOLO flag: '{}'", agent_config.yolo_flag));
                         runtime.logger.info(&format!("  JSON parser: {:?}", agent_config.json_parser));
-                        runtime.logger.info(&format!("  Full command: {}", cmd_str));
+                        runtime.logger
+                            .info(&format!("  Full command: {}", full_cmd_log));
                     }
                     // Validate -p flag is present (warn if missing regardless of print_flag value)
-                    if !cmd_str.contains(" -p") {
+                    let has_print_flag = cmd_argv
+                        .as_ref()
+                        .map(|argv| argv.iter().any(|arg| arg == "-p"))
+                        .unwrap_or(false);
+                    if !has_print_flag {
                         if agent_config.print_flag.is_empty() {
                             runtime.logger.warn(&format!(
                                 "GLM agent '{}' is missing '-p' flag: print_flag is empty in configuration. \
@@ -487,6 +545,7 @@ pub(crate) fn run_with_fallback(
                             prompt,
                             logfile: &logfile,
                             parser_type,
+                            env_vars: &agent_config.env_vars,
                         },
                         runtime,
                     )?;

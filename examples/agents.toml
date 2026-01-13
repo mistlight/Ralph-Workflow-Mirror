@@ -107,6 +107,23 @@ json_parser = "ccs"
 display_name = "CCS (Claude Code Switch)"
 print_flag = "-p"  # Required for non-interactive mode (Claude CLI requirement)
 
+# GLM-Direct - GLM via Claude CLI with CCS environment variables
+# This agent bypasses the CCS wrapper to get proper stream-json output.
+# It calls Claude CLI directly with GLM environment variables loaded from CCS settings.
+# This works around CCS's headless delegation formatting that interferes with stream-json.
+#
+# Requires: GLM profile configured in CCS (run: ccs api create --preset glm)
+[agents.glm-direct]
+cmd = "claude"
+output_flag = "--output-format=stream-json"
+yolo_flag = "--dangerously-skip-permissions"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "claude"
+ccs_profile = "glm"  # Load env vars from ~/.ccs/glm.settings.json
+print_flag = "-p"  # Required for non-interactive mode
+display_name = "GLM (Direct via Claude)"
+
 # OpenAI Codex CLI
 # https://github.com/openai/codex
 # Uses --full-auto for automatic sandboxed execution

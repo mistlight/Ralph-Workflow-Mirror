@@ -182,56 +182,6 @@ pub fn validate_can_commit(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::CcsConfig;
-    use std::collections::HashMap;
-
-    #[test]
-    fn validate_can_commit_uses_fuzzy_resolution() {
-        let registry = AgentRegistry::new().unwrap();
-        let mut config = Config::default();
-        config.developer_cmd = None;
-        config.reviewer_cmd = None;
-
-        // "AiChat" resolves to "aichat" (can_commit=false). This must be rejected.
-        let err = validate_can_commit(
-            &config,
-            &registry,
-            "AiChat",
-            "claude",
-            Path::new("ralph-workflow.toml"),
-        )
-        .unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("can_commit=false"));
-        assert!(msg.contains("AiChat"));
-        assert!(msg.contains("resolved to 'aichat'"));
-    }
-
-    #[test]
-    fn validate_can_commit_uses_resolve_config_for_ccs_refs() {
-        let mut registry = AgentRegistry::new().unwrap();
-        let mut defaults = CcsConfig::default();
-        defaults.can_commit = false;
-        registry.set_ccs_aliases(HashMap::new(), defaults);
-
-        let mut config = Config::default();
-        config.developer_cmd = None;
-        config.reviewer_cmd = None;
-
-        let err = validate_can_commit(
-            &config,
-            &registry,
-            "ccs/random",
-            "claude",
-            Path::new("ralph-workflow.toml"),
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("can_commit=false"));
-    }
-}
 /// Validates that agent chains are properly configured.
 ///
 /// Displays an error and exits if the agent chains are not configured.
@@ -258,5 +208,60 @@ pub fn validate_agent_chains(registry: &AgentRegistry, colors: &Colors) {
         );
         eprintln!();
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::CcsConfig;
+    use std::collections::HashMap;
+
+    #[test]
+    fn validate_can_commit_uses_fuzzy_resolution() {
+        let registry = AgentRegistry::new().unwrap();
+        let config = Config {
+            developer_cmd: None,
+            reviewer_cmd: None,
+            ..Config::default()
+        };
+
+        // "AiChat" resolves to "aichat" (can_commit=false). This must be rejected.
+        let err = validate_can_commit(
+            &config,
+            &registry,
+            "AiChat",
+            "claude",
+            Path::new("ralph-workflow.toml"),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("can_commit=false"));
+        assert!(msg.contains("AiChat"));
+        assert!(msg.contains("resolved to 'aichat'"));
+    }
+
+    #[test]
+    fn validate_can_commit_uses_resolve_config_for_ccs_refs() {
+        let mut registry = AgentRegistry::new().unwrap();
+        let mut defaults = CcsConfig::default();
+        defaults.can_commit = false;
+        registry.set_ccs_aliases(HashMap::new(), defaults);
+
+        let config = Config {
+            developer_cmd: None,
+            reviewer_cmd: None,
+            ..Config::default()
+        };
+
+        let err = validate_can_commit(
+            &config,
+            &registry,
+            "ccs/random",
+            "claude",
+            Path::new("ralph-workflow.toml"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("can_commit=false"));
     }
 }

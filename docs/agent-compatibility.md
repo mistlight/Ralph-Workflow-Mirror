@@ -176,6 +176,60 @@ RALPH_REVIEWER_REVIEWS=0 ralph
 - The `--dangerously-skip-permissions` flag is often required
 - Exit code 1 errors with GLM are now classified as `AgentSpecificQuirk` (triggers fallback)
 
+### GLM-Direct - Stream-JSON Workaround
+
+**Status**: ✅ Recommended Alternative
+
+**Issue with `ccs/glm`**:
+When using `ccs glm -p`, CCS's headless delegation mode intercepts and reformats the output. Instead of passing through raw stream-json, CCS displays:
+- "Delegating to GLM-4.6..." progress messages
+- Summary tables
+- Plain text output
+
+This means Ralph's Claude parser doesn't receive the expected stream-json events (`{"type":"stream_event",...}`).
+
+**Solution - `glm-direct` Agent**:
+Ralph includes a `glm-direct` agent that bypasses the CCS wrapper entirely:
+- Calls Claude CLI directly (`claude -p`)
+- Automatically loads GLM environment variables from CCS settings (`~/.ccs/glm.settings.json`)
+- Gets raw stream-json output that works with Claude parser
+
+**Configuration**:
+```toml
+[agents.glm-direct]
+cmd = "claude"
+output_flag = "--output-format=stream-json"
+yolo_flag = "--dangerously-skip-permissions"
+verbose_flag = "--verbose"
+can_commit = true
+json_parser = "claude"
+ccs_profile = "glm"  # Auto-loads env vars from CCS
+print_flag = "-p"
+display_name = "GLM (Direct via Claude)"
+```
+
+**Usage**:
+```bash
+# Use glm-direct instead of ccs/glm
+ralph --developer-agent glm-direct
+
+# Add to agent chain for automatic fallback
+# In ~/.config/ralph/agents.toml:
+[agent_chain]
+developer = ["glm-direct", "claude", "codex"]
+```
+
+**Requirements**:
+- GLM profile must be configured in CCS (`ccs api create --preset glm`)
+- CCS settings file at `~/.ccs/glm.settings.json` must exist
+- Claude CLI must be installed
+
+**Why This Works**:
+1. Claude CLI with GLM env vars outputs proper stream-json format
+2. No CCS delegation wrapper = no output formatting interference
+3. Ralph gets raw `{"type":"stream_event","event":{"type":"text_delta","text":"Hello"}}` events
+4. Real-time streaming works as expected
+
 ### ZhipuAI / ZAI
 
 **Status**: ⚠️ Partial Compatibility - Automatic Workarounds Applied
