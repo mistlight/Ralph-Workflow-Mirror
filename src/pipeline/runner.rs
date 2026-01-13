@@ -28,6 +28,7 @@ pub(crate) struct PipelineRuntime<'a> {
 /// A single prompt-based agent invocation.
 pub(crate) struct PromptCommand<'a> {
     pub(crate) label: &'a str,
+    pub(crate) display_name: &'a str,
     pub(crate) cmd_str: &'a str,
     pub(crate) prompt: &'a str,
     pub(crate) logfile: &'a str,
@@ -96,7 +97,7 @@ pub(crate) fn run_with_prompt(
 
     // GLM-specific debug logging
     // Check for GLM-like agents using the shared detection function
-    let is_glm_cmd = is_glm_like_agent(&cmd.cmd_str);
+    let is_glm_cmd = is_glm_like_agent(cmd.cmd_str);
 
     if is_glm_cmd && runtime.config.verbosity.is_debug() {
         runtime.logger.info(&format!("GLM command details: {}", cmd.cmd_str));
@@ -173,12 +174,14 @@ pub(crate) fn run_with_prompt(
                     *runtime.colors,
                     runtime.config.verbosity,
                 )
+                .with_display_name(cmd.display_name)
                 .with_log_file(cmd.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Codex => {
                 let p =
                     crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
+                        .with_display_name(cmd.display_name)
                         .with_log_file(cmd.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
@@ -187,6 +190,7 @@ pub(crate) fn run_with_prompt(
                     *runtime.colors,
                     runtime.config.verbosity,
                 )
+                .with_display_name(cmd.display_name)
                 .with_log_file(cmd.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
@@ -195,6 +199,7 @@ pub(crate) fn run_with_prompt(
                     *runtime.colors,
                     runtime.config.verbosity,
                 )
+                .with_display_name(cmd.display_name)
                 .with_log_file(cmd.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
@@ -321,13 +326,16 @@ pub(crate) fn run_with_fallback(
         }
 
         for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
-            let Some(agent_config) = registry.get(agent_name) else {
+            let Some(agent_config) = registry.resolve_config(agent_name) else {
                 runtime.logger.warn(&format!(
                     "Agent '{}' not found in registry, skipping",
                     agent_name
                 ));
                 continue;
             };
+
+            // Get display name for this agent (used throughout user-facing output)
+            let display_name = registry.display_name(agent_name);
 
             // Build the list of model flags to try for this agent:
             // 1. CLI model/provider override (if provided and this is the primary agent)
@@ -359,7 +367,7 @@ pub(crate) fn run_with_fallback(
                 let provider_fallbacks = fallback_config.get_provider_fallbacks(agent_name);
                 runtime.logger.info(&format!(
                     "Agent '{}' has {} provider fallback(s) configured",
-                    agent_name,
+                    display_name,
                     provider_fallbacks.len()
                 ));
                 for model in provider_fallbacks {
@@ -458,7 +466,8 @@ pub(crate) fn run_with_fallback(
                     .as_ref()
                     .map(|m| format!(" [{}]", m))
                     .unwrap_or_default();
-                let label = format!("{} ({}{})", base_label, agent_name, model_suffix);
+                let display_name = registry.display_name(agent_name);
+                let label = format!("{} ({}{})", base_label, display_name, model_suffix);
                 let logfile = format!("{}_{}_{}.log", logfile_prefix, agent_name, model_index);
 
                 // Try with retries
@@ -466,13 +475,14 @@ pub(crate) fn run_with_fallback(
                     if retry > 0 {
                         runtime.logger.info(&format!(
                             "Retry {}/{} for {}{}...",
-                            retry, fallback_config.max_retries, agent_name, model_suffix,
+                            retry, fallback_config.max_retries, display_name, model_suffix,
                         ));
                     }
 
                     let result = run_with_prompt(
                         PromptCommand {
                             label: &label,
+                            display_name: &display_name,
                             cmd_str: &cmd_str,
                             prompt,
                             logfile: &logfile,
@@ -572,7 +582,7 @@ pub(crate) fn run_with_fallback(
                     if error_kind.should_fallback() {
                         runtime.logger.info(&format!(
                             "Switching from '{}'{} to next configured fallback...",
-                            agent_name, model_suffix
+                            display_name, model_suffix
                         ));
                         break; // break retry loop and model loop
                     }
@@ -586,7 +596,7 @@ pub(crate) fn run_with_fallback(
                     if retry + 1 < fallback_config.max_retries {
                         runtime.logger.info(&format!(
                             "Retrying '{}'{} (attempt {}/{})",
-                            agent_name,
+                            display_name,
                             model_suffix,
                             retry + 2,
                             fallback_config.max_retries

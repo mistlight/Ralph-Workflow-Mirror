@@ -108,7 +108,14 @@ impl AgentConfig {
 
     /// Check if this agent requires --verbose when JSON output is enabled.
     fn requires_verbose_for_json(&self, json_enabled: bool) -> bool {
-        json_enabled && self.cmd.starts_with("claude ") && self.output_flag.contains("stream-json")
+        if !json_enabled || !self.output_flag.contains("stream-json") {
+            return false;
+        }
+
+        // Both `claude` and CCS (`ccs ...`) require verbose mode when using stream-json output.
+        // CCS is a wrapper around the Claude CLI and inherits its stream-json quirks.
+        let base = self.cmd.split_whitespace().next().unwrap_or("");
+        matches!(base, "claude" | "ccs")
     }
 }
 
@@ -138,6 +145,9 @@ pub struct AgentConfigToml {
     /// Print/non-interactive mode flag (optional, defaults to empty).
     #[serde(default)]
     pub print_flag: String,
+    /// Display name for UI/logging (optional, e.g., "My Custom Agent" instead of registry name).
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 fn default_can_commit() -> bool {
@@ -155,7 +165,7 @@ impl From<AgentConfigToml> for AgentConfig {
             json_parser: JsonParserType::parse(&toml.json_parser),
             model_flag: toml.model_flag,
             print_flag: toml.print_flag,
-            display_name: None, // Regular agents use their registry name
+            display_name: toml.display_name,
         }
     }
 }
@@ -260,6 +270,7 @@ mod tests {
             json_parser: "claude".to_string(),
             model_flag: Some("-m provider/model".to_string()),
             print_flag: String::new(),
+            display_name: Some("My Custom Agent".to_string()),
         };
 
         let config: AgentConfig = toml.into();
@@ -267,6 +278,7 @@ mod tests {
         assert!(!config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
         assert_eq!(config.model_flag, Some("-m provider/model".to_string()));
+        assert_eq!(config.display_name, Some("My Custom Agent".to_string()));
     }
 
     #[test]
