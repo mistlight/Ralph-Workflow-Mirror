@@ -501,6 +501,29 @@ Ralph includes several automatic mitigations:
 
 ## Troubleshooting Guide
 
+### GLM/CCS Agent Fails with "When using --print, --output-format=stream-json requires --verbose"
+
+**Symptoms**: Agent fails with error message about `--verbose` being required when using `--print` with `--output-format=stream-json`.
+
+**Root Cause**: When the Claude CLI is invoked with `-p` (print flag) and `--output-format=stream-json`, it also requires `--verbose`. This was a bug in Ralph v0.2.7 and earlier where the `--verbose` flag was not automatically added when using a full path to the claude binary (e.g., `/usr/local/bin/claude`).
+
+**Fixed in**: Ralph v0.2.8+
+
+**Workarounds** (if using older version):
+
+1. **Upgrade Ralph**: The fix has been applied - `requires_verbose_for_json` now correctly checks the file name portion of the path, not just the full path string.
+
+2. **Use "claude" directly in PATH** (temporary workaround): Ensure `claude` is in PATH as just "claude" rather than using a full path.
+
+**Verification**:
+```bash
+# Check that the command includes --verbose
+ralph --reviewer-agent ccs/glm --verbosity debug 2>&1 | grep -i "verbose"
+
+# Should see something like:
+# Executing: /usr/local/bin/claude -p --output-format=stream-json --include-partial-messages --verbose --dangerously-skip-permissions <PROMPT>
+```
+
 ### Review Agent Fails with Exit Code 1
 
 **Symptoms**: Agent exits with code 1 repeatedly with "AgentSpecificQuirk" error message.
@@ -545,6 +568,15 @@ Ralph includes several automatic mitigations:
    ```bash
    ralph --verbosity debug
    ```
+
+7. **Enable CCS-specific debug logging** (v0.2.8+):
+   ```bash
+   RALPH_CCS_DEBUG=1 ralph --reviewer-agent ccs/glm --verbosity debug
+   ```
+   This will show detailed information about:
+   - Claude binary detection
+   - Environment variable loading
+   - Command construction and bypass logic
 
 **Note**: As of Ralph v0.2.5, GLM and similar agents with exit code 1 errors now trigger immediate fallback to the next agent instead of retrying indefinitely.
 

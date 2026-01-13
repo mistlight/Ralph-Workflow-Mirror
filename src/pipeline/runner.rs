@@ -132,8 +132,20 @@ pub(crate) fn run_with_prompt(
     command.arg(cmd.prompt);
 
     // Inject environment variables from agent config
-    for (key, value) in cmd.env_vars {
-        command.env(key, value);
+    if !cmd.env_vars.is_empty() {
+        if runtime.config.verbosity.is_debug() {
+            runtime.logger.info(&format!(
+                "Injecting {} environment variable(s) into subprocess",
+                cmd.env_vars.len()
+            ));
+            // Show env var keys only (redact values for security)
+            for key in cmd.env_vars.keys() {
+                runtime.logger.info(&format!("  - {}", key));
+            }
+        }
+        for (key, value) in cmd.env_vars {
+            command.env(key, value);
+        }
     }
 
     let mut child = match command
