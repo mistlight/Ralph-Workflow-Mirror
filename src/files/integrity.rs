@@ -31,10 +31,7 @@ pub fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
     let read_back = fs::read_to_string(&temp_path)?;
     if read_back != content {
         let _ = fs::remove_file(&temp_path);
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Write verification failed: content mismatch",
-        ));
+        return Err(io::Error::other("Write verification failed: content mismatch"));
     }
 
     fs::rename(&temp_path, path)?;
@@ -90,10 +87,10 @@ pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
                 if let Ok(modified) = metadata.modified() {
                     if let Ok(elapsed) = modified.elapsed() {
                         if elapsed > std::time::Duration::from_secs(3600) {
-                            return Err(io::Error::new(
-                                io::ErrorKind::Other,
-                                format!("Stale lock file found: {}", name),
-                            ));
+                            return Err(io::Error::other(format!(
+                                "Stale lock file found: {}",
+                                name
+                            )));
                         }
                     }
                 }

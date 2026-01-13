@@ -63,12 +63,6 @@ pub fn head_oid(repo: &Repository) -> String {
         .unwrap_or_default()
 }
 
-pub fn commit_count(repo: &Repository) -> usize {
-    let mut walk = repo.revwalk().expect("revwalk");
-    walk.push_head().expect("push head");
-    walk.count()
-}
-
 pub fn stage_all(repo: &Repository) {
     let mut index = repo.index().expect("open index");
 

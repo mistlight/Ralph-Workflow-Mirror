@@ -330,24 +330,26 @@ fn extract_gemini_result(content: &str) -> Option<String> {
         }
 
         if let Ok(json) = serde_json::from_str::<JsonValue>(line) {
-            if let Some(type_field) = json.get("type").and_then(|v| v.as_str()) {
-                if type_field == "message" {
-                    if json.get("role").and_then(|v| v.as_str()) == Some("assistant") {
-                        if let Some(msg_content) = json.get("content").and_then(|v| v.as_str()) {
-                            if !msg_content.trim().is_empty() {
-                                // For streaming, accumulate or replace based on delta flag
-                                if json.get("delta").and_then(|v| v.as_bool()) == Some(true) {
-                                    // Delta message - accumulate
-                                    if let Some(ref mut existing) = last_assistant_content {
-                                        existing.push_str(msg_content);
-                                    } else {
-                                        last_assistant_content = Some(msg_content.to_string());
-                                    }
-                                } else {
-                                    // Full message - replace
-                                    last_assistant_content = Some(msg_content.to_string());
-                                }
+            let is_assistant_message = json
+                .get("type")
+                .and_then(|v| v.as_str())
+                == Some("message")
+                && json.get("role").and_then(|v| v.as_str()) == Some("assistant");
+
+            if is_assistant_message {
+                if let Some(msg_content) = json.get("content").and_then(|v| v.as_str()) {
+                    if !msg_content.trim().is_empty() {
+                        // For streaming, accumulate or replace based on delta flag
+                        if json.get("delta").and_then(|v| v.as_bool()) == Some(true) {
+                            // Delta message - accumulate
+                            if let Some(ref mut existing) = last_assistant_content {
+                                existing.push_str(msg_content);
+                            } else {
+                                last_assistant_content = Some(msg_content.to_string());
                             }
+                        } else {
+                            // Full message - replace
+                            last_assistant_content = Some(msg_content.to_string());
                         }
                     }
                 }
@@ -438,12 +440,11 @@ fn clean_plain_text(content: &str) -> String {
 
     // Remove quotes if the entire result is quoted
     let trimmed = result.trim();
-    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
-        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+    if ((trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
+        && trimmed.len() > 2
     {
-        if trimmed.len() > 2 {
-            result = trimmed[1..trimmed.len() - 1].to_string();
-        }
+        result = trimmed[1..trimmed.len() - 1].to_string();
     }
 
     // Clean up whitespace

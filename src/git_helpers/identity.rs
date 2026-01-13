@@ -93,14 +93,11 @@ pub fn fallback_username() -> String {
 
     // As a last resort, try to run whoami (Unix only)
     if cfg!(unix) {
-        match std::process::Command::new("whoami").output() {
-            Ok(output) => {
-                let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !username.is_empty() {
-                    return username;
-                }
+        if let Ok(output) = std::process::Command::new("whoami").output() {
+            let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !username.is_empty() {
+                return username;
             }
-            Err(_) => {} // Fall through to default
         }
     }
 
@@ -132,14 +129,11 @@ fn get_hostname() -> Option<String> {
     }
 
     // Try the `hostname` command
-    match std::process::Command::new("hostname").output() {
-        Ok(output) => {
-            let hostname = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !hostname.is_empty() {
-                return Some(hostname);
-            }
+    if let Ok(output) = std::process::Command::new("hostname").output() {
+        let hostname = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !hostname.is_empty() {
+            return Some(hostname);
         }
-        Err(_) => {}
     }
 
     None
@@ -155,11 +149,10 @@ pub enum IdentitySource {
     /// Identity from Ralph config file.
     RalphConfig,
     /// Identity from git config.
+    #[allow(dead_code)]
     GitConfig,
     /// Identity from system username/hostname.
     SystemFallback,
-    /// Identity from default values.
-    Default,
 }
 
 /// Resolve git identity with the full priority chain.
@@ -244,6 +237,22 @@ pub fn default_identity() -> GitIdentity {
     GitIdentity::new("Ralph Workflow".to_string(), "ralph@localhost".to_string())
 }
 
+/// Helper trait for error checking in tests
+#[cfg(test)]
+trait ContainsErr {
+    fn contains_err(&self, needle: &str) -> bool;
+}
+
+#[cfg(test)]
+impl ContainsErr for Result<(), String> {
+    fn contains_err(&self, needle: &str) -> bool {
+        match self {
+            Err(e) => e.contains(needle),
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,7 +268,7 @@ mod tests {
         let identity = GitIdentity::new("".to_string(), "test@example.com".to_string());
         assert!(identity
             .validate()
-            .contains_err(&"Git user name cannot be empty"));
+            .contains_err("Git user name cannot be empty"));
     }
 
     #[test]
@@ -267,19 +276,19 @@ mod tests {
         let identity = GitIdentity::new("Test User".to_string(), "".to_string());
         assert!(identity
             .validate()
-            .contains_err(&"Git user email cannot be empty"));
+            .contains_err("Git user email cannot be empty"));
     }
 
     #[test]
     fn test_git_identity_validation_invalid_email_no_at() {
         let identity = GitIdentity::new("Test User".to_string(), "invalidemail".to_string());
-        assert!(identity.validate().contains_err(&"Invalid email format"));
+        assert!(identity.validate().contains_err("Invalid email format"));
     }
 
     #[test]
     fn test_git_identity_validation_invalid_email_no_domain() {
         let identity = GitIdentity::new("Test User".to_string(), "user@".to_string());
-        assert!(identity.validate().contains_err(&"Invalid email format"));
+        assert!(identity.validate().contains_err("Invalid email format"));
     }
 
     #[test]
@@ -329,21 +338,5 @@ mod tests {
         let identity = default_identity();
         assert_eq!(identity.name, "Ralph Workflow");
         assert_eq!(identity.email, "ralph@localhost");
-    }
-}
-
-/// Helper trait for error checking in tests
-#[cfg(test)]
-trait ContainsErr {
-    fn contains_err(&self, needle: &str) -> bool;
-}
-
-#[cfg(test)]
-impl ContainsErr for Result<(), String> {
-    fn contains_err(&self, needle: &str) -> bool {
-        match self {
-            Err(e) => e.contains(needle),
-            _ => false,
-        }
     }
 }
