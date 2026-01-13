@@ -69,6 +69,7 @@ fn run_with_prompt_returns_command_result_for_missing_binary() {
     let result = run_with_prompt(
         PromptCommand {
             label: "test",
+            display_name: "test",
             cmd_str: "definitely-not-a-real-binary-ralph",
             prompt: "hello",
             logfile: &dir.path().join("log.txt").display().to_string(),

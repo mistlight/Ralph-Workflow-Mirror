@@ -15,6 +15,7 @@ pub(crate) struct GeminiParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
+    display_name: String,
 }
 
 impl GeminiParser {
@@ -23,7 +24,13 @@ impl GeminiParser {
             colors,
             verbosity,
             log_file: None,
+            display_name: "Gemini".to_string(),
         }
+    }
+
+    pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
+        self.display_name = display_name.to_string();
+        self
     }
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
@@ -50,6 +57,7 @@ impl GeminiParser {
             }
         };
         let c = &self.colors;
+        let prefix = &self.display_name;
 
         let output = match event {
             GeminiEvent::Init {
@@ -58,8 +66,9 @@ impl GeminiParser {
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                 let model_str = model.unwrap_or_else(|| "unknown".to_string());
                 format!(
-                    "{}[Gemini]{} {}Session started{} {}({:.8}..., {}){}\n",
+                    "{}[{}]{} {}Session started{} {}({:.8}..., {}){}\n",
                     c.dim(),
+                    prefix,
                     c.reset(),
                     c.cyan(),
                     c.reset(),
@@ -83,8 +92,9 @@ impl GeminiParser {
                     let delta_marker = if delta.unwrap_or(false) { "..." } else { "" };
                     if role_str == "assistant" {
                         format!(
-                            "{}[Gemini]{} {}{}{}{}\n",
+                            "{}[{}]{} {}{}{}{}\n",
                             c.dim(),
+                            prefix,
                             c.reset(),
                             c.white(),
                             preview,
@@ -93,8 +103,9 @@ impl GeminiParser {
                         )
                     } else {
                         format!(
-                            "{}[Gemini]{} {}{}:{} {}{}{}\n",
+                            "{}[{}]{} {}{}:{} {}{}{}\n",
                             c.dim(),
+                            prefix,
                             c.reset(),
                             c.blue(),
                             role_str,
@@ -113,15 +124,16 @@ impl GeminiParser {
                 parameters,
                 ..
             } => {
-                let name = tool_name.unwrap_or_else(|| "unknown".to_string());
+                let tool_name = tool_name.unwrap_or_else(|| "unknown".to_string());
                 let mut out = format!(
-                    "{}[Gemini]{} {}Tool{}: {}{}{}\n",
+                    "{}[{}]{} {}Tool{}: {}{}{}\n",
                     c.dim(),
+                    prefix,
                     c.reset(),
                     c.magenta(),
                     c.reset(),
                     c.bold(),
-                    name,
+                    tool_name,
                     c.reset()
                 );
                 if self.verbosity.show_tool_input() {
@@ -131,8 +143,9 @@ impl GeminiParser {
                         let preview = truncate_text(&params_str, limit);
                         if !preview.is_empty() {
                             out.push_str(&format!(
-                                "{}[Gemini]{} {}  └─ {}{}\n",
+                                "{}[{}]{} {}  └─ {}{}\n",
                                 c.dim(),
+                                prefix,
                                 c.reset(),
                                 c.dim(),
                                 preview,
@@ -150,8 +163,9 @@ impl GeminiParser {
                 let color = if is_success { c.green() } else { c.red() };
 
                 let mut out = format!(
-                    "{}[Gemini]{} {}{} Tool result{}\n",
+                    "{}[{}]{} {}{} Tool result{}\n",
                     c.dim(),
+                    prefix,
                     c.reset(),
                     color,
                     icon,
@@ -163,8 +177,9 @@ impl GeminiParser {
                         let limit = self.verbosity.truncate_limit("tool_result");
                         let preview = truncate_text(output_text, limit);
                         out.push_str(&format!(
-                            "{}[Gemini]{} {}  └─ {}{}\n",
+                            "{}[{}]{} {}  └─ {}{}\n",
                             c.dim(),
+                            prefix,
                             c.reset(),
                             c.dim(),
                             preview,
@@ -180,8 +195,9 @@ impl GeminiParser {
                     .map(|c| format!(" ({})", c))
                     .unwrap_or_else(String::new);
                 format!(
-                    "{}[Gemini]{} {}{} Error{}:{} {}\n",
+                    "{}[{}]{} {}{} Error{}:{} {}\n",
                     c.dim(),
+                    prefix,
                     c.reset(),
                     c.red(),
                     CROSS,
@@ -212,8 +228,9 @@ impl GeminiParser {
                 };
 
                 format!(
-                    "{}[Gemini]{} {}{} {}{} {}{}{}\n",
+                    "{}[{}]{} {}{} {}{} {}{}{}\n",
                     c.dim(),
+                    prefix,
                     c.reset(),
                     color,
                     icon,
@@ -242,6 +259,14 @@ impl GeminiParser {
     ) -> io::Result<()> {
         let c = &self.colors;
         let monitor = HealthMonitor::new("Gemini");
+        let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+                .ok()
+                .map(std::io::BufWriter::new)
+        });
 
         for line in reader.lines() {
             let line = line?;
@@ -281,17 +306,14 @@ impl GeminiParser {
             }
 
             // Log raw JSON to file if configured
-            if let Some(ref log_path) = self.log_file {
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(log_path)
-                {
-                    writeln!(file, "{}", line)?;
-                }
+            if let Some(ref mut file) = log_writer {
+                writeln!(file, "{}", line)?;
             }
         }
 
+        if let Some(ref mut file) = log_writer {
+            file.flush()?;
+        }
         if let Some(warning) = monitor.check_and_warn(c) {
             writeln!(writer, "{}", warning)?;
         }

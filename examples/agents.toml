@@ -31,6 +31,8 @@
 # json_parser  - Output parser: "claude", "codex", or "generic" (default: "generic")
 # model_flag   - Model/provider selection flag (e.g., "-m provider/model"; optional)
 #                Used by agents that support multiple providers like opencode
+# display_name - Human-readable name for UI/logging (e.g., "My Custom Agent"; optional)
+#                Defaults to agent name if not specified
 #
 # JSON PARSERS
 # ------------
@@ -87,6 +89,7 @@ yolo_flag = "--dangerously-skip-permissions"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "claude"
+display_name = "Claude Code"
 
 # CCS (Claude Code Switch) - Universal AI profile manager
 # https://github.com/kaitranntt/ccs
@@ -101,6 +104,7 @@ yolo_flag = "--dangerously-skip-permissions"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "ccs"
+display_name = "CCS (Claude Code Switch)"
 
 # OpenAI Codex CLI
 # https://github.com/openai/codex
@@ -112,6 +116,7 @@ yolo_flag = "--full-auto"
 verbose_flag = ""
 can_commit = true
 json_parser = "codex"
+display_name = "OpenAI Codex CLI"
 
 # OpenCode - Open source AI coding tool
 # https://github.com/opencode-ai/opencode
@@ -124,6 +129,7 @@ yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
+display_name = "OpenCode"
 # model_flag = "-m opencode/glm-4.7-free"  # Uncomment to set default model
 
 # Aider - AI pair programming in your terminal
@@ -136,6 +142,7 @@ yolo_flag = "--yes-always"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "generic"
+display_name = "Aider"
 
 # Goose - Block's open-source AI agent
 # https://github.com/block/goose
@@ -151,6 +158,7 @@ yolo_flag = ""
 verbose_flag = "--debug"
 can_commit = true
 json_parser = "generic"
+display_name = "Goose (Block)"
 
 # Cline - Autonomous coding agent
 # https://github.com/cline/cline
@@ -162,6 +170,7 @@ yolo_flag = "-y"
 verbose_flag = "-v"
 can_commit = true
 json_parser = "generic"
+display_name = "Cline"
 
 # Continue.dev CLI (cn)
 # https://docs.continue.dev/guides/cli
@@ -173,6 +182,7 @@ yolo_flag = "--auto"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "generic"
+display_name = "Continue.dev"
 
 # Amazon Q Developer CLI
 # https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html
@@ -184,6 +194,7 @@ yolo_flag = "--trust-all-tools"
 verbose_flag = ""
 can_commit = true
 json_parser = "generic"
+display_name = "Amazon Q Developer"
 
 # Gemini CLI
 # https://github.com/google-gemini/gemini-cli
@@ -196,6 +207,7 @@ yolo_flag = "-y"
 verbose_flag = "-d"
 can_commit = true
 json_parser = "gemini"
+display_name = "Google Gemini CLI"
 
 # =============================================================================
 # LOWER-COST / OPEN-SOURCE AGENTS
@@ -213,6 +225,7 @@ yolo_flag = "--yolo"
 verbose_flag = "--debug"
 can_commit = true
 json_parser = "claude"
+display_name = "Qwen Code"
 
 # Mistral Vibe - Mistral AI's CLI coding assistant (Devstral)
 # https://github.com/mistralai/mistral-vibe
@@ -227,6 +240,7 @@ yolo_flag = "--auto-approve"
 verbose_flag = ""
 can_commit = true
 json_parser = "generic"
+display_name = "Mistral Vibe"
 
 # llama.cpp CLI - Local LLM inference with llama-cli
 # https://github.com/ggml-org/llama.cpp
@@ -242,6 +256,7 @@ yolo_flag = ""
 verbose_flag = "-v"
 can_commit = false
 json_parser = "generic"
+display_name = "llama.cpp CLI"
 
 # AIChat - Multi-provider LLM CLI tool (OpenAI, Claude, Gemini, Ollama, etc.)
 # https://github.com/sigoden/aichat
@@ -257,6 +272,7 @@ yolo_flag = ""
 verbose_flag = ""
 can_commit = false
 json_parser = "generic"
+display_name = "AIChat"
 
 # Cursor CLI - Cursor's terminal-based AI coding agent
 # https://cursor.com/docs/cli/overview
@@ -271,6 +287,7 @@ yolo_flag = ""
 verbose_flag = ""
 can_commit = true
 json_parser = "generic"
+display_name = "Cursor CLI"
 
 # Plandex - Terminal-based AI for large codebases
 # https://github.com/plandex-ai/plandex
@@ -283,6 +300,7 @@ yolo_flag = "--apply --commit"
 verbose_flag = ""
 can_commit = true
 json_parser = "generic"
+display_name = "Plandex"
 
 # Ollama - Local LLM server with CLI
 # https://github.com/ollama/ollama
@@ -297,6 +315,7 @@ yolo_flag = ""
 verbose_flag = ""
 can_commit = false
 json_parser = "generic"
+display_name = "Ollama"
 
 # =============================================================================
 # AGENT CHAIN CONFIGURATION (required)
@@ -450,6 +469,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m opencode/glm-4.7-free"
+display_name = "OpenCode with GLM (Zen)"
 
 # OpenCode with Claude via Zen (premium, routed through OpenCode Zen billing)
 # Uses: opencode/claude-sonnet-4 - Claude via OpenCode Zen routing
@@ -461,6 +481,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m opencode/claude-sonnet-4"
+display_name = "OpenCode with Claude (Zen)"
 
 # OpenCode with Zen default routing (intelligent model selection)
 # Note: Zen mode refers to OpenCode's default intelligent routing,
@@ -472,6 +493,7 @@ yolo_flag = "--auto-approve"
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
+display_name = "OpenCode with Zen (Auto)"
 # No model_flag - uses opencode's default model selection
 
 # -------------------------------------------------------------------------
@@ -495,6 +517,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m zai/glm-4.7"
+display_name = "OpenCode with Z.AI GLM"
 
 # OpenCode with Z.AI GLM-4.5 Direct (alternative tier)
 # Uses: zai/glm-4.5 - direct connection to Z.AI API
@@ -506,6 +529,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m zai/glm-4.5"
+display_name = "OpenCode with Z.AI GLM-4.5"
 
 # -------------------------------------------------------------------------
 # Z.AI CODING PLAN PROVIDER ALIASES (Z.AI's Coding Plan subscription tier)
@@ -527,6 +551,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m zai/glm-4.7"
+display_name = "OpenCode with Z.AI GLM (Coding Plan)"
 
 # OpenCode with Z.AI GLM-4.5 Coding Plan (3x usage, 1/7 cost)
 # Uses: zai/glm-4.5 - Z.AI API with Coding Plan pricing (auth selection)
@@ -538,6 +563,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m zai/glm-4.5"
+display_name = "OpenCode with Z.AI GLM-4.5 (Coding Plan)"
 
 # -------------------------------------------------------------------------
 # DIRECT API PROVIDER ALIASES (uses your own API keys)
@@ -556,6 +582,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m anthropic/claude-sonnet-4"
+display_name = "OpenCode with Anthropic (Direct)"
 
 # OpenCode with direct OpenAI API (requires OPENAI_API_KEY)
 # Uses: openai/gpt-4o - direct API call, your billing
@@ -567,6 +594,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m openai/gpt-4o"
+display_name = "OpenCode with OpenAI (Direct)"
 
 # -------------------------------------------------------------------------
 # GOOGLE PROVIDER ALIASES (Google AI Studio & Vertex AI)
@@ -584,6 +612,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m google/gemini-2.0-flash"
+display_name = "OpenCode with Google"
 
 # OpenCode with Google Gemini Pro (requires GOOGLE_GENERATIVE_AI_API_KEY)
 # Uses: google/gemini-1.5-pro - Google's most capable Gemini model
@@ -595,6 +624,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m google/gemini-1.5-pro"
+display_name = "OpenCode with Gemini Pro"
 
 # -------------------------------------------------------------------------
 # GROQ PROVIDER ALIASES (Ultra-fast inference)
@@ -612,6 +642,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m groq/llama-3.3-70b-versatile"
+display_name = "OpenCode with Groq"
 
 # OpenCode with Groq Mixtral (fast Mixtral 8x7B)
 # Uses: groq/mixtral-8x7b - efficient mixture-of-experts
@@ -623,6 +654,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m groq/mixtral-8x7b-32768"
+display_name = "OpenCode with Groq Mixtral"
 
 # -------------------------------------------------------------------------
 # OPENROUTER PROVIDER ALIASES (Multi-provider gateway)
@@ -640,6 +672,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m openrouter/anthropic/claude-3.5-sonnet"
+display_name = "OpenCode with OpenRouter"
 
 # -------------------------------------------------------------------------
 # DEEPSEEK PROVIDER ALIASES (Cost-effective coding models)
@@ -657,6 +690,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m deepseek/deepseek-chat"
+display_name = "OpenCode with DeepSeek"
 
 # OpenCode with DeepSeek Coder (optimized for code)
 # Uses: deepseek/deepseek-coder
@@ -668,6 +702,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m deepseek/deepseek-coder"
+display_name = "OpenCode with DeepSeek Coder"
 
 # -------------------------------------------------------------------------
 # XAI PROVIDER ALIASES (Grok models)
@@ -685,6 +720,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m xai/grok-2"
+display_name = "OpenCode with xAI Grok"
 
 # Alias for Grok
 [agents.opencode-grok]
@@ -695,6 +731,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m xai/grok-2"
+display_name = "OpenCode with Grok"
 
 # -------------------------------------------------------------------------
 # MISTRAL PROVIDER ALIASES (European AI leader)
@@ -712,6 +749,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m mistral/mistral-large-latest"
+display_name = "OpenCode with Mistral"
 
 # OpenCode with Codestral (code-specialized model)
 # Uses: mistral/codestral-latest
@@ -723,6 +761,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m mistral/codestral-latest"
+display_name = "OpenCode with Codestral"
 
 # -------------------------------------------------------------------------
 # MOONSHOT PROVIDER ALIASES (Kimi K2 models)
@@ -740,6 +779,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m moonshot/kimi-k2"
+display_name = "OpenCode with Kimi"
 
 # Alias for Kimi
 [agents.opencode-kimi]
@@ -750,6 +790,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m moonshot/kimi-k2"
+display_name = "OpenCode with Kimi"
 
 # -------------------------------------------------------------------------
 # MINIMAX PROVIDER ALIASES
@@ -767,6 +808,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m minimax/abab6.5-chat"
+display_name = "OpenCode with MiniMax"
 
 # -------------------------------------------------------------------------
 # CLOUD PROVIDER ALIASES (AWS Bedrock, Azure OpenAI)
@@ -784,6 +826,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m amazon-bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0"
+display_name = "OpenCode with AWS Bedrock"
 
 # OpenCode with Azure OpenAI (requires Azure configuration)
 # Uses: azure-openai/gpt-4o
@@ -796,6 +839,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m azure-openai/gpt-4o"
+display_name = "OpenCode with Azure OpenAI"
 
 # -------------------------------------------------------------------------
 # LOCAL PROVIDER ALIASES (Ollama, LM Studio)
@@ -812,6 +856,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m ollama/llama3"
+display_name = "OpenCode with Ollama"
 
 # OpenCode with Ollama CodeLlama (local code-specialized model)
 # Uses: ollama/codellama - requires 'ollama pull codellama' first
@@ -823,6 +868,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m ollama/codellama"
+display_name = "OpenCode with Ollama CodeLlama"
 
 # OpenCode with LM Studio (local model runner)
 # Uses: lmstudio/local-model - requires LM Studio server running
@@ -834,6 +880,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m lmstudio/local-model"
+display_name = "OpenCode with LM Studio"
 
 # -------------------------------------------------------------------------
 # FAST INFERENCE PROVIDER ALIASES (Together, Fireworks)
@@ -851,6 +898,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m together/meta-llama/Llama-3-70b-chat-hf"
+display_name = "OpenCode with Together"
 
 # OpenCode with Fireworks AI (optimized inference)
 # Uses: fireworks/accounts/fireworks/models/llama-v3p1-70b-instruct
@@ -863,6 +911,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m fireworks/accounts/fireworks/models/llama-v3p1-70b-instruct"
+display_name = "OpenCode with Fireworks"
 
 # -------------------------------------------------------------------------
 # COHERE PROVIDER ALIASES
@@ -880,6 +929,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m cohere/command-r-plus"
+display_name = "OpenCode with Cohere"
 
 # -------------------------------------------------------------------------
 # GITHUB COPILOT PROVIDER ALIAS
@@ -897,6 +947,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m copilot/gpt-4o"
+display_name = "OpenCode with GitHub Copilot"
 
 # -------------------------------------------------------------------------
 # DEEP INFRA PROVIDER ALIAS
@@ -914,6 +965,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m deep-infra/meta-llama/Llama-3.3-70B-Instruct"
+display_name = "OpenCode with Deep Infra"
 
 # -------------------------------------------------------------------------
 # HUGGING FACE PROVIDER ALIAS
@@ -931,6 +983,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m huggingface/Qwen/Qwen2.5-Coder-32B"
+display_name = "OpenCode with Hugging Face"
 
 # -------------------------------------------------------------------------
 # PERPLEXITY PROVIDER ALIAS
@@ -948,6 +1001,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m perplexity/sonar-pro"
+display_name = "OpenCode with Perplexity"
 
 # -------------------------------------------------------------------------
 # CEREBRAS PROVIDER ALIAS
@@ -965,6 +1019,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m cerebras/llama3.3-70b"
+display_name = "OpenCode with Cerebras"
 
 # -------------------------------------------------------------------------
 # SAMBANOVA PROVIDER ALIAS
@@ -982,6 +1037,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m sambanova/Meta-Llama-3.3-70B-Instruct"
+display_name = "OpenCode with SambaNova"
 
 # -------------------------------------------------------------------------
 # REPLICATE PROVIDER ALIAS
@@ -999,6 +1055,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m replicate/meta/llama-3-70b-instruct"
+display_name = "OpenCode with Replicate"
 
 # -------------------------------------------------------------------------
 # AI21 PROVIDER ALIAS
@@ -1016,6 +1073,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m ai21/jamba-1.5-large"
+display_name = "OpenCode with AI21"
 
 # -------------------------------------------------------------------------
 # CLOUDFLARE PROVIDER ALIAS
@@ -1033,6 +1091,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m cloudflare/@cf/meta/llama-3.1-8b-instruct"
+display_name = "OpenCode with Cloudflare"
 
 # -------------------------------------------------------------------------
 # GOOGLE VERTEX AI PROVIDER ALIAS
@@ -1050,6 +1109,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m google-vertex/gemini-2.0-flash"
+display_name = "OpenCode with Vertex AI"
 
 # -------------------------------------------------------------------------
 # CLOUD PLATFORM PROVIDER ALIASES
@@ -1067,6 +1127,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m baseten/llama-3-70b"
+display_name = "OpenCode with Baseten"
 
 # OpenCode with Cortecs (AI compute platform)
 # Uses: cortecs/llama-3-70b
@@ -1079,6 +1140,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m cortecs/llama-3-70b"
+display_name = "OpenCode with Cortecs"
 
 # OpenCode with Scaleway (European cloud AI)
 # Uses: scaleway/llama-3-70b
@@ -1091,6 +1153,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m scaleway/llama-3-70b"
+display_name = "OpenCode with Scaleway"
 
 # OpenCode with OVHcloud (European cloud AI)
 # Uses: ovhcloud/llama-3-70b
@@ -1103,6 +1166,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m ovhcloud/llama-3-70b"
+display_name = "OpenCode with OVHcloud"
 
 # -------------------------------------------------------------------------
 # AI GATEWAY PROVIDER ALIASES
@@ -1120,6 +1184,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m vercel/gpt-4o"
+display_name = "OpenCode with Vercel"
 
 # OpenCode with Helicone (AI observability gateway)
 # Uses: helicone/gpt-4o
@@ -1132,6 +1197,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m helicone/gpt-4o"
+display_name = "OpenCode with Helicone"
 
 # OpenCode with IO.NET (Distributed GPU network)
 # Uses: io-net/llama-3-70b
@@ -1144,6 +1210,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m io-net/llama-3-70b"
+display_name = "OpenCode with IO.NET"
 
 # OpenCode with Nebius (Cloud AI infrastructure)
 # Uses: nebius/llama-3-70b
@@ -1156,6 +1223,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m nebius/llama-3-70b"
+display_name = "OpenCode with Nebius"
 
 # OpenCode with ZenMux (AI multiplexer gateway)
 # Uses: zenmux/gpt-4o
@@ -1168,6 +1236,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m zenmux/gpt-4o"
+display_name = "OpenCode with ZenMux"
 
 # -------------------------------------------------------------------------
 # ENTERPRISE/INDUSTRY PROVIDER ALIASES
@@ -1185,6 +1254,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m sap-ai-core/gpt-4o"
+display_name = "OpenCode with SAP AI Core"
 
 # OpenCode with Azure Cognitive Services
 # Uses: azure-cognitive-services/gpt-4o
@@ -1197,6 +1267,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m azure-cognitive-services/gpt-4o"
+display_name = "OpenCode with Azure Cognitive"
 
 # -------------------------------------------------------------------------
 # SPECIALIZED INFERENCE PROVIDER ALIASES
@@ -1214,6 +1285,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m venice-ai/llama-3-70b"
+display_name = "OpenCode with Venice AI"
 
 # OpenCode with Ollama Cloud (Cloud-hosted Ollama)
 # Uses: ollama-cloud/llama3
@@ -1226,6 +1298,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m ollama-cloud/llama3"
+display_name = "OpenCode with Ollama Cloud"
 
 # OpenCode with llama.cpp (Native llama.cpp inference)
 # Uses: llama.cpp/local-model - requires llama-server running locally
@@ -1238,6 +1311,7 @@ verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 model_flag = "-m llama.cpp/local-model"
+display_name = "OpenCode with llama.cpp"
 
 # -------------------------------------------------------------------------
 # EXAMPLE AGENT CHAINS

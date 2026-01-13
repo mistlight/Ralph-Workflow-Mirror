@@ -210,25 +210,32 @@ impl CcsAliasResolver {
 
     /// Try to resolve an agent name as a CCS reference.
     ///
-    /// Returns `Some(AgentConfig)` if the name is a valid CCS reference
-    /// and the alias exists (or it's the default `ccs`).
-    /// Returns `None` if:
-    /// - The name is not a CCS reference (doesn't start with "ccs")
-    /// - The alias is not found in the configured aliases
+    /// Returns `Some(AgentConfig)` if the name is a valid CCS reference.
+    /// For known aliases (or default `ccs`), uses the configured command.
+    /// For unknown aliases (e.g., `ccs/random`), generates a default CCS config
+    /// to allow direct CCS execution without configuration.
+    /// Returns `None` if the name is not a CCS reference (doesn't start with "ccs").
     pub fn try_resolve(&self, agent_name: &str) -> Option<AgentConfig> {
         let alias = parse_ccs_ref(agent_name)?;
-        resolve_ccs_agent(alias, &self.aliases, &self.defaults)
+        // Try to resolve from configured aliases
+        if let Some(config) = resolve_ccs_agent(alias, &self.aliases, &self.defaults) {
+            return Some(config);
+        }
+        // For unknown CCS aliases, generate a default config for direct execution
+        // This allows commands like `ccs random` to work without pre-configuration
+        let cmd = CcsAliasConfig {
+            cmd: format!("ccs {}", alias),
+            ..CcsAliasConfig::default()
+        };
+        let display_name = format!("ccs-{}", alias);
+        Some(build_ccs_agent_config(&cmd, &self.defaults, display_name))
     }
 
     /// Check if a given agent name would resolve to a CCS alias.
+    /// Now returns true for any CCS reference since we support direct execution.
     #[cfg(test)]
     pub fn can_resolve(&self, agent_name: &str) -> bool {
-        if let Some(alias) = parse_ccs_ref(agent_name) {
-            // Empty alias (just "ccs") always resolves
-            alias.is_empty() || self.aliases.contains_key(alias)
-        } else {
-            false
-        }
+        parse_ccs_ref(agent_name).is_some()
     }
 
     /// Add a new alias.
@@ -400,9 +407,10 @@ mod tests {
         assert!(config.is_some());
         assert_eq!(config.unwrap().cmd, "ccs");
 
-        // Unknown alias
+        // Unknown alias - now resolves with default config for direct CCS execution
         let config = resolver.try_resolve("ccs/unknown");
-        assert!(config.is_none());
+        assert!(config.is_some());
+        assert_eq!(config.unwrap().cmd, "ccs unknown");
 
         // Not a CCS ref
         let config = resolver.try_resolve("claude");
@@ -421,9 +429,10 @@ mod tests {
         );
         let resolver = CcsAliasResolver::new(aliases, default_ccs());
 
+        // All CCS references now resolve (including unregistered ones)
         assert!(resolver.can_resolve("ccs"));
         assert!(resolver.can_resolve("ccs/work"));
-        assert!(!resolver.can_resolve("ccs/unknown"));
+        assert!(resolver.can_resolve("ccs/unknown")); // Now true - direct CCS execution
         assert!(!resolver.can_resolve("claude"));
     }
 
