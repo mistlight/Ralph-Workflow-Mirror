@@ -52,25 +52,27 @@ impl Default for GitHelpers {
 }
 
 /// Enable git wrapper that blocks commits during agent phase.
-pub(crate) fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<PathBuf> {
+pub(crate) fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
     helpers.init_real_git();
-    let real_git = helpers
-        .real_git
-        .as_ref()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "git not found"))?;
+    let Some(real_git) = helpers.real_git.as_ref() else {
+        // Ralph's git operations use libgit2 and should work without the `git` CLI installed.
+        // The wrapper is only a safety feature for intercepting `git commit/push/tag`.
+        // If no `git` binary is available, there's nothing to wrap, so we no-op.
+        return Ok(());
+    };
 
     let wrapper_dir = tempfile::tempdir()?;
     let wrapper_path = wrapper_dir.path().join("git");
 
     let wrapper_content = format!(
-        r#"#!/usr/bin/env bash
-set -euo pipefail
+        r#"#!/usr/bin/env sh
+set -eu
 repo_root="$("{}" rev-parse --show-toplevel 2>/dev/null || pwd)"
-if [[ -f "$repo_root/.no_agent_commit" ]]; then
-  subcmd="${{1:-}}"
+if [ -f "$repo_root/.no_agent_commit" ]; then
+  subcmd="${{1-}}"
   case "$subcmd" in
     commit|push|tag)
-      echo "✋ Blocked: git $subcmd disabled during agent phase (.no_agent_commit present)."
+      echo "Blocked: git $subcmd disabled during agent phase (.no_agent_commit present)." >&2
       exit 1
       ;;
   esac
@@ -105,9 +107,8 @@ exec "{}" "$@"
         wrapper_dir.path().display().to_string(),
     )?;
 
-    let wrapper_dir_path = wrapper_dir.path().to_path_buf();
     helpers.wrapper_dir = Some(wrapper_dir);
-    Ok(wrapper_dir_path)
+    Ok(())
 }
 
 /// Disable git wrapper.

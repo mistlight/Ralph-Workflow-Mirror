@@ -52,6 +52,9 @@ tempfile = "3.10"
 # Signal handling for cleanup on Ctrl+C
 ctrlc = "3.4"
 
+# Git library for direct git operations (bypasses CLI)
+git2 = "0.18"
+
 [dev-dependencies]
 # Testing utilities
 tempfile = "3.10"

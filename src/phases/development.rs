@@ -8,7 +8,7 @@
 //! 4. Optionally runs fast checks
 
 use crate::agents::AgentRole;
-use crate::git_helpers::git_snapshot;
+use crate::git_helpers::{commit_with_auto_message_result, git_snapshot};
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use crate::utils::{
@@ -139,6 +139,43 @@ pub fn run_development_phase(
         } else {
             ctx.logger.success("Repository modified");
             ctx.stats.changes_detected += 1;
+
+            // Create a commit with auto-generated message
+            // This is done by the orchestrator, not the agent
+            // Note: commit_with_auto_message has fallback behavior if LLM fails
+            // We use the developer agent for commit message generation (not reviewer)
+            // because the commit should reflect the development work that was done
+            let agent_cmd = ctx
+                .config
+                .developer_cmd
+                .clone()
+                .or_else(|| ctx.registry.developer_cmd(ctx.developer_agent));
+            if let Some(agent_cmd) = agent_cmd {
+                ctx.logger
+                    .info("Creating commit with auto-generated message...");
+                match commit_with_auto_message_result(&agent_cmd) {
+                    crate::git_helpers::CommitResult::Success(oid) => {
+                        ctx.logger.success(&format!("Commit created successfully: {}", oid));
+                        ctx.stats.commits_created += 1;
+                    }
+                    crate::git_helpers::CommitResult::NoChanges => {
+                        // No meaningful changes to commit (already handled by has_meaningful_changes)
+                        ctx.logger.info("No commit created (no meaningful changes)");
+                    }
+                    crate::git_helpers::CommitResult::Failed(err) => {
+                        // Actual git operation failed - this is critical
+                        // The commit_with_auto_message function handles LLM failures internally
+                        // So this error indicates a real git problem
+                        ctx.logger
+                            .error(&format!("Failed to create commit (git operation failed): {}", err));
+                        // Don't continue - this is a real error that needs attention
+                        return Err(anyhow::anyhow!(err));
+                    }
+                }
+            } else {
+                ctx.logger
+                    .warn("Unable to get developer agent command for commit");
+            }
         }
         prev_snap = snap;
 
@@ -223,9 +260,21 @@ fn try_extract_plan_from_log(
         }
 
         if let Some(result) = last_result {
-            // Check if result looks like a plan (contains markdown headers)
+            // Check if result looks like a plan using more robust validation:
+            // 1. Contains markdown headers (lines starting with #)
+            // 2. Has reasonable length (> 50 chars minimum for a meaningful plan)
+            // 3. Contains plan-like structure indicators (steps, tasks, phases, etc.)
             let result_clean = result.trim().to_string();
-            if result_clean.contains("#") && result_clean.len() > 100 {
+            let has_header = result_clean.lines().any(|line| line.trim().starts_with('#'));
+            let has_min_length = result_clean.len() > 50;
+            let has_structure = result_clean.contains("step")
+                || result_clean.contains("task")
+                || result_clean.contains("phase")
+                || result_clean.contains("implement")
+                || result_clean.contains("create")
+                || result_clean.contains("add");
+
+            if has_header && has_min_length && has_structure {
                 logger.info(&format!(
                     "Extracted plan from agent output log: {}",
                     path.display()
@@ -239,6 +288,9 @@ fn try_extract_plan_from_log(
 }
 
 /// Run the planning step to create PLAN.md.
+///
+/// The agent returns structured plan content (captured by JSON parser),
+/// and the orchestrator writes it to .agent/PLAN.md.
 fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
     // Save checkpoint at start of planning phase (if enabled)
     if ctx.config.checkpoint_enabled {
@@ -265,7 +317,8 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         None, // No guidelines needed for planning
     );
 
-    let _ = {
+    let log_dir = format!(".agent/logs/planning_{}", iteration);
+    let exit_code = {
         let mut runtime = PipelineRuntime {
             timer: ctx.timer,
             logger: ctx.logger,
@@ -276,18 +329,52 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
             AgentRole::Developer,
             &format!("planning #{}", iteration),
             &plan_prompt,
-            &format!(".agent/logs/planning_{}", iteration),
+            &log_dir,
             &mut runtime,
             ctx.registry,
             ctx.developer_agent,
         )
-    };
+    }?;
+
+    // After agent completes, check if PLAN.md was created or extract from JSON log
+    // The orchestrator (not the agent) handles file I/O for production agents
+    // For tests/legacy agents that write PLAN.md directly, we accept that too
+    let plan_path = Path::new(".agent/PLAN.md");
+    let plan_exists = plan_path
+        .exists()
+        .then(|| fs::read_to_string(plan_path).ok())
+        .flatten()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+
+    if !plan_exists {
+        // Try to extract plan from JSON log (for production agents)
+        if let Some(plan_content) = try_extract_plan_from_log(ctx.logger, iteration, ctx.developer_agent)?
+        {
+            if let Some(parent) = plan_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(plan_path, &plan_content)?;
+            ctx.logger.success("Extracted plan from agent output and created PLAN.md");
+        } else if exit_code == 0 {
+            // Agent succeeded but we couldn't extract a plan and no PLAN.md exists
+            anyhow::bail!(
+                "Planning agent completed successfully but no plan was found in output"
+            );
+        }
+    } else {
+        ctx.logger.success("PLAN.md created by agent");
+    }
+    // If exit_code != 0, the error will be propagated by the caller
 
     Ok(())
 }
 
 /// Verify that PLAN.md exists and is non-empty.
-/// If missing, try to extract from agent log output as fallback.
+///
+/// With the new architecture, the orchestrator writes PLAN.md after extracting
+/// the plan content from the agent's JSON output. If PLAN.md is missing,
+/// we attempt to extract it from the log as a fallback.
 /// If resuming and plan is still missing, re-run planning.
 fn verify_plan_exists(
     ctx: &mut PhaseContext<'_>,
@@ -304,7 +391,7 @@ fn verify_plan_exists(
         .unwrap_or(false);
 
     // Fallback: try to extract plan from agent's JSON log output
-    // This handles cases where agent succeeded but file writes were denied (e.g., GLM permission denials)
+    // This handles edge cases where the orchestrator failed to write the file
     if !plan_ok {
         ctx.logger
             .info("PLAN.md not found; attempting to extract from agent output log...");

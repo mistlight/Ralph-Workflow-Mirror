@@ -20,6 +20,9 @@ use super::super::types::ContextLevel;
 /// This prompt is intentionally vague to preserve "fresh eyes" perspective
 /// and avoid context pollution. For detailed actionable output, use
 /// `prompt_detailed_review_without_guidelines` instead.
+///
+/// The reviewer returns structured issues data (captured by JSON parser)
+/// and the orchestrator writes it to .agent/ISSUES.md.
 pub fn prompt_reviewer_review(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"You are in REVIEW MODE with fresh eyes perspective.
@@ -34,8 +37,8 @@ Evaluate the codebase against PROMPT.md. Focus on:
 3) Bugs, error handling, tests, security
 
 OUTPUT:
-Write findings to .agent/ISSUES.md.
-If no issues found, write "No issues found." to .agent/ISSUES.md"#
+Return your findings as structured output.
+If no issues found, return "No issues found.""#
             .to_string(),
         ContextLevel::Normal => r#"You are in REVIEW MODE.
 
@@ -46,16 +49,19 @@ YOUR TASK:
 Review the repository against PROMPT.md requirements (goal, acceptance checks, quality).
 
 OUTPUT:
-Write findings to .agent/ISSUES.md.
-If no issues, write "No issues found.""#
+Return your findings as structured output.
+If no issues, return "No issues found.""#
             .to_string(),
     }
 }
 
 /// Generate detailed reviewer review prompt without language-specific guidelines.
 ///
-/// Use this when the review needs to produce actionable `.agent/ISSUES.md` output
+/// Use this when the review needs to produce actionable issues output
 /// even if stack detection did not produce `ReviewGuidelines`.
+///
+/// The reviewer returns structured issues data (captured by JSON parser)
+/// and the orchestrator writes it to .agent/ISSUES.md.
 pub fn prompt_detailed_review_without_guidelines(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"You are in DETAILED REVIEW MODE with fresh eyes perspective.
@@ -70,64 +76,93 @@ Produce actionable issues against PROMPT.md:
 2) Each acceptance check (explicit pass/fail with evidence)
 3) Code quality, bugs, security, tests
 
-OUTPUT to .agent/ISSUES.md (prioritized checklist):
+OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Description (blocks merge)
 - [ ] High: [file:line] Description (should fix before merge)
 - [ ] Medium: [file:line] Description (should address)
 - [ ] Low: [file:line] Description (nice to have)
 
-If no issues found, write "No issues found." to .agent/ISSUES.md"#
+If no issues found, return "No issues found.""#
             .to_string(),
         ContextLevel::Normal => r#"You are in DETAILED REVIEW MODE.
 
 INPUTS TO READ:
 - PROMPT.md
-- .agent/STATUS.md
 
 YOUR TASK:
 Review against PROMPT.md (goal, acceptance checks, quality).
 
-OUTPUT to .agent/ISSUES.md:
+OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Blocks merge
 - [ ] High: [file:line] Should fix before merge
 - [ ] Medium: [file:line] Should address
 - [ ] Low: [file:line] Nice to have
 
-If no issues found, write "No issues found.""#
+If no issues found, return "No issues found.""#
             .to_string(),
     }
 }
 
-/// Generate incremental review prompt for reviewing only changed files.
-pub fn prompt_incremental_review(context: ContextLevel) -> String {
+/// Generate incremental review prompt with diff included directly.
+///
+/// This version receives the diff as a parameter instead of telling the agent
+/// to run git commands. This keeps agents isolated from git operations.
+///
+/// The reviewer returns structured issues data (captured by JSON parser)
+/// and the orchestrator writes it to .agent/ISSUES.md.
+///
+/// # Arguments
+///
+/// * `context` - The context level (minimal or normal)
+/// * `diff` - The git diff to review (changes since pipeline start)
+pub fn prompt_incremental_review_with_diff(context: ContextLevel, diff: &str) -> String {
     match context {
-        ContextLevel::Minimal => r#"You are in INCREMENTAL REVIEW MODE with fresh eyes.
+        ContextLevel::Minimal => format!(
+            r#"You are in INCREMENTAL REVIEW MODE with fresh eyes.
 
 INPUTS TO READ:
-- PROMPT.md
-- Run `git diff HEAD~1` and `git status` to see changes
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md
+- PROMPT.md - The requirements (Goal and Acceptance checks)
+- DIFF below - Changes since the start of this pipeline
 
 YOUR TASK:
-Review ONLY the changed files/lines. Focus on:
+Review ONLY the changes in the DIFF below. Focus on:
 1) Alignment with PROMPT.md goal/acceptance checks
 2) Bugs, error handling, tests
 3) Security regressions (inputs validated, outputs escaped)
 
-OUTPUT:
-Write findings to .agent/ISSUES.md as a prioritized checklist.
-If no issues found, write \"No issues found in changed files.\" to .agent/ISSUES.md"#
-            .to_string(),
-        ContextLevel::Normal => r#"You are in INCREMENTAL REVIEW MODE.
+DIFF TO REVIEW:
+```diff
+{}
+```
+
+OUTPUT (prioritized checklist):
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description
+
+If no issues found, return "No issues found in changed files.""#,
+            diff
+        ),
+        ContextLevel::Normal => format!(
+            r#"You are in INCREMENTAL REVIEW MODE.
 
 INPUTS TO READ:
 - PROMPT.md
-- Run `git diff HEAD~1` and `git status`
-- .agent/STATUS.md
+- DIFF below - Changes since the start of this pipeline
 
-OUTPUT to .agent/ISSUES.md:
-- [ ] Critical/High/Medium/Low: [file:line] Description"#
-            .to_string(),
+DIFF TO REVIEW:
+```diff
+{}
+```
+
+OUTPUT (prioritized checklist):
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description"#,
+            diff
+        ),
     }
 }
 
@@ -138,6 +173,9 @@ OUTPUT to .agent/ISSUES.md:
 /// - Uses simpler, more direct language
 /// - Provides explicit output templates
 /// - Minimizes complex structured instructions
+///
+/// The reviewer returns structured issues data (captured by JSON parser)
+/// and the orchestrator writes it to .agent/ISSUES.md.
 ///
 /// Use this for agents like GLM, ZhipuAI, and other models that may struggle
 /// with more complex prompts.
@@ -153,28 +191,16 @@ Look for bugs, errors, security issues, and missing tests.
 
 OUTPUT FORMAT
 
-Write your findings to .agent/ISSUES.md
+Return your findings using this format:
 
-Example format:
-```markdown
-# Code Review Issues
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description
 
-## Critical Issues
-- [ ] [src/main.rs:42] Null pointer dereference risk
+If no issues found, return exactly: "No issues found."
 
-## High Priority
-- [ ] [src/auth.rs:15] Missing input validation
-
-## Medium Priority
-- [ ] [src/utils.rs:78] Function may return null
-
-## Low Priority
-- [ ] [src/config.rs:10] Missing documentation
-```
-
-If no issues found, write exactly: "No issues found."
-
-IMPORTANT: Use the format [file:line] for each issue so the fix agent can find them."#
+IMPORTANT: Use the format [file:line] for each issue."#
             .to_string(),
         ContextLevel::Normal => r#"REVIEW TASK
 
@@ -183,15 +209,13 @@ Review the codebase against those requirements.
 
 OUTPUT FORMAT
 
-Write your findings to .agent/ISSUES.md
-
-Use this format:
+Return your findings using this format:
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found, write exactly: "No issues found.""#
+If no issues found, return exactly: "No issues found.""#
             .to_string(),
     }
 }
