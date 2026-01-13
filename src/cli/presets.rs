@@ -63,6 +63,16 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: &Co
         }
     }
 
+    // Rapid mode: 2 developer iterations, 1 review pass (explicit flags override)
+    if args.rapid {
+        if args.developer_iters.is_none() {
+            config.developer_iters = 2;
+        }
+        if args.reviewer_reviews.is_none() {
+            config.reviewer_reviews = 1;
+        }
+    }
+
     if let Some(iters) = args.developer_iters {
         config.developer_iters = iters;
     }

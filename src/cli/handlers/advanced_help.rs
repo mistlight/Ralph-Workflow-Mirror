@@ -28,6 +28,7 @@ pub fn handle_help_advanced(colors: &Colors) {
     println!();
     println!("{}PRESET MODES:{}", reset, yellow);
     println!("    -Q, --quick      1 dev + 1 review      (rapid prototyping)");
+    println!("    -U, --rapid      2 dev + 1 review      (fast iteration)");
     println!("    -S, --standard   5 dev + 2 reviews     (default workflow)");
     println!("    -T, --thorough  10 dev + 5 reviews     (balanced but thorough)");
     println!("    -L, --long      15 dev + 10 reviews    (most thorough)");
@@ -37,10 +38,10 @@ pub fn handle_help_advanced(colors: &Colors) {
     println!("╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!();
     println!("{}COMMON FLAGS:{}", reset, yellow);
-    println!("    -D N        Developer iterations");
+    println!("    -D N        Developer iterations (how many times the AI tries to build)");
     println!("    -R N        Review cycles (0=skip, 1=one cycle, default: 2)");
     println!("    -a AGENT    Developer agent (claude, codex, opencode, etc.)");
-    println!("    -r AGENT    Reviewer agent");
+    println!("    -r AGENT    Reviewer agent (for code quality checks)");
     println!("    -v N        Verbosity (0=quiet, 1=normal, 2=verbose, 3=full, 4=debug)");
     println!("    -d, --diagnose    Show diagnostic info");
     println!();
@@ -61,6 +62,7 @@ pub fn handle_help_advanced(colors: &Colors) {
     println!();
     println!("    Preset modes:");
     println!("        ralph -Q \"fix: small bug\"           Quick (1+1)");
+    println!("        ralph -U \"fix: minor bug\"           Rapid (2+1)");
     println!("        ralph -S \"feat: normal change\"      Standard (5+2)");
     println!("        ralph -T \"refactor: optimize\"       Thorough (10+5)");
     println!("        ralph -L \"feat: complex feature\"    Long (15+10)");
