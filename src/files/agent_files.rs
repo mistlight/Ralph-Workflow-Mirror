@@ -3,6 +3,7 @@
 //! This module handles creation, modification, and cleanup of files
 //! in the `.agent/` directory that are used during pipeline execution.
 
+use crate::files::{integrity, recovery};
 use crate::logger::Logger;
 use std::fs::{self, File};
 use std::io::{self, BufRead};
@@ -31,7 +32,7 @@ fn overwrite_one_liner(path: &Path, line: &str) -> io::Result<()> {
     } else {
         format!("{}\n", first_line)
     };
-    fs::write(path, content)
+    integrity::write_file_atomic(path, &content)
 }
 
 /// Check if a file contains a specific marker string.
@@ -170,6 +171,21 @@ pub fn update_status(_status: &str, isolation_mode: bool) -> io::Result<()> {
 /// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
 /// are NOT created. This prevents context contamination from previous runs.
 pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
+    let agent_dir = Path::new(".agent");
+
+    // Best-effort state repair before we start touching `.agent/` contents.
+    // If the state is unrecoverable, fail early with a clear error.
+    match recovery::auto_repair(agent_dir)? {
+        recovery::RecoveryStatus::Unrecoverable(msg) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to repair .agent state: {}", msg),
+            ));
+        }
+        _ => {}
+    }
+
+    integrity::check_filesystem_ready(agent_dir)?;
     fs::create_dir_all(".agent/logs")?;
 
     // Only create STATUS.md, NOTES.md and ISSUES.md when NOT in isolation mode
@@ -215,6 +231,12 @@ pub fn delete_commit_message_file() -> io::Result<()> {
 /// Returns an error if the file doesn't exist, cannot be read, or is empty.
 pub fn read_commit_message_file() -> io::Result<String> {
     let msg_path = Path::new(".agent/commit-message.txt");
+    if msg_path.exists() && !integrity::verify_file_not_corrupted(msg_path)? {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            ".agent/commit-message.txt appears corrupted",
+        ));
+    }
     let content = fs::read_to_string(msg_path).map_err(|e| {
         io::Error::new(
             e.kind(),
@@ -248,7 +270,7 @@ pub fn write_commit_message_file(message: &str) -> io::Result<()> {
     if let Some(parent) = msg_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(msg_path, message)?;
+    integrity::write_file_atomic(msg_path, message)?;
     Ok(())
 }
 

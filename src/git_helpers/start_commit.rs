@@ -193,10 +193,8 @@ pub(crate) fn reset_start_commit() -> io::Result<()> {
     write_start_commit_with_oid(&oid)
 }
 
-/// Check if a starting commit file exists.
-///
-/// Returns true if `.agent/start_commit` exists and contains a valid start point.
-pub(crate) fn has_start_commit() -> bool {
+#[cfg(test)]
+fn has_start_commit() -> bool {
     load_start_point().is_ok()
 }
 
