@@ -202,6 +202,14 @@ cmd = "my-ai-tool run"
 json_parser = "generic"  # Use "generic" if agent doesn't output JSON
 ```
 
+**Important (unattended runs / automation)**: Ralph defaults to enabling autonomous permissions for agents that support it (e.g. `yolo_flag = "--dangerously-skip-permissions"`). This is intentional: unattended operation relies on non-interactive execution.
+
+To explicitly disable YOLO mode (recommended only for interactive/manual runs), set the flag to an empty string:
+```toml
+[agents.claude]
+yolo_flag = ""
+```
+
 ## Environment Variables
 
 Quick reference for the most common settings:
@@ -230,6 +238,11 @@ export FAST_CHECK_CMD="npm run lint"
 export FULL_CHECK_CMD="npm test"
 ralph
 ```
+
+Notes:
+- `FAST_CHECK_CMD` and `FULL_CHECK_CMD` are executed directly (no implicit `sh -c`).
+- For shell features (pipes, `&&`, redirects), make it explicit: `FULL_CHECK_CMD="sh -c 'npm test && npm run lint'"`.
+- Avoid embedding credentials in these commands; prefer environment variables or credential helpers.
 
 ## Advanced Features
 

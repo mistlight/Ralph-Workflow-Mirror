@@ -16,10 +16,10 @@
 //! - [`split_command`] - Parse shell command strings
 //! - [`truncate_text`] - Truncate text with ellipsis
 
-// Allow unused imports for re-exports (backward compatibility layer)
-#![allow(unused_imports)]
-
 use std::io;
+
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 // Re-exports from checkpoint module
 pub use crate::checkpoint::{
@@ -28,14 +28,23 @@ pub use crate::checkpoint::{
 };
 
 // Re-exports from logger module
-pub use crate::logger::{print_progress, strip_ansi_codes, timestamp, Logger};
+pub use crate::logger::{print_progress, Logger};
+pub use crate::logger::{strip_ansi_codes, timestamp};
 
 // Re-exports from files module
 pub use crate::files::{
     clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
     delete_issues_file_for_isolation, delete_plan_file, ensure_files, file_contains_marker,
     read_commit_message_file, reset_context_for_isolation, update_status, validate_prompt_md,
-    PromptValidationResult, GENERATED_FILES,
+};
+pub use crate::files::{PromptValidationResult, GENERATED_FILES};
+
+// Keep backward-compatibility re-exports "used" without suppressing lints.
+const _: () = {
+    let _strip_ansi_codes: fn(&str) -> String = strip_ansi_codes;
+    let _timestamp: fn() -> String = timestamp;
+    let _generated_files = GENERATED_FILES;
+    let _prompt_validation_result_size = std::mem::size_of::<PromptValidationResult>();
 };
 
 /// Split a shell-like command string into argv parts.
@@ -61,9 +70,117 @@ pub(crate) fn split_command(cmd: &str) -> io::Result<Vec<String>> {
     shell_words::split(cmd).map_err(|err| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("Failed to parse command string '{}': {}", cmd, err),
+            format!("Failed to parse command string: {}", err),
         )
     })
+}
+
+static SECRET_LIKE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?ix)
+        \b(
+          sk-[a-z0-9]{20,} |
+          ghp_[a-z0-9]{20,} |
+          github_pat_[a-z0-9_]{20,} |
+          xox[baprs]-[a-z0-9-]{10,} |
+          AKIA[0-9A-Z]{16}
+        )\b
+        ",
+    )
+    .expect("valid redaction regex")
+});
+
+fn is_sensitive_key(key: &str) -> bool {
+    let key = key.trim().trim_start_matches('-').trim_start_matches('-');
+    let key = key
+        .split_once('=')
+        .or_else(|| key.split_once(':'))
+        .map(|(k, _)| k)
+        .unwrap_or(key)
+        .trim()
+        .to_ascii_lowercase()
+        .replace('_', "-");
+
+    matches!(
+        key.as_str(),
+        "token"
+            | "access-token"
+            | "api-key"
+            | "apikey"
+            | "auth"
+            | "authorization"
+            | "bearer"
+            | "client-secret"
+            | "password"
+            | "pass"
+            | "passwd"
+            | "private-key"
+            | "secret"
+    )
+}
+
+fn redact_arg_value(key: &str, value: &str) -> String {
+    if is_sensitive_key(key) {
+        return "<redacted>".to_string();
+    }
+    SECRET_LIKE_RE.replace_all(value, "<redacted>").to_string()
+}
+
+fn shell_quote_for_log(arg: &str) -> String {
+    if arg.is_empty() {
+        return "''".to_string();
+    }
+    if !arg
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '\\'))
+    {
+        return arg.to_string();
+    }
+    let escaped = arg.replace('\'', r#"'\"'\"'"#);
+    format!("'{}'", escaped)
+}
+
+/// Format argv for logs, redacting likely secrets.
+pub(crate) fn format_argv_for_log(argv: &[String]) -> String {
+    let mut out = Vec::with_capacity(argv.len());
+    let mut redact_next_value = false;
+
+    for arg in argv {
+        if redact_next_value {
+            out.push("<redacted>".to_string());
+            redact_next_value = false;
+            continue;
+        }
+        redact_next_value = false;
+
+        if let Some((k, v)) = arg.split_once('=') {
+            // Flag-style (--token=...) or env-style (GITHUB_TOKEN=...)
+            let env_key = k.to_ascii_uppercase();
+            let looks_like_secret_env = env_key.contains("TOKEN")
+                || env_key.contains("SECRET")
+                || env_key.contains("PASSWORD")
+                || env_key.contains("PASS")
+                || env_key.contains("KEY");
+            if is_sensitive_key(k) || looks_like_secret_env {
+                out.push(format!("{}=<redacted>", shell_quote_for_log(k)));
+                continue;
+            }
+            let redacted = redact_arg_value(k, v);
+            out.push(shell_quote_for_log(&format!("{}={}", k, redacted)));
+            continue;
+        }
+
+        if is_sensitive_key(arg) {
+            out.push(shell_quote_for_log(arg));
+            redact_next_value = true;
+            continue;
+        }
+
+        let redacted = SECRET_LIKE_RE.replace_all(arg, "<redacted>").to_string();
+        out.push(shell_quote_for_log(&redacted));
+    }
+
+    out.join(" ")
 }
 
 /// Truncate text to a limit with ellipsis.
