@@ -28,6 +28,11 @@ CONFIGURATION:\n\
     CCS aliases can be defined in the config and used as 'ccs/alias-name'.\n\
     Run 'ralph --init-global' to create the unified config file.\n\
     Run 'ralph --list-agents' to see all configured agents.\n\n\
+PROMPT.md TEMPLATES:\n\
+    Run 'ralph --list-templates' to see available PROMPT.md templates.\n\
+    Run 'ralph --init-prompt <template>' to create PROMPT.md from a template.\n\
+    Run 'ralph --interactive' to be prompted when PROMPT.md is missing.\n\
+    Templates include: feature-spec, bug-fix, refactor, test, docs, quick.\n\n\
 VERBOSITY LEVELS (-v LEVEL):\n\
     0 = quiet    Minimal output, hide tool inputs (--quiet or -q)\n\
     1 = normal   Balanced output, show tool inputs\n\
@@ -70,7 +75,8 @@ pub struct Args {
         long = "developer-iters",
         env = "RALPH_DEVELOPER_ITERS",
         value_name = "N",
-        help = "Number of developer agent iterations"
+        help = "Number of developer agent iterations",
+        aliases = ["developer-iteration", "dev-iter", "d-iters"]
     )]
     pub developer_iters: Option<u32>,
 
@@ -79,7 +85,8 @@ pub struct Args {
         long = "reviewer-reviews",
         env = "RALPH_REVIEWER_REVIEWS",
         value_name = "N",
-        help = "Number of review-fix cycles (0=skip review, 1=one cycle, default: 2)"
+        help = "Number of review-fix cycles (0=skip review, 1=one cycle, default: 2)",
+        aliases = ["reviewer-count", "reviewer-review"]
     )]
     pub reviewer_reviews: Option<u32>,
 
@@ -96,7 +103,7 @@ pub struct Args {
     #[arg(
         long,
         env = "RALPH_DEVELOPER_AGENT",
-        aliases = ["driver-agent"],
+        aliases = ["driver-agent", "dev-agent", "developer"],
         value_name = "AGENT",
         help = "Developer agent for code implementation (default: first in agent_chain.developer)"
     )]
@@ -106,6 +113,7 @@ pub struct Args {
     #[arg(
         long,
         env = "RALPH_REVIEWER_AGENT",
+        aliases = ["rev-agent", "reviewer"],
         value_name = "AGENT",
         help = "Reviewer agent for code review (default: first in agent_chain.reviewer)"
     )]
@@ -227,7 +235,7 @@ pub struct Args {
     /// Initialize unified config file and exit (alias for --init-global)
     #[arg(
         long,
-        conflicts_with_all = ["init_global", "init_legacy"],
+        conflicts_with_all = ["init_global", "init_legacy", "init_prompt"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)"
     )]
     pub init: bool,
@@ -235,7 +243,7 @@ pub struct Args {
     /// Initialize unified config file and exit
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_legacy"],
+        conflicts_with_all = ["init", "init_legacy", "init_prompt"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)"
     )]
     pub init_global: bool,
@@ -243,7 +251,7 @@ pub struct Args {
     /// Initialize legacy per-repo agents.toml and exit
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_global"],
+        conflicts_with_all = ["init", "init_global", "init_prompt"],
         help = "(Legacy) Create .agent/agents.toml with default settings (not recommended)"
     )]
     pub init_legacy: bool,
@@ -310,4 +318,27 @@ pub struct Args {
         help = "Path to configuration file (default: ~/.config/ralph-workflow.toml)"
     )]
     pub config: Option<std::path::PathBuf>,
+
+    /// Initialize PROMPT.md from template and exit
+    #[arg(
+        long,
+        value_name = "TEMPLATE",
+        help = "Create PROMPT.md from a template (use --list-templates to see options)"
+    )]
+    pub init_prompt: Option<String>,
+
+    /// List available PROMPT.md templates and exit
+    #[arg(
+        long,
+        help = "Show all available PROMPT.md templates with descriptions"
+    )]
+    pub list_templates: bool,
+
+    /// Interactive mode: prompt to create PROMPT.md from template when missing
+    #[arg(
+        long,
+        short = 'i',
+        help = "Interactive mode: prompt to create PROMPT.md from template when missing"
+    )]
+    pub interactive: bool,
 }

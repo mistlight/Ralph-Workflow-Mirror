@@ -20,8 +20,8 @@ pub mod validation;
 use crate::agents::AgentRegistry;
 use crate::banner::{print_final_summary, print_welcome_banner};
 use crate::cli::{
-    handle_diagnose, handle_dry_run, handle_list_agents, handle_list_available_agents,
-    handle_list_providers, Args,
+    create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
+    handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
 };
 use crate::colors::Colors;
 use crate::config::Config;
@@ -87,6 +87,10 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let developer_agent = validated.developer_agent;
     let reviewer_agent = validated.reviewer_agent;
 
+    // Get display names for UI/logging
+    let developer_display = registry.display_name(&developer_agent);
+    let reviewer_display = registry.display_name(&reviewer_agent);
+
     // Handle listing commands (these can run without git repo)
     if handle_listing_commands(&args, &registry, &colors) {
         return Ok(());
@@ -148,6 +152,34 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     require_git_repo()?;
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
+
+    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
+    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
+    if args.interactive && !std::path::Path::new("PROMPT.md").exists() {
+        match prompt_template_selection(&colors) {
+            Some(template_name) => {
+                create_prompt_from_template(&template_name, &colors)?;
+                println!();
+                logger.info(
+                    "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+                );
+                logger.info(&format!(
+                    "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                    config.commit_msg
+                ));
+                return Ok(());
+            }
+            None => {
+                println!();
+                logger.info("PROMPT.md is required to run the pipeline.");
+                logger.info(
+                    "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+                );
+                return Ok(());
+            }
+        }
+    }
+
     ensure_files(config.isolation_mode)?;
 
     // Reset context for isolation mode
@@ -163,8 +195,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
             &logger,
             &colors,
             &config,
-            &developer_agent,
-            &reviewer_agent,
+            &developer_display,
+            &reviewer_display,
             &repo_root,
         );
     }
@@ -188,6 +220,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         registry,
         developer_agent,
         reviewer_agent,
+        developer_display,
+        reviewer_display,
         repo_root,
         logger,
         colors,
@@ -221,12 +255,14 @@ fn run_pipeline(
     registry: AgentRegistry,
     developer_agent: String,
     reviewer_agent: String,
+    developer_display: String,
+    reviewer_display: String,
     repo_root: std::path::PathBuf,
     logger: Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
     // Handle --resume
-    let resume_checkpoint = handle_resume(&args, &logger, &developer_agent, &reviewer_agent);
+    let resume_checkpoint = handle_resume(&args, &logger, &developer_display, &reviewer_display);
 
     // Set up git helpers
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
@@ -238,7 +274,7 @@ fn run_pipeline(
     let mut stats = Stats::new();
 
     // Welcome banner
-    print_welcome_banner(&colors, &developer_agent, &reviewer_agent);
+    print_welcome_banner(&colors, &developer_display, &reviewer_display);
     logger.info(&format!(
         "Working directory: {}{}{}",
         colors.cyan(),
@@ -255,7 +291,8 @@ fn run_pipeline(
     // Validate PROMPT.md early so we don't run a "review" against an ill-formed prompt.
     // In non-strict mode this is warning-only for missing sections, but still surfaced
     // loudly because it impacts the review workflow.
-    let prompt_validation = validate_prompt_md(config.strict_validation);
+    // Note: Interactive mode PROMPT.md creation is handled in run() before ensure_files()
+    let prompt_validation = validate_prompt_md(config.strict_validation, args.interactive);
     for err in &prompt_validation.errors {
         logger.error(err);
     }
@@ -574,9 +611,11 @@ fn run_final_validation(
         ctx.colors.reset()
     ));
 
-    let (program, args) = argv
-        .split_first()
-        .expect("argv is non-empty after empty check");
+    let Some((program, args)) = argv.split_first() else {
+        ctx.logger
+            .error("FULL_CHECK_CMD is empty after parsing; skipping final validation");
+        return Ok(());
+    };
     let status = Command::new(program).args(args).status()?;
 
     if status.success() {

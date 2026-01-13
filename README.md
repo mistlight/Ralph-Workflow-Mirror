@@ -80,7 +80,14 @@ After installing, make sure you've authenticated with your chosen agent (e.g., `
 Navigate to any git repository and:
 
 ```bash
-# Create a file describing what you want
+# Option A: Create from template (recommended)
+ralph --init-prompt feature-spec
+# Edit PROMPT.md with your task details
+
+# Option B: Interactive mode (prompts if PROMPT.md is missing)
+ralph --interactive
+
+# Option C: Create manually
 echo "Add a button that says Hello World" > PROMPT.md
 
 # Run Ralph Workflow
@@ -116,6 +123,10 @@ Add a dark mode toggle to the settings page.
 # Basic usage - uses agents configured in agent_chain
 ralph
 
+# Interactive mode - prompts to create PROMPT.md if missing
+ralph --interactive
+# or: ralph -i
+
 # Quick mode for rapid prototyping (1 dev iteration + 1 review)
 ralph --quick
 
@@ -125,6 +136,58 @@ ralph --developer-iters 3 --reviewer-reviews 1
 # See what's happening in detail
 ralph --full
 ```
+
+### PROMPT.md Templates
+
+Ralph Workflow includes pre-built templates to help you create well-structured PROMPT.md files for different task types:
+
+| Template | Name | Best For |
+|----------|------|----------|
+| `feature-spec` | Comprehensive product specification | Full features with multiple sections (Goal, Acceptance, Constraints, Context, Implementation Notes) |
+| `bug-fix` | Bug fix template | Fixing bugs with Issue, Expected Behavior, and Acceptance sections |
+| `refactor` | Code refactoring | Restructuring code with Goal and Acceptance sections |
+| `test` | Test writing | Adding tests with Goal and Acceptance sections |
+| `docs` | Documentation update | Updating docs with Goal and Acceptance sections |
+| `quick` | Quick/small change | Minor changes with just Goal and Acceptance sections |
+
+**List available templates:**
+```bash
+ralph --list-templates
+```
+
+**Create PROMPT.md from a template:**
+```bash
+# Create a feature specification template
+ralph --init-prompt feature-spec
+
+# Create a bug fix template
+ralph --init-prompt bug-fix
+
+# Create a quick change template
+ralph --init-prompt quick
+```
+
+**Interactive mode:**
+```bash
+# Prompts to create PROMPT.md if it's missing
+ralph --interactive
+# or: ralph -i
+
+# The interactive prompt will:
+# 1. Ask if you want to create PROMPT.md from a template
+# 2. Show all available templates
+# 3. Let you select one (defaults to feature-spec)
+# 4. Create the file and exit
+# 5. You then edit the file and run ralph again
+```
+
+After creating the template, edit `PROMPT.md` with your task details, then run `ralph` as usual.
+
+**Why use templates?**
+- **Structure**: Ensures your PROMPT.md has all required sections (Goal, Acceptance)
+- **Clarity**: Prompts you to include important context like constraints and implementation notes
+- **Consistency**: Provides a standard format that AI agents understand well
+- **Speed**: Start with a template instead of writing from scratch
 
 ### Checking What Agents Are Available
 

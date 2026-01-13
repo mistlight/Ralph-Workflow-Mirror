@@ -73,6 +73,10 @@ strict_validation = false
 output_flag = "--output-format=stream-json"
 verbose_flag = "--verbose"
 #
+# Print flag: Required for non-interactive mode (Claude CLI requirement).
+# CCS wraps Claude CLI, which needs -p to accept prompts as CLI arguments.
+print_flag = "-p"
+#
 # YOLO (autonomous) mode: Skip permission/confirmation prompts for unattended operation.
 # Ralph is designed for unattended automation, so this is enabled by default.
 # Set to "" to disable and require confirmation for each action.

@@ -76,10 +76,18 @@ pub fn validate_agent_commands(
 ) -> anyhow::Result<()> {
     // Validate developer command exists
     if config.developer_cmd.is_none() {
-        registry.developer_cmd(developer_agent).ok_or_else(|| {
+        let resolved_developer = registry.resolve_fuzzy(developer_agent);
+        let dev_agent_ref = resolved_developer.as_deref().unwrap_or(developer_agent);
+        registry.developer_cmd(dev_agent_ref).ok_or_else(|| {
+            let suggestion = resolved_developer
+                .as_ref()
+                .filter(|n| n != &developer_agent)
+                .map(|correct| format!(" Did you mean '{}'?", correct))
+                .unwrap_or_default();
             anyhow::anyhow!(
-                "Unknown developer agent '{}'. Use --list-agents or define it in {} under [agents].",
+                "Unknown developer agent '{}'.{}. Use --list-agents or define it in {} under [agents].",
                 developer_agent,
+                suggestion,
                 config_path.display()
             )
         })?;
@@ -87,10 +95,18 @@ pub fn validate_agent_commands(
 
     // Validate reviewer command exists
     if config.reviewer_cmd.is_none() {
-        registry.reviewer_cmd(reviewer_agent).ok_or_else(|| {
+        let resolved_reviewer = registry.resolve_fuzzy(reviewer_agent);
+        let rev_agent_ref = resolved_reviewer.as_deref().unwrap_or(reviewer_agent);
+        registry.reviewer_cmd(rev_agent_ref).ok_or_else(|| {
+            let suggestion = resolved_reviewer
+                .as_ref()
+                .filter(|n| n != &reviewer_agent)
+                .map(|correct| format!(" Did you mean '{}'?", correct))
+                .unwrap_or_default();
             anyhow::anyhow!(
-                "Unknown reviewer agent '{}'. Use --list-agents or define it in {} under [agents].",
+                "Unknown reviewer agent '{}'.{}. Use --list-agents or define it in {} under [agents].",
                 reviewer_agent,
+                suggestion,
                 config_path.display()
             )
         })?;
@@ -125,24 +141,42 @@ pub fn validate_can_commit(
 ) -> anyhow::Result<()> {
     // Enforce workflow-capable agents unless custom command override provided
     if config.developer_cmd.is_none() {
-        if let Some(cfg) = registry.get(developer_agent) {
+        let resolved = registry
+            .resolve_fuzzy(developer_agent)
+            .unwrap_or_else(|| developer_agent.to_string());
+        if let Some(cfg) = registry.resolve_config(&resolved) {
             if !cfg.can_commit {
+                let resolved_note = if resolved != developer_agent {
+                    format!(" (resolved to '{}')", resolved)
+                } else {
+                    String::new()
+                };
                 anyhow::bail!(
-                    "Developer agent '{}' has can_commit=false and cannot run Ralph's workflow.\n\
+                    "Developer agent '{}'{} has can_commit=false and cannot run Ralph's workflow.\n\
                     Fix: choose a different agent (see --list-agents) or set can_commit=true in {} under [agents].",
                     developer_agent,
+                    resolved_note,
                     config_path.display()
                 );
             }
         }
     }
     if config.reviewer_cmd.is_none() {
-        if let Some(cfg) = registry.get(reviewer_agent) {
+        let resolved = registry
+            .resolve_fuzzy(reviewer_agent)
+            .unwrap_or_else(|| reviewer_agent.to_string());
+        if let Some(cfg) = registry.resolve_config(&resolved) {
             if !cfg.can_commit {
+                let resolved_note = if resolved != reviewer_agent {
+                    format!(" (resolved to '{}')", resolved)
+                } else {
+                    String::new()
+                };
                 anyhow::bail!(
-                    "Reviewer agent '{}' has can_commit=false and cannot run Ralph's workflow.\n\
+                    "Reviewer agent '{}'{} has can_commit=false and cannot run Ralph's workflow.\n\
                     Fix: choose a different agent (see --list-agents) or set can_commit=true in {} under [agents].",
                     reviewer_agent,
+                    resolved_note,
                     config_path.display()
                 );
             }
@@ -178,5 +212,62 @@ pub fn validate_agent_chains(registry: &AgentRegistry, colors: &Colors) {
         );
         eprintln!();
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::CcsConfig;
+    use std::collections::HashMap;
+
+    #[test]
+    fn validate_can_commit_uses_fuzzy_resolution() {
+        let registry = AgentRegistry::new().unwrap();
+        let config = Config {
+            developer_cmd: None,
+            reviewer_cmd: None,
+            ..Config::default()
+        };
+
+        // "AiChat" resolves to "aichat" (can_commit=false). This must be rejected.
+        let err = validate_can_commit(
+            &config,
+            &registry,
+            "AiChat",
+            "claude",
+            Path::new("ralph-workflow.toml"),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("can_commit=false"));
+        assert!(msg.contains("AiChat"));
+        assert!(msg.contains("resolved to 'aichat'"));
+    }
+
+    #[test]
+    fn validate_can_commit_uses_resolve_config_for_ccs_refs() {
+        let mut registry = AgentRegistry::new().unwrap();
+        let defaults = CcsConfig {
+            can_commit: false,
+            ..CcsConfig::default()
+        };
+        registry.set_ccs_aliases(HashMap::new(), defaults);
+
+        let config = Config {
+            developer_cmd: None,
+            reviewer_cmd: None,
+            ..Config::default()
+        };
+
+        let err = validate_can_commit(
+            &config,
+            &registry,
+            "ccs/random",
+            "claude",
+            Path::new("ralph-workflow.toml"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("can_commit=false"));
     }
 }

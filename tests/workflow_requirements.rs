@@ -155,8 +155,8 @@ reviewer = ["aider", "codex"]
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("opencode"))
-        .stdout(predicate::str::contains("aider"));
+        .stdout(predicate::str::contains("OpenCode"))
+        .stdout(predicate::str::contains("Aider"));
 }
 
 #[test]
