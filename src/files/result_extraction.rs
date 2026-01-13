@@ -149,12 +149,59 @@ fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec
     Ok(log_files)
 }
 
+/// Find subdirectories matching a prefix pattern.
+///
+/// This handles the legacy case where agent names containing "/" created
+/// nested directories (e.g., "planning_1_ccs/glm_0.log" instead of flat files).
+fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<PathBuf>> {
+    let entries = match fs::read_dir(parent_dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+
+    let mut subdirs = Vec::new();
+    let prefix_pattern = format!("{}_", prefix);
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let dir_name = match path.file_name().and_then(|s| s.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+
+        // Match directories like "planning_1_ccs" when prefix is "planning_1"
+        if dir_name.starts_with(&prefix_pattern) {
+            subdirs.push(path);
+        }
+    }
+
+    // Sort by modification time (most recent last) to ensure consistent ordering
+    subdirs.sort_by(|a, b| {
+        let time_a = fs::metadata(a)
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        let time_b = fs::metadata(b)
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        time_a.cmp(&time_b)
+    });
+
+    Ok(subdirs)
+}
+
 /// Extract the last "result" event from agent JSON logs.
 ///
-/// Supports two modes:
+/// Supports three modes:
 /// 1. **Directory mode**: If `log_path` is a directory, scan all files in it
 /// 2. **Prefix mode**: If `log_path` is not a directory, treat it as a prefix and
 ///    search for files matching `{prefix}_*.log` in the parent directory
+/// 3. **Subdirectory fallback**: If no files found, check for subdirectories matching
+///    `{prefix}_*` (handles legacy logs where agent names with "/" created nested dirs)
 ///
 /// # Arguments
 ///
@@ -182,23 +229,34 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
 
     let log_files = find_log_files_with_prefix(parent, prefix)?;
 
-    if log_files.is_empty() {
-        // Fallback: check if the exact path exists as a file
-        if log_path.is_file() {
-            return extract_result_from_file(log_path);
+    if !log_files.is_empty() {
+        let mut last_result: Option<String> = None;
+        for log_file in log_files {
+            if let Some(result) = extract_result_from_file(&log_file)? {
+                last_result = Some(result);
+            }
         }
-        return Ok(None);
-    }
-
-    let mut last_result: Option<String> = None;
-
-    for log_file in log_files {
-        if let Some(result) = extract_result_from_file(&log_file)? {
-            last_result = Some(result);
+        if last_result.is_some() {
+            return Ok(last_result);
         }
     }
 
-    Ok(last_result)
+    // Strategy 3: Check for subdirectories matching prefix pattern
+    // This handles the legacy case where agent names with "/" created nested directories
+    // (e.g., "planning_1_ccs/glm_0.log" instead of "planning_1_ccs-glm_0.log")
+    let subdirs = find_subdirs_with_prefix(parent, prefix)?;
+    for subdir in subdirs {
+        if let Some(result) = extract_from_directory(&subdir)? {
+            return Ok(Some(result));
+        }
+    }
+
+    // Final fallback: check if the exact path exists as a file
+    if log_path.is_file() {
+        return extract_result_from_file(log_path);
+    }
+
+    Ok(None)
 }
 
 /// Extract from a directory by scanning all files in it.
@@ -257,31 +315,64 @@ pub fn extract_plan_from_text(content: &str) -> Option<String> {
 /// Extract plan content from log files using text-based fallback.
 ///
 /// This scans all log files matching the prefix and looks for markdown plan structure.
+/// Also checks subdirectories matching the prefix pattern (for legacy logs where agent
+/// names with "/" created nested directories).
 pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
-    // Get all log files
-    let log_files = if log_path.is_dir() {
-        fs::read_dir(log_path)?
+    // Helper to extract from a list of files
+    fn extract_from_files(files: &[PathBuf]) -> Option<String> {
+        for log_file in files {
+            let mut content = String::new();
+            if let Ok(mut file) = File::open(log_file) {
+                if file.read_to_string(&mut content).is_ok() {
+                    if let Some(plan) = extract_plan_from_text(&content) {
+                        return Some(plan);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    // Strategy 1: If log_path is a directory, scan all files in it
+    if log_path.is_dir() {
+        let log_files: Vec<_> = fs::read_dir(log_path)?
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.is_file())
-            .collect::<Vec<_>>()
-    } else {
-        let parent = log_path.parent().unwrap_or(Path::new("."));
-        let prefix = log_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        find_log_files_with_prefix(parent, prefix)?
-    };
+            .collect();
+        if let Some(plan) = extract_from_files(&log_files) {
+            return Ok(Some(plan));
+        }
+        return Ok(None);
+    }
 
-    for log_file in log_files {
-        let mut content = String::new();
-        if let Ok(mut file) = File::open(&log_file) {
-            if file.read_to_string(&mut content).is_ok() {
-                if let Some(plan) = extract_plan_from_text(&content) {
-                    return Ok(Some(plan));
-                }
-            }
+    // Strategy 2: Treat log_path as a prefix and search parent directory
+    let parent = log_path.parent().unwrap_or(Path::new("."));
+    let prefix = log_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+
+    if prefix.is_empty() {
+        return Ok(None);
+    }
+
+    let log_files = find_log_files_with_prefix(parent, prefix)?;
+    if let Some(plan) = extract_from_files(&log_files) {
+        return Ok(Some(plan));
+    }
+
+    // Strategy 3: Check subdirectories matching prefix pattern
+    // This handles the legacy case where agent names with "/" created nested directories
+    let subdirs = find_subdirs_with_prefix(parent, prefix)?;
+    for subdir in subdirs {
+        let subdir_files: Vec<_> = fs::read_dir(&subdir)?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file())
+            .collect();
+        if let Some(plan) = extract_from_files(&subdir_files) {
+            return Ok(Some(plan));
         }
     }
 
@@ -763,6 +854,62 @@ This is a text-based plan without proper JSON wrapping but with enough content.
 
         assert!(result.raw_content.is_some());
         assert!(result.is_valid);
+    }
+
+    // =====================================================
+    // SUBDIRECTORY FALLBACK TESTS
+    // (For legacy logs where agent names with "/" created nested dirs)
+    // =====================================================
+
+    #[test]
+    fn test_extract_from_subdirectory_fallback() {
+        let temp = TempDir::new().unwrap();
+
+        // Create nested structure like: planning_1_ccs/glm_0.log
+        // This simulates what happens when agent name is "ccs/glm"
+        let subdir = temp.path().join("planning_1_ccs");
+        fs::create_dir(&subdir).unwrap();
+
+        let json_log = r##"{"type": "result", "result": "# Plan\n\n## Summary\nPlan from nested subdirectory"}"##;
+        fs::write(subdir.join("glm_0.log"), json_log).unwrap();
+
+        // Extract using prefix (not the nested path)
+        let prefix = temp.path().join("planning_1");
+        let result = extract_plan(&prefix).unwrap();
+
+        assert!(
+            result.raw_content.is_some(),
+            "Should find content from subdirectory fallback"
+        );
+        assert!(result.raw_content.unwrap().contains("nested subdirectory"));
+    }
+
+    #[test]
+    fn test_extract_text_from_subdirectory_fallback() {
+        let temp = TempDir::new().unwrap();
+
+        // Create nested structure like: planning_1_ccs/glm_0.log
+        let subdir = temp.path().join("planning_1_ccs");
+        fs::create_dir(&subdir).unwrap();
+
+        // Create log file with text plan content (no JSON result event)
+        let text_log = r#"[agent] Starting...
+## Summary
+This is a text-based plan from nested subdirectory with enough content to pass validation.
+
+## Implementation Steps
+1. First step with detailed explanation
+"#;
+        fs::write(subdir.join("glm_0.log"), text_log).unwrap();
+
+        let prefix = temp.path().join("planning_1");
+        let result = extract_plan_from_logs_text(&prefix).unwrap();
+
+        assert!(
+            result.is_some(),
+            "Should find text content from subdirectory fallback"
+        );
+        assert!(result.unwrap().contains("nested subdirectory"));
     }
 
     // =====================================================
