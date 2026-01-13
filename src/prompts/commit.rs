@@ -7,6 +7,10 @@
 /// This prompt is agent-agnostic and works with any AI coding assistant.
 /// Instructions for NOTES.md are intentionally vague to avoid creating
 /// overly-specific context that could contaminate future runs.
+///
+/// The fix agent reads ISSUES.md (written by the orchestrator after extracting
+/// from the reviewer's output) and fixes the issues. The agent should NOT
+/// modify ISSUES.md - the orchestrator handles file I/O.
 pub fn prompt_fix() -> String {
     r#"You are in FIX MODE. Address issues found during review.
 
@@ -20,10 +24,12 @@ YOUR TASK:
 3. Verify fixes work
 
 AFTER FIXING:
-If .agent/ISSUES.md exists, OVERWRITE it with exactly ONE vague sentence:
-- "Issues addressed." (if you believe everything is fixed), OR
+Return your completion status as structured output:
+- "All issues addressed." (if you believe everything is fixed)
 - "Issues remain." (if you believe issues still exist)
-If .agent/NOTES.md exists, OVERWRITE it with exactly ONE vague sentence (no details).
+- "No issues found." (if ISSUES.md didn't exist or was empty)
+
+DO NOT modify ISSUES.md or any other files. The orchestrator handles file updates.
 
 GUIDELINES:
 - Fix issues properly, don't just suppress warnings
@@ -31,19 +37,41 @@ GUIDELINES:
         .to_string()
 }
 
-/// Generate prompt for agent to generate a commit message.
+/// Generate prompt for creating commit message from provided diff.
 ///
-/// Agent writes the commit message to .agent/commit-message.txt.
-/// NOTES.md reference is explicitly optional since it may not exist in isolation mode.
-pub fn prompt_generate_commit_message() -> String {
-    r#"Generate a commit message for all changes made.
+/// This is used by the orchestrator (not agents) to generate commit messages.
+/// The diff is provided directly in the prompt, so the LLM doesn't need to
+/// run git commands or access files.
+///
+/// # Arguments
+///
+/// * `diff` - The git diff to generate a commit message for. If empty or
+///   whitespace-only, the prompt will indicate no changes were detected.
+///
+/// # Note
+///
+/// This function includes a defensive check for empty diffs - if an empty diff
+/// is passed, it returns an error prompt that will fail validation in the caller
+/// and trigger fallback commit message generation. Callers should still check for
+/// meaningful changes before calling this function for efficiency.
+pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
+    // Check if diff is empty or whitespace-only
+    let diff_content = diff.trim();
+    let has_changes = !diff_content.is_empty();
 
-FIRST, gather context:
-1. Run `git diff HEAD` to see exactly what changed
-2. Read PROMPT.md to understand the original goal
-3. Optionally read .agent/NOTES.md for additional context (if it exists)
+    if !has_changes {
+        // Return an error message instead of a placeholder
+        // This will be caught by validation in commit_with_auto_message
+        // and trigger fallback commit message generation
+        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
+                meaningful changes should be checked before requesting a commit message.".to_string();
+    }
 
-THEN: Write a Conventional Commits message to .agent/commit-message.txt
+    format!(
+        r#"Generate a Conventional Commits message for the following git diff.
+
+DIFF:
+{}
 
 FORMAT:
 <type>[optional scope][!]: <subject>
@@ -82,8 +110,9 @@ BAD EXAMPLES (avoid these patterns):
 - "Updated the code" (no type, not imperative)
 - "feat: Add new feature." (capitalized, has period, vague)
 
-Write ONLY the commit message to .agent/commit-message.txt (no markdown fences, no extra text)."#
-        .to_string()
+Respond with ONLY the commit message (no markdown fences, no extra text)."#,
+        diff_content
+    )
 }
 
 #[cfg(test)]
@@ -94,60 +123,13 @@ mod tests {
     fn test_prompt_fix() {
         let result = prompt_fix();
         assert!(result.contains("ISSUES.md"));
-        // NOTES.md/ISSUES.md should be constrained to vague overwrite semantics
-        assert!(result.contains("OVERWRITE"));
-        assert!(result.contains("exactly ONE vague sentence"));
+        // Agent should NOT modify files - orchestrator handles I/O
+        assert!(result.contains("DO NOT modify ISSUES.md"));
+        assert!(result.contains("orchestrator handles file updates"));
         assert!(result.contains("FIX MODE"));
-    }
-
-    #[test]
-    fn test_prompt_generate_commit_message() {
-        let result = prompt_generate_commit_message();
-        // Basic structure
-        assert!(result.contains("commit-message.txt"));
-        assert!(result.contains("Conventional Commits"));
-
-        // Context gathering instructions
-        assert!(result.contains("git diff HEAD"));
-        assert!(result.contains("PROMPT.md"));
-        assert!(result.contains("NOTES.md"));
-
-        // Type prefixes
-        assert!(result.contains("feat"));
-        assert!(result.contains("fix"));
-        assert!(result.contains("docs"));
-        assert!(result.contains("refactor"));
-        assert!(result.contains("test"));
-        assert!(result.contains("chore"));
-        assert!(result.contains("perf"));
-
-        // Scope support
-        assert!(result.contains("scope"));
-        assert!(result.contains("feat(parser):"));
-
-        // Breaking change notation
-        assert!(result.contains("!:"));
-        assert!(result.contains("BREAKING CHANGE"));
-
-        // Imperative mood guidance
-        assert!(result.contains("imperative"));
-        assert!(result.contains("\"add\" not \"added\""));
-
-        // Character limits
-        assert!(result.contains("max 50 chars"));
-        assert!(result.contains("72 chars"));
-
-        // Issue references
-        assert!(result.contains("Fixes #"));
-
-        // Good examples
-        assert!(result.contains("feat(auth): add OAuth2 login flow"));
-        assert!(result.contains("fix: prevent null pointer"));
-
-        // Bad examples (anti-patterns to avoid)
-        assert!(result.contains("BAD EXAMPLES"));
-        assert!(result.contains("chore: apply changes"));
-        assert!(result.contains("too vague"));
+        // Agent should return status as structured output
+        assert!(result.contains("All issues addressed"));
+        assert!(result.contains("Issues remain"));
     }
 
     #[test]

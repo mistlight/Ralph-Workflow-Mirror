@@ -2,6 +2,8 @@
 
 This guide documents compatibility between Ralph and various AI coding agents for the review process. Ralph's review phase is designed to be agent-agnostic in its prompts, but different agents may have varying levels of success due to differences in JSON output format, tool execution behavior, and other agent-specific quirks.
 
+> **⚠️ Important Compatibility Note**: GLM, ZhipuAI, Qwen, and DeepSeek agents have known compatibility issues with review tasks. While Ralph automatically applies workarounds (universal prompt), success rates may vary. **For best results, consider using Claude Code or Codex as the reviewer.** You can override the reviewer agent with `--reviewer-agent claude` or `--reviewer-agent codex`.
+
 > **Note**: Ralph now includes a **Universal Review Prompt** that automatically activates for agents with known compatibility issues (GLM, ZhipuAI, Qwen, DeepSeek). This simplified prompt improves success rates with these agents.
 
 ## Table of Contents
@@ -466,9 +468,9 @@ Understanding why certain AI agents struggle with the review process can help yo
    - The `generic` parser can handle many variations but may miss some events
 
 2. **Tool Execution Behavior**
-   - Review agents need to write files (create ISSUES.md)
-   - Some agents have permission issues or different tool semantics
-   - GLM/CCS agents are known to have file write permission problems
+   - Review agents need to reliably produce the expected outputs (issues/fixes) in the configured format
+   - The orchestrator may write workflow files on the agent’s behalf, but agents still need compatible tool/IO behavior
+   - Some agents have permission issues or different tool semantics (notably some GLM/CCS setups)
 
 3. **Prompt Complexity Handling**
    - AI models vary in their ability to follow complex, multi-section prompts

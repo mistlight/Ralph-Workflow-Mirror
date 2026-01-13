@@ -3,7 +3,6 @@
 //! This module contains the execution logic for each phase of the Ralph pipeline:
 //! - Development phase: iterative planning and execution cycles
 //! - Review phase: code review and fix cycles
-//! - Commit phase: final commit creation
 //!
 //! Each phase is encapsulated in its own submodule with a clean interface that
 //! takes a shared context and returns results. The phases module coordinates
@@ -11,17 +10,14 @@
 //!
 //! # Module Structure
 //!
-//! - [`commit`] - Final commit creation phase
 //! - [`context`] - Shared phase context for passing state between phases
 //! - [`development`] - Iterative development cycle execution
 //! - [`review`] - Code review and fix cycle execution
 
-mod commit;
 mod context;
 mod development;
 mod review;
 
-pub use commit::run_commit_phase;
 pub use context::PhaseContext;
 pub use development::run_development_phase;
-pub use review::{generate_commit_message, run_review_phase};
+pub use review::run_review_phase;

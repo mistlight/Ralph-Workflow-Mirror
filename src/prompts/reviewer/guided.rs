@@ -15,6 +15,9 @@ use super::super::types::ContextLevel;
 use crate::guidelines::ReviewGuidelines;
 
 /// Generate reviewer review prompt with language-specific guidelines.
+///
+/// The reviewer returns structured issues data (captured by JSON parser)
+/// and the orchestrator writes it to .agent/ISSUES.md.
 pub fn prompt_reviewer_review_with_guidelines(
     context: ContextLevel,
     guidelines: &ReviewGuidelines,
@@ -35,13 +38,13 @@ Evaluate the codebase against PROMPT.md (goal + acceptance checks), then apply:
 Language-Specific checks:
 {guidelines}
 
-OUTPUT to .agent/ISSUES.md (prioritized checklist):
+OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found, write "No issues found." to .agent/ISSUES.md"#,
+If no issues found, return "No issues found.""#,
             guidelines = guidelines_section
         ),
         ContextLevel::Normal => format!(
@@ -49,19 +52,26 @@ If no issues found, write "No issues found." to .agent/ISSUES.md"#,
 
 INPUTS TO READ:
 - PROMPT.md
-- .agent/STATUS.md
 
 Language-Specific checks:
 {guidelines}
 
-OUTPUT:
-Write findings to .agent/ISSUES.md. If no issues, write "No issues found.""#,
+OUTPUT (prioritized checklist):
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description
+
+If no issues, return "No issues found.""#,
             guidelines = guidelines_section
         ),
     }
 }
 
 /// Generate comprehensive review prompt with priority-based guidelines.
+///
+/// The reviewer returns structured issues data (captured by JSON parser)
+/// and the orchestrator writes it to .agent/ISSUES.md.
 pub fn prompt_comprehensive_review(context: ContextLevel, guidelines: &ReviewGuidelines) -> String {
     let priority_section = guidelines.format_for_prompt_with_priorities();
 
@@ -83,7 +93,11 @@ Perform a thorough review:
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
 {priorities}
 
-OUTPUT to .agent/ISSUES.md (prioritized checklist, with [file:line]):\n- [ ] Critical/High/Medium/Low ..."#,
+OUTPUT (prioritized checklist with [file:line]):
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description"#,
             priorities = priority_section
         ),
         ContextLevel::Normal => format!(
@@ -91,18 +105,24 @@ OUTPUT to .agent/ISSUES.md (prioritized checklist, with [file:line]):\n- [ ] Cri
 
 INPUTS TO READ:
 - PROMPT.md
-- .agent/STATUS.md
 
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
 {priorities}
 
-OUTPUT to .agent/ISSUES.md: prioritized checklist."#,
+OUTPUT (prioritized checklist with [file:line]):
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description"#,
             priorities = priority_section
         ),
     }
 }
 
 /// Generate security-focused review prompt with security-oriented guidelines.
+///
+/// The reviewer returns structured issues data (captured by JSON parser)
+/// and the orchestrator writes it to .agent/ISSUES.md.
 pub fn prompt_security_focused_review(
     context: ContextLevel,
     guidelines: &ReviewGuidelines,
@@ -126,12 +146,13 @@ SECURITY FOCUS (OWASP TOP 10):
 LANGUAGE-SPECIFIC SECURITY:
 {security_section}
 
-OUTPUT to .agent/ISSUES.md:
+OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] SECURITY - Immediate fix required
 - [ ] High: [file:line] SECURITY - Fix before merge
-- [ ] Medium/Low: [file:line] SECURITY - Address as needed
+- [ ] Medium: [file:line] SECURITY - Address as needed
+- [ ] Low: [file:line] SECURITY - Nice to have
 
-If no issues found, write \"No security issues found.\" to .agent/ISSUES.md"#,
+If no issues found, return "No security issues found.""#,
             security_section = security_section
         ),
         ContextLevel::Normal => format!(
@@ -139,13 +160,15 @@ If no issues found, write \"No security issues found.\" to .agent/ISSUES.md"#,
 
 INPUTS TO READ:
 - PROMPT.md
-- .agent/STATUS.md
 
-LANGUAGE-SPECIFIC:
+LANGUAGE-SPECIFIC SECURITY:
 {security_section}
 
-OUTPUT to .agent/ISSUES.md:
-- [ ] Critical/High/Medium/Low: [file:line] SECURITY ..."#,
+OUTPUT (prioritized checklist with [file:line]):
+- [ ] Critical: [file:line] SECURITY - Description
+- [ ] High: [file:line] SECURITY - Description
+- [ ] Medium: [file:line] SECURITY - Description
+- [ ] Low: [file:line] SECURITY - Description"#,
             security_section = security_section
         ),
     }
