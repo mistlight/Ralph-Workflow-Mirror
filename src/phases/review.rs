@@ -481,7 +481,7 @@ pub fn run_review_phase(
             fs::write(issues_path, content)?;
 
             if extraction.is_valid {
-                ctx.logger.success("Issues extracted from agent output");
+                ctx.logger.success("Issues extracted from agent output (JSON)");
             } else {
                 ctx.logger.warn(&format!(
                     "Issues written but validation failed: {}",
@@ -489,7 +489,11 @@ pub fn run_review_phase(
                 ));
             }
         } else {
-            // Extraction failed - check if agent wrote the file directly (legacy fallback)
+            // JSON extraction failed - log for debugging
+            ctx.logger
+                .info("No JSON result event found in reviewer logs");
+
+            // Check if agent wrote the file directly (legacy fallback)
             let agent_wrote_file = issues_path
                 .exists()
                 .then(|| fs::read_to_string(issues_path).ok())
@@ -501,6 +505,7 @@ pub fn run_review_phase(
                 ctx.logger.info("Using agent-written ISSUES.md (legacy mode)");
             } else {
                 // No content from extraction or agent - write "no issues" marker
+                // This is not an error for review (unlike planning) since having no issues is valid
                 let no_issues_marker = "# Issues\n\nNo issues identified by reviewer.\n";
                 fs::write(issues_path, no_issues_marker)?;
                 ctx.logger
