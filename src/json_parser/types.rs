@@ -4,7 +4,43 @@
 //! all the CLI parsers (Claude, Codex, Gemini).
 
 use crate::utils::truncate_text;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+static SECRET_VALUE_RE: Lazy<Regex> = Lazy::new(|| {
+    // Keep this intentionally conservative to reduce false positives in normal text.
+    // Primary goal: avoid leaking common API key formats to stdout/logs.
+    Regex::new(
+        r"(?xi)
+        \bsk-[a-z0-9]{16,}\b          # OpenAI-style keys
+        | \bghp_[a-z0-9]{20,}\b       # GitHub PATs
+        | \bxox[baprs]-[a-z0-9-]{10,}\b # Slack tokens
+        ",
+    )
+    .expect("valid secret regex")
+});
+
+fn is_sensitive_key(key: &str) -> bool {
+    let normalized = key
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>();
+
+    // Common sensitive key patterns. We intentionally use `contains` to catch variants like:
+    // access_token, apiKey, openai_api_key, githubToken, bearerToken, etc.
+    normalized.contains("token")
+        || normalized.contains("apikey")
+        || normalized.contains("secret")
+        || normalized.contains("password")
+        || normalized == "authorization"
+        || normalized.contains("bearer")
+}
+
+fn looks_like_secret_value(value: &str) -> bool {
+    SECRET_VALUE_RE.is_match(value)
+}
 
 /// Claude event types
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -56,7 +92,7 @@ pub(crate) enum ContentBlock {
         input: Option<serde_json::Value>,
     },
     ToolResult {
-        content: Option<String>,
+        content: Option<serde_json::Value>,
     },
     #[serde(other)]
     Unknown,
@@ -183,6 +219,30 @@ pub(crate) struct GeminiStats {
     pub(crate) tool_calls: Option<u32>,
 }
 
+fn format_tool_value(key: Option<&str>, value: &serde_json::Value) -> String {
+    if let Some(k) = key {
+        if is_sensitive_key(k) {
+            return "<redacted>".to_string();
+        }
+    }
+
+    match value {
+        serde_json::Value::String(s) => {
+            if looks_like_secret_value(s) {
+                "<redacted>".to_string()
+            } else {
+                // Use character-safe truncation for strings
+                truncate_text(s, 100)
+            }
+        }
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Array(arr) => format!("[{} items]", arr.len()),
+        serde_json::Value::Object(_) => "{...}".to_string(),
+    }
+}
+
 /// Format tool input for display
 ///
 /// Converts JSON input to a human-readable string, showing key parameters.
@@ -193,23 +253,13 @@ pub(crate) fn format_tool_input(input: &serde_json::Value) -> String {
             let parts: Vec<String> = map
                 .iter()
                 .map(|(k, v)| {
-                    let val_str = match v {
-                        serde_json::Value::String(s) => {
-                            // Use character-safe truncation for strings
-                            truncate_text(s, 100)
-                        }
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::Bool(b) => b.to_string(),
-                        serde_json::Value::Null => "null".to_string(),
-                        serde_json::Value::Array(arr) => format!("[{} items]", arr.len()),
-                        serde_json::Value::Object(_) => "{...}".to_string(),
-                    };
-                    format!("{}={}", k, val_str)
+                    let val_str = format_tool_value(Some(k.as_str()), v);
+                    format!("{k}={val_str}")
                 })
                 .collect();
             parts.join(", ")
         }
-        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::String(_) => format_tool_value(None, input),
         other => other.to_string(),
     }
 }
