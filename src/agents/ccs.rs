@@ -173,6 +173,12 @@ fn build_ccs_agent_config(
         .unwrap_or(&defaults.json_parser);
     let can_commit = alias.can_commit.unwrap_or(defaults.can_commit);
 
+    // Get streaming flag from alias override or defaults
+    let streaming_flag = alias
+        .streaming_flag
+        .clone()
+        .unwrap_or_else(|| defaults.streaming_flag.clone());
+
     AgentConfig {
         cmd: alias.cmd.clone(),
         output_flag,
@@ -182,6 +188,7 @@ fn build_ccs_agent_config(
         json_parser: JsonParserType::parse(json_parser),
         model_flag: alias.model_flag.clone(),
         print_flag, // CCS requires -p for non-interactive mode (from defaults or alias override)
+        streaming_flag, // Required for JSON streaming when using -p
         display_name: Some(display_name),
     }
 }

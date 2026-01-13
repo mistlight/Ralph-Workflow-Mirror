@@ -324,6 +324,14 @@ impl AgentRegistry {
                             json_parser: JsonParserType::parse(json_parser),
                             model_flag: overrides.model_flag.clone(),
                             print_flag: overrides.print_flag.clone().unwrap_or_default(),
+                            streaming_flag: overrides.streaming_flag.clone().unwrap_or_else(|| {
+                                // Default to "--include-partial-messages" for Claude/CCS agents
+                                if cmd.starts_with("claude") || cmd.starts_with("ccs") {
+                                    "--include-partial-messages".to_string()
+                                } else {
+                                    String::new()
+                                }
+                            }),
                             display_name: overrides
                                 .display_name
                                 .as_ref()
@@ -366,6 +374,10 @@ impl AgentRegistry {
                         existing.model_flag
                     },
                     print_flag: overrides.print_flag.clone().unwrap_or(existing.print_flag),
+                    streaming_flag: overrides
+                        .streaming_flag
+                        .clone()
+                        .unwrap_or(existing.streaming_flag),
                     // Preserve existing display name unless explicitly overridden
                     // Empty string explicitly clears the display name
                     display_name: match &overrides.display_name {
@@ -532,6 +544,7 @@ mod tests {
                 json_parser: JsonParserType::Generic,
                 model_flag: None,
                 print_flag: String::new(),
+                streaming_flag: String::new(),
                 display_name: None,
             },
         );
@@ -554,6 +567,7 @@ mod tests {
                 json_parser: JsonParserType::Claude,
                 model_flag: None,
                 print_flag: String::new(),
+                streaming_flag: "--include-partial-messages".to_string(),
                 display_name: None,
             },
         );
@@ -570,6 +584,7 @@ mod tests {
                 json_parser: JsonParserType::Claude,
                 model_flag: None,
                 print_flag: "-p".to_string(),
+                streaming_flag: "--include-partial-messages".to_string(),
                 display_name: Some("ccs-glm".to_string()),
             },
         );

@@ -5,7 +5,16 @@
       "Bash(cargo test:*)",
       "Bash(cargo build:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(timeout 5 ccs glm:*)",
+      "Bash(git checkout:*)",
+      "Bash(cat:*)",
+      "Bash(timeout 10 ccs glm:*)",
+      "Bash(timeout 30 ccs glm:*)",
+      "Bash(timeout 60 cargo run:*)",
+      "Bash(cargo run:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
