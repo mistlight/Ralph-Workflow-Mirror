@@ -213,6 +213,10 @@ pub(crate) struct Config {
     /// any existing ones are deleted at the start of each run. This prevents
     /// context contamination from previous runs. Default: true.
     pub(crate) isolation_mode: bool,
+    /// Git user name for commits (optional, falls back to git config)
+    pub(crate) git_user_name: Option<String>,
+    /// Git user email for commits (optional, falls back to git config)
+    pub(crate) git_user_email: Option<String>,
 }
 
 impl Config {

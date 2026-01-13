@@ -6,6 +6,7 @@
 //! # Module Structure
 //!
 //! - [`hooks`] - Git hooks installation and removal
+//! - [`identity`] - Git identity resolution with comprehensive fallback chain
 //! - [`repo`] - Basic git repository operations (add, commit, snapshot)
 //! - [`start_commit`] - Starting commit tracking for incremental diffs
 //! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
@@ -13,6 +14,7 @@
 #![deny(unsafe_code)]
 
 mod hooks;
+pub mod identity;
 mod repo;
 mod start_commit;
 mod wrapper;
