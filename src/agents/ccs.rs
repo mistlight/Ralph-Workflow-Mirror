@@ -120,10 +120,16 @@ fn build_ccs_agent_config(alias: &CcsAliasConfig, defaults: &CcsConfig) -> Agent
         .verbose_flag
         .clone()
         .unwrap_or_else(|| defaults.verbose_flag.clone());
-    let json_parser = alias
-        .json_parser
-        .as_deref()
-        .unwrap_or(&defaults.json_parser);
+    let json_parser = match alias.json_parser.as_deref() {
+        // Explicit per-alias override always wins.
+        Some(p) => p,
+        // If the alias looks like it's targeting a non-Claude provider (e.g. GLM/Gemini),
+        // default to a safer parser to avoid hard failures when the output format differs.
+        None if is_likely_non_claude_ccs_profile(&alias.cmd, alias.model_flag.as_deref()) => {
+            "generic"
+        }
+        None => &defaults.json_parser,
+    };
     let can_commit = alias.can_commit.unwrap_or(defaults.can_commit);
 
     AgentConfig {
@@ -135,6 +141,20 @@ fn build_ccs_agent_config(alias: &CcsAliasConfig, defaults: &CcsConfig) -> Agent
         json_parser: JsonParserType::parse(json_parser),
         model_flag: alias.model_flag.clone(),
     }
+}
+
+fn is_likely_non_claude_ccs_profile(cmd: &str, model_flag: Option<&str>) -> bool {
+    fn has_hint(s: &str) -> bool {
+        let s = s.to_lowercase();
+        s.contains("glm")
+            || s.contains("zhipuai")
+            || s.contains("zai")
+            || s.contains("qwen")
+            || s.contains("deepseek")
+            || s.contains("gemini")
+    }
+
+    has_hint(cmd) || model_flag.is_some_and(has_hint)
 }
 
 /// CCS alias resolver that can be used by the agent registry.
@@ -528,13 +548,13 @@ mod tests {
 
         // CCS wraps Claude Code, so it uses Claude's stream-json format
         assert_eq!(config.output_flag, "--output-format=stream-json");
-        // Safety: opt-in only.
+        // Safety: opt-in only by default.
         assert_eq!(config.yolo_flag, "");
         assert_eq!(config.verbose_flag, "--verbose");
         assert!(config.can_commit);
 
-        // CCS uses Claude's JSON parser since it wraps Claude Code
-        assert_eq!(config.json_parser, JsonParserType::Claude);
+        // For non-Claude CCS providers, default to a safer parser unless overridden.
+        assert_eq!(config.json_parser, JsonParserType::Generic);
     }
 
     #[test]

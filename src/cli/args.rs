@@ -51,6 +51,8 @@ ENVIRONMENT VARIABLES:\n\
     RALPH_REVIEWER_AGENT     Reviewer agent (from agent_chain)\n\
     RALPH_DEVELOPER_ITERS    Developer iterations (default: 5)\n\
     RALPH_REVIEWER_REVIEWS   Re-review passes (default: 2)\n\
+    RALPH_REVIEWER_JSON_PARSER  JSON parser for reviewer agent (claude, codex, generic, etc.)\n\
+    RALPH_REVIEWER_UNIVERSAL_PROMPT  Force universal review prompt (0=auto, 1=force)\n\
     RALPH_VERBOSITY          Verbosity level 0-4 (default: 2)\n\
     RALPH_ISOLATION_MODE     Isolation mode on/off (default: 1=on)")]
 pub struct Args {
@@ -148,6 +150,16 @@ pub struct Args {
         help = "Provider for reviewer agent: 'opencode' (Zen), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)"
     )]
     pub reviewer_provider: Option<String>,
+
+    /// JSON parser for the reviewer agent (overrides agent config)
+    /// Useful for testing different parsers with problematic agents
+    #[arg(
+        long,
+        env = "RALPH_REVIEWER_JSON_PARSER",
+        value_name = "PARSER",
+        help = "JSON parser for reviewer (claude, codex, gemini, opencode, generic); overrides agent config"
+    )]
+    pub reviewer_json_parser: Option<String>,
 
     /// Verbosity level (0=quiet, 1=normal, 2=verbose, 3=full, 4=debug)
     #[arg(

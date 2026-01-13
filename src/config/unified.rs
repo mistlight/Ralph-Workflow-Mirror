@@ -91,6 +91,9 @@ pub struct GeneralConfig {
     pub review_depth: String,
     /// Strict PROMPT.md validation.
     pub strict_validation: bool,
+    /// Force universal review prompt for all agents.
+    #[serde(default)]
+    pub force_universal_prompt: bool,
     /// Path to save last prompt.
     #[serde(default)]
     pub prompt_path: Option<String>,
@@ -110,6 +113,7 @@ impl Default for GeneralConfig {
             reviewer_context: 0,
             review_depth: "standard".to_string(),
             strict_validation: false,
+            force_universal_prompt: false,
             prompt_path: None,
         }
     }
@@ -141,8 +145,9 @@ impl Default for CcsConfig {
     fn default() -> Self {
         Self {
             output_flag: "--output-format=stream-json".to_string(),
-            // Default to --dangerously-skip-permissions since Ralph is designed for unattended setups
-            yolo_flag: "--dangerously-skip-permissions".to_string(),
+            // Safety: opt-in only. Users can set this per-alias (or globally) if they explicitly
+            // want to bypass downstream CLI permission prompts.
+            yolo_flag: "".to_string(),
             verbose_flag: "--verbose".to_string(),
             json_parser: "claude".to_string(),
             can_commit: true,

@@ -7,6 +7,7 @@ use crate::config::Verbosity;
 use crate::utils::truncate_text;
 use std::io::{self, BufRead, Write};
 
+use super::health::HealthMonitor;
 use super::types::{format_tool_input, CodexEvent};
 
 /// Codex event parser
@@ -408,10 +409,19 @@ impl CodexParser {
         mut writer: W,
     ) -> io::Result<()> {
         let c = &self.colors;
+        let monitor = HealthMonitor::new("Codex");
 
         for line in reader.lines() {
             let line = line?;
-            if line.is_empty() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if trimmed.starts_with('{')
+                && serde_json::from_str::<serde_json::Value>(trimmed).is_err()
+            {
+                monitor.record_parse_error();
                 continue;
             }
 
@@ -428,8 +438,14 @@ impl CodexParser {
                 )?;
             }
 
-            if let Some(output) = self.parse_event(&line) {
-                write!(writer, "{}", output)?;
+            match self.parse_event(&line) {
+                Some(output) => {
+                    monitor.record_parsed();
+                    write!(writer, "{}", output)?;
+                }
+                None => {
+                    monitor.record_ignored();
+                }
             }
 
             // Log raw JSON to file if configured
@@ -442,6 +458,10 @@ impl CodexParser {
                     writeln!(file, "{}", line)?;
                 }
             }
+        }
+
+        if let Some(warning) = monitor.check_and_warn(c) {
+            writeln!(writer, "{}", warning)?;
         }
         Ok(())
     }

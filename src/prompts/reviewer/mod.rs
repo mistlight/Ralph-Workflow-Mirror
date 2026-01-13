@@ -12,6 +12,7 @@ pub use guided::{
 };
 pub use unguided::{
     prompt_detailed_review_without_guidelines, prompt_incremental_review, prompt_reviewer_review,
+    prompt_universal_review,
 };
 
 #[cfg(test)]

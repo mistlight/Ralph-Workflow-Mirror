@@ -340,7 +340,8 @@ fn verify_plan_exists(
                 try_extract_plan_from_log(ctx.logger, iteration, ctx.developer_agent)
             {
                 fs::write(plan_path, &extracted_plan)?;
-                ctx.logger.success("Extracted plan from second attempt and created PLAN.md");
+                ctx.logger
+                    .success("Extracted plan from second attempt and created PLAN.md");
                 plan_ok = true;
             }
         }
