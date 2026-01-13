@@ -220,6 +220,24 @@ pub(crate) fn run_with_prompt(
         None => String::new(),
     };
 
+    // Debug logging for stderr output to help diagnose agent issues
+    if !stderr_output.is_empty() && runtime.config.verbosity.is_debug() {
+        runtime.logger.warn(&format!(
+            "Agent stderr output detected ({} bytes):",
+            stderr_output.len()
+        ));
+        // Show first few lines of stderr for debugging
+        for (i, line) in stderr_output.lines().take(5).enumerate() {
+            runtime.logger.info(&format!("  stderr[{}]: {}", i, line));
+        }
+        if stderr_output.lines().count() > 5 {
+            runtime.logger.info(&format!(
+                "  ... ({} more lines, see log file for full output)",
+                stderr_output.lines().count() - 5
+            ));
+        }
+    }
+
     if runtime.config.verbosity.is_verbose() {
         runtime.logger.info(&format!(
             "Phase elapsed: {}",
@@ -346,7 +364,22 @@ pub(crate) fn run_with_fallback(
 
             // Try each model flag
             for (model_index, model_flag) in model_flags_to_try.iter().enumerate() {
-                let parser_type = agent_config.json_parser;
+                let mut parser_type = agent_config.json_parser;
+
+                // Apply parser override for reviewer if configured
+                // CLI/env var override takes precedence over agent config
+                if role == AgentRole::Reviewer {
+                    if let Some(ref parser_override) = runtime.config.reviewer_json_parser {
+                        parser_type = JsonParserType::parse(parser_override);
+                        // Only log on first try to avoid spam
+                        if agent_index == 0 && cycle == 0 && model_index == 0 {
+                            runtime.logger.info(&format!(
+                                "Using JSON parser override '{}' for reviewer",
+                                parser_override
+                            ));
+                        }
+                    }
+                }
 
                 // Build command with model override
                 let model_ref = model_flag.as_deref();
@@ -406,8 +439,12 @@ pub(crate) fn run_with_fallback(
 
                     last_exit_code = result.exit_code;
 
-                    // Classify the error
-                    let error_kind = AgentErrorKind::classify(result.exit_code, &result.stderr);
+                    // Classify the error with agent context for better handling
+                    let error_kind = AgentErrorKind::classify_with_agent(
+                        result.exit_code,
+                        &result.stderr,
+                        Some(agent_name),
+                    );
 
                     runtime.logger.warn(&format!(
                         "Agent '{}'{} failed: {} (exit code {})",
@@ -416,6 +453,40 @@ pub(crate) fn run_with_fallback(
                         error_kind.description(),
                         result.exit_code
                     ));
+
+                    // GLM-specific diagnostics
+                    // GLM (via CCS) has known issues that deserve special guidance
+                    let is_glm_agent = agent_name.contains("glm")
+                        || agent_name.contains("zhipuai")
+                        || agent_name.contains("zai")
+                        || (agent_name.starts_with("ccs/") && agent_name.contains("glm"));
+
+                    if is_glm_agent
+                        && matches!(
+                            error_kind,
+                            AgentErrorKind::AgentSpecificQuirk
+                                | AgentErrorKind::ToolExecutionFailed
+                        )
+                    {
+                        runtime.logger.warn(&format!(
+                            "{}GLM Agent Issue Detected:{} GLM has known compatibility issues with Ralph.",
+                            runtime.colors.yellow(),
+                            runtime.colors.reset()
+                        ));
+                        runtime.logger.info("Suggested workarounds:");
+                        runtime
+                            .logger
+                            .info("  1. Try: ralph --reviewer-agent codex");
+                        runtime
+                            .logger
+                            .info("  2. Try: ralph --reviewer-json-parser generic");
+                        runtime
+                            .logger
+                            .info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
+                        runtime
+                            .logger
+                            .info("See docs/agent-compatibility.md for details.");
+                    }
 
                     // Provide provider-specific auth advice for auth failures
                     if matches!(error_kind, AgentErrorKind::AuthFailure) {

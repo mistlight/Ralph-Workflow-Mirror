@@ -13,6 +13,7 @@
 //! - [`codex`] - OpenAI Codex CLI output parser
 //! - [`gemini`] - Google Gemini CLI output parser
 //! - [`opencode`] - OpenCode CLI output parser
+//! - [`health`] - Parser health monitoring and graceful degradation
 //!
 //! ## Verbosity Levels
 //!
@@ -26,6 +27,7 @@
 mod claude;
 mod codex;
 mod gemini;
+pub mod health;
 mod opencode;
 mod types;
 

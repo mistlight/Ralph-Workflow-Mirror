@@ -11,6 +11,7 @@
 //! - **Simple review**: Minimal, vague prompt for unbiased perspective
 //! - **Detailed review**: Actionable output with severity levels
 //! - **Incremental review**: Focus only on recently changed files
+//! - **Universal review**: Simplified prompt for agent compatibility
 
 use super::super::types::ContextLevel;
 
@@ -126,6 +127,71 @@ INPUTS TO READ:
 
 OUTPUT to .agent/ISSUES.md:
 - [ ] Critical/High/Medium/Low: [file:line] Description"#
+            .to_string(),
+    }
+}
+
+/// Generate a universal/simplified review prompt for maximum agent compatibility.
+///
+/// This prompt is designed to work with a wide range of AI agents, including
+/// those with weaker instruction-following capabilities. It:
+/// - Uses simpler, more direct language
+/// - Provides explicit output templates
+/// - Minimizes complex structured instructions
+///
+/// Use this for agents like GLM, ZhipuAI, and other models that may struggle
+/// with more complex prompts.
+pub fn prompt_universal_review(context: ContextLevel) -> String {
+    match context {
+        ContextLevel::Minimal => r#"REVIEW TASK
+
+Read PROMPT.md to understand the requirements.
+
+Check if the code meets the goal and acceptance checks in PROMPT.md.
+
+Look for bugs, errors, security issues, and missing tests.
+
+OUTPUT FORMAT
+
+Write your findings to .agent/ISSUES.md
+
+Example format:
+```markdown
+# Code Review Issues
+
+## Critical Issues
+- [ ] [src/main.rs:42] Null pointer dereference risk
+
+## High Priority
+- [ ] [src/auth.rs:15] Missing input validation
+
+## Medium Priority
+- [ ] [src/utils.rs:78] Function may return null
+
+## Low Priority
+- [ ] [src/config.rs:10] Missing documentation
+```
+
+If no issues found, write exactly: "No issues found."
+
+IMPORTANT: Use the format [file:line] for each issue so the fix agent can find them."#
+            .to_string(),
+        ContextLevel::Normal => r#"REVIEW TASK
+
+Read PROMPT.md to understand the requirements.
+Review the codebase against those requirements.
+
+OUTPUT FORMAT
+
+Write your findings to .agent/ISSUES.md
+
+Use this format:
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description
+
+If no issues found, write exactly: "No issues found.""#
             .to_string(),
     }
 }

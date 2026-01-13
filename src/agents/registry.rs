@@ -25,7 +25,6 @@ use super::fallback::{AgentRole, FallbackConfig};
 use super::parser::JsonParserType;
 use crate::config::{CcsAliasConfig, CcsConfig};
 use std::collections::HashMap;
-use std::path::Path;
 
 /// Agent registry with CCS alias support.
 ///
@@ -129,22 +128,6 @@ impl AgentRegistry {
     /// Get command for reviewer role.
     pub fn reviewer_cmd(&self, agent_name: &str) -> Option<String> {
         self.get(agent_name).map(|c| c.build_cmd(true, true, false))
-    }
-
-    /// Load custom agents from a TOML configuration file.
-    pub fn load_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<usize, AgentConfigError> {
-        match AgentsConfigFile::load_from_file(path)? {
-            Some(config) => {
-                let count = config.agents.len();
-                for (name, agent_toml) in config.agents {
-                    self.register(&name, agent_toml.into());
-                }
-                // Load fallback configuration
-                self.fallback = config.fallback;
-                Ok(count)
-            }
-            None => Ok(0),
-        }
     }
 
     /// Apply settings from the unified config (`~/.config/ralph-workflow.toml`).

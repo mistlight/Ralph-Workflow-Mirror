@@ -175,6 +175,12 @@ pub(crate) struct Config {
     /// Reviewer provider override (e.g., "opencode", "anthropic", "openai")
     /// When set, constructs the model flag as "-m {provider}/{model_name}"
     pub(crate) reviewer_provider: Option<String>,
+    /// JSON parser override for the reviewer agent (claude, codex, gemini, opencode, generic)
+    /// When set, overrides the agent's configured json_parser setting
+    pub(crate) reviewer_json_parser: Option<String>,
+    /// Force universal review prompt for all agents (default: auto-detect)
+    /// When true, the universal/simplified prompt is always used for review
+    pub(crate) force_universal_prompt: bool,
     /// Number of developer iterations
     pub(crate) developer_iters: u32,
     /// Number of reviewer re-review passes after fix
