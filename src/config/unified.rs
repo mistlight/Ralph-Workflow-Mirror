@@ -96,6 +96,12 @@ pub struct GeneralConfig {
     /// Path to save last prompt.
     #[serde(default)]
     pub prompt_path: Option<String>,
+    /// Git user name for commits (optional, falls back to git config).
+    #[serde(default)]
+    pub git_user_name: Option<String>,
+    /// Git user email for commits (optional, falls back to git config).
+    #[serde(default)]
+    pub git_user_email: Option<String>,
 }
 
 impl Default for GeneralConfig {
@@ -114,6 +120,8 @@ impl Default for GeneralConfig {
             strict_validation: false,
             force_universal_prompt: false,
             prompt_path: None,
+            git_user_name: None,
+            git_user_email: None,
         }
     }
 }

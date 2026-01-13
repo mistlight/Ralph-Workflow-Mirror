@@ -13,6 +13,7 @@
 #![deny(unsafe_code)]
 
 mod hooks;
+mod identity;
 mod repo;
 mod start_commit;
 mod wrapper;

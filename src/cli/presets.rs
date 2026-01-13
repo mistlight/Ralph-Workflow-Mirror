@@ -109,4 +109,18 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: &Co
     if args.no_isolation {
         config.isolation_mode = false;
     }
+
+    // Git user identity (CLI args have highest priority)
+    if let Some(name) = args.git_user_name.clone() {
+        let name = name.trim();
+        if !name.is_empty() {
+            config.git_user_name = Some(name.to_string());
+        }
+    }
+    if let Some(email) = args.git_user_email.clone() {
+        let email = email.trim();
+        if !email.is_empty() {
+            config.git_user_email = Some(email.to_string());
+        }
+    }
 }

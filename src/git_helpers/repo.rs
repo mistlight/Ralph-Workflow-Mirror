@@ -252,11 +252,21 @@ pub(crate) fn git_add_all() -> io::Result<bool> {
 ///
 /// Handles both initial commits (no HEAD yet) and subsequent commits.
 ///
+/// # Arguments
+///
+/// * `message` - The commit message
+/// * `git_user_name` - Optional git user name (overrides git config)
+/// * `git_user_email` - Optional git user email (overrides git config)
+///
 /// # Returns
 ///
 /// Returns `Ok(Some(oid))` with the commit OID if successful, `Ok(None)` if the
 /// OID is zero (no commit created), or an error if the operation failed.
-pub(crate) fn git_commit(message: &str) -> io::Result<Option<git2::Oid>> {
+pub(crate) fn git_commit(
+    message: &str,
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+) -> io::Result<Option<git2::Oid>> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     // Get the index
@@ -273,8 +283,12 @@ pub(crate) fn git_commit(message: &str) -> io::Result<Option<git2::Oid>> {
 
     let tree = repo.find_tree(tree_oid).map_err(git2_to_io_error)?;
 
-    // Create the commit
-    let sig = repo.signature().map_err(git2_to_io_error)?;
+    // Create the signature - use provided identity or fall back to git config
+    let sig = if let (Some(name), Some(email)) = (git_user_name, git_user_email) {
+        git2::Signature::now(name, email).map_err(git2_to_io_error)?
+    } else {
+        repo.signature().map_err(git2_to_io_error)?
+    };
 
     let oid = match repo.head() {
         Ok(head) => {
@@ -770,6 +784,8 @@ fn generate_fallback_commit_message(diff: &str) -> String {
 /// # Arguments
 ///
 /// * `agent_cmd` - The command to invoke the agent (e.g., "claude", "codex")
+/// * `git_user_name` - Optional git user name (overrides git config)
+/// * `git_user_email` - Optional git user email (overrides git config)
 ///
 /// # Returns
 ///
@@ -782,7 +798,11 @@ fn generate_fallback_commit_message(diff: &str) -> String {
 /// If the LLM fails to generate a commit message, a generic fallback message
 /// is used to ensure changes are still committed. This prevents the loss of
 /// progress if the LLM is temporarily unavailable or misconfigured.
-pub(crate) fn commit_with_auto_message(agent_cmd: &str) -> io::Result<Option<git2::Oid>> {
+pub(crate) fn commit_with_auto_message(
+    agent_cmd: &str,
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+) -> io::Result<Option<git2::Oid>> {
     // Check if there are meaningful changes
     if !has_meaningful_changes()? {
         return Ok(None);
@@ -818,7 +838,7 @@ pub(crate) fn commit_with_auto_message(agent_cmd: &str) -> io::Result<Option<git
     }
 
     // Create the commit
-    let oid = git_commit(&commit_message)?;
+    let oid = git_commit(&commit_message, git_user_name, git_user_email)?;
 
     Ok(oid)
 }
@@ -849,12 +869,18 @@ pub enum CommitResult {
 /// # Arguments
 ///
 /// * `agent_cmd` - The command to invoke the agent (e.g., "claude", "codex")
+/// * `git_user_name` - Optional git user name (overrides git config)
+/// * `git_user_email` - Optional git user email (overrides git config)
 ///
 /// # Returns
 ///
 /// Returns a `CommitResult` indicating success with OID, no changes, or failure.
-pub(crate) fn commit_with_auto_message_result(agent_cmd: &str) -> CommitResult {
-    match commit_with_auto_message(agent_cmd) {
+pub(crate) fn commit_with_auto_message_result(
+    agent_cmd: &str,
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+) -> CommitResult {
+    match commit_with_auto_message(agent_cmd, git_user_name, git_user_email) {
         Ok(Some(oid)) => CommitResult::Success(oid),
         Ok(None) => CommitResult::NoChanges,
         Err(e) => CommitResult::Failed(e.to_string()),

@@ -51,6 +51,14 @@ strict_validation = false
 # Path to save the last prompt (relative to project root)
 # prompt_path = ".agent/last_prompt.txt"
 
+# Git user identity for commits (optional, falls back to git config)
+# If not set, Ralph will use the standard git configuration from:
+# - git config (user.name, user.email)
+# - Environment variables: RALPH_GIT_USER_NAME, RALPH_GIT_USER_EMAIL
+# - System username as a last resort
+# git_user_name = "Your Name"
+# git_user_email = "your.email@example.com"
+
 # =============================================================================
 # CCS ALIASES (Claude Code Switch)
 # =============================================================================
