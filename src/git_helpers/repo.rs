@@ -14,6 +14,8 @@
 use std::io;
 use std::path::PathBuf;
 
+use super::identity::{resolve_git_identity, GitIdentity};
+
 /// Convert git2 error to io::Error.
 fn git2_to_io_error(err: git2::Error) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err.to_string())
@@ -246,11 +248,117 @@ pub(crate) fn git_add_all() -> io::Result<bool> {
     index_has_changes_to_commit(&repo, &index)
 }
 
+/// Resolve git commit identity with the full priority chain.
+///
+/// This function implements the identity resolution priority chain:
+/// 1. Provided name/email parameters (from Ralph config)
+/// 2. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
+/// 3. Ralph config file values (passed through)
+/// 4. Git config (via libgit2's repo.signature())
+/// 5. System username + derived email
+/// 6. Default values ("Ralph Workflow", "ralph@localhost")
+///
+/// Partial overrides are supported: if only name is provided, email will
+/// fall back through git config, system fallback, or defaults.
+///
+/// # Arguments
+///
+/// * `repo` - The git repository (for git config fallback)
+/// * `provided_name` - Optional name from Ralph config or CLI
+/// * `provided_email` - Optional email from Ralph config or CLI
+///
+/// # Returns
+///
+/// Returns `Ok(GitIdentity)` with the resolved name and email.
+fn resolve_commit_identity(
+    repo: &git2::Repository,
+    provided_name: Option<&str>,
+    provided_email: Option<&str>,
+) -> io::Result<GitIdentity> {
+    use super::identity::{default_identity, fallback_email, fallback_username};
+
+    // First try the identity resolution system for CLI/env/config sources
+    // This handles priorities 1-3 (CLI args, env vars, Ralph config)
+    match resolve_git_identity(provided_name, provided_email, None, None) {
+        Ok((identity, _source)) => {
+            // Identity resolved from CLI, env, or config - validate and return
+            if let Err(e) = identity.validate() {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Invalid git identity from config: {}", e)));
+            }
+            return Ok(identity);
+        }
+        Err(_) => {
+            // Identity resolution fell through - continue to git config fallback
+        }
+    }
+
+    // Priority 4: Git config (via libgit2)
+    // This handles the case where neither CLI/env nor Ralph config provided
+    // both name and email. We now try git config, and support partial overrides.
+    match repo.signature() {
+        Ok(sig) => {
+            // Git config provided a signature
+            let git_name = sig.name().unwrap_or("").to_string();
+            let git_email = sig.email().unwrap_or("").to_string();
+
+            // If git config has both name and email, use them
+            if !git_name.is_empty() && !git_email.is_empty() {
+                // Check if we have a partial override (name provided but not email, or vice versa)
+                let name = provided_name
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&git_name)
+                    .to_string();
+                let email = provided_email
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&git_email)
+                    .to_string();
+
+                let identity = GitIdentity::new(name, email);
+                if identity.validate().is_err() {
+                    // Git config identity is invalid - fall through to system fallback
+                } else {
+                    return Ok(identity);
+                }
+            }
+        }
+        Err(_) => {
+            // Git config failed - fall through to system fallback
+        }
+    }
+
+    // Priority 5: System username + derived email
+    let username = fallback_username();
+    let email = fallback_email(&username);
+    let identity = GitIdentity::new(username.clone(), email);
+
+    if identity.validate().is_err() {
+        // Shouldn't happen with our fallbacks, but handle it by falling through to defaults
+    } else {
+        return Ok(identity);
+    }
+
+    // Priority 6: Default values (last resort)
+    Ok(default_identity())
+}
+
 /// Create a commit.
 ///
 /// Similar to `git commit -m <message>`.
 ///
 /// Handles both initial commits (no HEAD yet) and subsequent commits.
+///
+/// # Identity Resolution
+///
+/// The git commit identity (name and email) is resolved using the following priority:
+/// 1. Provided `git_user_name` and `git_user_email` parameters (highest priority)
+/// 2. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
+/// 3. Ralph config file (read by caller, passed as parameters)
+/// 4. Git config (via libgit2)
+/// 5. System username + derived email (sane fallback)
+/// 6. Default values ("Ralph Workflow", "ralph@localhost") - last resort
+///
+/// Partial overrides are supported: if only name is provided, email will fall back
+/// through the remaining priority levels.
 ///
 /// # Arguments
 ///
@@ -283,12 +391,12 @@ pub(crate) fn git_commit(
 
     let tree = repo.find_tree(tree_oid).map_err(git2_to_io_error)?;
 
-    // Create the signature - use provided identity or fall back to git config
-    let sig = if let (Some(name), Some(email)) = (git_user_name, git_user_email) {
-        git2::Signature::now(name, email).map_err(git2_to_io_error)?
-    } else {
-        repo.signature().map_err(git2_to_io_error)?
-    };
+    // Resolve git identity using the identity resolution system.
+    // This implements the full priority chain with proper fallbacks.
+    let GitIdentity { name, email } = resolve_commit_identity(&repo, git_user_name, git_user_email)?;
+
+    // Create the signature with the resolved identity
+    let sig = git2::Signature::now(&name, &email).map_err(git2_to_io_error)?;
 
     let oid = match repo.head() {
         Ok(head) => {
