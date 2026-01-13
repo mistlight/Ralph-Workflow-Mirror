@@ -1,14 +1,18 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(ccs:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "sequential-thinking",
     "memory",
     "filesystem",
     "git"
-  ],
-  "permissions": {
-    "allow": [
-      "Bash(ccs:*)"
-    ]
-  }
+  ]
 }

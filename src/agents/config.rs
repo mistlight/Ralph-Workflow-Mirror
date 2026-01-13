@@ -53,6 +53,9 @@ pub struct AgentConfig {
     pub json_parser: JsonParserType,
     /// Model/provider flag for agents that support model selection.
     pub model_flag: Option<String>,
+    /// Display name for UI/logging (e.g., "ccs-glm" instead of raw agent name).
+    /// If None, the agent name from the registry is used.
+    pub display_name: Option<String>,
 }
 
 impl AgentConfig {
@@ -141,6 +144,7 @@ impl From<AgentConfigToml> for AgentConfig {
             can_commit: toml.can_commit,
             json_parser: JsonParserType::parse(&toml.json_parser),
             model_flag: toml.model_flag,
+            display_name: None, // Regular agents use their registry name
         }
     }
 }
@@ -223,6 +227,7 @@ mod tests {
             can_commit: true,
             json_parser: JsonParserType::Generic,
             model_flag: None,
+            display_name: None,
         };
 
         let cmd = agent.build_cmd(true, true, true);
