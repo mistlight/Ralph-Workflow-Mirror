@@ -5,14 +5,22 @@
 //! - commit-message.txt management
 //! - PROMPT.md validation
 //! - Isolation mode file cleanup
+//! - Result extraction from agent JSON logs
 //!
 //! # Isolation Mode
 //!
 //! By default, Ralph operates in isolation mode where STATUS.md, NOTES.md,
 //! and ISSUES.md are not persisted between runs. This prevents context
 //! contamination from previous runs.
+//!
+//! # Orchestrator-Controlled File I/O
+//!
+//! The orchestrator is the sole entity responsible for writing output files.
+//! Agent JSON output is extracted and written by the orchestrator, ensuring
+//! consistent file handling regardless of agent behavior.
 
 mod agent_files;
+pub mod result_extraction;
 mod validation;
 
 pub use agent_files::{
@@ -21,4 +29,5 @@ pub use agent_files::{
     read_commit_message_file, reset_context_for_isolation, update_status, write_commit_message_file,
     GENERATED_FILES,
 };
+pub use result_extraction::{extract_issues, extract_plan};
 pub use validation::{validate_prompt_md, PromptValidationResult};

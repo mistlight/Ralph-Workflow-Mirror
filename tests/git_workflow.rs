@@ -229,6 +229,9 @@ fn ralph_commit_infrastructure_for_review_fix_cycles() {
     //
     // Note: Actual commit creation requires a real LLM for message generation.
     // This test verifies the infrastructure is ready for commits.
+    //
+    // This test uses a mock script that creates ISSUES.md directly (legacy mode)
+    // since the orchestrator-controlled extraction requires proper JSON logging.
     let dir = TempDir::new().unwrap();
     init_repo_with_initial_commit(&dir);
 
@@ -238,7 +241,7 @@ fn ralph_commit_infrastructure_for_review_fix_cycles() {
     fs::write(
         &script_path,
         format!(
-            r#"#!/bin/sh
+            r##"#!/bin/sh
 mkdir -p .agent
 
 # Track calls
@@ -250,20 +253,23 @@ else
 fi
 echo $count > "{counter}"
 
-# Create ISSUES.md on odd calls (review phases)
-# Create a fix file on even calls (fix phases)
+# Create fix files and ISSUES.md for review phases
+# On odd calls (review phases): create ISSUES.md with issues
+# On even calls (fix phases): apply a fix
 if [ $((count % 2)) -ne 0 ]; then
-    # Review phase: create ISSUES.md
-    echo "- [ ] Issue found" > .agent/ISSUES.md
+    # Review phase: create ISSUES.md directly (for test reliability)
+    echo "# Issues" > .agent/ISSUES.md
+    echo "" >> .agent/ISSUES.md
+    echo "Critical:" >> .agent/ISSUES.md
+    echo "- [ ] Issue found in cycle $((count / 2 + 1))" >> .agent/ISSUES.md
 else
     # Fix phase: apply a fix
-    echo "fix from cycle $((count / 2))" >> fix_$((count / 2)).txt
+    cycle=$((count / 2))
+    echo "fix from cycle $cycle" >> fix_$cycle.txt
 fi
 
-# Create commit message for compatibility
-echo "feat: cycle $count" > .agent/commit-message.txt
 exit 0
-"#,
+"##,
             counter = counter_path.display()
         ),
     )
