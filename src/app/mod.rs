@@ -89,6 +89,10 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let developer_agent = validated.developer_agent;
     let reviewer_agent = validated.reviewer_agent;
 
+    // Get display names for UI/logging
+    let developer_display = registry.display_name(&developer_agent);
+    let reviewer_display = registry.display_name(&reviewer_agent);
+
     // Handle listing commands (these can run without git repo)
     if handle_listing_commands(&args, &registry, &colors) {
         return Ok(());
@@ -148,8 +152,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
             &logger,
             &colors,
             &config,
-            &developer_agent,
-            &reviewer_agent,
+            &developer_display,
+            &reviewer_display,
             &repo_root,
         );
     }
@@ -173,6 +177,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         registry,
         developer_agent,
         reviewer_agent,
+        developer_display,
+        reviewer_display,
         repo_root,
         logger,
         colors,
@@ -206,12 +212,14 @@ fn run_pipeline(
     registry: AgentRegistry,
     developer_agent: String,
     reviewer_agent: String,
+    developer_display: String,
+    reviewer_display: String,
     repo_root: std::path::PathBuf,
     logger: Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
     // Handle --resume
-    let resume_checkpoint = handle_resume(&args, &logger, &developer_agent, &reviewer_agent);
+    let resume_checkpoint = handle_resume(&args, &logger, &developer_display, &reviewer_display);
 
     // Set up git helpers
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
@@ -223,7 +231,7 @@ fn run_pipeline(
     let mut stats = Stats::new();
 
     // Welcome banner
-    print_welcome_banner(&colors, &developer_agent, &reviewer_agent);
+    print_welcome_banner(&colors, &developer_display, &reviewer_display);
     logger.info(&format!(
         "Working directory: {}{}{}",
         colors.cyan(),

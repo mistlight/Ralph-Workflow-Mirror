@@ -102,6 +102,28 @@ impl AgentRegistry {
         self.agents.get(name)
     }
 
+    /// Get display name for an agent.
+    ///
+    /// Returns the agent's custom display name if set (e.g., "ccs-glm" for CCS aliases),
+    /// otherwise returns the agent's registry name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The agent's registry name (e.g., "ccs/glm", "claude")
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// assert_eq!(registry.display_name("ccs/glm"), "ccs-glm");
+    /// assert_eq!(registry.display_name("claude"), "claude");
+    /// ```
+    pub fn display_name(&self, name: &str) -> String {
+        self.agents
+            .get(name)
+            .and_then(|config| config.display_name.clone())
+            .unwrap_or_else(|| name.to_string())
+    }
+
     /// Check if an agent name can be resolved.
     ///
     /// Since CCS aliases are eagerly registered, this just checks the agents map.
@@ -197,6 +219,7 @@ impl AgentRegistry {
                             can_commit: overrides.can_commit.unwrap_or(true),
                             json_parser: JsonParserType::parse(json_parser),
                             model_flag: overrides.model_flag.clone(),
+                            display_name: None,
                         },
                     );
                     loaded += 1;
@@ -233,6 +256,7 @@ impl AgentRegistry {
                     } else {
                         existing.model_flag
                     },
+                    display_name: existing.display_name, // Preserve existing display name
                 };
 
                 self.register(name, merged);
@@ -391,9 +415,52 @@ mod tests {
                 can_commit: true,
                 json_parser: JsonParserType::Generic,
                 model_flag: None,
+                display_name: None,
             },
         );
         assert!(registry.is_known("testbot"));
+    }
+
+    #[test]
+    fn test_registry_display_name() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        // Agent without custom display name uses registry key
+        registry.register(
+            "claude",
+            AgentConfig {
+                cmd: "claude -p".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                display_name: None,
+            },
+        );
+
+        // Agent with custom display name uses that
+        registry.register(
+            "ccs/glm",
+            AgentConfig {
+                cmd: "ccs glm".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                display_name: Some("ccs-glm".to_string()),
+            },
+        );
+
+        // Test display names
+        assert_eq!(registry.display_name("claude"), "claude");
+        assert_eq!(registry.display_name("ccs/glm"), "ccs-glm");
+
+        // Unknown agent returns the key as-is
+        assert_eq!(registry.display_name("unknown"), "unknown");
     }
 
     #[test]
