@@ -137,6 +137,9 @@ pub struct CcsConfig {
     /// Print flag for non-interactive mode (required by Claude CLI).
     /// Default: "-p"
     pub print_flag: String,
+    /// Streaming flag for JSON output with -p (required for Claude/CCS to stream).
+    /// Default: "--include-partial-messages"
+    pub streaming_flag: String,
     /// Which JSON parser to use for CCS output.
     pub json_parser: String,
     /// Whether CCS can run workflow tools (git commit, etc.).
@@ -152,6 +155,7 @@ impl Default for CcsConfig {
             yolo_flag: "--dangerously-skip-permissions".to_string(),
             verbose_flag: "--verbose".to_string(),
             print_flag: "-p".to_string(),
+            streaming_flag: "--include-partial-messages".to_string(),
             json_parser: "claude".to_string(),
             can_commit: true,
         }
@@ -172,6 +176,8 @@ pub struct CcsAliasConfig {
     pub verbose_flag: Option<String>,
     /// Optional print flag override for this alias (e.g., "-p" for Claude/CCS).
     pub print_flag: Option<String>,
+    /// Optional streaming flag override for this alias (e.g., "--include-partial-messages").
+    pub streaming_flag: Option<String>,
     /// Optional JSON parser override (e.g., "claude", "generic").
     pub json_parser: Option<String>,
     /// Optional can_commit override for this alias.
@@ -226,6 +232,10 @@ pub struct AgentConfigToml {
     ///
     /// Omitted means "keep built-in default". Empty string explicitly disables print mode.
     pub print_flag: Option<String>,
+    /// Include partial messages flag for streaming with -p (e.g., "--include-partial-messages").
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly disables streaming flag.
+    pub streaming_flag: Option<String>,
     /// Whether the agent can run git commit.
     ///
     /// Omitted means "keep built-in default". For new agents, this defaults to true when omitted.

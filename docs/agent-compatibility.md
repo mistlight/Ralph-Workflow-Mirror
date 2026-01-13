@@ -155,9 +155,11 @@ configure it to avoid warnings.
 name = "ccs/glm"
 command = "ccs"
 args = ["glm", "--output-format=stream-json", "--dangerously-skip-permissions", "<PROMPT>"]
-json_parser = "generic"  # Use generic parser as fallback
+json_parser = "claude"  # CCS always uses Claude parser (outputs stream-json format)
 print_flag = "-p"  # Required for non-interactive mode
 ```
+
+> **IMPORTANT**: CCS (Claude Code Switcher) ALWAYS outputs Claude's stream-json format, regardless of which provider you're using (GLM, Gemini, etc.). The Claude parser is the correct parser for all CCS agents. If `ccs/glm` is not using the Claude parser, **this is a bug** and should be reported.
 
 **Alternative - Use Different Reviewer**:
 ```bash
@@ -277,14 +279,16 @@ force_universal_prompt = true
 
 #### Option 2: Override JSON Parser
 
-Use a different parser for the reviewer agent:
+> **Note**: For CCS agents (ccs/glm, ccs/gemini, etc.), the Claude parser should always be used since CCS outputs Claude's stream-json format. If a CCS agent is not using the Claude parser, **this is a bug**.
+
+The parser override option is primarily for non-CCS agents that have compatibility issues:
 
 ```bash
-# Use generic parser with any agent
-ralph --reviewer-agent ccs/glm --reviewer-json-parser generic
+# Use generic parser with agents that don't output stream-json
+ralph --reviewer-agent aider --reviewer-json-parser generic
 
 # Or via environment variable
-RALPH_REVIEWER_JSON_PARSER=generic ralph --reviewer-agent ccs/glm
+RALPH_REVIEWER_JSON_PARSER=generic ralph --reviewer-agent aider
 ```
 
 #### Option 3: Use a Different Reviewer

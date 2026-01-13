@@ -122,6 +122,7 @@ exit 0
         yolo_flag: String::new(),
         verbose_flag: String::new(),
         print_flag: String::new(),
+        streaming_flag: String::new(),
         json_parser: "generic".to_string(),
         can_commit: true,
     };
@@ -271,6 +272,7 @@ fn test_glm_reviewer_command_includes_print_flag() {
         yolo_flag: "--dangerously-skip-permissions".to_string(),
         verbose_flag: "--verbose".to_string(),
         print_flag: "-p".to_string(),
+        streaming_flag: "--include-partial-messages".to_string(),
         json_parser: "claude".to_string(),
         can_commit: true,
     };
@@ -357,6 +359,7 @@ exit 0
         yolo_flag: String::new(),
         verbose_flag: String::new(),
         print_flag: "-p".to_string(),
+        streaming_flag: "--include-partial-messages".to_string(),
         json_parser: "claude".to_string(),
         can_commit: true,
     };

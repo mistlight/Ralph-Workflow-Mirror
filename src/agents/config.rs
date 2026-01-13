@@ -55,6 +55,9 @@ pub struct AgentConfig {
     pub model_flag: Option<String>,
     /// Print/non-interactive mode flag (e.g., "-p" for Claude/CCS).
     pub print_flag: String,
+    /// Include partial messages flag for streaming with -p (e.g., "--include-partial-messages").
+    /// Required for Claude/CCS to stream JSON output when using -p mode.
+    pub streaming_flag: String,
     /// Display name for UI/logging (e.g., "ccs-glm" instead of raw agent name).
     /// If None, the agent name from the registry is used.
     pub display_name: Option<String>,
@@ -83,6 +86,15 @@ impl AgentConfig {
 
         if output && !self.output_flag.is_empty() {
             parts.push(self.output_flag.clone());
+        }
+
+        // Add streaming flag when using stream-json output with -p
+        // Claude/CCS require --include-partial-messages to stream JSON in -p mode
+        if output && !self.output_flag.is_empty()
+            && self.output_flag.contains("stream-json")
+            && !self.print_flag.is_empty()
+            && !self.streaming_flag.is_empty() {
+            parts.push(self.streaming_flag.clone());
         }
         if yolo && !self.yolo_flag.is_empty() {
             parts.push(self.yolo_flag.clone());
@@ -145,6 +157,9 @@ pub struct AgentConfigToml {
     /// Print/non-interactive mode flag (optional, defaults to empty).
     #[serde(default)]
     pub print_flag: String,
+    /// Include partial messages flag for streaming with -p (optional, defaults to "--include-partial-messages").
+    #[serde(default = "default_streaming_flag")]
+    pub streaming_flag: String,
     /// Display name for UI/logging (optional, e.g., "My Custom Agent" instead of registry name).
     #[serde(default)]
     pub display_name: Option<String>,
@@ -152,6 +167,10 @@ pub struct AgentConfigToml {
 
 fn default_can_commit() -> bool {
     true
+}
+
+fn default_streaming_flag() -> String {
+    "--include-partial-messages".to_string()
 }
 
 impl From<AgentConfigToml> for AgentConfig {
@@ -165,6 +184,7 @@ impl From<AgentConfigToml> for AgentConfig {
             json_parser: JsonParserType::parse(&toml.json_parser),
             model_flag: toml.model_flag,
             print_flag: toml.print_flag,
+            streaming_flag: toml.streaming_flag,
             display_name: toml.display_name,
         }
     }
@@ -249,6 +269,7 @@ mod tests {
             json_parser: JsonParserType::Generic,
             model_flag: None,
             print_flag: String::new(),
+            streaming_flag: String::new(),
             display_name: None,
         };
 
@@ -270,6 +291,7 @@ mod tests {
             json_parser: "claude".to_string(),
             model_flag: Some("-m provider/model".to_string()),
             print_flag: String::new(),
+            streaming_flag: String::new(),
             display_name: Some("My Custom Agent".to_string()),
         };
 
@@ -302,12 +324,14 @@ mod tests {
             json_parser: JsonParserType::Claude,
             model_flag: None,
             print_flag: "-p".to_string(),
+            streaming_flag: "--include-partial-messages".to_string(),
             display_name: None,
         };
 
         let cmd = agent.build_cmd(true, true, true);
         assert!(cmd.contains("ccs glm -p"));
         assert!(cmd.contains("--output-format=stream-json"));
+        assert!(cmd.contains("--include-partial-messages"));
     }
 
     #[test]
