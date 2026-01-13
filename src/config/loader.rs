@@ -134,6 +134,8 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         strict_validation: general.strict_validation,
         review_depth,
         isolation_mode: general.isolation_mode,
+        git_user_name: general.git_user_name.clone(),
+        git_user_email: general.git_user_email.clone(),
     }
 }
 
@@ -165,6 +167,8 @@ fn default_config() -> Config {
         strict_validation: false,
         review_depth: ReviewDepth::default(),
         isolation_mode: true,
+        git_user_name: None,
+        git_user_email: None,
     }
 }
 
@@ -389,6 +393,20 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
     }
     if let Some(n) = parse_u8_env("RALPH_REVIEWER_CONTEXT", warnings, MAX_CONTEXT) {
         config.reviewer_context = n;
+    }
+
+    // Git user identity
+    if let Ok(val) = env::var("RALPH_GIT_USER_NAME") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            config.git_user_name = Some(trimmed.to_string());
+        }
+    }
+    if let Ok(val) = env::var("RALPH_GIT_USER_EMAIL") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            config.git_user_email = Some(trimmed.to_string());
+        }
     }
 
     config
