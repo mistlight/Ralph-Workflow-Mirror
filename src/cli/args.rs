@@ -25,6 +25,7 @@ QUICK START:\n\
 \n\
 PRESET MODES:\n\
     -Q, --quick      1 dev + 1 review      (rapid prototyping)\n\
+    -U, --rapid      2 dev + 1 review      (fast iteration)\n\
     -S, --standard   5 dev + 2 reviews     (default workflow)\n\
     -T, --thorough  10 dev + 5 reviews     (balanced but thorough)\n\
     -L, --long      15 dev + 10 reviews    (most thorough)\n\
@@ -32,10 +33,10 @@ PRESET MODES:\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
 COMMON FLAGS:\n\
-    -D N        Developer iterations\n\
+    -D N        Developer iterations (how many times the AI tries to build)\n\
     -R N        Review cycles (0=skip, 1=one cycle, default: 2)\n\
     -a AGENT    Developer agent (claude, codex, opencode, etc.)\n\
-    -r AGENT    Reviewer agent\n\
+    -r AGENT    Reviewer agent (for code quality checks)\n\
     -v N        Verbosity (0=quiet, 1=normal, 2=verbose, 3=full, 4=debug)\n\
 \n\
 EXAMPLES:\n\
@@ -207,6 +208,14 @@ pub struct Args {
         help = "Quick mode: 1 dev iteration + 1 review (for rapid prototyping)"
     )]
     pub quick: bool,
+
+    /// Rapid mode: 2 developer iterations, 1 review pass (between quick and standard)
+    #[arg(
+        long,
+        short = 'U',
+        help = "Rapid mode: 2 dev iterations + 1 review (fast but more thorough than quick)"
+    )]
+    pub rapid: bool,
 
     /// Long mode: 15 developer iterations, 10 review passes (for thorough development)
     #[arg(
