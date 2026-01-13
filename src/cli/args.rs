@@ -26,6 +26,11 @@ CONFIGURATION:\n\
     CCS aliases can be defined in the config and used as 'ccs/alias-name'.\n\
     Run 'ralph --init-global' to create the unified config file.\n\
     Run 'ralph --list-agents' to see all configured agents.\n\n\
+PROMPT.md TEMPLATES:\n\
+    Run 'ralph --list-templates' to see available PROMPT.md templates.\n\
+    Run 'ralph --init-prompt <template>' to create PROMPT.md from a template.\n\
+    Run 'ralph --interactive' to be prompted when PROMPT.md is missing.\n\
+    Templates include: feature-spec, bug-fix, refactor, test, docs, quick.\n\n\
 VERBOSITY LEVELS (-v LEVEL):\n\
     0 = quiet    Minimal output, hide tool inputs (--quiet or -q)\n\
     1 = normal   Balanced output, show tool inputs\n\
@@ -225,7 +230,7 @@ pub struct Args {
     /// Initialize unified config file and exit (alias for --init-global)
     #[arg(
         long,
-        conflicts_with_all = ["init_global", "init_legacy"],
+        conflicts_with_all = ["init_global", "init_legacy", "init_prompt"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)"
     )]
     pub init: bool,
@@ -233,7 +238,7 @@ pub struct Args {
     /// Initialize unified config file and exit
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_legacy"],
+        conflicts_with_all = ["init", "init_legacy", "init_prompt"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)"
     )]
     pub init_global: bool,
@@ -241,7 +246,7 @@ pub struct Args {
     /// Initialize legacy per-repo agents.toml and exit
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_global"],
+        conflicts_with_all = ["init", "init_global", "init_prompt"],
         help = "(Legacy) Create .agent/agents.toml with default settings (not recommended)"
     )]
     pub init_legacy: bool,
@@ -301,4 +306,27 @@ pub struct Args {
         help = "Path to configuration file (default: ~/.config/ralph-workflow.toml)"
     )]
     pub config: Option<std::path::PathBuf>,
+
+    /// Initialize PROMPT.md from template and exit
+    #[arg(
+        long,
+        value_name = "TEMPLATE",
+        help = "Create PROMPT.md from a template (use --list-templates to see options)"
+    )]
+    pub init_prompt: Option<String>,
+
+    /// List available PROMPT.md templates and exit
+    #[arg(
+        long,
+        help = "Show all available PROMPT.md templates with descriptions"
+    )]
+    pub list_templates: bool,
+
+    /// Interactive mode: prompt to create PROMPT.md from template when missing
+    #[arg(
+        long,
+        short = 'i',
+        help = "Interactive mode: prompt to create PROMPT.md from template when missing"
+    )]
+    pub interactive: bool,
 }
