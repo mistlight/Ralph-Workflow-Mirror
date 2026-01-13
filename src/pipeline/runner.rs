@@ -551,7 +551,10 @@ pub(crate) fn run_with_fallback(
                     .unwrap_or_default();
                 let display_name = registry.display_name(agent_name);
                 let label = format!("{} ({}{})", base_label, display_name, model_suffix);
-                let logfile = format!("{}_{}_{}.log", logfile_prefix, agent_name, model_index);
+                // Sanitize agent name for log file path - replace "/" with "-" to avoid
+                // creating subdirectories (e.g., "ccs/glm" -> "ccs-glm")
+                let safe_agent_name = agent_name.replace('/', "-");
+                let logfile = format!("{}_{}_{}.log", logfile_prefix, safe_agent_name, model_index);
 
                 // Try with retries
                 for retry in 0..fallback_config.max_retries {
