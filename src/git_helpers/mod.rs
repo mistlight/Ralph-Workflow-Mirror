@@ -7,16 +7,23 @@
 //!
 //! - [`hooks`] - Git hooks installation and removal
 //! - [`repo`] - Basic git repository operations (add, commit, snapshot)
+//! - [`start_commit`] - Starting commit tracking for incremental diffs
 //! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
 
 #![deny(unsafe_code)]
 
 mod hooks;
 mod repo;
+mod start_commit;
 mod wrapper;
 
 pub(crate) use hooks::uninstall_hooks;
-pub(crate) use repo::{get_repo_root, git_add_all, git_commit, git_snapshot, require_git_repo};
+pub(crate) use repo::{
+    commit_with_auto_message_result, generate_commit_message_with_llm,
+    get_git_diff_from_start, get_repo_root, git_add_all, git_commit, git_diff, git_snapshot,
+    require_git_repo, CommitResult,
+};
+pub(crate) use start_commit::{reset_start_commit, save_start_commit};
 pub(crate) use wrapper::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
     start_agent_phase, GitHelpers,

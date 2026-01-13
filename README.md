@@ -613,6 +613,23 @@ By default, Ralph Workflow runs in isolation mode, which clears NOTES.md and ISS
 ralph --no-isolation
 ```
 
+### Git Workflow and Commits
+
+Ralph Workflow automatically creates git commits throughout the development process:
+
+- **Per-iteration commits**: After each development iteration, if meaningful changes are detected, Ralph creates a commit with an auto-generated message based on the actual changes.
+- **Per-review-cycle commits**: After each review-fix cycle, if fixes were applied, Ralph creates a commit with an auto-generated message.
+- **Agent isolation**: AI agents are not aware of git operations. Only the orchestrator handles git commits, ensuring clean separation of concerns.
+- **Cumulative diffs for reviewers**: Reviewers receive the cumulative diff from the start of the pipeline (stored in `.agent/start_commit`), not per-commit diffs.
+
+**Reset the start commit** (establishes a new baseline for reviewer diffs):
+
+```bash
+ralph --reset-start-commit
+```
+
+**Skipping commits**: Commits are only created when there are meaningful changes (whitespace-only changes are skipped).
+
 ### Plumbing Commands
 
 For scripting and CI/CD:
@@ -647,6 +664,7 @@ All working files live in `.agent/`:
 ├── commit-message.txt # Generated commit message
 ├── checkpoint.json    # Pipeline checkpoint (for --resume)
 ├── last_prompt.txt    # Last prompt sent to agent
+├── start_commit       # Baseline commit for cumulative diffs (persists across runs)
 └── logs/              # Agent run logs
 ```
 
@@ -667,7 +685,7 @@ Add to `.gitignore` if you don't want these tracked:
 | Rate limit errors | Ralph Workflow auto-retries with backoff. Configure fallback agents for faster recovery. |
 | Network/connection errors | Check internet, firewall, VPN. Ralph Workflow auto-retries network issues. |
 | Authentication errors | Run `<agent> auth` to authenticate, or check your API key. See below for provider-specific guidance. |
-| No commit created | Ralph Workflow falls back to `git commit` if the reviewer doesn't |
+| No commit created | Ensure there are meaningful changes; if LLM message generation fails, Ralph uses a fallback commit message and still commits via libgit2 |
 | Nothing happening | Try `ralph --debug` to see what's going on |
 
 ### OpenCode Provider Authentication

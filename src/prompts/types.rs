@@ -49,8 +49,6 @@ pub enum Action {
     Review,
     /// Fix issues found during review
     Fix,
-    /// Generate a commit message
-    GenerateCommitMessage,
 }
 
 #[cfg(test)]
