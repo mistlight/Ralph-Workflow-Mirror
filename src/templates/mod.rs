@@ -56,12 +56,12 @@ impl PromptTemplate {
     /// Returns a short description of this template.
     pub fn description(self) -> &'static str {
         match self {
-            Self::FeatureSpec => "Comprehensive product specification (5+ sections)",
-            Self::BugFix => "Concise bug fix template (3 sections)",
-            Self::Refactor => "Code refactoring template (3 sections)",
-            Self::Test => "Test writing template (3 sections)",
-            Self::Docs => "Documentation update template (3 sections)",
-            Self::Quick => "Quick/small change template (2 sections)",
+            Self::FeatureSpec => "Comprehensive product specification with questions to consider and code quality standards",
+            Self::BugFix => "Bug fix template with investigation guidance and testing requirements",
+            Self::Refactor => "Code refactoring template with behavior preservation emphasis",
+            Self::Test => "Test writing template with edge case considerations",
+            Self::Docs => "Documentation update template with completeness checklist",
+            Self::Quick => "Quick/small change template (minimal)",
         }
     }
 

@@ -1,0 +1,118 @@
+//! Advanced help handler.
+//!
+//! Provides comprehensive help information including all options,
+//! environment variables, templates, and examples.
+
+use crate::colors::Colors;
+
+/// Displays comprehensive advanced help information.
+pub fn handle_help_advanced(colors: &Colors) {
+    let dim = colors.dim();
+    let reset = colors.reset();
+    let cyan = colors.cyan();
+    let yellow = colors.yellow();
+    let green = colors.green();
+
+    println!("{}", dim);
+    println!("╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!();
+    println!("{}QUICK START:{}", reset, yellow);
+    println!("    1. Create PROMPT.md: ralph --init-prompt feature-spec");
+    println!("    2. Run: ralph \"feat: implement my feature\"");
+    println!("    3. Ralph runs developer agent → reviewer agent → auto-commits result");
+    println!();
+    println!("    Get started: ralph --init-global    (create config)");
+    println!("                  ralph --list-templates");
+    println!();
+    println!("╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!();
+    println!("{}PRESET MODES:{}", reset, yellow);
+    println!("    -Q, --quick      1 dev + 1 review      (rapid prototyping)");
+    println!("    -S, --standard   5 dev + 2 reviews     (default workflow)");
+    println!("    -T, --thorough  10 dev + 5 reviews     (balanced but thorough)");
+    println!("    -L, --long      15 dev + 10 reviews    (most thorough)");
+    println!();
+    println!("    Note: -D N and -R N flags always override preset values.");
+    println!();
+    println!("╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!();
+    println!("{}COMMON FLAGS:{}", reset, yellow);
+    println!("    -D N        Developer iterations");
+    println!("    -R N        Review cycles (0=skip, 1=one cycle, default: 2)");
+    println!("    -a AGENT    Developer agent (claude, codex, opencode, etc.)");
+    println!("    -r AGENT    Reviewer agent");
+    println!("    -v N        Verbosity (0=quiet, 1=normal, 2=verbose, 3=full, 4=debug)");
+    println!("    -d, --diagnose    Show diagnostic info");
+    println!();
+    println!("{}OTHER FLAGS:{}", reset, yellow);
+    println!("    -q, --quiet       Quiet mode (same as -v0)");
+    println!("    -f, --full        Full output (same as -v3)");
+    println!("    --preset NAME     Use preset agent combo (default, opencode)");
+    println!("    --review-depth    Review depth: standard, comprehensive, security, incremental");
+    println!("    --no-isolation    Keep NOTES.md and ISSUES.md between runs");
+    println!("    --resume          Resume from last checkpoint");
+    println!("    --dry-run         Validate without running agents");
+    println!();
+    println!("╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!();
+    println!("{}EXAMPLES:{}", reset, yellow);
+    println!("    Basic:");
+    println!("        ralph \"feat: add login button\"");
+    println!();
+    println!("    Preset modes:");
+    println!("        ralph -Q \"fix: small bug\"           Quick (1+1)");
+    println!("        ralph -S \"feat: normal change\"      Standard (5+2)");
+    println!("        ralph -T \"refactor: optimize\"       Thorough (10+5)");
+    println!("        ralph -L \"feat: complex feature\"    Long (15+10)");
+    println!();
+    println!("    Custom iterations:");
+    println!("        ralph -D 3 -R 2 \"fix: bug\"");
+    println!();
+    println!("    Specific agents:");
+    println!("        ralph -a claude -r codex \"feat: change\"");
+    println!("        ralph --preset opencode \"feat: change\"");
+    println!();
+    println!("    Verbosity:");
+    println!("        ralph -q \"fix: typo\"                Quiet mode");
+    println!("        ralph -f \"feat: complex change\"     Full output");
+    println!();
+    println!("╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!();
+    println!("{}ADVANCED:{}", reset, yellow);
+    println!();
+    println!("Plumbing Commands (for scripting):");
+    println!("    ralph --generate-commit-msg    Generate message only");
+    println!("    ralph --show-commit-msg        Display generated message");
+    println!("    ralph --apply-commit           Commit using generated message");
+    println!();
+    println!("Templates:");
+    println!("    ralph --list-templates         Show available PROMPT.md templates");
+    println!("    ralph --init-prompt <template> Create PROMPT.md from template");
+    println!("    ralph --interactive            Prompt when PROMPT.md is missing");
+    println!();
+    println!("Configuration:");
+    println!("    Primary config: ~/.config/ralph-workflow.toml");
+    println!("    Run 'ralph --init-global' to create the unified config file.");
+    println!("    Run 'ralph --list-agents' to see all configured agents.");
+    println!("    Environment variables (RALPH_*) override config file settings.");
+    println!();
+    println!("{}Verbosity Levels:{}", reset, yellow);
+    println!("    0 = quiet    Minimal output, hide tool inputs (--quiet or -q)");
+    println!("    1 = normal   Balanced output, show tool inputs");
+    println!("    2 = verbose  Default - generous limits for full context");
+    println!("    3 = full     No truncation (--full or -f)");
+    println!("    4 = debug    Max verbosity with raw JSON (--debug)");
+    println!();
+    println!("{}Environment Variables:{}", reset, yellow);
+    println!("    RALPH_DEVELOPER_AGENT         Developer agent (from agent_chain)");
+    println!("    RALPH_REVIEWER_AGENT          Reviewer agent (from agent_chain)");
+    println!("    RALPH_DEVELOPER_ITERS         Developer iterations (default: 5)");
+    println!("    RALPH_REVIEWER_REVIEWS        Re-review passes (default: 2)");
+    println!("    RALPH_REVIEWER_JSON_PARSER    JSON parser for reviewer agent");
+    println!("    RALPH_VERBOSITY               Verbosity level 0-4 (default: 2)");
+    println!("    RALPH_ISOLATION_MODE          Isolation mode on/off (default: 1=on)");
+    println!();
+    println!("{}For full documentation, see:{} https://codeberg.org/mistlight/RalphWithReviewer", reset, cyan);
+    println!("{}Quick reference guide:{} docs/quick-reference.md", reset, green);
+    println!("╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
