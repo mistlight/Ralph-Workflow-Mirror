@@ -21,6 +21,14 @@ A cheat sheet for common Ralph Workflow commands and flags.
 | `-c PATH` | `--config PATH` | Path to config file |
 | `-i` | `--interactive` | Prompt for PROMPT.md template if missing |
 
+## Help Commands
+
+```bash
+ralph --help           # Show basic help (quick start, common flags)
+ralph --help-advanced  # Show comprehensive help (all options, templates, docs)
+ralph --list-templates # Show available PROMPT.md templates
+```
+
 ## Preset Modes
 
 | Mode | Flag | Dev Iters | Reviews | Use Case |
