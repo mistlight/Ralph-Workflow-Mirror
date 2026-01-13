@@ -165,29 +165,12 @@ pub fn update_status(_status: &str, isolation_mode: bool) -> io::Result<()> {
 
 /// Ensure required files and directories exist.
 ///
-/// Creates the `.agent/logs` directory and PROMPT.md template if they don't exist.
+/// Creates the `.agent/logs` directory if it doesn't exist.
 ///
 /// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
 /// are NOT created. This prevents context contamination from previous runs.
 pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
     fs::create_dir_all(".agent/logs")?;
-
-    if !Path::new("PROMPT.md").exists() {
-        fs::write(
-            "PROMPT.md",
-            r#"# PROMPT
-
-## Goal
-(Write what you want done)
-
-## Acceptance checks
-- (List tests/lint/behaviors that must pass)
-
-## Notes / constraints
-- (Optional)
-"#,
-        )?;
-    }
 
     // Only create STATUS.md, NOTES.md and ISSUES.md when NOT in isolation mode
     if !isolation_mode {
@@ -349,8 +332,8 @@ mod tests {
         with_temp_cwd(|_dir| {
             ensure_files(true).unwrap();
 
-            // Should create PROMPT.md only
-            assert!(Path::new("PROMPT.md").exists());
+            // Should not create PROMPT.md (creation is an explicit user action)
+            assert!(!Path::new("PROMPT.md").exists());
 
             // Should NOT create STATUS.md, NOTES.md and ISSUES.md in isolation mode
             assert!(!Path::new(".agent/STATUS.md").exists());
@@ -364,8 +347,8 @@ mod tests {
         with_temp_cwd(|_dir| {
             ensure_files(false).unwrap();
 
-            // Should create all files
-            assert!(Path::new("PROMPT.md").exists());
+            // Should not create PROMPT.md (creation is an explicit user action)
+            assert!(!Path::new("PROMPT.md").exists());
             assert!(Path::new(".agent/STATUS.md").exists());
             assert!(Path::new(".agent/NOTES.md").exists());
             assert!(Path::new(".agent/ISSUES.md").exists());

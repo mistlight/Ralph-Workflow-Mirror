@@ -7,7 +7,10 @@
 //! - Loading agent registry data from unified config
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
-use crate::cli::{apply_args_to_config, handle_init_global, handle_init_legacy, Args};
+use crate::cli::{
+    apply_args_to_config, handle_init_global, handle_init_legacy, handle_init_prompt,
+    handle_list_templates, Args,
+};
 use crate::colors::Colors;
 use crate::config::{loader, unified_config_path, Config, UnifiedConfig};
 use crate::git_helpers::get_repo_root;
@@ -32,7 +35,7 @@ pub struct ConfigInitResult {
 /// 1. Loads config from unified config file (~/.config/ralph-workflow.toml)
 /// 2. Applies environment variable overrides
 /// 3. Applies CLI arguments to config
-/// 4. Handles --init/--init-global (unified) and --init-legacy if set
+/// 4. Handles --list-templates, --init-prompt, --init/--init-global (unified), and --init-legacy if set
 /// 5. Loads agent registry from built-ins + unified config
 /// 6. Selects default agents from fallback chains
 ///
@@ -45,7 +48,7 @@ pub struct ConfigInitResult {
 /// # Returns
 ///
 /// Returns `Ok(Some(result))` on success, `Ok(None)` if an early exit was triggered
-/// (e.g., --init), or an error if initialization fails.
+/// (e.g., --init, --init-prompt, --list-templates), or an error if initialization fails.
 pub fn initialize_config(
     args: &Args,
     colors: &Colors,
@@ -74,6 +77,18 @@ pub fn initialize_config(
 
     // Apply CLI arguments to config
     apply_args_to_config(args, &mut config, colors);
+
+    // Handle --list-templates flag: display available templates and exit
+    if args.list_templates && handle_list_templates(colors)? {
+        return Ok(None);
+    }
+
+    // Handle --init-prompt flag: create PROMPT.md from template and exit
+    if let Some(ref template_name) = args.init_prompt {
+        if handle_init_prompt(template_name, colors)? {
+            return Ok(None);
+        }
+    }
 
     // Handle unified init flags: create unified config if it doesn't exist and exit
     if (args.init_global || args.init) && handle_init_global(colors)? {

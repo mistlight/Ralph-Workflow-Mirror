@@ -4,6 +4,7 @@
 //! they have the required sections for the pipeline to work effectively.
 
 use std::fs;
+use std::io::IsTerminal;
 use std::path::Path;
 
 fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
@@ -68,11 +69,13 @@ impl PromptValidationResult {
 /// # Arguments
 ///
 /// * `strict` - In strict mode, missing sections are errors; otherwise they're warnings.
+/// * `interactive` - If true and PROMPT.md doesn't exist, prompt to create from template.
+///                   Also requires stdout to be a terminal for interactive prompts.
 ///
 /// # Returns
 ///
 /// A `PromptValidationResult` containing validation findings.
-pub fn validate_prompt_md(strict: bool) -> PromptValidationResult {
+pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationResult {
     let prompt_path = Path::new("PROMPT.md");
     let mut result = PromptValidationResult {
         exists: prompt_path.exists(),
@@ -84,7 +87,20 @@ pub fn validate_prompt_md(strict: bool) -> PromptValidationResult {
     };
 
     if !result.exists {
-        result.errors.push("PROMPT.md not found".to_string());
+        if interactive && std::io::stdout().is_terminal() {
+            // Interactive mode: the caller should have already prompted
+            // We just return an error result so they can handle it
+            result.errors.push(
+                "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
+                    .to_string(),
+            );
+        } else {
+            result.errors.push(
+                "PROMPT.md not found. Run 'ralph --list-templates' to see available templates, \
+                 then 'ralph --init-prompt <template>' to create one."
+                    .to_string(),
+            );
+        }
         return result;
     }
 
@@ -140,10 +156,15 @@ mod tests {
     #[test]
     fn test_validate_prompt_md_not_exists() {
         with_temp_cwd(|_dir| {
-            let result = validate_prompt_md(false);
+            let result = validate_prompt_md(false, false);
             assert!(!result.exists);
             assert!(!result.is_valid());
             assert!(result.errors.iter().any(|e| e.contains("not found")));
+            // Verify template suggestion is included
+            assert!(result
+                .errors
+                .iter()
+                .any(|e| e.contains("--list-templates") || e.contains("--init-prompt")));
         });
     }
 
@@ -151,7 +172,7 @@ mod tests {
     fn test_validate_prompt_md_empty() {
         with_temp_cwd(|_dir| {
             fs::write("PROMPT.md", "   \n\n  ").unwrap();
-            let result = validate_prompt_md(false);
+            let result = validate_prompt_md(false, false);
             assert!(result.exists);
             assert!(!result.has_content);
             assert!(!result.is_valid());
@@ -174,7 +195,7 @@ Build a feature
 "#,
             )
             .unwrap();
-            let result = validate_prompt_md(false);
+            let result = validate_prompt_md(false, false);
             assert!(result.exists);
             assert!(result.has_content);
             assert!(result.has_goal);
@@ -188,7 +209,7 @@ Build a feature
     fn test_validate_prompt_md_missing_sections_lenient() {
         with_temp_cwd(|_dir| {
             fs::write("PROMPT.md", "Just some random content").unwrap();
-            let result = validate_prompt_md(false);
+            let result = validate_prompt_md(false, false);
             assert!(result.exists);
             assert!(result.has_content);
             assert!(!result.has_goal);
@@ -204,7 +225,7 @@ Build a feature
     fn test_validate_prompt_md_missing_sections_strict() {
         with_temp_cwd(|_dir| {
             fs::write("PROMPT.md", "Just some random content").unwrap();
-            let result = validate_prompt_md(true);
+            let result = validate_prompt_md(true, false);
             assert!(result.exists);
             assert!(result.has_content);
             assert!(!result.has_goal);
@@ -229,7 +250,7 @@ Test
 "#,
             )
             .unwrap();
-            let result = validate_prompt_md(false);
+            let result = validate_prompt_md(false, false);
             assert!(result.has_acceptance);
 
             // Test lowercase "acceptance" variant
@@ -242,7 +263,7 @@ The acceptance tests should pass.
 "#,
             )
             .unwrap();
-            let result = validate_prompt_md(false);
+            let result = validate_prompt_md(false, false);
             assert!(result.has_acceptance);
         });
     }

@@ -20,8 +20,8 @@ pub mod validation;
 use crate::agents::AgentRegistry;
 use crate::banner::{print_final_summary, print_welcome_banner};
 use crate::cli::{
-    handle_diagnose, handle_dry_run, handle_list_agents, handle_list_available_agents,
-    handle_list_providers, Args,
+    create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
+    handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
 };
 use crate::colors::Colors;
 use crate::config::Config;
@@ -137,6 +137,34 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     require_git_repo()?;
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
+
+    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
+    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
+    if args.interactive && !std::path::Path::new("PROMPT.md").exists() {
+        match prompt_template_selection(&colors) {
+            Some(template_name) => {
+                create_prompt_from_template(&template_name, &colors)?;
+                println!();
+                logger.info(
+                    "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+                );
+                logger.info(&format!(
+                    "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                    config.commit_msg
+                ));
+                return Ok(());
+            }
+            None => {
+                println!();
+                logger.info("PROMPT.md is required to run the pipeline.");
+                logger.info(
+                    "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+                );
+                return Ok(());
+            }
+        }
+    }
+
     ensure_files(config.isolation_mode)?;
 
     // Reset context for isolation mode
@@ -248,7 +276,8 @@ fn run_pipeline(
     // Validate PROMPT.md early so we don't run a "review" against an ill-formed prompt.
     // In non-strict mode this is warning-only for missing sections, but still surfaced
     // loudly because it impacts the review workflow.
-    let prompt_validation = validate_prompt_md(config.strict_validation);
+    // Note: Interactive mode PROMPT.md creation is handled in run() before ensure_files()
+    let prompt_validation = validate_prompt_md(config.strict_validation, args.interactive);
     for err in &prompt_validation.errors {
         logger.error(err);
     }

@@ -1,11 +1,14 @@
 //! Configuration initialization handlers.
 //!
-//! This module handles the `--init`, `--init-global`, and legacy `--init-legacy` flags,
-//! which create default agent configuration files.
+//! This module handles the `--init`, `--init-global`, legacy `--init-legacy` flags,
+//! and `--init-prompt` flag for creating default agent configuration files
+//! and PROMPT.md from templates.
 
 use crate::agents::{AgentsConfigFile, ConfigInitResult};
 use crate::colors::Colors;
 use crate::config::{unified_config_path, UnifiedConfig, UnifiedConfigInitResult};
+use crate::templates::{get_template, list_templates};
+use std::fs;
 use std::path::Path;
 
 /// Handle the `--init-global` flag.
@@ -99,3 +102,133 @@ pub fn handle_init_legacy(colors: &Colors, agents_config_path: &Path) -> anyhow:
 }
 
 // NOTE: legacy per-repo agents.toml creation is handled by `--init-legacy` only.
+
+/// Handle the `--init-prompt` flag.
+///
+/// Creates a PROMPT.md file from the specified template.
+///
+/// # Arguments
+///
+/// * `template_name` - The name of the template to use
+/// * `colors` - Terminal color configuration for output
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the flag was handled (program should exit after),
+/// or an error if template creation failed.
+pub fn handle_init_prompt(template_name: &str, colors: &Colors) -> anyhow::Result<bool> {
+    let prompt_path = Path::new("PROMPT.md");
+
+    // Check if PROMPT.md already exists
+    if prompt_path.exists() {
+        println!(
+            "{}PROMPT.md already exists:{} {}",
+            colors.yellow(),
+            colors.reset(),
+            prompt_path.display()
+        );
+        println!("Delete or backup the existing file to create a new one from a template.");
+        return Ok(true);
+    }
+
+    // Validate the template exists
+    let template = match get_template(template_name) {
+        Some(t) => t,
+        None => {
+            println!(
+                "{}Unknown template: '{}'{}",
+                colors.red(),
+                template_name,
+                colors.reset()
+            );
+            println!();
+            println!("Available templates:");
+            for (name, description) in list_templates() {
+                println!(
+                    "  {}{}{}  {}",
+                    colors.cyan(),
+                    name,
+                    colors.reset(),
+                    description
+                );
+            }
+            println!();
+            println!("Usage: ralph --init-prompt <template>");
+            println!("       ralph --list-templates");
+            return Ok(true);
+        }
+    };
+
+    // Write the template content to PROMPT.md
+    let content = template.content();
+    fs::write(prompt_path, content)?;
+
+    println!(
+        "{}Created PROMPT.md from template: {}{}{}",
+        colors.green(),
+        colors.bold(),
+        template_name,
+        colors.reset()
+    );
+    println!();
+    println!(
+        "Template: {}{}{}  {}",
+        colors.cyan(),
+        template.name(),
+        colors.reset(),
+        template.description()
+    );
+    println!();
+    println!("Next steps:");
+    println!("  1. Edit PROMPT.md with your task details");
+    println!("  2. Run: ralph \"your commit message\"");
+    println!();
+    println!("Tip: Use --list-templates to see all available templates.");
+
+    Ok(true)
+}
+
+/// Handle the `--list-templates` flag.
+///
+/// Lists all available PROMPT.md templates with descriptions.
+///
+/// # Arguments
+///
+/// * `colors` - Terminal color configuration for output
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the flag was handled (program should exit after).
+pub fn handle_list_templates(colors: &Colors) -> anyhow::Result<bool> {
+    println!("Available PROMPT.md templates:");
+    println!();
+
+    let templates = list_templates();
+    let _max_name_len = templates
+        .iter()
+        .map(|(name, _)| name.len())
+        .max()
+        .unwrap_or(0);
+
+    for (name, description) in templates {
+        println!(
+            "  {}{}{}  {}{}{}",
+            colors.cyan(),
+            name,
+            colors.reset(),
+            colors.dim(),
+            description,
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("Usage: ralph --init-prompt <template>");
+    println!();
+    println!("Example:");
+    println!("  ralph --init-prompt feature-spec   # Create comprehensive spec template");
+    println!("  ralph --init-prompt bug-fix        # Create bug fix template");
+    println!("  ralph --init-prompt quick          # Create quick change template");
+
+    Ok(true)
+}

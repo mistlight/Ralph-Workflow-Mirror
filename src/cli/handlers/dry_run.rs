@@ -38,7 +38,8 @@ pub fn handle_dry_run(
     logger.header("DRY RUN: Validation", |c| c.cyan());
 
     // Validate PROMPT.md using the utility function
-    let validation = validate_prompt_md(config.strict_validation);
+    // Dry run is non-interactive by definition
+    let validation = validate_prompt_md(config.strict_validation, false);
 
     // Report errors first
     for err in &validation.errors {
