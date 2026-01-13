@@ -130,7 +130,9 @@ pub type CcsAliases = HashMap<String, CcsAliasToml>;
 pub struct CcsConfig {
     /// Output-format flag for CCS (often Claude-compatible stream JSON).
     pub output_flag: String,
-    /// Flag for autonomous mode. Defaults to --dangerously-skip-permissions for unattended setups.
+    /// Flag for autonomous mode (skip permission/confirmation prompts).
+    /// Ralph is designed for unattended automation, so this is enabled by default.
+    /// Set to empty string ("") to disable and require confirmations.
     pub yolo_flag: String,
     /// Flag for verbose output.
     pub verbose_flag: String,
@@ -150,8 +152,7 @@ impl Default for CcsConfig {
     fn default() -> Self {
         Self {
             output_flag: "--output-format=stream-json".to_string(),
-            // YOLO mode enabled by default for unattended automation. Ralph is designed for
-            // autonomous operation. Users can override per-alias or globally with "" if needed.
+            // Default to unattended automation (config can override to disable).
             yolo_flag: "--dangerously-skip-permissions".to_string(),
             verbose_flag: "--verbose".to_string(),
             print_flag: "-p".to_string(),

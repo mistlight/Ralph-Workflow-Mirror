@@ -578,9 +578,11 @@ fn run_final_validation(
         ctx.colors.reset()
     ));
 
-    let (program, args) = argv
-        .split_first()
-        .expect("argv is non-empty after empty check");
+    let Some((program, args)) = argv.split_first() else {
+        ctx.logger
+            .error("FULL_CHECK_CMD is empty after parsing; skipping final validation");
+        return Ok(());
+    };
     let status = Command::new(program).args(args).status()?;
 
     if status.success() {

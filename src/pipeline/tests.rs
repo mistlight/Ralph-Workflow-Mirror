@@ -74,6 +74,7 @@ fn run_with_prompt_returns_command_result_for_missing_binary() {
             prompt: "hello",
             logfile: &dir.path().join("log.txt").display().to_string(),
             parser_type: JsonParserType::Generic,
+            env_vars: &std::collections::HashMap::new(),
         },
         &mut runtime,
     )

@@ -6,6 +6,7 @@
 use super::fallback::FallbackConfig;
 use super::parser::JsonParserType;
 use serde::Deserialize;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -13,6 +14,55 @@ use std::path::{Path, PathBuf};
 
 /// Default agents.toml template embedded at compile time.
 pub const DEFAULT_AGENTS_TOML: &str = include_str!("../../examples/agents.toml");
+
+#[derive(Debug, thiserror::Error)]
+pub enum CcsEnvVarsError {
+    #[error(
+        "Invalid CCS profile name '{profile}' (allowed characters: A-Z a-z 0-9 '_' '-')"
+    )]
+    InvalidProfile { profile: String },
+    #[error("Could not determine home directory for CCS settings")]
+    MissingHomeDir,
+    #[error("Failed to read CCS settings file at {path}: {source}")]
+    ReadFile { path: PathBuf, source: io::Error },
+    #[error("Failed to parse CCS settings JSON at {path}: {source}")]
+    ParseJson {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    #[error("CCS settings JSON at {path} is missing required 'env' object")]
+    MissingEnv { path: PathBuf },
+    #[error("CCS settings JSON at {path} contains invalid env var name '{key}'")]
+    InvalidEnvVarName { path: PathBuf, key: String },
+    #[error("CCS settings JSON at {path} has non-string env value for key '{key}'")]
+    NonStringEnvVarValue { path: PathBuf, key: String },
+}
+
+const CCS_ALLOWED_ENV_VARS: &[&str] = &[
+    // Direct Anthropic API usage
+    "ANTHROPIC_API_KEY",
+    // Claude-compatible "auth token" mode used by some CCS presets
+    "ANTHROPIC_AUTH_TOKEN",
+    // Non-default Anthropic-compatible endpoints (e.g., proxy / ZAI)
+    "ANTHROPIC_BASE_URL",
+    // Default model for Claude CLI when using Anthropic-compatible providers
+    "ANTHROPIC_MODEL",
+];
+
+fn is_valid_env_var_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_uppercase() || first == '_') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn is_allowed_ccs_env_var(name: &str) -> bool {
+    CCS_ALLOWED_ENV_VARS.contains(&name)
+}
 
 /// Get the global config directory for Ralph.
 ///
@@ -27,6 +77,95 @@ pub fn global_config_dir() -> Option<PathBuf> {
 /// Returns `~/.config/ralph/agents.toml` on Unix.
 pub fn global_agents_config_path() -> Option<PathBuf> {
     global_config_dir().map(|d| d.join("agents.toml"))
+}
+
+/// Load environment variables from a CCS settings file.
+///
+/// CCS stores provider configuration in `~/.ccs/{profile}.settings.json` files.
+/// This function reads that file and extracts the `env` object containing
+/// environment variables like ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, etc.
+///
+/// For safety, this function only imports a conservative allowlist of env vars
+/// required for Anthropic/Claude-compatible credentials. All other keys in the
+/// CCS `env` object are ignored to prevent unintended environment injection.
+///
+/// # Arguments
+///
+/// * `profile` - The CCS profile name (e.g., "glm" for ~/.ccs/glm.settings.json)
+///
+/// # Returns
+///
+/// Returns `HashMap<String, String>` with environment variables if successful.
+/// Returns an error with context if the settings file cannot be read/parsed.
+///
+/// # Example
+///
+/// ```ignore
+/// let env_vars = load_ccs_env_vars("glm").unwrap_or_default();
+/// // env_vars contains: {
+/// //   "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
+/// //   "ANTHROPIC_AUTH_TOKEN": "...",
+/// //   "ANTHROPIC_MODEL": "glm-4.7",
+/// // }
+/// ```
+pub fn load_ccs_env_vars(profile: &str) -> Result<HashMap<String, String>, CcsEnvVarsError> {
+    if profile.is_empty()
+        || !profile
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+    {
+        return Err(CcsEnvVarsError::InvalidProfile {
+            profile: profile.to_string(),
+        });
+    }
+
+    // Build path to CCS settings file
+    let home = dirs::home_dir().ok_or(CcsEnvVarsError::MissingHomeDir)?;
+    let settings_path = home
+        .join(".ccs")
+        .join(format!("{}.settings.json", profile));
+
+    // Read and parse the settings file
+    let content = fs::read_to_string(&settings_path).map_err(|source| CcsEnvVarsError::ReadFile {
+        path: settings_path.clone(),
+        source,
+    })?;
+
+    // Parse JSON
+    let json: JsonValue =
+        serde_json::from_str(&content).map_err(|source| CcsEnvVarsError::ParseJson {
+            path: settings_path.clone(),
+            source,
+        })?;
+
+    // Extract env object
+    let env_obj = json
+        .get("env")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| CcsEnvVarsError::MissingEnv {
+            path: settings_path.clone(),
+        })?;
+
+    // Convert to HashMap<String, String>
+    let mut env_vars = HashMap::new();
+    for (key, value) in env_obj {
+        if !is_allowed_ccs_env_var(key) {
+            continue;
+        }
+        if !is_valid_env_var_name(key) {
+            return Err(CcsEnvVarsError::InvalidEnvVarName {
+                path: settings_path.clone(),
+                key: key.clone(),
+            });
+        }
+        let str_value = value.as_str().ok_or_else(|| CcsEnvVarsError::NonStringEnvVarValue {
+            path: settings_path.clone(),
+            key: key.clone(),
+        })?;
+        env_vars.insert(key.clone(), str_value.to_string());
+    }
+
+    Ok(env_vars)
 }
 
 /// Config source for tracking where config was loaded from.
@@ -58,6 +197,9 @@ pub struct AgentConfig {
     /// Include partial messages flag for streaming with -p (e.g., "--include-partial-messages").
     /// Required for Claude/CCS to stream JSON output when using -p mode.
     pub streaming_flag: String,
+    /// Environment variables to set when running this agent.
+    /// Used for providers that need env vars (e.g., loaded from CCS settings).
+    pub env_vars: std::collections::HashMap<String, String>,
     /// Display name for UI/logging (e.g., "ccs-glm" instead of raw agent name).
     /// If None, the agent name from the registry is used.
     pub display_name: Option<String>,
@@ -160,6 +302,15 @@ pub struct AgentConfigToml {
     /// Include partial messages flag for streaming with -p (optional, defaults to "--include-partial-messages").
     #[serde(default = "default_streaming_flag")]
     pub streaming_flag: String,
+    /// CCS profile to load env vars from (e.g., "glm" for ~/.ccs/glm.settings.json).
+    /// If set, Ralph reads the CCS settings file and loads a conservative allowlist
+    /// of supported env vars from it (Anthropic/Claude-compatible credentials only).
+    #[serde(default)]
+    pub ccs_profile: Option<String>,
+    /// Environment variables to set when running this agent (optional).
+    /// If ccs_profile is set, these are merged with CCS env vars (CCS takes precedence).
+    #[serde(default)]
+    pub env_vars: std::collections::HashMap<String, String>,
     /// Display name for UI/logging (optional, e.g., "My Custom Agent" instead of registry name).
     #[serde(default)]
     pub display_name: Option<String>,
@@ -173,9 +324,24 @@ fn default_streaming_flag() -> String {
     "--include-partial-messages".to_string()
 }
 
-impl From<AgentConfigToml> for AgentConfig {
-    fn from(toml: AgentConfigToml) -> Self {
-        AgentConfig {
+impl TryFrom<AgentConfigToml> for AgentConfig {
+    type Error = CcsEnvVarsError;
+
+    fn try_from(toml: AgentConfigToml) -> Result<Self, Self::Error> {
+        // Load env vars from CCS if ccs_profile is set
+        let ccs_env_vars = match toml.ccs_profile.as_deref() {
+            Some(profile) => load_ccs_env_vars(profile)?,
+            None => HashMap::new(),
+        };
+
+        // Merge manually specified env vars with CCS env vars
+        // CCS env vars take precedence (as documented in ccs_profile field)
+        let mut merged_env_vars = toml.env_vars;
+        for (key, value) in ccs_env_vars {
+            merged_env_vars.insert(key, value);
+        }
+
+        Ok(AgentConfig {
             cmd: toml.cmd,
             output_flag: toml.output_flag,
             yolo_flag: toml.yolo_flag,
@@ -185,8 +351,9 @@ impl From<AgentConfigToml> for AgentConfig {
             model_flag: toml.model_flag,
             print_flag: toml.print_flag,
             streaming_flag: toml.streaming_flag,
+            env_vars: merged_env_vars,
             display_name: toml.display_name,
-        }
+        })
     }
 }
 
@@ -210,6 +377,8 @@ pub enum AgentConfigError {
     Toml(#[from] toml::de::Error),
     #[error("Built-in agents.toml template is invalid TOML: {0}")]
     DefaultTemplateToml(toml::de::Error),
+    #[error("{0}")]
+    CcsEnvVars(#[from] CcsEnvVarsError),
 }
 
 /// Result of checking/initializing the agents config file.
@@ -270,6 +439,7 @@ mod tests {
             model_flag: None,
             print_flag: String::new(),
             streaming_flag: String::new(),
+            env_vars: std::collections::HashMap::new(),
             display_name: None,
         };
 
@@ -292,10 +462,12 @@ mod tests {
             model_flag: Some("-m provider/model".to_string()),
             print_flag: String::new(),
             streaming_flag: String::new(),
+            ccs_profile: None,
+            env_vars: std::collections::HashMap::new(),
             display_name: Some("My Custom Agent".to_string()),
         };
 
-        let config: AgentConfig = toml.into();
+        let config: AgentConfig = AgentConfig::try_from(toml).unwrap();
         assert_eq!(config.cmd, "myagent run");
         assert!(!config.can_commit);
         assert_eq!(config.json_parser, JsonParserType::Claude);
@@ -325,6 +497,7 @@ mod tests {
             model_flag: None,
             print_flag: "-p".to_string(),
             streaming_flag: "--include-partial-messages".to_string(),
+            env_vars: std::collections::HashMap::new(),
             display_name: None,
         };
 

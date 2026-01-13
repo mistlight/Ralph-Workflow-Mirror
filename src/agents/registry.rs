@@ -52,7 +52,7 @@ impl AgentRegistry {
         };
 
         for (name, agent_toml) in agents {
-            registry.register(&name, agent_toml.into());
+            registry.register(&name, AgentConfig::try_from(agent_toml)?);
         }
 
         Ok(registry)
@@ -263,7 +263,7 @@ impl AgentRegistry {
             Some(config) => {
                 let count = config.agents.len();
                 for (name, agent_toml) in config.agents {
-                    self.register(&name, agent_toml.into());
+                    self.register(&name, AgentConfig::try_from(agent_toml)?);
                 }
                 // Load fallback configuration
                 self.fallback = config.fallback;
@@ -332,6 +332,7 @@ impl AgentRegistry {
                                     String::new()
                                 }
                             }),
+                            env_vars: std::collections::HashMap::new(),
                             display_name: overrides
                                 .display_name
                                 .as_ref()
@@ -378,6 +379,7 @@ impl AgentRegistry {
                         .streaming_flag
                         .clone()
                         .unwrap_or(existing.streaming_flag),
+                    env_vars: existing.env_vars.clone(),
                     // Preserve existing display name unless explicitly overridden
                     // Empty string explicitly clears the display name
                     display_name: match &overrides.display_name {
@@ -545,6 +547,7 @@ mod tests {
                 model_flag: None,
                 print_flag: String::new(),
                 streaming_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
                 display_name: None,
             },
         );
@@ -568,6 +571,7 @@ mod tests {
                 model_flag: None,
                 print_flag: String::new(),
                 streaming_flag: "--include-partial-messages".to_string(),
+                env_vars: std::collections::HashMap::new(),
                 display_name: None,
             },
         );
@@ -585,6 +589,7 @@ mod tests {
                 model_flag: None,
                 print_flag: "-p".to_string(),
                 streaming_flag: "--include-partial-messages".to_string(),
+                env_vars: std::collections::HashMap::new(),
                 display_name: Some("ccs-glm".to_string()),
             },
         );
