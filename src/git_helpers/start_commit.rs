@@ -200,7 +200,7 @@ fn has_start_commit() -> bool {
 
 /// Convert git2 error to io::Error.
 fn to_io_error(err: git2::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err.to_string())
+    io::Error::other(err.to_string())
 }
 
 #[cfg(test)]
