@@ -6,10 +6,15 @@
     <meta name="description" content="Page not found - Ralph Workflow">
     <title>404 - Page Not Found | Ralph Workflow</title>
 
-    <!-- Fonts -->
+    <!-- Preconnect Critical Assets -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Fonts: JetBrains Mono for code, Syne for distinctive display, General Sans for refined body -->
+    <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+    <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&f[]=syne@700,800&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 
     <style>
         *, *::before, *::after {
@@ -29,9 +34,9 @@
             --color-error: #FF3B30;
             --color-warning: #FFD60A;
             --border-color: #2A2A2A;
-            --font-display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
-            --font-body: 'Instrument Sans', 'General Sans', -apple-system, sans-serif;
-            --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+            --font-display: 'Syne', 'Big Shoulders Display', 'Archivo Black', -apple-system, sans-serif;
+            --font-body: 'General Sans', 'Founders Grotesk', 'Neue Montreal', -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
         }
 
         html {
