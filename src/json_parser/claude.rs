@@ -9,10 +9,11 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
+use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
 use super::types::{
     format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock,
-    ContentBlockDelta, DeltaAccumulator, StreamInnerEvent,
+    ContentBlockDelta, ContentType, DeltaAccumulator, StreamInnerEvent,
 };
 
 /// Claude event parser
@@ -315,9 +316,32 @@ impl ClaudeParser {
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart {
-                index: Some(index), ..
+                index: Some(index),
+                content_block: Some(block),
             } => {
                 // Initialize a new content block at this index
+                acc.clear_index(index);
+                // Pre-seed with any initial content from the block
+                match &block {
+                    ContentBlock::Text { text: Some(t) } if !t.is_empty() => {
+                        acc.add_text_delta(index, t);
+                    }
+                    ContentBlock::ToolUse { name: _, input: Some(i) } => {
+                        // Initialize tool input accumulator
+                        if let serde_json::Value::String(s) = i {
+                            acc.add_delta(ContentType::ToolInput, &index.to_string(), s);
+                        } else {
+                            let input_str = format_tool_input(i);
+                            acc.add_delta(ContentType::ToolInput, &index.to_string(), &input_str);
+                        }
+                    }
+                    _ => {}
+                }
+                String::new()
+            }
+            StreamInnerEvent::ContentBlockStart {
+                index: Some(index), ..
+            } => {
                 acc.clear_index(index);
                 String::new()
             }
@@ -343,7 +367,7 @@ impl ClaudeParser {
                             );
                         }
                     }
-                    // Otherwise, just show the delta (real-time streaming)
+                    // Normal mode: show the delta (real-time streaming)
                     format!(
                         "{}[{}]{} {}{}{}\n",
                         c.dim(),
@@ -357,20 +381,34 @@ impl ClaudeParser {
                 ContentBlockDelta::ThinkingDelta { thinking: Some(text) } => {
                     // Accumulate thinking content
                     acc.add_thinking_delta(index, &text);
-                    // Display thinking in a different style
-                    format!(
-                        "{}[{}]{} {}Thinking: {}{}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.dim(),
-                        text,
-                        c.reset()
-                    )
+                    // Display thinking with visual distinction
+                    Self::formatter().format_thinking(text.as_str(), prefix, c)
                 }
-                ContentBlockDelta::ToolUseDelta { .. } => {
-                    // Tool use deltas are less common, show minimal info
-                    String::new()
+                ContentBlockDelta::ToolUseDelta {
+                    tool_use: Some(tool_delta),
+                } => {
+                    // Handle tool input streaming
+                    // Extract the tool input from the delta
+                    let input_str = if let Some(input) = tool_delta.get("input") {
+                        match input {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => format_tool_input(other),
+                        }
+                    } else {
+                        // No input in this delta, accumulate empty string
+                        String::new()
+                    };
+
+                    if !input_str.is_empty() {
+                        // Accumulate tool input
+                        acc.add_delta(ContentType::ToolInput, &index.to_string(), &input_str);
+
+                        // Show partial tool input in real-time
+                        let formatter = DeltaDisplayFormatter::new();
+                        formatter.format_tool_input(&input_str, prefix, c)
+                    } else {
+                        String::new()
+                    }
                 }
                 _ => String::new(),
             },
@@ -390,8 +428,7 @@ impl ClaudeParser {
             }
             StreamInnerEvent::TextDelta { .. } => String::new(),
             StreamInnerEvent::MessageStop => {
-                // Message complete - we could show final accumulated state here
-                // For now, just clear the accumulator
+                // Message complete - clear the accumulator
                 acc.clear();
                 String::new()
             }
@@ -427,6 +464,11 @@ impl ClaudeParser {
                 }
             }
         }
+    }
+
+    /// Get a shared delta display formatter
+    fn formatter() -> DeltaDisplayFormatter {
+        DeltaDisplayFormatter::new()
     }
 
     /// Parse a stream of Claude NDJSON events
