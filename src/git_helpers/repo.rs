@@ -18,7 +18,7 @@ use super::identity::{resolve_git_identity, GitIdentity};
 
 /// Convert git2 error to io::Error.
 fn git2_to_io_error(err: git2::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err.to_string())
+    io::Error::other(err.to_string())
 }
 
 /// Check if we're in a git repository.
@@ -568,38 +568,27 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
 
                 let mut stdout = Vec::new();
                 if let Some(mut out) = child.stdout.take() {
-                    out.read_to_end(&mut stdout).map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("Failed to read LLM agent stdout: {}", e),
-                        )
-                    })?;
+                    out.read_to_end(&mut stdout)
+                        .map_err(|e| io::Error::other(format!("Failed to read LLM agent stdout: {}", e)))?;
                 }
 
                 let mut stderr = Vec::new();
                 if let Some(mut err) = child.stderr.take() {
-                    err.read_to_end(&mut stderr).map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("Failed to read LLM agent stderr: {}", e),
-                        )
-                    })?;
+                    err.read_to_end(&mut stderr)
+                        .map_err(|e| io::Error::other(format!("Failed to read LLM agent stderr: {}", e)))?;
                 }
 
                 if !exit_status.success() {
                     let stderr_str = String::from_utf8_lossy(&stderr);
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        format!(
-                            "Agent command failed with exit code: {:?}{}",
-                            exit_status.code(),
-                            if stderr_str.trim().is_empty() {
-                                String::new()
-                            } else {
-                                format!("\n{}", stderr_str.trim())
-                            }
-                        ),
-                    ));
+                    return Err(io::Error::other(format!(
+                        "Agent command failed with exit code: {:?}{}",
+                        exit_status.code(),
+                        if stderr_str.trim().is_empty() {
+                            String::new()
+                        } else {
+                            format!("\n{}", stderr_str.trim())
+                        }
+                    )));
                 }
 
                 // Extract commit message using the robust LLM output extraction module.
@@ -686,10 +675,10 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
             Err(e) => {
                 // Error checking process status
                 let _ = child.kill();
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to wait for LLM agent: {}", e),
-                ));
+                return Err(io::Error::other(format!(
+                    "Failed to wait for LLM agent: {}",
+                    e
+                )));
             }
         }
     }

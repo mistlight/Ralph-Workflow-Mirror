@@ -20,7 +20,7 @@ pub mod validation;
 use crate::agents::AgentRegistry;
 use crate::banner::{print_final_summary, print_welcome_banner};
 use crate::cli::{
-    create_prompt_from_template, handle_diagnose, handle_dry_run, handle_help_advanced,
+    create_prompt_from_template, handle_diagnose, handle_dry_run,
     handle_list_agents, handle_list_available_agents, handle_list_providers, prompt_template_selection,
     Args,
 };
@@ -100,12 +100,6 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // Handle --diagnose
     if args.diagnose {
         handle_diagnose(&colors, &config, &registry, &config_path, &config_sources);
-        return Ok(());
-    }
-
-    // Handle --help-advanced
-    if args.help_advanced {
-        handle_help_advanced(&colors);
         return Ok(());
     }
 

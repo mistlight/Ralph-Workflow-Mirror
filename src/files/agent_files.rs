@@ -175,14 +175,11 @@ pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
 
     // Best-effort state repair before we start touching `.agent/` contents.
     // If the state is unrecoverable, fail early with a clear error.
-    match recovery::auto_repair(agent_dir)? {
-        recovery::RecoveryStatus::Unrecoverable(msg) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to repair .agent state: {}", msg),
-            ));
-        }
-        _ => {}
+    if let recovery::RecoveryStatus::Unrecoverable(msg) = recovery::auto_repair(agent_dir)? {
+        return Err(io::Error::other(format!(
+            "Failed to repair .agent state: {}",
+            msg
+        )));
     }
 
     integrity::check_filesystem_ready(agent_dir)?;
