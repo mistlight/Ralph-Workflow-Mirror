@@ -123,7 +123,7 @@ fn derive_ccs_profile_name_from_filename(filename: &str) -> Option<String> {
         .strip_suffix(".settings.json")
         .or_else(|| filename.strip_suffix(".setting.json"))
         .or_else(|| filename.strip_suffix(".json"))
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 fn is_ccs_settings_filename(name: &str) -> bool {
@@ -397,6 +397,13 @@ fn expand_user_path(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Some(home) = ccs_home_dir() {
             return home.join(rest);
+        }
+    }
+    // Relative paths are resolved relative to the CCS directory
+    if let Some(ccs_dir) = ccs_dir() {
+        // If path is not absolute and doesn't start with ~, it's a relative path
+        if !(path.starts_with('/') || cfg!(windows) && path.chars().nth(1) == Some(':')) {
+            return ccs_dir.join(path);
         }
     }
     PathBuf::from(path)
@@ -742,7 +749,7 @@ pub struct AgentConfigToml {
     #[serde(default)]
     pub ccs_profile: Option<String>,
     /// Environment variables to set when running this agent (optional).
-    /// If ccs_profile is set, these are merged with CCS env vars (CCS takes precedence).
+    /// If `ccs_profile` is set, these are merged with CCS env vars (CCS takes precedence).
     #[serde(default)]
     pub env_vars: std::collections::HashMap<String, String>,
     /// Display name for UI/logging (optional, e.g., "My Custom Agent" instead of registry name).
@@ -750,7 +757,7 @@ pub struct AgentConfigToml {
     pub display_name: Option<String>,
 }
 
-fn default_can_commit() -> bool {
+const fn default_can_commit() -> bool {
     true
 }
 
@@ -762,8 +769,10 @@ impl From<AgentConfigToml> for AgentConfig {
     fn from(toml: AgentConfigToml) -> Self {
         // Loading CCS env vars is best-effort: registry initialization should not fail
         // just because a CCS profile is missing or misconfigured.
-        let ccs_env_vars = match toml.ccs_profile.as_deref() {
-            Some(profile) => match load_ccs_env_vars(profile) {
+        let ccs_env_vars = toml
+            .ccs_profile
+            .as_deref()
+            .map_or_else(HashMap::new, |profile| match load_ccs_env_vars(profile) {
                 Ok(vars) => vars,
                 Err(err) => {
                     eprintln!(
@@ -771,9 +780,7 @@ impl From<AgentConfigToml> for AgentConfig {
                     );
                     HashMap::new()
                 }
-            },
-            None => HashMap::new(),
-        };
+            });
 
         // Merge manually specified env vars with CCS env vars
         // CCS env vars take precedence (as documented in ccs_profile field)
@@ -782,7 +789,7 @@ impl From<AgentConfigToml> for AgentConfig {
             merged_env_vars.insert(key, value);
         }
 
-        AgentConfig {
+        Self {
             cmd: toml.cmd,
             output_flag: toml.output_flag,
             yolo_flag: toml.yolo_flag,
@@ -847,10 +854,7 @@ mod ccs_env_tests {
 
         fs::write(
             ccs_dir.join("config.json"),
-            format!(
-                r#"{{"profiles":{{"glm":"{}"}}}}"#,
-                settings_path.to_string_lossy()
-            ),
+            r#"{"profiles":{"glm":"glm.settings.json"}}"#,
         )
         .unwrap();
 
@@ -872,24 +876,20 @@ mod ccs_env_tests {
         let ccs_dir = home.join(".ccs");
         fs::create_dir_all(&ccs_dir).unwrap();
 
-        let settings_path = ccs_dir.join("custom.settings.json");
         fs::write(
-            &settings_path,
+            ccs_dir.join("custom.settings.json"),
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://yaml-test","ANTHROPIC_MODEL":"test-model"}}"#,
         )
         .unwrap();
 
         fs::write(
             ccs_dir.join("config.yaml"),
-            format!(
-                r#"version: 7
+            r#"version: 7
 profiles:
   custom:
     type: api
-    settings: "{}"
+    settings: "custom.settings.json"
 "#,
-                settings_path.to_string_lossy()
-            ),
         )
         .unwrap();
 
@@ -911,9 +911,8 @@ profiles:
         let ccs_dir = home.join(".ccs");
         fs::create_dir_all(&ccs_dir).unwrap();
 
-        let settings_path = ccs_dir.join("indent.settings.json");
         fs::write(
-            &settings_path,
+            ccs_dir.join("indent.settings.json"),
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://indent-test","ANTHROPIC_MODEL":"indent-model"}}"#,
         )
         .unwrap();
@@ -921,15 +920,12 @@ profiles:
         // Same structure as CCS config.yaml, but with 4-space indentation.
         fs::write(
             ccs_dir.join("config.yaml"),
-            format!(
-                r#"version: 7
+            r#"version: 7
 profiles:
     indent:
         type: api
-        settings: "{}"
+        settings: "indent.settings.json"
 "#,
-                settings_path.to_string_lossy()
-            ),
         )
         .unwrap();
 
@@ -1124,7 +1120,7 @@ impl AgentsConfigFile {
         }
 
         let contents = fs::read_to_string(path)?;
-        let config: AgentsConfigFile = toml::from_str(&contents)?;
+        let config: Self = toml::from_str(&contents)?;
         Ok(Some(config))
     }
 

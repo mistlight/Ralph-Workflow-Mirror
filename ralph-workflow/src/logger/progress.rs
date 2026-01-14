@@ -33,10 +33,13 @@ pub fn print_progress(current: u32, total: u32, label: &str) {
         .saturating_mul(100)
         .saturating_div(u64::from(total))
         .min(100) as u32;
-    let filled = (u64::from(current))
-        .saturating_mul(u64::from(bar_width))
-        .saturating_div(u64::from(total))
-        .min(u64::from(bar_width)) as usize;
+    let filled = usize::try_from(
+        (u64::from(current))
+            .saturating_mul(u64::from(bar_width))
+            .saturating_div(u64::from(total))
+            .min(u64::from(bar_width)),
+    )
+    .unwrap_or(usize::MAX);
     let empty = bar_width as usize - filled;
 
     let bar: String = "█".repeat(filled) + &"░".repeat(empty);
@@ -69,10 +72,13 @@ mod tests {
             .saturating_mul(100)
             .saturating_div(u64::from(total))
             .min(100) as u32;
-        let filled = (u64::from(current))
-            .saturating_mul(u64::from(bar_width))
-            .saturating_div(u64::from(total))
-            .min(u64::from(bar_width)) as usize;
+        let filled = usize::try_from(
+            (u64::from(current))
+                .saturating_mul(u64::from(bar_width))
+                .saturating_div(u64::from(total))
+                .min(u64::from(bar_width)),
+        )
+        .unwrap_or(usize::MAX);
         let empty = bar_width as usize - filled;
         let bar: String = "█".repeat(filled) + &"░".repeat(empty);
         (pct, bar)

@@ -4,7 +4,7 @@
 
 /// Issue severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum IssueSeverity {
+pub enum IssueSeverity {
     Critical,
     High,
     Medium,
@@ -16,13 +16,13 @@ impl IssueSeverity {
     pub(super) fn from_str(s: &str) -> Option<Self> {
         let lower = s.to_lowercase();
         if lower.contains("critical") {
-            Some(IssueSeverity::Critical)
+            Some(Self::Critical)
         } else if lower.contains("high") {
-            Some(IssueSeverity::High)
+            Some(Self::High)
         } else if lower.contains("medium") {
-            Some(IssueSeverity::Medium)
+            Some(Self::Medium)
         } else if lower.contains("low") {
-            Some(IssueSeverity::Low)
+            Some(Self::Low)
         } else {
             None
         }
@@ -32,10 +32,10 @@ impl IssueSeverity {
 impl std::fmt::Display for IssueSeverity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IssueSeverity::Critical => write!(f, "Critical"),
-            IssueSeverity::High => write!(f, "High"),
-            IssueSeverity::Medium => write!(f, "Medium"),
-            IssueSeverity::Low => write!(f, "Low"),
+            Self::Critical => write!(f, "Critical"),
+            Self::High => write!(f, "High"),
+            Self::Medium => write!(f, "Medium"),
+            Self::Low => write!(f, "Low"),
         }
     }
 }

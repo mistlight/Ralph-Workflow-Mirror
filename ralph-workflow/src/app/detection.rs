@@ -14,7 +14,7 @@ pub fn detect_project_stack(
     config: &Config,
     repo_root: &std::path::Path,
     logger: &Logger,
-    colors: &Colors,
+    colors: Colors,
 ) -> (Option<ProjectStack>, Option<ReviewGuidelines>) {
     if !config.auto_detect_stack {
         return (None, None);
@@ -32,7 +32,7 @@ pub fn detect_project_stack(
             (Some(stack), Some(guidelines))
         }
         Err(e) => {
-            logger.warn(&format!("Could not detect project stack: {}", e));
+            logger.warn(&format!("Could not detect project stack: {e}"));
             (None, None)
         }
     }

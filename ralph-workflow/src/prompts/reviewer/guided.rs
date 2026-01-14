@@ -35,7 +35,7 @@ YOUR TASK:
 Evaluate the codebase, then apply language-specific checks:
 
 Language-Specific checks:
-{guidelines}
+{guidelines_section}
 
 OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Description
@@ -43,14 +43,13 @@ OUTPUT (prioritized checklist):
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found, return \"No issues found.\"",
-            guidelines = guidelines_section
+If no issues found, return \"No issues found.\""
         ),
         ContextLevel::Normal => format!(
             "You are in REVIEW MODE.
 
 Language-Specific checks:
-{guidelines}
+{guidelines_section}
 
 OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Description
@@ -58,8 +57,7 @@ OUTPUT (prioritized checklist):
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues, return \"No issues found.\"",
-            guidelines = guidelines_section
+If no issues, return \"No issues found.\""
         ),
     }
 }
@@ -86,27 +84,25 @@ Perform a thorough review:
 4) Maintainability (error handling, tests)
 
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
-{priorities}
+{priority_section}
 
 OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description",
-            priorities = priority_section
+- [ ] Low: [file:line] Description"
         ),
         ContextLevel::Normal => format!(
             "You are in COMPREHENSIVE REVIEW MODE.
 
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
-{priorities}
+{priority_section}
 
 OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description",
-            priorities = priority_section
+- [ ] Low: [file:line] Description"
         ),
     }
 }
@@ -143,8 +139,7 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Medium: [file:line] SECURITY - Address as needed
 - [ ] Low: [file:line] SECURITY - Nice to have
 
-If no issues found, return \"No security issues found.\"",
-            security_section = security_section
+If no issues found, return \"No security issues found.\""
         ),
         ContextLevel::Normal => format!(
             "You are in SECURITY REVIEW MODE.
@@ -156,8 +151,7 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] SECURITY - Description
 - [ ] High: [file:line] SECURITY - Description
 - [ ] Medium: [file:line] SECURITY - Description
-- [ ] Low: [file:line] SECURITY - Description",
-            security_section = security_section
+- [ ] Low: [file:line] SECURITY - Description"
         ),
     }
 }

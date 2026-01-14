@@ -6,7 +6,7 @@ use super::severity::IssueSeverity;
 
 /// A single issue extracted from ISSUES.md
 #[derive(Debug, Clone)]
-pub(crate) struct Issue {
+pub struct Issue {
     /// Severity of the issue
     pub(crate) severity: IssueSeverity,
     /// Whether the issue has been resolved (checked off)
@@ -23,9 +23,9 @@ impl Issue {
     /// Generate a human-readable summary of this issue.
     pub(crate) fn summary(&self) -> String {
         let location = match (&self.file_path, self.line_number) {
-            (Some(path), Some(line)) => format!("{}:{}", path, line),
+            (Some(path), Some(line)) => format!("{path}:{line}"),
             (Some(path), None) => path.clone(),
-            (None, Some(line)) => format!("line {}", line),
+            (None, Some(line)) => format!("line {line}"),
             (None, None) => "unknown location".to_string(),
         };
         format!(

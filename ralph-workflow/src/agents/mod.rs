@@ -1,7 +1,7 @@
 //! Agent Abstraction Module
 //!
 //! Provides a pluggable agent system for different AI coding assistants
-//! (Claude, Codex, OpenCode, Goose, Cline, CCS, etc.)
+//! (Claude, Codex, `OpenCode`, Goose, Cline, CCS, etc.)
 //!
 //! ## Module Structure
 //!
@@ -10,7 +10,7 @@
 //! - `error` - Error classification for fault-tolerant execution
 //! - `fallback` - Fallback chain configuration for agent switching
 //! - `parser` - JSON parser type definitions
-//! - `providers` - OpenCode provider types and authentication
+//! - `providers` - `OpenCode` provider types and authentication
 //! - `registry` - Agent registry for agent lookup and management
 //!
 //! ## Configuration
@@ -60,23 +60,21 @@
 mod ccs;
 mod config;
 mod error;
-pub(crate) mod fallback;
+pub mod fallback;
 mod parser;
 mod providers;
 mod registry;
 
 // Re-export public types for crate-level access
-pub(crate) use ccs::is_ccs_ref;
-pub(crate) use config::{
-    global_agents_config_path, AgentsConfigFile, ConfigInitResult, ConfigSource,
-};
-pub(crate) use error::{is_glm_like_agent, AgentErrorKind};
-pub(crate) use fallback::AgentRole;
-pub(crate) use parser::JsonParserType;
-pub(crate) use providers::{
+pub use ccs::is_ccs_ref;
+pub use config::{global_agents_config_path, AgentsConfigFile, ConfigInitResult, ConfigSource};
+pub use error::{is_glm_like_agent, AgentErrorKind};
+pub use fallback::AgentRole;
+pub use parser::JsonParserType;
+pub use providers::{
     auth_failure_advice, strip_model_flag_prefix, validate_model_flag, OpenCodeProviderType,
 };
-pub(crate) use registry::AgentRegistry;
+pub use registry::AgentRegistry;
 
 #[cfg(test)]
 mod tests {

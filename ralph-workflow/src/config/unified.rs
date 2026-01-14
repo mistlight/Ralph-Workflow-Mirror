@@ -66,6 +66,7 @@ pub fn unified_config_path() -> Option<PathBuf> {
 /// General configuration section.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct GeneralConfig {
     /// Verbosity level (0-4).
     pub verbosity: u8,
@@ -189,7 +190,7 @@ pub struct CcsAliasConfig {
     pub streaming_flag: Option<String>,
     /// Optional JSON parser override (e.g., "claude", "generic").
     pub json_parser: Option<String>,
-    /// Optional can_commit override for this alias.
+    /// Optional `can_commit` override for this alias.
     pub can_commit: Option<bool>,
     /// Optional model flag appended to the command.
     pub model_flag: Option<String>,
@@ -206,11 +207,11 @@ pub enum CcsAliasToml {
 impl CcsAliasToml {
     pub fn as_config(&self) -> CcsAliasConfig {
         match self {
-            CcsAliasToml::Command(cmd) => CcsAliasConfig {
+            Self::Command(cmd) => CcsAliasConfig {
                 cmd: cmd.clone(),
                 ..CcsAliasConfig::default()
             },
-            CcsAliasToml::Config(cfg) => cfg.clone(),
+            Self::Config(cfg) => cfg.clone(),
         }
     }
 }
@@ -302,7 +303,7 @@ impl UnifiedConfig {
     /// Load unified configuration from a specific path.
     pub fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigLoadError> {
         let contents = std::fs::read_to_string(path)?;
-        let config: UnifiedConfig = toml::from_str(&contents)?;
+        let config: Self = toml::from_str(&contents)?;
         Ok(config)
     }
 
@@ -311,14 +312,11 @@ impl UnifiedConfig {
     /// This creates `~/.config/ralph-workflow.toml` with the default template
     /// if it doesn't already exist.
     pub fn ensure_config_exists() -> io::Result<ConfigInitResult> {
-        let path = match unified_config_path() {
-            Some(p) => p,
-            None => {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "Cannot determine config directory (no home directory)",
-                ))
-            }
+        let Some(path) = unified_config_path() else {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Cannot determine config directory (no home directory)",
+            ))
         };
 
         Self::ensure_config_exists_at(&path)

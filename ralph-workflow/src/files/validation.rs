@@ -32,6 +32,7 @@ fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
 ///
 /// Contains flags indicating what was found and any errors or warnings.
 #[derive(Debug, Clone)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct PromptValidationResult {
     /// Whether PROMPT.md exists
     pub exists: bool,
@@ -49,12 +50,12 @@ pub struct PromptValidationResult {
 
 impl PromptValidationResult {
     /// Returns true if validation passed (no errors).
-    pub fn is_valid(&self) -> bool {
+    pub const fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
 
     /// Returns true if validation passed with no warnings.
-    pub fn is_perfect(&self) -> bool {
+    pub const fn is_perfect(&self) -> bool {
         self.errors.is_empty() && self.warnings.is_empty()
     }
 }
@@ -87,8 +88,7 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
         .exists()
         .then(|| fs::read_to_string(prompt_path).ok())
         .flatten()
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false);
+        .is_some_and(|s| !s.trim().is_empty());
 
     if prompt_ok {
         return Ok(true);
@@ -104,10 +104,7 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     for backup_path in &backup_paths {
         if backup_path.exists() {
             // Verify backup has content
-            let backup_content = match fs::read_to_string(backup_path) {
-                Ok(c) => c,
-                Err(_) => continue, // Try next backup
-            };
+            let Ok(backup_content) = fs::read_to_string(backup_path) else { continue };
 
             if backup_content.trim().is_empty() {
                 continue; // Try next backup
@@ -193,31 +190,22 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
         for (idx, backup_path) in backup_paths.iter().enumerate() {
             if backup_path.exists() {
                 // Check if backup has content before restoring
-                let backup_content = match fs::read_to_string(backup_path) {
-                    Ok(c) => c,
-                    Err(_) => continue, // Try next backup
-                };
+                let Ok(backup_content) = fs::read_to_string(backup_path) else { continue };
 
                 if backup_content.trim().is_empty() {
                     continue; // Try next backup
                 }
 
-                match fs::copy(backup_path, prompt_path) {
-                    Ok(_) => {
-                        result.exists = true;
-                        restored = true;
-                        backup_used = Some(match idx {
-                            0 => ".agent/PROMPT.md.backup",
-                            1 => ".agent/PROMPT.md.backup.1",
-                            2 => ".agent/PROMPT.md.backup.2",
-                            _ => "unknown",
-                        });
-                        break;
-                    }
-                    Err(_) => {
-                        // Try next backup
-                        continue;
-                    }
+                if fs::copy(backup_path, prompt_path).is_ok() {
+                    result.exists = true;
+                    restored = true;
+                    backup_used = Some(match idx {
+                        0 => ".agent/PROMPT.md.backup",
+                        1 => ".agent/PROMPT.md.backup.1",
+                        2 => ".agent/PROMPT.md.backup.2",
+                        _ => "unknown",
+                    });
+                    break;
                 }
             }
         }
@@ -225,8 +213,7 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
         if restored {
             if let Some(source) = backup_used {
                 result.warnings.push(format!(
-                    "PROMPT.md was missing and was automatically restored from {}",
-                    source
+                    "PROMPT.md was missing and was automatically restored from {source}"
                 ));
             }
         } else {
@@ -251,9 +238,7 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
     let content = match fs::read_to_string(prompt_path) {
         Ok(c) => c,
         Err(e) => {
-            result
-                .errors
-                .push(format!("Failed to read PROMPT.md: {}", e));
+            result.errors.push(format!("Failed to read PROMPT.md: {e}"));
             return result;
         }
     };

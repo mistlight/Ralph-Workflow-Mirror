@@ -16,7 +16,7 @@ pub(super) fn extract_description(line: &str, severity_str: &str) -> String {
                 if start < end {
                     let before = desc[..start].trim();
                     let after = desc[end + 1..].trim();
-                    return format!("{}{}", before, after).trim().to_string();
+                    return format!("{before}{after}").trim().to_string();
                 }
             }
         }

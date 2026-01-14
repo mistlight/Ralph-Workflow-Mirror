@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 /// Timer for tracking execution duration
 #[derive(Clone)]
-pub(crate) struct Timer {
+pub struct Timer {
     start_time: Instant,
     phase_start: Instant,
 }
@@ -41,7 +41,7 @@ impl Timer {
         let total_secs = duration.as_secs();
         let mins = total_secs / 60;
         let secs = total_secs % 60;
-        format!("{}m {:02}s", mins, secs)
+        format!("{mins}m {secs:02}s")
     }
 
     /// Get formatted elapsed time since start

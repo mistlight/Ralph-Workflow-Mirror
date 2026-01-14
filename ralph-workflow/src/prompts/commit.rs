@@ -79,7 +79,7 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
         r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
 
 DIFF:
-{}
+{diff_content}
 
 ---
 
@@ -186,8 +186,7 @@ feat: add feature
 ```
 
 Example of CORRECT output:
-feat: add feature"#,
-        diff_content
+feat: add feature"#
     )
 }
 

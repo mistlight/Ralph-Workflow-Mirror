@@ -20,6 +20,7 @@
 //! This dual-mode support handles both legacy directory-based logs and the current
 //! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
 
+#![expect(clippy::cast_possible_truncation)]
 use serde_json::Value as JsonValue;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read};
@@ -38,7 +39,7 @@ pub struct ExtractionResult {
 
 impl ExtractionResult {
     /// Create a result with valid content
-    fn valid(content: String) -> Self {
+    const fn valid(content: String) -> Self {
         Self {
             raw_content: Some(content),
             is_valid: true,
@@ -56,7 +57,7 @@ impl ExtractionResult {
     }
 
     /// Create an empty result (no content found)
-    fn empty() -> Self {
+    const fn empty() -> Self {
         Self {
             raw_content: None,
             is_valid: false,
@@ -159,10 +160,7 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     let mut result_count = 0;
 
     for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
+        let Ok(line) = line else { continue };
 
         // Skip non-JSON lines
         if !line.trim().starts_with('{') {
@@ -193,11 +191,11 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     // Log diagnostic info when multiple results were found
     if result_count > 1 {
         eprintln!(
-            "[result_extraction] Found {} result events in {:?}, selected result with score {} (length: {})",
+            "[result_extraction] Found {} result events in {}, selected result with score {} (length: {})",
             result_count,
-            path,
+            path.display(),
             best_score,
-            best_result.as_ref().map_or(0, |r| r.len())
+            best_result.as_ref().map_or(0, std::string::String::len)
         );
     }
 
@@ -215,7 +213,7 @@ fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec
     };
 
     let mut log_files = Vec::new();
-    let prefix_pattern = format!("{}_", prefix);
+    let prefix_pattern = format!("{prefix}_");
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -223,13 +221,10 @@ fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec
             continue;
         }
 
-        let file_name = match path.file_name().and_then(|s| s.to_str()) {
-            Some(name) => name,
-            None => continue,
-        };
+        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else { continue };
 
         // Match files like "planning_1_glm_0.log" when prefix is "planning_1"
-        if file_name.starts_with(&prefix_pattern) && file_name.ends_with(".log") {
+        if file_name.starts_with(&prefix_pattern) && file_name.to_ascii_lowercase().ends_with(".log") {
             log_files.push(path);
         }
     }
@@ -251,7 +246,7 @@ fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec
 /// Find subdirectories matching a prefix pattern.
 ///
 /// This handles the legacy case where agent names containing "/" created
-/// nested directories (e.g., "planning_1_ccs/glm_0.log" instead of flat files).
+/// nested directories (e.g., "`planning_1_ccs/glm_0.log`" instead of flat files).
 fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<PathBuf>> {
     let entries = match fs::read_dir(parent_dir) {
         Ok(e) => e,
@@ -260,7 +255,7 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
     };
 
     let mut subdirs = Vec::new();
-    let prefix_pattern = format!("{}_", prefix);
+    let prefix_pattern = format!("{prefix}_");
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -268,10 +263,7 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
             continue;
         }
 
-        let dir_name = match path.file_name().and_then(|s| s.to_str()) {
-            Some(name) => name,
-            None => continue,
-        };
+        let Some(dir_name) = path.file_name().and_then(|s| s.to_str()) else { continue };
 
         // Match directories like "planning_1_ccs" when prefix is "planning_1"
         if dir_name.starts_with(&prefix_pattern) {
@@ -319,7 +311,7 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     }
 
     // Strategy 2: Treat log_path as a prefix and search parent directory
-    let parent = log_path.parent().unwrap_or(Path::new("."));
+    let parent = log_path.parent().unwrap_or_else(|| Path::new("."));
     let prefix = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     if prefix.is_empty() {
@@ -519,7 +511,7 @@ pub fn extract_plan_from_text(content: &str) -> Option<String> {
             );
         }
 
-        return best_candidate.map(|s| s.to_string());
+        return best_candidate.map(std::string::ToString::to_string);
     }
 
     // Permissive fallback: if no markdown markers found, look for substantial
@@ -533,6 +525,7 @@ pub fn extract_plan_from_text(content: &str) -> Option<String> {
 ///
 /// This is a final fallback for plaintext mode logs where the agent may have
 /// output a valid plan but without the expected markdown structure.
+#[expect(clippy::items_after_statements)]
 fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
     let content = content.trim();
 
@@ -645,7 +638,7 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
                 candidates_count,
                 files.len(),
                 best_score,
-                best_plan.as_ref().map_or(0, |p| p.len())
+                best_plan.as_ref().map_or(0, std::string::String::len)
             );
         }
 
@@ -666,7 +659,7 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
     }
 
     // Strategy 2: Treat log_path as a prefix and search parent directory
-    let parent = log_path.parent().unwrap_or(Path::new("."));
+    let parent = log_path.parent().unwrap_or_else(|| Path::new("."));
     let prefix = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     if prefix.is_empty() {
@@ -780,6 +773,7 @@ fn validate_issues_content(content: &str) -> (bool, Option<String>) {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like a valid plan)
 /// - Warning message (if validation failed)
+#[expect(clippy::option_if_let_else)]
 pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
@@ -812,6 +806,7 @@ pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like valid issues)
 /// - Warning message (if validation failed)
+#[expect(clippy::option_if_let_else)]
 pub fn extract_issues(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
@@ -966,7 +961,7 @@ mod tests {
         let result2 =
             r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
         let result3 = r#"{"type": "result", "result": "Last paragraph"}"#;
-        let json_log = format!("{}\n{}\n{}", result1, result2, result3);
+        let json_log = format!("{result1}\n{result2}\n{result3}");
         create_log_file(&log_dir, "output.log", &json_log);
 
         let result = extract_plan(&log_dir).unwrap();
@@ -977,8 +972,7 @@ mod tests {
         // NOT the last one (which would be "Last paragraph")
         assert!(
             content.contains("Implementation Steps"),
-            "Should select the complete plan, not the last partial result: {}",
-            content
+            "Should select the complete plan, not the last partial result: {content}"
         );
         assert!(
             content.contains("Create module"),
@@ -1534,8 +1528,7 @@ Just a short paragraph at the end.
         // NOT the first or last one found
         assert!(
             content.contains("Implementation Steps"),
-            "Should select the complete plan with Implementation Steps, got: {}",
-            content
+            "Should select the complete plan with Implementation Steps, got: {content}"
         );
         assert!(
             content.contains("scoring utility"),

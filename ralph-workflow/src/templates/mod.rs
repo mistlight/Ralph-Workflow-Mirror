@@ -29,7 +29,7 @@ pub enum PromptTemplate {
 
 impl PromptTemplate {
     /// Returns the name/key for this template (used for CLI arguments).
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::FeatureSpec => "feature-spec",
             Self::BugFix => "bug-fix",
@@ -41,7 +41,7 @@ impl PromptTemplate {
     }
 
     /// Returns a short description of this template.
-    pub fn description(self) -> &'static str {
+    pub const fn description(self) -> &'static str {
         match self {
             Self::FeatureSpec => "Comprehensive product specification with questions to consider and code quality standards",
             Self::BugFix => "Bug fix template with investigation guidance and testing requirements",
@@ -53,7 +53,7 @@ impl PromptTemplate {
     }
 
     /// Returns the embedded template content.
-    pub fn content(self) -> &'static str {
+    pub const fn content(self) -> &'static str {
         match self {
             Self::FeatureSpec => {
                 include_str!("../../../templates/prompts/feature-spec.md")

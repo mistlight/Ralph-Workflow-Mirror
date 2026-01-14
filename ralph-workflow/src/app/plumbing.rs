@@ -9,11 +9,13 @@
 use crate::agents::AgentRegistry;
 use crate::colors::Colors;
 use crate::config::Config;
+use crate::files::{
+    delete_commit_message_file, read_commit_message_file, write_commit_message_file,
+};
 use crate::git_helpers::{
     generate_commit_message_with_llm, get_repo_root, git_add_all, git_commit, git_diff,
     git_snapshot, require_git_repo,
 };
-use crate::files::{delete_commit_message_file, read_commit_message_file, write_commit_message_file};
 use crate::logger::Logger;
 use std::env;
 
@@ -31,11 +33,11 @@ pub fn handle_show_commit_msg() -> anyhow::Result<()> {
 
     match read_commit_message_file() {
         Ok(msg) => {
-            println!("{}", msg);
+            println!("{msg}");
             Ok(())
         }
         Err(e) => {
-            anyhow::bail!("Failed to read commit message: {}", e);
+            anyhow::bail!("Failed to read commit message: {e}");
         }
     }
 }
@@ -53,7 +55,7 @@ pub fn handle_show_commit_msg() -> anyhow::Result<()> {
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if commit fails.
-pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<()> {
+pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()> {
     require_git_repo()?;
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
@@ -85,10 +87,10 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
     // Note: Plumbing commands don't have access to config, so we use None
     // for git identity and fall back to git config (via repo.signature())
     if let Some(oid) = git_commit(&commit_msg, None, None)? {
-        logger.success(&format!("Commit created successfully: {}", oid));
+        logger.success(&format!("Commit created successfully: {oid}"));
         // Clean up the commit message file
         if let Err(err) = delete_commit_message_file() {
-            logger.warn(&format!("Failed to delete commit-message.txt: {}", err));
+            logger.warn(&format!("Failed to delete commit-message.txt: {err}"));
         }
     } else {
         logger.warn("Nothing to commit (working tree clean)");
@@ -119,7 +121,7 @@ pub fn handle_generate_commit_msg(
     config: &Config,
     registry: &AgentRegistry,
     logger: &Logger,
-    colors: &Colors,
+    colors: Colors,
     developer_agent: &str,
     _reviewer_agent: &str,
 ) -> anyhow::Result<()> {
@@ -132,7 +134,7 @@ pub fn handle_generate_commit_msg(
     } else {
         registry
             .developer_cmd(developer_agent)
-            .ok_or_else(|| anyhow::anyhow!("Developer agent '{}' not found", developer_agent))?
+            .ok_or_else(|| anyhow::anyhow!("Developer agent '{developer_agent}' not found"))?
     };
 
     // Generate the commit message using the new approach (LLM with diff inline)
@@ -147,7 +149,7 @@ pub fn handle_generate_commit_msg(
     // Use the internal commit message generation function
     // This calls the LLM with the diff inline and returns the message
     let commit_message = generate_commit_message_with_llm(&diff, &agent_cmd)
-        .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
 
     logger.success("Commit message generated:");
     println!();

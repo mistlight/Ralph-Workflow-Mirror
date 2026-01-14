@@ -73,16 +73,18 @@ PHASE 1: UNDERSTANDING
     // without naming the source file. This prevents agents from discovering
     // the file through exploration, reducing the risk of accidental deletion.
     if let Some(content) = prompt_content {
-        prompt.push_str(&format!(
+        use std::fmt::Write;
+        write!(
+            prompt,
             "
 
 REQUIREMENTS FROM PROJECT TASK:
 ───────────────────────────────────────────────────────────────────────────────
-{}
+{content}
 ───────────────────────────────────────────────────────────────────────────────
-",
-            content
-        ));
+"
+        )
+        .unwrap();
     } else {
         prompt.push_str(
             "

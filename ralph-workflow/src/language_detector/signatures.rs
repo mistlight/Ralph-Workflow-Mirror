@@ -3,8 +3,9 @@
 //! Analyzes configuration files like Cargo.toml, package.json, etc.
 //! to detect frameworks, test frameworks, and package managers.
 
+#![expect(clippy::too_many_lines)]
 use super::scanner::{should_skip_dir_name, MAX_FILES_TO_SCAN, MAX_SIGNATURE_SEARCH_DEPTH};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,11 +21,11 @@ fn push_unique(vec: &mut Vec<String>, value: impl Into<String>) {
 }
 
 /// Combine multiple items into a single string.
-fn combine_unique(items: Vec<String>) -> Option<String> {
+fn combine_unique(items: &[String]) -> Option<String> {
     match items.len() {
         0 => None,
         1 => Some(items[0].clone()),
-        _ => Some(items.join(" + ")),
+        _ => Some(items.iter().map(std::string::String::as_str).collect::<Vec<_>>().join(" + ")),
     }
 }
 
@@ -37,7 +38,7 @@ struct SignatureFiles {
 
 /// Collect signature files from the repository.
 fn collect_signature_files(root: &Path) -> SignatureFiles {
-    let mut targets: HashMap<String, ()> = HashMap::new();
+    let mut targets: HashSet<String> = HashSet::new();
     for name in [
         "cargo.toml",
         "pyproject.toml",
@@ -57,7 +58,7 @@ fn collect_signature_files(root: &Path) -> SignatureFiles {
         "mix.exs",
         "pubspec.yaml",
     ] {
-        let _ = targets.insert(name.to_string(), ());
+        let _ = targets.insert(name.to_string());
     }
 
     let mut result = SignatureFiles::default();
@@ -71,10 +72,7 @@ fn collect_signature_files(root: &Path) -> SignatureFiles {
         if scanned_entries >= MAX_FILES_TO_SCAN || collected >= MAX_SIGNATURE_FILES {
             break;
         }
-        let entries = match fs::read_dir(&dir) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
 
         for entry in entries.flatten() {
             if scanned_entries >= MAX_FILES_TO_SCAN || collected >= MAX_SIGNATURE_FILES {
@@ -100,7 +98,7 @@ fn collect_signature_files(root: &Path) -> SignatureFiles {
                 continue;
             }
 
-            if targets.contains_key(&name_lower) {
+            if targets.contains(&name_lower) {
                 result
                     .by_name_lower
                     .entry(name_lower.clone())
@@ -128,7 +126,7 @@ fn collect_signature_files(root: &Path) -> SignatureFiles {
 
 /// Detect signature files that indicate specific frameworks or package managers.
 ///
-/// Returns a tuple of (frameworks, test_framework, package_manager).
+/// Returns a tuple of (frameworks, `test_framework`, `package_manager`).
 pub(super) fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String>, Option<String>) {
     let signatures = collect_signature_files(root);
 
@@ -419,7 +417,7 @@ pub(super) fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String
 
     (
         frameworks,
-        combine_unique(test_frameworks),
-        combine_unique(package_managers),
+        combine_unique(&test_frameworks),
+        combine_unique(&package_managers),
     )
 }

@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
-pub(crate) use extensions::extension_to_language;
+pub use extensions::extension_to_language;
 use extensions::is_non_primary_language;
 use scanner::{count_extensions, detect_tests};
 use signatures::detect_signature_files;
@@ -41,7 +41,7 @@ const MIN_FILES_FOR_DETECTION: usize = 1;
 
 /// Represents the detected technology stack of a project
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ProjectStack {
+pub struct ProjectStack {
     /// Primary programming language (most prevalent)
     pub(crate) primary_language: String,
     /// Secondary languages used in the project
@@ -108,7 +108,7 @@ impl ProjectStack {
 
         if self.has_tests {
             if let Some(ref tf) = self.test_framework {
-                parts.push(format!("tests:{}", tf));
+                parts.push(format!("tests:{tf}"));
             } else {
                 parts.push("tests:yes".to_string());
             }
@@ -119,7 +119,7 @@ impl ProjectStack {
 }
 
 /// Detect the project stack for a given repository root
-pub(crate) fn detect_stack(root: &Path) -> io::Result<ProjectStack> {
+pub fn detect_stack(root: &Path) -> io::Result<ProjectStack> {
     // Count file extensions
     let extension_counts = count_extensions(root)?;
 
@@ -146,8 +146,7 @@ pub(crate) fn detect_stack(root: &Path) -> io::Result<ProjectStack> {
         .iter()
         .find(|(lang, _)| !is_non_primary_language(lang))
         .or_else(|| language_vec.first())
-        .map(|(lang, _)| (*lang).to_string())
-        .unwrap_or_else(|| "Unknown".to_string());
+        .map_or_else(|| "Unknown".to_string(), |(lang, _)| (*lang).to_string());
 
     let secondary_languages: Vec<String> = language_vec
         .iter()
@@ -173,11 +172,8 @@ pub(crate) fn detect_stack(root: &Path) -> io::Result<ProjectStack> {
 }
 
 /// Detect stack and return a summary string (for display in banner)
-pub(crate) fn detect_stack_summary(root: &Path) -> String {
-    match detect_stack(root) {
-        Ok(stack) => stack.summary(),
-        Err(_) => "Unknown".to_string(),
-    }
+pub fn detect_stack_summary(root: &Path) -> String {
+    detect_stack(root).map_or_else(|_| "Unknown".to_string(), |stack| stack.summary())
 }
 
 #[cfg(test)]

@@ -11,6 +11,8 @@
 //! Operations use libgit2 directly to avoid CLI dependencies and work
 //! even when git is not installed.
 
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::cast_precision_loss)]
 use std::io;
 use std::path::PathBuf;
 
@@ -38,19 +40,20 @@ const MAX_DIFF_SIZE_HARD: usize = 1024 * 1024;
 const DIFF_TRUNCATED_MARKER: &str =
     "\n\n[Diff truncated due to size. Showing first portion above.]";
 
-/// Convert git2 error to io::Error.
+/// Convert git2 error to `io::Error`.
+#[expect(clippy::needless_pass_by_value)]
 fn git2_to_io_error(err: git2::Error) -> io::Error {
     io::Error::other(err.to_string())
 }
 
 /// Check if we're in a git repository.
-pub(crate) fn require_git_repo() -> io::Result<()> {
+pub fn require_git_repo() -> io::Result<()> {
     git2::Repository::discover(".").map_err(git2_to_io_error)?;
     Ok(())
 }
 
 /// Get the git repository root.
-pub(crate) fn get_repo_root() -> io::Result<PathBuf> {
+pub fn get_repo_root() -> io::Result<PathBuf> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
     repo.workdir()
         .map(PathBuf::from)
@@ -61,7 +64,7 @@ pub(crate) fn get_repo_root() -> io::Result<PathBuf> {
 ///
 /// Returns the path to the hooks directory inside .git (or the equivalent
 /// for worktrees and other configurations).
-pub(crate) fn get_hooks_dir() -> io::Result<PathBuf> {
+pub fn get_hooks_dir() -> io::Result<PathBuf> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
     Ok(repo.path().join("hooks"))
 }
@@ -69,7 +72,7 @@ pub(crate) fn get_hooks_dir() -> io::Result<PathBuf> {
 /// Get a snapshot of the current git status.
 ///
 /// Returns status in porcelain format (similar to `git status --porcelain=v1`).
-pub(crate) fn git_snapshot() -> io::Result<String> {
+pub fn git_snapshot() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     let mut opts = git2::StatusOptions::new();
@@ -137,7 +140,7 @@ pub(crate) fn git_snapshot() -> io::Result<String> {
 ///
 /// Handles the case of an empty repository (no commits yet) by
 /// diffing against an empty tree using a read-only approach.
-pub(crate) fn git_diff() -> io::Result<String> {
+pub fn git_diff() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     // Try to get HEAD tree
@@ -204,25 +207,23 @@ pub(crate) fn git_diff() -> io::Result<String> {
 /// Returns a tuple containing:
 /// - The validated (and possibly truncated) diff
 /// - A boolean indicating whether the diff was truncated
-pub(crate) fn validate_and_truncate_diff(diff: String) -> (String, bool) {
+pub fn validate_and_truncate_diff(diff: String) -> (String, bool) {
     let diff_size = diff.len();
 
     // Warn about large diffs
     if diff_size > MAX_DIFF_SIZE_WARNING {
         eprintln!(
-            "Warning: Large diff detected ({} bytes). This may affect commit message quality.",
-            diff_size
+            "Warning: Large diff detected ({diff_size} bytes). This may affect commit message quality."
         );
     }
 
     // Truncate if over the hard limit
     if diff_size > MAX_DIFF_SIZE_HARD {
         let truncate_size = MAX_DIFF_SIZE_HARD - DIFF_TRUNCATED_MARKER.len();
-        let truncated = if let Some(idx) = diff.char_indices().nth(truncate_size).map(|(i, _)| i) {
-            format!("{}{}", &diff[..idx], DIFF_TRUNCATED_MARKER)
-        } else {
-            format!("{}{}", diff, DIFF_TRUNCATED_MARKER)
-        };
+        let truncated = diff
+            .char_indices()
+            .nth(truncate_size)
+            .map_or_else(|| format!("{diff}{DIFF_TRUNCATED_MARKER}"), |(i, _)| format!("{}{}", &diff[..i], DIFF_TRUNCATED_MARKER));
 
         eprintln!(
             "Warning: Diff truncated from {} to {} bytes for LLM processing.",
@@ -257,7 +258,7 @@ fn chunk_diff_for_commit_message(diff: &str) -> Vec<String> {
 
     // If diff is small enough, return as single chunk
     if diff_size <= MAX_DIFF_CHUNK_SIZE {
-        eprintln!("Diff size: {} bytes (single chunk)", diff_size);
+        eprintln!("Diff size: {diff_size} bytes (single chunk)");
         return vec![diff.to_string()];
     }
 
@@ -399,7 +400,7 @@ fn is_internal_agent_artifact(path: &std::path::Path) -> bool {
 ///
 /// Returns `Ok(true)` if files were successfully staged, `Ok(false)` if there
 /// were no files to stage, or an error if staging failed.
-pub(crate) fn git_add_all() -> io::Result<bool> {
+pub fn git_add_all() -> io::Result<bool> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     let mut index = repo.index().map_err(git2_to_io_error)?;
@@ -428,11 +429,7 @@ pub(crate) fn git_add_all() -> io::Result<bool> {
     // Note: add_all() is required here, not update_all(), to include untracked files
     let mut filter_cb = |path: &std::path::Path, _matched: &[u8]| -> i32 {
         // Never stage Ralph internal artifacts, even if the user's repo doesn't ignore them.
-        if is_internal_agent_artifact(path) {
-            1
-        } else {
-            0
-        }
+        i32::from(is_internal_agent_artifact(path))
     };
     index
         .add_all(
@@ -454,7 +451,7 @@ pub(crate) fn git_add_all() -> io::Result<bool> {
 /// 1. Provided name/email parameters (from Ralph config)
 /// 2. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
 /// 3. Ralph config file values (passed through)
-/// 4. Git config (via libgit2's repo.signature())
+/// 4. Git config (via libgit2's `repo.signature()`)
 /// 5. System username + derived email
 /// 6. Default values ("Ralph Workflow", "ralph@localhost")
 ///
@@ -479,60 +476,54 @@ fn resolve_commit_identity(
 
     // First try the identity resolution system for CLI/env/config sources
     // This handles priorities 1-3 (CLI args, env vars, Ralph config)
-    match resolve_git_identity(provided_name, provided_email, None, None) {
-        Ok((identity, _source)) => {
-            // Identity resolved from CLI, env, or config - validate and return
-            if let Err(e) = identity.validate() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("Invalid git identity from config: {}", e),
-                ));
-            }
-            return Ok(identity);
+    if let Ok((identity, _source)) = resolve_git_identity(provided_name, provided_email, None, None)
+    {
+        // Identity resolved from CLI, env, or config - validate and return
+        if let Err(e) = identity.validate() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Invalid git identity from config: {e}"),
+            ));
         }
-        Err(_) => {
-            // Identity resolution fell through - continue to git config fallback
-        }
+        return Ok(identity);
     }
+    // Identity resolution fell through - continue to git config fallback
 
     // Priority 4: Git config (via libgit2)
     // This handles the case where neither CLI/env nor Ralph config provided
     // both name and email. We now try git config, and support partial overrides.
-    match repo.signature() {
-        Ok(sig) => {
-            // Git config provided a signature
-            let git_name = sig.name().unwrap_or("").to_string();
-            let git_email = sig.email().unwrap_or("").to_string();
+    if let Ok(sig) = repo.signature() {
+        // Git config provided a signature
+        let git_name = sig.name().unwrap_or("").to_string();
+        let git_email = sig.email().unwrap_or("").to_string();
 
-            // If git config has both name and email, use them
-            if !git_name.is_empty() && !git_email.is_empty() {
-                // Check if we have a partial override (name provided but not email, or vice versa)
-                let name = provided_name
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(&git_name)
-                    .to_string();
-                let email = provided_email
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(&git_email)
-                    .to_string();
+        // If git config has both name and email, use them
+        if !git_name.is_empty() && !git_email.is_empty() {
+            // Check if we have a partial override (name provided but not email, or vice versa)
+            let name = provided_name
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&git_name)
+                .to_string();
+            let email = provided_email
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&git_email)
+                .to_string();
 
-                let identity = GitIdentity::new(name, email);
-                if identity.validate().is_err() {
-                    // Git config identity is invalid - fall through to system fallback
-                } else {
-                    return Ok(identity);
-                }
+            let identity = GitIdentity::new(name, email);
+            if identity.validate().is_err() {
+                // Git config identity is invalid - fall through to system fallback
+            } else {
+                return Ok(identity);
             }
         }
-        Err(_) => {
-            // Git config failed - fall through to system fallback
-        }
+    } else {
+        // Git config failed - fall through to system fallback
     }
 
     // Priority 5: System username + derived email
     let username = fallback_username();
     let email = fallback_email(&username);
-    let identity = GitIdentity::new(username.clone(), email);
+    let identity = GitIdentity::new(username, email);
 
     if identity.validate().is_err() {
         // Shouldn't happen with our fallbacks, but handle it by falling through to defaults
@@ -573,7 +564,7 @@ fn resolve_commit_identity(
 ///
 /// Returns `Ok(Some(oid))` with the commit OID if successful, `Ok(None)` if the
 /// OID is zero (no commit created), or an error if the operation failed.
-pub(crate) fn git_commit(
+pub fn git_commit(
     message: &str,
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
@@ -639,23 +630,23 @@ enum CommitGenerationError {
 impl std::fmt::Display for CommitGenerationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CommitGenerationError::Timeout => write!(f, "LLM agent timed out"),
-            CommitGenerationError::Empty => write!(f, "LLM returned empty response"),
-            CommitGenerationError::ExtractionFailed(msg) => {
-                write!(f, "Failed to extract commit message: {}", msg)
+            Self::Timeout => write!(f, "LLM agent timed out"),
+            Self::Empty => write!(f, "LLM returned empty response"),
+            Self::ExtractionFailed(msg) => {
+                write!(f, "Failed to extract commit message: {msg}")
             }
-            CommitGenerationError::ValidationFailed(msg) => write!(f, "Validation failed: {}", msg),
-            CommitGenerationError::AgentFailed {
+            Self::ValidationFailed(msg) => write!(f, "Validation failed: {msg}"),
+            Self::AgentFailed {
                 exit_code,
                 stderr,
                 agent_cmd,
                 message,
             } => {
-                write!(f, "Agent '{}' failed: ", agent_cmd)?;
+                write!(f, "Agent '{agent_cmd}' failed: ")?;
                 if let Some(code) = exit_code {
-                    write!(f, "Exit code: {}. ", code)?;
+                    write!(f, "Exit code: {code}. ")?;
                 }
-                write!(f, "{}", message)?;
+                write!(f, "{message}")?;
                 if !stderr.trim().is_empty() {
                     write!(f, "\nStderr: {}", stderr.trim())?;
                 }
@@ -670,27 +661,21 @@ impl std::error::Error for CommitGenerationError {}
 impl CommitGenerationError {
     /// Classify this error to determine if it should trigger a retry or fallback.
     ///
-    /// Returns `Some(true)` if the error should be retried with the same agent,
-    /// `Some(false)` if it should trigger immediate fallback to the next agent,
-    /// or `None` if the error type doesn't support classification (e.g., ValidationFailed).
-    fn should_retry_with_classification(&self) -> Option<bool> {
+    /// Returns `true` if the error should be retried with the same agent,
+    /// `false` if it should trigger immediate fallback to the next agent,
+    /// or `None` if the error type doesn't support classification (e.g., `ValidationFailed`).
+    fn should_retry_with_classification(&self) -> bool {
         use crate::agents::AgentErrorKind;
 
         match self {
-            // Empty responses can be retried (might be transient)
-            CommitGenerationError::Empty => Some(true),
-
-            // Timeout can be retried
-            CommitGenerationError::Timeout => Some(true),
+            // Empty responses and Timeout can be retried (might be transient)
+            Self::Empty | Self::Timeout | Self::ValidationFailed(_) => true,
 
             // ExtractionFailed is a parsing issue - don't retry
-            CommitGenerationError::ExtractionFailed(_) => Some(false),
-
-            // ValidationFailed is handled separately with feedback - always retry
-            CommitGenerationError::ValidationFailed(_) => Some(true),
+            Self::ExtractionFailed(_) => false,
 
             // AgentFailed needs classification based on exit code and stderr
-            CommitGenerationError::AgentFailed {
+            Self::AgentFailed {
                 exit_code,
                 stderr,
                 agent_cmd,
@@ -731,7 +716,7 @@ impl CommitGenerationError {
                 // Log recovery advice
                 eprintln!("  Recovery: {}", kind.recovery_advice());
 
-                Some(kind.should_retry())
+                kind.should_retry()
             }
         }
     }
@@ -754,19 +739,16 @@ fn call_llm_agent(
         exit_code: None,
         stderr: String::new(),
         agent_cmd: agent_cmd.to_string(),
-        message: format!("Failed to parse agent command: {}", e),
+        message: format!("Failed to parse agent command: {e}"),
     })?;
 
-    let (program, arguments) = match argv.split_first() {
-        Some(pair) => pair,
-        None => {
-            return Err(CommitGenerationError::AgentFailed {
-                exit_code: None,
-                stderr: String::new(),
-                agent_cmd: agent_cmd.to_string(),
-                message: "Agent command is empty".to_string(),
-            })
-        }
+    let Some((program, arguments)) = argv.split_first() else {
+        return Err(CommitGenerationError::AgentFailed {
+            exit_code: None,
+            stderr: String::new(),
+            agent_cmd: agent_cmd.to_string(),
+            message: "Agent command is empty".to_string(),
+        })
     };
 
     let mut child = Command::new(program)
@@ -779,7 +761,7 @@ fn call_llm_agent(
             exit_code: None,
             stderr: String::new(),
             agent_cmd: agent_cmd.to_string(),
-            message: format!("Failed to spawn agent: {}", e),
+            message: format!("Failed to spawn agent: {e}"),
         })?;
 
     if let Some(mut stdin) = child.stdin.take() {
@@ -789,7 +771,7 @@ fn call_llm_agent(
                 exit_code: None,
                 stderr: String::new(),
                 agent_cmd: agent_cmd.to_string(),
-                message: format!("Failed to write prompt: {}", e),
+                message: format!("Failed to write prompt: {e}"),
             })?;
         drop(stdin);
     }
@@ -807,7 +789,7 @@ fn call_llm_agent(
                             exit_code: None,
                             stderr: String::new(),
                             agent_cmd: agent_cmd.to_string(),
-                            message: format!("Failed to read stdout: {}", e),
+                            message: format!("Failed to read stdout: {e}"),
                         }
                     })?;
                 }
@@ -819,7 +801,7 @@ fn call_llm_agent(
                             exit_code: None,
                             stderr: String::new(),
                             agent_cmd: agent_cmd.to_string(),
-                            message: format!("Failed to read stderr: {}", e),
+                            message: format!("Failed to read stderr: {e}"),
                         }
                     })?;
                 }
@@ -830,7 +812,7 @@ fn call_llm_agent(
                         exit_code: exit_status.code(),
                         stderr: stderr_str,
                         agent_cmd: agent_cmd.to_string(),
-                        message: format!("Agent process exited unsuccessfully"),
+                        message: "Agent process exited unsuccessfully".to_string(),
                     });
                 }
 
@@ -850,7 +832,7 @@ fn call_llm_agent(
                     exit_code: None,
                     stderr: String::new(),
                     agent_cmd: agent_cmd.to_string(),
-                    message: format!("Failed to wait: {}", e),
+                    message: format!("Failed to wait: {e}"),
                 });
             }
         }
@@ -897,7 +879,7 @@ fn extract_and_validate_commit_message(
     );
 
     if let Some(warning) = &extraction.warning {
-        eprintln!("Warning: LLM output extraction warning: {}", warning);
+        eprintln!("Warning: LLM output extraction warning: {warning}");
     }
 
     let commit_message = clean_commit_message(&extraction.content);
@@ -928,7 +910,7 @@ fn extract_and_validate_commit_message(
 /// # Returns
 ///
 /// Returns `Ok(String)` with the generated commit message, or an error if all retries fail.
-pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> io::Result<String> {
+pub fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> io::Result<String> {
     eprintln!("Generating commit message with LLM...");
 
     // Log diff size and sample for debugging
@@ -949,12 +931,12 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
 
     eprintln!("First 5 lines of diff:");
     for line in first_lines {
-        eprintln!("  {}", line);
+        eprintln!("  {line}");
     }
     if !last_lines.is_empty() {
         eprintln!("Last 5 lines of diff:");
         for line in last_lines {
-            eprintln!("  {}", line);
+            eprintln!("  {line}");
         }
     }
 
@@ -968,7 +950,7 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
     }
 
     // For multiple chunks, combine messages from each chunk
-    eprintln!("Processing {} chunks - this may take longer...", num_chunks);
+    eprintln!("Processing {num_chunks} chunks - this may take longer...");
     let mut chunk_messages = Vec::new();
 
     for (idx, chunk) in chunks.iter().enumerate() {
@@ -985,7 +967,7 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
 
     // Combine chunk messages into a single commit message
     let combined = combine_chunk_messages(&chunk_messages);
-    eprintln!("Combined commit message from {} chunks", num_chunks);
+    eprintln!("Combined commit message from {num_chunks} chunks");
     Ok(combined)
 }
 
@@ -1046,8 +1028,7 @@ fn generate_commit_message_with_retries(
                         // Success!
                         if attempt > 0 {
                             eprintln!(
-                                "Successfully generated commit message after {} retries",
-                                attempt
+                                "Successfully generated commit message after {attempt} retries"
                             );
                         }
                         return Ok(commit_message);
@@ -1094,26 +1075,17 @@ fn generate_commit_message_with_retries(
                         // Use error classification to decide whether to retry or fallback immediately
                         eprintln!("Agent failed on attempt {}: {}", attempt + 1, err);
 
-                        match err.should_retry_with_classification() {
-                            Some(true) => {
-                                // Error is transient - retry with same agent
-                                eprintln!("  -> Retrying same agent (transient error)");
-                                if attempt == max_retries - 1 {
-                                    return Err(io::Error::other(err.to_string()));
-                                }
-                                // Continue to next retry
-                            }
-                            Some(false) => {
-                                // Error is permanent or agent-specific - fallback immediately
-                                eprintln!("  -> Falling back to next agent (non-retryable error)");
+                        if err.should_retry_with_classification() {
+                            // Error is transient - retry with same agent
+                            eprintln!("  -> Retrying same agent (transient error)");
+                            if attempt == max_retries - 1 {
                                 return Err(io::Error::other(err.to_string()));
                             }
-                            None => {
-                                // No classification available - use default retry behavior
-                                if attempt == max_retries - 1 {
-                                    return Err(io::Error::other(err.to_string()));
-                                }
-                            }
+                            // Continue to next retry
+                        } else {
+                            // Error is permanent or agent-specific - fallback immediately
+                            eprintln!("  -> Falling back to next agent (non-retryable error)");
+                            return Err(io::Error::other(err.to_string()));
                         }
                     }
                 }
@@ -1123,7 +1095,7 @@ fn generate_commit_message_with_retries(
                 if attempt == max_retries - 1 {
                     return Err(io::Error::new(
                         io::ErrorKind::TimedOut,
-                        format!("LLM timed out after {} attempts", max_retries),
+                        format!("LLM timed out after {max_retries} attempts"),
                     ));
                 }
             }
@@ -1131,26 +1103,17 @@ fn generate_commit_message_with_retries(
                 // Use error classification to decide whether to retry or fallback immediately
                 eprintln!("Agent error on attempt {}: {}", attempt + 1, err);
 
-                match err.should_retry_with_classification() {
-                    Some(true) => {
-                        // Error is transient - retry with same agent
-                        eprintln!("  -> Retrying same agent (transient error)");
-                        if attempt == max_retries - 1 {
-                            return Err(io::Error::other(err.to_string()));
-                        }
-                        // Continue to next retry
-                    }
-                    Some(false) => {
-                        // Error is permanent or agent-specific - fallback immediately
-                        eprintln!("  -> Falling back to next agent (non-retryable error)");
+                if err.should_retry_with_classification() {
+                    // Error is transient - retry with same agent
+                    eprintln!("  -> Retrying same agent (transient error)");
+                    if attempt == max_retries - 1 {
                         return Err(io::Error::other(err.to_string()));
                     }
-                    None => {
-                        // No classification available - use default retry behavior
-                        if attempt == max_retries - 1 {
-                            return Err(io::Error::other(err.to_string()));
-                        }
-                    }
+                    // Continue to next retry
+                } else {
+                    // Error is permanent or agent-specific - fallback immediately
+                    eprintln!("  -> Falling back to next agent (non-retryable error)");
+                    return Err(io::Error::other(err.to_string()));
                 }
             }
             Err(e) => {
@@ -1174,17 +1137,17 @@ fn generate_commit_message_with_retries(
 /// 3. Use the most common scope if it appears in at least half the chunks
 /// 4. Combine subjects intelligently - if they're similar, merge; if different,
 ///    concatenate with "and" or create a comprehensive subject
+#[expect(clippy::option_if_let_else)]
 fn combine_chunk_messages(messages: &[String]) -> String {
     // Type priority for significance (higher = more significant)
     fn type_priority(ty: &str) -> i32 {
         match ty {
             "feat" => 5,
             "fix" => 4,
-            "refactor" => 3,
-            "perf" => 3,
-            "docs" => 2,
-            "test" => 2,
+            "refactor" | "perf" => 3,
+            "docs" | "test" => 2,
             "style" => 1,
+            #[expect(clippy::match_same_arms)]
             "build" | "ci" | "chore" => 0,
             _ => 0,
         }
@@ -1228,9 +1191,12 @@ fn combine_chunk_messages(messages: &[String]) -> String {
             .collect();
 
         // Check if there's significant overlap (at least 50% of words)
-        let total_unique_words: HashSet<_> = words.iter().flatten().cloned().collect();
-        let avg_word_count =
-            (words.iter().map(|w| w.len()).sum::<usize>() as f64) / (words.len() as f64);
+        let total_unique_words: HashSet<_> = words.iter().flatten().copied().collect();
+        let avg_word_count = (words
+            .iter()
+            .map(std::collections::HashSet::len)
+            .sum::<usize>() as f64)
+            / (words.len() as f64);
 
         if (total_unique_words.len() as f64) < (avg_word_count * 1.5) {
             // Significant overlap - subjects are similar, use a merged version
@@ -1290,11 +1256,9 @@ fn combine_chunk_messages(messages: &[String]) -> String {
 
             // Extract subject (after colon, before newline)
             let subject_start = colon_pos + 1;
-            let subject = if let Some(newline_pos) = msg[subject_start..].find('\n') {
-                msg[subject_start..subject_start + newline_pos].trim()
-            } else {
-                msg[subject_start..].trim()
-            };
+            let subject = msg[subject_start..]
+                .find('\n')
+                .map_or_else(|| msg[subject_start..].trim(), |newline_pos| msg[subject_start..subject_start + newline_pos].trim());
 
             // Skip chunk placeholders and generic subjects
             if subject.starts_with('[') || subject.contains("chunk") {
@@ -1316,7 +1280,7 @@ fn combine_chunk_messages(messages: &[String]) -> String {
     if chunks.is_empty() {
         // Use a descriptive message that avoids bad patterns like "N file(s) changed"
         // The message indicates that processing failed but provides semantic context
-        return format!("{}: apply changes across multiple files", last_seen_type);
+        return format!("{last_seen_type}: apply changes across multiple files");
     }
 
     // Find the most significant type
@@ -1337,17 +1301,16 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         .into_iter()
         .max_by_key(|(_, count)| *count)
         .filter(|&(ref _scope, count)| count * 2 >= chunks.len())
-        .map(|(scope, _)| scope)
-        .unwrap_or_else(String::new);
+        .map_or_else(String::new, |(scope, _)| scope);
 
     // Combine subjects intelligently
     let combined_subject = combine_subjects(&chunks);
 
     // Build combined message
     let mut result = if scope.is_empty() {
-        format!("{}:", commit_type)
+        format!("{commit_type}:")
     } else {
-        format!("{}({}):", commit_type, scope)
+        format!("{commit_type}({scope}):")
     };
 
     result.push(' ');
@@ -1372,14 +1335,14 @@ fn combine_chunk_messages(messages: &[String]) -> String {
 /// - The repository cannot be opened
 /// - The starting commit cannot be found
 /// - The diff cannot be generated
-pub(crate) fn git_diff_from(start_oid: &str) -> io::Result<String> {
+pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     // Parse the starting OID
     let oid = git2::Oid::from_str(start_oid).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("Invalid commit OID: {}", start_oid),
+            format!("Invalid commit OID: {start_oid}"),
         )
     })?;
 
@@ -1438,7 +1401,7 @@ fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
 /// Returns a formatted diff string, or an error if:
 /// - The diff cannot be generated
 /// - The starting commit file exists but is invalid
-pub(crate) fn get_git_diff_from_start() -> io::Result<String> {
+pub fn get_git_diff_from_start() -> io::Result<String> {
     use crate::git_helpers::start_commit::{load_start_point, save_start_commit, StartPoint};
 
     // Ensure a valid starting point exists. This is expected to persist across runs,
@@ -1489,7 +1452,7 @@ fn clean_commit_message(message: &str) -> String {
     // Clean up whitespace while preserving intentional newlines
     cleaned = cleaned
         .lines()
-        .map(|line| line.trim())
+        .map(str::trim)
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -1670,10 +1633,12 @@ mod tests {
         // Create a diff that's larger than MAX_DIFF_CHUNK_SIZE
         let mut diff = String::new();
         for i in 0..2000 {
-            diff.push_str(&format!(
-                "diff --git a/file{}.rs b/file{}.rs\nnew file mode 100644\n+ content {}\n",
-                i, i, i
-            ));
+            use std::fmt::Write;
+            write!(
+                diff,
+                "diff --git a/file{i}.rs b/file{i}.rs\nnew file mode 100644\n+ content {i}\n"
+            )
+            .unwrap();
         }
 
         // Verify the diff is larger than the chunk size
@@ -1696,10 +1661,12 @@ mod tests {
         // Create a diff with clear file boundaries
         let mut diff = String::new();
         for i in 0..10 {
-            diff.push_str(&format!(
-                "diff --git a/file{}.rs b/file{}.rs\nnew file mode 100644\n+ content {}\n",
-                i, i, i
-            ));
+            use std::fmt::Write;
+            write!(
+                diff,
+                "diff --git a/file{i}.rs b/file{i}.rs\nnew file mode 100644\n+ content {i}\n"
+            )
+            .unwrap();
         }
 
         let chunks = chunk_diff_for_commit_message(&diff);
@@ -1722,7 +1689,7 @@ mod tests {
             // The chunk should report its file count correctly
             // For single chunk (not chunked), the format is different
             if chunk.contains("[Diff chunk") {
-                assert!(chunk.contains(&format!("{} files", file_count)));
+                assert!(chunk.contains(&format!("{file_count} files")));
             }
         }
     }
@@ -1733,7 +1700,8 @@ mod tests {
         let mut diff = String::new();
         diff.push_str("diff --git a/large_file.rs b/large_file.rs\n");
         for i in 0..1000 {
-            diff.push_str(&format!("+line {}\n", i));
+            use std::fmt::Write;
+            writeln!(diff, "+line {i}").unwrap();
         }
 
         let chunks = chunk_diff_for_commit_message(&diff);
@@ -1751,10 +1719,12 @@ mod tests {
         // Create an extremely large diff
         let mut diff = String::new();
         for i in 0..50000 {
-            diff.push_str(&format!(
-                "diff --git a/file{}.rs b/file{}.rs\n+ content {}\n",
-                i, i, i
-            ));
+            use std::fmt::Write;
+            write!(
+                diff,
+                "diff --git a/file{i}.rs b/file{i}.rs\n+ content {i}\n"
+            )
+            .unwrap();
         }
 
         let chunks = chunk_diff_for_commit_message(&diff);

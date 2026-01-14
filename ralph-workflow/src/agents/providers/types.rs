@@ -1,17 +1,17 @@
 //! Provider Type Enum
 //!
 //! Defines the `OpenCodeProviderType` enum representing all supported
-//! AI providers in the OpenCode ecosystem.
+//! AI providers in the `OpenCode` ecosystem.
 
-/// OpenCode provider type extracted from model flag.
+/// `OpenCode` provider type extracted from model flag.
 ///
-/// OpenCode supports 75+ providers through the AI SDK and Models.dev.
+/// `OpenCode` supports 75+ providers through the AI SDK and Models.dev.
 /// This enum explicitly lists all major provider categories for clear
 /// identification and provider-specific authentication guidance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpenCodeProviderType {
     // ==================== OpenCode Gateway ====================
-    /// OpenCode Zen - gateway for multiple providers via unified API.
+    /// `OpenCode` Zen - gateway for multiple providers via unified API.
     OpenCodeZen,
 
     // ==================== Chinese AI Providers ====================
@@ -21,13 +21,13 @@ pub enum OpenCodeProviderType {
     ZaiCodingPlan,
     /// Moonshot AI / Kimi.
     Moonshot,
-    /// MiniMax AI.
+    /// `MiniMax` AI.
     MiniMax,
 
     // ==================== Major Cloud Providers ====================
     /// Anthropic (Claude models).
     Anthropic,
-    /// OpenAI (GPT models).
+    /// `OpenAI` (GPT models).
     OpenAI,
     /// Google AI (Gemini models).
     Google,
@@ -35,7 +35,7 @@ pub enum OpenCodeProviderType {
     GoogleVertex,
     /// Amazon Bedrock.
     AmazonBedrock,
-    /// Azure OpenAI Service.
+    /// Azure `OpenAI` Service.
     AzureOpenAI,
     /// GitHub Copilot (Chat).
     GithubCopilot,
@@ -49,13 +49,13 @@ pub enum OpenCodeProviderType {
     Fireworks,
     /// Cerebras.
     Cerebras,
-    /// SambaNova.
+    /// `SambaNova`.
     SambaNova,
-    /// DeepInfra.
+    /// `DeepInfra`.
     DeepInfra,
 
     // ==================== Gateway / Aggregator Providers ====================
-    /// OpenRouter (model aggregator).
+    /// `OpenRouter` (model aggregator).
     OpenRouter,
     /// Cloudflare Workers AI.
     Cloudflare,
@@ -63,11 +63,11 @@ pub enum OpenCodeProviderType {
     Vercel,
     /// Helicone (observability + gateway).
     Helicone,
-    /// ZenMux (AI gateway).
+    /// `ZenMux` (AI gateway).
     ZenMux,
 
     // ==================== Specialized Providers ====================
-    /// DeepSeek (coding-focused).
+    /// `DeepSeek` (coding-focused).
     DeepSeek,
     /// xAI (Grok).
     Xai,
@@ -83,7 +83,7 @@ pub enum OpenCodeProviderType {
     VeniceAI,
 
     // ==================== Open-Source Model Providers ====================
-    /// HuggingFace Inference.
+    /// `HuggingFace` Inference.
     HuggingFace,
     /// Replicate.
     Replicate,
@@ -95,7 +95,7 @@ pub enum OpenCodeProviderType {
     Cortecs,
     /// Scaleway.
     Scaleway,
-    /// OVHcloud.
+    /// `OVHcloud`.
     OVHcloud,
     /// IO.NET.
     IONet,
@@ -119,6 +119,6 @@ pub enum OpenCodeProviderType {
     LlamaCpp,
 
     // ==================== Catch-all ====================
-    /// Custom/unknown provider (OpenCode may still support it).
+    /// Custom/unknown provider (`OpenCode` may still support it).
     Custom,
 }

@@ -15,6 +15,7 @@
 //! (`~/.config/ralph/agents.toml` and `.agent/agents.toml`) and emits
 //! deprecation warnings when they are used.
 
+#![expect(clippy::too_many_lines)]
 use super::parser::parse_env_bool;
 use super::types::{Config, ReviewDepth, Verbosity};
 use super::unified::{unified_config_path, UnifiedConfig};
@@ -53,7 +54,7 @@ pub fn load_config_from_path(
     let mut warnings = Vec::new();
 
     // Try to load unified config from specified path or default
-    let unified = if let Some(path) = config_path {
+    let unified = config_path.map_or_else(UnifiedConfig::load_default, |path| {
         if path.exists() {
             match UnifiedConfig::load_from_path(path) {
                 Ok(cfg) => Some(cfg),
@@ -70,9 +71,7 @@ pub fn load_config_from_path(
             warnings.push(format!("Config file not found: {}", path.display()));
             None
         }
-    } else {
-        UnifiedConfig::load_default()
-    };
+    });
 
     // Start with defaults, then apply unified config if found
     let config = if let Some(ref unified_cfg) = unified {
@@ -89,20 +88,17 @@ pub fn load_config_from_path(
     (config, unified, warnings)
 }
 
-/// Create a Config from UnifiedConfig.
+/// Create a Config from `UnifiedConfig`.
 fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> Config {
     let general = &unified.general;
 
-    let review_depth = match ReviewDepth::from_str(&general.review_depth) {
-        Some(d) => d,
-        None => {
-            warnings.push(format!(
-                "Invalid review_depth '{}' in config; falling back to 'standard'.",
-                general.review_depth
-            ));
-            ReviewDepth::default()
-        }
-    };
+    let review_depth = ReviewDepth::from_str(&general.review_depth).unwrap_or_else(|| {
+        warnings.push(format!(
+            "Invalid review_depth '{}' in config; falling back to 'standard'.",
+            general.review_depth
+        ));
+        ReviewDepth::default()
+    });
 
     Config {
         developer_agent: None, // Set from agent_chain or CLI
@@ -123,8 +119,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         prompt_path: general
             .prompt_path
             .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(".agent/last_prompt.txt")),
+            .map_or_else(|| PathBuf::from(".agent/last_prompt.txt"), PathBuf::from),
         developer_context: general.developer_context,
         reviewer_context: general.reviewer_context,
         verbosity: Verbosity::from(general.verbosity),
@@ -188,15 +183,13 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
             Ok(n) if n <= max => Some(n),
             Ok(n) => {
                 warnings.push(format!(
-                    "Env var {}={} is too large; clamping to {}.",
-                    name, n, max
+                    "Env var {name}={n} is too large; clamping to {max}."
                 ));
                 Some(max)
             }
             Err(_) => {
                 warnings.push(format!(
-                    "Env var {}='{}' is not a valid number; ignoring.",
-                    name, trimmed
+                    "Env var {name}='{trimmed}' is not a valid number; ignoring."
                 ));
                 None
             }
@@ -213,15 +206,13 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
             Ok(n) if n <= max => Some(n),
             Ok(n) => {
                 warnings.push(format!(
-                    "Env var {}={} is out of range; clamping to {}.",
-                    name, n, max
+                    "Env var {name}={n} is out of range; clamping to {max}."
                 ));
                 Some(max)
             }
             Err(_) => {
                 warnings.push(format!(
-                    "Env var {}='{}' is not a valid number; ignoring.",
-                    name, trimmed
+                    "Env var {name}='{trimmed}' is not a valid number; ignoring."
                 ));
                 None
             }
@@ -357,15 +348,13 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
         } else if let Ok(n) = trimmed.parse::<u8>() {
             if n > 4 {
                 warnings.push(format!(
-                    "Env var RALPH_VERBOSITY={} is out of range; clamping to 4 (debug).",
-                    n
+                    "Env var RALPH_VERBOSITY={n} is out of range; clamping to 4 (debug)."
                 ));
             }
             config.verbosity = Verbosity::from(n.min(4));
         } else {
             warnings.push(format!(
-                "Env var RALPH_VERBOSITY='{}' is not a valid number; ignoring.",
-                trimmed
+                "Env var RALPH_VERBOSITY='{trimmed}' is not a valid number; ignoring."
             ));
         }
     }
