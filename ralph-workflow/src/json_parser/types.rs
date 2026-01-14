@@ -52,7 +52,7 @@ fn looks_like_secret_value(value: &str) -> bool {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ClaudeEvent {
+pub enum ClaudeEvent {
     System {
         subtype: Option<String>,
         session_id: Option<String>,
@@ -88,7 +88,7 @@ pub(crate) enum ClaudeEvent {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StreamInnerEvent {
+pub enum StreamInnerEvent {
     /// Message start - initialization of a new message stream
     MessageStart { message: Option<AssistantMessage> },
     /// Content block start - initialization of a new content block (text, tool use, etc.)
@@ -119,7 +119,7 @@ pub(crate) enum StreamInnerEvent {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ContentBlockDelta {
+pub enum ContentBlockDelta {
     /// Delta for text content blocks
     TextDelta { text: Option<String> },
     /// Delta for tool use content blocks (input streaming)
@@ -132,7 +132,7 @@ pub(crate) enum ContentBlockDelta {
 
 /// Error information for streaming errors
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct StreamError {
+pub struct StreamError {
     pub(crate) message: Option<String>,
     pub(crate) code: Option<String>,
 }
@@ -242,19 +242,19 @@ impl DeltaAccumulator {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct AssistantMessage {
+pub struct AssistantMessage {
     pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct UserMessage {
+pub struct UserMessage {
     pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ContentBlock {
+pub enum ContentBlock {
     Text {
         text: Option<String>,
     },
@@ -282,7 +282,7 @@ pub(crate) enum ContentBlock {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CodexEvent {
+pub enum CodexEvent {
     #[serde(rename = "thread.started")]
     ThreadStarted { thread_id: Option<String> },
     #[serde(rename = "turn.started")]
@@ -304,7 +304,7 @@ pub(crate) enum CodexEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct CodexUsage {
+pub struct CodexUsage {
     pub(crate) input_tokens: Option<u64>,
     pub(crate) output_tokens: Option<u64>,
 }
@@ -352,7 +352,7 @@ pub(crate) struct CodexItem {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum GeminiEvent {
+pub enum GeminiEvent {
     Init {
         session_id: Option<String>,
         model: Option<String>,
@@ -383,7 +383,7 @@ pub(crate) enum GeminiEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct GeminiStats {
+pub struct GeminiStats {
     pub(crate) input_tokens: Option<u64>,
     pub(crate) output_tokens: Option<u64>,
     pub(crate) duration_ms: Option<u64>,
@@ -566,8 +566,10 @@ pub fn format_unknown_json_event(
             });
 
         extracted_text.map(|text: String| {
-            let truncated = if text.len() > 30 {
-                format!("{}...", &text[..27.min(text.len())])
+            let truncated = if text.chars().count() > 30 {
+                // Use character-based slicing to avoid panic on multi-byte UTF-8 characters
+                let chars: Vec<char> = text.chars().take(27).collect();
+                format!("{}...", chars.iter().collect::<String>())
             } else {
                 text
             };

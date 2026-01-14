@@ -237,7 +237,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Run the full pipeline
-    run_pipeline(&PipelineContext {
+    let ctx = PipelineContext {
         args,
         config,
         registry,
@@ -248,7 +248,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         repo_root,
         logger,
         colors,
-    })
+    };
+    run_pipeline(&ctx)
 }
 
 /// Handles listing commands that don't require the full pipeline.
@@ -326,12 +327,12 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         }
         Ok(Some(warning)) => {
             ctx.logger.warn(&format!(
-                "PROMPT.md backup created but: {warning}. Continuing anyway.",
+                "PROMPT.md backup created but: {warning}. Continuing anyway."
             ));
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to create PROMPT.md backup: {e}. Continuing anyway.",
+                "Failed to create PROMPT.md backup: {e}. Continuing anyway."
             ));
         }
     }
@@ -355,7 +356,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         Ok(mut monitor) => {
             if let Err(e) = monitor.start() {
                 ctx.logger.warn(&format!(
-                    "Failed to start PROMPT.md monitoring: {e}. Continuing anyway.",
+                    "Failed to start PROMPT.md monitoring: {e}. Continuing anyway."
                 ));
                 None
             } else {
@@ -367,7 +368,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to create PROMPT.md monitor: {e}. Continuing anyway.",
+                "Failed to create PROMPT.md monitor: {e}. Continuing anyway."
             ));
             None
         }
@@ -418,7 +419,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         Err(e) => {
             ctx.logger.warn(&format!(
                 "Failed to save starting commit: {e}. \
-                 Incremental diffs may be unavailable as a result.",
+                 Incremental diffs may be unavailable as a result."
             ));
             ctx.logger.info(
                 "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
@@ -470,8 +471,7 @@ fn run_development(
     args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 1: Development", super::colors::Colors::blue);
+    ctx.logger.header("PHASE 1: Development", Colors::blue);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
     let resume_rank = resume_phase.map(phase_rank);

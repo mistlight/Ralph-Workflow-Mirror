@@ -314,7 +314,18 @@ pub fn run_with_prompt(
 
     // Wait for command completion and collect stderr.
     let status = child.wait()?;
+    // If status.code() returns None (process terminated by signal on Unix),
+    // we default to exit code 1 (failure). This treats signal termination
+    // as a failure, which is appropriate for agent execution.
     let exit_code = status.code().unwrap_or(1);
+
+    // Log if process was terminated by signal (no exit code available)
+    if status.code().is_none() && runtime.config.verbosity.is_debug() {
+        runtime
+            .logger
+            .warn("Process terminated by signal (no exit code), treating as failure");
+    }
+
     let stderr_output = match stderr_join_handle {
         Some(handle) => match handle.join() {
             Ok(result) => result?,
@@ -740,6 +751,7 @@ pub fn run_with_fallback(
                     .as_ref()
                     .map(|m| format!(" [{m}]"))
                     .unwrap_or_default();
+                let display_name = registry.display_name(agent_name);
                 let label = format!("{base_label} ({display_name}{model_suffix})");
                 // Sanitize agent name for log file path - replace "/" with "-" to avoid
                 // creating subdirectories (e.g., "ccs/glm" -> "ccs-glm")

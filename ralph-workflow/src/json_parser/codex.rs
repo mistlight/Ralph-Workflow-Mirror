@@ -105,6 +105,8 @@ impl CodexParser {
                 )
             }
             CodexEvent::TurnStarted {} => {
+                // Reset streaming state on new turn
+                self.in_agent_message.borrow_mut().set(false);
                 format!(
                     "{}[{}]{} {}Turn started{}\n",
                     c.dim(),
@@ -180,9 +182,13 @@ impl CodexParser {
 
                                 // Only show prefix on the first chunk
                                 if was_in_msg {
-                                    // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                                    // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
                                     self.in_agent_message.borrow_mut().set(true);
-                                    return Some(format!("{}\r{}", c.white(), accumulated_text));
+                                    return Some(format!(
+                                        "{}\x1b[0K\r{}",
+                                        c.white(),
+                                        accumulated_text
+                                    ));
                                 }
                                 // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                                 self.in_agent_message.borrow_mut().set(true);

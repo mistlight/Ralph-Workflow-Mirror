@@ -174,18 +174,24 @@ Fixes #42
 - What is the COMMON THREAD that connects these changes?
 
 **OUTPUT REQUIREMENT**: Respond with ONLY the commit message.
-- NO markdown fences (no ``` ``` )
-- NO explanations
-- NO "Here is the commit message:" prefix
+- NO markdown fences, explanations, "Here is" prefixes, analysis, numbered/bullet lists, or phrases like "Looking at this diff" or "I can see"
 - JUST the commit message itself
 
-Example of WRONG output:
+WRONG (with analysis):
+```
+Looking at this diff, I can see:
+1. Updated parser
+
+feat: add feature
+```
+
+WRONG (with prefix):
 ```
 Here is the commit message:
 feat: add feature
 ```
 
-Example of CORRECT output:
+CORRECT:
 feat: add feature"#
     )
 }

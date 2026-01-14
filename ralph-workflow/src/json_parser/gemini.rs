@@ -93,8 +93,9 @@ impl GeminiParser {
             GeminiEvent::Init {
                 session_id, model, ..
             } => {
-                // Clear accumulator on new session
+                // Clear accumulator and reset streaming state on new session
                 self.delta_accumulator.borrow_mut().clear();
+                self.in_delta_content.borrow_mut().set(false);
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                 let model_str = model.unwrap_or_else(|| "unknown".to_string());
                 format!(
@@ -133,9 +134,9 @@ impl GeminiParser {
 
                         // Only show prefix on the first delta chunk
                         if was_in_delta {
-                            // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                            // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
                             self.in_delta_content.borrow_mut().set(true);
-                            return Some(format!("{}\r{}", c.white(), accumulated_text));
+                            return Some(format!("{}\x1b[0K\r{}", c.white(), accumulated_text));
                         }
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                         self.in_delta_content.borrow_mut().set(true);
