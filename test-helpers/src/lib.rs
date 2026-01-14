@@ -62,6 +62,7 @@ pub fn commit_all(repo: &Repository, message: &str) -> Oid {
     }
 }
 
+#[allow(dead_code)]
 pub fn head_oid(repo: &Repository) -> String {
     repo.head()
         .ok()
