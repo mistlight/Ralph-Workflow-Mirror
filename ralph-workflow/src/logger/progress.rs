@@ -28,16 +28,16 @@ pub fn print_progress(current: u32, total: u32, label: &str) {
         return;
     }
 
-    let bar_width: u32 = 20;
+    let bar_width: usize = 20;
     let pct = (u64::from(current))
         .saturating_mul(100)
         .saturating_div(u64::from(total))
         .min(100) as u32;
     let filled = (u64::from(current))
-        .saturating_mul(u64::from(bar_width))
+        .saturating_mul(bar_width as u64)
         .saturating_div(u64::from(total))
-        .min(u64::from(bar_width)) as usize;
-    let empty = bar_width as usize - filled;
+        .min(bar_width as u64) as usize;
+    let empty = bar_width - filled;
 
     let bar: String = "█".repeat(filled) + &"░".repeat(empty);
 
@@ -64,16 +64,16 @@ mod tests {
         if total == 0 {
             return (0, String::new());
         }
-        let bar_width: u32 = 20;
+        let bar_width: usize = 20;
         let pct = (u64::from(current))
             .saturating_mul(100)
             .saturating_div(u64::from(total))
             .min(100) as u32;
         let filled = (u64::from(current))
-            .saturating_mul(u64::from(bar_width))
+            .saturating_mul(bar_width as u64)
             .saturating_div(u64::from(total))
-            .min(u64::from(bar_width)) as usize;
-        let empty = bar_width as usize - filled;
+            .min(bar_width as u64) as usize;
+        let empty = bar_width - filled;
         let bar: String = "█".repeat(filled) + &"░".repeat(empty);
         (pct, bar)
     }

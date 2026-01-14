@@ -326,8 +326,7 @@ mod tests {
         for pattern in git_command_patterns {
             assert!(
                 !orchestrator_prompt.contains(pattern),
-                "Orchestrator prompt contains git command pattern '{}'",
-                pattern
+                "Orchestrator prompt contains git command pattern '{pattern}'"
             );
         }
     }
