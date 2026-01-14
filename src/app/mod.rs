@@ -36,8 +36,9 @@ use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use crate::pipeline::{AgentPhaseGuard, Stats};
 use crate::timer::Timer;
 use crate::utils::{
-    clear_checkpoint, ensure_files, load_checkpoint, reset_context_for_isolation, save_checkpoint,
-    update_status, validate_prompt_md, Logger, PipelineCheckpoint, PipelinePhase,
+    clear_checkpoint, create_prompt_backup, ensure_files, load_checkpoint,
+    reset_context_for_isolation, save_checkpoint, update_status, validate_prompt_md, Logger,
+    PipelineCheckpoint, PipelinePhase,
 };
 use std::env;
 use std::process::Command;
@@ -302,6 +303,14 @@ fn run_pipeline(
     }
     if !prompt_validation.is_valid() {
         anyhow::bail!("PROMPT.md validation errors");
+    }
+
+    // Create a backup of PROMPT.md to protect against accidental deletion.
+    // This must happen after validation and before any agent phases begin.
+    // If PROMPT.md doesn't exist (e.g., non-interactive mode with missing file),
+    // create_prompt_backup() returns Ok(()) and does nothing.
+    if let Err(e) = create_prompt_backup() {
+        logger.warn(&format!("Failed to create PROMPT.md backup: {}. Continuing anyway.", e));
     }
 
     // Detect project stack and generate review guidelines

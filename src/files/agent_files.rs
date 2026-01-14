@@ -9,6 +9,9 @@ use std::fs::{self, File};
 use std::io::{self, BufRead};
 use std::path::Path;
 
+/// Path to the PROMPT.md backup file in the .agent directory.
+const PROMPT_BACKUP_PATH: &str = ".agent/PROMPT.md.backup";
+
 // Vague status line constants (for isolation mode)
 const VAGUE_STATUS_LINE: &str = "In progress.";
 const VAGUE_NOTES_LINE: &str = "Notes.";
@@ -20,6 +23,14 @@ pub const GENERATED_FILES: &[&str] = &[
     ".agent/PLAN.md",
     ".agent/commit-message.txt",
     ".agent/checkpoint.json.tmp",
+];
+
+/// Backup files that should persist and NOT be cleaned up.
+///
+/// These files are created to protect against accidental deletion
+/// and should remain available across pipeline runs.
+pub const BACKUP_FILES: &[&str] = &[
+    ".agent/PROMPT.md.backup",
 ];
 
 /// Overwrite a file with a single-line content.
@@ -271,6 +282,75 @@ pub fn write_commit_message_file(message: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// Create a backup of PROMPT.md to protect against accidental deletion.
+///
+/// This function copies PROMPT.md to `.agent/PROMPT.md.backup` and sets
+/// the backup file to read-only permissions to make accidental deletion harder.
+///
+/// # Behavior
+///
+/// - If PROMPT.md doesn't exist, returns `Ok(())` (nothing to backup)
+/// - Creates the `.agent` directory if it doesn't exist
+/// - Uses atomic write to ensure backup file integrity
+/// - Sets backup file to read-only (best-effort; failures don't error)
+/// - Overwrites existing backup if present
+///
+/// # Returns
+///
+/// Returns `Ok(())` if backup was created or PROMPT.md doesn't exist.
+/// Returns an error if the backup cannot be created.
+pub fn create_prompt_backup() -> io::Result<()> {
+    let prompt_path = Path::new("PROMPT.md");
+
+    // If PROMPT.md doesn't exist, that's fine - nothing to backup
+    if !prompt_path.exists() {
+        return Ok(());
+    }
+
+    // Ensure .agent directory exists
+    let backup_path = Path::new(PROMPT_BACKUP_PATH);
+    if let Some(parent) = backup_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Read PROMPT.md content
+    let content = fs::read_to_string(prompt_path).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("Failed to read PROMPT.md for backup: {}", e),
+        )
+    })?;
+
+    // Write backup atomically
+    integrity::write_file_atomic(backup_path, &content).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("Failed to write PROMPT.md backup: {}", e),
+        )
+    })?;
+
+    // Set read-only permissions (best-effort - don't fail if this fails)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(mut perms) = fs::metadata(backup_path).map(|m| m.permissions()) {
+            perms.set_mode(0o444); // Read-only for all
+            let _ = fs::set_permissions(backup_path, perms);
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, read-only is set via the readonly flag
+        if let Ok(mut perms) = fs::metadata(backup_path).map(|m| m.permissions()) {
+            perms.set_readonly(true);
+            let _ = fs::set_permissions(backup_path, perms);
+        }
+    }
+
+    Ok(())
+}
+
 /// Clean up all generated files.
 ///
 /// Removes temporary files that may have been left behind by an interrupted
@@ -424,6 +504,76 @@ mod tests {
             delete_issues_file_for_isolation(&logger).unwrap();
 
             assert!(!Path::new(".agent/ISSUES.md").exists());
+        });
+    }
+
+    // Tests for create_prompt_backup
+
+    #[test]
+    fn test_create_prompt_backup_creates_file() {
+        with_temp_cwd(|_dir| {
+            // Create a PROMPT.md
+            fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
+
+            // Create backup
+            create_prompt_backup().unwrap();
+
+            // Verify backup exists
+            assert!(Path::new(".agent/PROMPT.md.backup").exists());
+
+            // Verify backup content matches original
+            let original = fs::read_to_string("PROMPT.md").unwrap();
+            let backup = fs::read_to_string(".agent/PROMPT.md.backup").unwrap();
+            assert_eq!(original, backup);
+        });
+    }
+
+    #[test]
+    fn test_create_prompt_backup_handles_missing_prompt() {
+        with_temp_cwd(|_dir| {
+            // No PROMPT.md exists
+            assert!(!Path::new("PROMPT.md").exists());
+
+            // Should succeed without error
+            create_prompt_backup().unwrap();
+
+            // Backup should not be created
+            assert!(!Path::new(".agent/PROMPT.md.backup").exists());
+        });
+    }
+
+    #[test]
+    fn test_create_prompt_backup_idempotent() {
+        with_temp_cwd(|_dir| {
+            // Create a PROMPT.md
+            fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
+
+            // Create backup twice
+            create_prompt_backup().unwrap();
+            create_prompt_backup().unwrap();
+
+            // Backup should still exist with correct content
+            assert!(Path::new(".agent/PROMPT.md.backup").exists());
+            let original = fs::read_to_string("PROMPT.md").unwrap();
+            let backup = fs::read_to_string(".agent/PROMPT.md.backup").unwrap();
+            assert_eq!(original, backup);
+        });
+    }
+
+    #[test]
+    fn test_create_prompt_backup_overwrites_existing() {
+        with_temp_cwd(|_dir| {
+            // Create PROMPT.md and an old backup with different content
+            fs::write("PROMPT.md", "# New Content\n\nThis is the new content.").unwrap();
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/PROMPT.md.backup", "# Old Content\n\nOld backup.").unwrap();
+
+            // Create backup (should overwrite)
+            create_prompt_backup().unwrap();
+
+            // Verify backup has new content
+            let backup = fs::read_to_string(".agent/PROMPT.md.backup").unwrap();
+            assert_eq!(backup, "# New Content\n\nThis is the new content.");
         });
     }
 }
