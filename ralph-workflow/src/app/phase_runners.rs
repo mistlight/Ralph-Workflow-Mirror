@@ -4,9 +4,11 @@
 
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::Args;
+use crate::colors::Colors;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
-use crate::resume::{phase_rank, should_run_from};
 use std::process::Command;
+
+use super::resume::{phase_rank, should_run_from};
 
 /// Runs the development phase.
 pub fn run_development(
@@ -14,8 +16,7 @@ pub fn run_development(
     args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 1: Development", super::colors::Colors::blue);
+    ctx.logger.header("PHASE 1: Development", Colors::blue);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
     let resume_rank = resume_phase.map(phase_rank);
@@ -56,8 +57,7 @@ pub fn run_review_and_fix(
     _args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 2: Review & Fix", super::colors::Colors::magenta);
+    ctx.logger.header("PHASE 2: Review & Fix", Colors::magenta);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
 
@@ -111,7 +111,7 @@ pub fn run_final_validation(
 
     if !should_run_from(PipelinePhase::FinalValidation, resume_checkpoint) {
         ctx.logger
-            .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
+            .header("PHASE 3: Final Validation", Colors::yellow);
         ctx.logger
             .info("Skipping final validation (resuming from a later checkpoint phase)");
         return Ok(());
@@ -138,7 +138,7 @@ pub fn run_final_validation(
     }
 
     ctx.logger
-        .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
+        .header("PHASE 3: Final Validation", Colors::yellow);
     let display_cmd = crate::utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running full check: {}{}{}",
