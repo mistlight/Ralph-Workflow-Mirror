@@ -17,6 +17,7 @@ pub enum TemplateCategory {
     LanguageSpecific,
 }
 
+#[allow(dead_code)]
 impl TemplateCategory {
     /// Returns the display name for this category.
     pub fn name(self) -> &'static str {
