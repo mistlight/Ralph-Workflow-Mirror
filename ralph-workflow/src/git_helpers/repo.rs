@@ -1126,6 +1126,7 @@ fn generate_commit_message_with_retries(
                         format!("LLM timed out after {} attempts", max_retries),
                     ));
                 }
+                // Continue to next retry
             }
             Err(err @ CommitGenerationError::AgentFailed { .. }) => {
                 // Use error classification to decide whether to retry or fallback immediately
@@ -1159,7 +1160,15 @@ fn generate_commit_message_with_retries(
         }
     }
 
-    unreachable!("Loop should always return")
+    // All loop paths should return, but if we somehow exhaust retries without
+    // matching any of the error cases above, return a generic error.
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        format!(
+            "Failed to generate commit message after {} attempts",
+            max_retries
+        ),
+    ))
 }
 
 /// Combine messages from multiple chunks into a single commit message.
