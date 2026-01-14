@@ -848,8 +848,11 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let log_dir = temp.path().join("planning_1");
 
-        let json_log = r##"{"type": "system", "message": "starting"}
-{"type": "result", "result": "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests"}"##;
+        let json_log = concat!(
+            r##"{"type": "system", "message": "starting"}"##,
+            "\n",
+            r##"{"type": "result", "result": "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests"}"##
+        );
         create_log_file(&log_dir, "output.log", json_log);
 
         let result = extract_plan(&log_dir).unwrap();
@@ -1203,7 +1206,7 @@ This is a text-based plan without proper JSON wrapping but with enough content.
     fn test_extract_issues_no_issues_from_prefix() {
         let temp = TempDir::new().unwrap();
 
-        let json_log = r##"{"type": "result", "result": "No issues found. The code looks good."}"##;
+        let json_log = r#"{"type": "result", "result": "No issues found. The code looks good."}"#;
         fs::write(temp.path().join("reviewer_1_opus_0.log"), json_log).unwrap();
 
         let prefix = temp.path().join("reviewer_1");
