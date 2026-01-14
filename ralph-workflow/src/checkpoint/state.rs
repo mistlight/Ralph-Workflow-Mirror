@@ -293,7 +293,9 @@ mod tests {
             save_checkpoint(&checkpoint).unwrap();
             assert!(checkpoint_exists());
 
-            let loaded = load_checkpoint().unwrap().unwrap();
+            let loaded = load_checkpoint()
+                .unwrap()
+                .expect("checkpoint should exist after save_checkpoint");
             assert_eq!(loaded.phase, PipelinePhase::Review);
             assert_eq!(loaded.iteration, 5);
             assert_eq!(loaded.developer_agent, "claude");
