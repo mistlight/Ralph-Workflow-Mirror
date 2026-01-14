@@ -15,7 +15,8 @@
 //! directory, avoiding CLI dependencies.
 
 use super::repo::get_hooks_dir;
-use crate::utils::{file_contains_marker, Logger};
+use crate::files::file_contains_marker;
+use crate::logger::Logger;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -182,9 +183,8 @@ pub fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
 ///
 /// Does not log output; safe to call during cleanup.
 pub fn uninstall_hooks_silent() {
-    let hooks_dir = match get_hooks_dir() {
-        Ok(d) => d,
-        Err(_) => return,
+    let Ok(hooks_dir) = get_hooks_dir() else {
+        return;
     };
     if !hooks_dir.exists() {
         return;
@@ -193,7 +193,7 @@ pub fn uninstall_hooks_silent() {
     for hook_name in &["pre-commit", "pre-push"] {
         let hook_path = hooks_dir.join(hook_name);
         if hook_path.exists() && matches!(file_contains_marker(&hook_path, HOOK_MARKER), Ok(true)) {
-            let hook_path_abs = fs::canonicalize(&hook_path).unwrap_or(hook_path.clone());
+            let hook_path_abs = fs::canonicalize(&hook_path).unwrap_or_else(|_| hook_path.clone());
             let orig_path = PathBuf::from(format!("{}.ralph.orig", hook_path_abs.display()));
 
             if orig_path.exists() {

@@ -20,6 +20,7 @@
 //! This dual-mode support handles both legacy directory-based logs and the current
 //! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
 
+#![expect(clippy::cast_possible_truncation)]
 use serde_json::Value as JsonValue;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read};
@@ -159,10 +160,7 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     let mut result_count = 0;
 
     for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
+        let Ok(line) = line else { continue };
 
         // Skip non-JSON lines
         if !line.trim().starts_with('{') {
@@ -193,9 +191,9 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     // Log diagnostic info when multiple results were found
     if result_count > 1 {
         eprintln!(
-            "[result_extraction] Found {} result events in {:?}, selected result with score {} (length: {})",
+            "[result_extraction] Found {} result events in {}, selected result with score {} (length: {})",
             result_count,
-            path,
+            path.display(),
             best_score,
             best_result.as_ref().map_or(0, std::string::String::len)
         );
@@ -223,13 +221,14 @@ fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec
             continue;
         }
 
-        let file_name = match path.file_name().and_then(|s| s.to_str()) {
-            Some(name) => name,
-            None => continue,
+        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
         };
 
         // Match files like "planning_1_glm_0.log" when prefix is "planning_1"
-        if file_name.starts_with(&prefix_pattern) && file_name.ends_with(".log") {
+        if file_name.starts_with(&prefix_pattern)
+            && file_name.to_ascii_lowercase().ends_with(".log")
+        {
             log_files.push(path);
         }
     }
@@ -268,9 +267,8 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
             continue;
         }
 
-        let dir_name = match path.file_name().and_then(|s| s.to_str()) {
-            Some(name) => name,
-            None => continue,
+        let Some(dir_name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
         };
 
         // Match directories like "planning_1_ccs" when prefix is "planning_1"
@@ -319,7 +317,7 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     }
 
     // Strategy 2: Treat log_path as a prefix and search parent directory
-    let parent = log_path.parent().unwrap_or(Path::new("."));
+    let parent = log_path.parent().unwrap_or_else(|| Path::new("."));
     let prefix = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     if prefix.is_empty() {
@@ -533,6 +531,7 @@ pub fn extract_plan_from_text(content: &str) -> Option<String> {
 ///
 /// This is a final fallback for plaintext mode logs where the agent may have
 /// output a valid plan but without the expected markdown structure.
+#[expect(clippy::items_after_statements)]
 fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
     let content = content.trim();
 
@@ -666,7 +665,7 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
     }
 
     // Strategy 2: Treat log_path as a prefix and search parent directory
-    let parent = log_path.parent().unwrap_or(Path::new("."));
+    let parent = log_path.parent().unwrap_or_else(|| Path::new("."));
     let prefix = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     if prefix.is_empty() {
@@ -780,6 +779,7 @@ fn validate_issues_content(content: &str) -> (bool, Option<String>) {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like a valid plan)
 /// - Warning message (if validation failed)
+#[expect(clippy::option_if_let_else)]
 pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
@@ -812,6 +812,7 @@ pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like valid issues)
 /// - Warning message (if validation failed)
+#[expect(clippy::option_if_let_else)]
 pub fn extract_issues(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
@@ -1165,7 +1166,7 @@ Step 2: Add tests and documentation
         let temp = TempDir::new().unwrap();
 
         // Create log file with no JSON result event, but text plan content
-        let text_log = r"[agent] Starting...
+        let text_log = "[agent] Starting...
 [agent] Thinking about the plan...
 ## Summary
 This is a text-based plan without proper JSON wrapping but with enough content.
@@ -1252,7 +1253,7 @@ This is a text-based plan without proper JSON wrapping but with enough content.
         fs::create_dir(&subdir).unwrap();
 
         // Create log file with text plan content (no JSON result event)
-        let text_log = r"[agent] Starting...
+        let text_log = "[agent] Starting...
 ## Summary
 This is a text-based plan from nested subdirectory with enough content to pass validation.
 
@@ -1340,7 +1341,7 @@ This is a text-based plan from nested subdirectory with enough content to pass v
     #[test]
     fn test_extract_plan_from_text_permissive_no_markers() {
         // Plaintext content without markdown markers but with plan keywords
-        let content = r"I need to implement a new feature for the user authentication system.
+        let content = "I need to implement a new feature for the user authentication system.
 First, I will create a new module that handles the login logic.
 Then, I will add functions for password validation and session management.
 Finally, I will write tests to ensure everything works correctly.
@@ -1393,7 +1394,7 @@ The module will integrate with the existing database layer."#;
     #[test]
     fn test_extract_plan_from_text_permissive_no_plan_keywords() {
         // Substantial content without plan-like keywords (avoiding: step, implement, create, add, build, develop, write, then, etc.)
-        let content = r"The quick brown fox jumps over the lazy dog repeatedly.
+        let content = "The quick brown fox jumps over the lazy dog repeatedly.
 This text was composed to be long enough to pass the length requirement.
 It avoids using technical terminology that might trigger extraction.
 Instead we just talk about random things like animals and weather.
@@ -1413,7 +1414,7 @@ A sunny day with blue skies makes for perfect conditions to observe nature.";
     #[test]
     fn test_extract_plan_from_text_permissive_filters_debug_output() {
         // Content with debug/tool markers
-        let content = r"[debug] Starting the process
+        let content = "[debug] Starting the process
 I need to develop the new module by writing code for authentication.
 [tool] Reading file: src/main.rs
 Then I must add functions for handling user sessions and password hashing.
@@ -1438,7 +1439,7 @@ Finally, I must verify everything works correctly through comprehensive testing.
         let temp = TempDir::new().unwrap();
 
         // Create log file with plaintext plan (no JSON result events, no markdown markers)
-        let text_log = r"The agent needs to implement a user authentication feature.
+        let text_log = "The agent needs to implement a user authentication feature.
 Step 1: Create a new auth module with login and registration functions.
 Step 2: Add password hashing using bcrypt for security.
 Step 3: Implement JWT token generation for session management.
@@ -1460,7 +1461,7 @@ Step 5: Write comprehensive tests for all auth functionality.";
     #[test]
     fn test_extract_plan_from_text_markers_take_precedence() {
         // When markdown markers exist, they should take precedence over permissive extraction
-        let content = r"Some initial text without structure.
+        let content = "Some initial text without structure.
 ## Summary
 This is the structured plan that should be extracted.
 The permissive fallback should not be used when markers are present.
@@ -1484,7 +1485,7 @@ The permissive fallback should not be used when markers are present.
         // Simulate the exact bug scenario:
         // Multiple log files where earlier files have complete plans,
         // later files have only partial/truncated plans
-        let log1_content = r"Agent output...
+        let log1_content = "Agent output...
 ## Summary
 
 Fix an indeterministic bug where PLAN.md sometimes contains only the last few paragraphs instead of the complete plan.
@@ -1503,13 +1504,13 @@ Step 5: Add diagnostic logging for debugging
 2. src/phases/development.rs - Calls the extraction functions
 ";
 
-        let log2_content = r"More agent output...
+        let log2_content = "More agent output...
 ## Summary
 
 This is a truncated plan that only has a summary section.
 ";
 
-        let log3_content = r"Even more output...
+        let log3_content = "Even more output...
 ## Summary
 
 Just a short paragraph at the end.

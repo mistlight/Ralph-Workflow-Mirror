@@ -53,26 +53,16 @@ pub fn prompt_for_agent(
 ) -> String {
     match (role, action) {
         (_, Action::Plan) => prompt_plan(prompt_md_content),
-        (Role::Developer, Action::Iterate) => prompt_developer_iteration(
+        (Role::Developer | Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
             iteration.unwrap_or(1),
             total_iterations.unwrap_or(1),
             context,
         ),
-        (Role::Reviewer, Action::Review) => {
-            // Use guidelines-enhanced prompt if guidelines are available
-            if let Some(g) = guidelines {
-                prompt_reviewer_review_with_guidelines(context, g)
-            } else {
-                prompt_reviewer_review(context)
-            }
-        }
+        (Role::Reviewer, Action::Review) => guidelines.map_or_else(
+            || prompt_reviewer_review(context),
+            |g| prompt_reviewer_review_with_guidelines(context, g),
+        ),
         (_, Action::Fix) => prompt_fix(),
-        // Fallback for Reviewer + Iterate (shouldn't happen but be safe)
-        (Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
-            iteration.unwrap_or(1),
-            total_iterations.unwrap_or(1),
-            context,
-        ),
         // Fallback for Developer + Review (shouldn't happen but be safe)
         (Role::Developer, Action::Review) => prompt_reviewer_review(context),
     }

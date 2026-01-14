@@ -19,7 +19,7 @@ use crate::timer::Timer;
 /// * `colors` - Color configuration for terminal output
 /// * `developer_agent` - Name of the developer agent
 /// * `reviewer_agent` - Name of the reviewer agent
-pub fn print_welcome_banner(colors: &Colors, developer_agent: &str, reviewer_agent: &str) {
+pub fn print_welcome_banner(colors: Colors, developer_agent: &str, reviewer_agent: &str) {
     println!();
     println!(
         "{}{}╭────────────────────────────────────────────────────────────╮{}",
@@ -76,7 +76,7 @@ pub fn print_welcome_banner(colors: &Colors, developer_agent: &str, reviewer_age
 /// * `stats` - Statistics collected during the pipeline run
 /// * `logger` - Logger for final success message
 pub fn print_final_summary(
-    colors: &Colors,
+    colors: Colors,
     config: &Config,
     timer: &Timer,
     stats: &Stats,
@@ -142,7 +142,7 @@ pub fn print_final_summary(
 }
 
 /// Print review metrics summary.
-fn print_review_metrics(colors: &Colors, config: &Config, metrics: &ReviewMetrics) {
+fn print_review_metrics(colors: Colors, config: &Config, metrics: &ReviewMetrics) {
     if !metrics.issues_file_found {
         return;
     }
@@ -212,7 +212,7 @@ fn print_review_metrics(colors: &Colors, config: &Config, metrics: &ReviewMetric
 }
 
 /// Print the output files list.
-fn print_output_files(colors: &Colors, config: &Config) {
+fn print_output_files(colors: Colors, config: &Config) {
     println!(
         "{}{}📁 Output Files{}",
         colors.bold(),

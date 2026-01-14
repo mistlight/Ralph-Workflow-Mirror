@@ -173,10 +173,7 @@ pub fn detect_stack(root: &Path) -> io::Result<ProjectStack> {
 
 /// Detect stack and return a summary string (for display in banner)
 pub fn detect_stack_summary(root: &Path) -> String {
-    match detect_stack(root) {
-        Ok(stack) => stack.summary(),
-        Err(_) => "Unknown".to_string(),
-    }
+    detect_stack(root).map_or_else(|_| "Unknown".to_string(), |stack| stack.summary())
 }
 
 #[cfg(test)]

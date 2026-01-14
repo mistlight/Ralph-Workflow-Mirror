@@ -141,13 +141,17 @@ impl ReviewMetrics {
 
     /// Get unresolved critical/high issues count
     pub(crate) fn unresolved_blocking_issues(&self) -> u32 {
-        self.issues
-            .iter()
-            .filter(|i| {
-                !i.resolved
-                    && (i.severity == IssueSeverity::Critical || i.severity == IssueSeverity::High)
-            })
-            .count() as u32
+        u32::try_from(
+            self.issues
+                .iter()
+                .filter(|i| {
+                    !i.resolved
+                        && (i.severity == IssueSeverity::Critical
+                            || i.severity == IssueSeverity::High)
+                })
+                .count(),
+        )
+        .unwrap_or(u32::MAX)
     }
 
     /// Format as a summary string

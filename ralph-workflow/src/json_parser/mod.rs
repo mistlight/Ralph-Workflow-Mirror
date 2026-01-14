@@ -50,9 +50,5 @@ pub use codex::CodexParser;
 pub use gemini::GeminiParser;
 pub use opencode::OpenCodeParser;
 
-// Re-export format_tool_input for tests
-#[cfg(test)]
-pub use types::format_tool_input;
-
 #[cfg(test)]
 mod tests;

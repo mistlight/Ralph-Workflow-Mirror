@@ -6,6 +6,9 @@
 //! - Provider-level fallback (try different models within same agent)
 //! - Exponential backoff with cycling
 
+#![expect(clippy::cast_possible_truncation)]
+#![expect(clippy::cast_sign_loss)]
+
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -134,9 +137,24 @@ impl FallbackConfig {
     /// Calculate exponential backoff delay for a given cycle.
     ///
     /// Uses the formula: min(base * multiplier^cycle, `max_backoff`)
+    ///
+    /// Uses integer arithmetic to avoid floating-point casting issues.
     pub fn calculate_backoff(&self, cycle: u32) -> u64 {
-        let delay = self.retry_delay_ms as f64 * self.backoff_multiplier.powi(cycle as i32);
-        (delay as u64).min(self.max_backoff_ms)
+        // Convert multiplier to a fraction (e.g., 2.0 -> 200/100, 1.5 -> 150/100)
+        // This avoids floating-point arithmetic entirely
+        let multiplier_hundredths = (self.backoff_multiplier * 100.0).round() as u64;
+        let base_hundredths = self.retry_delay_ms.saturating_mul(100);
+
+        // Calculate: base * (multiplier^cycle) / 100^cycle
+        // Use saturating arithmetic to avoid overflow
+        let mut delay_hundredths = base_hundredths;
+        for _ in 0..cycle {
+            delay_hundredths = delay_hundredths.saturating_mul(multiplier_hundredths);
+            delay_hundredths = delay_hundredths.saturating_div(100);
+        }
+
+        // Convert back to milliseconds
+        delay_hundredths.div_euclid(100).min(self.max_backoff_ms)
     }
 
     /// Get fallback agents for a role.
@@ -165,10 +183,9 @@ impl FallbackConfig {
 
     /// Check if provider-level fallback is configured for an agent.
     pub fn has_provider_fallbacks(&self, agent_name: &str) -> bool {
-        match self.provider_fallback.get(agent_name) {
-            Some(v) => !v.is_empty(),
-            None => false,
-        }
+        self.provider_fallback
+            .get(agent_name)
+            .is_some_and(|v| !v.is_empty())
     }
 }
 
@@ -184,6 +201,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_fallback_config_defaults() {
         let config = FallbackConfig::default();
         assert!(config.developer.is_empty());

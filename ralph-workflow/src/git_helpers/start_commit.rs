@@ -199,6 +199,7 @@ fn has_start_commit() -> bool {
 }
 
 /// Convert git2 error to `io::Error`.
+#[expect(clippy::needless_pass_by_value)]
 fn to_io_error(err: git2::Error) -> io::Error {
     io::Error::other(err.to_string())
 }

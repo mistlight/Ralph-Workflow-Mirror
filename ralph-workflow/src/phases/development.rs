@@ -7,16 +7,16 @@
 //! 3. Deletes PLAN.md
 //! 4. Optionally runs fast checks
 
+#![expect(clippy::too_many_lines)]
 use crate::agents::AgentRole;
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::files::{delete_plan_file, update_status};
 use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_needed};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
+use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
-use crate::utils::{
-    delete_plan_file, print_progress, save_checkpoint, update_status, PipelineCheckpoint,
-    PipelinePhase,
-};
 use std::fs;
 use std::path::Path;
 use std::process::Command;

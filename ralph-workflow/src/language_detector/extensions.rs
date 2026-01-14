@@ -10,10 +10,8 @@ pub fn extension_to_language(ext: &str) -> Option<&'static str> {
         // Python
         "py" | "pyw" | "pyi" => Some("Python"),
         // JavaScript/TypeScript
-        "js" | "mjs" | "cjs" => Some("JavaScript"),
-        "ts" | "mts" | "cts" => Some("TypeScript"),
-        "jsx" => Some("JavaScript"),
-        "tsx" => Some("TypeScript"),
+        "js" | "mjs" | "cjs" | "jsx" => Some("JavaScript"),
+        "ts" | "mts" | "cts" | "tsx" => Some("TypeScript"),
         // Go
         "go" => Some("Go"),
         // Java

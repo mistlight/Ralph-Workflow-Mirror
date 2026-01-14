@@ -194,7 +194,7 @@ pub fn validate_can_commit(
 ///
 /// * `registry` - The agent registry
 /// * `colors` - Color configuration for output
-pub fn validate_agent_chains(registry: &AgentRegistry, colors: &Colors) {
+pub fn validate_agent_chains(registry: &AgentRegistry, colors: Colors) {
     if let Err(msg) = registry.validate_agent_chains() {
         eprintln!();
         eprintln!(
@@ -252,7 +252,7 @@ mod tests {
             can_commit: false,
             ..CcsConfig::default()
         };
-        registry.set_ccs_aliases(HashMap::new(), defaults);
+        registry.set_ccs_aliases(&HashMap::new(), defaults);
 
         let config = Config {
             developer_cmd: None,

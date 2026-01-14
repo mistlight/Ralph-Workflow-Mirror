@@ -4,6 +4,8 @@
 //! recovery strategies when agents fail. Different error types warrant
 //! different responses: retry, fallback to another agent, or abort.
 
+#![expect(clippy::too_many_lines)]
+
 /// Check if an agent name or command string indicates a GLM-like agent.
 ///
 /// GLM-like agents include GLM, `ZhipuAI`, ZAI, Qwen, and `DeepSeek`.
@@ -66,7 +68,7 @@ pub enum AgentErrorKind {
 
 impl AgentErrorKind {
     /// Determine if this error should trigger a retry.
-    pub const fn should_retry(&self) -> bool {
+    pub const fn should_retry(self) -> bool {
         matches!(
             self,
             Self::RateLimited
@@ -79,7 +81,7 @@ impl AgentErrorKind {
     }
 
     /// Determine if this error should trigger a fallback to another agent.
-    pub const fn should_fallback(&self) -> bool {
+    pub const fn should_fallback(self) -> bool {
         matches!(
             self,
             Self::TokenExhausted
@@ -92,40 +94,39 @@ impl AgentErrorKind {
     }
 
     /// Determine if this error is unrecoverable (should abort).
-    pub const fn is_unrecoverable(&self) -> bool {
+    pub const fn is_unrecoverable(self) -> bool {
         matches!(self, Self::DiskFull | Self::Permanent)
     }
 
     /// Check if this is a command not found error.
-    pub const fn is_command_not_found(&self) -> bool {
+    pub const fn is_command_not_found(self) -> bool {
         matches!(self, Self::CommandNotFound)
     }
 
     /// Check if this is a network-related error.
-    pub const fn is_network_error(&self) -> bool {
+    pub const fn is_network_error(self) -> bool {
         matches!(self, Self::NetworkError | Self::Timeout)
     }
 
     /// Check if this error might be resolved by reducing context size.
-    pub const fn suggests_smaller_context(&self) -> bool {
+    pub const fn suggests_smaller_context(self) -> bool {
         matches!(self, Self::TokenExhausted | Self::ProcessKilled)
     }
 
     /// Get suggested wait time in milliseconds before retry.
-    pub const fn suggested_wait_ms(&self) -> u64 {
+    pub const fn suggested_wait_ms(self) -> u64 {
         match self {
-            Self::RateLimited => 5000,    // Rate limit: wait 5 seconds
-            Self::ApiUnavailable => 3000, // Server issue: wait 3 seconds
-            Self::NetworkError => 2000,   // Network: wait 2 seconds
-            Self::Timeout => 1000,        // Timeout: short wait
-            Self::InvalidResponse => 500, // Bad response: quick retry
-            Self::Transient => 1000,      // Transient: 1 second
-            _ => 0,                       // No wait for non-retryable errors
+            Self::RateLimited => 5000,               // Rate limit: wait 5 seconds
+            Self::ApiUnavailable => 3000,            // Server issue: wait 3 seconds
+            Self::NetworkError => 2000,              // Network: wait 2 seconds
+            Self::Timeout | Self::Transient => 1000, // Timeout/Transient: short wait
+            Self::InvalidResponse => 500,            // Bad response: quick retry
+            _ => 0,                                  // No wait for non-retryable errors
         }
     }
 
     /// Get a user-friendly description of this error type.
-    pub const fn description(&self) -> &'static str {
+    pub const fn description(self) -> &'static str {
         match self {
             Self::RateLimited => "API rate limit exceeded",
             Self::TokenExhausted => "Token/context limit exceeded",
@@ -145,7 +146,7 @@ impl AgentErrorKind {
     }
 
     /// Get recovery advice for this error type.
-    pub const fn recovery_advice(&self) -> &'static str {
+    pub const fn recovery_advice(self) -> &'static str {
         match self {
             Self::RateLimited => {
                 "Will retry after delay. Tip: Consider reducing request frequency or using a different provider."

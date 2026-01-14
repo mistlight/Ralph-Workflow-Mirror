@@ -6,7 +6,7 @@ use super::types::OpenCodeProviderType;
 
 impl OpenCodeProviderType {
     /// Get example models for this provider type.
-    pub const fn example_models(&self) -> &'static [&'static str] {
+    pub const fn example_models(self) -> &'static [&'static str] {
         match self {
             Self::OpenCodeZen => &["opencode/glm-4.7-free", "opencode/claude-sonnet-4"],
             Self::ZaiDirect => &["zai/glm-4.7", "zai/glm-4.5", "zhipuai/glm-4.7"],

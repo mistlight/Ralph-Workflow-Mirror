@@ -39,7 +39,6 @@ impl JsonParserType {
             "codex" => Self::Codex,
             "gemini" => Self::Gemini,
             "opencode" => Self::OpenCode,
-            "generic" | "none" | "raw" => Self::Generic,
             _ => Self::Generic,
         }
     }

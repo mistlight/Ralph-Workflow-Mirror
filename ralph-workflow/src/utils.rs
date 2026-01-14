@@ -21,30 +21,20 @@ use std::io;
 use regex::Regex;
 
 // Re-exports from checkpoint module
-pub use crate::checkpoint::{
-    checkpoint_exists, clear_checkpoint, load_checkpoint, save_checkpoint, PipelineCheckpoint,
-    PipelinePhase,
-};
+// Note: Most checkpoint items are now imported directly from crate::checkpoint
 
 // Re-exports from logger module
-pub use crate::logger::{print_progress, Logger};
 pub use crate::logger::{strip_ansi_codes, timestamp};
 
 // Re-exports from files module
-pub use crate::files::{
-    clean_context_for_reviewer, cleanup_generated_files, create_prompt_backup,
-    delete_commit_message_file, delete_issues_file_for_isolation, delete_plan_file, ensure_files,
-    file_contains_marker, make_prompt_read_only, read_commit_message_file,
-    reset_context_for_isolation, update_status, validate_prompt_md, write_commit_message_file,
-};
-pub use crate::files::{PromptValidationResult, GENERATED_FILES};
+pub use crate::files::{cleanup_generated_files, PromptValidationResult, GENERATED_FILES};
 
 // Keep backward-compatibility re-exports "used" without suppressing lints.
 const _: () = {
-    let _strip_ansi_codes: fn(&str) -> String = strip_ansi_codes;
-    let _timestamp: fn() -> String = timestamp;
-    let _generated_files = GENERATED_FILES;
-    let _prompt_validation_result_size = std::mem::size_of::<PromptValidationResult>();
+    let _ = strip_ansi_codes as fn(&str) -> String;
+    let _ = timestamp as fn() -> String;
+    let _ = GENERATED_FILES;
+    let _ = std::mem::size_of::<PromptValidationResult>();
 };
 
 /// Split a shell-like command string into argv parts.
@@ -122,10 +112,10 @@ fn redact_arg_value(key: &str, value: &str) -> String {
     if is_sensitive_key(key) {
         return "<redacted>".to_string();
     }
-    match SECRET_LIKE_RE.as_ref() {
-        Some(re) => re.replace_all(value, "<redacted>").to_string(),
-        None => value.to_string(),
-    }
+    SECRET_LIKE_RE.as_ref().map_or_else(
+        || value.to_string(),
+        |re| re.replace_all(value, "<redacted>").to_string(),
+    )
 }
 
 fn shell_quote_for_log(arg: &str) -> String {
@@ -178,10 +168,10 @@ pub fn format_argv_for_log(argv: &[String]) -> String {
             continue;
         }
 
-        let redacted = match SECRET_LIKE_RE.as_ref() {
-            Some(re) => re.replace_all(arg, "<redacted>").to_string(),
-            None => arg.clone(),
-        };
+        let redacted = SECRET_LIKE_RE.as_ref().map_or_else(
+            || arg.clone(),
+            |re| re.replace_all(arg, "<redacted>").to_string(),
+        );
         out.push(shell_quote_for_log(&redacted));
     }
 

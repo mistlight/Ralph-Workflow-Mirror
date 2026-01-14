@@ -399,14 +399,14 @@ fn expand_user_path(path: &str) -> PathBuf {
             return home.join(rest);
         }
     }
-    // For relative paths, resolve them relative to the .ccs directory
-    let path_buf = PathBuf::from(path);
-    if path_buf.is_relative() {
-        if let Some(ccs_dir) = ccs_dir() {
-            return ccs_dir.join(path_buf);
+    // Relative paths are resolved relative to the CCS directory
+    if let Some(ccs_dir) = ccs_dir() {
+        // If path is not absolute and doesn't start with ~, it's a relative path
+        if !(path.starts_with('/') || cfg!(windows) && path.chars().nth(1) == Some(':')) {
+            return ccs_dir.join(path);
         }
     }
-    path_buf
+    PathBuf::from(path)
 }
 
 fn find_env_object(json: &JsonValue) -> Option<&serde_json::Map<String, JsonValue>> {
@@ -769,8 +769,10 @@ impl From<AgentConfigToml> for AgentConfig {
     fn from(toml: AgentConfigToml) -> Self {
         // Loading CCS env vars is best-effort: registry initialization should not fail
         // just because a CCS profile is missing or misconfigured.
-        let ccs_env_vars = match toml.ccs_profile.as_deref() {
-            Some(profile) => match load_ccs_env_vars(profile) {
+        let ccs_env_vars = toml
+            .ccs_profile
+            .as_deref()
+            .map_or_else(HashMap::new, |profile| match load_ccs_env_vars(profile) {
                 Ok(vars) => vars,
                 Err(err) => {
                     eprintln!(
@@ -778,9 +780,7 @@ impl From<AgentConfigToml> for AgentConfig {
                     );
                     HashMap::new()
                 }
-            },
-            None => HashMap::new(),
-        };
+            });
 
         // Merge manually specified env vars with CCS env vars
         // CCS env vars take precedence (as documented in ccs_profile field)
@@ -882,9 +882,8 @@ mod ccs_env_tests {
         let ccs_dir = home.join(".ccs");
         fs::create_dir_all(&ccs_dir).unwrap();
 
-        let settings_path = ccs_dir.join("custom.settings.json");
         fs::write(
-            &settings_path,
+            ccs_dir.join("custom.settings.json"),
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://yaml-test","ANTHROPIC_MODEL":"test-model"}}"#,
         )
         .unwrap();
@@ -921,9 +920,8 @@ profiles:
         let ccs_dir = home.join(".ccs");
         fs::create_dir_all(&ccs_dir).unwrap();
 
-        let settings_path = ccs_dir.join("indent.settings.json");
         fs::write(
-            &settings_path,
+            ccs_dir.join("indent.settings.json"),
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://indent-test","ANTHROPIC_MODEL":"indent-model"}}"#,
         )
         .unwrap();
@@ -997,7 +995,7 @@ profiles:
             CcsEnvVarsError::ProfileNotFound { profile, .. } => {
                 assert_eq!(profile, "nonexistent");
             }
-            _ => assert!(false, "Expected ProfileNotFound error"),
+            _ => panic!("Expected ProfileNotFound error"),
         }
     }
 
@@ -1048,7 +1046,7 @@ profiles:
 
         match result.unwrap_err() {
             CcsEnvVarsError::MissingEnv { .. } => {}
-            _ => assert!(false, "Expected MissingEnv error"),
+            _ => panic!("Expected MissingEnv error"),
         }
     }
 
@@ -1062,7 +1060,7 @@ profiles:
             CcsEnvVarsError::InvalidProfile { profile } => {
                 assert_eq!(profile, "");
             }
-            _ => assert!(false, "Expected InvalidProfile error"),
+            _ => panic!("Expected InvalidProfile error"),
         }
     }
 

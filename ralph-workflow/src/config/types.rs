@@ -58,7 +58,7 @@ impl ReviewDepth {
     }
 
     /// Get a description for display.
-    pub(crate) const fn description(&self) -> &'static str {
+    pub(crate) const fn description(self) -> &'static str {
         match self {
             Self::Standard => "Balanced review covering functionality, quality, and security",
             Self::Comprehensive => "In-depth analysis with priority-ordered checks",
@@ -120,17 +120,17 @@ impl Verbosity {
     /// # Returns
     ///
     /// The maximum number of characters to display for the given content type.
-    pub(crate) fn truncate_limit(&self, content_type: &str) -> usize {
-        truncation::get_limit(*self as u8, content_type)
+    pub(crate) fn truncate_limit(self, content_type: &str) -> usize {
+        truncation::get_limit(self as u8, content_type)
     }
 
     /// Returns true if this verbosity level should show debug information.
-    pub(crate) const fn is_debug(&self) -> bool {
+    pub(crate) const fn is_debug(self) -> bool {
         matches!(self, Self::Debug)
     }
 
     /// Returns true if this verbosity level is at least Verbose.
-    pub(crate) const fn is_verbose(&self) -> bool {
+    pub(crate) const fn is_verbose(self) -> bool {
         matches!(self, Self::Verbose | Self::Full | Self::Debug)
     }
 
@@ -138,7 +138,7 @@ impl Verbosity {
     ///
     /// Tool inputs provide crucial context for understanding what the agent is doing.
     /// They are shown at Normal level and above for better usability.
-    pub(crate) const fn show_tool_input(&self) -> bool {
+    pub(crate) const fn show_tool_input(self) -> bool {
         !matches!(self, Self::Quiet)
     }
 }
@@ -149,6 +149,7 @@ impl Verbosity {
 /// environment variables and CLI arguments. Default values are applied
 /// via [`Default::default()`].
 #[derive(Debug, Clone)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct Config {
     /// Developer (driver) agent (set via CLI, env, or `agent_chain`)
     pub(crate) developer_agent: Option<String>,

@@ -3,6 +3,7 @@
 //! This module handles creation, modification, and cleanup of files
 //! in the `.agent/` directory that are used during pipeline execution.
 
+#![expect(clippy::unnecessary_debug_formatting)]
 use crate::files::{integrity, recovery};
 use crate::logger::Logger;
 use std::fs::{self, File};
@@ -421,12 +422,12 @@ pub fn cleanup_generated_files() {
 /// Returns `Ok(Option<String>)` where:
 /// - `Ok(None)` - permissions set successfully or file doesn't exist
 /// - `Ok(Some(warning))` - couldn't set read-only permissions
-pub fn make_prompt_read_only() -> io::Result<Option<String>> {
+pub fn make_prompt_read_only() -> Option<String> {
     let prompt_path = Path::new("PROMPT.md");
 
     // If PROMPT.md doesn't exist, that's fine - nothing to protect
     if !prompt_path.exists() {
-        return Ok(None);
+        return None;
     }
 
     // Try to set read-only permissions and track any failure
@@ -467,7 +468,7 @@ pub fn make_prompt_read_only() -> io::Result<Option<String>> {
         }
     }
 
-    Ok(readonly_warning)
+    readonly_warning
 }
 
 #[cfg(test)]
@@ -775,7 +776,7 @@ mod tests {
             fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
 
             // Make it read-only
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
 
             // On Unix, verify permissions are read-only
             #[cfg(unix)]
@@ -805,7 +806,7 @@ mod tests {
             assert!(!Path::new("PROMPT.md").exists());
 
             // Should succeed without error
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
         });
     }
 
@@ -816,8 +817,8 @@ mod tests {
             fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
 
             // Make it read-only twice
-            make_prompt_read_only().unwrap();
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
+            make_prompt_read_only();
 
             // File should still exist and be readable
             let content = fs::read_to_string("PROMPT.md").unwrap();

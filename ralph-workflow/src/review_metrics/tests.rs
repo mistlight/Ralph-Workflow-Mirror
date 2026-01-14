@@ -50,7 +50,7 @@ fn test_parse_resolved_issue() {
 
 #[test]
 fn test_parse_multiple_issues() {
-    let content = r"# Issues
+    let content = "# Issues
 
 - [ ] Critical: [main.rs:1] SQL injection vulnerability
 - [x] High: [auth.rs:50] Password hash weakness
@@ -70,7 +70,7 @@ fn test_parse_multiple_issues() {
 
 #[test]
 fn test_unresolved_blocking_issues() {
-    let content = r"
+    let content = "
 - [ ] Critical: Unresolved critical
 - [x] Critical: Resolved critical
 - [ ] High: Unresolved high
@@ -84,7 +84,7 @@ fn test_unresolved_blocking_issues() {
 
 #[test]
 fn test_summary_format() {
-    let content = r"
+    let content = "
 - [ ] Critical: Issue 1
 - [x] High: Issue 2
 ";
@@ -182,7 +182,7 @@ fn test_parse_all_issues_resolved_declaration() {
 #[test]
 fn test_parse_plain_list_items() {
     // Test parsing list items without checkboxes
-    let content = r"
+    let content = "
 # Issues
 
 - Critical: Security vulnerability
@@ -200,7 +200,7 @@ fn test_parse_plain_list_items() {
 #[test]
 fn test_parse_mixed_format() {
     // Test mixed checkbox and plain list items
-    let content = r"
+    let content = "
 - [ ] Critical: Unresolved critical issue
 - [x] High: Resolved high issue
 - Medium: Plain list medium issue
@@ -230,7 +230,7 @@ fn test_parse_nested_file_paths() {
 
 #[test]
 fn test_unresolved_issues_count() {
-    let content = r"
+    let content = "
 - [ ] Critical: Issue 1
 - [x] High: Issue 2
 - [ ] Medium: Issue 3
@@ -244,7 +244,7 @@ fn test_unresolved_issues_count() {
 #[test]
 fn test_has_blocking_issues_only_critical_high() {
     // Medium and low issues shouldn't be blocking
-    let content = r"
+    let content = "
 - [ ] Medium: Code style issue
 - [ ] Low: Minor improvement needed
 ";
@@ -257,7 +257,7 @@ fn test_has_blocking_issues_only_critical_high() {
 #[test]
 fn test_has_blocking_issues_with_resolved_critical() {
     // Resolved critical/high issues shouldn't be blocking
-    let content = r"
+    let content = "
 - [x] Critical: Fixed security issue
 - [x] High: Fixed memory leak
 - [ ] Medium: Pending style fix
@@ -269,7 +269,7 @@ fn test_has_blocking_issues_with_resolved_critical() {
 
 #[test]
 fn test_resolution_rate_partial() {
-    let content = r"
+    let content = "
 - [x] Critical: Fixed
 - [ ] High: Pending
 - [x] Medium: Fixed
@@ -283,7 +283,7 @@ fn test_resolution_rate_partial() {
 
 #[test]
 fn test_resolution_rate_all_resolved() {
-    let content = r"
+    let content = "
 - [x] Critical: Fixed
 - [x] High: Fixed
 ";
@@ -309,7 +309,7 @@ fn test_detailed_summary_no_issues() {
 
 #[test]
 fn test_detailed_summary_with_issues() {
-    let content = r"
+    let content = "
 - [ ] Critical: Security issue
 - [ ] High: Bug
 - [x] Medium: Fixed style
@@ -345,7 +345,7 @@ fn test_malformed_file_reference() {
 
 #[test]
 fn test_whitespace_handling() {
-    let content = r"
+    let content = "
     - [ ]   Critical:   [  file.rs:10  ]   Spaced issue
 
 ";

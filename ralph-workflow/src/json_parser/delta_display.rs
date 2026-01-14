@@ -23,7 +23,7 @@ impl DeltaDisplayFormatter {
     /// Format thinking content specifically
     ///
     /// Thinking content has special formatting to distinguish it from regular text.
-    pub fn format_thinking(&self, content: &str, prefix: &str, colors: &Colors) -> String {
+    pub fn format_thinking(&self, content: &str, prefix: &str, colors: Colors) -> String {
         if self.mark_partial {
             format!(
                 "{}[{}]{} {}Thinking: {}{}{}\n",
@@ -52,7 +52,7 @@ impl DeltaDisplayFormatter {
     /// Format tool input specifically
     ///
     /// Tool input is shown with appropriate styling.
-    pub fn format_tool_input(&self, content: &str, prefix: &str, colors: &Colors) -> String {
+    pub fn format_tool_input(&self, content: &str, prefix: &str, colors: Colors) -> String {
         if self.mark_partial {
             format!(
                 "{}[{}]{} {}  └─ {}{}{}\n",
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_format_thinking_content() {
         let formatter = DeltaDisplayFormatter::new();
-        let output = formatter.format_thinking("Thinking about this", "Claude", &test_colors());
+        let output = formatter.format_thinking("Thinking about this", "Claude", test_colors());
         assert!(output.contains("Thinking"));
         assert!(output.contains("Thinking about this"));
     }
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn test_format_tool_input() {
         let formatter = DeltaDisplayFormatter::new();
-        let output = formatter.format_tool_input("command=ls -la", "Claude", &test_colors());
+        let output = formatter.format_tool_input("command=ls -la", "Claude", test_colors());
         assert!(output.contains("command=ls -la"));
         assert!(output.contains("└─"));
     }

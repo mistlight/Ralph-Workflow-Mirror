@@ -3,6 +3,8 @@
 //! This module contains event types and utility functions used by
 //! all the CLI parsers (Claude, Codex, Gemini).
 
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::redundant_pub_crate)]
 use crate::utils::truncate_text;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -139,7 +141,7 @@ pub struct StreamError {
 ///
 /// Distinguishes between different types of content that may be streamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ContentType {
+pub(crate) enum ContentType {
     /// Regular text content
     Text,
     /// Thinking/reasoning content
@@ -157,7 +159,7 @@ pub enum ContentType {
 /// Supports both index-based tracking (for parsers with numeric indices)
 /// and string-based key tracking (for parsers with string identifiers).
 #[derive(Debug, Default, Clone)]
-pub struct DeltaAccumulator {
+pub(crate) struct DeltaAccumulator {
     /// Accumulated content by (`content_type`, key) composite key
     /// Using a String key to support both numeric and string-based identifiers
     buffers: std::collections::HashMap<(ContentType, String), String>,
@@ -318,7 +320,7 @@ pub struct CodexUsage {
 /// - `web_search`: Web search operations
 /// - `plan_update`: Changes to execution plan
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CodexItem {
+pub(crate) struct CodexItem {
     /// Item type (`command_execution`, `agent_message`, reasoning, `file_read`, etc.)
     #[serde(rename = "type")]
     pub(crate) item_type: Option<String>,
@@ -473,6 +475,7 @@ fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
 /// # Returns
 /// A formatted string showing the event type and key fields, or an empty string
 /// if the JSON couldn't be parsed or verbosity should suppress it.
+#[expect(clippy::trivially_copy_pass_by_ref)]
 pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,
@@ -480,9 +483,7 @@ pub fn format_unknown_json_event(
     is_verbose: bool,
 ) -> String {
     // Try to parse as generic JSON to extract type and key fields
-    let value = if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-        v
-    } else {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
         // Only show parsing failure message in verbose mode
         if is_verbose {
             return format!(
@@ -496,9 +497,7 @@ pub fn format_unknown_json_event(
         return String::new();
     };
 
-    let obj = if let Some(o) = value.as_object() {
-        o
-    } else {
+    let Some(obj) = value.as_object() else {
         if is_verbose {
             return format!(
                 "{}[{}]{} {}Unknown event (non-object JSON)\n",
@@ -528,40 +527,43 @@ pub fn format_unknown_json_event(
     // For partial/delta events, try to extract and show content
     let content_info = if classification.event_type == StreamEventType::Partial {
         // Try to extract content from various nested structures
-        let extracted_text = if let Some(ref content) = classification.content_field {
-            // Content field was found at top level by classifier
-            if let Some(val) = obj.get(content) {
-                if let Some(text) = val.as_str() {
-                    Some(text.to_string())
-                } else {
-                    // Content field exists but is not a string - try to extract nested text
-                    extract_nested_text(val)
-                }
-            } else {
-                None
-            }
-        } else {
-            // No content field found - try to extract from delta field
-            obj.get("delta")
-                .and_then(extract_nested_text)
-                .or_else(|| {
-                    // Try nested delta structure: delta.text or delta.content
-                    obj.get("delta")
-                        .and_then(|d| d.as_object())
-                        .and_then(|delta_obj| {
-                            // First try delta.text, then delta.content
-                            delta_obj
-                                .get("text")
-                                .or_else(|| delta_obj.get("content"))
-                                .and_then(|v| v.as_str())
-                                .map(std::string::ToString::to_string)
-                        })
+        let extracted_text = classification
+            .content_field
+            .as_ref()
+            .and_then(|content| {
+                // Content field was found at top level by classifier
+                obj.get(content).and_then(|val| {
+                    val.as_str().map_or_else(
+                        || {
+                            // Content field exists but is not a string - try to extract nested text
+                            extract_nested_text(val)
+                        },
+                        |s| Some(s.to_string()),
+                    )
                 })
-                .or_else(|| {
-                    // Try other common nested structures
-                    obj.get("data").and_then(extract_nested_text)
-                })
-        };
+            })
+            .or_else(|| {
+                // No content field found - try to extract from delta field
+                obj.get("delta")
+                    .and_then(extract_nested_text)
+                    .or_else(|| {
+                        // Try nested delta structure: delta.text or delta.content
+                        obj.get("delta")
+                            .and_then(|d| d.as_object())
+                            .and_then(|delta_obj| {
+                                // First try delta.text, then delta.content
+                                delta_obj
+                                    .get("text")
+                                    .or_else(|| delta_obj.get("content"))
+                                    .and_then(|v| v.as_str())
+                                    .map(std::string::ToString::to_string)
+                            })
+                    })
+                    .or_else(|| {
+                        // Try other common nested structures
+                        obj.get("data").and_then(extract_nested_text)
+                    })
+            });
 
         extracted_text.map(|text: String| {
             let truncated = if text.chars().count() > 30 {
@@ -599,8 +601,10 @@ pub fn format_unknown_json_event(
             } else if is_explicit_delta {
                 // In non-verbose mode, show explicit partial events (they're user content)
                 // Extract full content (not truncated) for delta events
-                let full_content: Option<String> =
-                    if let Some(ref content) = classification.content_field {
+                let full_content: Option<String> = classification
+                    .content_field
+                    .as_ref()
+                    .and_then(|content| {
                         // Use classifier's detected content field first
                         obj.get(content)
                             .and_then(|v| v.as_str())
@@ -609,7 +613,8 @@ pub fn format_unknown_json_event(
                                 // Content field wasn't a string, try extracting nested text
                                 obj.get(content).and_then(extract_nested_text)
                             })
-                    } else {
+                    })
+                    .or_else(|| {
                         // Try delta field (common pattern)
                         obj.get("delta")
                             .and_then(|v| v.as_str())
@@ -623,18 +628,18 @@ pub fn format_unknown_json_event(
                                         .map(std::string::ToString::to_string)
                                 })
                             })
-                            .or_else(|| {
-                                // Try common text fields at top level
-                                for field in ["text", "content", "message"] {
-                                    if let Some(val) = obj.get(field) {
-                                        if let Some(text) = val.as_str() {
-                                            return Some(text.to_string());
-                                        }
-                                    }
+                    })
+                    .or_else(|| {
+                        // Try common text fields at top level
+                        for field in ["text", "content", "message"] {
+                            if let Some(val) = obj.get(field) {
+                                if let Some(text) = val.as_str() {
+                                    return Some(text.to_string());
                                 }
-                                None
-                            })
-                    };
+                            }
+                        }
+                        None
+                    });
 
                 if let Some(content) = full_content {
                     if !content.trim().is_empty() {

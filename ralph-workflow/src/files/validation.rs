@@ -32,6 +32,7 @@ fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
 ///
 /// Contains flags indicating what was found and any errors or warnings.
 #[derive(Debug, Clone)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct PromptValidationResult {
     /// Whether PROMPT.md exists
     pub exists: bool,
@@ -103,9 +104,8 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     for backup_path in &backup_paths {
         if backup_path.exists() {
             // Verify backup has content
-            let backup_content = match fs::read_to_string(backup_path) {
-                Ok(c) => c,
-                Err(_) => continue, // Try next backup
+            let Ok(backup_content) = fs::read_to_string(backup_path) else {
+                continue;
             };
 
             if backup_content.trim().is_empty() {
@@ -192,31 +192,24 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
         for (idx, backup_path) in backup_paths.iter().enumerate() {
             if backup_path.exists() {
                 // Check if backup has content before restoring
-                let backup_content = match fs::read_to_string(backup_path) {
-                    Ok(c) => c,
-                    Err(_) => continue, // Try next backup
+                let Ok(backup_content) = fs::read_to_string(backup_path) else {
+                    continue;
                 };
 
                 if backup_content.trim().is_empty() {
                     continue; // Try next backup
                 }
 
-                match fs::copy(backup_path, prompt_path) {
-                    Ok(_) => {
-                        result.exists = true;
-                        restored = true;
-                        backup_used = Some(match idx {
-                            0 => ".agent/PROMPT.md.backup",
-                            1 => ".agent/PROMPT.md.backup.1",
-                            2 => ".agent/PROMPT.md.backup.2",
-                            _ => "unknown",
-                        });
-                        break;
-                    }
-                    Err(_) => {
-                        // Try next backup
-                        continue;
-                    }
+                if fs::copy(backup_path, prompt_path).is_ok() {
+                    result.exists = true;
+                    restored = true;
+                    backup_used = Some(match idx {
+                        0 => ".agent/PROMPT.md.backup",
+                        1 => ".agent/PROMPT.md.backup.1",
+                        2 => ".agent/PROMPT.md.backup.2",
+                        _ => "unknown",
+                    });
+                    break;
                 }
             }
         }

@@ -6,11 +6,15 @@
 //! 2. Fixes the issues found
 //! 3. Cleans up ISSUES.md (in isolation mode)
 
+#![expect(clippy::too_many_lines)]
 use crate::agents::{is_glm_like_agent, AgentRole};
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::config::ReviewDepth;
+use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::files::{extract_issues, restore_prompt_if_needed};
 use crate::git_helpers::{get_git_diff_from_start, git_snapshot, CommitResultFallback};
 use crate::guidelines::ReviewGuidelines;
+use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
@@ -19,10 +23,6 @@ use crate::prompts::{
     Action, ContextLevel, Role,
 };
 use crate::review_metrics::ReviewMetrics;
-use crate::utils::{
-    clean_context_for_reviewer, delete_issues_file_for_isolation, print_progress, save_checkpoint,
-    update_status, PipelineCheckpoint, PipelinePhase,
-};
 
 use super::context::PhaseContext;
 use std::fs;
@@ -771,6 +771,7 @@ fn should_use_universal_prompt(agent: &str, model_flag: Option<&str>, force: boo
 }
 
 /// Build the review prompt based on configuration and agent type.
+#[expect(clippy::option_if_let_else)]
 fn build_review_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,

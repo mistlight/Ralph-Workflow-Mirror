@@ -32,6 +32,9 @@
 //! - **Ignored events**: General category for events not displayed (includes
 //!   both unknown events and parse errors)
 
+#![expect(clippy::cast_sign_loss)]
+#![expect(clippy::cast_possible_truncation)]
+#![expect(clippy::cast_precision_loss)]
 use crate::colors::Colors;
 use std::cell::Cell;
 
@@ -128,7 +131,7 @@ impl ParserHealth {
     }
 
     /// Get a warning message if health is concerning
-    pub fn warning(&self, parser_name: &str, colors: &Colors) -> Option<String> {
+    pub fn warning(&self, parser_name: &str, colors: Colors) -> Option<String> {
         if !self.is_concerning() {
             return None;
         }
@@ -234,7 +237,8 @@ impl HealthMonitor {
     }
 
     /// Check if we should warn about parser health (only warn once)
-    pub fn check_and_warn(&self, colors: &Colors) -> Option<String> {
+    #[expect(clippy::option_if_let_else)]
+    pub fn check_and_warn(&self, colors: Colors) -> Option<String> {
         if self.threshold_warned.get() {
             return None;
         }
@@ -358,7 +362,7 @@ mod tests {
         assert_eq!(health.ignored_events, 1);
 
         let colors = Colors { enabled: false };
-        assert!(monitor.check_and_warn(&colors).is_none()); // Not concerning yet
+        assert!(monitor.check_and_warn(colors).is_none()); // Not concerning yet
 
         monitor.reset();
         assert_eq!(monitor.health().total_events, 0);
@@ -374,10 +378,10 @@ mod tests {
             monitor.record_parse_error();
         }
 
-        let warning1 = monitor.check_and_warn(&colors);
+        let warning1 = monitor.check_and_warn(colors);
         assert!(warning1.is_some());
 
-        let warning2 = monitor.check_and_warn(&colors);
+        let warning2 = monitor.check_and_warn(colors);
         assert!(warning2.is_none()); // Already warned
     }
 
@@ -394,7 +398,7 @@ mod tests {
             monitor.record_parsed();
         }
 
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_none()); // Should NOT warn even with 97.5% unknown events
     }
 
@@ -415,7 +419,7 @@ mod tests {
         }
 
         // 140 total events, 20 parse errors = ~14% (not concerning)
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_none());
 
         // Add more parse errors to trigger warning
@@ -424,7 +428,7 @@ mod tests {
         }
 
         // 170 total events, 50 parse errors = ~29% (still not concerning)
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_none());
 
         // Add even more parse errors
@@ -433,7 +437,7 @@ mod tests {
         }
 
         // 230 total events, 110 parse errors = ~48% (close to threshold)
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_none());
 
         // Push it over 50%
@@ -442,20 +446,20 @@ mod tests {
         }
 
         // 260 total events, 140 parse errors = ~54% (concerning!)
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_some());
     }
 
     #[test]
     fn test_parser_health_parse_error_percentage() {
         let mut health = ParserHealth::new();
-        assert_eq!(health.parse_error_percentage(), 0.0);
+        assert!((health.parse_error_percentage() - 0.0).abs() < f64::EPSILON);
 
         // Parse errors only
         for _ in 0..5 {
             health.record_parse_error();
         }
-        assert_eq!(health.parse_error_percentage(), 100.0);
+        assert!((health.parse_error_percentage() - 100.0).abs() < f64::EPSILON);
 
         // Add parsed events
         let mut health2 = ParserHealth::new();
@@ -465,7 +469,7 @@ mod tests {
         for _ in 0..5 {
             health2.record_parsed();
         }
-        assert_eq!(health2.parse_error_percentage(), 50.0);
+        assert!((health2.parse_error_percentage() - 50.0).abs() < f64::EPSILON);
 
         // Unknown events don't affect parse error percentage
         let mut health3 = ParserHealth::new();
@@ -479,7 +483,7 @@ mod tests {
             health3.record_parsed();
         }
         // 20 total, 5 parse errors = 25%
-        assert_eq!(health3.parse_error_percentage(), 25.0);
+        assert!((health3.parse_error_percentage() - 25.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -524,7 +528,7 @@ mod tests {
 
         // Not concerning - no parse errors
         assert!(!health.is_concerning());
-        assert_eq!(health.parse_error_percentage(), 0.0);
+        assert!((health.parse_error_percentage() - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -548,7 +552,7 @@ mod tests {
 
         // Should NOT warn even with 97.5% "non-displayed" events
         // because they're control events, not ignored/parse errors
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_none());
     }
 
@@ -566,7 +570,7 @@ mod tests {
             monitor.record_control_event();
         }
 
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_some());
 
         let warning_text = warning.unwrap();
@@ -620,7 +624,7 @@ mod tests {
 
         // Not concerning - no parse errors
         assert!(!health.is_concerning());
-        assert_eq!(health.parse_error_percentage(), 0.0);
+        assert!((health.parse_error_percentage() - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -644,7 +648,7 @@ mod tests {
 
         // Should NOT warn even with 97.5% "partial" events
         // because partial events are valid streaming content, not errors
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_none());
     }
 
@@ -666,7 +670,7 @@ mod tests {
             monitor.record_control_event();
         }
 
-        let warning = monitor.check_and_warn(&colors);
+        let warning = monitor.check_and_warn(colors);
         assert!(warning.is_some());
 
         let warning_text = warning.unwrap();

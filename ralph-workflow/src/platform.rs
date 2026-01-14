@@ -2,6 +2,7 @@
 //!
 //! Provides OS-specific suggestions for installing missing dependencies.
 
+#![expect(clippy::too_many_lines)]
 use std::env::consts::OS;
 use std::process::Command;
 
@@ -119,11 +120,7 @@ impl InstallGuidance {
                             .notes
                             .push("Requires Node.js. Install via: https://nodejs.org".to_string());
                     }
-                    Platform::Windows => {
-                        guidance.install_cmd =
-                            Some("npm install -g @anthropic/claude-code".to_string());
-                    }
-                    Platform::Unknown => {
+                    Platform::Windows | Platform::Unknown => {
                         guidance.install_cmd =
                             Some("npm install -g @anthropic/claude-code".to_string());
                     }
