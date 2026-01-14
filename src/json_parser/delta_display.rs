@@ -9,8 +9,12 @@ use crate::colors::Colors;
 /// Display mode for delta content
 ///
 /// Controls how partial/delta content is presented to the user.
+///
+/// Note: `ShowLatestAccumulated`, `Minimal`, and `Verbose` modes are fully
+/// implemented and tested but not currently used in production parsers.
+/// They are reserved for future display mode enhancements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Reserved variants for future use
 pub enum DeltaDisplayMode {
     /// Minimal display - show only deltas, no accumulated content
     Minimal,
@@ -25,8 +29,9 @@ pub enum DeltaDisplayMode {
 /// State tracking for content display
 ///
 /// Tracks whether we should show delta or complete content for a specific key.
+/// Reserved for future use in more sophisticated display state management.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Reserved for future display state management
 pub enum ContentState {
     /// Content is being accumulated (partial/delta state)
     Accumulating,
@@ -37,8 +42,9 @@ pub enum ContentState {
 /// Content display info
 ///
 /// Contains information about how to display specific content.
+/// Fully implemented and tested - reserved for future use in enhanced display modes.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Used in tests and reserved for future display modes
 pub struct ContentDisplayInfo {
     /// The content to display
     pub content: String,
@@ -51,8 +57,9 @@ pub struct ContentDisplayInfo {
 /// Content type for display styling
 ///
 /// Different types of content may be styled differently.
+/// Fully implemented and tested - reserved for future use in enhanced display modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Used in tests and reserved for future display modes
 pub enum DisplayContentType {
     /// Regular text content
     Text,
@@ -67,20 +74,21 @@ pub enum DisplayContentType {
 /// Delta display formatter
 ///
 /// Formats delta content for user display with consistent styling across all parsers.
+/// Enhanced display modes are fully implemented and tested - reserved for future use.
 pub struct DeltaDisplayFormatter {
     /// Display mode for delta content
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Currently fixed to Normal mode; other modes are tested and reserved
     display_mode: DeltaDisplayMode,
     /// Whether to mark partial content visually
     mark_partial: bool,
     /// Whether to show delta in real-time
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Currently always true; configurable mode tested and reserved
     show_realtime: bool,
 }
 
 impl DeltaDisplayFormatter {
     /// Create a new formatter with default settings
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Only used in tests; production uses formatter() method
     pub fn new() -> Self {
         Self {
             display_mode: DeltaDisplayMode::Normal,
@@ -90,7 +98,7 @@ impl DeltaDisplayFormatter {
     }
 
     /// Create a new formatter with specific display mode
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Tested and reserved for future display mode selection
     pub fn with_mode(display_mode: DeltaDisplayMode) -> Self {
         Self {
             display_mode,
@@ -100,7 +108,7 @@ impl DeltaDisplayFormatter {
     }
 
     /// Create a new formatter with custom settings
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Tested and reserved for future formatter customization
     pub fn with_settings(display_mode: DeltaDisplayMode, mark_partial: bool, show_realtime: bool) -> Self {
         Self {
             display_mode,
@@ -118,7 +126,7 @@ impl DeltaDisplayFormatter {
     ///
     /// # Returns
     /// Formatted string for display, or None if content should not be shown
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Tested and reserved for enhanced display modes
     pub fn format_content(
         &self,
         info: &ContentDisplayInfo,
@@ -171,7 +179,7 @@ impl DeltaDisplayFormatter {
     /// Format delta/partial content for display
     ///
     /// Deltas are shown with visual indicators that this is partial content.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Tested and reserved for enhanced display modes
     fn format_delta_content(
         &self,
         content: &str,
@@ -209,7 +217,7 @@ impl DeltaDisplayFormatter {
     /// Format latest accumulated content for display
     ///
     /// Shows "Latest: [accumulated so far]" to provide context during streaming.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Tested and reserved for ShowLatestAccumulated display mode
     fn format_latest_accumulated(
         &self,
         content: &str,
@@ -240,7 +248,7 @@ impl DeltaDisplayFormatter {
     /// Format complete content for display
     ///
     /// Complete content is shown without partial markers.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Tested and reserved for enhanced display modes
     fn format_complete_content(
         &self,
         content: &str,

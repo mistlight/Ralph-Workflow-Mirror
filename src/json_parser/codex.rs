@@ -551,13 +551,6 @@ impl CodexParser {
                 continue;
             }
 
-            if trimmed.starts_with('{')
-                && serde_json::from_str::<serde_json::Value>(trimmed).is_err()
-            {
-                monitor.record_parse_error();
-                continue;
-            }
-
             // In debug mode, also show the raw JSON
             if self.verbosity.is_debug() {
                 writeln!(
@@ -571,6 +564,7 @@ impl CodexParser {
                 )?;
             }
 
+            // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
                     monitor.record_parsed();
@@ -578,15 +572,18 @@ impl CodexParser {
                 }
                 None => {
                     // Check if this was a control event (state management with no user output)
-                    if let Ok(event) = serde_json::from_str::<CodexEvent>(&line) {
-                        if Self::is_control_event(&event) {
-                            monitor.record_control_event();
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<CodexEvent>(&line) {
+                            if Self::is_control_event(&event) {
+                                monitor.record_control_event();
+                            } else {
+                                // Valid JSON but not a control event - track as unknown
+                                monitor.record_unknown_event();
+                            }
                         } else {
-                            // Valid JSON but not a control event - track as unknown
-                            monitor.record_unknown_event();
+                            // Failed to deserialize - track as parse error
+                            monitor.record_parse_error();
                         }
-                    } else if trimmed.starts_with('{') {
-                        monitor.record_unknown_event();
                     } else {
                         monitor.record_ignored();
                     }

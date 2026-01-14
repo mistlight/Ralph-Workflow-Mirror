@@ -43,6 +43,7 @@ pub struct ClassificationResult {
     /// The primary content field if found
     pub content_field: Option<String>,
     /// Whether this appears to be a streaming delta
+    /// Reserved for future use - currently set but not consumed by the parser
     #[allow(dead_code)]
     pub is_delta: bool,
 }
@@ -194,30 +195,71 @@ impl StreamEventClassifier {
             }
         }
 
-        // Check for delta fields in the object
+        // Check for delta fields in the object (content fields, not boolean flags)
+        // Only treat as partial if the field contains actual content (string, array, or object),
+        // not if it's just a boolean flag or null
         let delta_fields = ["delta", "partial", "increment"];
         for field in delta_fields {
-            if obj.contains_key(field) {
-                return true;
+            if let Some(value) = obj.get(field) {
+                // Check if the field contains actual content, not just a boolean or null
+                let has_content = value.is_string()
+                    || value.is_array()
+                    || value.is_object()
+                    || (value.is_number() && value.as_i64() != Some(0));
+                if has_content {
+                    return true;
+                }
             }
         }
 
         // Check for small content fragments that might be partial
-        if let Some(content) = self.find_content_field(obj) {
-            if let Some(text) = obj.get(&content).and_then(|v| v.as_str()) {
-                // Short text fragments are likely partial
-                if text.len() < self.substantial_content_threshold {
-                    // But only consider it partial if it doesn't look like a complete message
-                    let text_lower = text.to_lowercase();
-                    let complete_indicators = [
-                        ".", "!", "?", "\n\n",
-                        "done", "finished", "complete",
-                        "error:", "warning:",
-                    ];
-                    let has_complete_indicator = complete_indicators
-                        .iter()
-                        .any(|indicator| text_lower.contains(indicator));
-                    return !has_complete_indicator;
+        // Only apply this heuristic if there's no explicit delta flag or type name
+        if !explicit_delta && (type_name.is_none() || !type_name.as_ref().map_or(false, |n| {
+            let n_lower = n.to_lowercase();
+            n_lower.contains("delta") || n_lower.contains("partial") || n_lower.contains("chunk")
+        })) {
+            if let Some(content) = self.find_content_field(obj) {
+                if let Some(text) = obj.get(&content).and_then(|v| v.as_str()) {
+                    // Short text fragments are likely partial, BUT check for complete patterns
+                    if text.len() < self.substantial_content_threshold {
+                        let text_lower = text.to_lowercase();
+                        let trimmed = text.trim();
+
+                        // Check for complete message indicators:
+                        // 1. Common response words that are complete on their own
+                        let complete_responses = [
+                            "ok", "okay", "yes", "no", "true", "false",
+                            "done", "finished", "complete", "success", "failed",
+                            "error", "warning", "info", "debug",
+                            "pending", "processing", "running",
+                            "none", "null", "empty",
+                        ];
+                        let is_complete_response = complete_responses
+                            .iter()
+                            .any(|response| trimmed == *response);
+
+                        // 2. Messages ending with terminal punctuation
+                        let ends_with_terminal = trimmed.ends_with('.')
+                            || trimmed.ends_with('!')
+                            || trimmed.ends_with('?');
+
+                        // 3. Messages containing newlines (usually intentional formatting)
+                        let has_newline = text.contains('\n');
+
+                        // 4. Error/warning patterns (these are complete messages)
+                        let is_error_message = text_lower.contains("error:")
+                            || text_lower.contains("warning:")
+                            || text_lower.starts_with("error")
+                            || text_lower.starts_with("warning");
+
+                        // If any complete indicator is present, it's NOT partial
+                        if is_complete_response || ends_with_terminal || has_newline || is_error_message {
+                            return false;
+                        }
+
+                        // Otherwise, short text without clear completion markers is likely partial
+                        return true;
+                    }
                 }
             }
         }
