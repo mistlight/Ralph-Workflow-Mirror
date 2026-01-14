@@ -10,11 +10,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <!-- Fonts: Bebas Neue (display), Syne (headings), Archivo Black (body), IBM Plex Mono (code) -->
-    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- Fonts: Cormorant Garamond (display), DM Sans (headings/body), JetBrains Mono (code) -->
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-    <!-- Favicon - Enhanced with distinctive R logo matching main site -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg-grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23111'/%3E%3Cstop offset='100%25' style='stop-color:%23000'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg-grad)' rx='14'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%23CCFF00' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23CCFF00'/%3E%3C/svg%3E">
+    <!-- Favicon - Refined editorial design with terracotta accent -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg-grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23FAF8F5'/%3E%3Cstop offset='100%25' style='stop-color:%23F5F2ED'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg-grad)' rx='16'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%23C4784A' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23C4784A'/%3E%3C/svg%3E">
 
     <style>
         *, *::before, *::after {
@@ -24,21 +24,33 @@
         }
 
         :root {
-            --color-bg: #09090B;
-            --color-bg-alt: #0C0C0E;
-            --color-bg-card: #18181B;
-            --color-text: #E4E4E7;
-            --color-text-muted: #A1A1AA;
-            --color-text-dim: #52525B;
-            --color-primary: #C8FF00;
-            --color-accent: #00FFD5;
-            --color-error: #FF0080;
-            --border-subtle: #27272A;
-            --border-medium: #3F3F46;
-            --font-display: 'Bebas Neue', 'Orbitron', 'Rajdhani', cursive;
-            --font-heading: 'Syne', 'Archivo Black', 'Outfit', 'Plus Jakarta Sans', sans-serif;
-            --font-body: 'Archivo Black', 'Outfit', -apple-system, sans-serif;
-            --font-mono: 'IBM Plex Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+            /* Warm, sophisticated color palette */
+            --color-bg: #FAF8F5;
+            --color-bg-alt: #F5F2ED;
+            --color-bg-card: #FFFFFF;
+            --color-bg-warm: #F0ECE6;
+            --color-text: #1A1612;
+            --color-text-primary: #2C241C;
+            --color-text-muted: #6B5D52;
+            --color-text-dim: #9A8A7E;
+            --color-primary: #C4784A;
+            --color-primary-light: #D89060;
+            --color-accent: #2D6A6E;
+            --color-accent-light: #3A8A8E;
+            --border-subtle: rgba(44, 36, 28, 0.08);
+            --border-soft: rgba(44, 36, 28, 0.12);
+            --border-medium: rgba(44, 36, 28, 0.18);
+            --font-display: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+            --font-heading: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+            --font-body: 'DM Sans', 'Segoe UI', -apple-system, system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+            --shadow-sm: 0 1px 2px rgba(26, 22, 18, 0.04);
+            --shadow-md: 0 4px 12px rgba(26, 22, 18, 0.06);
+            --shadow-lg: 0 12px 32px rgba(26, 22, 18, 0.08);
+            --shadow-terracotta: 0 8px 24px rgba(196, 120, 74, 0.15);
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --radius-full: 9999px;
         }
 
         html {
@@ -49,7 +61,7 @@
             font-family: var(--font-body);
             font-size: 1rem;
             line-height: 1.6;
-            color: var(--color-text);
+            color: var(--color-text-primary);
             background-color: var(--color-bg);
             min-height: 100%;
             display: flex;
@@ -59,41 +71,37 @@
             overflow-x: hidden;
         }
 
-        /* Scanline Effect */
+        /* Ambient background effects */
         body::before {
             content: '';
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: -30%;
+            right: -10%;
+            width: 50%;
+            height: 80%;
             pointer-events: none;
-            z-index: 10;
-            opacity: 0.03;
-            background: repeating-linear-gradient(
-                0deg,
-                transparent,
-                transparent 1px,
-                rgba(200, 255, 0, 0.1) 1px,
-                rgba(200, 255, 0, 0.1) 2px
+            z-index: 0;
+            background: radial-gradient(
+                ellipse at center,
+                rgba(196, 120, 74, 0.06) 0%,
+                transparent 70%
             );
         }
 
-        /* Grid Pattern Background */
         body::after {
             content: '';
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            bottom: -20%;
+            left: -10%;
+            width: 40%;
+            height: 60%;
             pointer-events: none;
             z-index: 0;
-            opacity: 0.4;
-            background-image:
-                linear-gradient(var(--border-subtle) 1px, transparent 1px),
-                linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
-            background-size: 60px 60px;
+            background: radial-gradient(
+                ellipse at center,
+                rgba(45, 106, 110, 0.05) 0%,
+                transparent 70%
+            );
         }
 
         body > * {
@@ -113,16 +121,26 @@
 
         .error-code {
             font-family: var(--font-display);
-            font-size: clamp(120px, 25vw, 220px);
+            font-size: clamp(80px, 18vw, 140px);
             font-weight: 400;
-            color: var(--color-bg-card);
-            line-height: 0.9;
-            letter-spacing: 0.02em;
-            margin-bottom: -3rem;
+            color: var(--color-bg-warm);
+            line-height: 1;
+            letter-spacing: -0.03em;
+            margin-bottom: 1rem;
             position: relative;
             z-index: 0;
             user-select: none;
-            text-shadow: 0 0 40px rgba(200, 255, 0, 0.1);
+        }
+
+        .error-code::after {
+            content: '404';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            color: var(--color-primary);
+            opacity: 0.15;
+            filter: blur(1px);
         }
 
         .content {
@@ -141,33 +159,36 @@
             width: 40px;
             height: 40px;
             background: var(--color-bg-card);
-            border: 1px solid var(--color-primary);
-            border-radius: 8px;
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-md);
             color: var(--color-primary);
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 0 20px rgba(200, 255, 0, 0.3);
+            box-shadow: var(--shadow-sm);
         }
 
         .logo-text {
             font-family: var(--font-display);
             font-weight: 400;
-            font-size: 1.25rem;
-            text-transform: lowercase;
+            font-size: 1.5rem;
             letter-spacing: 0.05em;
-            color: var(--color-primary);
+            color: var(--color-text);
+            text-transform: lowercase;
         }
 
         .error-title {
-            font-family: var(--font-heading);
+            font-family: var(--font-display);
             font-size: clamp(2rem, 5vw, 3rem);
-            font-weight: 700;
+            font-weight: 400;
             margin-bottom: 1rem;
-            letter-spacing: -0.03em;
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+            color: var(--color-text);
         }
 
         .error-title span {
+            font-style: italic;
             color: var(--color-primary);
         }
 
@@ -183,14 +204,14 @@
             font-family: var(--font-mono);
             font-size: 0.875rem;
             color: var(--color-text);
-            background: var(--color-bg);
-            border: 1px solid var(--border-subtle);
-            border-radius: 12px;
+            background: var(--color-bg-card);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-lg);
             padding: 1.5rem;
             margin-bottom: 2.5rem;
             text-align: left;
             max-width: 500px;
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 40px rgba(200, 255, 0, 0.05);
+            box-shadow: var(--shadow-md);
         }
 
         .terminal-line {
@@ -220,20 +241,29 @@
         }
 
         .terminal-error {
-            color: var(--color-error);
+            color: #B85C4A;
+            font-weight: 500;
         }
 
         .terminal-warn {
-            color: #FFAA00;
+            color: var(--color-primary);
+            font-weight: 500;
         }
 
         .terminal-success {
             color: var(--color-accent);
+            font-weight: 500;
         }
 
         .terminal-link {
             color: var(--color-accent);
-            text-decoration: underline;
+            text-decoration: none;
+            border-bottom: 1px solid var(--border-soft);
+            transition: all 0.15s ease;
+        }
+
+        .terminal-link:hover {
+            border-bottom-color: var(--color-accent);
         }
 
         .terminal-cursor {
@@ -260,39 +290,37 @@
             align-items: center;
             gap: 0.5rem;
             padding: 0.875rem 1.75rem;
-            font-family: var(--font-mono);
+            font-family: var(--font-heading);
             font-size: 0.9375rem;
             font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
             cursor: pointer;
             text-decoration: none;
-            transition: all 0.25s ease;
+            transition: all 0.15s ease;
             border: none;
-            border-radius: 9999px;
+            border-radius: var(--radius-lg);
         }
 
         .btn--primary {
             background: var(--color-primary);
-            color: var(--color-bg);
-            box-shadow: 0 0 20px rgba(200, 255, 0, 0.3);
+            color: #FAF8F5;
+            box-shadow: var(--shadow-terracotta);
         }
 
         .btn--primary:hover {
-            background: var(--color-text);
-            transform: translateY(-2px);
-            box-shadow: 0 0 30px rgba(200, 255, 0, 0.5);
+            background: var(--color-primary-light);
+            transform: translateY(-1px);
+            box-shadow: 0 12px 32px rgba(196, 120, 74, 0.2);
         }
 
         .btn--secondary {
             background: transparent;
             color: var(--color-text);
-            border: 2px solid var(--border-medium);
+            border: 1px solid var(--border-medium);
         }
 
         .btn--secondary:hover {
-            border-color: var(--color-accent);
-            color: var(--color-accent);
+            background: var(--color-bg-warm);
+            border-color: var(--color-text);
         }
 
         footer {
@@ -310,7 +338,7 @@
         }
 
         footer a:hover {
-            color: var(--color-accent);
+            color: var(--color-primary-light);
         }
 
         /* Skip Link for Accessibility */
@@ -321,19 +349,26 @@
             transform: translateX(-50%);
             padding: 1rem 2rem;
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: #FAF8F5;
             text-decoration: none;
             font-weight: 700;
-            font-family: var(--font-mono);
+            font-family: var(--font-heading);
             font-size: 0.875rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
+            border-radius: var(--radius-md);
             z-index: 9999;
             transition: top 0.15s ease;
+            box-shadow: var(--shadow-terracotta);
         }
 
         .skip-link:focus {
             top: 1.5rem;
+        }
+
+        /* Focus visible */
+        :focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+            border-radius: var(--radius-sm);
         }
 
         @media (max-width: 480px) {
@@ -370,8 +405,9 @@
         <div class="content">
             <div class="logo">
                 <div class="logo-mark">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                        <path d="M8 6h8M8 12h5M8 18h3"/>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4h6c1.5 0 2.5.5 2.5 2v3c0 1-.5 1.5-1.5 2S11 12.5 10 15H8l1.5-5c-.75 0-1.75-.25-2.25-1V4z"/>
+                        <path d="M8 7.5h3c.4 0 .5.1.5.5v1.5c0 .3-.1.5-.5.5H8" fill="currentColor"/>
                     </svg>
                 </div>
                 <span class="logo-text">ralph</span>
@@ -405,13 +441,13 @@
 
             <div class="actions">
                 <a href="/" class="btn btn--primary">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
                     </svg>
                     Go Home
                 </a>
                 <a href="https://codeberg.org/mistlight/Ralph-Workflow/issues" target="_blank" rel="noopener" class="btn btn--secondary">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"/>
                         <path d="M12 8v4M12 16h.01"/>
                     </svg>
