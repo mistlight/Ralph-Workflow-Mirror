@@ -154,25 +154,12 @@ impl GenericParser {
 
                 if let Some(text) = content {
                     if !text.trim().is_empty() {
-                        // In verbose mode, accumulate and show full content
-                        if self.verbosity.is_verbose() {
-                            // Use a simple key for accumulation
-                            {
-                                let mut acc = self.delta_accumulator.borrow_mut();
-                                acc.add_delta(ContentType::Text, "main", &text);
-                            }
-                            let acc = self.delta_accumulator.borrow();
-                            if let Some(full) = acc.get(ContentType::Text, "main") {
-                                return Some(format!(
-                                    "{}[{}]{} {}\n",
-                                    c.dim(),
-                                    name,
-                                    c.reset(),
-                                    full
-                                ));
-                            }
+                        // Accumulate for completion events
+                        {
+                            let mut acc = self.delta_accumulator.borrow_mut();
+                            acc.add_delta(ContentType::Text, "main", &text);
                         }
-                        // Normal mode: show delta in real-time
+                        // Show delta in real-time (both verbose and normal mode)
                         return Some(format!("{}\n", text));
                     }
                 }

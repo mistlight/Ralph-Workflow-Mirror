@@ -358,23 +358,9 @@ impl ClaudeParser {
                 delta: Some(delta),
             } => match delta {
                 ContentBlockDelta::TextDelta { text: Some(text) } => {
-                    // Accumulate and display the text delta
+                    // Accumulate the text delta for completion events
                     acc.add_text_delta(index, &text);
-                    // In verbose mode, show the full accumulated text so far
-                    if self.verbosity.is_verbose() {
-                        if let Some(full_text) = acc.get_text(&index) {
-                            return format!(
-                                "{}[{}]{} {}{}{}\n",
-                                c.dim(),
-                                prefix,
-                                c.reset(),
-                                c.white(),
-                                full_text,
-                                c.reset()
-                            );
-                        }
-                    }
-                    // Normal mode: show the delta (real-time streaming)
+                    // Show the delta (real-time streaming) - both verbose and normal mode
                     format!(
                         "{}[{}]{} {}{}{}\n",
                         c.dim(),

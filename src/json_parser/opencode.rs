@@ -326,23 +326,7 @@ impl OpenCodeParser {
                         let mut acc = self.delta_accumulator.borrow_mut();
                         acc.add_delta(ContentType::Text, "main", text);
 
-                        // In verbose mode, show full accumulated text
-                        if self.verbosity.is_verbose() {
-                            if let Some(full_text) = acc.get(ContentType::Text, "main") {
-                                let limit = self.verbosity.truncate_limit("text");
-                                let preview = truncate_text(full_text, limit);
-                                return Some(format!(
-                                    "{}[{}]{} {}{}{}\n",
-                                    c.dim(),
-                                    prefix,
-                                    c.reset(),
-                                    c.white(),
-                                    preview,
-                                    c.reset()
-                                ));
-                            }
-                        }
-                        // Normal mode: show delta in real-time
+                        // Show delta in real-time (both verbose and normal mode)
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(text, limit);
                         return Some(format!(
