@@ -55,7 +55,7 @@ GUIDELINES:
 ///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
 ///   which prevents accidental deletion.
 pub fn prompt_plan(prompt_content: Option<&str>) -> String {
-    let mut prompt = r#"You are in PLANNING MODE. Create a detailed implementation plan.
+    let mut prompt = r"You are in PLANNING MODE. Create a detailed implementation plan.
 
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
 - Creating, modifying, or deleting any files
@@ -66,7 +66,7 @@ You MAY use read-only operations: reading files, searching code, listing directo
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 1: UNDERSTANDING
-═══════════════════════════════════════════════════════════════════════════════"#
+═══════════════════════════════════════════════════════════════════════════════"
         .to_string();
 
     // If prompt content is provided, include it directly in the prompt
@@ -74,26 +74,26 @@ PHASE 1: UNDERSTANDING
     // the file through exploration, reducing the risk of accidental deletion.
     if let Some(content) = prompt_content {
         prompt.push_str(&format!(
-            r#"
+            r"
 
 REQUIREMENTS FROM PROJECT TASK:
 ───────────────────────────────────────────────────────────────────────────────
 {}
 ───────────────────────────────────────────────────────────────────────────────
-"#,
+",
             content
         ));
     } else {
         prompt.push_str(
-            r#"
+            r"
 
 The orchestrator has provided requirements to you via the planning task.
-"#,
+",
         );
     }
 
     prompt.push_str(
-        r#"
+        r"
 Understand:
 - The Goal: What is the desired end state?
 - Acceptance Checks: What specific conditions must be satisfied?
@@ -162,7 +162,7 @@ CRITICAL OUTPUT INSTRUCTIONS:
 - Output your COMPLETE plan above as a single response
 - Ensure ALL sections (Summary, Implementation Steps, Critical Files, Risks & Mitigations, Verification Strategy) are included
 - Do NOT truncate or shorten your plan
-- Do NOT write to any files"#
+- Do NOT write to any files"
     );
 
     prompt
