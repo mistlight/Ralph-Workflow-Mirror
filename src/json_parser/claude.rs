@@ -5,10 +5,16 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
+use std::rc::Rc;
 
+use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, ClaudeEvent, ContentBlock};
+use super::types::{
+    format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock,
+    ContentBlockDelta, ContentType, DeltaAccumulator, StreamInnerEvent,
+};
 
 /// Claude event parser
 pub(crate) struct ClaudeParser {
@@ -16,6 +22,8 @@ pub(crate) struct ClaudeParser {
     pub(crate) verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
 }
 
 impl ClaudeParser {
@@ -25,6 +33,7 @@ impl ClaudeParser {
             verbosity,
             log_file: None,
             display_name: "Claude".to_string(),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
 
@@ -269,7 +278,16 @@ impl ClaudeParser {
                 }
                 out
             }
-            ClaudeEvent::Unknown => String::new(),
+            ClaudeEvent::StreamEvent { event } => {
+                // Handle streaming events for delta/partial updates
+                self.parse_stream_event(event)
+            }
+            ClaudeEvent::Unknown => {
+                // Use the generic unknown event formatter for consistent handling
+                // In verbose mode, this will show the event type and key fields
+                // In normal mode, this returns empty string
+                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+            }
         };
 
         if output.is_empty() {
@@ -277,6 +295,206 @@ impl ClaudeParser {
         } else {
             Some(output)
         }
+    }
+
+    /// Parse a streaming event for delta/partial updates
+    ///
+    /// Handles the nested events within `stream_event`:
+    /// - MessageStart/Stop: Manage session state
+    /// - ContentBlockStart: Initialize new content blocks
+    /// - ContentBlockDelta/TextDelta: Accumulate and display incrementally
+    /// - Error: Display appropriately
+    ///
+    /// Returns String for display content, empty String for control events.
+    fn parse_stream_event(&self, event: StreamInnerEvent) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+        let mut acc = self.delta_accumulator.borrow_mut();
+
+        match event {
+            StreamInnerEvent::MessageStart { .. } => {
+                // Clear accumulator on new message
+                acc.clear();
+                String::new()
+            }
+            StreamInnerEvent::ContentBlockStart {
+                index: Some(index),
+                content_block: Some(block),
+            } => {
+                // Initialize a new content block at this index with initial content
+                acc.clear_index(index);
+                match &block {
+                    ContentBlock::Text { text: Some(t) } if !t.is_empty() => {
+                        acc.add_text_delta(index, t);
+                    }
+                    ContentBlock::ToolUse { name: _, input: Some(i) } => {
+                        // Initialize tool input accumulator
+                        if let serde_json::Value::String(s) = i {
+                            acc.add_delta(ContentType::ToolInput, &index.to_string(), s);
+                        } else {
+                            let input_str = format_tool_input(i);
+                            acc.add_delta(ContentType::ToolInput, &index.to_string(), &input_str);
+                        }
+                    }
+                    _ => {}
+                }
+                String::new()
+            }
+            StreamInnerEvent::ContentBlockStart {
+                index: Some(index),
+                content_block: None,
+            } => {
+                // Content block started but no initial content provided
+                // Just clear the index for future deltas
+                acc.clear_index(index);
+                String::new()
+            }
+            StreamInnerEvent::ContentBlockStart { .. } => {
+                // Content block without index - ignore
+                String::new()
+            }
+            StreamInnerEvent::ContentBlockDelta {
+                index: Some(index),
+                delta: Some(delta),
+            } => match delta {
+                ContentBlockDelta::TextDelta { text: Some(text) } => {
+                    // Accumulate and display the text delta
+                    acc.add_text_delta(index, &text);
+                    // In verbose mode, show the full accumulated text so far
+                    if self.verbosity.is_verbose() {
+                        if let Some(full_text) = acc.get_text(&index) {
+                            return format!(
+                                "{}[{}]{} {}{}{}\n",
+                                c.dim(),
+                                prefix,
+                                c.reset(),
+                                c.white(),
+                                full_text,
+                                c.reset()
+                            );
+                        }
+                    }
+                    // Normal mode: show the delta (real-time streaming)
+                    format!(
+                        "{}[{}]{} {}{}{}\n",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.white(),
+                        text,
+                        c.reset()
+                    )
+                }
+                ContentBlockDelta::ThinkingDelta { thinking: Some(text) } => {
+                    // Accumulate thinking content
+                    acc.add_thinking_delta(index, &text);
+                    // Display thinking with visual distinction
+                    Self::formatter().format_thinking(text.as_str(), prefix, c)
+                }
+                ContentBlockDelta::ToolUseDelta {
+                    tool_use: Some(tool_delta),
+                } => {
+                    // Handle tool input streaming
+                    // Extract the tool input from the delta
+                    let input_str = if let Some(input) = tool_delta.get("input") {
+                        match input {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => format_tool_input(other),
+                        }
+                    } else {
+                        // No input in this delta, accumulate empty string
+                        String::new()
+                    };
+
+                    if !input_str.is_empty() {
+                        // Accumulate tool input
+                        acc.add_delta(ContentType::ToolInput, &index.to_string(), &input_str);
+
+                        // Show partial tool input in real-time
+                        let formatter = DeltaDisplayFormatter::new();
+                        formatter.format_tool_input(&input_str, prefix, c)
+                    } else {
+                        String::new()
+                    }
+                }
+                _ => String::new(),
+            },
+            StreamInnerEvent::ContentBlockDelta { .. } => String::new(),
+            StreamInnerEvent::TextDelta { text: Some(text) } => {
+                // Standalone text delta (not part of content block)
+                // Display incrementally for real-time feedback
+                format!(
+                    "{}[{}]{} {}{}{}\n",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.white(),
+                    text,
+                    c.reset()
+                )
+            }
+            StreamInnerEvent::TextDelta { .. } => String::new(),
+            StreamInnerEvent::MessageStop => {
+                // Message complete - clear the accumulator
+                acc.clear();
+                String::new()
+            }
+            StreamInnerEvent::Error {
+                error: Some(err), ..
+            } => {
+                let msg = err.message.unwrap_or_else(|| "Unknown streaming error".to_string());
+                format!(
+                    "{}[{}]{} {}Error: {}{}\n",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.red(),
+                    msg,
+                    c.reset()
+                )
+            }
+            StreamInnerEvent::Error { .. } => String::new(),
+            StreamInnerEvent::Ping => String::new(),
+            StreamInnerEvent::Unknown => {
+                // Unknown stream event - in debug mode, log it
+                if self.verbosity.is_debug() {
+                    format!(
+                        "{}[{}]{} {}Unknown streaming event{}\n",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.dim(),
+                        c.reset()
+                    )
+                } else {
+                    String::new()
+                }
+            }
+        }
+    }
+
+    /// Check if a Claude event is a control event (state management with no user output)
+    ///
+    /// Control events are valid JSON that represent state transitions rather than
+    /// user-facing content. They should be tracked separately from "ignored" events
+    /// to avoid false health warnings.
+    fn is_control_event(event: &ClaudeEvent) -> bool {
+        match event {
+            // Stream events that are control events
+            ClaudeEvent::StreamEvent { event } => matches!(
+                event,
+                StreamInnerEvent::MessageStart { .. }
+                    | StreamInnerEvent::ContentBlockStart { .. }
+                    | StreamInnerEvent::MessageStop
+                    | StreamInnerEvent::Ping
+            ),
+            _ => false,
+        }
+    }
+
+    /// Get a shared delta display formatter
+    fn formatter() -> DeltaDisplayFormatter {
+        DeltaDisplayFormatter::new()
     }
 
     /// Parse a stream of Claude NDJSON events
@@ -303,13 +521,6 @@ impl ClaudeParser {
                 continue;
             }
 
-            if trimmed.starts_with('{')
-                && serde_json::from_str::<serde_json::Value>(trimmed).is_err()
-            {
-                monitor.record_parse_error();
-                continue;
-            }
-
             // In debug mode, also show the raw JSON
             if self.verbosity.is_debug() {
                 writeln!(
@@ -323,13 +534,30 @@ impl ClaudeParser {
                 )?;
             }
 
+            // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
                     monitor.record_parsed();
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    monitor.record_ignored();
+                    // Check if this was a control event (state management with no user output)
+                    // Control events are valid JSON that return empty output but aren't "ignored"
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
+                            if Self::is_control_event(&event) {
+                                monitor.record_control_event();
+                            } else {
+                                // Valid JSON but not a control event - track as unknown
+                                monitor.record_unknown_event();
+                            }
+                        } else {
+                            // Failed to deserialize - track as parse error
+                            monitor.record_parse_error();
+                        }
+                    } else {
+                        monitor.record_ignored();
+                    }
                 }
             }
 

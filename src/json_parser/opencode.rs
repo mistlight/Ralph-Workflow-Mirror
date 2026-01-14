@@ -6,10 +6,12 @@ use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
+use std::rc::Rc;
 
 use super::health::HealthMonitor;
-use super::types::format_tool_input;
+use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator};
 
 /// OpenCode event types
 ///
@@ -97,6 +99,8 @@ pub(crate) struct OpenCodeParser {
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
 }
 
 impl OpenCodeParser {
@@ -106,6 +110,7 @@ impl OpenCodeParser {
             verbosity,
             log_file: None,
             display_name: "OpenCode".to_string(),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
 
@@ -142,6 +147,8 @@ impl OpenCodeParser {
 
         let output = match event.event_type.as_str() {
             "step_start" => {
+                // Clear accumulator on new step
+                self.delta_accumulator.borrow_mut().clear();
                 let _sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
                 let snapshot = event
                     .part
@@ -315,9 +322,30 @@ impl OpenCodeParser {
             "text" => {
                 if let Some(ref part) = event.part {
                     if let Some(ref text) = part.text {
+                        // Accumulate streaming text
+                        let mut acc = self.delta_accumulator.borrow_mut();
+                        acc.add_delta(ContentType::Text, "main", text);
+
+                        // In verbose mode, show full accumulated text
+                        if self.verbosity.is_verbose() {
+                            if let Some(full_text) = acc.get(ContentType::Text, "main") {
+                                let limit = self.verbosity.truncate_limit("text");
+                                let preview = truncate_text(full_text, limit);
+                                return Some(format!(
+                                    "{}[{}]{} {}{}{}\n",
+                                    c.dim(),
+                                    prefix,
+                                    c.reset(),
+                                    c.white(),
+                                    preview,
+                                    c.reset()
+                                ));
+                            }
+                        }
+                        // Normal mode: show delta in real-time
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(text, limit);
-                        format!(
+                        return Some(format!(
                             "{}[{}]{} {}{}{}\n",
                             c.dim(),
                             prefix,
@@ -325,17 +353,14 @@ impl OpenCodeParser {
                             c.white(),
                             preview,
                             c.reset()
-                        )
-                    } else {
-                        String::new()
+                        ));
                     }
-                } else {
-                    String::new()
                 }
+                String::new()
             }
             _ => {
-                // Unknown event type - ignore silently
-                String::new()
+                // Unknown event type - use the generic formatter in verbose mode
+                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
             }
         };
 
@@ -343,6 +368,19 @@ impl OpenCodeParser {
             None
         } else {
             Some(output)
+        }
+    }
+
+    /// Check if an OpenCode event is a control event (state management with no user output)
+    ///
+    /// Control events are valid JSON that represent state transitions rather than
+    /// user-facing content. They should be tracked separately from "ignored" events
+    /// to avoid false health warnings.
+    fn is_control_event(event: &OpenCodeEvent) -> bool {
+        match event.event_type.as_str() {
+            // Step lifecycle events are control events
+            "step_start" | "step_finish" => true,
+            _ => false,
         }
     }
 
@@ -370,13 +408,6 @@ impl OpenCodeParser {
                 continue;
             }
 
-            if trimmed.starts_with('{')
-                && serde_json::from_str::<serde_json::Value>(trimmed).is_err()
-            {
-                monitor.record_parse_error();
-                continue;
-            }
-
             if self.verbosity.is_debug() {
                 writeln!(
                     writer,
@@ -389,13 +420,29 @@ impl OpenCodeParser {
                 )?;
             }
 
+            // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
                     monitor.record_parsed();
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    monitor.record_ignored();
+                    // Check if this was a control event (state management with no user output)
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<OpenCodeEvent>(&line) {
+                            if Self::is_control_event(&event) {
+                                monitor.record_control_event();
+                            } else {
+                                // Valid JSON but not a control event - track as unknown
+                                monitor.record_unknown_event();
+                            }
+                        } else {
+                            // Failed to deserialize - track as parse error
+                            monitor.record_parse_error();
+                        }
+                    } else {
+                        monitor.record_ignored();
+                    }
                 }
             }
 
