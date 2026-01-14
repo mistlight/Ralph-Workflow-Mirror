@@ -43,6 +43,7 @@ pub struct ClassificationResult {
     /// The primary content field if found
     pub content_field: Option<String>,
     /// Whether this appears to be a streaming delta
+    #[allow(dead_code)]
     pub is_delta: bool,
 }
 
@@ -74,6 +75,7 @@ impl StreamEventClassifier {
     ///
     /// # Arguments
     /// * `threshold` - Minimum character count for text to be considered "substantial"
+    #[allow(dead_code)]
     pub fn with_threshold(threshold: usize) -> Self {
         Self {
             substantial_content_threshold: threshold,
@@ -256,6 +258,7 @@ impl StreamEventClassifier {
     ///
     /// # Returns
     /// The extracted text content, or None if no content found
+    #[allow(dead_code)]
     pub fn extract_content(&self, obj: &serde_json::Map<String, Value>) -> Option<String> {
         if let Some(field) = self.find_content_field(obj) {
             obj.get(&field)
@@ -273,6 +276,7 @@ impl StreamEventClassifier {
     ///
     /// # Returns
     /// The extracted text content, or None if no content found
+    #[allow(dead_code)]
     pub fn extract_content_from_value(&self, value: &Value) -> Option<String> {
         value
             .as_object()

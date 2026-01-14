@@ -51,8 +51,10 @@ mod types;
 pub(crate) use claude::ClaudeParser;
 pub(crate) use codex::CodexParser;
 pub(crate) use gemini::GeminiParser;
-pub(crate) use generic::GenericParser;
 pub(crate) use opencode::OpenCodeParser;
+
+#[allow(unused_imports)]
+pub(crate) use generic::GenericParser;
 
 // Re-export format_tool_input for tests
 #[cfg(test)]

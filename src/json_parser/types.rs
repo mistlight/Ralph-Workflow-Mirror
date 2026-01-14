@@ -152,6 +152,7 @@ pub(crate) struct StreamError {
 ///
 /// Distinguishes between different types of content that may be streamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum ContentType {
     /// Regular text content
     Text,
@@ -219,6 +220,7 @@ impl DeltaAccumulator {
     }
 
     /// Get the accumulated thinking for a specific index
+    #[allow(dead_code)]
     pub(crate) fn get_thinking(&self, index: &u64) -> Option<&str> {
         self.get(ContentType::Thinking, &index.to_string())
     }
@@ -229,6 +231,7 @@ impl DeltaAccumulator {
     }
 
     /// Get the most recent content of a specific type
+    #[allow(dead_code)]
     pub(crate) fn get_most_recent_of_type(&self, content_type: ContentType) -> Option<&str> {
         self.key_order
             .iter()
@@ -238,16 +241,19 @@ impl DeltaAccumulator {
     }
 
     /// Get the most recent text (highest index or last added)
+    #[allow(dead_code)]
     pub(crate) fn get_most_recent_text(&self) -> Option<&str> {
         self.get_most_recent_of_type(ContentType::Text)
     }
 
     /// Get the most recent thinking (highest index or last added)
+    #[allow(dead_code)]
     pub(crate) fn get_most_recent_thinking(&self) -> Option<&str> {
         self.get_most_recent_of_type(ContentType::Thinking)
     }
 
     /// Get all accumulated text entries
+    #[allow(dead_code)]
     pub(crate) fn get_all_text(&self) -> impl Iterator<Item = (&str, &str)> {
         self.buffers
             .iter()
@@ -256,6 +262,7 @@ impl DeltaAccumulator {
     }
 
     /// Get all accumulated thinking entries
+    #[allow(dead_code)]
     pub(crate) fn get_all_thinking(&self) -> impl Iterator<Item = (&str, &str)> {
         self.buffers
             .iter()
@@ -287,11 +294,13 @@ impl DeltaAccumulator {
     }
 
     /// Check if there is any accumulated content
+    #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.buffers.is_empty()
     }
 
     /// Check if there is accumulated content of a specific type
+    #[allow(dead_code)]
     pub(crate) fn has_content_of_type(&self, content_type: ContentType) -> bool {
         self.buffers
             .keys()
@@ -299,6 +308,7 @@ impl DeltaAccumulator {
     }
 
     /// Get the total number of accumulated entries
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.buffers.len()
     }
