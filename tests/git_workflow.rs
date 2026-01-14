@@ -65,18 +65,19 @@ exit 0
 
     cmd.assert().success();
 
-    // Verify .agent/start_commit exists
+    // Verify .agent/start_commit exists (enables cumulative diffs for reviewers)
     assert!(
         dir.path().join(".agent/start_commit").exists(),
         ".agent/start_commit should be created at pipeline start"
     );
 
-    // Verify it contains a valid OID (40 hex characters)
+    // Verify it contains a valid OID (40 hex characters or empty repo marker)
     let start_commit_content = fs::read_to_string(dir.path().join(".agent/start_commit")).unwrap();
-    assert_eq!(
-        start_commit_content.trim().len(),
-        40,
-        "start_commit should contain a 40-character OID"
+    let is_valid_oid = start_commit_content.trim().len() == 40;
+    let is_empty_repo_marker = start_commit_content.trim() == "__EMPTY_REPO__";
+    assert!(
+        is_valid_oid || is_empty_repo_marker,
+        "start_commit should contain a valid OID or empty repo marker"
     );
 }
 

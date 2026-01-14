@@ -23,7 +23,7 @@
 #![expect(clippy::too_many_lines)]
 #![expect(clippy::items_after_statements)]
 
-use crate::cli::truncate_text;
+use crate::common::truncate_text;
 use crate::config::Verbosity;
 use crate::logger::{Colors, CHECK, CROSS};
 use std::cell::{Cell, RefCell};

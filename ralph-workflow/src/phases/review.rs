@@ -16,7 +16,7 @@ use crate::git_helpers::{get_git_diff_from_start, git_snapshot, CommitResultFall
 use crate::guidelines::ReviewGuidelines;
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
-use crate::phases::get_primary_commit_agent;
+use crate::phases::common::get_primary_commit_agent;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines, prompt_for_agent,

@@ -68,7 +68,7 @@ use super::config::{
     CcsEnvVarsError,
 };
 use super::parser::JsonParserType;
-use crate::cli::split_command;
+use crate::common::split_command;
 use crate::config::{CcsAliasConfig, CcsConfig};
 use std::collections::HashMap;
 use std::path::Path;

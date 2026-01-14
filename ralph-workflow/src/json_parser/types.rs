@@ -5,7 +5,7 @@
 
 #![expect(clippy::too_many_lines)]
 #![expect(clippy::redundant_pub_crate)]
-use crate::cli::truncate_text;
+use crate::common::truncate_text;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
