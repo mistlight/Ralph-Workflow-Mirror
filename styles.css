@@ -182,6 +182,18 @@ body > * {
     top: var(--space-4);
 }
 
+/* Focus Visible - Better keyboard navigation */
+:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 4px;
+}
+
 /* === TYPOGRAPHY === */
 h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
@@ -1675,5 +1687,57 @@ code.inline {
     .terminal-cursor {
         animation: none;
         opacity: 1;
+    }
+}
+
+/* === PRINT STYLES === */
+@media print {
+    body {
+        background: white;
+        color: black;
+    }
+
+    body::before,
+    body::after,
+    .hero-bg-effects,
+    .scroll-indicator,
+    .nav,
+    .footer,
+    .btn {
+        display: none !important;
+    }
+
+    .hero-grid {
+        grid-template-columns: 1fr;
+        text-align: left;
+    }
+
+    .hero-visual {
+        display: none;
+    }
+
+    .section {
+        page-break-inside: avoid;
+    }
+
+    .terminal-window {
+        border: 1px solid #ccc;
+        box-shadow: none;
+        transform: none !important;
+    }
+
+    a {
+        text-decoration: underline;
+        color: black;
+    }
+
+    a[href]::after {
+        content: " (" attr(href) ")";
+        font-size: 0.8em;
+        word-break: break-all;
+    }
+
+    a[href^="#"]::after {
+        content: "";
     }
 }

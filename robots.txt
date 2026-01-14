@@ -1,0 +1,10 @@
+# robots.txt for Ralph Workflow website
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://mistlight.codeberg.page/ralph/sitemap.xml
+
+# Crawl-delay (optional, polite crawling)
+Crawl-delay: 1

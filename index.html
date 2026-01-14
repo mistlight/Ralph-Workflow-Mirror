@@ -8,9 +8,21 @@
     <meta name="author" content="Ralph Workflow Contributors">
 
     <!-- Open Graph -->
-    <meta property="og:title" content="Ralph Workflow">
-    <meta property="og:description" content="From PROMPT.md to committed code. Automate your AI coding workflow.">
+    <meta property="og:title" content="Ralph Workflow - Automate Your AI Coding Workflow">
+    <meta property="og:description" content="From PROMPT.md to committed code. Ralph orchestrates multiple AI agents to implement, review, and ship your changes automatically.">
     <meta property="og:type" content="website">
+    <meta property="og:url" content="https://mistlight.codeberg.page/ralph/">
+    <meta property="og:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Ralph Workflow - Automate Your AI Coding Workflow">
+    <meta name="twitter:description" content="From PROMPT.md to committed code. Multi-agent orchestration that ships code automatically.">
+    <meta name="twitter:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
+
+    <!-- Additional SEO -->
+    <link rel="canonical" href="https://mistlight.codeberg.page/ralph/">
+    <meta name="theme-color" content="#0A0A0A">
 
     <title>Ralph Workflow</title>
 
@@ -21,8 +33,36 @@
     <!-- Fonts: JetBrains Mono for code, Space Grotesk for display, Instrument Sans for body -->
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
+    <!-- Preconnect for external resources -->
+    <link rel="preconnect" href="https://codeberg.org" crossorigin>
+
     <!-- Favicon - Amber terminal cursor -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%230A0A0A'/%3E%3Crect width='16' height='24' x='22' y='18' fill='%23FFB800'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%230A0A0A'/%3E%3Crect width='16' height='24' x='22' y='18' fill='%23FFB800'/%3E%3C/svg%3E">
+
+    <!-- Structured Data for SEO -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Ralph Workflow",
+        "description": "Multi-agent orchestration tool that automates AI coding workflows from PROMPT.md to committed code.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Windows",
+        "programmingLanguage": "Rust",
+        "license": "https://codeberg.org/mistlight/ralph/src/branch/main/LICENSE",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "url": "https://codeberg.org/mistlight/ralph",
+        "author": {
+            "@type": "Organization",
+            "name": "Ralph Workflow Contributors"
+        }
+    }
+    </script>
 
     <!-- Styles -->
     <link rel="stylesheet" href="styles.css">
