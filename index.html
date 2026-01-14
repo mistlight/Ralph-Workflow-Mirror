@@ -378,11 +378,11 @@
                     <!-- Visual Workflow Diagram -->
                     <div class="workflow-diagram">
                         <svg viewBox="0 0 600 200" class="workflow-svg" xmlns="http://www.w3.org/2000/svg">
-                            <!-- Background Glow -->
+                            <!-- Background Glow - Uses design system primary cyan -->
                             <defs>
                                 <radialGradient id="diagramGlow" cx="50%" cy="50%" r="50%">
-                                    <stop offset="0%" style="stop-color:rgba(204, 255, 0, 0.1);stop-opacity:1" />
-                                    <stop offset="100%" style="stop-color:rgba(204, 255, 0, 0);stop-opacity:0" />
+                                    <stop offset="0%" stop-color="rgba(0, 212, 255, 0.1)" stop-opacity="1" />
+                                    <stop offset="100%" stop-color="rgba(0, 212, 255, 0)" stop-opacity="0" />
                                 </radialGradient>
                                 <filter id="glow">
                                     <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
@@ -394,53 +394,53 @@
                             </defs>
                             <ellipse cx="300" cy="100" rx="280" ry="80" fill="url(#diagramGlow)"/>
 
-                            <!-- Connection Lines -->
-                            <line x1="120" y1="100" x2="200" y2="100" stroke="#CCFF00" stroke-width="2" opacity="0.5"/>
-                            <line x1="280" y1="100" x2="360" y2="100" stroke="#CCFF00" stroke-width="2" opacity="0.5"/>
-                            <line x1="440" y1="100" x2="520" y2="100" stroke="#CCFF00" stroke-width="2" opacity="0.5"/>
+                            <!-- Connection Lines - Primary cyan -->
+                            <line x1="120" y1="100" x2="200" y2="100" stroke="#00D4FF" stroke-width="2" opacity="0.5"/>
+                            <line x1="280" y1="100" x2="360" y2="100" stroke="#00D4FF" stroke-width="2" opacity="0.5"/>
+                            <line x1="440" y1="100" x2="520" y2="100" stroke="#00D4FF" stroke-width="2" opacity="0.5"/>
 
-                            <!-- Arrows -->
-                            <polygon points="195,95 205,100 195,105" fill="#CCFF00" opacity="0.7"/>
-                            <polygon points="275,95 285,100 275,105" fill="#CCFF00" opacity="0.7"/>
-                            <polygon points="355,95 365,100 355,105" fill="#CCFF00" opacity="0.7"/>
-                            <polygon points="435,95 445,100 435,105" fill="#CCFF00" opacity="0.7"/>
+                            <!-- Arrows - Primary cyan -->
+                            <polygon points="195,95 205,100 195,105" fill="#00D4FF" opacity="0.7"/>
+                            <polygon points="275,95 285,100 275,105" fill="#00D4FF" opacity="0.7"/>
+                            <polygon points="355,95 365,100 355,105" fill="#00D4FF" opacity="0.7"/>
+                            <polygon points="435,95 445,100 435,105" fill="#00D4FF" opacity="0.7"/>
 
-                            <!-- Step 1: User writes PROMPT.md -->
+                            <!-- Step 1: User writes PROMPT.md - Primary cyan -->
                             <g class="workflow-node">
-                                <rect x="40" y="60" width="80" height="80" rx="0" fill="#111" stroke="#CCFF00" stroke-width="2"/>
-                                <text x="80" y="90" text-anchor="middle" fill="#CCFF00" font-size="20" font-weight="bold">📝</text>
-                                <text x="80" y="115" text-anchor="middle" fill="#F2F2F2" font-size="11" font-family="monospace">PROMPT.md</text>
-                                <text x="80" y="130" text-anchor="middle" fill="#727272" font-size="9">You write</text>
+                                <rect x="40" y="60" width="80" height="80" rx="0" fill="#111" stroke="#00D4FF" stroke-width="2"/>
+                                <text x="80" y="90" text-anchor="middle" fill="#00D4FF" font-size="20" font-weight="bold">📝</text>
+                                <text x="80" y="115" text-anchor="middle" fill="#F4F4F5" font-size="11" font-family="monospace">PROMPT.md</text>
+                                <text x="80" y="130" text-anchor="middle" fill="#71717A" font-size="9">You write</text>
                             </g>
 
-                            <!-- Step 2: Developer Agent -->
+                            <!-- Step 2: Developer Agent - Accent violet -->
                             <g class="workflow-node">
-                                <rect x="200" y="60" width="80" height="80" rx="0" fill="#111" stroke="#FF00AA" stroke-width="2"/>
-                                <text x="240" y="90" text-anchor="middle" fill="#FF00AA" font-size="20" font-weight="bold">⚙️</text>
-                                <text x="240" y="115" text-anchor="middle" fill="#F2F2F2" font-size="11" font-family="monospace">DEV AGENT</text>
-                                <text x="240" y="130" text-anchor="middle" fill="#727272" font-size="9">Writes code</text>
+                                <rect x="200" y="60" width="80" height="80" rx="0" fill="#111" stroke="#A78BFA" stroke-width="2"/>
+                                <text x="240" y="90" text-anchor="middle" fill="#A78BFA" font-size="20" font-weight="bold">⚙️</text>
+                                <text x="240" y="115" text-anchor="middle" fill="#F4F4F5" font-size="11" font-family="monospace">DEV AGENT</text>
+                                <text x="240" y="130" text-anchor="middle" fill="#71717A" font-size="9">Writes code</text>
                             </g>
 
-                            <!-- Step 3: Reviewer Agent -->
+                            <!-- Step 3: Reviewer Agent - Accent dark violet -->
                             <g class="workflow-node">
-                                <rect x="360" y="60" width="80" height="80" rx="0" fill="#111" stroke="#9D4EDD" stroke-width="2"/>
-                                <text x="400" y="90" text-anchor="middle" fill="#9D4EDD" font-size="20" font-weight="bold">🔍</text>
-                                <text x="400" y="115" text-anchor="middle" fill="#F2F2F2" font-size="11" font-family="monospace">REVIEWER</text>
-                                <text x="400" y="130" text-anchor="middle" fill="#727272" font-size="9">Validates</text>
+                                <rect x="360" y="60" width="80" height="80" rx="0" fill="#111" stroke="#8B5CF6" stroke-width="2"/>
+                                <text x="400" y="90" text-anchor="middle" fill="#8B5CF6" font-size="20" font-weight="bold">🔍</text>
+                                <text x="400" y="115" text-anchor="middle" fill="#F4F4F5" font-size="11" font-family="monospace">REVIEWER</text>
+                                <text x="400" y="130" text-anchor="middle" fill="#71717A" font-size="9">Validates</text>
                             </g>
 
-                            <!-- Step 4: Git Commit -->
+                            <!-- Step 4: Git Commit - Emerald success -->
                             <g class="workflow-node">
-                                <rect x="520" y="60" width="80" height="80" rx="0" fill="#111" stroke="#00FFF0" stroke-width="2"/>
-                                <text x="560" y="90" text-anchor="middle" fill="#00FFF0" font-size="20" font-weight="bold">✓</text>
-                                <text x="560" y="115" text-anchor="middle" fill="#F2F2F2" font-size="11" font-family="monospace">COMMIT</text>
-                                <text x="560" y="130" text-anchor="middle" fill="#727272" font-size="9">Ready to push</text>
+                                <rect x="520" y="60" width="80" height="80" rx="0" fill="#111" stroke="#34D399" stroke-width="2"/>
+                                <text x="560" y="90" text-anchor="middle" fill="#34D399" font-size="20" font-weight="bold">✓</text>
+                                <text x="560" y="115" text-anchor="middle" fill="#F4F4F5" font-size="11" font-family="monospace">COMMIT</text>
+                                <text x="560" y="130" text-anchor="middle" fill="#71717A" font-size="9">Ready to push</text>
                             </g>
 
-                            <!-- Loop Indicator -->
-                            <path d="M 240 150 Q 300 170 360 150" fill="none" stroke="#FF00AA" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.6"/>
-                            <text x="300" y="168" text-anchor="middle" fill="#727272" font-size="9">iterate until approved</text>
-                            <polygon points="355,148 365,150 355,152" fill="#FF00AA" opacity="0.6"/>
+                            <!-- Loop Indicator - Accent violet -->
+                            <path d="M 240 150 Q 300 170 360 150" fill="none" stroke="#A78BFA" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.6"/>
+                            <text x="300" y="168" text-anchor="middle" fill="#71717A" font-size="9">iterate until approved</text>
+                            <polygon points="355,148 365,150 355,152" fill="#A78BFA" opacity="0.6"/>
                         </svg>
                     </div>
                 </div>
@@ -467,279 +467,276 @@
         </section>
 
         <!-- Before/After Comparison Section -->
-        <section class="section" style="background: var(--color-bg-alt);">
+        <section class="section section--alt">
             <div class="section-header">
-                <h2 class="section-title" style="font-size: var(--display-md);">The difference is dramatic</h2>
+                <h2 class="section-title section-title--large">The difference is dramatic</h2>
                 <p class="section-subtitle">See how Ralph transforms your workflow from manual to automated</p>
             </div>
 
-            <div style="max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-8); align-items: stretch;">
+            <div class="comparison-grid">
                 <!-- Before: Manual AI Chat -->
-                <div style="background: var(--color-bg-card); border: 2px solid var(--border-medium); border-radius: var(--radius-xl); padding: var(--space-8); position: relative;">
-                    <div style="position: absolute; top: -12px; left: var(--space-8); background: var(--color-error); color: white; padding: var(--space-1) var(--space-4); border-radius: var(--radius-full); font-size: var(--text-xs); font-weight: var(--font-semibold); text-transform: uppercase; letter-spacing: 1px;">Before</div>
+                <div class="comparison-card">
+                    <div class="comparison-badge comparison-badge--before">Before</div>
+                    <h3 class="comparison-title comparison-title--before">Manual AI Chat Workflow</h3>
 
-                    <h3 style="font-family: var(--font-display); font-size: var(--text-2xl); color: var(--color-error); margin-bottom: var(--space-6); margin-top: var(--space-4);">Manual AI Chat Workflow</h3>
-
-                    <div style="display: flex; flex-direction: column; gap: var(--space-4); font-size: var(--text-sm);">
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-warm); border-radius: var(--radius-md);">
-                            <span style="color: var(--color-error); font-size: var(--text-lg);">✕</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Copy prompt to chat</strong>
-                                <span style="color: var(--color-text-muted);">Switch context from editor to browser</span>
+                    <div class="comparison-list">
+                        <div class="comparison-item comparison-item--negative">
+                            <span class="comparison-icon comparison-icon--negative">✕</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Copy prompt to chat</strong>
+                                <span class="comparison-item-desc">Switch context from editor to browser</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-warm); border-radius: var(--radius-md);">
-                            <span style="color: var(--color-error); font-size: var(--text-lg);">✕</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Wait for AI response</strong>
-                                <span style="color: var(--color-text-muted);">Often loses context or forgets details</span>
+                        <div class="comparison-item comparison-item--negative">
+                            <span class="comparison-icon comparison-icon--negative">✕</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Wait for AI response</strong>
+                                <span class="comparison-item-desc">Often loses context or forgets details</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-warm); border-radius: var(--radius-md);">
-                            <span style="color: var(--color-error); font-size: var(--text-lg);">✕</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Copy code from response</strong>
-                                <span style="color: var(--color-text-muted);">Manually find the code block in the chat</span>
+                        <div class="comparison-item comparison-item--negative">
+                            <span class="comparison-icon comparison-icon--negative">✕</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Copy code from response</strong>
+                                <span class="comparison-item-desc">Manually find the code block in the chat</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-warm); border-radius: var(--radius-md);">
-                            <span style="color: var(--color-error); font-size: var(--text-lg);">✕</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Paste into editor</strong>
-                                <span style="color: var(--color-text-muted);">Hope it works, often requires fixes</span>
+                        <div class="comparison-item comparison-item--negative">
+                            <span class="comparison-icon comparison-icon--negative">✕</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Paste into editor</strong>
+                                <span class="comparison-item-desc">Hope it works, often requires fixes</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-warm); border-radius: var(--radius-md);">
-                            <span style="color: var(--color-error); font-size: var(--text-lg);">✕</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Manually review and test</strong>
-                                <span style="color: var(--color-text-muted);">You catch issues yourself</span>
+                        <div class="comparison-item comparison-item--negative">
+                            <span class="comparison-icon comparison-icon--negative">✕</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Manually review and test</strong>
+                                <span class="comparison-item-desc">You catch issues yourself</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-warm); border-radius: var(--radius-md);">
-                            <span style="color: var(--color-error); font-size: var(--text-lg);">✕</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Repeat if issues found</strong>
-                                <span style="color: var(--color-text-muted);">Start the cycle all over again</span>
+                        <div class="comparison-item comparison-item--negative">
+                            <span class="comparison-icon comparison-icon--negative">✕</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Repeat if issues found</strong>
+                                <span class="comparison-item-desc">Start the cycle all over again</span>
                             </div>
                         </div>
                     </div>
 
-                    <div style="margin-top: var(--space-6); padding-top: var(--space-6); border-top: 1px solid var(--border-subtle); text-align: center;">
-                        <span style="font-size: var(--text-sm); color: var(--color-text-dim);">Average time: </span>
-                        <span style="font-size: var(--text-2xl); font-weight: var(--font-bold); color: var(--color-error); margin-left: var(--space-2);">30-60 min</span>
+                    <div class="comparison-footer">
+                        <span class="comparison-time-label">Average time: </span>
+                        <span class="comparison-time-value comparison-time-value--before">30-60 min</span>
                     </div>
                 </div>
 
                 <!-- After: Ralph Workflow -->
-                <div style="background: var(--color-bg-card); border: 2px solid var(--color-primary); border-radius: var(--radius-xl); padding: var(--space-8); position: relative; box-shadow: var(--shadow-terracotta);">
-                    <div style="position: absolute; top: -12px; left: var(--space-8); background: var(--color-primary); color: white; padding: var(--space-1) var(--space-4); border-radius: var(--radius-full); font-size: var(--text-xs); font-weight: var(--font-semibold); text-transform: uppercase; letter-spacing: 1px;">After</div>
+                <div class="comparison-card comparison-card--after">
+                    <div class="comparison-badge comparison-badge--after">After</div>
+                    <h3 class="comparison-title comparison-title--after">Ralph Workflow</h3>
 
-                    <h3 style="font-family: var(--font-display); font-size: var(--text-2xl); color: var(--color-primary); margin-bottom: var(--space-6); margin-top: var(--space-4);">Ralph Workflow</h3>
-
-                    <div style="display: flex; flex-direction: column; gap: var(--space-4); font-size: var(--text-sm);">
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: rgba(196, 120, 74, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(196, 120, 74, 0.2);">
-                            <span style="color: var(--color-primary); font-size: var(--text-lg);">✓</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Write PROMPT.md</strong>
-                                <span style="color: var(--color-text-muted);">Stay in your editor, describe what you want</span>
+                    <div class="comparison-list">
+                        <div class="comparison-item comparison-item--positive">
+                            <span class="comparison-icon comparison-icon--positive">✓</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Write PROMPT.md</strong>
+                                <span class="comparison-item-desc">Stay in your editor, describe what you want</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: rgba(196, 120, 74, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(196, 120, 74, 0.2);">
-                            <span style="color: var(--color-primary); font-size: var(--text-lg);">✓</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Run <code style="background: rgba(196, 120, 74, 0.15); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.9em;">ralph -S</code></strong>
-                                <span style="color: var(--color-text-muted);">Single command, automated execution</span>
+                        <div class="comparison-item comparison-item--positive">
+                            <span class="comparison-icon comparison-icon--positive">✓</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Run <code class="inline">ralph -S</code></strong>
+                                <span class="comparison-item-desc">Single command, automated execution</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: rgba(196, 120, 74, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(196, 120, 74, 0.2);">
-                            <span style="color: var(--color-primary); font-size: var(--text-lg);">✓</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">AI agents collaborate</strong>
-                                <span style="color: var(--color-text-muted);">Developer writes, reviewer validates</span>
+                        <div class="comparison-item comparison-item--positive">
+                            <span class="comparison-icon comparison-icon--positive">✓</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">AI agents collaborate</strong>
+                                <span class="comparison-item-desc">Developer writes, reviewer validates</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: rgba(196, 120, 74, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(196, 120, 74, 0.2);">
-                            <span style="color: var(--color-primary); font-size: var(--text-lg);">✓</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Auto-iterate until approved</strong>
-                                <span style="color: var(--color-text-muted);">Self-correcting loop catches issues</span>
+                        <div class="comparison-item comparison-item--positive">
+                            <span class="comparison-icon comparison-icon--positive">✓</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Auto-iterate until approved</strong>
+                                <span class="comparison-item-desc">Self-correcting loop catches issues</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: rgba(196, 120, 74, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(196, 120, 74, 0.2);">
-                            <span style="color: var(--color-primary); font-size: var(--text-lg);">✓</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">Review and push commit</strong>
-                                <span style="color: var(--color-text-muted);">Production-ready with semantic message</span>
+                        <div class="comparison-item comparison-item--positive">
+                            <span class="comparison-icon comparison-icon--positive">✓</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">Review and push commit</strong>
+                                <span class="comparison-item-desc">Production-ready with semantic message</span>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: rgba(196, 120, 74, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(196, 120, 74, 0.2);">
-                            <span style="color: var(--color-primary); font-size: var(--text-lg);">✓</span>
-                            <div style="flex: 1;">
-                                <strong style="display: block; margin-bottom: var(--space-1); color: var(--color-text);">You stay in flow</strong>
-                                <span style="color: var(--color-text-muted);">No context switching, hands-free</span>
+                        <div class="comparison-item comparison-item--positive">
+                            <span class="comparison-icon comparison-icon--positive">✓</span>
+                            <div class="comparison-item-content">
+                                <strong class="comparison-item-title">You stay in flow</strong>
+                                <span class="comparison-item-desc">No context switching, hands-free</span>
                             </div>
                         </div>
                     </div>
 
-                    <div style="margin-top: var(--space-6); padding-top: var(--space-6); border-top: 1px solid var(--border-subtle); text-align: center;">
-                        <span style="font-size: var(--text-sm); color: var(--color-text-dim);">Average time: </span>
-                        <span style="font-size: var(--text-2xl); font-weight: var(--font-bold); color: var(--color-primary); margin-left: var(--space-2);">3-10 min</span>
+                    <div class="comparison-footer">
+                        <span class="comparison-time-label">Average time: </span>
+                        <span class="comparison-time-value comparison-time-value--after">3-10 min</span>
                     </div>
                 </div>
             </div>
 
-            <p style="text-align: center; margin-top: var(--space-8); color: var(--color-text-muted); font-size: var(--text-sm);">
-                <strong style="color: var(--color-success);">→ Save 80-90% of your time</strong> while getting better code quality
+            <p class="comparison-summary">
+                <strong class="text-success">→ Save 80-90% of your time</strong> while getting better code quality
             </p>
         </section>
 
         <!-- CLI Glossary Section (for newcomers) - Collapsible -->
-        <section class="section" id="glossary" style="background: var(--color-bg);">
+        <section class="section" id="glossary">
             <div class="section-header">
                 <span class="section-number">Glossary</span>
                 <h2 class="section-title">CLI Terms Made Simple</h2>
                 <p class="section-subtitle">Essential concepts for anyone new to the command line</p>
             </div>
 
-            <div style="max-width: var(--container-lg); margin: 0 auto;">
-                <details class="glossary-details audience-newcomer-content" style="margin-bottom: var(--space-8);">
-                    <summary style="cursor: pointer; padding: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--color-primary); border-radius: var(--radius-xl); display: flex; align-items: center; justify-content: space-between; transition: all var(--duration-normal) var(--ease-out);">
-                        <span style="font-family: var(--font-heading); font-size: var(--text-lg); color: var(--color-primary); font-weight: var(--font-semibold);">Show CLI Glossary</span>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform var(--duration-normal) var(--ease-out);">
+            <div class="glossary-container">
+                <details class="glossary-details audience-newcomer-content">
+                    <summary class="glossary-summary">
+                        <span class="glossary-summary-text">Show CLI Glossary</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="6 9 12 15 18 9"/>
                         </svg>
                     </summary>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-6); margin-top: var(--space-6);">
-                    <!-- Term: Terminal -->
-                    <div style="background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <div style="width: 40px; height: 40px; background: var(--color-bg-warm); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-                                </svg>
+                    <div class="glossary-grid">
+                        <!-- Term: Terminal -->
+                        <div class="glossary-term">
+                            <div class="glossary-term-header">
+                                <div class="glossary-term-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                                    </svg>
+                                </div>
+                                <h3 class="glossary-term-name">Terminal</h3>
                             </div>
-                            <h3 style="font-family: var(--font-heading); font-size: var(--text-lg); color: var(--color-primary); margin: 0;">Terminal</h3>
+                            <p class="glossary-term-content">
+                                <strong>What it is:</strong> A text-based interface for controlling your computer.
+                                <br><br>
+                                <strong>Think of it as:</strong> Like having a conversation with your computer using text commands instead of clicking icons.
+                                <br><br>
+                                <strong>Example:</strong> Instead of double-clicking a file, you type <code class="inline">ls</code> to list files.
+                            </p>
                         </div>
-                        <p style="font-size: var(--text-sm); color: var(--color-text-muted); line-height: var(--leading-relaxed);">
-                            <strong style="color: var(--color-text);">What it is:</strong> A text-based interface for controlling your computer.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Think of it as:</strong> Like having a conversation with your computer using text commands instead of clicking icons.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Example:</strong> Instead of double-clicking a file, you type <code style="background: var(--color-bg-warm); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.9em;">ls</code> to list files.
-                        </p>
+
+                        <!-- Term: Command -->
+                        <div class="glossary-term">
+                            <div class="glossary-term-header">
+                                <div class="glossary-term-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M18 6L6 18M6 6l12 12"/>
+                                    </svg>
+                                </div>
+                                <h3 class="glossary-term-name">Command</h3>
+                            </div>
+                            <p class="glossary-term-content">
+                                <strong>What it is:</strong> A specific instruction you type to tell the computer what to do.
+                                <br><br>
+                                <strong>Think of it as:</strong> Like clicking a button, but written as text.
+                                <br><br>
+                                <strong>Example:</strong> <code class="inline">ralph -S</code> is a command that runs Ralph in "Short" mode.
+                            </p>
+                        </div>
+
+                        <!-- Term: PATH -->
+                        <div class="glossary-term">
+                            <div class="glossary-term-header">
+                                <div class="glossary-term-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/><path d="M8 12h8"/>
+                                    </svg>
+                                </div>
+                                <h3 class="glossary-term-name">PATH</h3>
+                            </div>
+                            <p class="glossary-term-content">
+                                <strong>What it is:</strong> A list of folders where your computer looks for programs.
+                                <br><br>
+                                <strong>Think of it as:</strong> Like having a search path—your computer checks these folders when you type a command.
+                                <br><br>
+                                <strong>Why it matters:</strong> When you install Ralph, it needs to be "in your PATH" so you can run it from anywhere.
+                            </p>
+                        </div>
+
+                        <!-- Term: Executable -->
+                        <div class="glossary-term">
+                            <div class="glossary-term-header">
+                                <div class="glossary-term-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                                    </svg>
+                                </div>
+                                <h3 class="glossary-term-name">Executable</h3>
+                            </div>
+                            <p class="glossary-term-content">
+                                <strong>What it is:</strong> A file that can run as a program on your computer.
+                                <br><br>
+                                <strong>Think of it as:</strong> Like an .app file on Mac or .exe on Windows—just a file that does something when you run it.
+                                <br><br>
+                                <strong>Example:</strong> When you run <code class="inline">cargo install</code>, it creates an executable you can run.
+                            </p>
+                        </div>
+
+                        <!-- Term: Prompt -->
+                        <div class="glossary-term">
+                            <div class="glossary-term-header">
+                                <div class="glossary-term-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                                    </svg>
+                                </div>
+                                <h3 class="glossary-term-name">Prompt</h3>
+                            </div>
+                            <p class="glossary-term-content">
+                                <strong>What it is:</strong> The text that appears before the cursor, waiting for you to type something.
+                                <br><br>
+                                <strong>Think of it as:</strong> Like the "blink cursor" in a text box, showing where your typing will go.
+                                <br><br>
+                                <strong>Example:</strong> <code class="inline">$</code> is the common prompt symbol, meaning "ready for your command."
+                            </p>
+                        </div>
+
+                        <!-- Term: Permissions -->
+                        <div class="glossary-term">
+                            <div class="glossary-term-header">
+                                <div class="glossary-term-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                    </svg>
+                                </div>
+                                <h3 class="glossary-term-name">Permissions</h3>
+                            </div>
+                            <p class="glossary-term-content">
+                                <strong>What it is:</strong> Security settings that control what a file or program is allowed to do.
+                                <br><br>
+                                <strong>Think of it as:</strong> Like "read-only" vs "editable"—permissions tell the computer who can do what.
+                                <br><br>
+                                <strong>Why it matters:</strong> Sometimes you need to make a file "executable" (allowed to run) with <code class="inline">chmod +x</code>.
+                            </p>
+                        </div>
                     </div>
 
-                    <!-- Term: Command -->
-                    <div style="background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <div style="width: 40px; height: 40px; background: var(--color-bg-warm); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M18 6L6 18M6 6l12 12"/>
-                                </svg>
-                            </div>
-                            <h3 style="font-family: var(--font-heading); font-size: var(--text-lg); color: var(--color-primary); margin: 0;">Command</h3>
-                        </div>
-                        <p style="font-size: var(--text-sm); color: var(--color-text-muted); line-height: var(--leading-relaxed);">
-                            <strong style="color: var(--color-text);">What it is:</strong> A specific instruction you type to tell the computer what to do.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Think of it as:</strong> Like clicking a button, but written as text.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Example:</strong> <code style="background: var(--color-bg-warm); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.9em;">ralph -S</code> is a command that runs Ralph in "Short" mode.
-                        </p>
-                    </div>
-
-                    <!-- Term: PATH -->
-                    <div style="background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <div style="width: 40px; height: 40px; background: var(--color-bg-warm); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <circle cx="12" cy="12" r="10"/><path d="M8 12h8"/>
-                                </svg>
-                            </div>
-                            <h3 style="font-family: var(--font-heading); font-size: var(--text-lg); color: var(--color-primary); margin: 0;">PATH</h3>
-                        </div>
-                        <p style="font-size: var(--text-sm); color: var(--color-text-muted); line-height: var(--leading-relaxed);">
-                            <strong style="color: var(--color-text);">What it is:</strong> A list of folders where your computer looks for programs.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Think of it as:</strong> Like having a search path—your computer checks these folders when you type a command.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Why it matters:</strong> When you install Ralph, it needs to be "in your PATH" so you can run it from anywhere.
-                        </p>
-                    </div>
-
-                    <!-- Term: Executable -->
-                    <div style="background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <div style="width: 40px; height: 40px; background: var(--color-bg-warm); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-                                </svg>
-                            </div>
-                            <h3 style="font-family: var(--font-heading); font-size: var(--text-lg); color: var(--color-primary); margin: 0;">Executable</h3>
-                        </div>
-                        <p style="font-size: var(--text-sm); color: var(--color-text-muted); line-height: var(--leading-relaxed);">
-                            <strong style="color: var(--color-text);">What it is:</strong> A file that can run as a program on your computer.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Think of it as:</strong> Like an .app file on Mac or .exe on Windows—just a file that does something when you run it.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Example:</strong> When you run <code style="background: var(--color-bg-warm); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.9em;">cargo install</code>, it creates an executable you can run.
-                        </p>
-                    </div>
-
-                    <!-- Term: Prompt -->
-                    <div style="background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <div style="width: 40px; height: 40px; background: var(--color-bg-warm); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-                                </svg>
-                            </div>
-                            <h3 style="font-family: var(--font-heading); font-size: var(--text-lg); color: var(--color-primary); margin: 0;">Prompt</h3>
-                        </div>
-                        <p style="font-size: var(--text-sm); color: var(--color-text-muted); line-height: var(--leading-relaxed);">
-                            <strong style="color: var(--color-text);">What it is:</strong> The text that appears before the cursor, waiting for you to type something.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Think of it as:</strong> Like the "blink cursor" in a text box, showing where your typing will go.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Example:</strong> <code style="background: var(--color-bg-warm); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.9em;">$</code> is the common prompt symbol, meaning "ready for your command."
-                        </p>
-                    </div>
-
-                    <!-- Term: Permissions -->
-                    <div style="background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <div style="width: 40px; height: 40px; background: var(--color-bg-warm); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                                </svg>
-                            </div>
-                            <h3 style="font-family: var(--font-heading); font-size: var(--text-lg); color: var(--color-primary); margin: 0;">Permissions</h3>
-                        </div>
-                        <p style="font-size: var(--text-sm); color: var(--color-text-muted); line-height: var(--leading-relaxed);">
-                            <strong style="color: var(--color-text);">What it is:</strong> Security settings that control what a file or program is allowed to do.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Think of it as:</strong> Like "read-only" vs "editable"—permissions tell the computer who can do what.
-                            <br><br>
-                            <strong style="color: var(--color-text);">Why it matters:</strong> Sometimes you need to make a file "executable" (allowed to run) with <code style="background: var(--color-bg-warm); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.9em;">chmod +x</code>.
-                        </p>
-                    </div>
-                </div>
-
-                <p style="text-align: center; margin-top: var(--space-8); padding: var(--space-6); background: var(--color-bg-elevated); border-radius: var(--radius-lg); border: 1px solid var(--border-subtle);">
-                    <strong style="color: var(--color-accent);">Don't worry!</strong> You don't need to memorize these. Ralph's installation will guide you through everything step by step.
-                </p>
-                </div>
+                    <p class="glossary-note">
+                        <strong class="text-primary">Don't worry!</strong> You don't need to memorize these. Ralph's installation will guide you through everything step by step.
+                    </p>
                 </details>
             </div>
         </section>
@@ -1364,189 +1361,186 @@ max_iterations = 10</code></pre>
         </section>
 
         <!-- FAQ Section -->
-        <section class="section" style="background: var(--color-bg);">
+        <section class="section" id="faq">
             <div class="section-header">
                 <span class="section-number">08</span>
                 <h2 class="section-title">Frequently Asked Questions</h2>
                 <p class="section-subtitle">Common questions about Ralph Workflow</p>
             </div>
 
-            <div style="max-width: 900px; margin: 0 auto;">
+            <div class="faq-container">
                 <!-- Getting Started Category -->
-                <h3 style="margin-top: 0; margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-primary);">Getting Started</h3>
+                <h3 class="faq-category faq-category--primary">Getting Started</h3>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>What AI providers does Ralph support?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Ralph supports Claude Code, Codex, and OpenCode agents. You can configure a fallback chain in your config file so if one provider fails, Ralph automatically tries the next.</p>
+                    <div class="faq-content">
+                        <p>Ralph supports Claude Code, Codex, and OpenCode agents. You can configure a fallback chain in your config file so if one provider fails, Ralph automatically tries the next.</p>
                     </div>
                 </details>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>Is Ralph safe to use with my code?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Yes! Ralph runs entirely locally on your machine. Your code never leaves your computer except when sent to your configured AI provider for processing. You keep full control of your API keys and data.</p>
+                    <div class="faq-content">
+                        <p>Yes! Ralph runs entirely locally on your machine. Your code never leaves your computer except when sent to your configured AI provider for processing. You keep full control of your API keys and data.</p>
                     </div>
                 </details>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>How do I install Ralph if I don't have Rust?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">You'll need to install Rust first. Visit <a href="https://rustup.rs" target="_blank" rel="noopener" style="color: var(--color-accent);">rustup.rs</a> for a simple installer. Once Rust is installed, you can use <code class="inline">cargo install ralph-workflow</code> or build from source.</p>
+                    <div class="faq-content">
+                        <p>You'll need to install Rust first. Visit <a href="https://rustup.rs" target="_blank" rel="noopener">rustup.rs</a> for a simple installer. Once Rust is installed, you can use <code class="inline">cargo install ralph-workflow</code> or build from source.</p>
                     </div>
                 </details>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>What is PROMPT.md and how do I create one?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">PROMPT.md is a simple Markdown file in your project directory where you describe what you want to build. Just create a file named <code class="inline">PROMPT.md</code> and write your requirements in plain English. Include details like features, tech stack preferences, and constraints. Ralph reads this file and uses it as the source of truth for generating code.</p>
+                    <div class="faq-content">
+                        <p>PROMPT.md is a simple Markdown file in your project directory where you describe what you want to build. Just create a file named <code class="inline">PROMPT.md</code> and write your requirements in plain English. Include details like features, tech stack preferences, and constraints. Ralph reads this file and uses it as the source of truth for generating code.</p>
                     </div>
                 </details>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>How much does it cost to use Ralph?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Ralph itself is free and open-source (AGPL-3.0). You only pay for the AI API calls you make to your provider (like Claude or OpenAI). Costs depend on your usage, but typically range from a few cents to a few dollars per task depending on complexity.</p>
+                    <div class="faq-content">
+                        <p>Ralph itself is free and open-source (AGPL-3.0). You only pay for the AI API calls you make to your provider (like Claude or OpenAI). Costs depend on your usage, but typically range from a few cents to a few dollars per task depending on complexity.</p>
                     </div>
                 </details>
 
                 <!-- Technical Category -->
-                <h3 style="margin-top: var(--space-10); margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-accent);">Technical</h3>
+                <h3 class="faq-category faq-category--accent">Technical</h3>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>Can Ralph work with my existing codebase?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Yes! Ralph works with any codebase that uses Git. Simply create a PROMPT.md file in your project root describing the changes you want, and Ralph will read your existing code and make the requested modifications while maintaining your project's structure and conventions.</p>
+                    <div class="faq-content">
+                        <p>Yes! Ralph works with any codebase that uses Git. Simply create a PROMPT.md file in your project root describing the changes you want, and Ralph will read your existing code and make the requested modifications while maintaining your project's structure and conventions.</p>
                     </div>
                 </details>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>What if Ralph makes a mistake?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">The Reviewer agent is specifically designed to catch mistakes. It validates code quality, checks for bugs, and requests fixes from the Developer agent until the code meets standards. You can also review the commit before pushing, and Ralph never makes changes to your repository without creating a proper Git commit that you can inspect or revert.</p>
+                    <div class="faq-content">
+                        <p>The Reviewer agent is specifically designed to catch mistakes. It validates code quality, checks for bugs, and requests fixes from the Developer agent until the code meets standards. You can also review the commit before pushing, and Ralph never makes changes to your repository without creating a proper Git commit that you can inspect or revert.</p>
                     </div>
                 </details>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>How do I configure API keys?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Ralph uses your existing AI provider API keys. Configure them in <code class="inline">~/.ralph/config.toml</code> or set them as environment variables. Ralph supports Claude, Codex, and OpenCode agents. See the Advanced install tab for a sample configuration file.</p>
+                    <div class="faq-content">
+                        <p>Ralph uses your existing AI provider API keys. Configure them in <code class="inline">~/.ralph/config.toml</code> or set them as environment variables. Ralph supports Claude, Codex, and OpenCode agents. See the Advanced install tab for a sample configuration file.</p>
                     </div>
                 </details>
 
-                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item">
+                    <summary class="faq-summary">
                         <span>Can I use Ralph in CI/CD?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Yes! Ralph supports quiet mode (<code class="inline">-q</code>) and verbosity control for CI/CD environments. You can run Ralph in automated workflows, GitHub Actions, or any CI/CD pipeline. Configure your API keys as environment variables and run <code class="inline">ralph -S -q</code> for silent operation.</p>
+                    <div class="faq-content">
+                        <p>Yes! Ralph supports quiet mode (<code class="inline">-q</code>) and verbosity control for CI/CD environments. You can run Ralph in automated workflows, GitHub Actions, or any CI/CD pipeline. Configure your API keys as environment variables and run <code class="inline">ralph -S -q</code> for silent operation.</p>
                     </div>
                 </details>
 
                 <!-- Newcomer Category -->
-                <h3 class="audience-newcomer-content" style="margin-top: var(--space-10); margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-accent);">New to CLI?</h3>
+                <h3 class="faq-category faq-category--accent audience-newcomer-content">New to CLI?</h3>
 
-                <!-- Newcomer FAQ items -->
-                <details class="audience-newcomer-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-accent); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item audience-newcomer-content">
+                    <summary class="faq-summary faq-summary--accent">
                         <span>What is the terminal?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">The terminal (also called command line or CLI) is a text-based interface for controlling your computer. Think of it as a direct way to give commands to your operating system. Ralph runs in the terminal, but don't worry—you only need to learn a few simple commands to get started.</p>
+                    <div class="faq-content">
+                        <p>The terminal (also called command line or CLI) is a text-based interface for controlling your computer. Think of it as a direct way to give commands to your operating system. Ralph runs in the terminal, but don't worry—you only need to learn a few simple commands to get started.</p>
                     </div>
                 </details>
 
-                <details class="audience-newcomer-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-accent); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item audience-newcomer-content">
+                    <summary class="faq-summary faq-summary--accent">
                         <span>What does "PATH" mean?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">PATH is a list of folders your computer searches when you type a command. When you install Ralph with cargo, it gets added to your PATH automatically. This means you can run <code class="inline">ralph</code> from anywhere in your terminal without specifying the full file path.</p>
+                    <div class="faq-content">
+                        <p>PATH is a list of folders your computer searches when you type a command. When you install Ralph with cargo, it gets added to your PATH automatically. This means you can run <code class="inline">ralph</code> from anywhere in your terminal without specifying the full file path.</p>
                     </div>
                 </details>
 
-                <details class="audience-newcomer-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-accent); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item audience-newcomer-content">
+                    <summary class="faq-summary faq-summary--accent">
                         <span>Is Ralph safe for beginners?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Yes! Ralph is actually great for learning. It runs locally on your machine, so your code never leaves except when sent to your AI provider. Ralph creates git commits before making changes, so you can always see what it did and revert if needed. Think of it as a helpful assistant that shows you exactly what it's doing.</p>
+                    <div class="faq-content">
+                        <p>Yes! Ralph is actually great for learning. It runs locally on your machine, so your code never leaves except when sent to your AI provider. Ralph creates git commits before making changes, so you can always see what it did and revert if needed. Think of it as a helpful assistant that shows you exactly what it's doing.</p>
                     </div>
                 </details>
 
                 <!-- Developer Category -->
-                <h3 class="audience-developer-content" style="margin-top: var(--space-10); margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-magenta);">For Developers</h3>
+                <h3 class="faq-category faq-category--magenta audience-developer-content">For Developers</h3>
 
-                <!-- Developer FAQ items -->
-                <details class="audience-developer-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-magenta); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item audience-developer-content">
+                    <summary class="faq-summary faq-summary--magenta">
                         <span>How do I configure custom iteration modes?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Ralph supports preset iteration modes: Quick (3 passes), Standard (5 passes), Thorough (10 passes), Extensive (20 passes), and Long (30 passes). You can also use <code class="inline">-D</code> (developer passes) and <code class="inline">-R</code> (reviewer passes) flags for fine-grained control. See the Advanced install tab for configuration examples.</p>
+                    <div class="faq-content">
+                        <p>Ralph supports preset iteration modes: Quick (3 passes), Standard (5 passes), Thorough (10 passes), Extensive (20 passes), and Long (30 passes). You can also use <code class="inline">-D</code> (developer passes) and <code class="inline">-R</code> (reviewer passes) flags for fine-grained control. See the Advanced install tab for configuration examples.</p>
                     </div>
                 </details>
 
-                <details class="audience-developer-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-magenta); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item audience-developer-content">
+                    <summary class="faq-summary faq-summary--magenta">
                         <span>How do I configure agent fallback chains?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">In your <code class="inline">~/.ralph/config.toml</code>, specify a primary agent and fallback agents: <code class="inline">agent = "claude-code"</code> and <code class="inline">fallback = ["codex", "opencode"]</code>. Ralph will automatically try the next agent if one fails, ensuring your workflow continues uninterrupted.</p>
+                    <div class="faq-content">
+                        <p>In your <code class="inline">~/.ralph/config.toml</code>, specify a primary agent and fallback agents: <code class="inline">agent = "claude-code"</code> and <code class="inline">fallback = ["codex", "opencode"]</code>. Ralph will automatically try the next agent if one fails, ensuring your workflow continues uninterrupted.</p>
                     </div>
                 </details>
 
                 <!-- Vibe Coder Category -->
-                <h3 class="audience-vibe-coder-content" style="margin-top: var(--space-10); margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-violet);">For Vibe Coders</h3>
+                <h3 class="faq-category faq-category--violet audience-vibe-coder-content">For Vibe Coders</h3>
 
-                <!-- Vibe Coder FAQ items -->
-                <details class="audience-vibe-coder-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-violet); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item audience-vibe-coder-content">
+                    <summary class="faq-summary faq-summary--violet">
                         <span>How much time will Ralph save me?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Most users see tasks completed in 3-10 minutes that would normally take 30-60 minutes of manual back-and-forth with AI chat tools. Ralph eliminates the copy-paste cycle and automatically iterates until code is ready. You can start a task and come back to finished, committed code.</p>
+                    <div class="faq-content">
+                        <p>Most users see tasks completed in 3-10 minutes that would normally take 30-60 minutes of manual back-and-forth with AI chat tools. Ralph eliminates the copy-paste cycle and automatically iterates until code is ready. You can start a task and come back to finished, committed code.</p>
                     </div>
                 </details>
 
-                <details class="audience-vibe-coder-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-violet); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                <details class="faq-item audience-vibe-coder-content">
+                    <summary class="faq-summary faq-summary--violet">
                         <span>Do I need to be a CLI expert to use Ralph?</span>
-                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                        <span class="faq-toggle">+</span>
                     </summary>
-                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
-                        <p style="margin: 0;">Not at all! Once Ralph is installed (a one-time setup), you only need to remember one command: <code class="inline">ralph -S</code>. Write your requirements in plain English in PROMPT.md, run that command, and Ralph handles everything else. It's designed to be simple and hands-free.</p>
+                    <div class="faq-content">
+                        <p>Not at all! Once Ralph is installed (a one-time setup), you only need to remember one command: <code class="inline">ralph -S</code>. Write your requirements in plain English in PROMPT.md, run that command, and Ralph handles everything else. It's designed to be simple and hands-free.</p>
                     </div>
                 </details>
             </div>
