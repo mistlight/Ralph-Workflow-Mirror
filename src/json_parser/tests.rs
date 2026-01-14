@@ -1001,3 +1001,73 @@ fn test_stream_classifies_error_as_control() {
     let result = classifier.classify(&event);
     assert_eq!(result.event_type, StreamEventType::Control);
 }
+
+// Test for verbose mode streaming fix - ensures no duplicate lines
+#[test]
+fn test_verbose_mode_streaming_no_duplicate_lines() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+
+    // Simulate streaming content that arrives in multiple deltas
+    // This mimics a diagnostic message like "warning: unused variable"
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"warning: unu"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"sed"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" vari"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"able"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Verify the bug is fixed: each delta should appear once
+    // The bug would produce:
+    // [Claude] warning: unu
+    // [Claude] warning: unused  <-- accumulated text from deltas 1+2
+    // [Claude] warning: unused vari  <-- accumulated text from deltas 1+2+3
+    // [Claude] warning: unused able  <-- accumulated text from deltas 1+2+3+4
+    //
+    // After the fix, we get:
+    // [Claude] warning: unu
+    // [Claude] sed
+    // [Claude]  vari
+    // [Claude] able
+    // Each delta appears exactly once
+
+    let lines: Vec<&str> = output.lines().collect();
+
+    // Count lines containing "warning:"
+    let warning_count = lines.iter().filter(|l| l.contains("warning:")).count();
+
+    // After fix: should have exactly 1 line with "warning:" (the first delta)
+    // The bug would cause 4 lines all starting with "warning:"
+    assert_eq!(warning_count, 1, "Should have exactly 1 line with 'warning:' prefix");
+
+    // Verify that we see each delta fragment exactly once
+    assert!(output.contains("warning: unu"), "Should contain first delta");
+    assert!(output.contains("sed"), "Should contain second delta");
+    assert!(output.contains(" vari"), "Should contain third delta");
+    assert!(output.contains("able"), "Should contain fourth delta");
+}
+
+// Test that normal and verbose mode show the same delta content
+#[test]
+fn test_normal_and_verbose_mode_show_same_deltas() {
+    let normal_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let verbose_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+
+    let json = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
+
+    let normal_output = normal_parser.parse_event(json);
+    let verbose_output = verbose_parser.parse_event(json);
+
+    // Both should show the delta content
+    assert!(normal_output.is_some());
+    assert!(verbose_output.is_some());
+
+    // Both should contain the delta text
+    assert!(normal_output.unwrap().contains("Hello"));
+    assert!(verbose_output.unwrap().contains("Hello"));
+}

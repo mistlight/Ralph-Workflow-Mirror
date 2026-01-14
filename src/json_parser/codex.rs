@@ -146,21 +146,7 @@ impl CodexParser {
                                 let mut acc = self.delta_accumulator.borrow_mut();
                                 acc.add_delta(ContentType::Text, "agent_msg", text);
 
-                                // In verbose mode, show full accumulated text
-                                if self.verbosity.is_verbose() {
-                                    if let Some(full_text) = acc.get(ContentType::Text, "agent_msg") {
-                                        return Some(format!(
-                                            "{}[{}]{} {}{}{}\n",
-                                            c.dim(),
-                                            name,
-                                            c.reset(),
-                                            c.white(),
-                                            full_text,
-                                            c.reset()
-                                        ));
-                                    }
-                                }
-                                // Normal mode: show delta in real-time
+                                // Show delta in real-time (both verbose and normal mode)
                                 return Some(format!(
                                     "{}[{}]{} {}{}{}\n",
                                     c.dim(),
