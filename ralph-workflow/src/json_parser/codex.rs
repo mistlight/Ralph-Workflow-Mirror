@@ -47,6 +47,8 @@ pub struct CodexParser {
     /// Delta accumulator for reasoning content (which uses special display)
     /// Note: We keep this for reasoning only, as it uses `DeltaDisplayFormatter`
     reasoning_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Turn counter for generating synthetic turn IDs
+    turn_counter: Rc<RefCell<u64>>,
 }
 
 impl CodexParser {
@@ -58,6 +60,7 @@ impl CodexParser {
             display_name: "Codex".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
             reasoning_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            turn_counter: Rc::new(RefCell::new(0)),
         }
     }
 
@@ -114,6 +117,18 @@ impl CodexParser {
                 // Reset streaming state on new turn
                 self.streaming_session.borrow_mut().on_message_start();
                 self.reasoning_accumulator.borrow_mut().clear();
+
+                // Generate and set synthetic turn ID for duplicate detection
+                let turn_id = {
+                    let mut counter = self.turn_counter.borrow_mut();
+                    let id = format!("turn-{}", *counter);
+                    *counter += 1;
+                    id
+                };
+                self.streaming_session
+                    .borrow_mut()
+                    .set_current_message_id(Some(turn_id));
+
                 format!(
                     "{}[{}]{} {}Turn started{}\n",
                     c.dim(),
@@ -124,6 +139,9 @@ impl CodexParser {
                 )
             }
             CodexEvent::TurnCompleted { usage } => {
+                // Mark the turn message as complete
+                self.streaming_session.borrow_mut().on_message_stop();
+
                 let (input, output) = usage.map_or((0, 0), |u| {
                     (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0))
                 });
@@ -142,6 +160,9 @@ impl CodexParser {
                 )
             }
             CodexEvent::TurnFailed { error } => {
+                // Mark the turn message as complete even on failure
+                self.streaming_session.borrow_mut().on_message_stop();
+
                 let err = error.unwrap_or_else(|| "unknown error".to_string());
                 format!(
                     "{}[{}]{} {}{} Turn failed:{} {}\n",

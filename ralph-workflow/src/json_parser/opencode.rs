@@ -171,11 +171,27 @@ impl OpenCodeParser {
             "step_start" => {
                 // Reset streaming state on new step
                 self.streaming_session.borrow_mut().on_message_start();
-                let sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
-                // Set the current message ID for duplicate detection
+
+                // Create unique step ID for duplicate detection
+                // Use part.message_id if available, otherwise combine session_id + part.id
+                let step_id = if let Some(part) = &event.part {
+                    if let Some(message_id) = &part.message_id {
+                        message_id.clone()
+                    } else {
+                        let session = event.session_id.as_deref().unwrap_or("unknown");
+                        let part_id = part.id.as_deref().unwrap_or("step");
+                        format!("{session}:{part_id}")
+                    }
+                } else {
+                    event
+                        .session_id
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string())
+                };
                 self.streaming_session
                     .borrow_mut()
-                    .set_current_message_id(Some(sid));
+                    .set_current_message_id(Some(step_id));
+
                 let snapshot = event
                     .part
                     .as_ref()
@@ -272,7 +288,7 @@ impl OpenCodeParser {
                     let title = part.state.as_ref().and_then(|s| s.title.as_deref());
 
                     let is_completed = status == "completed";
-                    let icon = if is_completed { CHECK } else { '⏳' };
+                    let icon = if is_completed { CHECK } else { WAIT };
                     let color = if is_completed { c.green() } else { c.yellow() };
 
                     let mut out = format!(
@@ -577,7 +593,7 @@ mod tests {
         let out = output.unwrap();
         assert!(out.contains("Tool"));
         assert!(out.contains("bash"));
-        assert!(out.contains("⏳")); // pending icon
+        assert!(out.contains("…")); // pending icon (WAIT)
     }
 
     #[test]

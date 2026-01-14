@@ -692,8 +692,10 @@ pub fn format_unknown_json_event(
             let val_str = match val {
                 serde_json::Value::String(s) => {
                     // Truncate long strings for display
-                    if s.len() > 20 {
-                        format!("{}...", &s[..17.min(s.len())])
+                    if s.chars().count() > 20 {
+                        // Use character-based slicing to avoid UTF-8 boundary issues
+                        let truncated: String = s.chars().take(17).collect();
+                        format!("{truncated}...")
                     } else {
                         s.clone()
                     }
