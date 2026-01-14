@@ -770,25 +770,21 @@ fn validate_issues_content(content: &str) -> (bool, Option<String>) {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like a valid plan)
 /// - Warning message (if validation failed)
-#[expect(clippy::option_if_let_else)]
 pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
-    match raw_content {
-        Some(content) => {
+    raw_content.map_or_else(
+        || Ok(ExtractionResult::empty()),
+        |content| {
             let content_clean = content.trim().to_string();
             let (is_valid, warning) = validate_plan_content(&content_clean);
-            if is_valid {
-                Ok(ExtractionResult::valid(content_clean))
+            Ok(if is_valid {
+                ExtractionResult::valid(content_clean)
             } else {
-                Ok(ExtractionResult::invalid(
-                    content_clean,
-                    &warning.unwrap_or_default(),
-                ))
-            }
-        }
-        None => Ok(ExtractionResult::empty()),
-    }
+                ExtractionResult::invalid(content_clean, &warning.unwrap_or_default())
+            })
+        },
+    )
 }
 
 /// Extract and validate issues content from agent logs.
@@ -803,25 +799,21 @@ pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like valid issues)
 /// - Warning message (if validation failed)
-#[expect(clippy::option_if_let_else)]
 pub fn extract_issues(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
-    match raw_content {
-        Some(content) => {
+    raw_content.map_or_else(
+        || Ok(ExtractionResult::empty()),
+        |content| {
             let content_clean = content.trim().to_string();
             let (is_valid, warning) = validate_issues_content(&content_clean);
-            if is_valid {
-                Ok(ExtractionResult::valid(content_clean))
+            Ok(if is_valid {
+                ExtractionResult::valid(content_clean)
             } else {
-                Ok(ExtractionResult::invalid(
-                    content_clean,
-                    &warning.unwrap_or_default(),
-                ))
-            }
-        }
-        None => Ok(ExtractionResult::empty()),
-    }
+                ExtractionResult::invalid(content_clean, &warning.unwrap_or_default())
+            })
+        },
+    )
 }
 
 #[cfg(test)]

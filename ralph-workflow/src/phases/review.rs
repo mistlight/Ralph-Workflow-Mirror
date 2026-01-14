@@ -766,7 +766,6 @@ fn should_use_universal_prompt(agent: &str, model_flag: Option<&str>, force: boo
 }
 
 /// Build the review prompt based on configuration and agent type.
-#[expect(clippy::option_if_let_else)]
 fn build_review_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
@@ -797,20 +796,19 @@ fn build_review_prompt(
 
     match ctx.config.review_depth {
         ReviewDepth::Security => {
-            if let Some(g) = guidelines {
-                ctx.logger
-                    .info("Using security-focused review with language-specific checks");
-                (
-                    "review (security)".to_string(),
-                    prompt_security_focused_review(reviewer_context, g),
-                )
+            ctx.logger.info(if guidelines.is_some() {
+                "Using security-focused review with language-specific checks"
             } else {
-                ctx.logger.info("Using security-focused review");
-                (
-                    "review (security)".to_string(),
-                    prompt_security_focused_review(reviewer_context, &ReviewGuidelines::default()),
-                )
-            }
+                "Using security-focused review"
+            });
+            let prompt = guidelines.map_or_else(
+                || {
+                    let default = ReviewGuidelines::default();
+                    prompt_security_focused_review(reviewer_context, &default)
+                },
+                |g| prompt_security_focused_review(reviewer_context, g),
+            );
+            ("review (security)".to_string(), prompt)
         }
         ReviewDepth::Incremental => {
             ctx.logger
@@ -866,24 +864,33 @@ fn build_review_prompt(
                 prompt_incremental_review_with_diff(reviewer_context, &diff),
             )
         }
-        ReviewDepth::Comprehensive => {
-            if let Some(g) = guidelines {
+        ReviewDepth::Comprehensive => guidelines.map_or_else(
+            || {
+                ctx.logger.info("Using comprehensive review");
+                (
+                    "review (comprehensive)".to_string(),
+                    prompt_comprehensive_review(reviewer_context, &ReviewGuidelines::default()),
+                )
+            },
+            |g| {
                 ctx.logger
                     .info("Using comprehensive review with language-specific checks");
                 (
                     "review (comprehensive)".to_string(),
                     prompt_comprehensive_review(reviewer_context, g),
                 )
-            } else {
-                ctx.logger.info("Using comprehensive review");
+            },
+        ),
+        ReviewDepth::Standard => guidelines.map_or_else(
+            || {
+                ctx.logger
+                    .info("Using detailed review without stack-specific checks");
                 (
-                    "review (comprehensive)".to_string(),
-                    prompt_comprehensive_review(reviewer_context, &ReviewGuidelines::default()),
+                    "review (standard)".to_string(),
+                    prompt_detailed_review_without_guidelines(reviewer_context),
                 )
-            }
-        }
-        ReviewDepth::Standard => {
-            if let Some(g) = guidelines {
+            },
+            |g| {
                 ctx.logger
                     .info("Using standard review with language-specific checks");
                 (
@@ -898,14 +905,7 @@ fn build_review_prompt(
                         None,
                     ),
                 )
-            } else {
-                ctx.logger
-                    .info("Using detailed review without stack-specific checks");
-                (
-                    "review (standard)".to_string(),
-                    prompt_detailed_review_without_guidelines(reviewer_context),
-                )
-            }
-        }
+            },
+        ),
     }
 }

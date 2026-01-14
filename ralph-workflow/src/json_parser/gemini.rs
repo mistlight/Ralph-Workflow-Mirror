@@ -280,7 +280,7 @@ impl GeminiParser {
                 let icon = if is_success { CHECK } else { CROSS };
                 let color = if is_success { c.green() } else { c.red() };
 
-                let stats_display = stats.map_or_else(String::new, |s| {
+                let stats_display = stats.as_ref().map_or_else(String::new, |s| {
                     let duration_s = s.duration_ms.unwrap_or(0) / 1000;
                     let duration_m = duration_s / 60;
                     let duration_s_rem = duration_s % 60;

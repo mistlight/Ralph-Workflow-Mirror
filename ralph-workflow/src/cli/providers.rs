@@ -232,7 +232,7 @@ mod tests {
     fn test_all_providers_have_aliases() {
         for category in PROVIDER_CATEGORIES {
             for (provider, alias) in category.providers {
-                assert!(!alias.is_empty(), "Provider {:?} has empty alias", provider);
+                assert!(!alias.is_empty(), "Provider {provider:?} has empty alias");
             }
         }
     }
