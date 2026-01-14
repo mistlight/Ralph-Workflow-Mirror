@@ -18,7 +18,10 @@ mod reviewer;
 mod types;
 
 // Re-export all public items for backward compatibility
-pub use commit::{prompt_fix, prompt_generate_commit_message_with_diff, prompt_strict_json_commit};
+pub use commit::{
+    prompt_emergency_commit, prompt_fix, prompt_generate_commit_message_with_diff,
+    prompt_strict_json_commit, prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
+};
 pub use developer::{prompt_developer_iteration, prompt_plan};
 pub use reviewer::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines,

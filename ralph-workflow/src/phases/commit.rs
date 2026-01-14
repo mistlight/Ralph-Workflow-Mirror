@@ -23,10 +23,68 @@ use crate::files::llm_output_extraction::{
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
-use crate::prompts::{prompt_generate_commit_message_with_diff, prompt_strict_json_commit};
+use crate::prompts::{
+    prompt_emergency_commit, prompt_generate_commit_message_with_diff, prompt_strict_json_commit,
+    prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
+};
 use crate::timer::Timer;
+use std::fmt;
 use std::fs::{self, File};
 use std::io::Read;
+
+/// Retry strategy for commit message generation.
+///
+/// Tracks which stage of re-prompting we're in, allowing for progressive
+/// degradation from detailed prompts to minimal ones before falling back
+/// to the next agent in the chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommitRetryStrategy {
+    /// First attempt with normal prompt
+    Initial,
+    /// Re-prompt with strict JSON requirement
+    StrictJson,
+    /// Even stricter prompt with negative examples
+    StrictJsonV2,
+    /// Ultra-minimal prompt, no context
+    UltraMinimal,
+    /// Final attempt, maximum strictness
+    Emergency,
+}
+
+impl CommitRetryStrategy {
+    /// Get the description of this retry stage for logging
+    const fn description(&self) -> &'static str {
+        match self {
+            Self::Initial => "initial prompt",
+            Self::StrictJson => "strict JSON prompt",
+            Self::StrictJsonV2 => "strict JSON V2 prompt",
+            Self::UltraMinimal => "ultra-minimal prompt",
+            Self::Emergency => "emergency prompt",
+        }
+    }
+
+    /// Get the next retry strategy, or None if this is the last stage
+    const fn next(&self) -> Option<Self> {
+        match self {
+            Self::Initial => Some(Self::StrictJson),
+            Self::StrictJson => Some(Self::StrictJsonV2),
+            Self::StrictJsonV2 => Some(Self::UltraMinimal),
+            Self::UltraMinimal => Some(Self::Emergency),
+            Self::Emergency => None,
+        }
+    }
+
+    /// Get the total number of retry stages
+    const fn total_stages() -> usize {
+        5 // Initial + 4 re-prompt variants
+    }
+}
+
+impl fmt::Display for CommitRetryStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.description())
+    }
+}
 
 /// Result of commit message generation.
 pub struct CommitMessageResult {
@@ -46,6 +104,14 @@ pub struct CommitMessageResult {
 /// - Configurable fallback chains
 /// - Retry logic with exponential backoff
 /// - Agent error classification
+///
+/// Multi-stage retry logic:
+/// 1. Try initial prompt
+/// 2. On fallback/empty result, try strict JSON prompt
+/// 3. On failure, try V2 strict prompt (with negative examples)
+/// 4. On failure, try ultra-minimal prompt
+/// 5. On failure, try emergency prompt
+/// 6. Only use hardcoded fallback after all prompt variants exhausted
 ///
 /// # Arguments
 ///
@@ -71,169 +137,162 @@ pub fn generate_commit_message(
 
     runtime.logger.info("Generating commit message...");
 
-    // Build the commit message prompt
-    let prompt = prompt_generate_commit_message_with_diff(diff);
+    // Try each prompt variant in sequence
+    let mut strategy = CommitRetryStrategy::Initial;
+    let mut last_extraction: Option<CommitExtractionResult> = None;
+    let mut last_error: Option<anyhow::Error> = None;
 
-    // Run the agent through the standard pipeline
-    // This handles all the fallback, retry, and logging logic
-    let exit_code = run_with_fallback(
-        AgentRole::Commit,
-        "generate commit message",
-        &prompt,
-        log_dir,
-        runtime,
-        registry,
-        commit_agent,
-    )?;
+    while let Some(current_strategy) = Some(strategy) {
+        // Generate the appropriate prompt for this retry stage
+        let prompt = match current_strategy {
+            CommitRetryStrategy::Initial => prompt_generate_commit_message_with_diff(diff),
+            CommitRetryStrategy::StrictJson => prompt_strict_json_commit(diff),
+            CommitRetryStrategy::StrictJsonV2 => prompt_strict_json_commit_v2(diff),
+            CommitRetryStrategy::UltraMinimal => prompt_ultra_minimal_commit(diff),
+            CommitRetryStrategy::Emergency => prompt_emergency_commit(diff),
+        };
 
-    // Try to extract the commit message from the agent output
-    // We look at the most recent log file
-    let result = if exit_code == 0 {
-        // Agent succeeded - extract commit message from logs
-        match extract_commit_message_from_logs(log_dir, diff, commit_agent, runtime.logger) {
+        // Log the current attempt
+        if strategy == CommitRetryStrategy::Initial {
+            runtime.logger.info(&format!(
+                "Attempt 1/{}: Using {}",
+                CommitRetryStrategy::total_stages(),
+                strategy
+            ));
+        } else {
+            runtime.logger.warn(&format!(
+                "Attempt {}/{}: Re-prompting with {}...",
+                strategy as usize + 1,
+                CommitRetryStrategy::total_stages(),
+                strategy
+            ));
+        }
+
+        // Run the agent through the standard pipeline
+        let exit_code = run_with_fallback(
+            AgentRole::Commit,
+            &format!("generate commit message ({})", strategy.description()),
+            &prompt,
+            log_dir,
+            runtime,
+            registry,
+            commit_agent,
+        )?;
+
+        // Try to extract the commit message from the agent output
+        if exit_code != 0 {
+            // Agent failed - check if we can extract a partial result
+            runtime
+                .logger
+                .warn("Commit agent failed, checking logs for partial output...");
+        }
+        let extraction_result =
+            extract_commit_message_from_logs(log_dir, diff, commit_agent, runtime.logger);
+
+        match extraction_result {
             Ok(Some(extraction)) => {
-                // Check if we got a real extraction or just a fallback
-                // If fallback, try re-prompting with stricter instruction first
-                let final_extraction = if extraction.is_fallback() {
-                    // Fallback was generated - try re-prompting with stricter instruction
-                    // before accepting the generic fallback message
-                    runtime.logger.warn(
-                        "Extraction produced fallback, re-prompting with stricter instruction...",
-                    );
+                // Check if we got a valid extraction or a fallback
+                if extraction.is_fallback() {
+                    // Fallback was generated - log and continue to next prompt variant
+                    runtime.logger.warn(&format!(
+                        "Extraction produced fallback message with {strategy}"
+                    ));
+                    last_extraction = Some(extraction);
 
-                    // Run agent again with stricter JSON-only prompt
-                    let strict_prompt = prompt_strict_json_commit(diff);
-                    let retry_exit = run_with_fallback(
-                        AgentRole::Commit,
-                        "generate commit message (strict retry)",
-                        &strict_prompt,
-                        log_dir,
-                        runtime,
-                        registry,
-                        commit_agent,
-                    )?;
-
-                    if retry_exit == 0 {
-                        if let Ok(Some(retry_extraction)) = extract_commit_message_from_logs(
-                            log_dir,
-                            diff,
-                            commit_agent,
-                            runtime.logger,
-                        ) {
-                            // Accept retry result if it's not a fallback
-                            if retry_extraction.is_fallback() {
-                                // Re-prompt also produced fallback - use original
-                                runtime
-                                    .logger
-                                    .warn("Re-prompt also failed, using fallback message");
-                                extraction
-                            } else {
-                                retry_extraction
-                            }
-                        } else {
-                            // Extraction failed on retry - use original fallback
-                            runtime
-                                .logger
-                                .warn("Re-prompt also failed, using fallback message");
-                            extraction
-                        }
+                    // Move to next strategy
+                    if let Some(next) = strategy.next() {
+                        strategy = next;
                     } else {
-                        // Retry agent failed - use original fallback
-                        runtime
-                            .logger
-                            .warn("Re-prompt also failed, using fallback message");
-                        extraction
+                        // No more strategies - use the last fallback we got
+                        runtime.logger.warn(&format!(
+                            "All {} prompt variants exhausted, using fallback message",
+                            CommitRetryStrategy::total_stages()
+                        ));
+                        break;
                     }
                 } else {
-                    // Got a real extraction (Extracted or Salvaged) - use it directly
-                    extraction
-                };
-
-                CommitMessageResult {
-                    message: final_extraction.into_message(),
-                    success: true,
-                    _log_path: log_file,
+                    // Got a valid extraction (Extracted or Salvaged) - use it
+                    runtime.logger.info(&format!(
+                        "Successfully extracted commit message with {strategy}"
+                    ));
+                    return Ok(CommitMessageResult {
+                        message: extraction.into_message(),
+                        success: true,
+                        _log_path: log_file,
+                    });
                 }
             }
             Ok(None) => {
-                // Agent succeeded but extraction completely failed - try re-prompt
-                runtime.logger.warn(
-                    "No valid commit message extracted, re-prompting with stricter instruction...",
-                );
+                // Extraction completely failed - log and continue
+                runtime.logger.warn(&format!(
+                    "No valid commit message extracted with {strategy}"
+                ));
 
-                // Run agent again with stricter JSON-only prompt
-                let strict_prompt = prompt_strict_json_commit(diff);
-                let retry_exit = run_with_fallback(
-                    AgentRole::Commit,
-                    "generate commit message (strict retry)",
-                    &strict_prompt,
-                    log_dir,
-                    runtime,
-                    registry,
-                    commit_agent,
-                )?;
-
-                if retry_exit == 0 {
-                    if let Ok(Some(extraction)) = extract_commit_message_from_logs(
-                        log_dir,
-                        diff,
-                        commit_agent,
-                        runtime.logger,
-                    ) {
-                        return Ok(CommitMessageResult {
-                            message: extraction.into_message(),
-                            success: true,
-                            _log_path: log_file,
-                        });
-                    }
-                }
-
-                // Both attempts failed
-                runtime
-                    .logger
-                    .warn("Re-prompt also failed to produce valid commit message");
-                CommitMessageResult {
-                    message: String::new(),
-                    success: false,
-                    _log_path: log_file,
+                // Move to next strategy
+                if let Some(next) = strategy.next() {
+                    strategy = next;
+                } else {
+                    // No more strategies - return failure
+                    runtime.logger.error(&format!(
+                        "All {} prompt variants failed",
+                        CommitRetryStrategy::total_stages()
+                    ));
+                    return Ok(CommitMessageResult {
+                        message: String::new(),
+                        success: false,
+                        _log_path: log_file,
+                    });
                 }
             }
             Err(e) => {
-                runtime
-                    .logger
-                    .error(&format!("Failed to extract commit message: {e}"));
-                CommitMessageResult {
-                    message: String::new(),
-                    success: false,
-                    _log_path: log_file,
+                // Extraction error - log and continue
+                runtime.logger.error(&format!(
+                    "Failed to extract commit message with {strategy}: {e}"
+                ));
+                last_error = Some(e);
+
+                // Move to next strategy
+                if let Some(next) = strategy.next() {
+                    strategy = next;
+                } else {
+                    // No more strategies - return failure
+                    runtime.logger.error(&format!(
+                        "All {} prompt variants failed with errors",
+                        CommitRetryStrategy::total_stages()
+                    ));
+                    return Ok(CommitMessageResult {
+                        message: String::new(),
+                        success: false,
+                        _log_path: log_file,
+                    });
                 }
             }
         }
-    } else {
-        // Agent failed - check if we can extract a partial result
+    }
+
+    // If we have a fallback from the last attempt, use it
+    if let Some(extraction) = last_extraction {
         runtime
             .logger
-            .warn("Commit agent failed, checking logs for partial output...");
-        match extract_commit_message_from_logs(log_dir, diff, commit_agent, runtime.logger) {
-            Ok(Some(extraction)) => {
-                runtime
-                    .logger
-                    .warn("Using partially generated commit message from failed agent");
-                CommitMessageResult {
-                    message: extraction.into_message(),
-                    success: false,
-                    _log_path: log_file,
-                }
-            }
-            _ => CommitMessageResult {
-                message: String::new(),
-                success: false,
-                _log_path: log_file,
-            },
-        }
-    };
+            .warn("Using fallback commit message from final attempt");
+        return Ok(CommitMessageResult {
+            message: extraction.into_message(),
+            success: true, // We still have a valid (though generic) message
+            _log_path: log_file,
+        });
+    }
 
-    Ok(result)
+    // Complete failure - no valid message could be generated
+    let error_msg = last_error.as_ref().map_or_else(
+        || "Failed to generate commit message".to_string(),
+        std::string::ToString::to_string,
+    );
+    runtime.logger.error(&error_msg);
+    Ok(CommitMessageResult {
+        message: String::new(),
+        success: false,
+        _log_path: log_file,
+    })
 }
 
 /// Create a commit with an automatically generated message using the standard pipeline.
