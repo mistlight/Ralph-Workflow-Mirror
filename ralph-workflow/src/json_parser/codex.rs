@@ -630,6 +630,7 @@ impl CodexParser {
                         monitor.record_parsed();
                     }
                     write!(writer, "{}", output)?;
+                    writer.flush()?;
                 }
                 None => {
                     // Check if this was a control event (state management with no user output)

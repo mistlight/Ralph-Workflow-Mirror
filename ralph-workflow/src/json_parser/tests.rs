@@ -3,6 +3,8 @@
 use super::*;
 use crate::colors::Colors;
 use crate::config::Verbosity;
+use std::cell::RefCell;
+use std::io::{self, Cursor, Write};
 
 #[test]
 fn test_parse_claude_system_init() {
@@ -1052,5 +1054,129 @@ fn test_delta_with_embedded_newline_displays_inline() {
         lines.len(),
         1,
         "Delta with embedded newline should produce a single output line"
+    );
+}
+
+// Integration test for real-time streaming behavior
+// Verifies that flush() is called after each streaming write to ensure
+// output is displayed immediately rather than being buffered
+
+/// A mock writer that tracks whether flush() is called after each write()
+struct FlushTrackingWriter {
+    write_count: RefCell<usize>,
+    flush_count: RefCell<usize>,
+    buffer: RefCell<Vec<u8>>,
+}
+
+impl FlushTrackingWriter {
+    fn new() -> Self {
+        Self {
+            write_count: RefCell::new(0),
+            flush_count: RefCell::new(0),
+            buffer: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Verify that flush was called at least as many times as write
+    /// In the streaming fix, flush should be called after every write
+    fn flush_called_after_writes(&self) -> bool {
+        let writes = *self.write_count.borrow();
+        let flushes = *self.flush_count.borrow();
+        flushes >= writes
+    }
+}
+
+impl Write for FlushTrackingWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        *self.write_count.borrow_mut() += 1;
+        self.buffer.borrow_mut().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        *self.flush_count.borrow_mut() += 1;
+        Ok(())
+    }
+}
+
+#[test]
+fn test_claude_streaming_flushes_after_write() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming deltas that produce output
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = FlushTrackingWriter::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+
+    // Verify flush was called after writes for streaming output
+    assert!(
+        writer.flush_called_after_writes(),
+        "flush() should be called after writes for real-time streaming"
+    );
+}
+
+#[test]
+fn test_codex_streaming_flushes_after_write() {
+    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming delta events
+    let input = r#"{"type":"item.started","item":{"type":"reasoning","id":"item_1","text":"Thinking"}}
+{"type":"item.completed","item":{"type":"reasoning","id":"item_1"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = FlushTrackingWriter::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+
+    // Verify flush was called after writes
+    assert!(
+        writer.flush_called_after_writes(),
+        "flush() should be called after writes for real-time streaming"
+    );
+}
+
+#[test]
+fn test_gemini_streaming_flushes_after_write() {
+    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming delta events
+    let input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true,"timestamp":"2025-10-10T12:00:01.000Z"}
+{"type":"message","role":"assistant","content":" World","delta":true,"timestamp":"2025-10-10T12:00:02.000Z"}
+{"type":"result","status":"success","timestamp":"2025-10-10T12:00:03.000Z"}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = FlushTrackingWriter::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+
+    // Verify flush was called after writes
+    assert!(
+        writer.flush_called_after_writes(),
+        "flush() should be called after writes for real-time streaming"
+    );
+}
+
+#[test]
+fn test_opencode_streaming_flushes_after_write() {
+    let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming tool_use events
+    let input = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"started","input":{"filePath":"/test.rs"}}}}
+{"type":"tool_use","timestamp":1768191346713,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"/test.rs"}}}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = FlushTrackingWriter::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+
+    // Verify flush was called after writes
+    assert!(
+        writer.flush_called_after_writes(),
+        "flush() should be called after writes for real-time streaming"
     );
 }
