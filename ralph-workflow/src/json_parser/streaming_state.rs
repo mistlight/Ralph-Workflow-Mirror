@@ -48,7 +48,7 @@
 //! ```
 
 use crate::json_parser::types::ContentType;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Ralph enforces a **delta contract** for all streaming content.
 ///
@@ -124,6 +124,12 @@ pub struct StreamingSession {
     delta_sizes: HashMap<(ContentType, String), Vec<usize>>,
     /// Maximum number of delta sizes to track per key
     max_delta_history: usize,
+    /// Track the current message ID for duplicate detection
+    current_message_id: Option<String>,
+    /// Track the last finalized message ID to detect duplicates
+    last_finalized_message_id: Option<String>,
+    /// Track which messages have been displayed to prevent duplicate final output
+    displayed_final_messages: HashSet<String>,
 }
 
 impl StreamingSession {
@@ -142,6 +148,9 @@ impl StreamingSession {
     /// - Codex: `TurnStarted` event
     /// - Gemini: `init` event or new message
     /// - `OpenCode`: New part starts
+    ///
+    /// # Arguments
+    /// * `message_id` - Optional unique identifier for this message (for deduplication)
     pub fn on_message_start(&mut self) {
         self.state = StreamingState::Idle;
         self.streamed_types.clear();
@@ -149,6 +158,54 @@ impl StreamingSession {
         self.accumulated.clear();
         self.key_order.clear();
         self.delta_sizes.clear();
+        // Note: We don't reset current_message_id here - it's set by a separate method
+        // This allows for more flexible message ID handling
+    }
+
+    /// Set the current message ID for tracking.
+    ///
+    /// This should be called when processing a `MessageStart` event that contains
+    /// a message identifier. Used to prevent duplicate display of final messages.
+    ///
+    /// # Arguments
+    /// * `message_id` - The unique identifier for this message (or None to clear)
+    pub fn set_current_message_id(&mut self, message_id: Option<String>) {
+        self.current_message_id = message_id;
+    }
+
+    /// Get the current message ID.
+    ///
+    /// # Returns
+    /// * `Some(id)` - The current message ID
+    /// * `None` - No message ID is set
+    pub fn get_current_message_id(&self) -> Option<&str> {
+        self.current_message_id.as_deref()
+    }
+
+    /// Check if a message ID represents a duplicate final message.
+    ///
+    /// This prevents displaying the same message twice - once after streaming
+    /// completes and again when the final "Assistant" event arrives.
+    ///
+    /// # Arguments
+    /// * `message_id` - The message ID to check
+    ///
+    /// # Returns
+    /// * `true` - This message has already been displayed (is a duplicate)
+    /// * `false` - This is a new message
+    pub fn is_duplicate_final_message(&self, message_id: &str) -> bool {
+        self.displayed_final_messages.contains(message_id)
+    }
+
+    /// Mark a message as displayed to prevent duplicate display.
+    ///
+    /// This should be called after displaying a message's final content.
+    ///
+    /// # Arguments
+    /// * `message_id` - The message ID to mark as displayed
+    pub fn mark_message_displayed(&mut self, message_id: &str) {
+        self.displayed_final_messages.insert(message_id.to_string());
+        self.last_finalized_message_id = Some(message_id.to_string());
     }
 
     /// Mark the start of a content block.
@@ -394,11 +451,16 @@ impl StreamingSession {
     /// - Codex: `TurnCompleted` or `ItemCompleted` with text
     /// - Gemini: Message completion
     /// - `OpenCode`: Part completion
-    #[expect(clippy::missing_const_for_fn)]
     pub fn on_message_stop(&mut self) -> bool {
         let was_in_block = self.in_content_block;
         self.state = StreamingState::Finalized;
         self.in_content_block = false;
+
+        // Mark the current message as displayed to prevent duplicate display
+        // when the final "Assistant" event arrives
+        if let Some(message_id) = self.current_message_id.clone() {
+            self.mark_message_displayed(&message_id);
+        }
 
         was_in_block
     }
@@ -985,5 +1047,74 @@ mod tests {
             session.get_accumulated(ContentType::Text, "0"),
             Some("Hello World! This is additional content")
         );
+    }
+
+    // Tests for message identity tracking
+
+    #[test]
+    fn test_set_and_get_current_message_id() {
+        let mut session = StreamingSession::new();
+
+        // Initially no message ID
+        assert!(session.get_current_message_id().is_none());
+
+        // Set a message ID
+        session.set_current_message_id(Some("msg-123".to_string()));
+        assert_eq!(session.get_current_message_id(), Some("msg-123"));
+
+        // Clear the message ID
+        session.set_current_message_id(None);
+        assert!(session.get_current_message_id().is_none());
+    }
+
+    #[test]
+    fn test_mark_message_displayed() {
+        let mut session = StreamingSession::new();
+
+        // Initially not marked as displayed
+        assert!(!session.is_duplicate_final_message("msg-123"));
+
+        // Mark as displayed
+        session.mark_message_displayed("msg-123");
+        assert!(session.is_duplicate_final_message("msg-123"));
+
+        // Different message ID is not a duplicate
+        assert!(!session.is_duplicate_final_message("msg-456"));
+    }
+
+    #[test]
+    fn test_message_stop_marks_displayed() {
+        let mut session = StreamingSession::new();
+
+        // Set a message ID
+        session.set_current_message_id(Some("msg-123".to_string()));
+
+        // Start a message with content
+        session.on_message_start();
+        session.on_text_delta(0, "Hello");
+
+        // Stop should mark as displayed
+        session.on_message_stop();
+        assert!(session.is_duplicate_final_message("msg-123"));
+    }
+
+    #[test]
+    fn test_multiple_messages_tracking() {
+        let mut session = StreamingSession::new();
+
+        // First message
+        session.set_current_message_id(Some("msg-1".to_string()));
+        session.on_message_start();
+        session.on_text_delta(0, "First");
+        session.on_message_stop();
+        assert!(session.is_duplicate_final_message("msg-1"));
+
+        // Second message
+        session.set_current_message_id(Some("msg-2".to_string()));
+        session.on_message_start();
+        session.on_text_delta(0, "Second");
+        session.on_message_stop();
+        assert!(session.is_duplicate_final_message("msg-1"));
+        assert!(session.is_duplicate_final_message("msg-2"));
     }
 }

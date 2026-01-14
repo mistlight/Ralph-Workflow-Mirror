@@ -30,6 +30,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
+use super::delta_display::StreamingDisplay;
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType, GeminiEvent};
@@ -42,6 +43,8 @@ pub struct GeminiParser {
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Streaming display manager for in-place terminal updates
+    streaming_display: Rc<RefCell<StreamingDisplay>>,
 }
 
 impl GeminiParser {
@@ -52,6 +55,7 @@ impl GeminiParser {
             log_file: None,
             display_name: "Gemini".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            streaming_display: Rc::new(RefCell::new(StreamingDisplay::new())),
         }
     }
 
@@ -91,7 +95,12 @@ impl GeminiParser {
             } => {
                 // Clear accumulator and reset streaming state on new session
                 self.streaming_session.borrow_mut().on_message_start();
+                self.streaming_display.borrow_mut().reset_cursor();
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
+                // Set the current message ID for duplicate detection
+                self.streaming_session
+                    .borrow_mut()
+                    .set_current_message_id(Some(sid.clone()));
                 let model_str = model.unwrap_or_else(|| "unknown".to_string());
                 format!(
                     "{}[{}]{} {}Session started{} {}({:.8}..., {}){}\n",
@@ -117,17 +126,22 @@ impl GeminiParser {
                 if let Some(text) = content {
                     if is_delta && role_str == "assistant" {
                         // Accumulate delta content using StreamingSession
-                        let mut session = self.streaming_session.borrow_mut();
-                        let show_prefix = session.on_text_delta_key("main", &text);
-                        // Get accumulated text for streaming display
-                        let accumulated_text = session
-                            .get_accumulated(ContentType::Text, "main")
-                            .unwrap_or("");
+                        let (show_prefix, accumulated_text) = {
+                            let mut session = self.streaming_session.borrow_mut();
+                            let show_prefix = session.on_text_delta_key("main", &text);
+                            // Get accumulated text for streaming display
+                            let accumulated_text = session
+                                .get_accumulated(ContentType::Text, "main")
+                                .unwrap_or("")
+                                .to_string();
+                            (show_prefix, accumulated_text)
+                        };
 
                         // Show prefix only on the first delta chunk
                         if !show_prefix {
-                            // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                            return Some(format!("{}\x1b[0K\r{}", c.white(), accumulated_text));
+                            // Subsequent chunks: use StreamingDisplay for in-place update
+                            let mut display = self.streaming_display.borrow_mut();
+                            return Some(display.in_place_update(&accumulated_text, *c));
                         }
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                         return Some(format!(
@@ -140,17 +154,23 @@ impl GeminiParser {
                             c.reset()
                         ));
                     } else if !is_delta && role_str == "assistant" {
-                        // Non-delta message - check if we were streaming, then finalize
+                        // Non-delta message - check for duplicate using message ID or fallback to streaming content check
                         let session = self.streaming_session.borrow();
+                        let is_duplicate = session
+                            .get_current_message_id()
+                            .map_or_else(|| session.has_any_streamed_content(), |message_id| {
+                                session.is_duplicate_final_message(message_id)
+                            });
                         let was_streaming = session.has_any_streamed_content();
                         drop(session);
 
-                        // Finalize the message
+                        // Finalize the message (this marks it as displayed)
                         let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
 
-                        // If content was streamed, just add a final newline and skip re-display
-                        if was_streaming {
-                            return Some(format!("{}\n", c.reset()));
+                        // If this is a duplicate or content was streamed, use StreamingDisplay for completion
+                        if is_duplicate || was_streaming {
+                            let display = self.streaming_display.borrow();
+                            return Some(display.render_completion());
                         }
 
                         // Otherwise, show the full content (non-streaming path)
