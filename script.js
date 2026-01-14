@@ -464,6 +464,97 @@ const AgentAnimation = {
     }
 };
 
+// === PLATFORM DETECTION ===
+const PlatformDetection = {
+    init() {
+        const banner = document.getElementById('platformBanner');
+        const icon = document.getElementById('platformIcon');
+        const name = document.getElementById('platformName');
+
+        if (!banner || !icon || !name) return;
+
+        const platform = this.detectPlatform();
+        if (platform) {
+            name.textContent = platform.name;
+            icon.innerHTML = platform.icon;
+            banner.style.display = 'flex';
+
+            // Auto-select the appropriate tab
+            setTimeout(() => {
+                const tabs = document.querySelectorAll('.install-tab');
+                tabs.forEach(tab => {
+                    if (tab.dataset.tab === platform.recommendedTab) {
+                        tab.click();
+                    }
+                });
+            }, 500);
+        }
+    },
+
+    detectPlatform() {
+        const ua = navigator.userAgent.toLowerCase();
+        const platform = navigator.platform.toLowerCase();
+
+        // macOS
+        if (platform.includes('mac') || ua.includes('mac os x')) {
+            return {
+                name: 'macOS',
+                icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>',
+                recommendedTab: 'cargo'
+            };
+        }
+
+        // Windows
+        if (platform.includes('win') || ua.includes('windows')) {
+            return {
+                name: 'Windows',
+                icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.5L8.5 3.5V9H11V12H8.5V19.5L3 16.5V12ZM12.5 12V6.5L18 3.5V9H20.5V12H18V19.5L12.5 16.5V12Z"/></svg>',
+                recommendedTab: 'cargo'
+            };
+        }
+
+        // Linux
+        if (platform.includes('linux') || ua.includes('linux')) {
+            return {
+                name: 'Linux',
+                icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2c1.85 0 3.55.54 5 1.43-.38.92-.73 2.08-.96 3.23-.6.08-1.23.13-1.87.13-.48 0-.95-.03-1.41-.1.15-1.31.33-2.58.56-3.76.12-.61.27-1.21.43-1.8C13.23 4.3 12.63 4 12 4zM5.65 6.37C7.02 5.15 8.82 4.38 10.76 4.12c-.16.59-.31 1.19-.43 1.8-.24 1.18-.41 2.45-.56 3.76-1.37.24-2.68.68-3.89 1.28-.03-1.25-.08-2.59-.08-3.99 0-.55.02-1.08.06-1.6h-.21zm12.7 0c.04.52.06 1.05.06 1.6 0 1.4-.05 2.74-.08 3.99-1.21-.6-2.52-1.04-3.89-1.28-.15-1.31-.32-2.58-.56-3.76-.12-.61-.27-1.21-.43-1.8 1.94.26 3.74 1.03 5.11 2.25h-.21zM6.8 11.16c1.17-.57 2.43-.99 3.75-1.22-.13 1.27-.23 2.57-.29 3.89-.01.01-.01.01-.01.02-1.46.18-2.86.5-4.18.94.24-1.25.44-2.46.59-3.63h.14zm10.4 0c.15 1.17.35 2.38.59 3.63-1.32-.44-2.72-.76-4.18-.94 0-.01 0-.01-.01-.02-.06-1.32-.16-2.62-.29-3.89 1.32.23 2.58.65 3.75 1.22h.14zM10.2 13.92c.06-1.25.15-2.49.27-3.7 1.22.2 2.38.2 3.6 0 .12 1.21.21 2.45.27 3.7-1.38-.19-2.76-.19-4.14 0zm2.07 1.08c.06 1.27.16 2.57.29 3.84-1.32-.23-2.58-.65-3.75-1.22-.15-1.17-.35-2.38-.59-3.63 1.32.44 2.72.76 4.18.94.01.01.01.01.01.02h-.14zm-.14 1.02c-.15-1.31-.32-2.58-.56-3.76-1.22.24-2.52.24-3.76 0-.24 1.18-.41 2.45-.56 3.76.48.07.95.1 1.41.1.64 0 1.27-.05 1.87-.13h.6z"/></svg>',
+                recommendedTab: 'cargo'
+            };
+        }
+
+        return null;
+    }
+};
+
+// === WORKFLOW DEMO ===
+const WorkflowDemo = {
+    init() {
+        const container = document.getElementById('workflowDemo');
+        if (!container) return;
+
+        const steps = container.querySelectorAll('.demo-step');
+        const panels = document.querySelectorAll('.demo-panel');
+
+        steps.forEach(step => {
+            step.addEventListener('click', () => {
+                const stepNum = step.dataset.step;
+
+                // Update step buttons
+                steps.forEach(s => s.classList.remove('demo-step-active'));
+                step.classList.add('demo-step-active');
+
+                // Update panels
+                panels.forEach(panel => {
+                    panel.classList.remove('demo-panel-active');
+                    if (panel.dataset.panel === stepNum) {
+                        panel.classList.add('demo-step-active');
+                    }
+                });
+            });
+        });
+    }
+};
+
 // === INITIALIZE ALL ===
 document.addEventListener('DOMContentLoaded', () => {
     MobileNav.init();
@@ -477,6 +568,8 @@ document.addEventListener('DOMContentLoaded', () => {
     MagneticButtons.init();
     TerminalTyping.init();
     HeroAnimation.init();
+    PlatformDetection.init();
+    WorkflowDemo.init();
 });
 
 // === CONSOLE EASTER EGG ===

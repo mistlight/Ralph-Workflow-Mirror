@@ -99,6 +99,9 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Grain Texture Overlay -->
+    <div class="grain-overlay" aria-hidden="true"></div>
+
     <!-- Skip Link -->
     <a href="#main" class="skip-link">Skip to content</a>
 
@@ -357,6 +360,95 @@
                                 <div class="step-content">
                                     <h3>Commit</h3>
                                     <p>Git commit created automatically</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Interactive Workflow Demo -->
+                        <div class="workflow-demo">
+                            <h4 class="demo-title">Try the workflow</h4>
+                            <p class="demo-subtitle">Click through to see how Ralph works</p>
+                            <div class="demo-steps" id="workflowDemo">
+                                <button class="demo-step demo-step-active" data-step="1">
+                                    <span class="demo-step-num">1</span>
+                                    <span class="demo-step-label">Prompt</span>
+                                </button>
+                                <button class="demo-step" data-step="2">
+                                    <span class="demo-step-num">2</span>
+                                    <span class="demo-step-label">Code</span>
+                                </button>
+                                <button class="demo-step" data-step="3">
+                                    <span class="demo-step-num">3</span>
+                                    <span class="demo-step-label">Review</span>
+                                </button>
+                                <button class="demo-step" data-step="4">
+                                    <span class="demo-step-num">4</span>
+                                    <span class="demo-step-label">Commit</span>
+                                </button>
+                            </div>
+                            <div class="demo-content">
+                                <div class="demo-panel demo-panel-active" data-panel="1">
+                                    <div class="demo-panel-header">
+                                        <span class="demo-panel-icon">📝</span>
+                                        <h5>Your PROMPT.md</h5>
+                                    </div>
+                                    <div class="demo-panel-body">
+                                        <pre><code class="language-markdown"># Add OAuth login
+
+Implement GitHub OAuth2 authentication.
+Use the 'oauth2' crate and store sessions
+in Redis with a 24-hour expiration.</code></pre>
+                                    </div>
+                                    <p class="demo-panel-desc">You describe what you want in plain English</p>
+                                </div>
+                                <div class="demo-panel" data-panel="2">
+                                    <div class="demo-panel-header">
+                                        <span class="demo-panel-icon">🔨</span>
+                                        <h5>Developer Agent</h5>
+                                    </div>
+                                    <div class="demo-panel-body">
+                                        <div class="demo-terminal">
+                                            <div class="terminal-line"><span class="terminal-success">✓</span> Added OAuth routes to main.rs</div>
+                                            <div class="terminal-line"><span class="terminal-success">✓</span> Created auth module with GitHub provider</div>
+                                            <div class="terminal-line"><span class="terminal-success">✓</span> Implemented Redis session storage</div>
+                                            <div class="terminal-line"><span class="terminal-dim">→ Generating token handler...</span>
+                                        </div>
+                                    </div>
+                                    <p class="demo-panel-desc">The Developer agent writes the implementation</p>
+                                </div>
+                                <div class="demo-panel" data-panel="3">
+                                    <div class="demo-panel-header">
+                                        <span class="demo-panel-icon">👁️</span>
+                                        <h5>Reviewer Agent</h5>
+                                    </div>
+                                    <div class="demo-panel-body">
+                                        <div class="demo-terminal">
+                                            <div class="terminal-line"><span class="terminal-warning">⚠</span> Missing error handling on token exchange</div>
+                                            <div class="terminal-line"><span class="terminal-warning">⚠</span> Session expiration should be configurable</div>
+                                            <div class="terminal-line"><span class="terminal-info">→</span> Requesting fixes from Developer...</div>
+                                            <div class="terminal-line"><span class="terminal-success">✓</span> All issues resolved, code approved</div>
+                                        </div>
+                                    </div>
+                                    <p class="demo-panel-desc">The Reviewer validates and iterates until satisfied</p>
+                                </div>
+                                <div class="demo-panel" data-panel="4">
+                                    <div class="demo-panel-header">
+                                        <span class="demo-panel-icon">✅</span>
+                                        <h5>Commit Ready</h5>
+                                    </div>
+                                    <div class="demo-panel-body">
+                                        <div class="demo-commit">
+                                            <div class="commit-message">
+                                                <code>feat(auth): implement GitHub OAuth2 login</code>
+                                            </div>
+                                            <div class="commit-files">
+                                                <span class="file-added">+src/auth/oauth.rs</span>
+                                                <span class="file-added">+src/session/redis.rs</span>
+                                                <span class="file-modified">M Cargo.toml</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p class="demo-panel-desc">A semantic commit is created automatically</p>
                                 </div>
                             </div>
                         </div>
@@ -665,6 +757,12 @@ Use the 'oauth2' crate and store sessions in Redis.</code></pre>
                     <span class="section-number">04</span>
                     <h2 class="install-title">Get started in minutes</h2>
                     <p class="install-subtitle">Install Ralph and run your first automated workflow</p>
+
+                    <!-- Platform Detection Banner -->
+                    <div class="platform-banner" id="platformBanner" style="display: none;">
+                        <span class="platform-icon" id="platformIcon"></span>
+                        <span class="platform-text">Detected: <strong id="platformName">Loading...</strong></span>
+                    </div>
 
                     <div class="install-requirements">
                         <h4>Requirements</h4>
