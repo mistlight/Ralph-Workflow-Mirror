@@ -1,9 +1,9 @@
 [package]
-name = "ralph"
-version = "0.3.3"
+name = "ralph-workflow"
+version = "0.3.4"
 edition = "2021"
 description = "PROMPT-driven multi-agent orchestrator for git repos"
-authors = ["Ralph Authors"]
+authors = ["Mistlight"]
 license = "AGPL-3.0-only"
 readme = "README.md"
 repository = "https://codeberg.org/mistlight/RalphWithReviewer"

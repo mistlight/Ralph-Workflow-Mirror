@@ -65,10 +65,77 @@ impl ExtractionResult {
     }
 }
 
-/// Extract the last "result" event from a single log file.
+/// Calculate a score for a result to determine its quality.
 ///
-/// Scans the file for JSON lines and returns the last `{"type": "result", "result": "..."}`
-/// event's content.
+/// Higher scores indicate better results. Scoring considers:
+/// - Presence of plan structure markers (## Summary, ## Implementation Steps, etc.)
+/// - Markdown headers (#)
+/// - Content length (longer is generally better)
+/// - Plan-like keywords
+fn score_result(content: &str) -> u32 {
+    let mut score: u32 = 0;
+    let content_lower = content.to_lowercase();
+
+    // Strong structure markers (very high weight)
+    let structure_markers = [
+        "## Summary",
+        "## Implementation Steps",
+        "## Implementation",
+        "### Implementation",
+        "# Summary",
+        "# Implementation Plan",
+        "# Plan",
+    ];
+    for marker in &structure_markers {
+        if content.contains(marker) {
+            score += 1000;
+        }
+    }
+
+    // Secondary headers (medium weight)
+    let secondary_headers = ["###", "####", "## Risks", "## Verification", "## Testing"];
+    for header in &secondary_headers {
+        if content.contains(header) {
+            score += 100;
+        }
+    }
+
+    // Any markdown headers (low weight)
+    for line in content.lines() {
+        if line.trim().starts_with('#') {
+            score += 10;
+        }
+    }
+
+    // Plan keywords (very low weight as tiebreaker)
+    let keywords = [
+        "step", "implement", "create", "add", "build", "task", "phase",
+        "first", "second", "then", "finally", "next",
+    ];
+    for keyword in &keywords {
+        if content_lower.contains(keyword) {
+            score += 1;
+        }
+    }
+
+    // Length bonus (slight preference for longer content with same structure)
+    // Cap the bonus to avoid length overriding structure
+    let length_bonus = (content.len() as u32).min(500);
+    score += length_bonus;
+
+    score
+}
+
+/// Extract the best "result" event from a single log file.
+///
+/// Scans the file for JSON lines and returns the best `{"type": "result", "result": "..."}`
+/// event's content. The "best" result is determined by a scoring function that considers:
+/// 1. Plan structure markers (## Summary, ## Implementation Steps, etc.)
+/// 2. Markdown headers
+/// 3. Content length (as a tiebreaker)
+///
+/// This handles cases where agents emit multiple partial result events during streaming
+/// or retries, preferring results with proper plan structure over simple length.
 fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     let file = match File::open(path) {
         Ok(f) => f,
@@ -77,7 +144,9 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     };
 
     let reader = BufReader::new(file);
-    let mut last_result: Option<String> = None;
+    let mut best_result: Option<String> = None;
+    let mut best_score: u32 = 0;
+    let mut result_count = 0;
 
     for line in reader.lines() {
         let line = match line {
@@ -95,14 +164,34 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
             if let Some(typ) = value.get("type").and_then(|v| v.as_str()) {
                 if typ == "result" {
                     if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
-                        last_result = Some(result.to_string());
+                        let result_string = result.to_string();
+                        let result_score = score_result(&result_string);
+                        result_count += 1;
+
+                        // Select the result with the highest score
+                        // This prefers structured plans over simple longest strings
+                        if result_score > best_score {
+                            best_score = result_score;
+                            best_result = Some(result_string);
+                        }
                     }
                 }
             }
         }
     }
 
-    Ok(last_result)
+    // Log diagnostic info when multiple results were found
+    if result_count > 1 {
+        eprintln!(
+            "[result_extraction] Found {} result events in {:?}, selected result with score {} (length: {})",
+            result_count,
+            path,
+            best_score,
+            best_result.as_ref().map_or(0, |r| r.len())
+        );
+    }
+
+    Ok(best_result)
 }
 
 /// Find log files matching a prefix pattern in a directory.
@@ -194,7 +283,7 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
     Ok(subdirs)
 }
 
-/// Extract the last "result" event from agent JSON logs.
+/// Extract the best "result" event from agent JSON logs.
 ///
 /// Supports three modes:
 /// 1. **Directory mode**: If `log_path` is a directory, scan all files in it
@@ -203,13 +292,16 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
 /// 3. **Subdirectory fallback**: If no files found, check for subdirectories matching
 ///    `{prefix}_*` (handles legacy logs where agent names with "/" created nested dirs)
 ///
+/// The "best" result is determined by selecting the longest content, which handles
+/// cases where agents emit multiple partial result events during streaming or retries.
+///
 /// # Arguments
 ///
 /// * `log_path` - Path to the log directory OR log file prefix
 ///
 /// # Returns
 ///
-/// The raw content from the last result event, or None if no result found.
+/// The raw content from the best result event, or None if no result found.
 pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     // Strategy 1: If log_path is a directory, scan all files in it (legacy mode)
     if log_path.is_dir() {
@@ -227,14 +319,20 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     let log_files = find_log_files_with_prefix(parent, prefix)?;
 
     if !log_files.is_empty() {
-        let mut last_result: Option<String> = None;
+        let mut best_result: Option<String> = None;
+        let mut best_score: u32 = 0;
         for log_file in log_files {
             if let Some(result) = extract_result_from_file(&log_file)? {
-                last_result = Some(result);
+                let result_score = score_result(&result);
+                // Select the result with the highest score across all files
+                if result_score > best_score {
+                    best_score = result_score;
+                    best_result = Some(result);
+                }
             }
         }
-        if last_result.is_some() {
-            return Ok(last_result);
+        if best_result.is_some() {
+            return Ok(best_result);
         }
     }
 
@@ -257,6 +355,10 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
 }
 
 /// Extract from a directory by scanning all files in it.
+///
+/// Selects the best result across all files using the scoring function to handle
+/// retry scenarios where multiple log files may exist. Prefers structured plans
+/// over simple longest strings.
 fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
     let log_entries = match fs::read_dir(log_dir) {
         Ok(entries) => entries,
@@ -264,7 +366,8 @@ fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
         Err(e) => return Err(e),
     };
 
-    let mut last_result: Option<String> = None;
+    let mut best_result: Option<String> = None;
+    let mut best_score: u32 = 0;
 
     for entry in log_entries.flatten() {
         let path = entry.path();
@@ -273,37 +376,196 @@ fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
         }
 
         if let Some(result) = extract_result_from_file(&path)? {
-            last_result = Some(result);
+            let result_score = score_result(&result);
+            // Select the result with the highest score across all files
+            if result_score > best_score {
+                best_score = result_score;
+                best_result = Some(result);
+            }
         }
     }
 
-    Ok(last_result)
+    Ok(best_result)
+}
+
+/// Calculate a score for text content to determine plan completeness.
+///
+/// This is similar to `score_result()` but works on raw text content rather than
+/// JSON result events. Higher scores indicate more complete plans.
+fn score_text_plan(content: &str) -> u32 {
+    let mut score: u32 = 0;
+    let content_lower = content.to_lowercase();
+
+    // Strong structure markers (very high weight)
+    let structure_markers = [
+        "## Summary",
+        "## Implementation Steps",
+        "## Implementation",
+        "### Implementation",
+        "# Summary",
+        "# Implementation Plan",
+        "# Plan",
+    ];
+    for marker in &structure_markers {
+        if content.contains(marker) {
+            score += 1000;
+        }
+    }
+
+    // Secondary headers (medium weight)
+    let secondary_headers = ["###", "####", "## Risks", "## Verification", "## Testing"];
+    for header in &secondary_headers {
+        if content.contains(header) {
+            score += 100;
+        }
+    }
+
+    // Any markdown headers (low weight)
+    for line in content.lines() {
+        if line.trim().starts_with('#') {
+            score += 10;
+        }
+    }
+
+    // Plan keywords (very low weight as tiebreaker)
+    let keywords = [
+        "step", "implement", "create", "add", "build", "task", "phase",
+        "first", "second", "then", "finally", "next",
+    ];
+    for keyword in &keywords {
+        if content_lower.contains(keyword) {
+            score += 1;
+        }
+    }
+
+    // Length bonus (slight preference for longer content with same structure)
+    // Cap the bonus to avoid length overriding structure
+    let length_bonus = (content.len() as u32).min(500);
+    score += length_bonus;
+
+    score
 }
 
 /// Extract plan content from text by looking for markdown structure.
 ///
 /// This is a fallback method for cases where JSON result events are not available.
 /// It looks for common plan markers like `## Summary` and `## Implementation Steps`.
+/// If multiple plan candidates are found, it returns the highest-scoring one.
+/// If no markers are found, it falls back to extracting substantial text content
+/// that contains plan-like keywords.
 pub fn extract_plan_from_text(content: &str) -> Option<String> {
-    // Look for plan markers in order of specificity
-    let markers = [
+    // Look for plan start markers - these indicate where a plan begins
+    let start_markers = [
         "## Summary",
-        "## Implementation Steps",
         "# Plan",
         "# Implementation Plan",
+        "## Implementation Steps",
     ];
 
-    for marker in markers {
-        if let Some(start) = content.find(marker) {
-            // Extract from the marker to the end (or to a clear boundary)
-            let plan_content = &content[start..];
+    // Find all potential plan candidates
+    // Each candidate starts at a marker and continues to the end of content
+    let mut candidates: Vec<(usize, &str)> = Vec::new();
 
-            // Trim and return if we have substantial content
+    for marker in start_markers {
+        if let Some(start) = content.find(marker) {
+            // Extract from the marker to the end of the content
+            let plan_content = &content[start..];
             let trimmed = plan_content.trim();
+
             if trimmed.len() > 50 {
-                return Some(trimmed.to_string());
+                candidates.push((start, trimmed));
             }
         }
+    }
+
+    if !candidates.is_empty() {
+        // Score each candidate and return the best one
+        let mut best_candidate: Option<&str> = None;
+        let mut best_score: u32 = 0;
+
+        for (_start, candidate) in &candidates {
+            let score = score_text_plan(candidate);
+            if score > best_score {
+                best_score = score;
+                best_candidate = Some(candidate);
+            }
+        }
+
+        if candidates.len() > 1 {
+            eprintln!(
+                "[result_extraction] Found {} plan candidates in text, selected one with score {}",
+                candidates.len(),
+                best_score
+            );
+        }
+
+        return best_candidate.map(|s| s.to_string());
+    }
+
+    // Permissive fallback: if no markdown markers found, look for substantial
+    // content that contains plan-like keywords. This handles plaintext mode where
+    // the agent outputs plan content without structured markdown.
+    extract_plan_from_text_permissive(content)
+}
+
+/// Permissive extraction that finds substantial plan-like content without
+/// requiring specific markdown markers.
+///
+/// This is a final fallback for plaintext mode logs where the agent may have
+/// output a valid plan but without the expected markdown structure.
+fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
+    let content = content.trim();
+
+    // Filter out obvious non-plan content
+    // - JSON lines
+    // - Debug/tool output patterns
+    let filtered: String = content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            // Skip JSON lines
+            if trimmed.starts_with('{') || trimmed.starts_with('[') {
+                return false;
+            }
+            // Skip debug/tool markers
+            if trimmed.starts_with("[debug]")
+                || trimmed.starts_with("[tool]")
+                || trimmed.starts_with("[error]")
+                || trimmed.starts_with("[warn]")
+            {
+                return false;
+            }
+            // Skip empty lines
+            if trimmed.is_empty() {
+                return false;
+            }
+            true
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Minimum content length (increased from 50 to 200 for permissive mode)
+    const MIN_PERMISSIVE_LENGTH: usize = 200;
+
+    if filtered.len() < MIN_PERMISSIVE_LENGTH {
+        return None;
+    }
+
+    // Check for plan-like keywords (case-insensitive)
+    let plan_keywords = [
+        "step", "implement", "create", "add", "build", "develop", "write",
+        "function", "feature", "component", "module", "task", "phase",
+        "first", "second", "third", "next", "then", "finally",
+        "approach", "strategy", "design", "architecture",
+    ];
+
+    let filtered_lower = filtered.to_lowercase();
+    let has_plan_keyword = plan_keywords
+        .iter()
+        .any(|keyword| filtered_lower.contains(keyword));
+
+    if has_plan_keyword {
+        return Some(filtered);
     }
 
     None
@@ -315,19 +577,40 @@ pub fn extract_plan_from_text(content: &str) -> Option<String> {
 /// Also checks subdirectories matching the prefix pattern (for legacy logs where agent
 /// names with "/" created nested directories).
 pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
-    // Helper to extract from a list of files
+    // Helper to extract from a list of files by finding the best plan across all files
     fn extract_from_files(files: &[PathBuf]) -> Option<String> {
+        let mut best_plan: Option<String> = None;
+        let mut best_score: u32 = 0;
+        let mut candidates_count = 0;
+
         for log_file in files {
             let mut content = String::new();
             if let Ok(mut file) = File::open(log_file) {
                 if file.read_to_string(&mut content).is_ok() {
                     if let Some(plan) = extract_plan_from_text(&content) {
-                        return Some(plan);
+                        let score = score_text_plan(&plan);
+                        candidates_count += 1;
+                        if score > best_score {
+                            best_score = score;
+                            best_plan = Some(plan);
+                        }
                     }
                 }
             }
         }
-        None
+
+        // Log diagnostic info when multiple candidates were found
+        if candidates_count > 1 {
+            eprintln!(
+                "[result_extraction] Found {} plan candidates across {} files, selected plan with score {} (length: {})",
+                candidates_count,
+                files.len(),
+                best_score,
+                best_plan.as_ref().map_or(0, |p| p.len())
+            );
+        }
+
+        best_plan
     }
 
     // Strategy 1: If log_path is a directory, scan all files in it
@@ -622,7 +905,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let log_dir = temp.path().join("planning_1");
 
-        // Multiple result events - should use the last one
+        // Multiple result events - should use the best (longest/most complete) one
         let json_log = r##"{"type": "result", "result": "First result"}
 {"type": "result", "result": "# Final Plan\n\nStep 1: Implement feature"}"##;
         create_log_file(&log_dir, "output.log", json_log);
@@ -630,6 +913,42 @@ mod tests {
         let result = extract_plan(&log_dir).unwrap();
         assert!(result.raw_content.is_some());
         assert!(result.raw_content.unwrap().contains("Final Plan"));
+    }
+
+    #[test]
+    fn test_incomplete_plan_bug_regression() {
+        let temp = TempDir::new().unwrap();
+        let log_dir = temp.path().join("planning_1");
+
+        // Simulate the exact bug scenario:
+        // Multiple result events where first is complete/longest, last is partial/short
+        // Use format! with separate strings to avoid escaping issues
+        let result1 = r##"{"type": "result", "result": "# Complete Plan\n\n## Implementation Steps\n\nStep 1: Create module with functionality.\nStep 2: Add comprehensive tests.\nStep 3: Write documentation.\nStep 4: Integrate and verify."}"##;
+        let result2 = r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
+        let result3 = r##"{"type": "result", "result": "Last paragraph"}"##;
+        let json_log = format!("{}\n{}\n{}", result1, result2, result3);
+        create_log_file(&log_dir, "output.log", &json_log);
+
+        let result = extract_plan(&log_dir).unwrap();
+        assert!(result.raw_content.is_some());
+        let content = result.raw_content.unwrap();
+
+        // The fix should select the longest/most complete result
+        // NOT the last one (which would be "Last paragraph")
+        assert!(
+            content.contains("Implementation Steps"),
+            "Should select the complete plan, not the last partial result: {}",
+            content
+        );
+        assert!(
+            content.contains("Create module"),
+            "Should contain the full plan content"
+        );
+        assert!(
+            content.len() > 100,
+            "Complete plan should be selected (length > 100), got length: {}",
+            content.len()
+        );
     }
 
     // =====================================================
@@ -970,5 +1289,226 @@ This is a text-based plan from nested subdirectory with enough content to pass v
 
         let result = extract_result_from_file(&file_path).unwrap();
         assert!(result.is_none());
+    }
+
+    // =====================================================
+    // PERMISSIVE EXTRACTION TESTS (Plaintext mode fallback)
+    // =====================================================
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_no_markers() {
+        // Plaintext content without markdown markers but with plan keywords
+        let content = r#"I need to implement a new feature for the user authentication system.
+First, I will create a new module that handles the login logic.
+Then, I will add functions for password validation and session management.
+Finally, I will write tests to ensure everything works correctly.
+
+The approach involves using secure hashing for passwords and JWT tokens for sessions."#;
+
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_some(),
+            "Should extract substantial content with plan keywords even without markdown markers"
+        );
+        let extracted = result.unwrap();
+        assert!(extracted.contains("implement"));
+        assert!(extracted.contains("create"));
+        assert!(extracted.len() > 200);
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_filters_json() {
+        // Content with JSON lines mixed in - should filter them out
+        let content = r#"{"type": "tool", "tool": "read_file"}
+I need to build a new authentication module that handles user login.
+{"type": "system", "message": "processing"}
+This will handle registration for the web application.
+The development approach should be secure and follow best practices.
+We'll add password hashing, session management, and proper error handling.
+The module will integrate with the existing database layer."#;
+
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_some(),
+            "Should extract content while filtering out JSON lines"
+        );
+        let extracted = result.unwrap();
+        assert!(!extracted.contains("{\"type\":"));
+        assert!(extracted.contains("authentication"));
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_too_short() {
+        // Content with plan keywords but too short
+        let content = "I will build a feature.";
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_none(),
+            "Should reject content that's too short even with plan keywords"
+        );
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_no_plan_keywords() {
+        // Substantial content without plan-like keywords (avoiding: step, implement, create, add, build, develop, write, then, etc.)
+        let content = r#"The quick brown fox jumps over the lazy dog repeatedly.
+This text was composed to be long enough to pass the length requirement.
+It avoids using technical terminology that might trigger extraction.
+Instead we just talk about random things like animals and weather.
+Our purpose is to test that the extraction correctly filters out non-plan content.
+This should definitely be long enough but still rejected due to lack of keywords.
+We're discussing foxes, dogs, weather, and other non-technical subjects today.
+The weather is nice so all of the animals are playing in a large field outside.
+A sunny day with blue skies makes for perfect conditions to observe nature."#;
+
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_none(),
+            "Should reject content without plan-like keywords"
+        );
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_filters_debug_output() {
+        // Content with debug/tool markers
+        let content = r#"[debug] Starting the process
+I need to develop the new module by writing code for authentication.
+[tool] Reading file: src/main.rs
+Then I must add functions for handling user sessions and password hashing.
+[warn] Deprecated API usage detected in legacy code
+Finally, I must verify everything works correctly through comprehensive testing."#;
+
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_some(),
+            "Should extract content while filtering out debug/tool markers"
+        );
+        let extracted = result.unwrap();
+        assert!(!extracted.contains("[debug]"));
+        assert!(!extracted.contains("[tool]"));
+        assert!(!extracted.contains("[warn]"));
+        assert!(extracted.contains("develop"));
+        assert!(extracted.contains("authentication"));
+    }
+
+    #[test]
+    fn test_extract_plan_from_logs_text_permissive_fallback() {
+        let temp = TempDir::new().unwrap();
+
+        // Create log file with plaintext plan (no JSON result events, no markdown markers)
+        let text_log = r#"The agent needs to implement a user authentication feature.
+Step 1: Create a new auth module with login and registration functions.
+Step 2: Add password hashing using bcrypt for security.
+Step 3: Implement JWT token generation for session management.
+Step 4: Add middleware to protect routes that require authentication.
+Step 5: Write comprehensive tests for all auth functionality."#;
+
+        fs::write(temp.path().join("planning_1_glm_0.log"), text_log).unwrap();
+
+        let prefix = temp.path().join("planning_1");
+        let result = extract_plan_from_logs_text(&prefix).unwrap();
+
+        assert!(
+            result.is_some(),
+            "Should extract plaintext plan via permissive fallback"
+        );
+        assert!(result.unwrap().contains("authentication"));
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_markers_take_precedence() {
+        // When markdown markers exist, they should take precedence over permissive extraction
+        let content = r#"Some initial text without structure.
+## Summary
+This is the structured plan that should be extracted.
+The permissive fallback should not be used when markers are present.
+## Implementation Steps
+1. Step one
+2. Step two"#;
+
+        let result = extract_plan_from_text(content);
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert!(
+            extracted.starts_with("## Summary"),
+            "Should use marker-based extraction when markers are present"
+        );
+    }
+
+    #[test]
+    fn test_text_fallback_uses_best_plan() {
+        let temp = TempDir::new().unwrap();
+
+        // Simulate the exact bug scenario:
+        // Multiple log files where earlier files have complete plans,
+        // later files have only partial/truncated plans
+        let log1_content = r#"Agent output...
+## Summary
+
+Fix an indeterministic bug where PLAN.md sometimes contains only the last few paragraphs instead of the complete plan.
+
+## Implementation Steps
+
+Step 1: Add scoring utility for text-based plan extraction in result_extraction.rs
+Step 2: Update extract_plan_from_text to use scoring and return the best candidate
+Step 3: Update extract_from_files helper to score all candidates across files
+Step 4: Add comprehensive regression test to verify the fix
+Step 5: Add diagnostic logging for debugging
+
+## Critical Files
+
+1. src/files/result_extraction.rs - Core extraction logic
+2. src/phases/development.rs - Calls the extraction functions
+"#;
+
+        let log2_content = r#"More agent output...
+## Summary
+
+This is a truncated plan that only has a summary section.
+"#;
+
+        let log3_content = r#"Even more output...
+## Summary
+
+Just a short paragraph at the end.
+"#;
+
+        fs::write(temp.path().join("planning_1_glm_0.log"), log1_content).unwrap();
+
+        // Sleep briefly to ensure different modification times
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        fs::write(temp.path().join("planning_1_opus_0.log"), log2_content).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        fs::write(temp.path().join("planning_1_sonnet_0.log"), log3_content).unwrap();
+
+        let prefix = temp.path().join("planning_1");
+        let result = extract_plan_from_logs_text(&prefix).unwrap();
+
+        assert!(result.is_some(), "Should extract a plan");
+        let content = result.unwrap();
+
+        // The fix should select the highest-scoring (most complete) plan
+        // NOT the first or last one found
+        assert!(
+            content.contains("Implementation Steps"),
+            "Should select the complete plan with Implementation Steps, got: {}",
+            content
+        );
+        assert!(
+            content.contains("scoring utility"),
+            "Should contain the detailed steps from the complete plan"
+        );
+        assert!(
+            content.contains("Critical Files"),
+            "Should contain all sections from the complete plan"
+        );
+        assert!(
+            content.len() > 400,
+            "Complete plan should be selected (length > 400), got length: {}",
+            content.len()
+        );
     }
 }
