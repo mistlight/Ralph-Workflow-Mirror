@@ -39,14 +39,14 @@ pub enum PipelinePhase {
 impl std::fmt::Display for PipelinePhase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PipelinePhase::Planning => write!(f, "Planning"),
-            PipelinePhase::Development => write!(f, "Development"),
-            PipelinePhase::Review => write!(f, "Review"),
-            PipelinePhase::Fix => write!(f, "Fix"),
-            PipelinePhase::ReviewAgain => write!(f, "Verification Review"),
-            PipelinePhase::CommitMessage => write!(f, "Commit Message Generation"),
-            PipelinePhase::FinalValidation => write!(f, "Final Validation"),
-            PipelinePhase::Complete => write!(f, "Complete"),
+            Self::Planning => write!(f, "Planning"),
+            Self::Development => write!(f, "Development"),
+            Self::Review => write!(f, "Review"),
+            Self::Fix => write!(f, "Fix"),
+            Self::ReviewAgain => write!(f, "Verification Review"),
+            Self::CommitMessage => write!(f, "Commit Message Generation"),
+            Self::FinalValidation => write!(f, "Final Validation"),
+            Self::Complete => write!(f, "Complete"),
         }
     }
 }
@@ -160,12 +160,12 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
     let json = serde_json::to_string_pretty(checkpoint).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Failed to serialize checkpoint: {}", e),
+            format!("Failed to serialize checkpoint: {e}"),
         )
     })?;
 
     // Write atomically by writing to temp file then renaming
-    let temp_path = format!("{}.tmp", CHECKPOINT_PATH);
+    let temp_path = format!("{CHECKPOINT_PATH}.tmp");
     fs::write(&temp_path, &json)?;
     fs::rename(&temp_path, CHECKPOINT_PATH)?;
 
@@ -192,7 +192,7 @@ pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
     let checkpoint: PipelineCheckpoint = serde_json::from_str(&content).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Failed to parse checkpoint: {}", e),
+            format!("Failed to parse checkpoint: {e}"),
         )
     })?;
 

@@ -13,7 +13,7 @@
 
 use super::hooks::{install_hooks, uninstall_hooks_silent};
 use super::repo::get_repo_root;
-use crate::utils::Logger;
+use crate::logger::Logger;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -24,13 +24,13 @@ use which::which;
 const WRAPPER_DIR_TRACK_FILE: &str = ".agent/git-wrapper-dir.txt";
 
 /// Git helper state.
-pub(crate) struct GitHelpers {
+pub struct GitHelpers {
     real_git: Option<PathBuf>,
     wrapper_dir: Option<TempDir>,
 }
 
 impl GitHelpers {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             real_git: None,
             wrapper_dir: None,
@@ -52,7 +52,7 @@ impl Default for GitHelpers {
 }
 
 /// Enable git wrapper that blocks commits during agent phase.
-pub(crate) fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
+pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
     helpers.init_real_git();
     let Some(real_git) = helpers.real_git.as_ref() else {
         // Ralph's git operations use libgit2 and should work without the `git` CLI installed.
@@ -75,7 +75,7 @@ pub(crate) fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
     let wrapper_content = format!(
         r#"#!/usr/bin/env sh
 set -eu
-repo_root="$('{0}' rev-parse --show-toplevel 2>/dev/null || pwd)"
+repo_root="$('{git_path_escaped}' rev-parse --show-toplevel 2>/dev/null || pwd)"
 if [ -f "$repo_root/.no_agent_commit" ]; then
   subcmd="${{1-}}"
   case "$subcmd" in
@@ -85,9 +85,8 @@ if [ -f "$repo_root/.no_agent_commit" ]; then
       ;;
   esac
 fi
-exec '{0}' "$@"
-"#,
-        git_path_escaped
+exec '{git_path_escaped}' "$@"
+"#
     );
 
     let mut file = File::create(&wrapper_path)?;
@@ -119,7 +118,7 @@ exec '{0}' "$@"
 }
 
 /// Disable git wrapper.
-pub(crate) fn disable_git_wrapper(helpers: &mut GitHelpers) {
+pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
     if let Some(wrapper_dir) = helpers.wrapper_dir.take() {
         let wrapper_dir_path = wrapper_dir.path().to_path_buf();
         let _ = fs::remove_dir_all(&wrapper_dir_path);
@@ -138,7 +137,7 @@ pub(crate) fn disable_git_wrapper(helpers: &mut GitHelpers) {
 }
 
 /// Start agent phase (creates marker file, installs hooks, enables wrapper).
-pub(crate) fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
+pub fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
     File::create(".no_agent_commit")?;
     install_hooks()?;
     enable_git_wrapper(helpers)?;
@@ -146,9 +145,8 @@ pub(crate) fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
 }
 
 /// End agent phase (removes marker file).
-pub(crate) fn end_agent_phase() -> io::Result<()> {
+pub fn end_agent_phase() {
     let _ = fs::remove_file(".no_agent_commit");
-    Ok(())
 }
 
 fn cleanup_git_wrapper_dir_silent() {
@@ -164,15 +162,15 @@ fn cleanup_git_wrapper_dir_silent() {
 }
 
 /// Best-effort cleanup for unexpected exits (Ctrl+C, early-return, panics).
-pub(crate) fn cleanup_agent_phase_silent() {
-    let _ = end_agent_phase();
+pub fn cleanup_agent_phase_silent() {
+    end_agent_phase();
     cleanup_git_wrapper_dir_silent();
     uninstall_hooks_silent();
     crate::utils::cleanup_generated_files();
 }
 
-/// Clean up orphaned .no_agent_commit marker.
-pub(crate) fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
+/// Clean up orphaned .`no_agent_commit` marker.
+pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
     let repo_root = get_repo_root()?;
     let marker_path = repo_root.join(".no_agent_commit");
 

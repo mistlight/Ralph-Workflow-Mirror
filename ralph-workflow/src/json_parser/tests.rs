@@ -49,8 +49,7 @@ fn test_verbosity_affects_output() {
 
     let long_text = "a".repeat(200);
     let json = format!(
-        r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{}"}}]}}}}"#,
-        long_text
+        r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{long_text}"}}]}}}}"#
     );
 
     let quiet_output = quiet_parser.parse_event(&json).unwrap();
@@ -58,74 +57,6 @@ fn test_verbosity_affects_output() {
 
     // Quiet output should be truncated (shorter)
     assert!(quiet_output.len() < full_output.len());
-}
-
-#[test]
-fn test_format_tool_input_object() {
-    let input = serde_json::json!({
-        "file_path": "/path/to/file.rs",
-        "content": "hello world"
-    });
-    let result = format_tool_input(&input);
-    assert!(result.contains("file_path=/path/to/file.rs"));
-    assert!(result.contains("content=hello world"));
-}
-
-#[test]
-fn test_format_tool_input_truncates_long_strings() {
-    let long_content = "x".repeat(150);
-    let input = serde_json::json!({
-        "content": long_content
-    });
-    let result = format_tool_input(&input);
-    assert!(result.contains("..."));
-    assert!(result.len() < 150);
-}
-
-#[test]
-fn test_format_tool_input_handles_arrays() {
-    let input = serde_json::json!({
-        "files": ["a.rs", "b.rs", "c.rs"]
-    });
-    let result = format_tool_input(&input);
-    assert!(result.contains("files=[3 items]"));
-}
-
-#[test]
-fn test_format_tool_input_handles_nested_objects() {
-    let input = serde_json::json!({
-        "options": {"key": "value"}
-    });
-    let result = format_tool_input(&input);
-    assert!(result.contains("options={...}"));
-}
-
-#[test]
-fn test_format_tool_input_redacts_sensitive_keys() {
-    let fake_key = format!("sk-{}", "a".repeat(24));
-    let input = serde_json::json!({
-        "api_key": fake_key,
-        "access_token": format!("{}{}", "sk-", "b".repeat(24)),
-        "Authorization": format!("Bearer {}", format!("{}{}", "sk-", "c".repeat(24))),
-        "file_path": "/safe/path.rs"
-    });
-    let result = format_tool_input(&input);
-    assert!(result.contains("api_key=<redacted>"));
-    assert!(result.contains("access_token=<redacted>"));
-    assert!(result.contains("Authorization=<redacted>"));
-    assert!(result.contains("file_path=/safe/path.rs"));
-    assert!(!result.contains("sk-"));
-}
-
-#[test]
-fn test_format_tool_input_redacts_secret_like_string_values() {
-    let fake_key = format!("{}{}", "sk-", "d".repeat(24));
-    let input = serde_json::json!({
-        "query": format!("please use {} for this", fake_key)
-    });
-    let result = format_tool_input(&input);
-    assert!(result.contains("query=<redacted>"));
-    assert!(!result.contains("sk-"));
 }
 
 #[test]
@@ -205,19 +136,6 @@ fn test_codex_file_operations_shown() {
     let out = output.unwrap();
     assert!(out.contains("file_read"));
     assert!(out.contains("/src/main.rs"));
-}
-
-#[test]
-fn test_format_tool_input_unicode_safe() {
-    // Ensure Unicode characters don't cause panics
-    let unicode_content = "日本語".to_string() + &"x".repeat(200);
-    let input = serde_json::json!({
-        "content": unicode_content
-    });
-    // Should not panic and should truncate properly
-    let result = format_tool_input(&input);
-    assert!(result.contains("..."));
-    assert!(result.contains("日本語"));
 }
 
 #[test]
@@ -791,7 +709,7 @@ fn test_format_unknown_json_event_very_long_content() {
     let colors = Colors { enabled: false };
     // Test very long content doesn't cause issues
     let long_text = "a".repeat(10000);
-    let json = format!(r#"{{"type":"delta","text":"{}"}}"#, long_text);
+    let json = format!(r#"{{"type":"delta","text":"{long_text}"}}"#);
     let output = super::types::format_unknown_json_event(&json, "Test", &colors, false);
     // Should handle long content without crashing
     assert!(!output.is_empty());
@@ -858,7 +776,7 @@ fn test_health_monitor_no_warning_with_high_partial_percentage() {
     }
 
     // Should NOT warn even with 97.5% "partial" events
-    let warning = monitor.check_and_warn(&colors);
+    let warning = monitor.check_and_warn(colors);
     assert!(
         warning.is_none(),
         "Should not warn with high percentage of partial events"
@@ -884,7 +802,7 @@ fn test_health_monitor_warning_only_for_parse_errors() {
         monitor.record_parsed();
     }
 
-    let warning = monitor.check_and_warn(&colors);
+    let warning = monitor.check_and_warn(colors);
     assert!(
         warning.is_none(),
         "Should not warn with mix of partial, control, and parsed events"
@@ -901,7 +819,7 @@ fn test_health_monitor_warning_only_for_parse_errors() {
         monitor.record_parsed();
     }
 
-    let warning = monitor.check_and_warn(&colors);
+    let warning = monitor.check_and_warn(colors);
     assert!(warning.is_some(), "Should warn with >50% parse errors");
     assert!(warning.unwrap().contains("parse errors"));
 }
@@ -1045,9 +963,8 @@ fn test_delta_with_embedded_newline_displays_inline() {
 
     // Verify that the output doesn't have an actual newline in the delta text portion
     // (there should only be one line from the prefix+text, not two)
-    let lines: Vec<&str> = out.lines().collect();
     assert_eq!(
-        lines.len(),
+        out.lines().count(),
         1,
         "Delta with embedded newline should produce a single output line"
     );

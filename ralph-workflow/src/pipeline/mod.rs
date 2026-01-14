@@ -17,13 +17,8 @@ mod model_flag;
 mod runner;
 mod types;
 
-#[cfg(test)]
-pub(crate) use model_flag::resolve_model_with_provider;
-pub(crate) use runner::{run_with_fallback, PipelineRuntime};
-pub(crate) use types::{AgentPhaseGuard, Stats};
-
-#[cfg(test)]
-pub(crate) use runner::{run_with_prompt, PromptCommand};
+pub use runner::{run_with_fallback, PipelineRuntime};
+pub use types::{AgentPhaseGuard, Stats};
 
 #[cfg(test)]
 mod tests;

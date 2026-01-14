@@ -3,7 +3,7 @@
 //! This module handles validation of agents and agent chains:
 //! - Resolving required agent names from config
 //! - Validating that agent commands exist in the registry
-//! - Enforcing workflow-capable agents (can_commit=true)
+//! - Enforcing workflow-capable agents (`can_commit=true`)
 //! - Validating agent chain configuration
 
 use crate::agents::AgentRegistry;
@@ -22,7 +22,7 @@ pub struct ValidatedAgents {
 /// Resolves and validates the required agent names from configuration.
 ///
 /// Both developer and reviewer agents must be configured at this point,
-/// either via CLI args, environment variables, or agent_chain defaults.
+/// either via CLI args, environment variables, or `agent_chain` defaults.
 ///
 /// # Arguments
 ///
@@ -82,7 +82,7 @@ pub fn validate_agent_commands(
             let suggestion = resolved_developer
                 .as_ref()
                 .filter(|n| n != &developer_agent)
-                .map(|correct| format!(" Did you mean '{}'?", correct))
+                .map(|correct| format!(" Did you mean '{correct}'?"))
                 .unwrap_or_default();
             anyhow::anyhow!(
                 "Unknown developer agent '{}'.{}. Use --list-agents or define it in {} under [agents].",
@@ -101,7 +101,7 @@ pub fn validate_agent_commands(
             let suggestion = resolved_reviewer
                 .as_ref()
                 .filter(|n| n != &reviewer_agent)
-                .map(|correct| format!(" Did you mean '{}'?", correct))
+                .map(|correct| format!(" Did you mean '{correct}'?"))
                 .unwrap_or_default();
             anyhow::anyhow!(
                 "Unknown reviewer agent '{}'.{}. Use --list-agents or define it in {} under [agents].",
@@ -115,9 +115,9 @@ pub fn validate_agent_commands(
     Ok(())
 }
 
-/// Validates that agents are workflow-capable (can_commit=true).
+/// Validates that agents are workflow-capable (`can_commit=true`).
 ///
-/// Agents with can_commit=false are chat-only / non-tool agents and will
+/// Agents with `can_commit=false` are chat-only / non-tool agents and will
 /// stall Ralph's workflow. This validation is skipped if a custom command
 /// override is provided.
 ///
@@ -146,10 +146,10 @@ pub fn validate_can_commit(
             .unwrap_or_else(|| developer_agent.to_string());
         if let Some(cfg) = registry.resolve_config(&resolved) {
             if !cfg.can_commit {
-                let resolved_note = if resolved != developer_agent {
-                    format!(" (resolved to '{}')", resolved)
-                } else {
+                let resolved_note = if resolved == developer_agent {
                     String::new()
+                } else {
+                    format!(" (resolved to '{resolved}')")
                 };
                 anyhow::bail!(
                     "Developer agent '{}'{} has can_commit=false and cannot run Ralph's workflow.\n\
@@ -167,10 +167,10 @@ pub fn validate_can_commit(
             .unwrap_or_else(|| reviewer_agent.to_string());
         if let Some(cfg) = registry.resolve_config(&resolved) {
             if !cfg.can_commit {
-                let resolved_note = if resolved != reviewer_agent {
-                    format!(" (resolved to '{}')", resolved)
-                } else {
+                let resolved_note = if resolved == reviewer_agent {
                     String::new()
+                } else {
+                    format!(" (resolved to '{resolved}')")
                 };
                 anyhow::bail!(
                     "Reviewer agent '{}'{} has can_commit=false and cannot run Ralph's workflow.\n\
@@ -194,7 +194,7 @@ pub fn validate_can_commit(
 ///
 /// * `registry` - The agent registry
 /// * `colors` - Color configuration for output
-pub fn validate_agent_chains(registry: &AgentRegistry, colors: &Colors) {
+pub fn validate_agent_chains(registry: &AgentRegistry, colors: Colors) {
     if let Err(msg) = registry.validate_agent_chains() {
         eprintln!();
         eprintln!(
@@ -252,7 +252,7 @@ mod tests {
             can_commit: false,
             ..CcsConfig::default()
         };
-        registry.set_ccs_aliases(HashMap::new(), defaults);
+        registry.set_ccs_aliases(&HashMap::new(), defaults);
 
         let config = Config {
             developer_cmd: None,

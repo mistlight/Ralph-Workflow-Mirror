@@ -1,4 +1,4 @@
-//! OpenCode event parser implementation
+//! `OpenCode` event parser implementation
 //!
 //! This module handles parsing and displaying OpenCode NDJSON event streams.
 //!
@@ -20,6 +20,9 @@
 //! [OpenCode] ✓ Step finished... (step_finish shows prefix with newline)
 //! ```
 
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::items_after_statements)]
+
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
@@ -31,9 +34,9 @@ use std::rc::Rc;
 use super::health::HealthMonitor;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator};
 
-/// OpenCode event types
+/// `OpenCode` event types
 ///
-/// Based on OpenCode's actual NDJSON output format, events include:
+/// Based on `OpenCode`'s actual NDJSON output format, events include:
 /// - `step_start`: Step initialization with snapshot info
 /// - `step_finish`: Step completion with reason, cost, tokens
 /// - `tool_use`: Tool invocation with tool name, callID, and state (status, input, output)
@@ -41,7 +44,7 @@ use super::types::{format_tool_input, format_unknown_json_event, ContentType, De
 ///
 /// The top-level structure is: `{ "type": "...", "timestamp": ..., "sessionID": "...", "part": {...} }`
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct OpenCodeEvent {
+pub struct OpenCodeEvent {
     #[serde(rename = "type")]
     pub(crate) event_type: String,
     pub(crate) timestamp: Option<u64>,
@@ -52,7 +55,7 @@ pub(crate) struct OpenCodeEvent {
 
 /// Nested part object containing the actual event data
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct OpenCodePart {
+pub struct OpenCodePart {
     pub(crate) id: Option<String>,
     #[serde(rename = "sessionID")]
     pub(crate) session_id: Option<String>,
@@ -79,7 +82,7 @@ pub(crate) struct OpenCodePart {
 
 /// Tool state containing status, input, and output
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct OpenCodeToolState {
+pub struct OpenCodeToolState {
     pub(crate) status: Option<String>,
     pub(crate) input: Option<serde_json::Value>,
     pub(crate) output: Option<serde_json::Value>,
@@ -88,9 +91,9 @@ pub(crate) struct OpenCodeToolState {
     pub(crate) time: Option<OpenCodeTime>,
 }
 
-/// Token statistics from step_finish events
+/// Token statistics from `step_finish` events
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct OpenCodeTokens {
+pub struct OpenCodeTokens {
     pub(crate) input: Option<u64>,
     pub(crate) output: Option<u64>,
     pub(crate) reasoning: Option<u64>,
@@ -99,20 +102,20 @@ pub(crate) struct OpenCodeTokens {
 
 /// Cache statistics
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct OpenCodeCache {
+pub struct OpenCodeCache {
     pub(crate) read: Option<u64>,
     pub(crate) write: Option<u64>,
 }
 
 /// Time information
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct OpenCodeTime {
+pub struct OpenCodeTime {
     pub(crate) start: Option<u64>,
     pub(crate) end: Option<u64>,
 }
 
-/// OpenCode event parser
-pub(crate) struct OpenCodeParser {
+/// `OpenCode` event parser
+pub struct OpenCodeParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
@@ -145,23 +148,22 @@ impl OpenCodeParser {
         self
     }
 
-    /// Parse and display a single OpenCode JSON event
+    /// Parse and display a single `OpenCode` JSON event
     ///
-    /// The OpenCode NDJSON format uses events with:
+    /// The `OpenCode` NDJSON format uses events with:
     /// - `step_start`: Step initialization with snapshot info
     /// - `step_finish`: Step completion with reason, cost, tokens
     /// - `tool_use`: Tool invocation with tool name, callID, and state (status, input, output)
     /// - `text`: Streaming text content
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
-        let event: OpenCodeEvent = match serde_json::from_str(line) {
-            Ok(e) => e,
-            Err(_) => {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() && !trimmed.starts_with('{') {
-                    return Some(format!("{}\n", trimmed));
-                }
-                return None;
+        let event: OpenCodeEvent = if let Ok(e) = serde_json::from_str(line) {
+            e
+        } else {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                return Some(format!("{trimmed}\n"));
             }
+            return None;
         };
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -177,7 +179,7 @@ impl OpenCodeParser {
                     .part
                     .as_ref()
                     .and_then(|p| p.snapshot.as_ref())
-                    .map(|s| format!("({:.8}...)", s))
+                    .map(|s| format!("({s:.8}...)"))
                     .unwrap_or_default();
                 format!(
                     "{}[{}]{} {}Step started{} {}{}{}\n",
@@ -208,14 +210,11 @@ impl OpenCodeParser {
                         let reasoning = tokens.reasoning.unwrap_or(0);
                         let cache_read = tokens.cache.as_ref().and_then(|c| c.read).unwrap_or(0);
                         if reasoning > 0 {
-                            format!(
-                                "in:{} out:{} reason:{} cache:{}",
-                                input, output, reasoning, cache_read
-                            )
+                            format!("in:{input} out:{output} reason:{reasoning} cache:{cache_read}")
                         } else if cache_read > 0 {
-                            format!("in:{} out:{} cache:{}", input, output, cache_read)
+                            format!("in:{input} out:{output} cache:{cache_read}")
                         } else {
-                            format!("in:{} out:{}", input, output)
+                            String::new()
                         }
                     } else {
                         String::new()
@@ -245,19 +244,22 @@ impl OpenCodeParser {
                         reason
                     );
                     if !tokens_str.is_empty() {
-                        out.push_str(&format!(", {}", tokens_str));
+                        use std::fmt::Write;
+                        let _ = write!(out, ", {tokens_str}");
                     }
                     if cost > 0.0 {
-                        out.push_str(&format!(", ${:.4}", cost));
+                        use std::fmt::Write;
+                        let _ = write!(out, ", ${cost:.4}");
                     }
-                    out.push_str(&format!("){}\n", c.reset()));
+                    use std::fmt::Write;
+                    let _ = writeln!(out, "){}", c.reset());
                     out
                 } else {
                     String::new()
                 }
             }
             "tool_use" => {
-                if let Some(ref part) = event.part {
+                event.part.as_ref().map_or_else(String::new, |part| {
                     let tool_name = part.tool.as_deref().unwrap_or("unknown");
                     let status = part
                         .state
@@ -289,15 +291,17 @@ impl OpenCodeParser {
                     if let Some(t) = title {
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(t, limit);
-                        out.push_str(&format!(
-                            "{}[{}]{} {}  └─ {}{}\n",
+                        use std::fmt::Write;
+                        let _ = writeln!(
+                            out,
+                            "{}[{}]{} {}  └─ {}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.dim(),
                             preview,
                             c.reset()
-                        ));
+                        );
                     }
 
                     // Show tool input at Normal+ verbosity
@@ -308,15 +312,17 @@ impl OpenCodeParser {
                                 let limit = self.verbosity.truncate_limit("tool_input");
                                 let preview = truncate_text(&input_str, limit);
                                 if !preview.is_empty() {
-                                    out.push_str(&format!(
-                                        "{}[{}]{} {}  └─ {}{}\n",
+                                    use std::fmt::Write;
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}  └─ {}{}",
                                         c.dim(),
                                         prefix,
                                         c.reset(),
                                         c.dim(),
                                         preview,
                                         c.reset()
-                                    ));
+                                    );
                                 }
                             }
                         }
@@ -330,31 +336,31 @@ impl OpenCodeParser {
                                     serde_json::Value::String(s) => s.as_str(),
                                     _ => "",
                                 };
-                                let output_str = if !output_str.is_empty() {
-                                    output_str.to_string()
-                                } else {
+                                let output_str = if output_str.is_empty() {
                                     output_val.to_string()
+                                } else {
+                                    output_str.to_string()
                                 };
                                 let limit = self.verbosity.truncate_limit("tool_result");
                                 let preview = truncate_text(&output_str, limit);
                                 if !preview.is_empty() {
-                                    out.push_str(&format!(
-                                        "{}[{}]{} {}  └─ Output: {}{}\n",
+                                    use std::fmt::Write;
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}  └─ Output: {}{}",
                                         c.dim(),
                                         prefix,
                                         c.reset(),
                                         c.dim(),
                                         preview,
                                         c.reset()
-                                    ));
+                                    );
                                 }
                             }
                         }
                     }
                     out
-                } else {
-                    String::new()
-                }
+                })
             }
             "text" => {
                 if let Some(ref part) = event.part {
@@ -408,7 +414,7 @@ impl OpenCodeParser {
         }
     }
 
-    /// Check if an OpenCode event is a control event (state management with no user output)
+    /// Check if an `OpenCode` event is a control event (state management with no user output)
     ///
     /// Control events are valid JSON that represent state transitions rather than
     /// user-facing content. They should be tracked separately from "ignored" events
@@ -421,7 +427,7 @@ impl OpenCodeParser {
         }
     }
 
-    /// Check if an OpenCode event is a partial/delta event (streaming content displayed incrementally)
+    /// Check if an `OpenCode` event is a partial/delta event (streaming content displayed incrementally)
     ///
     /// Partial events represent streaming text deltas that are shown to the user
     /// in real-time. These should be tracked separately to avoid inflating "ignored" percentages.
@@ -433,7 +439,7 @@ impl OpenCodeParser {
         }
     }
 
-    /// Parse a stream of OpenCode NDJSON events
+    /// Parse a stream of `OpenCode` NDJSON events
     pub(crate) fn parse_stream<R: BufRead, W: Write>(
         &self,
         reader: R,
@@ -510,15 +516,15 @@ impl OpenCodeParser {
             }
 
             if let Some(ref mut file) = log_writer {
-                writeln!(file, "{}", line)?;
+                writeln!(file, "{line}")?;
             }
         }
 
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
-            writeln!(writer, "{}", warning)?;
+        if let Some(warning) = monitor.check_and_warn(*c) {
+            writeln!(writer, "{warning}")?;
         }
         Ok(())
     }

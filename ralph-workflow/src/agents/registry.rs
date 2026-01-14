@@ -19,6 +19,7 @@
 //! developer = ["ccs/work", "claude"]
 //! ```
 
+#![expect(clippy::too_many_lines)]
 use super::ccs::CcsAliasResolver;
 use super::config::{AgentConfig, AgentConfigError, AgentsConfigFile, DEFAULT_AGENTS_TOML};
 use super::fallback::{AgentRole, FallbackConfig};
@@ -64,13 +65,13 @@ impl AgentRegistry {
     /// resolved with `resolve_config()`.
     pub fn set_ccs_aliases(
         &mut self,
-        aliases: HashMap<String, CcsAliasConfig>,
+        aliases: &HashMap<String, CcsAliasConfig>,
         defaults: CcsConfig,
     ) {
         self.ccs_resolver = CcsAliasResolver::new(aliases.clone(), defaults);
         // Eagerly register CCS aliases as agents
         for alias_name in aliases.keys() {
-            let agent_name = format!("ccs/{}", alias_name);
+            let agent_name = format!("ccs/{alias_name}");
             if let Some(config) = self.ccs_resolver.try_resolve(&agent_name) {
                 self.agents.insert(agent_name, config);
             }
@@ -135,7 +136,7 @@ impl AgentRegistry {
 
         // Handle common typos/alternatives
         let normalized = name.to_lowercase();
-        let alternatives = self.get_fuzzy_alternatives(&normalized);
+        let alternatives = Self::get_fuzzy_alternatives(&normalized);
 
         for alt in alternatives {
             // If it's a ccs/ pattern, return it for direct CCS execution
@@ -154,7 +155,7 @@ impl AgentRegistry {
     /// Get fuzzy alternatives for a given agent name.
     ///
     /// Returns a list of potential canonical names to try, in order of preference.
-    pub(crate) fn get_fuzzy_alternatives(&self, name: &str) -> Vec<String> {
+    pub(crate) fn get_fuzzy_alternatives(name: &str) -> Vec<String> {
         let mut alternatives = Vec::new();
 
         // Add exact match first
@@ -166,7 +167,7 @@ impl AgentRegistry {
             n if n.starts_with("ccs-") => {
                 alternatives.push(name.replace("ccs-", "ccs/"));
             }
-            n if n.contains("_") => {
+            n if n.contains('_') => {
                 alternatives.push(name.replace('_', "-"));
                 alternatives.push(name.replace('_', "/"));
             }
@@ -260,7 +261,7 @@ impl AgentRegistry {
                 .iter()
                 .map(|(name, v)| (name.clone(), v.as_config()))
                 .collect::<HashMap<_, _>>();
-            self.set_ccs_aliases(aliases, unified.ccs.clone());
+            self.set_ccs_aliases(&aliases, unified.ccs.clone());
         }
 
         if !unified.agents.is_empty() {
@@ -337,8 +338,7 @@ impl AgentRegistry {
                         .as_deref()
                         .map(str::trim)
                         .filter(|s| !s.is_empty())
-                        .map(JsonParserType::parse)
-                        .unwrap_or(existing.json_parser),
+                        .map_or(existing.json_parser, JsonParserType::parse),
                     model_flag: if overrides.model_flag.is_some() {
                         overrides.model_flag.clone()
                     } else {
@@ -372,7 +372,7 @@ impl AgentRegistry {
     }
 
     /// Get the fallback configuration.
-    pub fn fallback_config(&self) -> &FallbackConfig {
+    pub const fn fallback_config(&self) -> &FallbackConfig {
         &self.fallback
     }
 
@@ -393,7 +393,7 @@ impl AgentRegistry {
                 self.resolve_config(name.as_str())
                     .is_some_and(|cfg| cfg.can_commit)
             })
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect()
     }
 
@@ -431,10 +431,9 @@ impl AgentRegistry {
                 .any(|name| self.resolve_config(name).is_some_and(|cfg| cfg.can_commit));
             if !has_capable {
                 return Err(format!(
-                    "No workflow-capable agents found for {}.\n\
-                    All agents in the {} chain have can_commit=false.\n\
-                    Fix: set can_commit=true for at least one agent or update [agent_chain].",
-                    role, role
+                    "No workflow-capable agents found for {role}.\n\
+                    All agents in the {role} chain have can_commit=false.\n\
+                    Fix: set can_commit=true for at least one agent or update [agent_chain]."
                 ));
             }
         }
@@ -464,7 +463,7 @@ impl AgentRegistry {
         self.agents
             .keys()
             .filter(|name| self.is_agent_available(name))
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect()
     }
 }
@@ -659,7 +658,7 @@ mod tests {
             },
         );
 
-        registry.set_ccs_aliases(aliases, default_ccs());
+        registry.set_ccs_aliases(&aliases, default_ccs());
 
         // CCS aliases should be registered as agents
         assert!(registry.is_known("ccs/work"));
@@ -706,7 +705,7 @@ mod tests {
                 ..CcsAliasConfig::default()
             },
         );
-        registry.set_ccs_aliases(aliases, default_ccs());
+        registry.set_ccs_aliases(&aliases, default_ccs());
 
         // Set fallback chain with CCS alias
         registry.set_fallback(FallbackConfig {
@@ -733,7 +732,7 @@ mod tests {
     #[test]
     fn test_ccs_aliases_with_registry_constructor() {
         let mut registry = AgentRegistry::new().unwrap();
-        registry.set_ccs_aliases(HashMap::new(), default_ccs());
+        registry.set_ccs_aliases(&HashMap::new(), default_ccs());
 
         // Should have built-in agents
         assert!(registry.is_known("claude"));
@@ -750,7 +749,7 @@ mod tests {
             },
         );
 
-        registry2.set_ccs_aliases(aliases, default_ccs());
+        registry2.set_ccs_aliases(&aliases, default_ccs());
         assert!(registry2.is_known("ccs/work"));
     }
 
@@ -773,15 +772,17 @@ mod tests {
                 ..CcsAliasConfig::default()
             },
         );
-        registry.set_ccs_aliases(aliases, default_ccs());
+        registry.set_ccs_aliases(&aliases, default_ccs());
 
         let all_agents = registry.list();
-        let ccs_agents: Vec<_> = all_agents
-            .iter()
-            .filter(|(name, _)| name.starts_with("ccs/"))
-            .collect();
 
-        assert_eq!(ccs_agents.len(), 2);
+        assert_eq!(
+            all_agents
+                .iter()
+                .filter(|(name, _)| name.starts_with("ccs/"))
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -888,10 +889,9 @@ mod tests {
 
     #[test]
     fn test_resolve_fuzzy_underscore_replacement() {
-        let registry = AgentRegistry::new().unwrap();
         // Test underscore to dash/slash replacement
         // Note: These test the pattern, actual agents may not exist
-        let result = registry.get_fuzzy_alternatives("my_agent");
+        let result = AgentRegistry::get_fuzzy_alternatives("my_agent");
         assert!(result.contains(&"my_agent".to_string()));
         assert!(result.contains(&"my-agent".to_string()));
         assert!(result.contains(&"my/agent".to_string()));

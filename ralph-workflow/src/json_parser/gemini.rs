@@ -20,6 +20,9 @@
 //! [Gemini] Hello World\n   (final non-delta message shows complete result)
 //! ```
 
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::items_after_statements)]
+
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
@@ -33,7 +36,7 @@ use super::types::{
 };
 
 /// Gemini event parser
-pub(crate) struct GeminiParser {
+pub struct GeminiParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
@@ -68,21 +71,20 @@ impl GeminiParser {
 
     /// Parse and display a single Gemini JSON event
     ///
-    /// Returns Some(formatted_output) for valid events, or None for:
+    /// Returns `Some(formatted_output)` for valid events, or None for:
     /// - Malformed JSON (non-JSON text passed through if meaningful)
     /// - Unknown event types
     /// - Empty or whitespace-only output
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
-        let event: GeminiEvent = match serde_json::from_str(line) {
-            Ok(e) => e,
-            Err(_) => {
-                // Non-JSON line - pass through as-is if meaningful
-                let trimmed = line.trim();
-                if !trimmed.is_empty() && !trimmed.starts_with('{') {
-                    return Some(format!("{}\n", trimmed));
-                }
-                return None;
+        let event: GeminiEvent = if let Ok(e) = serde_json::from_str(line) {
+            e
+        } else {
+            // Non-JSON line - pass through as-is if meaningful
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                return Some(format!("{trimmed}\n"));
             }
+            return None;
         };
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -216,15 +218,17 @@ impl GeminiParser {
                         let limit = self.verbosity.truncate_limit("tool_input");
                         let preview = truncate_text(&params_str, limit);
                         if !preview.is_empty() {
-                            out.push_str(&format!(
-                                "{}[{}]{} {}  └─ {}{}\n",
+                            use std::fmt::Write;
+                            let _ = writeln!(
+                                out,
+                                "{}[{}]{} {}  └─ {}{}",
                                 c.dim(),
                                 prefix,
                                 c.reset(),
                                 c.dim(),
                                 preview,
                                 c.reset()
-                            ));
+                            );
                         }
                     }
                 }
@@ -250,24 +254,24 @@ impl GeminiParser {
                     if let Some(ref output_text) = output {
                         let limit = self.verbosity.truncate_limit("tool_result");
                         let preview = truncate_text(output_text, limit);
-                        out.push_str(&format!(
-                            "{}[{}]{} {}  └─ {}{}\n",
+                        use std::fmt::Write;
+                        let _ = writeln!(
+                            out,
+                            "{}[{}]{} {}  └─ {}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.dim(),
                             preview,
                             c.reset()
-                        ));
+                        );
                     }
                 }
                 out
             }
             GeminiEvent::Error { message, code, .. } => {
                 let msg = message.unwrap_or_else(|| "unknown error".to_string());
-                let code_str = code
-                    .map(|c| format!(" ({})", c))
-                    .unwrap_or_else(String::new);
+                let code_str = code.map_or_else(String::new, |c| format!(" ({c})"));
                 format!(
                     "{}[{}]{} {}{} Error{}:{} {}\n",
                     c.dim(),
@@ -294,8 +298,7 @@ impl GeminiParser {
                     let output = s.output_tokens.unwrap_or(0);
                     let tools = s.tool_calls.unwrap_or(0);
                     format!(
-                        "({}m {}s, in:{} out:{}, {} tools)",
-                        duration_m, duration_s_rem, input, output, tools
+                        "({duration_m}m {duration_s_rem}s, in:{input} out:{output}, {tools} tools)"
                     )
                 } else {
                     String::new()
@@ -333,12 +336,10 @@ impl GeminiParser {
     /// Control events are valid JSON that represent state transitions rather than
     /// user-facing content. They should be tracked separately from "ignored" events
     /// to avoid false health warnings.
-    fn is_control_event(event: &GeminiEvent) -> bool {
+    const fn is_control_event(event: &GeminiEvent) -> bool {
         match event {
-            // Init event is a control event
-            GeminiEvent::Init { .. } => true,
-            // Result event is a control event (aggregated stats, no direct user output)
-            GeminiEvent::Result { .. } => true,
+            // Init and Result events are control events
+            GeminiEvent::Init { .. } | GeminiEvent::Result { .. } => true,
             _ => false,
         }
     }
@@ -409,15 +410,15 @@ impl GeminiParser {
 
             // Log raw JSON to file if configured
             if let Some(ref mut file) = log_writer {
-                writeln!(file, "{}", line)?;
+                writeln!(file, "{line}")?;
             }
         }
 
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
-            writeln!(writer, "{}", warning)?;
+        if let Some(warning) = monitor.check_and_warn(*c) {
+            writeln!(writer, "{warning}\n")?;
         }
         Ok(())
     }

@@ -38,6 +38,7 @@ pub(super) fn count_extensions(root: &Path) -> io::Result<HashMap<String, usize>
     let mut files_scanned = 0;
 
     // Use a simple recursive approach with early termination
+    #[expect(clippy::items_after_statements)]
     fn scan_dir(
         dir: &Path,
         counts: &mut HashMap<String, usize>,
@@ -47,9 +48,8 @@ pub(super) fn count_extensions(root: &Path) -> io::Result<HashMap<String, usize>
             return Ok(());
         }
 
-        let entries = match fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return Ok(()), // Skip unreadable directories
+        let Ok(entries) = fs::read_dir(dir) else {
+            return Ok(());
         };
 
         for entry in entries.flatten() {
@@ -86,6 +86,7 @@ pub(super) fn count_extensions(root: &Path) -> io::Result<HashMap<String, usize>
 }
 
 /// Detect if tests exist in common test directories
+#[expect(clippy::too_many_lines)]
 pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
     use std::collections::VecDeque;
     use std::path::PathBuf;
@@ -99,9 +100,8 @@ pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
         if scanned_files >= MAX_FILES_TO_SCAN {
             break;
         }
-        let entries = match fs::read_dir(&dir) {
-            Ok(e) => e,
-            Err(_) => continue,
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
         };
 
         for entry in entries.flatten() {
@@ -142,6 +142,8 @@ pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
                     if file_name == "tests.rs" || file_name.ends_with("_test.rs") {
                         return true;
                     }
+                    // Note: file_name is already lowercase, so ends_with is case-insensitive
+                    #[expect(clippy::case_sensitive_file_extension_comparisons)]
                     if file_name.ends_with(".rs")
                         && path_components.windows(1).any(|w| w[0] == "tests")
                     {
@@ -149,8 +151,16 @@ pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
                     }
                 }
                 "Python" => {
-                    if (file_name.starts_with("test_") && file_name.ends_with(".py"))
+                    // Note: file_name is already lowercase
+                    if (file_name.starts_with("test_")
+                        && std::path::Path::new(file_name)
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("py")))
                         || file_name.ends_with("_test.py")
+                        || (file_name.starts_with("test_") && {
+                            #[expect(clippy::case_sensitive_file_extension_comparisons)]
+                            file_name.ends_with(".py")
+                        })
                     {
                         return true;
                     }

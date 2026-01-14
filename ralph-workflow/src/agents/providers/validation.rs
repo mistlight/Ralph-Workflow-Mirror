@@ -19,8 +19,7 @@ pub fn validate_model_flag(model_flag: &str) -> Vec<String> {
     // Ensure model flag has provider prefix
     if !model.contains('/') {
         warnings.push(format!(
-            "Model '{}' has no provider prefix. Expected format: 'provider/model' (e.g., 'opencode/glm-4.7-free')",
-            model
+            "Model '{model}' has no provider prefix. Expected format: 'provider/model' (e.g., 'opencode/glm-4.7-free')"
         ));
         return warnings;
     }
@@ -49,9 +48,8 @@ pub fn validate_model_flag(model_flag: &str) -> Vec<String> {
     if provider_type == OpenCodeProviderType::Custom {
         let prefix = model.split('/').next().unwrap_or("");
         warnings.push(format!(
-            "Unknown provider prefix '{}'. This may work if OpenCode supports it. \
-             Run 'ralph --list-providers' to see known providers.",
-            prefix
+            "Unknown provider prefix '{prefix}'. This may work if OpenCode supports it. \
+             Run 'ralph --list-providers' to see known providers."
         ));
     }
 

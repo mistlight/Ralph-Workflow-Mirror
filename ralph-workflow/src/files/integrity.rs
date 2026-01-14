@@ -26,7 +26,7 @@ pub fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
 
     // Create a NamedTempFile in the same directory as the target file.
     // This ensures atomic rename works (same filesystem).
-    let parent_dir = path.parent().unwrap_or(Path::new("."));
+    let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent_dir)?;
 
     // Write content to the temp file
@@ -81,7 +81,7 @@ pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
             let Some(name) = file_name.to_str() else {
                 continue;
             };
-            if !name.ends_with(".lock") {
+            if !name.to_ascii_lowercase().ends_with(".lock") {
                 continue;
             }
 
@@ -89,10 +89,7 @@ pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
                 if let Ok(modified) = metadata.modified() {
                     if let Ok(elapsed) = modified.elapsed() {
                         if elapsed > std::time::Duration::from_secs(3600) {
-                            return Err(io::Error::other(format!(
-                                "Stale lock file found: {}",
-                                name
-                            )));
+                            return Err(io::Error::other(format!("Stale lock file found: {name}")));
                         }
                     }
                 }

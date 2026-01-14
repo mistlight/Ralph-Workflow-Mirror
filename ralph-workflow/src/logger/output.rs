@@ -22,7 +22,7 @@ pub struct Logger {
 
 impl Logger {
     /// Create a new Logger with the given colors configuration.
-    pub fn new(colors: Colors) -> Self {
+    pub const fn new(colors: Colors) -> Self {
         Self {
             colors,
             log_file: None,
@@ -46,7 +46,7 @@ impl Logger {
                 let _ = fs::create_dir_all(parent);
             }
             if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-                let _ = writeln!(file, "{}", clean_msg);
+                let _ = writeln!(file, "{clean_msg}");
             }
         }
     }
@@ -143,8 +143,8 @@ impl Logger {
     ///
     /// * `title` - The header title text
     /// * `color_fn` - Function that returns the color to use
-    pub fn header(&self, title: &str, color_fn: fn(&Colors) -> &'static str) {
-        let c = &self.colors;
+    pub fn header(&self, title: &str, color_fn: fn(Colors) -> &'static str) {
+        let c = self.colors;
         let color = color_fn(c);
         let width = 60;
         let title_len = title.chars().count();
@@ -203,13 +203,11 @@ impl Default for Logger {
 ///
 /// Used when writing to log files where ANSI codes are not supported.
 pub fn strip_ansi_codes(s: &str) -> String {
-    use once_cell::sync::Lazy;
-    static ANSI_RE: Lazy<Result<regex::Regex, regex::Error>> =
-        Lazy::new(|| regex::Regex::new(r"\x1b\[[0-9;]*m"));
-    match &*ANSI_RE {
-        Ok(re) => re.replace_all(s, "").to_string(),
-        Err(_) => s.to_string(),
-    }
+    static ANSI_RE: std::sync::LazyLock<Result<regex::Regex, regex::Error>> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\x1b\[[0-9;]*m"));
+    (*ANSI_RE)
+        .as_ref()
+        .map_or_else(|_| s.to_string(), |re| re.replace_all(s, "").to_string())
 }
 
 #[cfg(test)]

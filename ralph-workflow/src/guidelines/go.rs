@@ -6,7 +6,7 @@ use super::base::ReviewGuidelines;
 use crate::language_detector::ProjectStack;
 
 /// Add Go-specific guidelines to the review
-pub(crate) fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+pub fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
     // Core Go guidelines
     guidelines.quality_checks.extend([
         "Run go fmt and golint".to_string(),

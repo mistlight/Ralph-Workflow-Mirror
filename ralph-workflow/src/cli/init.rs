@@ -24,7 +24,7 @@ use std::path::Path;
 ///
 /// Returns `Ok(true)` if the flag was handled (program should exit after),
 /// or an error if config creation failed.
-pub fn handle_init_global(colors: &Colors) -> anyhow::Result<bool> {
+pub fn handle_init_global(colors: Colors) -> anyhow::Result<bool> {
     let global_path = unified_config_path()
         .ok_or_else(|| anyhow::anyhow!("Cannot determine config directory (no home directory)"))?;
 
@@ -69,7 +69,7 @@ pub fn handle_init_global(colors: &Colors) -> anyhow::Result<bool> {
 /// Handle the legacy `--init-legacy` flag.
 ///
 /// Creates a local agents.toml file at the specified path if it doesn't exist.
-pub fn handle_init_legacy(colors: &Colors, agents_config_path: &Path) -> anyhow::Result<bool> {
+pub fn handle_init_legacy(colors: Colors, agents_config_path: &Path) -> anyhow::Result<bool> {
     match AgentsConfigFile::ensure_config_exists(agents_config_path) {
         Ok(ConfigInitResult::Created) => {
             println!(
@@ -116,7 +116,7 @@ pub fn handle_init_legacy(colors: &Colors, agents_config_path: &Path) -> anyhow:
 ///
 /// Returns `Ok(true)` if the flag was handled (program should exit after),
 /// or an error if template creation failed.
-pub fn handle_init_prompt(template_name: &str, colors: &Colors) -> anyhow::Result<bool> {
+pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result<bool> {
     let prompt_path = Path::new("PROMPT.md");
 
     // Check if PROMPT.md already exists
@@ -132,31 +132,28 @@ pub fn handle_init_prompt(template_name: &str, colors: &Colors) -> anyhow::Resul
     }
 
     // Validate the template exists
-    let template = match get_template(template_name) {
-        Some(t) => t,
-        None => {
+    let Some(template) = get_template(template_name) else {
+        println!(
+            "{}Unknown template: '{}'{}",
+            colors.red(),
+            template_name,
+            colors.reset()
+        );
+        println!();
+        println!("Available templates:");
+        for (name, description) in list_templates() {
             println!(
-                "{}Unknown template: '{}'{}",
-                colors.red(),
-                template_name,
-                colors.reset()
+                "  {}{}{}  {}",
+                colors.cyan(),
+                name,
+                colors.reset(),
+                description
             );
-            println!();
-            println!("Available templates:");
-            for (name, description) in list_templates() {
-                println!(
-                    "  {}{}{}  {}",
-                    colors.cyan(),
-                    name,
-                    colors.reset(),
-                    description
-                );
-            }
-            println!();
-            println!("Usage: ralph --init-prompt <template>");
-            println!("       ralph --list-templates");
-            return Ok(true);
         }
+        println!();
+        println!("Usage: ralph --init-prompt <template>");
+        println!("       ralph --list-templates");
+        return Ok(true);
     };
 
     // Write the template content to PROMPT.md
@@ -198,8 +195,8 @@ pub fn handle_init_prompt(template_name: &str, colors: &Colors) -> anyhow::Resul
 ///
 /// # Returns
 ///
-/// Returns `Ok(true)` if the flag was handled (program should exit after).
-pub fn handle_list_templates(colors: &Colors) -> anyhow::Result<bool> {
+/// Returns `true` if the flag was handled (program should exit after).
+pub fn handle_list_templates(colors: Colors) -> bool {
     println!("Available PROMPT.md templates:");
     println!();
 
@@ -230,5 +227,5 @@ pub fn handle_list_templates(colors: &Colors) -> anyhow::Result<bool> {
     println!("  ralph --init-prompt bug-fix        # Create bug fix template");
     println!("  ralph --init-prompt quick          # Create quick change template");
 
-    Ok(true)
+    true
 }

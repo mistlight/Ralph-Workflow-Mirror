@@ -14,9 +14,10 @@
 //! # Platform Support
 //!
 //! - **Unix/Linux**: inotify via `notify` crate
-//! - **macOS**: FSEvents via `notify` crate
-//! - **Windows**: ReadDirectoryChangesW via `notify` crate
+//! - **macOS**: `FSEvents` via `notify` crate
+//! - **Windows**: `ReadDirectoryChangesW` via `notify` crate
 
+#![expect(clippy::needless_pass_by_value)]
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -118,19 +119,19 @@ impl PromptMonitor {
         let mut watcher = match notify::recommended_watcher(tx) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("Warning: Failed to create file system watcher: {}", e);
+                eprintln!("Warning: Failed to create file system watcher: {e}");
                 eprintln!("Falling back to periodic polling for PROMPT.md protection");
                 // Fallback to polling if watcher creation fails
-                Self::polling_monitor(restoration_detected, stop_signal);
+                Self::polling_monitor(&restoration_detected, &stop_signal);
                 return;
             }
         };
 
         // Watch the current directory for events
         if let Err(e) = watcher.watch(Path::new("."), notify::RecursiveMode::NonRecursive) {
-            eprintln!("Warning: Failed to watch current directory: {}", e);
+            eprintln!("Warning: Failed to watch current directory: {e}");
             eprintln!("Falling back to periodic polling for PROMPT.md protection");
-            Self::polling_monitor(restoration_detected, stop_signal);
+            Self::polling_monitor(&restoration_detected, &stop_signal);
             return;
         }
 
@@ -147,13 +148,8 @@ impl PromptMonitor {
                         &mut prompt_existed_last_check,
                     );
                 }
-                Ok(Err(_)) => {
-                    // Error in watcher - continue anyway
-                    continue;
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Timeout is expected - check stop signal and continue
-                    continue;
+                Ok(Err(_)) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Error in watcher or timeout - continue anyway
                 }
                 Err(_) => {
                     // Channel disconnected - stop monitoring
@@ -186,7 +182,7 @@ impl PromptMonitor {
     ///
     /// Some filesystems (NFS, network drives) don't support file system
     /// events. This fallback polls every 100ms to check if PROMPT.md exists.
-    fn polling_monitor(restoration_detected: Arc<AtomicBool>, stop_signal: Arc<AtomicBool>) {
+    fn polling_monitor(restoration_detected: &Arc<AtomicBool>, stop_signal: &Arc<AtomicBool>) {
         let mut prompt_existed = Path::new("PROMPT.md").exists();
 
         while !stop_signal.load(Ordering::Relaxed) {
@@ -292,8 +288,8 @@ impl PromptMonitor {
     ///     println!("PROMPT.md was restored during this phase!");
     /// }
     /// ```
-    pub fn check_and_restore(&mut self) -> bool {
-        self.restoration_detected.swap(false, Ordering::Acquire)
+    pub fn check_and_restore(&self) -> bool {
+        self.restoration_detected.load(Ordering::Acquire)
     }
 
     /// Stop monitoring and cleanup resources.
