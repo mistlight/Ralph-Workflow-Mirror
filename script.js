@@ -119,7 +119,9 @@ const ScrollAnimations = {
             '.feature-card',
             '.preset-card',
             '.audience-card',
-            '.workflow-step-item'
+            '.workflow-step-item',
+            '.timeline-step',
+            '.what-key-point'
         ];
 
         selectors.forEach(selector => {
@@ -173,12 +175,23 @@ const InstallTabs = {
     },
 
     switchTab(activeTab) {
+        const tabName = activeTab.dataset.tab;
+
+        // Update tab styles
         this.tabs.forEach(tab => {
             tab.classList.remove('install-tab-active');
             tab.setAttribute('aria-selected', 'false');
         });
         activeTab.classList.add('install-tab-active');
         activeTab.setAttribute('aria-selected', 'true');
+
+        // Update content visibility
+        document.querySelectorAll('.install-content').forEach(content => {
+            content.classList.remove('install-content-active');
+            if (content.dataset.content === tabName) {
+                content.classList.add('install-content-active');
+            }
+        });
     }
 };
 
@@ -229,7 +242,7 @@ const CopyButton = {
 
 // === ACTIVE NAVIGATION HIGHLIGHT ===
 const NavHighlight = {
-    sections: ['how-it-works', 'install', 'features'],
+    sections: ['what-is-ralph', 'how-it-works', 'install', 'features'],
 
     init() {
         window.addEventListener('scroll', Utils.throttle(() => this.onScroll(), 100));
@@ -357,7 +370,8 @@ const HeroAnimation = {
             hero.querySelector('.hero-meta'),
             hero.querySelector('.hero-title'),
             hero.querySelector('.hero-description'),
-            hero.querySelector('.hero-actions')
+            hero.querySelector('.hero-actions'),
+            hero.querySelector('.hero-trust')
         ].filter(Boolean);
 
         elements.forEach((el, index) => {
@@ -376,15 +390,15 @@ const HeroAnimation = {
             });
         }, 150);
 
-        // Terminal visual with enhanced animation
-        const terminal = document.querySelector('.hero-visual');
-        if (terminal) {
-            terminal.style.opacity = '0';
-            terminal.style.transform = 'perspective(1000px) rotateY(-15deg) rotateX(10deg) translateX(80px) translateY(40px)';
+        // Agent orchestration visualization with enhanced animation
+        const orchestration = document.querySelector('.agent-orchestration');
+        if (orchestration) {
+            orchestration.style.opacity = '0';
+            orchestration.style.transform = 'perspective(1000px) rotateY(-15deg) rotateX(10deg) translateX(80px) translateY(40px)';
             setTimeout(() => {
-                terminal.style.transition = 'opacity 1.2s ease, transform 1.2s cubic-bezier(0.16, 1, 0.3, 1)';
-                terminal.style.opacity = '1';
-                terminal.style.transform = 'perspective(1000px) rotateY(-3deg) rotateX(2deg) translateX(0) translateY(0)';
+                orchestration.style.transition = 'opacity 1.2s ease, transform 1.2s cubic-bezier(0.16, 1, 0.3, 1)';
+                orchestration.style.opacity = '1';
+                orchestration.style.transform = 'perspective(1000px) rotateY(-2deg) rotateX(1deg) translateX(0) translateY(0)';
             }, 400);
         }
 
@@ -397,6 +411,56 @@ const HeroAnimation = {
                 glow.style.opacity = '';
             }, 800 + (index * 200));
         });
+
+        // Start agent animation simulation
+        AgentAnimation.init();
+    }
+};
+
+// === AGENT ORCHESTRATION ANIMATION ===
+const AgentAnimation = {
+    init() {
+        const devAgent = document.querySelector('.agent-node-dev');
+        const reviewAgent = document.querySelector('.agent-node-review');
+        const devStatus = devAgent?.querySelector('.agent-status');
+        const reviewStatus = reviewAgent?.querySelector('.agent-status');
+
+        if (!devStatus || !reviewStatus) return;
+
+        // Simulate agent activity cycle
+        const states = [
+            { dev: 'Writing code...', review: 'Awaiting code...' },
+            { dev: 'Code complete!', review: 'Reviewing...' },
+            { dev: 'Fixing issues...', review: 'Found bugs...' },
+            { dev: 'Writing code...', review: 'Awaiting code...' },
+            { dev: 'Code complete!', review: 'Approved ✓' }
+        ];
+
+        let currentState = 0;
+
+        // Cycle through states
+        setInterval(() => {
+            currentState = (currentState + 1) % states.length;
+            const state = states[currentState];
+
+            devStatus.textContent = state.dev;
+            reviewStatus.textContent = state.review;
+
+            // Update status classes
+            if (state.dev.includes('complete')) {
+                devStatus.classList.remove('agent-status-active');
+                reviewStatus.classList.add('agent-status-active');
+            } else if (state.dev.includes('Writing') || state.dev.includes('Fixing')) {
+                devStatus.classList.add('agent-status-active');
+                reviewStatus.classList.remove('agent-status-active');
+            }
+
+            // Flash effect on state change
+            devAgent.style.transform = 'scale(1.02)';
+            setTimeout(() => {
+                devAgent.style.transform = '';
+            }, 150);
+        }, 3000);
     }
 };
 

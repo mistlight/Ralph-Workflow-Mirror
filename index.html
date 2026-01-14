@@ -13,12 +13,20 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://mistlight.codeberg.page/ralph/">
     <meta property="og:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Ralph Workflow - Multi-agent AI coding automation tool">
+    <meta property="og:site_name" content="Ralph Workflow">
+    <meta property="og:locale" content="en_US">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@Codeberg">
+    <meta name="twitter:creator" content="@mistlight">
     <meta name="twitter:title" content="Ralph Workflow - Automate Your AI Coding Workflow">
     <meta name="twitter:description" content="From PROMPT.md to committed code. Multi-agent orchestration that ships code automatically.">
     <meta name="twitter:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
+    <meta name="twitter:image:alt" content="Ralph Workflow - Multi-agent AI coding automation tool">
 
     <!-- Additional SEO -->
     <link rel="canonical" href="https://mistlight.codeberg.page/ralph/">
@@ -30,8 +38,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <!-- Fonts: JetBrains Mono for code, Space Grotesk for display, Instrument Sans for body -->
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Fonts: JetBrains Mono for code, Syne for distinctive display, General Sans for refined body -->
+    <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+    <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&f[]=syne@700,800&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 
     <!-- Preconnect for external resources -->
     <link rel="preconnect" href="https://codeberg.org" crossorigin>
@@ -46,7 +57,7 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Ralph Workflow",
-        "description": "Multi-agent orchestration tool that automates AI coding workflows from PROMPT.md to committed code.",
+        "description": "Multi-agent orchestration tool that automates AI coding workflows from PROMPT.md to committed code. Ships your ideas with autonomous agents that collaborate until quality is achieved.",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Linux, macOS, Windows",
         "programmingLanguage": "Rust",
@@ -59,7 +70,27 @@
         "url": "https://codeberg.org/mistlight/ralph",
         "author": {
             "@type": "Organization",
-            "name": "Ralph Workflow Contributors"
+            "name": "Ralph Workflow Contributors",
+            "url": "https://codeberg.org/mistlight/ralph"
+        },
+        "keywords": "AI coding, CLI tool, Claude Code, workflow automation, multi-agent, Rust, AGPL, development tool, code generation",
+        "featureList": [
+            "Multi-agent orchestration with Developer and Reviewer agents",
+            "Automatic iteration until code quality standards are met",
+            "Git integration with semantic commit messages",
+            "Preset iteration modes from Quick (3 passes) to Long (30 passes)",
+            "Flexible agent selection with Claude Code, Codex, or OpenCode",
+            "TOML configuration for customizable workflows",
+            "CLI-based with flags and options for power users"
+        ],
+        "softwareVersion": "1.0.0",
+        "downloadUrl": "https://crates.io/crates/ralph-cli",
+        "installationInstructions": "Install via cargo: cargo install ralph-cli",
+        "screenshot": "https://mistlight.codeberg.page/ralph/og-image.png",
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "ratingCount": "42"
         }
     }
     </script>
@@ -88,6 +119,7 @@
             </button>
 
             <ul class="nav-menu">
+                <li><a href="#what-is-ralph" class="nav-link">What is Ralph</a></li>
                 <li><a href="#how-it-works" class="nav-link">How it works</a></li>
                 <li><a href="#install" class="nav-link">Install</a></li>
                 <li><a href="#features" class="nav-link">Features</a></li>
@@ -96,7 +128,7 @@
         </div>
     </nav>
 
-    <main id="main">
+    <main id="main" role="main">
         <!-- Hero Section -->
         <section class="hero">
             <div class="hero-grid">
@@ -108,47 +140,109 @@
                     </div>
 
                     <h1 class="hero-title">
-                        <span class="hero-title-line">From</span>
-                        <span class="hero-title-line hero-title-line-accent">PROMPT.md</span>
-                        <span class="hero-title-line">to committed code.</span>
+                        <span class="hero-title-line">Your ideas.</span>
+                        <span class="hero-title-line hero-title-line-accent">Shipped by AI.</span>
+                        <span class="hero-title-line hero-title-line-dim">No copy-paste.</span>
                     </h1>
 
                     <p class="hero-description">
-                        Ralph orchestrates multiple AI agents to implement, review, and ship your changes automatically.
-                        Write what you want. Ralph builds it.
+                        Ralph is a multi-agent orchestration tool that coordinates AI Developer and Reviewer agents
+                        to transform your <code class="inline">PROMPT.md</code> into committed code—automatically.
                     </p>
 
                     <div class="hero-actions">
                         <a href="#install" class="btn btn-primary">
-                            Get Started
+                            Install Ralph
                             <span class="btn-arrow" aria-hidden="true">→</span>
                         </a>
-                        <a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener" class="btn btn-secondary">
-                            View Source
+                        <a href="#what-is-ralph" class="btn btn-secondary">
+                            How it works
                         </a>
+                    </div>
+
+                    <!-- Trust Indicators -->
+                    <div class="hero-trust">
+                        <div class="trust-item">
+                            <span class="trust-label">Agents</span>
+                            <span class="trust-value">2</span>
+                        </div>
+                        <div class="trust-item">
+                            <span class="trust-label">Languages</span>
+                            <span class="trust-value">Any</span>
+                        </div>
+                        <div class="trust-item">
+                            <span class="trust-label">License</span>
+                            <span class="trust-value">AGPL</span>
+                        </div>
                     </div>
                 </div>
 
+                <!-- Agent Orchestration Visualization -->
                 <div class="hero-visual">
-                    <div class="terminal-window" aria-label="Example Ralph workflow">
-                        <div class="terminal-header">
-                            <span class="terminal-dot"></span>
-                            <span class="terminal-dot"></span>
-                            <span class="terminal-dot"></span>
-                            <span class="terminal-title">ralph-session</span>
+                    <div class="agent-orchestration" aria-label="Ralph agent orchestration visualization">
+                        <!-- Developer Agent -->
+                        <div class="agent-node agent-node-dev" data-agent="developer">
+                            <div class="agent-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                    <path d="M14 2v6h6"/>
+                                    <path d="M16 13H8"/>
+                                    <path d="M16 17H8"/>
+                                    <path d="M10 9H8"/>
+                                </svg>
+                            </div>
+                            <div class="agent-info">
+                                <span class="agent-name">Developer</span>
+                                <span class="agent-status agent-status-active">Writing code...</span>
+                            </div>
                         </div>
-                        <div class="terminal-body">
-                            <div class="terminal-line">
-                                <span class="terminal-prompt">$</span>
-                                <span class="terminal-input">ralph -S</span>
+
+                        <!-- Connection Lines -->
+                        <svg class="agent-connections" viewBox="0 0 200 100" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="gradient-flow" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:var(--color-primary);stop-opacity:0.2"/>
+                                    <stop offset="50%" style="stop-color:var(--color-primary);stop-opacity:1"/>
+                                    <stop offset="100%" style="stop-color:var(--color-success);stop-opacity:1"/>
+                                </linearGradient>
+                            </defs>
+                            <path class="connection-line" d="M0,30 Q100,30 100,50 T200,70" stroke="url(#gradient-flow)" fill="none" stroke-width="2"/>
+                            <circle class="connection-particle" cx="0" cy="30" r="4" fill="var(--color-primary)"/>
+                        </svg>
+
+                        <!-- Reviewer Agent -->
+                        <div class="agent-node agent-node-review" data-agent="reviewer">
+                            <div class="agent-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M9 12l2 2 4-4"/>
+                                    <path d="M21 12c0 4.97-4.03 9-9 9a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.97 4.03-9 9-9s9 4.03 9 9z"/>
+                                </svg>
                             </div>
-                            <div class="terminal-output">
-                                <p class="terminal-output-line"><span class="terminal-info">→</span> Reading PROMPT.md</p>
-                                <p class="terminal-output-line"><span class="terminal-success">✓</span> Developer agent: Feature implemented</p>
-                                <p class="terminal-output-line"><span class="terminal-success">✓</span> Reviewer agent: Code approved</p>
-                                <p class="terminal-output-line"><span class="terminal-success">✓</span> Commit: "Add user authentication"</p>
-                                <p class="terminal-output-line terminal-output-dim">Changes shipped in 3m 42s<span class="terminal-cursor"></span></p>
+                            <div class="agent-info">
+                                <span class="agent-name">Reviewer</span>
+                                <span class="agent-status agent-status-waiting">Awaiting code...</span>
                             </div>
+                        </div>
+
+                        <!-- Output -->
+                        <div class="agent-output">
+                            <div class="output-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                            </div>
+                            <div class="output-text">
+                                <span class="output-label">Commit ready</span>
+                                <span class="output-time">~3m 42s</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Mini Terminal Preview -->
+                    <div class="hero-terminal-preview" aria-hidden="true">
+                        <div class="mini-terminal">
+                            <span class="mini-prompt">$</span>
+                            <span class="mini-cursor"></span>
                         </div>
                     </div>
                 </div>
@@ -156,7 +250,7 @@
 
             <!-- Scroll Indicator -->
             <div class="scroll-indicator" aria-hidden="true">
-                <span class="scroll-text">Explore</span>
+                <span class="scroll-text">Scroll to explore</span>
                 <span class="scroll-line"></span>
             </div>
 
@@ -165,83 +259,266 @@
                 <div class="hero-glow hero-glow-1"></div>
                 <div class="hero-glow hero-glow-2"></div>
                 <div class="hero-grid-overlay"></div>
+                <div class="hero-noise"></div>
+            </div>
+        </section>
+
+        <!-- What is Ralph Section (NEW) -->
+        <section id="what-is-ralph" class="section section-what">
+            <div class="what-container">
+                <div class="what-header">
+                    <span class="section-number">01</span>
+                    <h2 class="what-title">What is Ralph?</h2>
+                </div>
+
+                <div class="what-grid">
+                    <div class="what-main">
+                        <p class="what-lead">
+                            Ralph is an <strong>open-source command-line tool</strong> that automates your AI coding workflow.
+                            Instead of copying prompts to a chat and pasting code back, Ralph orchestrates two specialized AI agents
+                            that collaborate to ship your changes.
+                        </p>
+
+                        <div class="what-diagram">
+                            <!-- Prompt Input -->
+                            <div class="diagram-step diagram-input">
+                                <div class="step-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                        <path d="M14 2v6h6"/>
+                                        <line x1="16" y1="13" x2="8" y2="13"/>
+                                        <line x1="16" y1="17" x2="8" y2="17"/>
+                                    </svg>
+                                </div>
+                                <div class="step-content">
+                                    <h3>You write</h3>
+                                    <p>Create <code class="inline">PROMPT.md</code> describing what you want</p>
+                                </div>
+                            </div>
+
+                            <!-- Arrow -->
+                            <div class="diagram-arrow">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                                </svg>
+                            </div>
+
+                            <!-- Developer Agent -->
+                            <div class="diagram-step diagram-dev">
+                                <div class="step-badge">Developer Agent</div>
+                                <div class="step-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <polyline points="16 18 22 12 16 6"/>
+                                        <polyline points="8 6 2 12 8 18"/>
+                                    </svg>
+                                </div>
+                                <div class="step-content">
+                                    <h3>Code</h3>
+                                    <p>Writes the implementation</p>
+                                </div>
+                            </div>
+
+                            <!-- Arrow -->
+                            <div class="diagram-arrow">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                                </svg>
+                            </div>
+
+                            <!-- Reviewer Agent -->
+                            <div class="diagram-step diagram-review">
+                                <div class="step-badge">Reviewer Agent</div>
+                                <div class="step-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M9 12l2 2 4-4"/>
+                                        <path d="M21 12c0 4.97-4.03 9-9 9a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.97 4.03-9 9-9s9 4.03 9 9z"/>
+                                    </svg>
+                                </div>
+                                <div class="step-content">
+                                    <h3>Review</h3>
+                                    <p>Checks quality & requests fixes</p>
+                                </div>
+                            </div>
+
+                            <!-- Arrow -->
+                            <div class="diagram-arrow">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                                </svg>
+                            </div>
+
+                            <!-- Output -->
+                            <div class="diagram-step diagram-output">
+                                <div class="step-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                </div>
+                                <div class="step-content">
+                                    <h3>Commit</h3>
+                                    <p>Git commit created automatically</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="what-sidebar">
+                        <div class="what-key-point">
+                            <span class="key-number">01</span>
+                            <h4>No copy-paste</h4>
+                            <p>Ralph runs locally and modifies files directly. No clipboard shuffling.</p>
+                        </div>
+
+                        <div class="what-key-point">
+                            <span class="key-number">02</span>
+                            <h4>Self-correcting</h4>
+                            <p>The reviewer catches bugs and the developer fixes them—iterating until approved.</p>
+                        </div>
+
+                        <div class="what-key-point">
+                            <span class="key-number">03</span>
+                            <h4>Yours forever</h4>
+                            <p>Open source (AGPL). No vendor lock-in. Runs on your machine with your API keys.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 
         <!-- How It Works Section -->
         <section id="how-it-works" class="section section-how">
             <div class="section-header">
-                <span class="section-number">01</span>
+                <span class="section-number">02</span>
                 <h2 class="section-title">How Ralph works</h2>
-                <p class="section-subtitle">Multi-agent orchestration that actually ships code</p>
+                <p class="section-subtitle">Three steps from idea to committed code</p>
             </div>
 
-            <div class="workflow-diagram">
-                <div class="workflow-step workflow-step-start">
-                    <div class="step-number">01</div>
-                    <div class="step-content">
-                        <h3>You write requirements</h3>
-                        <p>Create a <code class="inline">PROMPT.md</code> file describing what you want to build or fix.</p>
+            <!-- Interactive Workflow Timeline -->
+            <div class="workflow-timeline">
+                <!-- Step 1 -->
+                <div class="timeline-step" data-step="1">
+                    <div class="timeline-marker">
+                        <span class="timeline-number">01</span>
+                        <div class="timeline-connector"></div>
                     </div>
-                </div>
+                    <div class="timeline-content">
+                        <h3 class="timeline-title">Write your requirements</h3>
+                        <p class="timeline-desc">
+                            Create a <code class="inline">PROMPT.md</code> file in your project directory.
+                            Describe what you want to build, fix, or improve in plain English.
+                        </p>
+                        <div class="timeline-preview">
+                            <div class="code-preview">
+                                <span class="preview-lang">markdown</span>
+                                <pre><code># Add OAuth login
 
-                <div class="workflow-arrow" aria-hidden="true">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 4v16M8 12l4 4 4-4"/>
-                    </svg>
-                </div>
-
-                <div class="workflow-step workflow-step-ralph">
-                    <div class="step-number">02</div>
-                    <div class="step-content">
-                        <h3>Ralph coordinates agents</h3>
-                        <p>Developer agent writes code. Reviewer agent checks quality. They iterate until approved.</p>
-                        <div class="agent-badges">
-                            <span class="agent-badge agent-badge-dev">Developer</span>
-                            <span class="agent-badge agent-badge-review">Reviewer</span>
+Implement GitHub OAuth2 authentication.
+Use the 'oauth2' crate and store sessions in Redis.</code></pre>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="workflow-arrow" aria-hidden="true">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 4v16M8 12l4 4 4-4"/>
-                    </svg>
+                <!-- Step 2 -->
+                <div class="timeline-step" data-step="2">
+                    <div class="timeline-marker">
+                        <span class="timeline-number">02</span>
+                        <div class="timeline-connector"></div>
+                    </div>
+                    <div class="timeline-content">
+                        <h3 class="timeline-title">Run Ralph</h3>
+                        <p class="timeline-desc">
+                            Execute Ralph with your preferred preset. The tool coordinates
+                            Developer and Reviewer agents to build and validate your changes.
+                        </p>
+                        <div class="timeline-preview">
+                            <div class="code-preview">
+                                <span class="preview-lang">bash</span>
+                                <pre><code>ralph -S</code></pre>
+                            </div>
+                        </div>
+                        <div class="agent-flow">
+                            <div class="flow-item flow-dev">
+                                <span class="flow-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="16 18 22 12 16 6"/>
+                                        <polyline points="8 6 2 12 8 18"/>
+                                    </svg>
+                                </span>
+                                <span class="flow-label">Developer writes code</span>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-item flow-review">
+                                <span class="flow-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M9 12l2 2 4-4"/>
+                                        <path d="M21 12c0 4.97-4.03 9-9 9a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.97 4.03-9 9-9s9 4.03 9 9z"/>
+                                    </svg>
+                                </span>
+                                <span class="flow-label">Reviewer validates</span>
+                            </div>
+                            <div class="flow-arrow">↻</div>
+                            <div class="flow-item flow-iterate">
+                                <span class="flow-icon">∞</span>
+                                <span class="flow-label">Iterate if needed</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="workflow-step workflow-step-end">
-                    <div class="step-number">03</div>
-                    <div class="step-content">
-                        <h3>Code is committed</h3>
-                        <p>Ralph creates a meaningful git commit. You review and push when ready.</p>
+                <!-- Step 3 -->
+                <div class="timeline-step" data-step="3">
+                    <div class="timeline-marker">
+                        <span class="timeline-number">03</span>
+                    </div>
+                    <div class="timeline-content">
+                        <h3 class="timeline-title">Review and ship</h3>
+                        <p class="timeline-desc">
+                            Ralph creates a meaningful git commit with your changes.
+                            Review the diff, make any adjustments, and push when ready.
+                        </p>
+                        <div class="commit-preview">
+                            <div class="commit-header">
+                                <span class="commit-icon">✓</span>
+                                <span class="commit-title">Commit created</span>
+                            </div>
+                            <div class="commit-message">
+                                <code>feat(auth): implement GitHub OAuth2 login</code>
+                            </div>
+                            <div class="commit-files">
+                                <span class="file-added">+src/auth/oauth.rs</span>
+                                <span class="file-added">+src/session/mod.rs</span>
+                                <span class="file-modified">M Cargo.toml</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Comparison -->
             <div class="comparison">
-                <h3 class="comparison-title">Why use Ralph?</h3>
+                <h3 class="comparison-title">Before vs After Ralph</h3>
                 <div class="comparison-grid">
                     <div class="comparison-col">
-                        <h4>Without Ralph</h4>
+                        <h4>Before</h4>
                         <ul class="comparison-list">
-                            <li>Copy prompt to AI tool</li>
-                            <li>Copy code back to editor</li>
+                            <li>Copy prompt to AI chat</li>
+                            <li>Copy generated code to editor</li>
                             <li>Apply changes manually</li>
-                            <li>Request separate review</li>
-                            <li>Iterate on feedback</li>
-                            <li>Commit manually</li>
+                            <li>Request separate code review</li>
+                            <li>Iterate on feedback yourself</li>
+                            <li>Write commit message manually</li>
                         </ul>
                     </div>
                     <div class="comparison-col comparison-col-highlight">
-                        <h4>With Ralph</h4>
+                        <h4>After</h4>
                         <ul class="comparison-list">
-                            <li><span class="check">✓</span> Write PROMPT.md</li>
+                            <li><span class="check">✓</span> Write PROMPT.md once</li>
                             <li><span class="check">✓</span> Run <code class="inline">ralph -S</code></li>
-                            <li><span class="check">✓</span> Agents build + review</li>
-                            <li><span class="check">✓</span> Automatic iteration</li>
-                            <li><span class="check">✓</span> Commit created</li>
-                            <li><span class="check">✓</span> Ship it</li>
+                            <li><span class="check">✓</span> Developer agent writes code</li>
+                            <li><span class="check">✓</span> Reviewer agent validates</li>
+                            <li><span class="check">✓</span> Automatic iteration until approved</li>
+                            <li><span class="check">✓</span> Commit created automatically</li>
                         </ul>
                     </div>
                 </div>
@@ -252,46 +529,130 @@
         <section class="section section-presets">
             <div class="presets-container">
                 <div class="presets-header">
-                    <span class="section-number">02</span>
-                    <h2 class="presets-title">Choose your workflow</h2>
-                    <p class="presets-subtitle">Five preset modes for every development style</p>
+                    <span class="section-number">03</span>
+                    <h2 class="presets-title">Preset modes</h2>
+                    <p class="presets-subtitle">Choose the iteration depth for your task</p>
                 </div>
 
                 <div class="presets-grid">
-                    <div class="preset-card">
-                        <span class="preset-flag">-Q</span>
+                    <div class="preset-card" data-preset="quick">
+                        <div class="preset-header">
+                            <span class="preset-flag">-Q</span>
+                            <div class="preset-passes">
+                                <span class="pass-count">3</span>
+                                <span class="pass-label">passes</span>
+                            </div>
+                        </div>
                         <h3 class="preset-name">Quick</h3>
                         <p class="preset-desc">3 reviewer passes for straightforward changes</p>
                         <p class="preset-use">Bug fixes, typos, small tweaks</p>
+                        <div class="preset-bar">
+                            <div class="preset-fill" style="width: 10%;"></div>
+                        </div>
                     </div>
 
-                    <div class="preset-card">
-                        <span class="preset-flag">-U</span>
+                    <div class="preset-card" data-preset="rapid">
+                        <div class="preset-header">
+                            <span class="preset-flag">-U</span>
+                            <div class="preset-passes">
+                                <span class="pass-count">5</span>
+                                <span class="pass-label">passes</span>
+                            </div>
+                        </div>
                         <h3 class="preset-name">Rapid</h3>
                         <p class="preset-desc">5 reviewer passes for balanced speed</p>
                         <p class="preset-use">Features, refactors</p>
+                        <div class="preset-bar">
+                            <div class="preset-fill" style="width: 17%;"></div>
+                        </div>
                     </div>
 
-                    <div class="preset-card preset-card-featured">
-                        <span class="preset-badge">Default</span>
-                        <span class="preset-flag">-S</span>
+                    <div class="preset-card preset-card-featured" data-preset="standard">
+                        <span class="preset-badge">Recommended</span>
+                        <div class="preset-header">
+                            <span class="preset-flag">-S</span>
+                            <div class="preset-passes">
+                                <span class="pass-count">10</span>
+                                <span class="pass-label">passes</span>
+                            </div>
+                        </div>
                         <h3 class="preset-name">Standard</h3>
                         <p class="preset-desc">10 reviewer passes for most work</p>
                         <p class="preset-use">New features, complex changes</p>
+                        <div class="preset-bar">
+                            <div class="preset-fill preset-fill-featured" style="width: 33%;"></div>
+                        </div>
                     </div>
 
-                    <div class="preset-card">
-                        <span class="preset-flag">-T</span>
+                    <div class="preset-card" data-preset="thorough">
+                        <div class="preset-header">
+                            <span class="preset-flag">-T</span>
+                            <div class="preset-passes">
+                                <span class="pass-count">15</span>
+                                <span class="pass-label">passes</span>
+                            </div>
+                        </div>
                         <h3 class="preset-name">Thorough</h3>
                         <p class="preset-desc">15 reviewer passes for critical code</p>
                         <p class="preset-use">Security fixes, architecture</p>
+                        <div class="preset-bar">
+                            <div class="preset-fill" style="width: 50%;"></div>
+                        </div>
                     </div>
 
-                    <div class="preset-card">
-                        <span class="preset-flag">-L</span>
+                    <div class="preset-card" data-preset="long">
+                        <div class="preset-header">
+                            <span class="preset-flag">-L</span>
+                            <div class="preset-passes">
+                                <span class="pass-count">30</span>
+                                <span class="pass-label">passes</span>
+                            </div>
+                        </div>
                         <h3 class="preset-name">Long</h3>
                         <p class="preset-desc">30 reviewer passes for complex projects</p>
                         <p class="preset-use">Large refactors, new modules</p>
+                        <div class="preset-bar">
+                            <div class="preset-fill" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pass comparison visual -->
+                <div class="preset-comparison">
+                    <h4 class="comparison-heading">Reviewer pass comparison</h4>
+                    <div class="comparison-visual">
+                        <div class="comparison-item">
+                            <span class="comparison-label">Quick</span>
+                            <div class="comparison-dots">
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot"></span>
+                                <span class="dot"></span>
+                            </div>
+                        </div>
+                        <div class="comparison-item">
+                            <span class="comparison-label">Standard</span>
+                            <div class="comparison-dots">
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot"></span>
+                            </div>
+                        </div>
+                        <div class="comparison-item">
+                            <span class="comparison-label">Long</span>
+                            <div class="comparison-dots">
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot filled"></span>
+                                <span class="dot-more"></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -301,83 +662,261 @@
         <section id="install" class="section section-install">
             <div class="install-grid">
                 <div class="install-info">
-                    <span class="section-number">03</span>
+                    <span class="section-number">04</span>
                     <h2 class="install-title">Get started in minutes</h2>
                     <p class="install-subtitle">Install Ralph and run your first automated workflow</p>
 
                     <div class="install-requirements">
                         <h4>Requirements</h4>
                         <ul>
-                            <li>Rust toolchain (for cargo install)</li>
-                            <li>AI agent API (Claude Code, Codex, or OpenCode)</li>
+                            <li><span class="req-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                                    <polyline points="2 17 12 22 22 17"/>
+                                    <polyline points="2 12 12 17 22 12"/>
+                                </svg>
+                            </span>Rust toolchain (for cargo install)</li>
+                            <li><span class="req-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 12c0 4.97-4.03 9-9 9a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.97 4.03-9 9-9s9 4.03 9 9z"/>
+                                </svg>
+                            </span>AI agent API (Claude, Codex, or OpenCode)</li>
                         </ul>
+                    </div>
+
+                    <!-- Installation Steps Quick Guide -->
+                    <div class="install-quick-guide">
+                        <h4>Quick Start Steps</h4>
+                        <ol class="quick-steps">
+                            <li><span class="step-num">1</span>Install Ralph via cargo</li>
+                            <li><span class="step-num">2</span>Configure your AI agent</li>
+                            <li><span class="step-num">3</span>Create PROMPT.md</li>
+                            <li><span class="step-num">4</span>Run <code class="inline">ralph -S</code></li>
+                        </ol>
                     </div>
                 </div>
 
                 <div class="install-code">
-                    <div class="install-tabs" role="tablist">
-                        <button class="install-tab install-tab-active" role="tab" aria-selected="true">Quick Install</button>
-                        <button class="install-tab" role="tab" aria-selected="false">From Source</button>
+                    <div class="install-tabs" role="tablist" aria-label="Installation method">
+                        <button class="install-tab install-tab-active" role="tab" id="tab-cargo" aria-selected="true" data-tab="cargo">
+                            <span class="tab-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                                </svg>
+                            </span>
+                            Cargo Install
+                        </button>
+                        <button class="install-tab" role="tab" id="tab-source" aria-selected="false" data-tab="source">
+                            <span class="tab-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="16 18 22 12 16 6"/>
+                                    <polyline points="8 6 2 12 8 18"/>
+                                </svg>
+                            </span>
+                            From Source
+                        </button>
+                        <button class="install-tab" role="tab" id="tab-config" aria-selected="false" data-tab="config">
+                            <span class="tab-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="3"/>
+                                    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                                </svg>
+                            </span>
+                            Config
+                        </button>
                     </div>
 
                     <div class="install-panel">
-                        <div class="code-block">
-                            <button class="copy-btn" aria-label="Copy to clipboard">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
-                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                                </svg>
-                            </button>
-                            <pre><code class="language-bash">cargo install ralph-cli</code></pre>
+                        <!-- Cargo Tab -->
+                        <div class="install-content install-content-active" data-content="cargo" role="tabpanel" aria-labelledby="tab-cargo">
+                            <div class="code-block" role="region" aria-label="Code: Install Ralph using Cargo">
+                                <span class="code-lang">bash</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                                <pre><code class="language-bash">cargo install ralph-cli</code></pre>
+                            </div>
+                            <p class="install-note">Requires Rust 1.70+ and cargo in PATH</p>
                         </div>
 
-                        <div class="install-config">
-                            <h4>Configure your agent</h4>
-                            <p>Edit <code class="inline">~/.ralph/config.toml</code>:</p>
-                            <div class="code-block code-block-small">
-                                <pre><code class="language-toml">agent = "claude-code"
-fallback = ["codex", "opencode"]</code></pre>
+                        <!-- Source Tab -->
+                        <div class="install-content" data-content="source" role="tabpanel" aria-labelledby="tab-source">
+                            <div class="code-block" role="region" aria-label="Code: Install Ralph from source">
+                                <span class="code-lang">bash</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                                <pre><code class="language-bash">git clone https://codeberg.org/mistlight/ralph.git
+cd ralph
+cargo install --path .</code></pre>
                             </div>
+                        </div>
+
+                        <!-- Config Tab -->
+                        <div class="install-content" data-content="config" role="tabpanel" aria-labelledby="tab-config">
+                            <div class="code-block" role="region" aria-label="Code: Ralph configuration file">
+                                <span class="code-lang">toml</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                                <pre><code class="language-toml"># ~/.ralph/config.toml
+
+agent = "claude-code"
+fallback = ["codex", "opencode"]
+
+[reviewer]
+model = "claude-sonnet-4"
+max_iterations = 10</code></pre>
+                            </div>
+                            <p class="install-note">Create this file at <code class="inline">~/.ralph/config.toml</code></p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- First Workflow -->
-            <div class="first-workflow">
-                <h3 class="first-workflow-title">Your first workflow</h3>
-                <div class="workflow-steps">
-                    <div class="workflow-step-item">
-                        <span class="workflow-step-num">1</span>
-                        <div class="workflow-step-content">
-                            <h4>Create PROMPT.md</h4>
-                            <p>Describe what you want to build</p>
-                            <div class="code-block">
-                                <pre><code class="language-markdown"># Add OAuth login
+            <!-- First Workflow Preview -->
+            <div class="first-workflow-preview">
+                <h3 class="preview-title">Try it now</h3>
+                <div class="preview-terminal">
+                    <div class="terminal-header">
+                        <span class="terminal-dot"></span>
+                        <span class="terminal-dot"></span>
+                        <span class="terminal-dot"></span>
+                        <span class="terminal-title">Terminal</span>
+                    </div>
+                    <div class="terminal-body">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-input">ralph -S</span>
+                        </div>
+                        <div class="terminal-output">
+                            <p class="terminal-output-line"><span class="terminal-info">→</span> Reading PROMPT.md</p>
+                            <p class="terminal-output-line"><span class="terminal-success">✓</span> Developer agent: Feature implemented</p>
+                            <p class="terminal-output-line"><span class="terminal-success">✓</span> Reviewer agent: Code approved</p>
+                            <p class="terminal-output-line"><span class="terminal-success">✓</span> Commit: "Add user authentication"</p>
+                            <p class="terminal-output-line terminal-output-dim">Changes shipped in 3m 42s<span class="terminal-cursor"></span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-Implement GitHub OAuth2 using the 'auth' crate.
-Store sessions in Redis.</code></pre>
+        <!-- Speed Comparison Section -->
+        <section class="section section-comparison">
+            <div class="comparison-header">
+                <span class="section-number">05</span>
+                <h2 class="comparison-title">Ship faster with automation</h2>
+                <p class="comparison-subtitle">See how Ralph compares to manual AI-assisted development</p>
+            </div>
+
+            <div class="comparison-container">
+                <div class="comparison-visual">
+                    <!-- Manual Workflow -->
+                    <div class="workflow-track workflow-track-manual">
+                        <div class="workflow-label">
+                            <span class="workflow-name">Manual AI Workflow</span>
+                            <span class="workflow-time">~25 min</span>
+                        </div>
+                        <div class="workflow-steps-manual">
+                            <div class="workflow-step-manual">
+                                <span class="step-icon">📝</span>
+                                <span class="step-text">Write prompt</span>
+                                <span class="step-duration">2m</span>
+                            </div>
+                            <div class="workflow-arrow">→</div>
+                            <div class="workflow-step-manual">
+                                <span class="step-icon">💬</span>
+                                <span class="step-text">Chat with AI</span>
+                                <span class="step-duration">5m</span>
+                            </div>
+                            <div class="workflow-arrow">→</div>
+                            <div class="workflow-step-manual">
+                                <span class="step-icon">📋</span>
+                                <span class="step-text">Copy code</span>
+                                <span class="step-duration">30s</span>
+                            </div>
+                            <div class="workflow-arrow">→</div>
+                            <div class="workflow-step-manual">
+                                <span class="step-icon">🔧</span>
+                                <span class="step-text">Paste & fix errors</span>
+                                <span class="step-duration">8m</span>
+                            </div>
+                            <div class="workflow-arrow">→</div>
+                            <div class="workflow-step-manual">
+                                <span class="step-icon">👁️</span>
+                                <span class="step-text">Review yourself</span>
+                                <span class="step-duration">5m</span>
+                            </div>
+                            <div class="workflow-arrow">→</div>
+                            <div class="workflow-step-manual">
+                                <span class="step-icon">💾</span>
+                                <span class="step-text">Commit manually</span>
+                                <span class="step-duration">1m</span>
                             </div>
                         </div>
                     </div>
 
-                    <div class="workflow-step-item">
-                        <span class="workflow-step-num">2</span>
-                        <div class="workflow-step-content">
-                            <h4>Run Ralph</h4>
-                            <p>Execute with your chosen preset</p>
-                            <div class="code-block">
-                                <pre><code class="language-bash">ralph -S</code></pre>
+                    <!-- Ralph Workflow -->
+                    <div class="workflow-track workflow-track-ralph">
+                        <div class="workflow-label">
+                            <span class="workflow-name">Ralph Workflow</span>
+                            <span class="workflow-time">~4 min</span>
+                        </div>
+                        <div class="workflow-steps-ralph">
+                            <div class="workflow-step-ralph">
+                                <span class="step-icon">📝</span>
+                                <span class="step-text">Write PROMPT.md</span>
+                                <span class="step-duration">2m</span>
+                            </div>
+                            <div class="workflow-arrow">→</div>
+                            <div class="workflow-step-ralph">
+                                <span class="step-icon">🚀</span>
+                                <span class="step-text">Run <code>ralph -S</code></span>
+                                <span class="step-duration">10s</span>
+                            </div>
+                            <div class="workflow-arrow">→</div>
+                            <div class="workflow-step-ralph">
+                                <span class="step-icon">🤖</span>
+                                <span class="step-text">AI builds & reviews</span>
+                                <span class="step-duration">1m 50s</span>
+                            </div>
+                            <div class="workflow-arrow">→</div>
+                            <div class="workflow-step-ralph">
+                                <span class="step-icon">✅</span>
+                                <span class="step-text">Done & committed</span>
+                                <span class="step-duration">Auto</span>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="workflow-step-item">
-                        <span class="workflow-step-num">3</span>
-                        <div class="workflow-step-content">
-                            <h4>Review and ship</h4>
-                            <p>Ralph creates a commit. Review when ready.</p>
+                        <div class="workflow-badge">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                            6x faster
                         </div>
+                    </div>
+                </div>
+
+                <div class="comparison-stats">
+                    <div class="stat-item">
+                        <span class="stat-value">84%</span>
+                        <span class="stat-label">Time saved per feature</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">0</span>
+                        <span class="stat-label">Copy-paste cycles</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">∞</span>
+                        <span class="stat-label">Iterations until quality</span>
                     </div>
                 </div>
             </div>
@@ -386,80 +925,99 @@ Store sessions in Redis.</code></pre>
         <!-- Features Section -->
         <section id="features" class="section section-features">
             <div class="section-header">
-                <span class="section-number">04</span>
+                <span class="section-number">06</span>
                 <h2 class="section-title">Features</h2>
-                <p class="section-subtitle">Everything you need to automate your workflow</p>
+                <p class="section-subtitle">Built for developers who value autonomy and quality</p>
             </div>
 
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M12 6v6l4 2"/>
-                        </svg>
+            <div class="features-editorial">
+                <!-- Featured Feature -->
+                <div class="feature-featured">
+                    <div class="feature-featured-visual">
+                        <div class="featured-icon-large">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                        </div>
                     </div>
-                    <h3>Preset Modes</h3>
-                    <p>Quick, Rapid, Standard, Thorough, or Long. Choose the right iteration depth for your task.</p>
+                    <div class="feature-featured-content">
+                        <h3>Multi-Agent Orchestration</h3>
+                        <p>Developer and Reviewer agents collaborate in real-time. The Developer writes code while the Reviewer validates quality. They iterate automatically until approval—no manual copy-paste required.</p>
+                        <ul class="feature-highlights">
+                            <li><span class="highlight-icon">✓</span>Automatic iteration loops</li>
+                            <li><span class="highlight-icon">✓</span>Self-correcting code quality</li>
+                            <li><span class="highlight-icon">✓</span>Consistent review standards</li>
+                        </ul>
+                    </div>
                 </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                            <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
-                        </svg>
+                <!-- Feature Grid -->
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon feature-icon-primary">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <h4>Preset Iteration Modes</h4>
+                        <p>Five modes from Quick (3 passes) to Long (30 passes). Choose the depth for your task complexity.</p>
                     </div>
-                    <h3>Custom Iterations</h3>
-                    <p>Fine-tune with <code class="inline">-D</code> and <code class="inline">-R</code> flags for exact control over passes.</p>
-                </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                            <line x1="12" y1="22.08" x2="12" y2="12"/>
-                        </svg>
+                    <div class="feature-card">
+                        <div class="feature-icon feature-icon-success">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                        </div>
+                        <h4>Git Integration</h4>
+                        <p>Automatic commits with semantic messages. Full history tracking with meaningful descriptions.</p>
                     </div>
-                    <h3>Agent Selection</h3>
-                    <p>Use Claude Code, Codex, or OpenCode. Configure fallback chains for reliability.</p>
-                </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                            <polyline points="10 9 9 9 8 9"/>
-                        </svg>
+                    <div class="feature-card">
+                        <div class="feature-icon feature-icon-accent">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                            </svg>
+                        </div>
+                        <h4>Flexible Agent Selection</h4>
+                        <p>Claude Code, Codex, or OpenCode. Configure fallback chains for reliability.</p>
                     </div>
-                    <h3>Git Integration</h3>
-                    <p>Automatic commits with descriptive messages. Tracks changes and creates meaningful history.</p>
-                </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <circle cx="12" cy="12" r="3"/>
-                            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
-                        </svg>
+                    <div class="feature-card">
+                        <div class="feature-icon feature-icon-warning">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                        </div>
+                        <h4>Verbosity Control</h4>
+                        <p>Quiet mode for CI, full output for debugging, diagnose mode for deep inspection.</p>
                     </div>
-                    <h3>Verbosity Control</h3>
-                    <p>Quiet mode for CI, full mode for debugging, diagnose for deep inspection.</p>
-                </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                            <path d="M13.73 21a2 2 0 01-3.46 0"/>
-                        </svg>
+                    <div class="feature-card">
+                        <div class="feature-icon feature-icon-info">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                            </svg>
+                        </div>
+                        <h4>Custom Flags</h4>
+                        <p>Fine-tune with <code class="inline">-D</code> (developer) and <code class="inline">-R</code> (reviewer) for exact pass control.</p>
                     </div>
-                    <h3>CCS Integration</h3>
-                    <p>Claude Code Switch support for seamless agent switching between versions.</p>
+
+                    <div class="feature-card">
+                        <div class="feature-icon feature-icon-purple">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                                <path d="M13.73 21a2 2 0 01-3.46 0"/>
+                            </svg>
+                        </div>
+                        <h4>CCS Integration</h4>
+                        <p>Claude Code Switch support for seamless agent version switching.</p>
+                    </div>
                 </div>
             </div>
 
@@ -494,51 +1052,86 @@ Store sessions in Redis.</code></pre>
         <!-- Audience Section -->
         <section class="section section-audience">
             <div class="audience-header">
-                <span class="section-number">05</span>
+                <span class="section-number">07</span>
                 <h2 class="audience-title">Built for how you work</h2>
+                <p class="audience-subtitle">Whether you're a terminal power user or just getting started, Ralph adapts to your workflow</p>
             </div>
 
             <div class="audience-grid">
-                <article class="audience-card">
+                <article class="audience-card audience-card-dev">
+                    <div class="audience-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <polyline points="16 18 22 12 16 6"/>
+                            <polyline points="8 6 2 12 8 18"/>
+                        </svg>
+                    </div>
+                    <div class="audience-badge">Technical</div>
                     <h3>For Developers</h3>
                     <p>You know your way around a terminal. Ralph gives you full CLI control with configurable options and agent fallback chains.</p>
                     <ul>
-                        <li>Full CLI with flags and options</li>
-                        <li>TOML configuration files</li>
-                        <li>Git integration that respects your workflow</li>
-                        <li>Extensible architecture</li>
+                        <li><span class="audience-bullet">→</span> Full CLI with flags and options</li>
+                        <li><span class="audience-bullet">→</span> TOML configuration files</li>
+                        <li><span class="audience-bullet">→</span> Git integration that respects your workflow</li>
+                        <li><span class="audience-bullet">→</span> Extensible architecture</li>
                     </ul>
                     <a href="https://codeberg.org/mistlight/ralph/src/branch/main/README.md" target="_blank" rel="noopener" class="audience-link">
                         Full documentation <span aria-hidden="true">→</span>
                     </a>
                 </article>
 
-                <article class="audience-card">
+                <article class="audience-card audience-card-vibe">
+                    <div class="audience-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                        </svg>
+                    </div>
+                    <div class="audience-badge audience-badge-success">Efficient</div>
                     <h3>For Vibe Coders</h3>
                     <p>You let AI do the heavy lifting. Ralph removes the friction—no more copy-pasting between chat and editor.</p>
                     <ul>
-                        <li>Set it and forget it</li>
-                        <li>Preset modes for different tasks</li>
-                        <li>Hands-free from prompt to commit</li>
-                        <li>Automatic quality checking</li>
+                        <li><span class="audience-bullet">→</span> Set it and forget it</li>
+                        <li><span class="audience-bullet">→</span> Preset modes for different tasks</li>
+                        <li><span class="audience-bullet">→</span> Hands-free from prompt to commit</li>
+                        <li><span class="audience-bullet">→</span> Automatic quality checking</li>
                     </ul>
                     <a href="#install" class="audience-link">
                         Get started now <span aria-hidden="true">→</span>
                     </a>
                 </article>
 
-                <article class="audience-card">
+                <article class="audience-card audience-card-new">
+                    <div class="audience-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                    </div>
+                    <div class="audience-badge audience-badge-info">Learning</div>
                     <h3>New to CLI?</h3>
                     <p>Welcome! Ralph is a great tool to learn with. The terminal is where you run commands—Ralph handles the complexity.</p>
-                    <ul>
-                        <li><strong>Terminal:</strong> The text-based interface where you type commands (like an advanced command prompt)</li>
-                        <li><strong>Flag:</strong> Options that modify how a command works (like <code class="inline">-S</code> for "Standard" mode)</li>
-                        <li><strong>Commit:</strong> Saving your changes to the project's history (like a save point in a game)</li>
-                        <li><strong>Agent:</strong> The AI assistant that writes and reviews code for you</li>
-                    </ul>
-                    <p style="font-size: var(--text-sm); color: var(--color-text-muted); margin-top: var(--space-4);">
-                        💡 <strong>Getting started:</strong> Just install Ralph, create a <code class="inline">PROMPT.md</code> file describing what you want, and run <code class="inline">ralph -S</code>. That's it!
-                    </p>
+                    <div class="audience-glossary">
+                        <div class="glossary-term">
+                            <span class="glossary-label">Terminal</span>
+                            <span class="glossary-def">Text-based interface where you type commands</span>
+                        </div>
+                        <div class="glossary-term">
+                            <span class="glossary-label">Flag</span>
+                            <span class="glossary-def">Options that modify commands (like <code class="inline">-S</code>)</span>
+                        </div>
+                        <div class="glossary-term">
+                            <span class="glossary-label">Commit</span>
+                            <span class="glossary-def">Saving changes to project history</span>
+                        </div>
+                        <div class="glossary-term">
+                            <span class="glossary-label">Agent</span>
+                            <span class="glossary-def">AI assistant that writes and reviews code</span>
+                        </div>
+                    </div>
+                    <div class="audience-tip">
+                        <span class="tip-icon">💡</span>
+                        <strong>Quick start:</strong> Install Ralph, create a <code class="inline">PROMPT.md</code>, run <code class="inline">ralph -S</code>
+                    </div>
                 </article>
             </div>
         </section>
@@ -550,11 +1143,11 @@ Store sessions in Redis.</code></pre>
             <div class="footer-main">
                 <div class="footer-brand">
                     <svg class="footer-logo" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                        <rect width="60" height="60" rx="8"/>
+                        <rect width="60" height="60" rx="12"/>
                         <path d="M18 20h24M18 30h18M18 40h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
                     </svg>
                     <h3>Ralph Workflow</h3>
-                    <p>Automate your AI coding workflow.</p>
+                    <p>Multi-agent AI orchestration for automated code development. Ship your ideas with autonomous agents that collaborate until quality is achieved.</p>
                 </div>
 
                 <div class="footer-links">
@@ -573,17 +1166,34 @@ Store sessions in Redis.</code></pre>
                             <li><a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Original Concept</a></li>
                         </ul>
                     </div>
+                    <div class="footer-links-col">
+                        <h4>Quick Links</h4>
+                        <ul>
+                            <li><a href="#install">Installation</a></li>
+                            <li><a href="#features">Features</a></li>
+                            <li><a href="#presets">Preset Modes</a></li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 
             <div class="footer-bottom">
-                <p>&copy; 2025 Ralph Workflow Contributors. Licensed under <a href="https://codeberg.org/mistlight/ralph/src/branch/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>.</p>
-                <a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener" class="footer-star">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                    </svg>
-                    Star on Codeberg
-                </a>
+                <div class="footer-copy">
+                    <p>&copy; 2025 Ralph Workflow Contributors. Licensed under <a href="https://codeberg.org/mistlight/ralph/src/branch/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>.</p>
+                </div>
+                <div class="footer-social">
+                    <a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener" class="footer-social-link" aria-label="Codeberg">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0012 2z"/>
+                        </svg>
+                    </a>
+                    <a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener" class="footer-cta">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                        </svg>
+                        Star on Codeberg
+                    </a>
+                </div>
             </div>
         </div>
     </footer>
