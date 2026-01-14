@@ -235,7 +235,19 @@ impl StreamingSession {
 
         let delta_size = delta.len();
 
-        // Track delta size for pattern detection
+        // Auto-repair: Check if this is a snapshot being sent as a delta
+        // Do this BEFORE any mutable borrows so we can use immutable methods.
+        // Use content-based detection which is more reliable than size-based alone.
+        let is_snapshot = self.is_likely_snapshot(delta, key);
+        let actual_delta = if is_snapshot {
+            // Extract only the new portion to prevent exponential duplication
+            self.get_delta_from_snapshot(delta, key).to_string()
+        } else {
+            // Genuine delta - use as-is
+            delta.to_string()
+        };
+
+        // Track delta size for pattern detection (use original delta size for detection)
         let content_key = (ContentType::Text, key.to_string());
         let sizes = self.delta_sizes.entry(content_key.clone()).or_default();
         sizes.push(delta_size);
@@ -245,14 +257,12 @@ impl StreamingSession {
             sizes.remove(0);
         }
 
-        // Validate delta size - warn if it looks like a snapshot
-        if delta_size > SNAPSHOT_THRESHOLD {
-            // This is a potential snapshot-as-delta bug
-            // Log via eprintln since we don't have a logger here
+        // Only warn on actual large deltas (after auto-repair extraction)
+        let actual_delta_size = actual_delta.len();
+        if actual_delta_size > SNAPSHOT_THRESHOLD {
             eprintln!(
-                "Warning: Large delta ({delta_size} chars) for key '{key}'. \
-                This may indicate a snapshot being treated as a delta, \
-                which can cause exponential duplication bugs."
+                "Warning: Large delta ({actual_delta_size} chars) for key '{key}'. \
+                This may indicate unusual streaming behavior."
             );
         }
 
@@ -279,11 +289,11 @@ impl StreamingSession {
         // Check if this is the first delta for this key
         let is_first = !self.accumulated.contains_key(&content_key);
 
-        // Accumulate the delta
+        // Accumulate the delta (using auto-repaired delta if snapshot was detected)
         self.accumulated
             .entry(content_key.clone())
-            .and_modify(|buf| buf.push_str(delta))
-            .or_insert_with(|| delta.to_string());
+            .and_modify(|buf| buf.push_str(&actual_delta))
+            .or_insert_with(|| actual_delta);
 
         // Track order
         if is_first {
