@@ -31,7 +31,17 @@
       "Bash(git format-patch:*)",
       "Bash(git config:*)",
       "Bash(git am:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(rg:*)",
+      "Bash(cd:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Skill(commit)",
+      "mcp__git__git_status",
+      "mcp__git__git_diff_unstaged",
+      "mcp__git__git_log",
+      "mcp__git__git_add",
+      "Bash(git restore:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

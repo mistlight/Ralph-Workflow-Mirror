@@ -47,7 +47,9 @@ impl Platform {
 
 /// Check if a command exists in PATH
 fn has_command(cmd: &str) -> bool {
-    Command::new("which")
+    // Use platform-appropriate command: "where" on Windows, "which" on Unix/macOS
+    let checker = if cfg!(windows) { "where" } else { "which" };
+    Command::new(checker)
         .arg(cmd)
         .output()
         .map(|o| o.status.success())
