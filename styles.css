@@ -3058,3 +3058,207 @@ body[data-audience="newcomer"] .audience-vibe-coder-content {
         transform: translateY(0);
     }
 }
+
+/* ========================================
+   VISUAL POLISH: Ultra-Wide Breakpoint
+   ======================================== */
+
+@media (min-width: 1600px) {
+    .container,
+    .nav-container,
+    .section-container,
+    .footer-container,
+    .demo-container {
+        max-width: 1320px;
+    }
+
+    .hero .container {
+        max-width: 1400px;
+    }
+
+    /* More generous spacing on ultra-wide screens */
+    .section {
+        padding: var(--space-16) 0;
+    }
+
+    .features-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .audience-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1920px) {
+    .container,
+    .nav-container,
+    .section-container,
+    .footer-container,
+    .demo-container {
+        max-width: 1440px;
+    }
+
+    .hero .container {
+        max-width: 1520px;
+    }
+
+    /* Even more breathing room */
+    .section {
+        padding: var(--space-20) 0;
+    }
+}
+
+/* ========================================
+   VISUAL POLISH: Enhanced Focus States
+   ======================================== */
+
+/* Improve focus visibility for accessibility */
+.btn:focus-visible,
+.nav-link:focus-visible,
+.audience-option:focus-visible,
+.terminal-control-btn:focus-visible,
+.copy-btn:focus-visible,
+.install-tab:focus-visible,
+.demo-tab:focus-visible,
+.demo-run-btn:focus-visible,
+.feature-expand-btn:focus-visible,
+.dark-mode-toggle:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+.card:focus-visible,
+.feature-card:focus-visible,
+.audience-card:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 4px;
+}
+
+/* ========================================
+   VISUAL POLISH: Smoother Scroll Animations
+   ======================================== */
+
+/* Enhance scroll reveal animations with better easing */
+.scroll-reveal,
+.scroll-reveal-from-left,
+.scroll-reveal-from-right,
+.scroll-reveal-scale {
+    will-change: transform, opacity;
+}
+
+.scroll-reveal.is-visible,
+.scroll-reveal-from-left.is-visible,
+.scroll-reveal-from-right.is-visible,
+.scroll-reveal-scale.is-visible {
+    transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ========================================
+   VISUAL POLISH: Badge Hover Enhancements
+   ======================================== */
+
+.badge {
+    transition: transform var(--duration-fast) var(--ease-out),
+                box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.badge:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.badge-badge-forest:hover {
+    box-shadow: 0 4px 12px rgba(26, 58, 47, 0.15);
+}
+
+.badge-badge-amber:hover {
+    box-shadow: 0 4px 12px rgba(212, 165, 116, 0.2);
+}
+
+/* ========================================
+   VISUAL POLISH: Feature Card Enhancements
+   ======================================== */
+
+.feature-card {
+    transition: transform var(--duration-normal) var(--ease-out),
+                box-shadow var(--duration-normal) var(--ease-out);
+}
+
+.feature-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* ========================================
+   VISUAL POLISH: Workflow Step Enhancements
+   ======================================== */
+
+.workflow-step {
+    transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.workflow-step:hover {
+    transform: translateX(8px);
+}
+
+/* ========================================
+   VISUAL POLISH: Terminal Demo Enhancements
+   ======================================== */
+
+.terminal-window {
+    transition: box-shadow var(--duration-normal) var(--ease-out),
+                transform var(--duration-normal) var(--ease-out);
+}
+
+.terminal-window:hover {
+    box-shadow: 0 20px 60px rgba(26, 58, 47, 0.15);
+}
+
+/* ========================================
+   VISUAL POLISH: Link Hover Improvements
+   ======================================== */
+
+a {
+    transition: color var(--duration-fast) var(--ease-out);
+}
+
+/* External links get subtle arrow animation */
+.external-icon {
+    transition: transform var(--duration-fast) var(--ease-out);
+}
+
+a:hover .external-icon {
+    transform: translate(2px, -2px);
+}
+
+/* ========================================
+   VISUAL POLISH: Comparison Table Row Hover
+   ======================================== */
+
+.comparison-table tbody tr {
+    transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+/* ========================================
+   VISUAL POLISH: Copy Button Enhancement
+   ======================================== */
+
+.copy-btn {
+    transition: all var(--duration-fast) var(--ease-out);
+}
+
+.copy-btn:active {
+    transform: scale(0.95);
+}
+
+.copy-btn.copied {
+    animation: copySuccess 0.4s var(--ease-spring);
+}
+
+@keyframes copySuccess {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}

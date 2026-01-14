@@ -732,7 +732,7 @@
     updateActiveNav();
 
     // === Enhanced Scroll Animations (Intersection Observer) ===
-    const observerOptions = {
+    const animationObserverOptions = {
         root: null,
         rootMargin: '0px 0px -100px 0px',
         threshold: 0.1
@@ -747,7 +747,7 @@
                 animationObserver.unobserve(entry.target);
             }
         });
-    }, observerOptions);
+    }, animationObserverOptions);
 
     // Observe elements for animation
     const animatedElements = document.querySelectorAll(
