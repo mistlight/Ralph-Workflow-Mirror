@@ -441,6 +441,27 @@ fn remove_thought_process_patterns(content: &str) -> String {
         "Looking at the changes",
         "I've analyzed",
         "After reviewing",
+        // Additional patterns to catch more variations
+        "Based on the git diff",
+        "Based on the git diff, here are the changes",
+        "Based on the git diff, here's what changed",
+        "Based on the git diff, the following changes",
+        "Here are the changes",
+        "Here's what changed",
+        "Here is what changed",
+        "The following changes",
+        "The changes include",
+        "Changes include",
+        "After reviewing the diff",
+        "After reviewing the changes",
+        "After analyzing the diff",
+        "After analyzing the changes",
+        "I've analyzed the changes",
+        "I've analyzed the diff",
+        "Looking at the changes, I can see",
+        "Key changes include",
+        "Several changes include",
+        "This diff shows the following",
     ];
 
     for pattern in &thought_patterns {
@@ -520,7 +541,19 @@ fn remove_thought_process_patterns(content: &str) -> String {
     if let Some(commit_start) = find_conventional_commit_start(result) {
         // Verify that the content before the commit looks like analysis
         let before_commit = &result[..commit_start];
-        if before_commit.contains('\n') && looks_like_analysis_text(before_commit) {
+        // Check multiple conditions to identify analysis:
+        // 1. Contains multiple lines (analysis is typically multi-line)
+        // 2. Either looks like analysis text OR contains common analysis patterns
+        let is_analysis = before_commit.contains('\n')
+            && (looks_like_analysis_text(before_commit)
+                || before_commit
+                    .to_lowercase()
+                    .contains("changes")
+                    || before_commit.to_lowercase().contains("diff")
+                || before_commit.contains("1.")
+                || before_commit.contains("- "));
+
+        if is_analysis {
             return result[commit_start..].to_string();
         }
     }
@@ -662,6 +695,26 @@ fn looks_like_analysis_text(text: &str) -> bool {
         "first change",
         "second change",
         "third change",
+        // Additional patterns to catch more variations
+        "here are the changes",
+        "based on the git diff",
+        "based on the diff",
+        "the following changes",
+        "changes include",
+        "here's what changed",
+        "here is what changed",
+        "after reviewing the diff",
+        "after reviewing the changes",
+        "after analyzing",
+        "this diff shows",
+        "i've analyzed the changes",
+        "i've analyzed",
+        "looking at the changes",
+        "key changes",
+        "several changes",
+        "distinct changes",
+        "key categories of changes",
+        "several categories of changes",
     ];
 
     for indicator in &analysis_indicators {
@@ -933,6 +986,24 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         "looking at the changes",
         "i've analyzed",
         "after reviewing",
+        // Additional patterns to catch more variations
+        "based on the git diff",
+        "here are the changes",
+        "here's what changed",
+        "here is what changed",
+        "the following changes",
+        "changes include",
+        "after reviewing the diff",
+        "after reviewing the changes",
+        "after analyzing",
+        "i've analyzed the changes",
+        "i've analyzed the diff",
+        "key changes",
+        "several changes",
+        "distinct changes",
+        "key changes include",
+        "several changes include",
+        "this diff shows the following",
     ];
     for prefix in &thought_process_prefixes {
         if content_lower.starts_with(prefix) {
@@ -2403,5 +2474,117 @@ Error messages are now more descriptive.";
             result.content.contains("fix: actual message") || result.content.contains("fix:"),
             "Clean commit message should remain after filtering"
         );
+    }
+
+    // =========================================================================
+    // Regression Tests: Additional Thought Process Patterns
+    // =========================================================================
+
+    #[test]
+    fn test_regression_based_on_git_diff_pattern() {
+        // Test filtering of "Based on the git diff" analysis pattern
+        let agent_output = r#"{"result":"Based on the git diff, here are the changes:\n- Updated parser\n- Fixed tests\n\nfeat: add new feature"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Based on the git diff"));
+        assert!(!result.content.contains("- Updated"));
+        assert_eq!(result.content, "feat: add new feature");
+    }
+
+    #[test]
+    fn test_regression_here_are_the_changes_pattern() {
+        // Test filtering of "Here are the changes" analysis pattern
+        let agent_output = r#"{"result":"Here are the changes I made:\n1. Fixed bug\n2. Added tests\n\nfix: resolve bug"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Here are the changes"));
+        assert!(!result.content.contains("1. Fixed"));
+        assert_eq!(result.content, "fix: resolve bug");
+    }
+
+    #[test]
+    fn test_regression_heres_what_changed_pattern() {
+        // Test filtering of "Here's what changed" analysis pattern
+        let agent_output = r#"{"result":"Here's what changed:\n- First change\n- Second change\n\nchore: update dependencies"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Here's what changed"));
+        assert!(!result.content.contains("- First"));
+        assert_eq!(result.content, "chore: update dependencies");
+    }
+
+    #[test]
+    fn test_regression_the_following_changes_pattern() {
+        // Test filtering of "The following changes" analysis pattern
+        let agent_output = r#"{"result":"The following changes were made:\n1. Updated code\n2. Fixed tests\n\nrefactor: improve code structure"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("The following changes"));
+        assert!(!result.content.contains("1. Updated"));
+        assert_eq!(result.content, "refactor: improve code structure");
+    }
+
+    #[test]
+    fn test_regression_changes_include_pattern() {
+        // Test filtering of "Changes include" analysis pattern
+        let agent_output = r#"{"result":"Changes include:\n- Bug fixes\n- New features\n\nfeat: implement feature"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Changes include"));
+        assert!(!result.content.contains("- Bug"));
+        assert_eq!(result.content, "feat: implement feature");
+    }
+
+    #[test]
+    fn test_regression_after_reviewing_pattern() {
+        // Test filtering of "After reviewing" analysis pattern
+        let agent_output = r#"{"result":"After reviewing the diff, I can see:\n- Multiple fixes\n\nfix: apply bug fixes"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("After reviewing"));
+        assert!(!result.content.contains("- Multiple"));
+        assert_eq!(result.content, "fix: apply bug fixes");
+    }
+
+    #[test]
+    fn test_regression_this_diff_shows_pattern() {
+        // Test filtering of "This diff shows" analysis pattern
+        let agent_output = r#"{"result":"This diff shows the following:\n1. Performance improvements\n\nperf: optimize performance"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("This diff shows"));
+        assert!(!result.content.contains("1. Performance"));
+        assert_eq!(result.content, "perf: optimize performance");
+    }
+
+    #[test]
+    fn test_regression_ive_analyzed_pattern() {
+        // Test filtering of "I've analyzed" analysis pattern
+        let agent_output = r#"{"result":"I've analyzed the changes:\n- Key improvements\n\nfeat: add improvements"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("I've analyzed"));
+        assert!(!result.content.contains("- Key"));
+        assert_eq!(result.content, "feat: add improvements");
+    }
+
+    #[test]
+    fn test_regression_key_changes_include_pattern() {
+        // Test filtering of "Key changes include" analysis pattern
+        let agent_output = r#"{"result":"Key changes include:\n1. Security fixes\n2. Performance boost\n\nfix: security vulnerability"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Key changes include"));
+        assert!(!result.content.contains("1. Security"));
+        assert_eq!(result.content, "fix: security vulnerability");
     }
 }
