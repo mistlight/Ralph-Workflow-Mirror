@@ -741,7 +741,7 @@ fn validate_plan_content(content: &str) -> (bool, Option<String>) {
 /// Validate issues content.
 ///
 /// Checks if the content looks like valid issues:
-/// - Contains checkboxes (- [ ] or - [x])
+/// - Contains checkboxes (- \[ ] or - \[x])
 /// - Contains severity markers (Critical:, High:, etc.)
 /// - Or contains "no issues" declaration
 fn validate_issues_content(content: &str) -> (bool, Option<String>) {

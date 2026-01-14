@@ -731,7 +731,9 @@ mod tests {
         // Calling on non-snapshot should return error (not panic)
         let result = session.get_delta_from_snapshot("World", "0");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("extract_delta_from_snapshot called on non-snapshot text"));
+        assert!(result
+            .unwrap_err()
+            .contains("extract_delta_from_snapshot called on non-snapshot text"));
     }
 
     #[test]
@@ -747,7 +749,9 @@ mod tests {
         assert!(is_snapshot);
 
         // Should extract delta correctly
-        let delta = session.get_delta_from_snapshot("Hello World", "main").unwrap();
+        let delta = session
+            .get_delta_from_snapshot("Hello World", "main")
+            .unwrap();
         assert_eq!(delta, " World");
     }
 }
