@@ -62,9 +62,6 @@ CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
 - Running any commands that modify system state
 - Installing dependencies or packages
 
-IMPORTANT FILES TO NEVER MODIFY:
-- PROMPT.md: This file contains your task requirements. NEVER read, write, or delete this file. The requirements have already been provided to you directly in this prompt. Do NOT explore the file system to find this file.
-
 You MAY use read-only operations: reading files, searching code, listing directories.
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -72,14 +69,14 @@ PHASE 1: UNDERSTANDING
 ═══════════════════════════════════════════════════════════════════════════════"#
         .to_string();
 
-    // If PROMPT.md content is provided, include it directly in the prompt
-    // This prevents agents from discovering PROMPT.md through file exploration,
-    // which reduces the risk of accidental deletion.
+    // If prompt content is provided, include it directly in the prompt
+    // without naming the source file. This prevents agents from discovering
+    // the file through exploration, reducing the risk of accidental deletion.
     if let Some(content) = prompt_content {
         prompt.push_str(&format!(
             r#"
 
-REQUIREMENTS FROM PROMPT.md:
+REQUIREMENTS FROM PROJECT TASK:
 ───────────────────────────────────────────────────────────────────────────────
 {}
 ───────────────────────────────────────────────────────────────────────────────
@@ -196,9 +193,10 @@ mod tests {
     #[test]
     fn test_prompt_plan() {
         let result = prompt_plan(None);
-        // Prompt now explicitly warns agents to NEVER touch PROMPT.md (defense-in-depth)
-        assert!(result.contains("PROMPT.md"));
-        assert!(result.contains("NEVER read, write, or delete this file"));
+        // Prompt should NOT explicitly mention PROMPT.md file name
+        // Agents receive content directly without knowing the source file
+        assert!(!result.contains("PROMPT.md"));
+        assert!(!result.contains("NEVER read, write, or delete this file"));
         // Plan is now returned as structured output, not written to file
         assert!(result.contains("PLANNING MODE"));
         assert!(result.contains("Implementation Steps"));
@@ -221,9 +219,11 @@ mod tests {
     fn test_prompt_plan_with_content() {
         let prompt_md = "# Test Prompt\n\nThis is the content.";
         let result = prompt_plan(Some(prompt_md));
-        // Should include the PROMPT.md content directly
-        assert!(result.contains("REQUIREMENTS FROM PROMPT.md:"));
+        // Should include the content WITHOUT naming PROMPT.md
+        assert!(result.contains("REQUIREMENTS FROM PROJECT TASK:"));
         assert!(result.contains("This is the content."));
+        // Should NOT mention PROMPT.md file name
+        assert!(!result.contains("PROMPT.md"));
         // Should still have the planning structure
         assert!(result.contains("PLANNING MODE"));
         assert!(result.contains("PHASE 1: UNDERSTANDING"));

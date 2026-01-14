@@ -8,6 +8,7 @@
 //! - Result extraction from agent JSON logs
 //! - File integrity verification and checksums
 //! - Error recovery and state repair
+//! - Real-time file system monitoring for PROMPT.md protection
 //!
 //! # Isolation Mode
 //!
@@ -24,6 +25,7 @@
 mod agent_files;
 pub mod integrity;
 pub mod llm_output_extraction;
+pub mod monitoring;
 pub mod recovery;
 pub mod result_extraction;
 pub mod validation;

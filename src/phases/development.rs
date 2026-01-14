@@ -24,17 +24,31 @@ use std::process::Command;
 ///
 /// This is a defense-in-depth measure to ensure PROMPT.md is always available
 /// even if an agent accidentally deletes it during pipeline execution.
-fn ensure_prompt_integrity(logger: &crate::logger::Logger) {
+///
+/// The enhanced logging helps identify which phase/agent likely caused
+/// the deletion for debugging purposes.
+fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, iteration: u32) {
     match restore_prompt_if_needed() {
         Ok(true) => {
             // File exists with content, no action needed
         }
         Ok(false) => {
-            logger.warn("PROMPT.md was missing or empty and has been restored from backup");
+            logger.warn(&format!(
+                "[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup",
+            ));
+            logger.warn(&format!(
+                "[PROMPT_INTEGRITY] Deletion detected during {} phase (iteration {})",
+                phase, iteration
+            ));
+            logger.warn("[PROMPT_INTEGRITY] Possible cause: Agent used 'rm' or file write tools on PROMPT.md");
             logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
         }
         Err(e) => {
-            logger.error(&format!("Failed to restore PROMPT.md: {}", e));
+            logger.error(&format!("[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}", e));
+            logger.error(&format!(
+                "[PROMPT_INTEGRITY] Error occurred during {} phase (iteration {})",
+                phase, iteration
+            ));
             logger.error("Pipeline may not function correctly without PROMPT.md");
         }
     }
@@ -211,7 +225,7 @@ pub fn run_development_phase(
 
         // Periodic restoration check - ensure PROMPT.md still exists
         // This catches agent deletions and restores from backup
-        ensure_prompt_integrity(ctx.logger);
+        ensure_prompt_integrity(ctx.logger, "development", i);
 
         // Step 3: Delete the PLAN
         ctx.logger.info("Deleting PLAN.md...");
