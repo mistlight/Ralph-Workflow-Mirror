@@ -5,10 +5,15 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
+use std::rc::Rc;
 
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, ClaudeEvent, ContentBlock};
+use super::types::{
+    format_tool_input, ClaudeEvent, ContentBlock, ContentBlockDelta, DeltaAccumulator,
+    StreamInnerEvent,
+};
 
 /// Claude event parser
 pub(crate) struct ClaudeParser {
@@ -16,6 +21,8 @@ pub(crate) struct ClaudeParser {
     pub(crate) verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
 }
 
 impl ClaudeParser {
@@ -25,6 +32,7 @@ impl ClaudeParser {
             verbosity,
             log_file: None,
             display_name: "Claude".to_string(),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
 
@@ -269,7 +277,18 @@ impl ClaudeParser {
                 }
                 out
             }
-            ClaudeEvent::Unknown => String::new(),
+            ClaudeEvent::StreamEvent { event } => {
+                // Handle streaming events for delta/partial updates
+                self.parse_stream_event(event)
+            }
+            ClaudeEvent::Unknown => {
+                // In verbose/debug mode, show information about unknown events
+                if self.verbosity.is_verbose() {
+                    self.format_unknown_event(line)
+                } else {
+                    String::new()
+                }
+            }
         };
 
         if output.is_empty() {
@@ -277,6 +296,201 @@ impl ClaudeParser {
         } else {
             Some(output)
         }
+    }
+
+    /// Parse a streaming event for delta/partial updates
+    ///
+    /// Handles the nested events within `stream_event`:
+    /// - MessageStart/Stop: Manage session state
+    /// - ContentBlockStart: Initialize new content blocks
+    /// - ContentBlockDelta/TextDelta: Accumulate and display incrementally
+    /// - Error: Display appropriately
+    fn parse_stream_event(&self, event: StreamInnerEvent) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+        let mut acc = self.delta_accumulator.borrow_mut();
+
+        match event {
+            StreamInnerEvent::MessageStart { .. } => {
+                // Clear accumulator on new message
+                acc.clear();
+                String::new()
+            }
+            StreamInnerEvent::ContentBlockStart {
+                index: Some(index), ..
+            } => {
+                // Initialize a new content block at this index
+                acc.clear_index(index);
+                String::new()
+            }
+            StreamInnerEvent::ContentBlockStart { .. } => String::new(),
+            StreamInnerEvent::ContentBlockDelta {
+                index: Some(index),
+                delta: Some(delta),
+            } => match delta {
+                ContentBlockDelta::TextDelta { text: Some(text) } => {
+                    // Accumulate and display the text delta
+                    acc.add_text_delta(index, &text);
+                    // In verbose mode, show the full accumulated text so far
+                    if self.verbosity.is_verbose() {
+                        if let Some(full_text) = acc.get_text(&index) {
+                            return format!(
+                                "{}[{}]{} {}{}{}\n",
+                                c.dim(),
+                                prefix,
+                                c.reset(),
+                                c.white(),
+                                full_text,
+                                c.reset()
+                            );
+                        }
+                    }
+                    // Otherwise, just show the delta (real-time streaming)
+                    format!(
+                        "{}[{}]{} {}{}{}\n",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.white(),
+                        text,
+                        c.reset()
+                    )
+                }
+                ContentBlockDelta::ThinkingDelta { thinking: Some(text) } => {
+                    // Accumulate thinking content
+                    acc.add_thinking_delta(index, &text);
+                    // Display thinking in a different style
+                    format!(
+                        "{}[{}]{} {}Thinking: {}{}\n",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.dim(),
+                        text,
+                        c.reset()
+                    )
+                }
+                ContentBlockDelta::ToolUseDelta { .. } => {
+                    // Tool use deltas are less common, show minimal info
+                    String::new()
+                }
+                _ => String::new(),
+            },
+            StreamInnerEvent::ContentBlockDelta { .. } => String::new(),
+            StreamInnerEvent::TextDelta { text: Some(text) } => {
+                // Standalone text delta (not part of content block)
+                // Display incrementally for real-time feedback
+                format!(
+                    "{}[{}]{} {}{}{}\n",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.white(),
+                    text,
+                    c.reset()
+                )
+            }
+            StreamInnerEvent::TextDelta { .. } => String::new(),
+            StreamInnerEvent::MessageStop => {
+                // Message complete - we could show final accumulated state here
+                // For now, just clear the accumulator
+                acc.clear();
+                String::new()
+            }
+            StreamInnerEvent::Error {
+                error: Some(err), ..
+            } => {
+                let msg = err.message.unwrap_or_else(|| "Unknown streaming error".to_string());
+                format!(
+                    "{}[{}]{} {}Error: {}{}\n",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.red(),
+                    msg,
+                    c.reset()
+                )
+            }
+            StreamInnerEvent::Error { .. } => String::new(),
+            StreamInnerEvent::Ping => String::new(),
+            StreamInnerEvent::Unknown => {
+                // Unknown stream event - in debug mode, log it
+                if self.verbosity.is_debug() {
+                    format!(
+                        "{}[{}]{} {}Unknown streaming event{}\n",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.dim(),
+                        c.reset()
+                    )
+                } else {
+                    String::new()
+                }
+            }
+        }
+    }
+
+    /// Format an unknown event for display in verbose/debug mode
+    ///
+    /// Extracts key fields from unknown events to provide useful debugging info
+    /// without exposing potentially sensitive data.
+    fn format_unknown_event(&self, line: &str) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        // Try to parse as generic JSON to extract type and key fields
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+            if let Some(obj) = value.as_object() {
+                // Extract the type field
+                let event_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
+
+                // Extract a few other common fields for context
+                let mut fields = Vec::new();
+                for key in ["subtype", "session_id", "message_id", "index"] {
+                    if let Some(val) = obj.get(key) {
+                        let val_str = match val {
+                            serde_json::Value::String(s) => {
+                                // Truncate long strings for display
+                                if s.len() > 20 {
+                                    format!("{}...", &s[..17])
+                                } else {
+                                    s.clone()
+                                }
+                            }
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            _ => continue,
+                        };
+                        fields.push(format!("{}={}", key, val_str));
+                    }
+                }
+
+                let fields_str = if fields.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", fields.join(", "))
+                };
+
+                return format!(
+                    "{}[{}]{} {}Unknown event: {}{}{}\n",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.dim(),
+                    event_type,
+                    fields_str,
+                    c.reset()
+                );
+            }
+        }
+
+        // Fallback: just note it was an unknown event
+        format!(
+            "[{}]{} Unknown event\n",
+            prefix,
+            c.reset()
+        )
     }
 
     /// Parse a stream of Claude NDJSON events
