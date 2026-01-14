@@ -139,7 +139,7 @@ If no issues found, return "No issues found in changed files.""#,
             diff
         ),
         ContextLevel::Normal => format!(
-            r#"You are in INCREMENTAL REVIEW MODE.
+            r"You are in INCREMENTAL REVIEW MODE.
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
@@ -153,7 +153,7 @@ OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"#,
+- [ ] Low: [file:line] Description",
             diff
         ),
     }

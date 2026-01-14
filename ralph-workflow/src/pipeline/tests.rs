@@ -352,9 +352,9 @@ exit 1
     let ok_script = dir.path().join("ok.sh");
     std::fs::write(
         &ok_script,
-        r#"#!/bin/sh
+        r"#!/bin/sh
 exit 0
-"#,
+",
     )
     .unwrap();
 

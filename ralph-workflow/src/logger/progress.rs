@@ -69,6 +69,7 @@ mod tests {
             .saturating_mul(100)
             .saturating_div(u64::from(total))
             .min(100) as u32;
+        // The value is bounded by bar_width (20), which always fits in usize
         let filled = usize::try_from(
             (u64::from(current))
                 .saturating_mul(bar_width as u64)

@@ -69,7 +69,12 @@ pub(crate) fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
     // wrap the entire path in single quotes.
     let git_path_escaped = real_git
         .to_str()
-        .expect("git path must be valid UTF-8")
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "git path contains invalid UTF-8 characters",
+            )
+        })?
         .replace('\'', "'\\''");
 
     let wrapper_content = format!(

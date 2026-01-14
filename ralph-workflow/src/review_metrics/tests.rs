@@ -50,13 +50,13 @@ fn test_parse_resolved_issue() {
 
 #[test]
 fn test_parse_multiple_issues() {
-    let content = r#"# Issues
+    let content = r"# Issues
 
 - [ ] Critical: [main.rs:1] SQL injection vulnerability
 - [x] High: [auth.rs:50] Password hash weakness
 - [ ] Medium: [api.rs:100] Missing rate limiting
 - [x] Low: [utils.rs:30] Unused import
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert_eq!(metrics.total_issues, 4);
@@ -70,12 +70,12 @@ fn test_parse_multiple_issues() {
 
 #[test]
 fn test_unresolved_blocking_issues() {
-    let content = r#"
+    let content = r"
 - [ ] Critical: Unresolved critical
 - [x] Critical: Resolved critical
 - [ ] High: Unresolved high
 - [ ] Medium: Unresolved medium
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert_eq!(metrics.unresolved_blocking_issues(), 2);
@@ -84,10 +84,10 @@ fn test_unresolved_blocking_issues() {
 
 #[test]
 fn test_summary_format() {
-    let content = r#"
+    let content = r"
 - [ ] Critical: Issue 1
 - [x] High: Issue 2
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
     let summary = metrics.summary();
 
@@ -182,12 +182,12 @@ fn test_parse_all_issues_resolved_declaration() {
 #[test]
 fn test_parse_plain_list_items() {
     // Test parsing list items without checkboxes
-    let content = r#"
+    let content = r"
 # Issues
 
 - Critical: Security vulnerability
 - High: Memory leak
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert_eq!(metrics.total_issues, 2);
@@ -200,11 +200,11 @@ fn test_parse_plain_list_items() {
 #[test]
 fn test_parse_mixed_format() {
     // Test mixed checkbox and plain list items
-    let content = r#"
+    let content = r"
 - [ ] Critical: Unresolved critical issue
 - [x] High: Resolved high issue
 - Medium: Plain list medium issue
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert_eq!(metrics.total_issues, 3);
@@ -230,12 +230,12 @@ fn test_parse_nested_file_paths() {
 
 #[test]
 fn test_unresolved_issues_count() {
-    let content = r#"
+    let content = r"
 - [ ] Critical: Issue 1
 - [x] High: Issue 2
 - [ ] Medium: Issue 3
 - [x] Low: Issue 4
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert_eq!(metrics.unresolved_issues(), 2);
@@ -244,10 +244,10 @@ fn test_unresolved_issues_count() {
 #[test]
 fn test_has_blocking_issues_only_critical_high() {
     // Medium and low issues shouldn't be blocking
-    let content = r#"
+    let content = r"
 - [ ] Medium: Code style issue
 - [ ] Low: Minor improvement needed
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert!(!metrics.has_blocking_issues());
@@ -257,11 +257,11 @@ fn test_has_blocking_issues_only_critical_high() {
 #[test]
 fn test_has_blocking_issues_with_resolved_critical() {
     // Resolved critical/high issues shouldn't be blocking
-    let content = r#"
+    let content = r"
 - [x] Critical: Fixed security issue
 - [x] High: Fixed memory leak
 - [ ] Medium: Pending style fix
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert!(!metrics.has_blocking_issues());
@@ -269,12 +269,12 @@ fn test_has_blocking_issues_with_resolved_critical() {
 
 #[test]
 fn test_resolution_rate_partial() {
-    let content = r#"
+    let content = r"
 - [x] Critical: Fixed
 - [ ] High: Pending
 - [x] Medium: Fixed
 - [ ] Low: Pending
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     // 2 out of 4 = 50%
@@ -283,10 +283,10 @@ fn test_resolution_rate_partial() {
 
 #[test]
 fn test_resolution_rate_all_resolved() {
-    let content = r#"
+    let content = r"
 - [x] Critical: Fixed
 - [x] High: Fixed
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert!((metrics.resolution_rate() - 100.0).abs() < 0.01);
@@ -309,11 +309,11 @@ fn test_detailed_summary_no_issues() {
 
 #[test]
 fn test_detailed_summary_with_issues() {
-    let content = r#"
+    let content = r"
 - [ ] Critical: Security issue
 - [ ] High: Bug
 - [x] Medium: Fixed style
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
     let summary = metrics.detailed_summary();
 
@@ -345,10 +345,10 @@ fn test_malformed_file_reference() {
 
 #[test]
 fn test_whitespace_handling() {
-    let content = r#"
+    let content = r"
     - [ ]   Critical:   [  file.rs:10  ]   Spaced issue
 
-"#;
+";
     let metrics = ReviewMetrics::from_issues_content(content);
 
     // Should handle extra whitespace gracefully
