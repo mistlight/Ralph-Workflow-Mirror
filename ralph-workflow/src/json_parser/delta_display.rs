@@ -3,8 +3,140 @@
 //! This module provides centralized logic for displaying partial vs. complete
 //! content consistently across all parsers. It handles visual distinction,
 //! real-time streaming display, and automatic transition from delta to complete.
+//!
+//! # `DeltaRenderer` Trait
+//!
+//! The `DeltaRenderer` trait defines a consistent interface for rendering
+//! streaming deltas across all parsers. Implementations must ensure:
+//! - First chunk shows prefix with accumulated content
+//! - Subsequent chunks update in-place (no prefix, carriage return)
+//! - Final newline on completion only
 
 use crate::colors::Colors;
+
+/// Renderer for streaming delta content.
+///
+/// This trait defines the contract for rendering streaming deltas consistently
+/// across all parsers. Implementations must ensure:
+///
+/// 1. **First chunk**: Shows prefix with accumulated content, no trailing newline
+/// 2. **Subsequent chunks**: Updates in-place with `\x1b[0K\r` (clear line + carriage return), no prefix
+/// 3. **Completion**: Final newline added when streaming completes
+///
+/// # Rendering Rules
+///
+/// - `render_first_delta()`: Called for the first delta of a content block
+///   - Must include prefix
+///   - Must NOT include trailing newline (stays on same line for in-place updates)
+///   - Shows the accumulated content so far
+///
+/// - `render_subsequent_delta()`: Called for subsequent deltas
+///   - Must NOT include prefix
+///   - Must use `\x1b[0K\r` to clear line and return to start
+///   - Shows the full accumulated content (not just the new delta)
+///
+/// - `render_completion()`: Called when streaming completes
+///   - Adds a final newline to move cursor to next line
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::json_parser::delta_display::DeltaRenderer;
+/// use crate::colors::Colors;
+///
+/// let colors = Colors { enabled: true };
+///
+/// // First chunk
+/// let output = DeltaRenderer::render_first_delta(
+///     "Hello",
+///     "ccs-glm",
+///     colors
+/// );
+/// // Output: "[ccs-glm] Hello" (no newline)
+///
+/// // Second chunk
+/// let output = DeltaRenderer::render_subsequent_delta(
+///     "Hello World",
+///     colors
+/// );
+/// // Output: "\x1b[0K\rHello World" (no newline, in-place update)
+///
+/// // Complete
+/// let output = DeltaRenderer::render_completion();
+/// // Output: "\n"
+/// ```
+pub trait DeltaRenderer {
+    /// Render the first delta of a content block.
+    ///
+    /// This is called when streaming begins for a new content block.
+    /// The output should include the prefix and the accumulated content,
+    /// but no trailing newline (to allow in-place updates).
+    ///
+    /// # Arguments
+    /// * `accumulated` - The full accumulated content so far
+    /// * `prefix` - The agent prefix (e.g., "ccs-glm")
+    /// * `colors` - Terminal colors
+    ///
+    /// # Returns
+    /// A formatted string with prefix and content, no trailing newline.
+    fn render_first_delta(accumulated: &str, prefix: &str, colors: Colors) -> String;
+
+    /// Render a subsequent delta (in-place update).
+    ///
+    /// This is called for all deltas after the first. The output should
+    /// clear the line and overwrite with the accumulated content.
+    ///
+    /// # Arguments
+    /// * `accumulated` - The full accumulated content so far
+    /// * `colors` - Terminal colors
+    ///
+    /// # Returns
+    /// A formatted string with `\x1b[0K\r` prefix and content, no trailing newline.
+    fn render_subsequent_delta(accumulated: &str, colors: Colors) -> String;
+
+    /// Render the completion of streaming.
+    ///
+    /// This is called when streaming completes to add a final newline.
+    ///
+    /// # Returns
+    /// A string with just a newline character.
+    fn render_completion() -> String {
+        "\n".to_string()
+    }
+}
+
+/// Default implementation of `DeltaRenderer` for text content.
+///
+/// This implementation follows the standard rendering rules:
+/// - Sanitizes newlines to spaces (to prevent artificial line breaks)
+/// - Uses ANSI escape codes for in-place updates
+/// - Applies consistent color formatting
+pub struct TextDeltaRenderer;
+
+impl DeltaRenderer for TextDeltaRenderer {
+    fn render_first_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
+        // Sanitize embedded newlines to spaces to prevent artificial line breaks
+        let sanitized = accumulated.replace('\n', " ");
+
+        format!(
+            "{}[{}]{} {}{}{}",
+            colors.dim(),
+            prefix,
+            colors.reset(),
+            colors.white(),
+            sanitized,
+            colors.reset()
+        )
+    }
+
+    fn render_subsequent_delta(accumulated: &str, colors: Colors) -> String {
+        // Sanitize embedded newlines to spaces
+        let sanitized = accumulated.replace('\n', " ");
+
+        // Clear line, carriage return, show accumulated content without prefix
+        format!("{}\x1b[0K\r{}", colors.white(), sanitized)
+    }
+}
 
 /// Delta display formatter
 ///
@@ -106,5 +238,63 @@ mod tests {
         let output = formatter.format_tool_input("command=ls -la", "Claude", test_colors());
         assert!(output.contains("command=ls -la"));
         assert!(output.contains("└─"));
+    }
+
+    // Tests for DeltaRenderer trait
+
+    #[test]
+    fn test_text_delta_renderer_first_delta() {
+        let output = TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", test_colors());
+        assert!(output.contains("[ccs-glm]"));
+        assert!(output.contains("Hello"));
+        // First delta should NOT have trailing newline
+        assert!(!output.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_text_delta_renderer_subsequent_delta() {
+        let output = TextDeltaRenderer::render_subsequent_delta("Hello World", test_colors());
+        // Should contain carriage return and clear
+        assert!(output.contains("\x1b[0K\r"));
+        assert!(output.contains("Hello World"));
+        // Subsequent delta should NOT have trailing newline
+        assert!(!output.ends_with('\n'));
+        // Should NOT contain prefix
+        assert!(!output.contains("[ccs-glm]"));
+    }
+
+    #[test]
+    fn test_text_delta_renderer_completion() {
+        let output = TextDeltaRenderer::render_completion();
+        assert_eq!(output, "\n");
+    }
+
+    #[test]
+    fn test_text_delta_renderer_sanitizes_newlines() {
+        let output =
+            TextDeltaRenderer::render_first_delta("Hello\nWorld", "ccs-glm", test_colors());
+        // Newlines should be replaced with spaces
+        assert!(!output.contains("Hello\nWorld"));
+        assert!(output.contains("Hello World"));
+    }
+
+    #[test]
+    fn test_text_delta_renderer_in_place_update_sequence() {
+        let colors = test_colors();
+
+        // First chunk
+        let out1 = TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", colors);
+        assert!(out1.contains("[ccs-glm]"));
+        assert!(!out1.ends_with('\n'));
+
+        // Second chunk (in-place update)
+        let out2 = TextDeltaRenderer::render_subsequent_delta("Hello World", colors);
+        assert!(out2.contains("\x1b[0K\r"));
+        assert!(!out2.contains("[ccs-glm]"));
+        assert!(!out2.ends_with('\n'));
+
+        // Completion
+        let out3 = TextDeltaRenderer::render_completion();
+        assert_eq!(out3, "\n");
     }
 }

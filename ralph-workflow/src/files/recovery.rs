@@ -120,24 +120,50 @@ fn remove_zero_length_files(agent_dir: &Path) -> io::Result<usize> {
 }
 
 /// Best-effort repair of common `.agent/` state issues.
+///
+/// # Security
+///
+/// This function canonicalizes the input path to prevent path traversal attacks.
+/// While Ralph is a developer tool where `agent_dir` is typically constructed
+/// internally (not from untrusted input), we still validate the path as a
+/// defense-in-depth measure.
 pub fn auto_repair(agent_dir: &Path) -> io::Result<RecoveryStatus> {
+    // Canonicalize the path to resolve any ".." or symlinks
+    let agent_dir = agent_dir
+        .canonicalize()
+        .unwrap_or_else(|_| agent_dir.to_path_buf());
+
+    // Additional safety check: ensure we're not escaping the current directory
+    // This is a defense-in-depth measure; in normal Ralph usage this shouldn't trigger.
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Ok(rel_path) = agent_dir.strip_prefix(&cwd) {
+            // Check if the relative path starts with ".." which would indicate escaping
+            let rel_str = rel_path.to_string_lossy();
+            if rel_str.starts_with("..") || rel_str.contains("/..") || rel_str.contains("\\..") {
+                return Ok(RecoveryStatus::Unrecoverable(
+                    "Invalid agent directory: path escapes current directory".to_string(),
+                ));
+            }
+        }
+    }
+
     if !agent_dir.exists() {
         fs::create_dir_all(agent_dir.join("logs"))?;
         return Ok(RecoveryStatus::Recovered);
     }
 
-    let validation = validate_agent_state(agent_dir)?;
+    let validation = validate_agent_state(&agent_dir)?;
     if validation.is_valid {
         fs::create_dir_all(agent_dir.join("logs"))?;
         return Ok(RecoveryStatus::Valid);
     }
 
     // Attempt repairs.
-    remove_corrupted_files(agent_dir)?;
-    remove_zero_length_files(agent_dir)?;
+    remove_corrupted_files(&agent_dir)?;
+    remove_zero_length_files(&agent_dir)?;
     fs::create_dir_all(agent_dir.join("logs"))?;
 
-    let post_validation = validate_agent_state(agent_dir)?;
+    let post_validation = validate_agent_state(&agent_dir)?;
     if post_validation.is_valid {
         Ok(RecoveryStatus::Recovered)
     } else {

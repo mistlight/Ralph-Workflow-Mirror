@@ -4,7 +4,6 @@
 
 #![expect(clippy::too_many_lines)]
 use std::env::consts::OS;
-use std::process::Command;
 
 /// Detected platform type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,13 +46,7 @@ impl Platform {
 
 /// Check if a command exists in PATH
 fn has_command(cmd: &str) -> bool {
-    // Use platform-appropriate command: "where" on Windows, "which" on Unix/macOS
-    let checker = if cfg!(windows) { "where" } else { "which" };
-    Command::new(checker)
-        .arg(cmd)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    which::which(cmd).is_ok()
 }
 
 /// Detect Linux distribution based on available package managers
@@ -183,10 +176,20 @@ impl InstallGuidance {
                     guidance
                         .notes
                         .push("Consider installing Homebrew first:".to_string());
+                    // Provide safer installation instructions:
+                    // 1. Download script for inspection
+                    // 2. Execute after review
+                    guidance
+                        .notes
+                        .push("Step 1: Download and review the installer:".to_string());
                     guidance.install_cmd = Some(
-                            "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"".to_string()
-                        );
-                    guidance.alternative = Some(format!("Then: brew install {binary}"));
+                        "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/install.sh".to_string()
+                    );
+                    guidance
+                        .notes
+                        .push("Step 2: After reviewing, execute: bash /tmp/install.sh".to_string());
+                    guidance.alternative =
+                        Some(format!("After brew is installed: brew install {binary}"));
                 }
                 Platform::DebianLinux => {
                     guidance.install_cmd = Some(format!("sudo apt-get install {binary}"));
