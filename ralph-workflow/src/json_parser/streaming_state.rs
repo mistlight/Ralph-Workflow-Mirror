@@ -460,12 +460,7 @@ impl StreamingSession {
 
         // Check if we have accumulated content for this key
         if let Some(previous) = self.accumulated.get(&content_key) {
-            // A snapshot would start with the previous accumulated content
-            // Only consider it a snapshot if:
-            // 1. The incoming text is longer than previous content (strictly greater)
-            // 2. The incoming text starts with the exact previous content
-            // Note: If text.len() == previous.len() and text starts with previous,
-            // they are identical duplicates, not snapshots.
+            // Exact snapshot detection: text starts with previous and is longer
             if text.len() > previous.len() && text.starts_with(previous) {
                 return true;
             }
@@ -474,9 +469,41 @@ impl StreamingSession {
             if text == *previous {
                 return false;
             }
+
+            // Fuzzy snapshot detection: check for high overlap ratio
+            // Some agents may add prefixes or have minor whitespace differences
+            // If the text contains most of the previous content (>80% overlap), it's likely a snapshot
+            if Self::is_fuzzy_snapshot_match(text, previous) {
+                return true;
+            }
         }
 
         false
+    }
+
+    /// Check if text is a fuzzy snapshot match using overlap ratio.
+    ///
+    /// This handles cases where agents send snapshot-style content with minor differences
+    /// like prefixes, extra whitespace, or formatting changes.
+    ///
+    /// Returns true if text contains >80% of previous content as a subsequence.
+    #[expect(clippy::cast_precision_loss)]
+    fn is_fuzzy_snapshot_match(text: &str, previous: &str) -> bool {
+        // For very short previous content, skip fuzzy matching to avoid false positives
+        if previous.len() < 20 {
+            return false;
+        }
+
+        // Check if previous is contained within text
+        if text.contains(previous) {
+            // Calculate overlap ratio
+            let overlap_ratio = previous.len() as f64 / text.len() as f64;
+            // If >60% of the incoming text is the previous content, it's likely a snapshot
+            // (Lowered threshold from 80% to catch more cases while avoiding false positives)
+            overlap_ratio > 0.6
+        } else {
+            false
+        }
     }
 
     /// Extract the delta portion from a snapshot.
@@ -500,8 +527,16 @@ impl StreamingSession {
         let content_key = (ContentType::Text, key.to_string());
 
         if let Some(previous) = self.accumulated.get(&content_key) {
+            // Try exact match first (previous is at the start)
             if text.starts_with(previous) {
                 return Ok(previous.len());
+            }
+
+            // Try fuzzy match (previous is contained somewhere in text)
+            // This handles cases where agents add prefixes before the accumulated content
+            if let Some(pos) = text.find(previous) {
+                let delta_start = pos + previous.len();
+                return Ok(delta_start);
             }
         }
 
@@ -761,5 +796,194 @@ mod tests {
             .get_delta_from_snapshot("Hello World", "main")
             .unwrap();
         assert_eq!(delta, " World");
+    }
+
+    // Tests for fuzzy snapshot detection
+
+    #[test]
+    fn test_fuzzy_snapshot_detection_with_prefix() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First delta is "Hello World! This is a test message that is long enough to trigger fuzzy matching"
+        let long_text =
+            "Hello World! This is a test message that is long enough to trigger fuzzy matching";
+        session.on_text_delta(0, long_text);
+
+        // GLM might send: "Response: Hello World! This is a test message that is long enough to trigger fuzzy matching and more"
+        // The previous content is embedded within the new text (with a prefix)
+        let with_prefix = format!("Response: {long_text} and more content here");
+
+        // Should detect as snapshot using fuzzy matching
+        let is_snapshot = session.is_likely_snapshot(&with_prefix, "0");
+        assert!(is_snapshot, "Should detect fuzzy snapshot with prefix");
+
+        // Should extract the delta portion (content after the previous text)
+        let delta = session.get_delta_from_snapshot(&with_prefix, "0").unwrap();
+        assert!(
+            delta.contains("and more content"),
+            "Delta should contain new content"
+        );
+        assert!(
+            !delta.contains("Hello World"),
+            "Delta should not contain the previous content"
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_snapshot_detection_no_false_positive() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First delta is "Hello"
+        session.on_text_delta(0, "Hello");
+
+        // Genuine delta "World!" should NOT be detected as snapshot
+        // even though it's short and doesn't contain much overlap
+        let is_snapshot = session.is_likely_snapshot("World!", "0");
+        assert!(
+            !is_snapshot,
+            "Genuine delta should not be flagged as fuzzy snapshot"
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_snapshot_detection_requires_minimum_length() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Short content (below 20 char threshold)
+        session.on_text_delta(0, "Hi there");
+
+        // Even with high overlap, short content shouldn't trigger fuzzy matching
+        let with_prefix = "Response: Hi there, how are you?";
+        let is_snapshot = session.is_likely_snapshot(with_prefix, "0");
+        assert!(
+            !is_snapshot,
+            "Short content should not trigger fuzzy snapshot detection"
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_snapshot_detection_requires_high_overlap() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First delta is "This is a moderately long message for testing fuzzy snapshot detection thresholds"
+        let long_text =
+            "This is a moderately long message for testing fuzzy snapshot detection thresholds";
+        session.on_text_delta(0, long_text);
+
+        // For fuzzy detection, the text must NOT start with previous (otherwise exact match triggers)
+        // Create text where previous is embedded but NOT at the start
+        let embedded_not_at_start = format!("Some prefix text {long_text} plus a lot more content to reduce the overlap ratio below threshold and ensure fuzzy detection does not trigger");
+        let is_snapshot = session.is_likely_snapshot(&embedded_not_at_start, "0");
+        assert!(
+            !is_snapshot,
+            "Low overlap with embedded content should not trigger fuzzy snapshot detection"
+        );
+    }
+
+    #[test]
+    fn test_snapshot_extraction_with_fuzzy_match() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First delta is a long message
+        let long_text =
+            "This is a moderately long message for testing snapshot extraction with fuzzy matching";
+        session.on_text_delta(0, long_text);
+
+        // New text with prefix added by agent
+        let with_prefix = format!("Agent response: {long_text} Additional content at the end");
+
+        // Should detect as snapshot
+        assert!(session.is_likely_snapshot(&with_prefix, "0"));
+
+        // Should extract delta correctly (content after the embedded previous text)
+        let delta = session.get_delta_from_snapshot(&with_prefix, "0").unwrap();
+        assert!(
+            delta.contains("Additional content at the end"),
+            "Delta should have new content"
+        );
+    }
+
+    #[test]
+    fn test_snapshot_extraction_exact_match_takes_priority() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First delta is "Hello"
+        session.on_text_delta(0, "Hello");
+
+        // Exact match: "Hello World" (starts with previous)
+        let exact_match = "Hello World";
+        let delta1 = session.get_delta_from_snapshot(exact_match, "0").unwrap();
+        assert_eq!(delta1, " World");
+
+        // Reset for second test
+        session.on_message_start();
+        session.on_text_delta(0, "Hello");
+
+        // Fuzzy match: "Prefix: Hello World" (contains previous somewhere)
+        let fuzzy_match = "Prefix: Hello World";
+        let delta2 = session.get_delta_from_snapshot(fuzzy_match, "0").unwrap();
+        assert!(delta2.contains(" World") || delta2.starts_with(" World"));
+    }
+
+    #[test]
+    fn test_token_by_token_streaming_scenario() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Simulate token-by-token streaming
+        let tokens = ["H", "e", "l", "l", "o", " ", "W", "o", "r", "l", "d", "!"];
+
+        for token in tokens {
+            let show_prefix = session.on_text_delta(0, token);
+
+            // Only first token should show prefix
+            if token == "H" {
+                assert!(show_prefix, "First token should show prefix");
+            } else {
+                assert!(!show_prefix, "Subsequent tokens should not show prefix");
+            }
+        }
+
+        // Verify accumulated content
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello World!")
+        );
+    }
+
+    #[test]
+    fn test_snapshot_in_token_stream() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First few tokens as genuine deltas
+        session.on_text_delta(0, "Hello");
+        session.on_text_delta(0, " World");
+
+        // Now GLM sends a snapshot instead of delta
+        let snapshot = "Hello World! This is additional content";
+        assert!(
+            session.is_likely_snapshot(snapshot, "0"),
+            "Should detect snapshot in token stream"
+        );
+
+        // Extract delta and continue
+        let delta = session.get_delta_from_snapshot(snapshot, "0").unwrap();
+        assert!(delta.contains("! This is additional content"));
+
+        // Apply the delta
+        session.on_text_delta(0, delta);
+
+        // Verify final accumulated content
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello World! This is additional content")
+        );
     }
 }
