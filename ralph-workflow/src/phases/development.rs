@@ -11,48 +11,17 @@
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::files::{delete_plan_file, update_status};
-use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_needed};
+use crate::files::{extract_plan, extract_plan_from_logs_text};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
+use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-
-/// Periodically restore PROMPT.md if it was deleted by an agent.
-///
-/// This is a defense-in-depth measure to ensure PROMPT.md is always available
-/// even if an agent accidentally deletes it during pipeline execution.
-///
-/// The enhanced logging helps identify which phase/agent likely caused
-/// the deletion for debugging purposes.
-fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, iteration: u32) {
-    match restore_prompt_if_needed() {
-        Ok(true) => {
-            // File exists with content, no action needed
-        }
-        Ok(false) => {
-            logger.warn("[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup");
-            logger.warn(&format!(
-                "[PROMPT_INTEGRITY] Deletion detected during {phase} phase (iteration {iteration})"
-            ));
-            logger.warn("[PROMPT_INTEGRITY] Possible cause: Agent used 'rm' or file write tools on PROMPT.md");
-            logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
-        }
-        Err(e) => {
-            logger.error(&format!(
-                "[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {e}"
-            ));
-            logger.error(&format!(
-                "[PROMPT_INTEGRITY] Error occurred during {phase} phase (iteration {iteration})"
-            ));
-            logger.error("Pipeline may not function correctly without PROMPT.md");
-        }
-    }
-}
 
 use super::context::PhaseContext;
 
