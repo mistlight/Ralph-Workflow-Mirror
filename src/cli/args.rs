@@ -16,39 +16,41 @@ use clap::Parser;
 #[command(version)]
 #[command(after_help = "╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
-QUICK START:\n\
-    1. Create PROMPT.md: ralph --init-prompt feature-spec\n\
-    2. Run: ralph \"feat: implement my feature\"\n\
-    3. Ralph runs developer → reviewer → auto-commits result\n\
+NEW TO RALPH?\n\
+    Just want to get started? Run:\n\
+        ralph --init-prompt feature-spec    # Create a prompt template\n\
+        ralph \"fix: my bug\"                # Run with AI agents\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
-PRESET MODES:\n\
-    -Q, --quick      1 dev + 1 review      (rapid prototyping)\n\
-    -U, --rapid      2 dev + 1 review      (fast iteration)\n\
-    -S, --standard   5 dev + 2 reviews     (default workflow)\n\
-    -T, --thorough  10 dev + 5 reviews     (balanced but thorough)\n\
-    -L, --long      15 dev + 10 reviews    (most thorough)\n\
+PRESET MODES (pick how thorough AI should be):\n\
+    -Q  Quick:      1 dev + 1 review     (typos, small fixes)\n\
+    -U  Rapid:      2 dev + 1 review     (minor changes)\n\
+    -S  Standard:   5 dev + 2 reviews    (default for most tasks)\n\
+    -T  Thorough:  10 dev + 5 reviews    (complex features)\n\
+    -L  Long:      15 dev + 10 reviews   (most thorough)\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
-COMMON FLAGS:\n\
-    -D N        Developer iterations (how many times the AI tries to build)\n\
-    -R N        Review cycles (0=skip, 1=one cycle, default: 2)\n\
-    -a AGENT    Developer agent (claude, codex, opencode, etc.)\n\
-    -r AGENT    Reviewer agent (for code quality checks)\n\
-    -v N        Verbosity (0=quiet, 1=normal, 2=verbose, 3=full, 4=debug)\n\
-\n\
-EXAMPLES:\n\
-    ralph \"feat: add login button\"      Basic usage\n\
-    ralph -Q \"fix: typo\"                Quick mode (1+1)\n\
-    ralph -D 3 -R 2 \"fix: bug\"          Custom iterations\n\
+COMMON SHORTHANDS:\n\
+    -D N, -R N       Set dev iterations and review cycles\n\
+    -a AGENT         Pick developer agent (claude, opencode, etc.)\n\
+    -r AGENT         Pick reviewer agent\n\
+    -v N / -q / -f   Set verbosity (quiet/normal/full)\n\
+    -d               Diagnose/show system info\n\
+    -i               Interactive mode (prompt if PROMPT.md missing)\n\
+    -c PATH          Use specific config file\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
-For advanced options, templates, and full documentation:\n\
-    ralph --help-advanced\n\
-    ralph --list-templates\n\
+QUICK EXAMPLES:\n\
+    ralph \"fix: typo\"                Run with default settings\n\
+    ralph -Q \"fix: small bug\"        Quick mode for tiny fixes\n\
+    ralph -U \"feat: add button\"      Rapid mode for minor features\n\
+    ralph -a claude \"fix: bug\"       Use specific agent\n\
+    ralph --list-templates            See all prompt templates\n\
+\n\
+For all options and details:  ralph --help-advanced\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")]
 pub struct Args {
     /// Commit message for the final commit
