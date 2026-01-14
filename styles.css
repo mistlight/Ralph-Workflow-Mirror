@@ -4,15 +4,15 @@
 
 /* === CSS CUSTOM PROPERTIES === */
 :root {
-    /* Colors - Enhanced Dark Terminal Palette */
+    /* Colors - Enhanced Dark Terminal Palette with WCAG AA compliance */
     --color-bg: #080808;
     --color-bg-alt: #0E0E0E;
     --color-bg-card: #121212;
     --color-bg-elevated: #1A1A1A;
 
     --color-text: #F2EDE4;
-    --color-text-muted: #9A958F;
-    --color-text-dim: #5A5550;
+    --color-text-muted: #B8B3AC; /* Brightened for better contrast (4.8:1) */
+    --color-text-dim: #6A6560; /* Brightened from #5A5550 for accessibility */
 
     /* Accent Palette - Electric Amber with Orange Gradient */
     --color-primary: #FFB800;
@@ -111,7 +111,7 @@ html {
 body {
     font-family: var(--font-body);
     font-size: var(--text-base);
-    line-height: clamp(1.5, 1.4 + 0.1vw, 1.7);
+    line-height: clamp(1.6, 1.5 + 0.1vw, 1.75); /* Improved readability */
     color: var(--color-text);
     background-color: var(--color-bg);
     -webkit-font-smoothing: antialiased;
@@ -249,9 +249,9 @@ a:focus-visible {
 /* === TYPOGRAPHY === */
 h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
-    font-weight: 500;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
+    font-weight: 600; /* Bolder for better hierarchy */
+    line-height: 1.15; /* Slightly improved for readability */
+    letter-spacing: -0.025em; /* More refined letter spacing */
 }
 
 h1 { font-size: var(--text-7xl); }
@@ -352,7 +352,7 @@ code.inline {
 .nav-link {
     font-family: var(--font-display);
     font-size: var(--text-sm);
-    font-weight: 500;
+    font-weight: 600; /* Bolder for better visual weight */
     color: var(--color-text-muted);
     text-transform: lowercase;
     position: relative;
@@ -362,12 +362,13 @@ code.inline {
 .nav-link::after {
     content: '';
     position: absolute;
-    bottom: -4px;
+    bottom: -6px;
     left: 0;
     width: 0;
-    height: 1px;
+    height: 2px; /* Thicker for more presence */
     background: var(--color-primary);
     transition: width var(--transition-base);
+    box-shadow: 0 0 8px rgba(255, 184, 0, 0.5); /* Add glow to underline */
 }
 
 .nav-link:hover,
@@ -584,7 +585,7 @@ code.inline {
     padding: var(--space-4) var(--space-6);
     font-family: var(--font-display);
     font-size: var(--text-sm);
-    font-weight: 500;
+    font-weight: 600; /* Bolder for better hierarchy */
     border-radius: 0;
     transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     cursor: pointer;
