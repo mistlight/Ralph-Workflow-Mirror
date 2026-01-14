@@ -154,12 +154,8 @@ pub enum IdentitySource {
     Environment,
     /// Identity from Ralph config file.
     RalphConfig,
-    /// Identity from git config.
-    GitConfig,
     /// Identity from system username/hostname.
     SystemFallback,
-    /// Identity from default values.
-    Default,
 }
 
 /// Resolve git identity with the full priority chain.
