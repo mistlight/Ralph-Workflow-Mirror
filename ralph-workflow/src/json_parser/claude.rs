@@ -403,10 +403,10 @@ impl ClaudeParser {
                         input: Some(i),
                     } => {
                         // Initialize tool input accumulator
-                        let input_str = if let serde_json::Value::String(s) = i {
+                        let input_str = if let serde_json::Value::String(s) = &i {
                             s.clone()
                         } else {
-                            format_tool_input(&i)
+                            format_tool_input(i)
                         };
                         session.on_tool_input_delta(index, &input_str);
                     }
