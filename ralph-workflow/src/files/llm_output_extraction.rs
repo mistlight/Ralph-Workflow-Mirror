@@ -1100,6 +1100,118 @@ pub fn try_extract_structured_commit(content: &str) -> Option<String> {
     try_extract_from_text(trimmed)
 }
 
+/// Sanitize JSON string content to handle literal newlines in string values.
+///
+/// AI agents sometimes output JSON with literal newlines, tabs, or carriage returns
+/// within string values, which is invalid JSON syntax. This function pre-processes
+/// JSON content to escape these characters before parsing.
+///
+/// # Examples
+///
+/// - Input: `{"subject": "feat: add\nfeature", "body": null}`
+/// - Output: `{"subject": "feat: add\\nfeature", "body": null}`
+///
+/// # Algorithm
+///
+/// The function carefully tracks whether we're inside a JSON string value and:
+/// 1. Escapes literal newlines (`\n`) as `\\n`
+/// 2. Escapes literal tabs (`\t`) as `\\t`
+/// 3. Escapes literal carriage returns (`\r`) as `\\r`
+/// 4. Preserves already-escaped sequences (`\\n`, `\\t`, `\\r`)
+/// 5. Handles string boundaries correctly (quotes)
+fn sanitize_json_string_content(json: &str) -> String {
+    let mut result = String::with_capacity(json.len());
+    let mut in_string = false;
+    let mut escape_next = false;
+
+    for c in json.chars() {
+        match c {
+            '\\' if !escape_next => {
+                // Start of escape sequence
+                escape_next = true;
+                result.push(c);
+            }
+            '"' if !escape_next => {
+                // String boundary
+                in_string = !in_string;
+                result.push(c);
+            }
+            '\n' if in_string && !escape_next => {
+                // Literal newline in string - escape it
+                result.push_str("\\n");
+            }
+            '\t' if in_string && !escape_next => {
+                // Literal tab in string - escape it
+                result.push_str("\\t");
+            }
+            '\r' if in_string && !escape_next => {
+                // Literal carriage return in string - escape it
+                result.push_str("\\r");
+            }
+            c => {
+                if escape_next {
+                    escape_next = false;
+                }
+                result.push(c);
+            }
+        }
+    }
+
+    result
+}
+
+/// Try to extract commit message via regex patterns as a last resort.
+///
+/// This function is called when JSON parsing completely fails. It uses regex
+/// patterns to extract `"subject": "value"` and `"body": "value"` pairs from
+/// malformed JSON that `serde_json` cannot parse.
+///
+/// # Examples
+///
+/// Can handle cases like:
+/// - `{"subject": "feat: add\nfeature", "body": null}`  (literal newline)
+/// - `{"subject": "feat: scope: desc", "body": "multi\nline\nbody"}`
+fn try_extract_via_regex(content: &str) -> Option<String> {
+    use regex::Regex;
+
+    let trimmed = content.trim();
+
+    // Try extracting from markdown code fence first
+    let json_content: String = extract_json_from_code_fence(trimmed).unwrap_or_else(|| {
+        // Try to find JSON object boundaries
+        trimmed
+            .find('{')
+            .and_then(|start| {
+                trimmed
+                    .rfind('}')
+                    .map(|end| trimmed[start..=end].to_string())
+            })
+            .unwrap_or_else(|| trimmed.to_string())
+    });
+
+    // Extract subject - handle quoted values with possible escapes
+    let subject_re = Regex::new(r#""subject"\s*:\s*"((?:[^"\\]|\\.)*)""#).ok()?;
+    let subject = subject_re.captures(&json_content)?.get(1)?.as_str();
+
+    // Extract body (optional)
+    let body_re = Regex::new(r#""body"\s*:\s*(?:"((?:[^"\\]|\\.)*)"\s*|null|false)"#).ok()?;
+    let body = body_re
+        .captures(&json_content)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str());
+
+    // Validate conventional commit format
+    if !is_conventional_commit_subject(subject) {
+        return None;
+    }
+
+    // Format the commit message
+    match body {
+        Some(b) if !b.is_empty() => Some(format!("{subject}\n\n{b}")),
+        _ => Some(subject.to_string()),
+    }
+}
+
 /// Try to extract a structured commit message from text content.
 ///
 /// This handles:
@@ -1111,8 +1223,20 @@ fn try_extract_from_text(content: &str) -> Option<String> {
 
     // Try extracting from markdown code fence first
     if let Some(json_content) = extract_json_from_code_fence(trimmed) {
+        // First try direct parsing
         if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&json_content) {
             return format_structured_commit(&msg);
+        }
+
+        // If direct parsing fails, try sanitization for literal newlines
+        let sanitized = sanitize_json_string_content(&json_content);
+        if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&sanitized) {
+            return format_structured_commit(&msg);
+        }
+
+        // Last resort: try regex extraction
+        if let Some(msg) = try_extract_via_regex(trimmed) {
+            return Some(msg);
         }
     }
 
@@ -1121,19 +1245,34 @@ fn try_extract_from_text(content: &str) -> Option<String> {
         return format_structured_commit(&msg);
     }
 
+    // If direct parsing fails, try sanitization for literal newlines
+    let sanitized = sanitize_json_string_content(trimmed);
+    if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&sanitized) {
+        return format_structured_commit(&msg);
+    }
+
     // Try to find JSON object within content (in case of minor preamble)
     if let Some(start) = trimmed.find('{') {
         if let Some(end) = trimmed.rfind('}') {
             if start < end {
                 let json_str = &trimmed[start..=end];
+
+                // Try direct parsing first
                 if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(json_str) {
+                    return format_structured_commit(&msg);
+                }
+
+                // Try sanitization
+                let sanitized = sanitize_json_string_content(json_str);
+                if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&sanitized) {
                     return format_structured_commit(&msg);
                 }
             }
         }
     }
 
-    None
+    // Final fallback: regex extraction on full content
+    try_extract_via_regex(trimmed)
 }
 
 /// Format a structured commit message into the final string format.
@@ -3774,5 +3913,193 @@ simplify raw string literals and add explicit type conversion handling.";
             "Should not contain analysis: {}",
             result.content
         );
+    }
+
+    // =========================================================================
+    // Regression Tests: Literal Newlines in JSON String Values
+    // =========================================================================
+
+    #[test]
+    fn test_sanitize_json_with_literal_newline_in_subject() {
+        let input = r#"{"subject": "feat: add
+feature", "body": null}"#;
+        let expected = r#"{"subject": "feat: add\nfeature", "body": null}"#;
+        let result = sanitize_json_string_content(input);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_sanitize_json_with_literal_tab_in_subject() {
+        let input = r#"{"subject": "feat:	add	here", "body": null}"#;
+        let expected = r#"{"subject": "feat:\tadd\there", "body": null}"#;
+        let result = sanitize_json_string_content(input);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_sanitize_json_with_literal_newline_in_body() {
+        let input = r#"{"subject": "feat: add feature", "body": "First line
+second line"}"#;
+        let expected = r#"{"subject": "feat: add feature", "body": "First line\nsecond line"}"#;
+        let result = sanitize_json_string_content(input);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_sanitize_json_preserves_already_escaped_newlines() {
+        let input = r#"{"subject": "feat: add\nfeature", "body": null}"#;
+        let expected = r#"{"subject": "feat: add\nfeature", "body": null}"#;
+        let result = sanitize_json_string_content(input);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_sanitize_json_handles_mixed_content() {
+        let input = r#"{"subject": "fix: bug", "body": "Line1
+Line2"}"#;
+        let result = sanitize_json_string_content(input);
+        // Should escape the literal newline
+        assert!(result.contains("Line1\\nLine2"));
+    }
+
+    #[test]
+    fn test_sanitize_json_handles_nested_quotes() {
+        let input = r#"{"subject": "feat: add \"quoted\" text", "body": null}"#;
+        let expected = r#"{"subject": "feat: add \"quoted\" text", "body": null}"#;
+        let result = sanitize_json_string_content(input);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_sanitize_json_does_not_escape_newlines_outside_strings() {
+        let input = r#"{
+"subject": "feat: add feature",
+"body": null
+}"#;
+        let result = sanitize_json_string_content(input);
+        // Newlines outside strings should NOT be escaped
+        assert!(result.contains('\n'));
+    }
+
+    #[test]
+    fn test_extract_structured_commit_with_literal_newline() {
+        // This is the bug scenario: JSON with literal newline in string value
+        let content = r#"{"subject": "feat: add
+feature", "body": null}"#;
+
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some(), "Should extract despite literal newline");
+        assert_eq!(result.unwrap(), "feat: add\nfeature");
+    }
+
+    #[test]
+    fn test_extract_structured_commit_with_literal_newline_in_body() {
+        let content = r#"{"subject": "feat: add feature", "body": "First line
+Second line
+Third line"}"#;
+
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some());
+        let expected = "feat: add feature\n\nFirst line\nSecond line\nThird line";
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_extract_structured_commit_with_literal_newline_in_code_fence() {
+        let content = r#"```json
+{"subject": "fix: resolve
+edge case", "body": "Multi
+line
+body"}
+```"#;
+
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert!(extracted.contains("fix: resolve"));
+        assert!(extracted.contains("Multi"));
+    }
+
+    #[test]
+    fn test_regex_fallback_extraction_with_literal_newlines() {
+        // Even if sanitization fails for some reason, regex should still extract
+        let content = r#"{"subject": "refactor: improve
+code quality", "body": "Make it
+better"}"#;
+
+        let result = try_extract_structured_commit(content);
+        // Should extract via sanitization OR regex fallback
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_extract_with_preamble_and_literal_newline() {
+        // Complex case: analysis text + JSON with literal newlines
+        let content = r#"Looking at this diff:
+
+1. Added feature
+2. Fixed bug
+
+```json
+{"subject": "feat: add authentication", "body": "Add OAuth
+login support"}
+```"#;
+
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert!(extracted.contains("feat: add authentication"));
+        assert!(extracted.contains("OAuth"));
+    }
+
+    #[test]
+    fn test_sanitize_json_with_carriage_return() {
+        let input = r#"{"subject": "feat: add\rfeature", "body": null}"#;
+        let result = sanitize_json_string_content(input);
+        assert!(result.contains("\\r"));
+    }
+
+    #[test]
+    fn test_sanitize_json_preserves_escaped_backslash() {
+        let input = r#"{"subject": "feat: add\\nfeature", "body": null}"#;
+        let expected = r#"{"subject": "feat: add\\nfeature", "body": null}"#;
+        let result = sanitize_json_string_content(input);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_extract_with_multiple_literal_newlines() {
+        let content = r#"{"subject": "chore: update deps", "body": "Added
+
+
+
+whitespace"}"#;
+
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_extract_with_tabs_in_json_string() {
+        let content = r#"{"subject": "fix: handle	edge	case", "body": null}"#;
+
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some());
+        // After sanitization, tabs become \t in JSON, then serde_json parses \t as actual tab char
+        assert!(result.unwrap().contains('\t'));
+    }
+
+    #[test]
+    fn test_extract_ndjson_with_literal_newline_in_result() {
+        // NDJSON stream with literal newline in the result field's JSON
+        let ndjson = r#"{"type":"system","session_id":"abc"}
+{"type":"result","result":"{\"subject\": \"feat: add\nfeature\", \"body\": null}"}"#;
+
+        let result = try_extract_structured_commit(ndjson);
+        assert!(
+            result.is_some(),
+            "Should extract from NDJSON with literal newline"
+        );
+        assert_eq!(result.unwrap(), "feat: add\nfeature");
     }
 }
