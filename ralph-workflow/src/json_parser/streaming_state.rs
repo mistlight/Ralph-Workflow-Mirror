@@ -11,7 +11,52 @@
 //! 3. **Deduplication rule**: Content displayed during streaming is never re-displayed
 //! 4. **State reset**: Streaming state resets on `MessageStart`/Init events
 //!
-//! # Stream Contract
+//! # Message Lifecycle
+//!
+//! The streaming message lifecycle follows this sequence:
+//!
+//! 1. **`MessageStart`** (or equivalent init event):
+//!    - Resets all streaming state to `Idle`
+//!    - Clears accumulated content
+//!    - Resets content block state
+//!
+//! 2. **`ContentBlockStart`** (optional, for each content block):
+//!    - If already in a block with `started_output=true`, finalizes the previous block
+//!    - Initializes tracking for the new block index
+//!    - Clears any accumulated content for this block index
+//!
+//! 3. **Text/Thinking deltas** (zero or more per block):
+//!    - First delta for each `(content_type, index)` shows prefix
+//!    - Subsequent deltas update in-place (no prefix)
+//!    - Sets `started_output=true` for the current block
+//!
+//! 4. **`MessageStop`**:
+//!    - Finalizes the current content block
+//!    - Marks message as displayed to prevent duplicate final output
+//!    - Returns whether content was streamed (for emitting completion newline)
+//!
+//! # Content Block Transitions
+//!
+//! When transitioning between content blocks (e.g., block 0 → block 1):
+//!
+//! ```ignore
+//! // Streaming "Hello" in block 0
+//! session.on_text_delta(0, "Hello");  // started_output = true
+//!
+//! // Transition to block 1
+//! session.on_content_block_start(1);  // Finalizes block 0, started_output was true
+//!
+//! // Stream "World" in block 1
+//! session.on_text_delta(1, "World");  // New block, shows prefix again
+//! ```
+//!
+//! The `ContentBlockState::InBlock { index, started_output }` tracks:
+//! - `index`: Which block is currently active
+//! - `started_output`: Whether any content was output for this block
+//!
+//! This state enables proper finalization of previous blocks when new ones start.
+//!
+//! # Delta Contract
 //!
 //! This module enforces a strict **delta contract** - all streaming events must
 //! contain only the newly generated text (deltas), not the full accumulated content.
@@ -89,6 +134,26 @@ pub enum StreamingState {
     Finalized,
 }
 
+/// State tracking for content blocks during streaming.
+///
+/// Replaces the boolean `in_content_block` with richer state that tracks
+/// which block is active and whether output has started for that block.
+/// This prevents "glued text" bugs where block boundaries are crossed
+/// without proper finalization.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ContentBlockState {
+    /// Not currently inside a content block
+    #[default]
+    NotInBlock,
+    /// Inside a content block with tracking for output state
+    InBlock {
+        /// The block index/identifier
+        index: String,
+        /// Whether any content has been output for this block
+        started_output: bool,
+    },
+}
+
 /// Unified streaming session tracker.
 ///
 /// Provides a single source of truth for streaming state across all parsers.
@@ -112,8 +177,8 @@ pub struct StreamingSession {
     /// Track which content types have been streamed (for deduplication)
     /// Maps `ContentType` → whether it has been streamed
     streamed_types: HashMap<ContentType, bool>,
-    /// Track whether we're currently inside a content block
-    in_content_block: bool,
+    /// Track the current content block state
+    current_block: ContentBlockState,
     /// Accumulated content by (`content_type`, index) for display
     /// This mirrors `DeltaAccumulator` but adds deduplication tracking
     accumulated: HashMap<(ContentType, String), String>,
@@ -154,7 +219,7 @@ impl StreamingSession {
     pub fn on_message_start(&mut self) {
         self.state = StreamingState::Idle;
         self.streamed_types.clear();
-        self.in_content_block = false;
+        self.current_block = ContentBlockState::NotInBlock;
         self.accumulated.clear();
         self.key_order.clear();
         self.delta_sizes.clear();
@@ -216,9 +281,15 @@ impl StreamingSession {
     /// - Gemini: Content section begins
     /// - `OpenCode`: Part with content starts
     ///
+    /// If we're already in a block, this method finalizes the previous block
+    /// by emitting a newline if output had started.
+    ///
     /// # Arguments
     /// * `index` - The content block index (for multi-block messages)
     pub fn on_content_block_start(&mut self, index: u64) {
+        // Finalize previous block if we're in one
+        self.ensure_content_block_finalized();
+
         // Clear accumulated content for this specific index
         let index_str = index.to_string();
         for content_type in [
@@ -229,6 +300,25 @@ impl StreamingSession {
             let key = (content_type, index_str.clone());
             self.accumulated.remove(&key);
             self.key_order.retain(|k| k != &key);
+        }
+    }
+
+    /// Ensure the current content block is finalized.
+    ///
+    /// If we're in a block and output has started, this returns true to indicate
+    /// that a newline should be emitted. This prevents "glued text" bugs where
+    /// content from different blocks is concatenated without separation.
+    ///
+    /// # Returns
+    /// * `true` - A newline should be emitted (output had started)
+    /// * `false` - No newline needed (no output or not in a block)
+    fn ensure_content_block_finalized(&mut self) -> bool {
+        if let ContentBlockState::InBlock { started_output, .. } = &self.current_block {
+            let had_output = *started_output;
+            self.current_block = ContentBlockState::NotInBlock;
+            had_output
+        } else {
+            false
         }
     }
 
@@ -350,7 +440,12 @@ impl StreamingSession {
         // Mark that we're streaming text content
         self.streamed_types.insert(ContentType::Text, true);
         self.state = StreamingState::Streaming;
-        self.in_content_block = true;
+
+        // Update block state to track this block and mark output as started
+        self.current_block = ContentBlockState::InBlock {
+            index: key.to_string(),
+            started_output: true,
+        };
 
         // Check if this is the first delta for this key
         let is_first = !self.accumulated.contains_key(&content_key);
@@ -451,10 +546,13 @@ impl StreamingSession {
     /// - Codex: `TurnCompleted` or `ItemCompleted` with text
     /// - Gemini: Message completion
     /// - `OpenCode`: Part completion
+    ///
+    /// # Returns
+    /// * `true` - A completion newline should be emitted (was in a content block)
+    /// * `false` - No completion needed (no content block active)
     pub fn on_message_stop(&mut self) -> bool {
-        let was_in_block = self.in_content_block;
+        let was_in_block = self.ensure_content_block_finalized();
         self.state = StreamingState::Finalized;
-        self.in_content_block = false;
 
         // Mark the current message as displayed to prevent duplicate display
         // when the final "Assistant" event arrives

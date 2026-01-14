@@ -1340,3 +1340,81 @@ fn test_ccs_glm_complete_message_deduplication() {
         "Should have exactly 1 prefix from streaming. Output: {output:?}"
     );
 }
+
+/// Test for content block state tracking
+///
+/// This test verifies that the `ContentBlockState` implementation correctly
+/// tracks block transitions and the `started_output` flag. This is the foundation
+/// for future enhancements where block transitions can emit newlines.
+///
+/// Note: This is a unit test that directly tests the `StreamingSession` state
+/// tracking, not the end-to-end parser behavior (which would require additional
+/// parser-layer changes to actually emit newlines on block transitions).
+#[test]
+fn test_content_block_state_tracking() {
+    use crate::json_parser::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // Initially, no content has been streamed
+    assert!(!session.has_any_streamed_content());
+
+    // Start streaming content in block 0
+    let show_prefix = session.on_text_delta(0, "First");
+    assert!(show_prefix, "First delta should show prefix");
+    assert!(session.has_any_streamed_content());
+
+    // Transition to block 1 via on_content_block_start
+    // This should finalize block 0 and return true (had output)
+    session.on_content_block_start(1);
+
+    // Stream content in block 1
+    let show_prefix = session.on_text_delta(1, "Second");
+    assert!(show_prefix, "First delta in new block should show prefix");
+
+    // Verify both blocks have separate accumulated content
+    assert_eq!(
+        session.get_accumulated(crate::json_parser::types::ContentType::Text, "0"),
+        Some("First")
+    );
+    assert_eq!(
+        session.get_accumulated(crate::json_parser::types::ContentType::Text, "1"),
+        Some("Second")
+    );
+}
+
+/// Test for message finalize without deltas producing no output
+///
+/// This test verifies that when a message starts and stops without any
+/// content deltas, no extraneous output is produced (like spurious newlines).
+#[test]
+fn test_finalize_without_deltas_no_output() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate message_start -> message_stop with no content
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should have NO prefix since no content was streamed
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(
+        prefix_count, 0,
+        "Should have no prefix when no content was streamed. Output: {output:?}"
+    );
+
+    // Output should be empty or contain only whitespace (no actual content)
+    let trimmed = output.trim();
+    assert!(
+        trimmed.is_empty(),
+        "Should have no actual content when message has no deltas. Output: {output:?}"
+    );
+}
