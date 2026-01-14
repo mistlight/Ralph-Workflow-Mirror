@@ -33,6 +33,28 @@
                 btn.style.transform = '';
             });
         });
+
+        // === Extended Magnetic Effect for Cards ===
+        // Apply subtle magnetic effect to feature cards and audience cards
+        const magneticElements = document.querySelectorAll('.feature-card, .audience-card, .card');
+
+        magneticElements.forEach(card => {
+            card.addEventListener('mousemove', function(e) {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left - rect.width / 2;
+                const y = e.clientY - rect.top - rect.height / 2;
+
+                // More subtle effect for cards - less movement, no scale
+                const moveX = x * 0.03;
+                const moveY = y * 0.03;
+
+                card.style.transform = `translate(${moveX}px, ${moveY}px)`;
+            });
+
+            card.addEventListener('mouseleave', function() {
+                card.style.transform = '';
+            });
+        });
     }
 
     // === Enhanced Parallax Effect for Hero Glows ===
@@ -863,6 +885,7 @@
     }
 
     // === Kinetic Typography on Scroll ===
+    // Note: heroTitle is already declared above in the Character Typography section
     const heroWords = document.querySelectorAll('.hero-word');
     let kineticScrollY = window.scrollY;
 
@@ -877,13 +900,30 @@
         const heroVisible = heroRect.bottom > 0 && heroRect.top < window.innerHeight;
 
         if (heroVisible) {
+            // Enhanced hero title transformation on scroll
+            if (heroTitle) {
+                const scrollProgress = Math.min(scrollY / (window.innerHeight * 0.5), 1);
+                const scaleValue = 1 - (scrollProgress * 0.15); // Subtle scale down
+                const translateYValue = scrollProgress * -30; // Move up slightly
+
+                heroTitle.style.transform = `scale(${scaleValue}) translateY(${translateYValue}px)`;
+
+                // Add scrolling class for additional effects
+                if (scrollProgress > 0.1) {
+                    heroTitle.classList.add('scrolling');
+                } else {
+                    heroTitle.classList.remove('scrolling');
+                }
+            }
+
+            // Individual word parallax
             heroWords.forEach((word, index) => {
-                const speed = (index + 1) * 0.02;
+                const speed = (index + 1) * 0.03; // Slightly more pronounced
                 const yPos = scrollDelta * speed;
                 const currentTransform = word.style.transform || 'translateY(0) scale(1)';
                 const match = currentTransform.match(/translateY\(([^)]+)\)/);
                 const currentY = match ? parseFloat(match[1]) : 0;
-                const newY = Math.max(Math.min(currentY + yPos, 20), -20);
+                const newY = Math.max(Math.min(currentY + yPos, 30), -30);
 
                 word.style.transform = `translateY(${newY}px)`;
             });

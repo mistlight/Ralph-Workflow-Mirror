@@ -151,13 +151,8 @@
         <section class="hero">
             <!-- Background layers for atmosphere -->
             <div class="hero-bg">
-                <!-- Noise texture overlay -->
-                <svg class="hero-noise" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <filter id="noise">
-                        <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch"/>
-                    </filter>
-                    <rect width="100%" height="100%" filter="url(#noise)" opacity="0.4"/>
-                </svg>
+                <!-- Animated noise texture overlay -->
+                <div class="hero-noise" aria-hidden="true"></div>
 
                 <!-- Gradient orbs -->
                 <div class="hero-orb hero-orb-1" aria-hidden="true"></div>
