@@ -318,8 +318,16 @@ impl PromptMonitor {
                 let panic_msg = panic_payload
                     .downcast_ref::<String>()
                     .cloned()
-                    .or_else(|| panic_payload.downcast_ref::<&str>().map(ToString::to_string))
-                    .or_else(|| panic_payload.downcast_ref::<&String>().map(|s| (*s).clone()))
+                    .or_else(|| {
+                        panic_payload
+                            .downcast_ref::<&str>()
+                            .map(ToString::to_string)
+                    })
+                    .or_else(|| {
+                        panic_payload
+                            .downcast_ref::<&String>()
+                            .map(|s| (*s).clone())
+                    })
                     .unwrap_or_else(|| {
                         // Fallback: Try to get any available information
                         format!(

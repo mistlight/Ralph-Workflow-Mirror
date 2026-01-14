@@ -31,7 +31,9 @@
       "Bash(git format-patch:*)",
       "Bash(git config:*)",
       "Bash(git am:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(rg:*)",
+      "Bash(cargo clippy:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
