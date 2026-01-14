@@ -7,7 +7,7 @@
 use crate::agents::{AgentsConfigFile, ConfigInitResult};
 use crate::colors::Colors;
 use crate::config::{unified_config_path, UnifiedConfig, UnifiedConfigInitResult};
-use crate::templates::{get_template, list_templates};
+use crate::templates::{get_template, list_templates, PromptTemplate, TemplateCategory, ALL_TEMPLATES};
 use std::fs;
 use std::path::Path;
 
@@ -103,6 +103,153 @@ pub fn handle_init_legacy(colors: &Colors, agents_config_path: &Path) -> anyhow:
 
 // NOTE: legacy per-repo agents.toml creation is handled by `--init-legacy` only.
 
+/// Handle the `--init-prompt` or `--prompt` flag without a template argument.
+///
+/// Shows helpful template suggestions when no template is specified.
+///
+/// # Arguments
+///
+/// * `colors` - Terminal color configuration for output
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the flag was handled (program should exit after).
+pub fn handle_init_prompt_noarg(colors: &Colors) -> anyhow::Result<bool> {
+    println!("{}No template specified.{} Here are some common templates to get you started:\n",
+        colors.yellow(),
+        colors.reset()
+    );
+
+    println!("{}Most Common Templates:{}",
+        colors.bold(),
+        colors.reset()
+    );
+    println!();
+
+    // Show most common general templates
+    let common_templates = [
+        PromptTemplate::FeatureSpec,
+        PromptTemplate::BugFix,
+        PromptTemplate::Quick,
+    ];
+
+    for template in common_templates {
+        println!(
+            "  {}{}{}  {}{}{}",
+            colors.cyan(),
+            template.name(),
+            colors.reset(),
+            colors.dim(),
+            template.description(),
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("{}{}Popular Language-Specific Templates:{}",
+        colors.bold(),
+        colors.green(),
+        colors.reset()
+    );
+    println!();
+
+    // Show some popular language-specific templates
+    let popular_language_templates = [
+        PromptTemplate::RustFeature,
+        PromptTemplate::TypeScriptFeature,
+        PromptTemplate::RubyOnRails,
+    ];
+
+    for template in popular_language_templates {
+        println!(
+            "  {}{}{}  {}{}{}",
+            colors.cyan(),
+            template.name(),
+            colors.reset(),
+            colors.dim(),
+            template.description(),
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("{}All Available Templates:{}",
+        colors.bold(),
+        colors.reset()
+    );
+    println!();
+
+    // Group templates by category
+    let mut general_templates = Vec::new();
+    let mut language_specific_templates = Vec::new();
+
+    for template in ALL_TEMPLATES {
+        match template.category() {
+            TemplateCategory::General => general_templates.push(template),
+            TemplateCategory::LanguageSpecific => language_specific_templates.push(template),
+        }
+    }
+
+    // Display General templates
+    println!("  {}General:{}",
+        colors.yellow(),
+        colors.reset()
+    );
+    for template in general_templates {
+        println!(
+            "    {}{}{}  {}{}{}",
+            colors.cyan(),
+            template.name(),
+            colors.reset(),
+            colors.dim(),
+            template.description(),
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("  {}Language-Specific:{}",
+        colors.green(),
+        colors.reset()
+    );
+    for template in language_specific_templates {
+        println!(
+            "    {}{}{}  {}{}{}",
+            colors.cyan(),
+            template.name(),
+            colors.reset(),
+            colors.dim(),
+            template.description(),
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("{}Usage:{}",
+        colors.bold(),
+        colors.reset()
+    );
+    println!("  ralph --init-prompt <template>");
+    println!("  ralph --prompt <template>");
+    println!("  ralph -P <template>");
+    println!();
+    println!("{}Examples:{}",
+        colors.bold(),
+        colors.reset()
+    );
+    println!("  ralph --init-prompt feature-spec       # Create comprehensive spec template");
+    println!("  ralph --prompt bug-fix                # Create bug fix template");
+    println!("  ralph -P rust-feature                 # Create Rust-specific feature template");
+    println!("  ralph -P typescript-feature           # Create TypeScript-specific feature template");
+    println!();
+    println!("{}Tip:{} Use --list-templates to see all available templates with descriptions.",
+        colors.bold(),
+        colors.reset()
+    );
+
+    Ok(true)
+}
+
 /// Handle the `--init-prompt` flag.
 ///
 /// Creates a PROMPT.md file from the specified template.
@@ -190,7 +337,7 @@ pub fn handle_init_prompt(template_name: &str, colors: &Colors) -> anyhow::Resul
 
 /// Handle the `--list-templates` flag.
 ///
-/// Lists all available PROMPT.md templates with descriptions.
+/// Lists all available PROMPT.md templates with descriptions, grouped by category.
 ///
 /// # Arguments
 ///
@@ -203,32 +350,72 @@ pub fn handle_list_templates(colors: &Colors) -> anyhow::Result<bool> {
     println!("Available PROMPT.md templates:");
     println!();
 
-    let templates = list_templates();
-    let _max_name_len = templates
-        .iter()
-        .map(|(name, _)| name.len())
-        .max()
-        .unwrap_or(0);
+    // Group templates by category
+    let mut general_templates = Vec::new();
+    let mut language_specific_templates = Vec::new();
 
-    for (name, description) in templates {
+    for template in ALL_TEMPLATES {
+        match template.category() {
+            TemplateCategory::General => general_templates.push(template),
+            TemplateCategory::LanguageSpecific => language_specific_templates.push(template),
+        }
+    }
+
+    // Display General templates
+    println!("{}{}General Templates:{}",
+        colors.bold(),
+        colors.yellow(),
+        colors.reset()
+    );
+    println!();
+    for template in general_templates {
         println!(
             "  {}{}{}  {}{}{}",
             colors.cyan(),
-            name,
+            template.name(),
             colors.reset(),
             colors.dim(),
-            description,
+            template.description(),
             colors.reset()
         );
     }
 
     println!();
-    println!("Usage: ralph --init-prompt <template>");
+    println!("{}{}Language-Specific Templates:{}",
+        colors.bold(),
+        colors.green(),
+        colors.reset()
+    );
     println!();
-    println!("Example:");
-    println!("  ralph --init-prompt feature-spec   # Create comprehensive spec template");
-    println!("  ralph --init-prompt bug-fix        # Create bug fix template");
-    println!("  ralph --init-prompt quick          # Create quick change template");
+    for template in language_specific_templates {
+        println!(
+            "  {}{}{}  {}{}{}",
+            colors.cyan(),
+            template.name(),
+            colors.reset(),
+            colors.dim(),
+            template.description(),
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("{}Usage:{}",
+        colors.bold(),
+        colors.reset()
+    );
+    println!("  ralph --init-prompt <template>");
+    println!("  ralph --prompt <template>");
+    println!("  ralph -P <template>");
+    println!();
+    println!("{}Examples:{}",
+        colors.bold(),
+        colors.reset()
+    );
+    println!("  ralph --init-prompt feature-spec       # Create comprehensive spec template");
+    println!("  ralph --prompt bug-fix                # Create bug fix template");
+    println!("  ralph -P rust-feature                 # Create Rust-specific feature template");
+    println!("  ralph -P typescript-feature           # Create TypeScript-specific feature template");
 
     Ok(true)
 }

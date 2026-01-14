@@ -370,9 +370,19 @@ pub struct Args {
     )]
     pub init_prompt: Option<String>,
 
+    /// Shorthand for --init-prompt
+    #[arg(
+        long,
+        short = 'P',
+        value_name = "TEMPLATE",
+        help = "Create PROMPT.md from a template (shorthand for --init-prompt)"
+    )]
+    pub prompt: Option<String>,
+
     /// List available PROMPT.md templates and exit
     #[arg(
         long,
+        aliases = ["templates", "list"],
         help = "Show all available PROMPT.md templates with descriptions"
     )]
     pub list_templates: bool,

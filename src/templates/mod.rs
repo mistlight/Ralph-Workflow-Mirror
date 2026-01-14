@@ -8,6 +8,25 @@
 
 use std::fmt;
 
+/// Template category for grouping templates by purpose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateCategory {
+    /// General-purpose templates (feature-spec, bug-fix, refactor, test, docs, quick)
+    General,
+    /// Language-specific templates (rust-feature, rust-bug-fix, typescript-feature, ruby-on-rails, cpp-feature)
+    LanguageSpecific,
+}
+
+impl TemplateCategory {
+    /// Returns the display name for this category.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::General => "General",
+            Self::LanguageSpecific => "Language-Specific",
+        }
+    }
+}
+
 /// Available prompt template types.
 ///
 /// Each variant represents a different template for a specific use case.
@@ -25,6 +44,16 @@ pub enum PromptTemplate {
     Docs,
     /// Quick/small change template
     Quick,
+    /// Rust-specific feature template
+    RustFeature,
+    /// Rust-specific bug fix template
+    RustBugFix,
+    /// TypeScript/Node.js feature template
+    TypeScriptFeature,
+    /// Ruby on Rails feature template
+    RubyOnRails,
+    /// C++ feature template
+    CppFeature,
 }
 
 impl PromptTemplate {
@@ -38,6 +67,11 @@ impl PromptTemplate {
             Self::Test => "test.md",
             Self::Docs => "docs.md",
             Self::Quick => "quick.md",
+            Self::RustFeature => "rust-feature.md",
+            Self::RustBugFix => "rust-bug-fix.md",
+            Self::TypeScriptFeature => "typescript-feature.md",
+            Self::RubyOnRails => "ruby-on-rails.md",
+            Self::CppFeature => "cpp-feature.md",
         }
     }
 
@@ -50,6 +84,23 @@ impl PromptTemplate {
             Self::Test => "test",
             Self::Docs => "docs",
             Self::Quick => "quick",
+            Self::RustFeature => "rust-feature",
+            Self::RustBugFix => "rust-bug-fix",
+            Self::TypeScriptFeature => "typescript-feature",
+            Self::RubyOnRails => "ruby-on-rails",
+            Self::CppFeature => "cpp-feature",
+        }
+    }
+
+    /// Returns the category for this template.
+    pub fn category(self) -> TemplateCategory {
+        match self {
+            Self::FeatureSpec | Self::BugFix | Self::Refactor | Self::Test | Self::Docs | Self::Quick => {
+                TemplateCategory::General
+            }
+            Self::RustFeature | Self::RustBugFix | Self::TypeScriptFeature | Self::RubyOnRails | Self::CppFeature => {
+                TemplateCategory::LanguageSpecific
+            }
         }
     }
 
@@ -62,6 +113,11 @@ impl PromptTemplate {
             Self::Test => "Test writing template with edge case considerations",
             Self::Docs => "Documentation update template with completeness checklist",
             Self::Quick => "Quick/small change template (minimal)",
+            Self::RustFeature => "Rust feature template with ownership, async, error handling best practices",
+            Self::RustBugFix => "Rust bug fix template with borrow checker, panic, unsafe guidance",
+            Self::TypeScriptFeature => "TypeScript/Node.js feature template with typing, async/await, npm best practices",
+            Self::RubyOnRails => "Ruby on Rails template with conventions, ActiveRecord, RESTful design",
+            Self::CppFeature => "C++ feature template with modern standards, RAII, memory management",
         }
     }
 
@@ -86,6 +142,21 @@ impl PromptTemplate {
             Self::Quick => {
                 include_str!("../../templates/prompts/quick.md")
             }
+            Self::RustFeature => {
+                include_str!("../../templates/prompts/rust-feature.md")
+            }
+            Self::RustBugFix => {
+                include_str!("../../templates/prompts/rust-bug-fix.md")
+            }
+            Self::TypeScriptFeature => {
+                include_str!("../../templates/prompts/typescript-feature.md")
+            }
+            Self::RubyOnRails => {
+                include_str!("../../templates/prompts/ruby-on-rails.md")
+            }
+            Self::CppFeature => {
+                include_str!("../../templates/prompts/cpp-feature.md")
+            }
         }
     }
 }
@@ -97,13 +168,18 @@ impl fmt::Display for PromptTemplate {
 }
 
 /// All available prompt templates.
-pub const ALL_TEMPLATES: [PromptTemplate; 6] = [
+pub const ALL_TEMPLATES: [PromptTemplate; 11] = [
     PromptTemplate::FeatureSpec,
     PromptTemplate::BugFix,
     PromptTemplate::Refactor,
     PromptTemplate::Test,
     PromptTemplate::Docs,
     PromptTemplate::Quick,
+    PromptTemplate::RustFeature,
+    PromptTemplate::RustBugFix,
+    PromptTemplate::TypeScriptFeature,
+    PromptTemplate::RubyOnRails,
+    PromptTemplate::CppFeature,
 ];
 
 /// Get template content by name.
@@ -256,9 +332,45 @@ mod tests {
     #[test]
     fn test_list_templates() {
         let templates = list_templates();
-        assert_eq!(templates.len(), 6);
+        assert_eq!(templates.len(), 11);
         assert!(templates.iter().any(|(name, _)| name == &"feature-spec"));
         assert!(templates.iter().any(|(name, _)| name == &"bug-fix"));
+    }
+
+    #[test]
+    fn test_language_specific_templates_exist() {
+        assert_eq!(PromptTemplate::RustFeature.name(), "rust-feature");
+        assert_eq!(PromptTemplate::RustBugFix.name(), "rust-bug-fix");
+        assert_eq!(PromptTemplate::TypeScriptFeature.name(), "typescript-feature");
+        assert_eq!(PromptTemplate::RubyOnRails.name(), "ruby-on-rails");
+        assert_eq!(PromptTemplate::CppFeature.name(), "cpp-feature");
+    }
+
+    #[test]
+    fn test_language_specific_templates_have_content() {
+        assert!(!PromptTemplate::RustFeature.content().is_empty());
+        assert!(!PromptTemplate::RustBugFix.content().is_empty());
+        assert!(!PromptTemplate::TypeScriptFeature.content().is_empty());
+        assert!(!PromptTemplate::RubyOnRails.content().is_empty());
+        assert!(!PromptTemplate::CppFeature.content().is_empty());
+    }
+
+    #[test]
+    fn test_template_categories() {
+        // General templates
+        assert_eq!(PromptTemplate::FeatureSpec.category(), TemplateCategory::General);
+        assert_eq!(PromptTemplate::BugFix.category(), TemplateCategory::General);
+        assert_eq!(PromptTemplate::Refactor.category(), TemplateCategory::General);
+        assert_eq!(PromptTemplate::Test.category(), TemplateCategory::General);
+        assert_eq!(PromptTemplate::Docs.category(), TemplateCategory::General);
+        assert_eq!(PromptTemplate::Quick.category(), TemplateCategory::General);
+
+        // Language-specific templates
+        assert_eq!(PromptTemplate::RustFeature.category(), TemplateCategory::LanguageSpecific);
+        assert_eq!(PromptTemplate::RustBugFix.category(), TemplateCategory::LanguageSpecific);
+        assert_eq!(PromptTemplate::TypeScriptFeature.category(), TemplateCategory::LanguageSpecific);
+        assert_eq!(PromptTemplate::RubyOnRails.category(), TemplateCategory::LanguageSpecific);
+        assert_eq!(PromptTemplate::CppFeature.category(), TemplateCategory::LanguageSpecific);
     }
 
     #[test]

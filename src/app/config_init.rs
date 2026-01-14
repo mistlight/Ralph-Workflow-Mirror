@@ -8,7 +8,7 @@
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{
-    apply_args_to_config, handle_init_global, handle_init_legacy, handle_init_prompt,
+    apply_args_to_config, handle_init_global, handle_init_legacy, handle_init_prompt, handle_init_prompt_noarg,
     handle_list_templates, Args,
 };
 use crate::colors::Colors;
@@ -83,9 +83,16 @@ pub fn initialize_config(
         return Ok(None);
     }
 
-    // Handle --init-prompt flag: create PROMPT.md from template and exit
-    if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt(template_name, colors)? {
+    // Handle --prompt or --init-prompt flag: create PROMPT.md from template and exit
+    // --prompt is a shorthand for --init-prompt, prefer --prompt if both are set
+    let template_arg = args.prompt.as_ref().or(args.init_prompt.as_ref());
+    if let Some(template_name) = template_arg {
+        // Handle the case where no template name was provided (empty string or flag without value)
+        if template_name.is_empty() {
+            if handle_init_prompt_noarg(colors)? {
+                return Ok(None);
+            }
+        } else if handle_init_prompt(template_name, colors)? {
             return Ok(None);
         }
     }
