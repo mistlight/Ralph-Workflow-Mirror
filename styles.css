@@ -853,8 +853,8 @@ pre code {
 }
 
 .btn-primary:hover {
-    box-shadow: var(--shadow-glow-md), var(--shadow-lg);
-    transform: translateY(-2px);
+    box-shadow: var(--shadow-glow-sm), var(--shadow-md);
+    transform: translateY(-1px);
     color: var(--color-bg);
 }
 
@@ -1288,12 +1288,16 @@ pre code {
     font-size: var(--fluid-display);
     font-weight: var(--font-semibold);
     line-height: var(--leading-none);
-    letter-spacing: var(--tracking-tighter);
+    letter-spacing: -0.04em;
     color: var(--color-text);
     margin: 0;
     word-wrap: break-word;
     overflow-wrap: break-word;
     hyphens: none;
+    /* Subtle text-shadow for depth perception */
+    text-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.15),
+        0 4px 8px rgba(0, 0, 0, 0.08);
 }
 
 /* Small screen adjustment for hero title */
@@ -1319,24 +1323,47 @@ pre code {
 
 .hero-word {
     display: inline-block;
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
-    animation-delay: calc(var(--word-index, 0) * 0.1s);
+    animation: slideUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: calc(var(--word-index, 0) * 0.12s);
     opacity: 0;
-    transform: translateY(100%);
+    transform: translateY(110%) rotateX(-10deg);
+    transform-origin: center bottom;
+    will-change: transform, opacity;
 }
 
 @keyframes slideUp {
-    to {
+    0% {
+        opacity: 0;
+        transform: translateY(110%) rotateX(-10deg);
+    }
+    60% {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(-5%) rotateX(2deg);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) rotateX(0);
     }
 }
 
 .hero-title-accent {
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 50%, var(--color-accent) 100%);
+    background-size: 200% 200%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    animation: gradientShift 8s ease-in-out infinite;
+    /* Add subtle glow effect */
+    filter: drop-shadow(0 0 20px rgba(212, 165, 116, 0.2));
+}
+
+@keyframes gradientShift {
+    0%, 100% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
 }
 
 /* Hero Description */
@@ -1941,9 +1968,33 @@ pre code {
     padding: var(--space-24) var(--space-6);
 }
 
+/* Add subtle top border decoration to numbered sections */
+.section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(100px, 20%);
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--border-soft), transparent);
+    opacity: 0;
+    transition: opacity var(--duration-300) var(--ease-out);
+}
+
+.section:hover::before {
+    opacity: 1;
+}
+
 .section-alt,
 .section--alt {
     background-color: var(--color-bg-alt);
+    /* Subtle radial gradient for depth */
+    background-image: radial-gradient(
+        ellipse 80% 50% at 50% 0%,
+        rgba(212, 165, 116, 0.02) 0%,
+        transparent 50%
+    );
 }
 
 .section-title--large {
@@ -1974,6 +2025,10 @@ pre code {
 .section-title {
     font-size: clamp(2rem, 5vw, var(--text-5xl));
     margin-bottom: var(--space-4);
+    letter-spacing: -0.03em;
+    text-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.1),
+        0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .section-subtitle {
@@ -2047,8 +2102,8 @@ pre code {
 
 .workflow-step:hover {
     border-color: var(--border-accent);
-    box-shadow: var(--shadow-lg), var(--shadow-glow-sm);
-    transform: translateY(-4px);
+    box-shadow: var(--shadow-md), var(--shadow-glow-sm);
+    transform: translateY(-2px);
 }
 
 .step-number {
@@ -2142,8 +2197,9 @@ pre code {
 }
 
 .quick-benefit-card:hover {
-    border-color: var(--border-soft);
-    transform: translateY(-2px);
+    border-color: var(--border-medium);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
 }
 
 .quick-benefit-header {
@@ -2802,7 +2858,7 @@ pre code {
 .feature-card:hover {
     border-color: var(--border-accent);
     box-shadow: var(--shadow-lg), var(--shadow-glow-sm);
-    transform: translateY(-4px);
+    transform: translateY(-2px);
 }
 
 .feature-icon {
