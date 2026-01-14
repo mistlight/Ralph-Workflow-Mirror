@@ -349,7 +349,11 @@ impl AgentRegistry {
                         .streaming_flag
                         .clone()
                         .unwrap_or(existing.streaming_flag),
-                    env_vars: existing.env_vars.clone(),
+                    // Do NOT inherit env_vars from the existing agent to prevent
+                    // CCS env vars from one agent from leaking into another.
+                    // The unified config (unified::AgentConfigToml) doesn't support
+                    // ccs_profile or env_vars fields, so we always start fresh.
+                    env_vars: std::collections::HashMap::new(),
                     // Preserve existing display name unless explicitly overridden
                     // Empty string explicitly clears the display name
                     display_name: match &overrides.display_name {
@@ -902,5 +906,86 @@ mod tests {
         let registry = AgentRegistry::new().unwrap();
         // Unknown agent should return None
         assert_eq!(registry.resolve_fuzzy("totally-unknown"), None);
+    }
+
+    #[test]
+    fn test_apply_unified_config_does_not_inherit_env_vars() {
+        // Regression test for CCS env vars leaking between agents.
+        // Ensures that when apply_unified_config merges agent configurations,
+        // env_vars from the existing agent are NOT inherited into the merged agent.
+        let mut registry = AgentRegistry::new().unwrap();
+
+        // First, manually register a "claude" agent with some env vars (simulating
+        // a previously-loaded agent with CCS env vars or manually-specified vars)
+        registry.register(
+            "claude",
+            AgentConfig {
+                cmd: "claude -p".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: "--include-partial-messages".to_string(),
+                // Simulate CCS env vars from a previous load
+                env_vars: {
+                    let mut vars = std::collections::HashMap::new();
+                    vars.insert(
+                        "ANTHROPIC_BASE_URL".to_string(),
+                        "https://api.z.ai/api/anthropic".to_string(),
+                    );
+                    vars.insert(
+                        "ANTHROPIC_AUTH_TOKEN".to_string(),
+                        "test-token-glm".to_string(),
+                    );
+                    vars.insert("ANTHROPIC_MODEL".to_string(), "glm-4.7".to_string());
+                    vars
+                },
+                display_name: None,
+            },
+        );
+
+        // Verify the "claude" agent has the GLM env vars
+        let claude_config = registry.resolve_config("claude").unwrap();
+        assert_eq!(claude_config.env_vars.len(), 3);
+        assert_eq!(
+            claude_config.env_vars.get("ANTHROPIC_BASE_URL"),
+            Some(&"https://api.z.ai/api/anthropic".to_string())
+        );
+
+        // Now apply a unified config that overrides the "claude" agent
+        // (simulating user's ~/.config/ralph-workflow.toml with [agents.claude])
+        // Create a minimal GeneralConfig via Default for UnifiedConfig
+        // Note: We can't directly construct UnifiedConfig with Default because agents is not Default
+        // So we'll create it by deserializing from a TOML string
+        let toml_str = r#"
+            [general]
+            verbosity = 2
+            interactive = true
+            isolation_mode = true
+
+            [agents.claude]
+            cmd = "claude -p"
+            display_name = "My Custom Claude"
+        "#;
+        let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+
+        // Apply the unified config
+        registry.apply_unified_config(&unified);
+
+        // Verify that the "claude" agent's env_vars are now empty (NOT inherited)
+        let claude_config_after = registry.resolve_config("claude").unwrap();
+        assert_eq!(
+            claude_config_after.env_vars.len(),
+            0,
+            "env_vars should NOT be inherited from the existing agent when unified config is applied"
+        );
+        assert_eq!(
+            claude_config_after.display_name,
+            Some("My Custom Claude".to_string()),
+            "display_name should be updated from the unified config"
+        );
     }
 }
