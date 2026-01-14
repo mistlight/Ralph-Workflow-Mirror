@@ -15,7 +15,7 @@ use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
-use crate::phases::get_primary_commit_agent;
+use crate::phases::common::get_primary_commit_agent;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use std::fs;

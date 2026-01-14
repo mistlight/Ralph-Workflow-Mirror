@@ -1,4 +1,4 @@
-//! CLI utility functions.
+//! Common utility functions.
 //!
 //! This module provides utility functions for command-line interface operations:
 //! - Shell command parsing

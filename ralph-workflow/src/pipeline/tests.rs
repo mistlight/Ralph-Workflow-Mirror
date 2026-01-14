@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::agents::{AgentRegistry, JsonParserType};
-use crate::cli::split_command;
+use crate::common::split_command;
 use crate::config::Config;
 use crate::config::Verbosity;
 use crate::logger::argv_requests_json;
