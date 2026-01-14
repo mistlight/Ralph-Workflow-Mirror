@@ -8,7 +8,7 @@
 //! 4. Optionally runs fast checks
 
 use crate::agents::AgentRole;
-use crate::files::{extract_plan, extract_plan_from_logs_text};
+use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_needed};
 use crate::git_helpers::{commit_with_auto_message_result, git_snapshot};
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
@@ -19,6 +19,26 @@ use crate::utils::{
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+/// Periodically restore PROMPT.md if it was deleted by an agent.
+///
+/// This is a defense-in-depth measure to ensure PROMPT.md is always available
+/// even if an agent accidentally deletes it during pipeline execution.
+fn ensure_prompt_integrity(logger: &crate::logger::Logger) {
+    match restore_prompt_if_needed() {
+        Ok(true) => {
+            // File exists with content, no action needed
+        }
+        Ok(false) => {
+            logger.warn("PROMPT.md was missing or empty and has been restored from backup");
+            logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
+        }
+        Err(e) => {
+            logger.error(&format!("Failed to restore PROMPT.md: {}", e));
+            logger.error("Pipeline may not function correctly without PROMPT.md");
+        }
+    }
+}
 
 use super::context::PhaseContext;
 
@@ -188,6 +208,10 @@ pub fn run_development_phase(
         if let Some(ref fast_cmd) = ctx.config.fast_check_cmd {
             run_fast_check(ctx, fast_cmd, i)?;
         }
+
+        // Periodic restoration check - ensure PROMPT.md still exists
+        // This catches agent deletions and restores from backup
+        ensure_prompt_integrity(ctx.logger);
 
         // Step 3: Delete the PLAN
         ctx.logger.info("Deleting PLAN.md...");

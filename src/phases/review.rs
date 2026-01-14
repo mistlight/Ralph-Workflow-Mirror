@@ -8,7 +8,7 @@
 
 use crate::agents::{is_glm_like_agent, AgentRole};
 use crate::config::ReviewDepth;
-use crate::files::extract_issues;
+use crate::files::{extract_issues, restore_prompt_if_needed};
 use crate::git_helpers::{commit_with_auto_message_result, get_git_diff_from_start, git_snapshot};
 use crate::guidelines::ReviewGuidelines;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
@@ -26,6 +26,26 @@ use crate::utils::{
 use super::context::PhaseContext;
 use std::fs;
 use std::path::Path;
+
+/// Periodically restore PROMPT.md if it was deleted by an agent.
+///
+/// This is a defense-in-depth measure to ensure PROMPT.md is always available
+/// even if an agent accidentally deletes it during pipeline execution.
+fn ensure_prompt_integrity(logger: &crate::logger::Logger) {
+    match restore_prompt_if_needed() {
+        Ok(true) => {
+            // File exists with content, no action needed
+        }
+        Ok(false) => {
+            logger.warn("PROMPT.md was missing or empty and has been restored from backup");
+            logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
+        }
+        Err(e) => {
+            logger.error(&format!("Failed to restore PROMPT.md: {}", e));
+            logger.error("Pipeline may not function correctly without PROMPT.md");
+        }
+    }
+}
 
 /// Result of the review phase.
 pub struct ReviewResult {
@@ -619,6 +639,10 @@ pub fn run_review_phase(
         if ctx.config.isolation_mode {
             delete_issues_file_for_isolation(ctx.logger)?;
         }
+
+        // Periodic restoration check - ensure PROMPT.md still exists
+        // This catches agent deletions and restores from backup
+        ensure_prompt_integrity(ctx.logger);
 
         // Check for changes and create commit if modified
         let snap = git_snapshot()?;
