@@ -15,8 +15,8 @@ use super::types::ContextLevel;
 /// overly-specific context that could contaminate future runs.
 pub fn prompt_developer_iteration(_iteration: u32, _total: u32, context: ContextLevel) -> String {
     match context {
-        ContextLevel::Minimal | ContextLevel::Normal => {
-            "You are in IMPLEMENTATION MODE. Execute the plan and make progress.
+        ContextLevel::Minimal | ContextLevel::Normal => r"
+You are in IMPLEMENTATION MODE. Execute the plan and make progress.
 
 INPUTS TO READ:
 1. .agent/PLAN.md - The implementation plan (execute these steps)
@@ -29,7 +29,6 @@ GUIDELINES:
 - Write clean, idiomatic code following project patterns
 - Add tests where appropriate"
                 .to_string()
-        }
     }
 }
 
@@ -55,7 +54,8 @@ GUIDELINES:
 ///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
 ///   which prevents accidental deletion.
 pub fn prompt_plan(prompt_content: Option<&str>) -> String {
-    let mut prompt = "You are in PLANNING MODE. Create a detailed implementation plan.
+    let mut prompt = r"
+You are in PLANNING MODE. Create a detailed implementation plan.
 
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
 - Creating, modifying, or deleting any files
@@ -73,21 +73,19 @@ PHASE 1: UNDERSTANDING
     // without naming the source file. This prevents agents from discovering
     // the file through exploration, reducing the risk of accidental deletion.
     if let Some(content) = prompt_content {
-        use std::fmt::Write;
-        write!(
-            prompt,
-            "
+        prompt.push_str(&format!(
+            r"
 
 REQUIREMENTS FROM PROJECT TASK:
 ───────────────────────────────────────────────────────────────────────────────
-{content}
+{}
 ───────────────────────────────────────────────────────────────────────────────
-"
-        )
-        .unwrap();
+",
+            content
+        ));
     } else {
         prompt.push_str(
-            "
+            r"
 
 The orchestrator has provided requirements to you via the planning task.
 ",
@@ -95,7 +93,7 @@ The orchestrator has provided requirements to you via the planning task.
     }
 
     prompt.push_str(
-        "
+        r"
 Understand:
 - The Goal: What is the desired end state?
 - Acceptance Checks: What specific conditions must be satisfied?

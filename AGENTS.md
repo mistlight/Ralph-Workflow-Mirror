@@ -18,12 +18,21 @@ If any instruction below conflicts with another file (e.g., `CONTRIBUTING.md`), 
 
 ## Build & test expectations
 
+Ensure you run git rebase on the main branch if working on a feature branch and resolve any merge conflicts AND:
+
 Before opening a PR (or marking work “done”), run:
 
 ```bash
 # THIS MUST BE EMPTY
-grep -RIn --include='*.rs' --exclude-dir target --exclude-dir .git \
-  'allow\s*(\s*dead_code\s*)' .
+rg -n --pcre2 '(?x)
+  \#\s*!?\[\s*
+  (allow|expect)
+  \s*\(
+    [^()\]]*
+    (?:\([^()\]]*\)[^()\]]*)*
+  \)
+  \s*\]
+' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features

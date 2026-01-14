@@ -1,6 +1,24 @@
 //! `OpenCode` event parser implementation
 //!
-//! This module handles parsing and displaying `OpenCode` NDJSON event streams.
+//! This module handles parsing and displaying OpenCode NDJSON event streams.
+//!
+//! # Streaming Output Behavior
+//!
+//! This parser implements real-time streaming output for text deltas. When content
+//! arrives in multiple chunks (via `text` events), the parser:
+//!
+//! 1. **Accumulates** text deltas from each chunk into a buffer
+//! 2. **Displays** the accumulated text after each chunk
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix** on the first `text` event and again on `step_finish`
+//!
+//! Example output sequence for streaming "Hello World" in two chunks:
+//! ```text
+//! [OpenCode] Hello\r       (first text event with prefix, no newline)
+//! Hello World\r             (second text event overwrites with accumulated text)
+//! [OpenCode] ✓ Step finished... (step_finish shows prefix with newline)
+//! ```
 
 #![expect(clippy::too_many_lines)]
 #![expect(clippy::items_after_statements)]
@@ -9,7 +27,7 @@ use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -104,6 +122,8 @@ pub struct OpenCodeParser {
     display_name: String,
     /// Delta accumulator for streaming content
     delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Track if we're currently streaming text content
+    in_text_content: Rc<RefCell<Cell<bool>>>,
 }
 
 impl OpenCodeParser {
@@ -114,6 +134,7 @@ impl OpenCodeParser {
             log_file: None,
             display_name: "OpenCode".to_string(),
             delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            in_text_content: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -151,6 +172,8 @@ impl OpenCodeParser {
             "step_start" => {
                 // Clear accumulator on new step
                 self.delta_accumulator.borrow_mut().clear();
+                // Reset streaming state
+                self.in_text_content.borrow_mut().set(false);
                 let _sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
                 let snapshot = event
                     .part
@@ -170,49 +193,68 @@ impl OpenCodeParser {
                     c.reset()
                 )
             }
-            "step_finish" => event.part.as_ref().map_or_else(String::new, |part| {
-                let reason = part.reason.as_deref().unwrap_or("unknown");
-                let cost = part.cost.unwrap_or(0.0);
+            "step_finish" => {
+                // Check if we were streaming text content
+                let in_text = self.in_text_content.borrow();
+                let was_in_text = in_text.get();
+                drop(in_text);
+                self.in_text_content.borrow_mut().set(false);
 
-                let tokens_str = part.tokens.as_ref().map_or_else(String::new, |tokens| {
-                    let input = tokens.input.unwrap_or(0);
-                    let output = tokens.output.unwrap_or(0);
-                    let reasoning = tokens.reasoning.unwrap_or(0);
-                    let cache_read = tokens.cache.as_ref().and_then(|c| c.read).unwrap_or(0);
-                    if reasoning > 0 {
-                        format!("in:{input} out:{output} reason:{reasoning} cache:{cache_read}")
-                    } else if cache_read > 0 {
-                        format!("in:{input} out:{output} cache:{cache_read}")
+                if let Some(ref part) = event.part {
+                    let reason = part.reason.as_deref().unwrap_or("unknown");
+                    let cost = part.cost.unwrap_or(0.0);
+
+                    let tokens_str = if let Some(ref tokens) = part.tokens {
+                        let input = tokens.input.unwrap_or(0);
+                        let output = tokens.output.unwrap_or(0);
+                        let reasoning = tokens.reasoning.unwrap_or(0);
+                        let cache_read = tokens.cache.as_ref().and_then(|c| c.read).unwrap_or(0);
+                        if reasoning > 0 {
+                            format!("in:{input} out:{output} reason:{reasoning} cache:{cache_read}")
+                        } else if cache_read > 0 {
+                            format!("in:{input} out:{output} cache:{cache_read}")
+                        } else {
+                            String::new()
+                        }
                     } else {
-                        format!("in:{input} out:{output}")
+                        String::new()
+                    };
+
+                    let is_success = reason == "tool-calls" || reason == "end_turn";
+                    let icon = if is_success { CHECK } else { CROSS };
+                    let color = if is_success { c.green() } else { c.yellow() };
+
+                    // Add final newline if we were streaming text
+                    let newline_prefix = if was_in_text {
+                        format!("{}\n", c.reset())
+                    } else {
+                        String::new()
+                    };
+
+                    let mut out = format!(
+                        "{}{}[{}]{} {}{} Step finished{} {}({}",
+                        newline_prefix,
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        color,
+                        icon,
+                        c.reset(),
+                        c.dim(),
+                        reason
+                    );
+                    if !tokens_str.is_empty() {
+                        out.push_str(&format!(", {}", tokens_str));
                     }
-                });
-
-                let is_success = reason == "tool-calls" || reason == "end_turn";
-                let icon = if is_success { CHECK } else { CROSS };
-                let color = if is_success { c.green() } else { c.yellow() };
-
-                let mut out = format!(
-                    "{}[{}]{} {}{} Step finished{} {}({}",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    color,
-                    icon,
-                    c.reset(),
-                    c.dim(),
-                    reason
-                );
-                use std::fmt::Write;
-                if !tokens_str.is_empty() {
-                    let _ = write!(out, ", {tokens_str}");
+                    if cost > 0.0 {
+                        out.push_str(&format!(", ${cost:.4}"));
+                    }
+                    out.push_str(&format!("){}\n", c.reset()));
+                    out
+                } else {
+                    String::new()
                 }
-                if cost > 0.0 {
-                    let _ = write!(out, ", ${cost:.4}");
-                }
-                let _ = writeln!(out, "){}", c.reset());
-                out
-            }),
+            }
             "tool_use" => {
                 event.part.as_ref().map_or_else(String::new, |part| {
                     let tool_name = part.tool.as_deref().unwrap_or("unknown");
@@ -323,12 +365,28 @@ impl OpenCodeParser {
                         // Accumulate streaming text
                         let mut acc = self.delta_accumulator.borrow_mut();
                         acc.add_delta(ContentType::Text, "main", text);
+                        // Get accumulated text for streaming display
+                        let accumulated_text = acc.get(ContentType::Text, "main").unwrap_or("");
+
+                        // Check if we're already streaming text content
+                        let in_text = self.in_text_content.borrow();
+                        let was_in_text = in_text.get();
+                        drop(in_text);
 
                         // Show delta in real-time (both verbose and normal mode)
                         let limit = self.verbosity.truncate_limit("text");
-                        let preview = truncate_text(text, limit);
+                        let preview = truncate_text(accumulated_text, limit);
+
+                        // Only show prefix on the first text chunk
+                        if was_in_text {
+                            // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                            self.in_text_content.borrow_mut().set(true);
+                            return Some(format!("{}\r{}", c.white(), preview));
+                        }
+                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
+                        self.in_text_content.borrow_mut().set(true);
                         return Some(format!(
-                            "{}[{}]{} {}{}{}\n",
+                            "{}[{}]{} {}{}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
@@ -431,7 +489,8 @@ impl OpenCodeParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{output}")?;
+                    write!(writer, "{}", output)?;
+                    writer.flush()?;
                 }
                 None => {
                     // Check if this was a control event (state management with no user output)

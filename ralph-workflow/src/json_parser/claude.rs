@@ -1,6 +1,28 @@
 //! Claude CLI JSON parser.
 //!
 //! Parses NDJSON output from Claude CLI and formats it for display.
+//!
+//! # Streaming Output Behavior
+//!
+//! This parser implements real-time streaming output for text deltas. When content
+//! arrives in multiple chunks (via `content_block_delta` events), the parser:
+//!
+//! 1. **Accumulates** text deltas from each chunk into a buffer
+//! 2. **Displays** the accumulated text after each chunk
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix only once** at the start of streaming, avoiding duplicate
+//!    prefixes on each line
+//!
+//! Example output sequence for streaming "Hello World" in two chunks:
+//! ```text
+//! [Claude] Hello\r          (first chunk with prefix, no newline)
+//! Hello World\r              (second chunk overwrites with accumulated text)
+//! Hello World\n              (message_stop adds final newline)
+//! ```
+//!
+//! This pattern is consistent across all parsers (Claude, Codex, Gemini, OpenCode)
+//! with variations in when the prefix is shown based on each format's event structure.
 
 #![expect(clippy::too_many_lines)]
 #![expect(clippy::items_after_statements)]
@@ -8,7 +30,7 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -27,6 +49,8 @@ pub struct ClaudeParser {
     display_name: String,
     /// Delta accumulator for streaming content
     delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Track if we're currently streaming a content block
+    in_content_block: Rc<RefCell<Cell<bool>>>,
 }
 
 impl ClaudeParser {
@@ -37,6 +61,7 @@ impl ClaudeParser {
             log_file: None,
             display_name: "Claude".to_string(),
             delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            in_content_block: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -325,6 +350,7 @@ impl ClaudeParser {
         let c = &self.colors;
         let prefix = &self.display_name;
         let mut acc = self.delta_accumulator.borrow_mut();
+        let in_block = self.in_content_block.borrow();
 
         match event {
             StreamInnerEvent::MessageStart { .. } => {
@@ -356,6 +382,9 @@ impl ClaudeParser {
                     }
                     _ => {}
                 }
+                // Reset streaming state for new content block
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart {
@@ -365,6 +394,9 @@ impl ClaudeParser {
                 // Content block started but no initial content provided
                 // Just clear the index for future deltas
                 acc.clear_index(index);
+                // Reset streaming state
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart { .. } => {
@@ -378,19 +410,32 @@ impl ClaudeParser {
                 ContentBlockDelta::TextDelta { text: Some(text) } => {
                     // Accumulate the text delta for completion events
                     acc.add_text_delta(index, &text);
-                    // Show the delta (real-time streaming) - both verbose and normal mode
+                    // Get accumulated text for streaming display
+                    let accumulated_text =
+                        acc.get(ContentType::Text, &index.to_string()).unwrap_or("");
                     // Replace embedded newlines with spaces to prevent artificial line breaks
-                    // in streaming output (each line would get a new prefix, causing duplicates)
-                    let sanitized_text = text.replace('\n', " ");
-                    format!(
-                        "{}[{}]{} {}{}{}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.white(),
-                        sanitized_text,
-                        c.reset()
-                    )
+                    let sanitized_text = accumulated_text.replace('\n', " ");
+                    let was_in_block = in_block.get();
+                    drop(in_block);
+
+                    // Only show prefix on the first chunk of a content block
+                    if was_in_block {
+                        // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                        self.in_content_block.borrow_mut().set(true);
+                        format!("{}\r{}", c.white(), sanitized_text)
+                    } else {
+                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
+                        self.in_content_block.borrow_mut().set(true);
+                        format!(
+                            "{}[{}]{} {}{}{}",
+                            c.dim(),
+                            prefix,
+                            c.reset(),
+                            c.white(),
+                            sanitized_text,
+                            c.reset()
+                        )
+                    }
                 }
                 ContentBlockDelta::ThinkingDelta {
                     thinking: Some(text),
@@ -430,23 +475,45 @@ impl ClaudeParser {
             StreamInnerEvent::ContentBlockDelta { .. } | StreamInnerEvent::Ping => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Standalone text delta (not part of content block)
-                // Display incrementally for real-time feedback
-                // Replace embedded newlines with spaces to prevent artificial line breaks
-                let sanitized_text = text.replace('\n', " ");
-                format!(
-                    "{}[{}]{} {}{}{}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    c.white(),
-                    sanitized_text,
-                    c.reset()
-                )
+                // Use default index "0" for standalone text
+                let default_index = 0u64;
+                acc.add_text_delta(default_index, &text);
+                let accumulated_text = acc
+                    .get(ContentType::Text, &default_index.to_string())
+                    .unwrap_or("");
+                let sanitized_text = accumulated_text.replace('\n', " ");
+                let was_in_block = in_block.get();
+                drop(in_block);
+
+                if was_in_block {
+                    // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                    self.in_content_block.borrow_mut().set(true);
+                    format!("{}\r{}", c.white(), sanitized_text)
+                } else {
+                    // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
+                    self.in_content_block.borrow_mut().set(true);
+                    format!(
+                        "{}[{}]{} {}{}{}",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.white(),
+                        sanitized_text,
+                        c.reset()
+                    )
+                }
             }
             StreamInnerEvent::MessageStop => {
-                // Message complete - clear the accumulator
+                // Message complete - add final newline if we were in a content block
+                let was_in_block = in_block.get();
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
                 acc.clear();
-                String::new()
+                if was_in_block {
+                    format!("{}\n", c.reset())
+                } else {
+                    String::new()
+                }
             }
             StreamInnerEvent::Error {
                 error: Some(err), ..
@@ -577,7 +644,8 @@ impl ClaudeParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{output}")?;
+                    write!(writer, "{}", output)?;
+                    writer.flush()?;
                 }
                 None => {
                     // Check if this was a control event (state management with no user output)

@@ -47,14 +47,23 @@ Do **not** replace it with other blanket `allow(...)` attributes unless explicit
 
 ## Required verification (before considering work complete)
 
+Ensure you run git rebase on the main branch if working on a feature branch and resolve any merge conflicts AND:
+
 You **must** run the following commands and ensure they succeed.
 
 ```bash
 # THIS MUST PRODUCE NO OUTPUT
-grep -RIn --include='*.rs' --exclude-dir target --exclude-dir .git \
-  '^[[:space:]]*#\[[[:space:]]*allow[[:space:]]*(\([^)]*\))[[:space:]]*\]' .
+rg -n --pcre2 '(?x)
+  \#\s*!?\[\s*
+  (allow|expect)
+  \s*\(
+    [^()\]]*
+    (?:\([^()\]]*\)[^()\]]*)*
+  \)
+  \s*\]
+' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+# DO NOT CONTINUE IF THE ABOVE COMMAND PRODUCE ANYTHING AND FIX THE ISSUE
 
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
-
