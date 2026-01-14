@@ -13,7 +13,9 @@ use crate::git_helpers::{
     generate_commit_message_with_llm, get_repo_root, git_add_all, git_commit, git_diff,
     git_snapshot, require_git_repo,
 };
-use crate::utils::{delete_commit_message_file, read_commit_message_file, write_commit_message_file, Logger};
+use crate::utils::{
+    delete_commit_message_file, read_commit_message_file, write_commit_message_file, Logger,
+};
 use std::env;
 
 /// Handles the `--show-commit-msg` command.

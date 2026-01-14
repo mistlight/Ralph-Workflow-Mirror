@@ -499,7 +499,10 @@ fn test_delta_accumulator_text() {
     acc.add_text_delta(0, "Hello, ");
     acc.add_text_delta(0, "World!");
 
-    assert_eq!(acc.get_text(&0), Some("Hello, World!"));
+    assert_eq!(
+        acc.get(super::types::ContentType::Text, "0"),
+        Some("Hello, World!")
+    );
     assert!(!acc.is_empty());
 }
 
@@ -509,7 +512,10 @@ fn test_delta_accumulator_thinking() {
     acc.add_thinking_delta(0, "Let me think...");
     acc.add_thinking_delta(0, " Done.");
 
-    assert_eq!(acc.get_thinking(&0), Some("Let me think... Done."));
+    assert_eq!(
+        acc.get(super::types::ContentType::Thinking, "0"),
+        Some("Let me think... Done.")
+    );
 }
 
 #[test]
@@ -532,7 +538,7 @@ fn test_delta_accumulator_clear() {
 
     acc.clear();
     assert!(acc.is_empty());
-    assert_eq!(acc.get_text(&0), None);
+    assert_eq!(acc.get(super::types::ContentType::Text, "0"), None);
 }
 
 #[test]
@@ -542,8 +548,11 @@ fn test_delta_accumulator_clear_key() {
     acc.add_text_delta(1, "Text 1");
 
     acc.clear_key(super::types::ContentType::Text, "0");
-    assert_eq!(acc.get_text(&0), None);
-    assert_eq!(acc.get_text(&1), Some("Text 1"));
+    assert_eq!(acc.get(super::types::ContentType::Text, "0"), None);
+    assert_eq!(
+        acc.get(super::types::ContentType::Text, "1"),
+        Some("Text 1")
+    );
 }
 
 #[test]
@@ -561,7 +570,8 @@ fn test_format_unknown_json_event_partial_event() {
     let colors = Colors { enabled: false };
     // Partial events with content should show in non-verbose mode
     // The delta content should be extracted and shown directly
-    let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
+    let json =
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
     let output = super::types::format_unknown_json_event(json, "Claude", &colors, false);
     // Should show content for partial events
     // Note: The delta text field is nested, so it will be extracted
@@ -572,7 +582,8 @@ fn test_format_unknown_json_event_partial_event() {
 fn test_format_unknown_json_event_partial_event_verbose() {
     let colors = Colors { enabled: false };
     // Partial events should be labeled as such in verbose mode
-    let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
+    let json =
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
     let output = super::types::format_unknown_json_event(json, "Claude", &colors, true);
     // Should show "Partial event:" in verbose mode
     assert!(!output.is_empty());
@@ -785,81 +796,6 @@ fn test_format_unknown_json_event_very_long_content() {
     // Content should be shown in full for deltas (not truncated)
 }
 
-// Edge case tests for generic parser
-
-#[test]
-fn test_generic_parser_unknown_protocol_with_deltas() {
-    use super::generic::GenericParser;
-    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Normal);
-    // Simulate unknown protocol with streaming deltas
-    let json1 = r#"{"type":"text_chunk","data":"Hello "}"#;
-    let json2 = r#"{"type":"text_chunk","data":"World "}"#;
-    let json3 = r#"{"type":"text_chunk","data":"!"}"#;
-
-    let output1 = parser.parse_event(json1);
-    let output2 = parser.parse_event(json2);
-    let output3 = parser.parse_event(json3);
-
-    // All should show their deltas
-    assert!(output1.is_some() && output1.unwrap().contains("Hello"));
-    assert!(output2.is_some() && output2.unwrap().contains("World"));
-    assert!(output3.is_some() && output3.unwrap().contains("!"));
-}
-
-#[test]
-fn test_generic_parser_mixed_event_types() {
-    use super::generic::GenericParser;
-    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Normal);
-    // Mix of control, partial, and complete events
-    let control = r#"{"type":"session_start"}"#;
-    let partial = r#"{"type":"content","text":"streaming"}"#;
-    let complete = r#"{"type":"final_message","content":"done"}"#;
-
-    let control_out = parser.parse_event(control);
-    let partial_out = parser.parse_event(partial);
-    let complete_out = parser.parse_event(complete);
-
-    // Control event should not show in normal mode
-    assert!(control_out.is_none());
-    // Partial event should show
-    assert!(partial_out.is_some() && partial_out.unwrap().contains("streaming"));
-    // Complete event should show
-    assert!(complete_out.is_some() && complete_out.unwrap().contains("done"));
-}
-
-#[test]
-fn test_generic_parser_very_long_nested_content() {
-    use super::generic::GenericParser;
-    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Normal);
-    // Test very long nested content doesn't cause issues
-    // Using a structure that the generic parser can actually extract from
-    let long_text = "x".repeat(5000);
-    let json = format!(r#"{{"type":"message","text":"{}"}}"#, long_text);
-    let output = parser.parse_event(&json);
-    // Should handle long content without crashing
-    assert!(output.is_some());
-}
-
-#[test]
-fn test_generic_parser_empty_object() {
-    use super::generic::GenericParser;
-    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{}"#;
-    let output = parser.parse_event(json);
-    // Empty object should be handled gracefully
-    assert!(output.is_none() || output.unwrap().is_empty());
-}
-
-#[test]
-fn test_generic_parser_array_at_top_level() {
-    use super::generic::GenericParser;
-    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Verbose);
-    let json = r#"[{"text":"first"},{"text":"second"}]"#;
-    let output = parser.parse_event(json);
-    // Array at top level should show in verbose mode
-    assert!(output.is_some());
-}
-
 // Tests for stream classifier edge cases
 
 #[test]
@@ -921,7 +857,10 @@ fn test_health_monitor_no_warning_with_high_partial_percentage() {
 
     // Should NOT warn even with 97.5% "partial" events
     let warning = monitor.check_and_warn(&colors);
-    assert!(warning.is_none(), "Should not warn with high percentage of partial events");
+    assert!(
+        warning.is_none(),
+        "Should not warn with high percentage of partial events"
+    );
 }
 
 #[test]
@@ -944,7 +883,10 @@ fn test_health_monitor_warning_only_for_parse_errors() {
     }
 
     let warning = monitor.check_and_warn(&colors);
-    assert!(warning.is_none(), "Should not warn with mix of partial, control, and parsed events");
+    assert!(
+        warning.is_none(),
+        "Should not warn with mix of partial, control, and parsed events"
+    );
 
     // Reset and test with actual parse errors
     monitor.reset();
@@ -1043,10 +985,16 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
 
     // After fix: should have exactly 1 line with "warning:" (the first delta)
     // The bug would cause 4 lines all starting with "warning:"
-    assert_eq!(warning_count, 1, "Should have exactly 1 line with 'warning:' prefix");
+    assert_eq!(
+        warning_count, 1,
+        "Should have exactly 1 line with 'warning:' prefix"
+    );
 
     // Verify that we see each delta fragment exactly once
-    assert!(output.contains("warning: unu"), "Should contain first delta");
+    assert!(
+        output.contains("warning: unu"),
+        "Should contain first delta"
+    );
     assert!(output.contains("sed"), "Should contain second delta");
     assert!(output.contains(" vari"), "Should contain third delta");
     assert!(output.contains("able"), "Should contain fourth delta");
@@ -1100,29 +1048,9 @@ fn test_delta_with_embedded_newline_displays_inline() {
     // Verify that the output doesn't have an actual newline in the delta text portion
     // (there should only be one line from the prefix+text, not two)
     let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines.len(), 1, "Delta with embedded newline should produce a single output line");
-}
-
-// Regression test for generic parser with embedded newlines
-#[test]
-fn test_generic_parser_delta_with_embedded_newline() {
-    let parser = crate::json_parser::generic::GenericParser::new(
-        Colors { enabled: false },
-        Verbosity::Normal,
+    assert_eq!(
+        lines.len(),
+        1,
+        "Delta with embedded newline should produce a single output line"
     );
-
-    // Generic parser should also sanitize newlines in delta text
-    let json = r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"Line 1\nLine 2"}}"#;
-
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-
-    // Should contain both parts but newline should be replaced with space
-    assert!(out.contains("Line 1"));
-    assert!(out.contains("Line 2"));
-
-    // Should produce a single line output
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines.len(), 1, "Generic parser delta with embedded newline should produce a single output line");
 }

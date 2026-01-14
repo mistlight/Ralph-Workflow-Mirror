@@ -311,7 +311,10 @@ mod tests {
             // No PROMPT.md, no backup
             let result = restore_prompt_if_needed();
             assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("no valid backup available"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("no valid backup available"));
         });
     }
 
@@ -358,7 +361,10 @@ mod tests {
             let result = restore_prompt_if_needed();
             assert!(result.is_err());
             // Error should mention no valid backup (since empty backup is skipped)
-            assert!(result.unwrap_err().to_string().contains("no valid backup available"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("no valid backup available"));
         });
     }
 

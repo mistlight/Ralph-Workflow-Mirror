@@ -331,10 +331,7 @@ fn extract_gemini_result(content: &str) -> Option<String> {
         }
 
         if let Ok(json) = serde_json::from_str::<JsonValue>(line) {
-            let is_assistant_message = json
-                .get("type")
-                .and_then(|v| v.as_str())
-                == Some("message")
+            let is_assistant_message = json.get("type").and_then(|v| v.as_str()) == Some("message")
                 && json.get("role").and_then(|v| v.as_str()) == Some("assistant");
 
             if is_assistant_message {
@@ -578,12 +575,12 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
     let first_line_lower = first_line.to_lowercase();
 
     // Check both "chore: update <path>" and "chore: <path>" patterns
-    if first_line_lower.starts_with("chore: update ") ||
-       first_line_lower.starts_with("chore:") {
+    if first_line_lower.starts_with("chore: update ") || first_line_lower.starts_with("chore:") {
         let subject = first_line_lower
             .replacen("chore: update ", "", 1)
             .replacen("chore:", "", 1)
-            .trim().to_string();
+            .trim()
+            .to_string();
 
         // Check if subject looks like a file path or list of file paths
         // File paths contain '/' or end with common extensions
@@ -593,7 +590,10 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         // 3. Multiple files with "and": "src/a.rs and src/b.rs"
 
         // Common code file extensions
-        let code_extensions = [".rs", ".js", ".ts", ".py", ".go", ".java", ".c", ".cpp", ".h", ".cs", ".php", ".rb", ".swift", ".kt"];
+        let code_extensions = [
+            ".rs", ".js", ".ts", ".py", ".go", ".java", ".c", ".cpp", ".h", ".cs", ".php", ".rb",
+            ".swift", ".kt",
+        ];
 
         // Check if subject looks like a file path or list of file paths
         let looks_like_file_list = subject.contains('/') ||
@@ -601,12 +601,12 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
             code_extensions.iter().any(|ext| subject.ends_with(ext));
 
         // Additional check: if there are commas and file extensions, it's definitely a file list
-        let has_comma_separated_files = subject.contains(", ") &&
-            code_extensions.iter().any(|ext| subject.contains(ext));
+        let has_comma_separated_files =
+            subject.contains(", ") && code_extensions.iter().any(|ext| subject.contains(ext));
 
         // Check for "and" separated files
-        let has_and_separated_files = subject.contains(" and ") &&
-            code_extensions.iter().any(|ext| subject.contains(ext));
+        let has_and_separated_files =
+            subject.contains(" and ") && code_extensions.iter().any(|ext| subject.contains(ext));
 
         if looks_like_file_list || has_comma_separated_files || has_and_separated_files {
             return Err(format!(
@@ -1020,13 +1020,15 @@ Done."#;
 
     #[test]
     fn test_validate_rejects_single_file_path_pattern() {
-        let err = validate_commit_message("chore: update src/files/result_extraction.rs").unwrap_err();
+        let err =
+            validate_commit_message("chore: update src/files/result_extraction.rs").unwrap_err();
         assert!(err.contains("file list"));
     }
 
     #[test]
     fn test_validate_rejects_multiple_file_paths_pattern() {
-        let err = validate_commit_message("chore: update src/a.rs, src/b.rs, src/c.rs").unwrap_err();
+        let err =
+            validate_commit_message("chore: update src/a.rs, src/b.rs, src/c.rs").unwrap_err();
         assert!(err.contains("file list"));
     }
 
@@ -1047,7 +1049,8 @@ Done."#;
     #[test]
     fn test_validate_rejects_multiple_file_paths_mixed() {
         // Test with mixed file types
-        let err = validate_commit_message("chore: update src/lib.rs, tests/test.rs, README.md").unwrap_err();
+        let err = validate_commit_message("chore: update src/lib.rs, tests/test.rs, README.md")
+            .unwrap_err();
         assert!(err.contains("file list"));
     }
 

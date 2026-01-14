@@ -11,8 +11,8 @@ use crate::config::ReviewDepth;
 use crate::files::{extract_issues, restore_prompt_if_needed};
 use crate::git_helpers::{get_git_diff_from_start, git_snapshot, CommitResultFallback};
 use crate::guidelines::ReviewGuidelines;
-use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::phases::commit::commit_with_generated_message;
+use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines, prompt_for_agent,
     prompt_incremental_review_with_diff, prompt_security_focused_review, prompt_universal_review,
@@ -52,7 +52,10 @@ fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, cycle: u
             logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
         }
         Err(e) => {
-            logger.error(&format!("[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}", e));
+            logger.error(&format!(
+                "[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}",
+                e
+            ));
             logger.error(&format!(
                 "[PROMPT_INTEGRITY] Error occurred during {} phase (cycle {})",
                 phase, cycle
@@ -432,19 +435,24 @@ pub fn run_review_phase(
             // any modifications to the working directory since the last snapshot.
             let snap = git_snapshot()?;
             if snap != prev_snap {
-                ctx.logger.success("Repository modified (external changes detected)");
+                ctx.logger
+                    .success("Repository modified (external changes detected)");
                 ctx.stats.changes_detected += 1;
 
                 // Get the primary commit agent
                 let commit_agent = get_primary_commit_agent(ctx);
                 if let Some(agent) = commit_agent {
-                    ctx.logger.info(&format!("Creating commit with auto-generated message (agent: {})...", agent));
+                    ctx.logger.info(&format!(
+                        "Creating commit with auto-generated message (agent: {})...",
+                        agent
+                    ));
 
                     // Get the diff for commit message generation
                     let diff = match crate::git_helpers::git_diff() {
                         Ok(d) => d,
                         Err(e) => {
-                            ctx.logger.error(&format!("Failed to get diff for commit: {}", e));
+                            ctx.logger
+                                .error(&format!("Failed to get diff for commit: {}", e));
                             return Err(anyhow::anyhow!(e));
                         }
                     };
@@ -465,7 +473,8 @@ pub fn run_review_phase(
                         ctx.timer,
                     ) {
                         CommitResultFallback::Success(oid) => {
-                            ctx.logger.success(&format!("Commit created successfully: {}", oid));
+                            ctx.logger
+                                .success(&format!("Commit created successfully: {}", oid));
                             ctx.stats.commits_created += 1;
                         }
                         CommitResultFallback::NoChanges => {
@@ -478,8 +487,7 @@ pub fn run_review_phase(
                         }
                     }
                 } else {
-                    ctx.logger
-                        .warn("Unable to get commit agent for commit");
+                    ctx.logger.warn("Unable to get commit agent for commit");
                 }
             }
             prev_snap = snap;
@@ -536,7 +544,8 @@ pub fn run_review_phase(
             fs::write(issues_path, content)?;
 
             if extraction.is_valid {
-                ctx.logger.success("Issues extracted from agent output (JSON)");
+                ctx.logger
+                    .success("Issues extracted from agent output (JSON)");
             } else {
                 ctx.logger.warn(&format!(
                     "Issues written but validation failed: {}",
@@ -557,7 +566,8 @@ pub fn run_review_phase(
                 .unwrap_or(false);
 
             if agent_wrote_file {
-                ctx.logger.info("Using agent-written ISSUES.md (legacy mode)");
+                ctx.logger
+                    .info("Using agent-written ISSUES.md (legacy mode)");
             } else {
                 // No content from extraction or agent - write "no issues" marker
                 // This is not an error for review (unlike planning) since having no issues is valid
@@ -683,13 +693,17 @@ pub fn run_review_phase(
             // Get the primary commit agent
             let commit_agent = get_primary_commit_agent(ctx);
             if let Some(agent) = commit_agent {
-                ctx.logger.info(&format!("Creating commit with auto-generated message (agent: {})...", agent));
+                ctx.logger.info(&format!(
+                    "Creating commit with auto-generated message (agent: {})...",
+                    agent
+                ));
 
                 // Get the diff for commit message generation
                 let diff = match crate::git_helpers::git_diff() {
                     Ok(d) => d,
                     Err(e) => {
-                        ctx.logger.error(&format!("Failed to get diff for commit: {}", e));
+                        ctx.logger
+                            .error(&format!("Failed to get diff for commit: {}", e));
                         return Err(anyhow::anyhow!(e));
                     }
                 };
@@ -710,7 +724,8 @@ pub fn run_review_phase(
                     ctx.timer,
                 ) {
                     CommitResultFallback::Success(oid) => {
-                        ctx.logger.success(&format!("Commit created successfully: {}", oid));
+                        ctx.logger
+                            .success(&format!("Commit created successfully: {}", oid));
                         ctx.stats.commits_created += 1;
                     }
                     CommitResultFallback::NoChanges => {
@@ -719,8 +734,10 @@ pub fn run_review_phase(
                     }
                     CommitResultFallback::Failed(err) => {
                         // Actual git operation failed - this is critical
-                        ctx.logger
-                            .error(&format!("Failed to create commit (git operation failed): {}", err));
+                        ctx.logger.error(&format!(
+                            "Failed to create commit (git operation failed): {}",
+                            err
+                        ));
                         // Don't continue - this is a real error that needs attention
                         return Err(anyhow::anyhow!(err));
                     }
@@ -744,7 +761,9 @@ pub fn run_review_phase(
             "This may indicate a git repository issue or that no changes have been made yet.",
         );
         if skipped_cycles == total_cycles {
-            ctx.logger.warn("No review cycles were completed. Consider checking your git repository state.");
+            ctx.logger.warn(
+                "No review cycles were completed. Consider checking your git repository state.",
+            );
         }
     }
 
@@ -838,7 +857,8 @@ fn build_review_prompt(
                     // For reviewer, use truncation for very large diffs (not chunking)
                     // The limit is 1MB which provides substantial context for review
                     // Chunking is only for commit message generation where we need to combine results
-                    let (truncated_diff, was_truncated) = crate::git_helpers::validate_and_truncate_diff(d);
+                    let (truncated_diff, was_truncated) =
+                        crate::git_helpers::validate_and_truncate_diff(d);
                     if was_truncated {
                         ctx.logger.warn(&format!(
                             "Review diff truncated from {} to {} bytes for LLM processing",
@@ -849,13 +869,11 @@ fn build_review_prompt(
                     truncated_diff
                 }
                 Ok(_) => {
-                    ctx.logger
-                        .warn("No diff found from starting commit; review will be skipped for this cycle");
-                    // Return empty prompt to signal no review should be done
-                    return (
-                        "review (incremental - skipped)".to_string(),
-                        String::new(),
+                    ctx.logger.warn(
+                        "No diff found from starting commit; review will be skipped for this cycle",
                     );
+                    // Return empty prompt to signal no review should be done
+                    return ("review (incremental - skipped)".to_string(), String::new());
                 }
                 Err(e) => {
                     // Diff retrieval failed - this is a more serious issue
@@ -868,10 +886,7 @@ fn build_review_prompt(
                         "This may indicate a git repository issue. The review cycle will be skipped.",
                     );
                     // Return empty prompt to signal no review should be done
-                    return (
-                        "review (incremental - error)".to_string(),
-                        String::new(),
-                    );
+                    return ("review (incremental - error)".to_string(), String::new());
                 }
             };
 

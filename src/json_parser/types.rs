@@ -89,9 +89,7 @@ pub(crate) enum ClaudeEvent {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum StreamInnerEvent {
     /// Message start - initialization of a new message stream
-    MessageStart {
-        message: Option<AssistantMessage>,
-    },
+    MessageStart { message: Option<AssistantMessage> },
     /// Content block start - initialization of a new content block (text, tool use, etc.)
     ContentBlockStart {
         index: Option<u64>,
@@ -103,15 +101,11 @@ pub(crate) enum StreamInnerEvent {
         delta: Option<ContentBlockDelta>,
     },
     /// Text delta - incremental text content update
-    TextDelta {
-        text: Option<String>,
-    },
+    TextDelta { text: Option<String> },
     /// Message stop - completion of the message stream
     MessageStop,
     /// Error event during streaming
-    Error {
-        error: Option<StreamError>,
-    },
+    Error { error: Option<StreamError> },
     /// Ping/keepalive event
     Ping,
     #[serde(other)]
@@ -126,17 +120,11 @@ pub(crate) enum StreamInnerEvent {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ContentBlockDelta {
     /// Delta for text content blocks
-    TextDelta {
-        text: Option<String>,
-    },
+    TextDelta { text: Option<String> },
     /// Delta for tool use content blocks (input streaming)
-    ToolUseDelta {
-        tool_use: Option<serde_json::Value>,
-    },
+    ToolUseDelta { tool_use: Option<serde_json::Value> },
     /// Delta for thinking/reasoning content blocks
-    ThinkingDelta {
-        thinking: Option<String>,
-    },
+    ThinkingDelta { thinking: Option<String> },
     #[serde(other)]
     Unknown,
 }
@@ -152,7 +140,6 @@ pub(crate) struct StreamError {
 ///
 /// Distinguishes between different types of content that may be streamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
 pub enum ContentType {
     /// Regular text content
     Text,
@@ -160,8 +147,6 @@ pub enum ContentType {
     Thinking,
     /// Tool input content
     ToolInput,
-    /// Custom content type (for extensibility)
-    Custom(&'static str),
 }
 
 /// Delta accumulator for streaming content
@@ -214,61 +199,11 @@ impl DeltaAccumulator {
         }
     }
 
-    /// Get the accumulated text for a specific index
-    #[allow(dead_code)]
-    pub(crate) fn get_text(&self, index: &u64) -> Option<&str> {
-        self.get(ContentType::Text, &index.to_string())
-    }
-
-    /// Get the accumulated thinking for a specific index
-    #[allow(dead_code)]
-    pub(crate) fn get_thinking(&self, index: &u64) -> Option<&str> {
-        self.get(ContentType::Thinking, &index.to_string())
-    }
-
     /// Get accumulated content for a specific content type and key
     pub(crate) fn get(&self, content_type: ContentType, key: &str) -> Option<&str> {
-        self.buffers.get(&(content_type, key.to_string())).map(|s| s.as_str())
-    }
-
-    /// Get the most recent content of a specific type
-    #[allow(dead_code)]
-    pub(crate) fn get_most_recent_of_type(&self, content_type: ContentType) -> Option<&str> {
-        self.key_order
-            .iter()
-            .rev()
-            .find(|(t, _)| *t == content_type)
-            .and_then(|key| self.buffers.get(key).map(|s| s.as_str()))
-    }
-
-    /// Get the most recent text (highest index or last added)
-    #[allow(dead_code)]
-    pub(crate) fn get_most_recent_text(&self) -> Option<&str> {
-        self.get_most_recent_of_type(ContentType::Text)
-    }
-
-    /// Get the most recent thinking (highest index or last added)
-    #[allow(dead_code)]
-    pub(crate) fn get_most_recent_thinking(&self) -> Option<&str> {
-        self.get_most_recent_of_type(ContentType::Thinking)
-    }
-
-    /// Get all accumulated text entries
-    #[allow(dead_code)]
-    pub(crate) fn get_all_text(&self) -> impl Iterator<Item = (&str, &str)> {
         self.buffers
-            .iter()
-            .filter(|((ct, _), _)| *ct == ContentType::Text)
-            .map(|((_, key), value)| (key.as_str(), value.as_str()))
-    }
-
-    /// Get all accumulated thinking entries
-    #[allow(dead_code)]
-    pub(crate) fn get_all_thinking(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.buffers
-            .iter()
-            .filter(|((ct, _), _)| *ct == ContentType::Thinking)
-            .map(|((_, key), value)| (key.as_str(), value.as_str()))
+            .get(&(content_type, key.to_string()))
+            .map(|s| s.as_str())
     }
 
     /// Clear all accumulated content
@@ -280,7 +215,11 @@ impl DeltaAccumulator {
     /// Clear content for a specific index
     pub(crate) fn clear_index(&mut self, index: u64) {
         let index_str = index.to_string();
-        for content_type in [ContentType::Text, ContentType::Thinking, ContentType::ToolInput] {
+        for content_type in [
+            ContentType::Text,
+            ContentType::Thinking,
+            ContentType::ToolInput,
+        ] {
             let key = (content_type, index_str.clone());
             self.buffers.remove(&key);
             self.key_order.retain(|k| k != &key);
@@ -294,24 +233,9 @@ impl DeltaAccumulator {
         self.key_order.retain(|k| k != &composite_key);
     }
 
-    /// Check if there is any accumulated content
-    #[allow(dead_code)]
+    /// Check if there is any accumulated content (used in tests)
     pub(crate) fn is_empty(&self) -> bool {
         self.buffers.is_empty()
-    }
-
-    /// Check if there is accumulated content of a specific type
-    #[allow(dead_code)]
-    pub(crate) fn has_content_of_type(&self, content_type: ContentType) -> bool {
-        self.buffers
-            .keys()
-            .any(|(ct, _)| *ct == content_type)
-    }
-
-    /// Get the total number of accumulated entries
-    #[allow(dead_code)]
-    pub(crate) fn len(&self) -> usize {
-        self.buffers.len()
     }
 }
 
@@ -628,7 +552,8 @@ pub(crate) fn format_unknown_json_event(
                         .and_then(|d| d.as_object())
                         .and_then(|delta_obj| {
                             // First try delta.text, then delta.content
-                            delta_obj.get("text")
+                            delta_obj
+                                .get("text")
                                 .or_else(|| delta_obj.get("content"))
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
@@ -674,50 +599,46 @@ pub(crate) fn format_unknown_json_event(
             } else if is_explicit_delta {
                 // In non-verbose mode, show explicit partial events (they're user content)
                 // Extract full content (not truncated) for delta events
-                let full_content: Option<String> = if let Some(ref content) = classification.content_field {
-                    // Use classifier's detected content field first
-                    obj.get(content)
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .or_else(|| {
-                            // Content field wasn't a string, try extracting nested text
-                            obj.get(content).and_then(|v| extract_nested_text(v))
-                        })
-                } else {
-                    // Try delta field (common pattern)
-                    obj.get("delta")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .or_else(|| {
-                            // Try nested delta.text or delta.content
-                            obj.get("delta")
-                                .and_then(|d| d.as_object())
-                                .and_then(|o| {
+                let full_content: Option<String> =
+                    if let Some(ref content) = classification.content_field {
+                        // Use classifier's detected content field first
+                        obj.get(content)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .or_else(|| {
+                                // Content field wasn't a string, try extracting nested text
+                                obj.get(content).and_then(|v| extract_nested_text(v))
+                            })
+                    } else {
+                        // Try delta field (common pattern)
+                        obj.get("delta")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .or_else(|| {
+                                // Try nested delta.text or delta.content
+                                obj.get("delta").and_then(|d| d.as_object()).and_then(|o| {
                                     o.get("text")
                                         .or_else(|| o.get("content"))
                                         .and_then(|t| t.as_str())
                                         .map(|s| s.to_string())
                                 })
-                        })
-                        .or_else(|| {
-                            // Try common text fields at top level
-                            for field in ["text", "content", "message"] {
-                                if let Some(val) = obj.get(field) {
-                                    if let Some(text) = val.as_str() {
-                                        return Some(text.to_string());
+                            })
+                            .or_else(|| {
+                                // Try common text fields at top level
+                                for field in ["text", "content", "message"] {
+                                    if let Some(val) = obj.get(field) {
+                                        if let Some(text) = val.as_str() {
+                                            return Some(text.to_string());
+                                        }
                                     }
                                 }
-                            }
-                            None
-                        })
-                };
+                                None
+                            })
+                    };
 
                 if let Some(content) = full_content {
                     if !content.trim().is_empty() {
-                        return format!(
-                            "{}\n",
-                            content
-                        );
+                        return format!("{}\n", content);
                     }
                 }
                 return String::new();

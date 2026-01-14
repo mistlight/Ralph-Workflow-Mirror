@@ -53,7 +53,10 @@ exit 0
         .env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'")
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
@@ -217,7 +220,10 @@ exit 0
         .trim()
         .parse()
         .unwrap();
-    assert_eq!(count, 4, "Expected 4 developer calls (2 iterations × 2 phases)");
+    assert_eq!(
+        count, 4,
+        "Expected 4 developer calls (2 iterations × 2 phases)"
+    );
 }
 
 #[test]
@@ -476,7 +482,10 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     cmd.current_dir(dir.path())
         .arg("--generate-commit-msg")
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com");
 
@@ -576,7 +585,9 @@ exit 0
         let log_content = fs::read_to_string(&prompt_log).unwrap();
         // Agent should NOT receive git commands like "git diff", "git commit", etc.
         assert!(
-            !log_content.contains("git diff") && !log_content.contains("git commit") && !log_content.contains("git status"),
+            !log_content.contains("git diff")
+                && !log_content.contains("git commit")
+                && !log_content.contains("git status"),
             "Agent prompts should not contain git commands. Found: {}",
             log_content
         );
@@ -609,7 +620,10 @@ exit 0
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
         .env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd.assert().success();
@@ -629,7 +643,10 @@ exit 0
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
         .env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd.assert().success();
@@ -727,7 +744,10 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
     cmd.assert().success();
 
@@ -746,7 +766,10 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
     cmd.assert().success();
 

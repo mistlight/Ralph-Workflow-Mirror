@@ -71,7 +71,8 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
         // This will be caught by validation in commit_with_auto_message
         // and trigger fallback commit message generation
         return "ERROR: Empty diff provided. This indicates a bug in the caller - \
-                meaningful changes should be checked before requesting a commit message.".to_string();
+                meaningful changes should be checked before requesting a commit message."
+            .to_string();
     }
 
     format!(
@@ -278,7 +279,9 @@ Analyze the diff above and write a commit message that:
 4. Does NOT use any of the rejected patterns
 
 OUTPUT REQUIREMENT: Respond with ONLY the commit message (no markdown, no explanation)."#,
-        bad_message, validation_error, diff.trim()
+        bad_message,
+        validation_error,
+        diff.trim()
     )
 }
 

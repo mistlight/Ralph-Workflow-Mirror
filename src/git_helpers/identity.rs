@@ -53,7 +53,10 @@ impl GitIdentity {
             return Err(format!("Invalid email format: '{}'", email));
         }
         if parts[0].trim().is_empty() {
-            return Err(format!("Invalid email format: '{}' (missing local part)", email));
+            return Err(format!(
+                "Invalid email format: '{}' (missing local part)",
+                email
+            ));
         }
         if parts[1].trim().is_empty() || !parts[1].contains('.') {
             return Err(format!(
@@ -148,9 +151,6 @@ pub enum IdentitySource {
     Environment,
     /// Identity from Ralph config file.
     RalphConfig,
-    /// Identity from git config.
-    #[allow(dead_code)]
-    GitConfig,
     /// Identity from system username/hostname.
     SystemFallback,
 }
@@ -225,7 +225,10 @@ pub fn resolve_git_identity(
     let identity = GitIdentity::new(username.clone(), email);
     if let Err(e) = identity.validate() {
         // Shouldn't happen with our fallbacks, but handle it
-        return Err(format!("System fallback git identity validation failed: {}", e));
+        return Err(format!(
+            "System fallback git identity validation failed: {}",
+            e
+        ));
     }
     Ok((identity, IdentitySource::SystemFallback))
 }
@@ -308,8 +311,7 @@ mod tests {
     #[test]
     fn test_resolve_git_identity_cli_args() {
         let (identity, source) =
-            resolve_git_identity(Some("CLI User"), Some("cli@example.com"), None, None)
-                .unwrap();
+            resolve_git_identity(Some("CLI User"), Some("cli@example.com"), None, None).unwrap();
         assert_eq!(identity.name, "CLI User");
         assert_eq!(identity.email, "cli@example.com");
         assert_eq!(source, IdentitySource::CliArgs);

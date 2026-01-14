@@ -42,10 +42,6 @@ pub struct ClassificationResult {
     pub type_name: Option<String>,
     /// The primary content field if found
     pub content_field: Option<String>,
-    /// Whether this appears to be a streaming delta
-    /// Reserved for future use - currently set but not consumed by the parser
-    #[allow(dead_code)]
-    pub is_delta: bool,
 }
 
 /// Stream event classifier
@@ -72,17 +68,6 @@ impl StreamEventClassifier {
         }
     }
 
-    /// Create a new classifier with custom content threshold
-    ///
-    /// # Arguments
-    /// * `threshold` - Minimum character count for text to be considered "substantial"
-    #[allow(dead_code)]
-    pub fn with_threshold(threshold: usize) -> Self {
-        Self {
-            substantial_content_threshold: threshold,
-        }
-    }
-
     /// Classify a JSON event
     ///
     /// # Arguments
@@ -99,7 +84,6 @@ impl StreamEventClassifier {
                     event_type: StreamEventType::Complete,
                     type_name: None,
                     content_field: None,
-                    is_delta: false,
                 }
             }
         };
@@ -112,10 +96,7 @@ impl StreamEventClassifier {
             .map(|s| s.to_string());
 
         // Check for explicit delta flag
-        let is_delta = obj
-            .get("delta")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let is_delta = obj.get("delta").and_then(|v| v.as_bool()).unwrap_or(false);
 
         // Check for control event patterns
         if self.is_control_event(&type_name, obj) {
@@ -123,7 +104,6 @@ impl StreamEventClassifier {
                 event_type: StreamEventType::Control,
                 type_name,
                 content_field: None,
-                is_delta,
             };
         }
 
@@ -133,7 +113,6 @@ impl StreamEventClassifier {
                 event_type: StreamEventType::Partial,
                 type_name,
                 content_field: self.find_content_field(obj),
-                is_delta: true,
             };
         }
 
@@ -143,20 +122,37 @@ impl StreamEventClassifier {
             event_type: StreamEventType::Complete,
             type_name,
             content_field: self.find_content_field(obj),
-            is_delta,
         }
     }
 
     /// Check if an event is a control/metadata event
-    fn is_control_event(&self, type_name: &Option<String>, obj: &serde_json::Map<String, Value>) -> bool {
+    fn is_control_event(
+        &self,
+        type_name: &Option<String>,
+        obj: &serde_json::Map<String, Value>,
+    ) -> bool {
         // Check type name for control patterns
         if let Some(name) = type_name {
             let control_patterns = [
-                "start", "started", "init", "initialize",
-                "stop", "stopped", "end", "done", "complete",
-                "error", "fail", "failed", "failure",
-                "ping", "pong", "heartbeat", "keepalive",
-                "metadata", "meta",
+                "start",
+                "started",
+                "init",
+                "initialize",
+                "stop",
+                "stopped",
+                "end",
+                "done",
+                "complete",
+                "error",
+                "fail",
+                "failed",
+                "failure",
+                "ping",
+                "pong",
+                "heartbeat",
+                "keepalive",
+                "metadata",
+                "meta",
             ];
 
             let name_lower = name.to_lowercase();
@@ -174,7 +170,12 @@ impl StreamEventClassifier {
     }
 
     /// Check if an event is a partial/delta event
-    fn is_partial_event(&self, type_name: &Option<String>, obj: &serde_json::Map<String, Value>, explicit_delta: bool) -> bool {
+    fn is_partial_event(
+        &self,
+        type_name: &Option<String>,
+        obj: &serde_json::Map<String, Value>,
+        explicit_delta: bool,
+    ) -> bool {
         // Explicit delta flag
         if explicit_delta {
             return true;
@@ -183,8 +184,13 @@ impl StreamEventClassifier {
         // Check type name for partial patterns
         if let Some(name) = type_name {
             let partial_patterns = [
-                "delta", "partial", "increment", "chunk",
-                "progress", "streaming", "update",
+                "delta",
+                "partial",
+                "increment",
+                "chunk",
+                "progress",
+                "streaming",
+                "update",
             ];
 
             let name_lower = name.to_lowercase();
@@ -214,10 +220,15 @@ impl StreamEventClassifier {
 
         // Check for small content fragments that might be partial
         // Only apply this heuristic if there's no explicit delta flag or type name
-        if !explicit_delta && (type_name.is_none() || !type_name.as_ref().map_or(false, |n| {
-            let n_lower = n.to_lowercase();
-            n_lower.contains("delta") || n_lower.contains("partial") || n_lower.contains("chunk")
-        })) {
+        if !explicit_delta
+            && (type_name.is_none()
+                || !type_name.as_ref().map_or(false, |n| {
+                    let n_lower = n.to_lowercase();
+                    n_lower.contains("delta")
+                        || n_lower.contains("partial")
+                        || n_lower.contains("chunk")
+                }))
+        {
             if let Some(content) = self.find_content_field(obj) {
                 if let Some(text) = obj.get(&content).and_then(|v| v.as_str()) {
                     // Short text fragments are likely partial, BUT check for complete patterns
@@ -228,11 +239,27 @@ impl StreamEventClassifier {
                         // Check for complete message indicators:
                         // 1. Common response words that are complete on their own
                         let complete_responses = [
-                            "ok", "okay", "yes", "no", "true", "false",
-                            "done", "finished", "complete", "success", "failed",
-                            "error", "warning", "info", "debug",
-                            "pending", "processing", "running",
-                            "none", "null", "empty",
+                            "ok",
+                            "okay",
+                            "yes",
+                            "no",
+                            "true",
+                            "false",
+                            "done",
+                            "finished",
+                            "complete",
+                            "success",
+                            "failed",
+                            "error",
+                            "warning",
+                            "info",
+                            "debug",
+                            "pending",
+                            "processing",
+                            "running",
+                            "none",
+                            "null",
+                            "empty",
                         ];
                         let is_complete_response = complete_responses
                             .iter()
@@ -253,7 +280,11 @@ impl StreamEventClassifier {
                             || text_lower.starts_with("warning");
 
                         // If any complete indicator is present, it's NOT partial
-                        if is_complete_response || ends_with_terminal || has_newline || is_error_message {
+                        if is_complete_response
+                            || ends_with_terminal
+                            || has_newline
+                            || is_error_message
+                        {
                             return false;
                         }
 
@@ -271,9 +302,17 @@ impl StreamEventClassifier {
     fn find_content_field(&self, obj: &serde_json::Map<String, Value>) -> Option<String> {
         // Common content field names in priority order
         let content_fields = [
-            "content", "text", "message", "data",
-            "output", "result", "response", "body",
-            "thinking", "reasoning", "delta",
+            "content",
+            "text",
+            "message",
+            "data",
+            "output",
+            "result",
+            "response",
+            "body",
+            "thinking",
+            "reasoning",
+            "delta",
         ];
 
         for field in content_fields {
@@ -291,38 +330,6 @@ impl StreamEventClassifier {
     /// Check if an object has any content field
     fn has_content_field(&self, obj: &serde_json::Map<String, Value>) -> bool {
         self.find_content_field(obj).is_some()
-    }
-
-    /// Extract text content from a partial event
-    ///
-    /// # Arguments
-    /// * `obj` - The JSON object to extract content from
-    ///
-    /// # Returns
-    /// The extracted text content, or None if no content found
-    #[allow(dead_code)]
-    pub fn extract_content(&self, obj: &serde_json::Map<String, Value>) -> Option<String> {
-        if let Some(field) = self.find_content_field(obj) {
-            obj.get(&field)
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        } else {
-            None
-        }
-    }
-
-    /// Extract text content from a JSON value
-    ///
-    /// # Arguments
-    /// * `value` - The JSON value to extract content from
-    ///
-    /// # Returns
-    /// The extracted text content, or None if no content found
-    #[allow(dead_code)]
-    pub fn extract_content_from_value(&self, value: &Value) -> Option<String> {
-        value
-            .as_object()
-            .and_then(|obj| self.extract_content(obj))
     }
 }
 
@@ -342,7 +349,6 @@ mod tests {
 
         let result = classifier.classify(&event);
         assert_eq!(result.event_type, StreamEventType::Partial);
-        assert_eq!(result.is_delta, true);
     }
 
     #[test]
@@ -367,7 +373,6 @@ mod tests {
 
         let result = classifier.classify(&event);
         assert_eq!(result.event_type, StreamEventType::Complete);
-        assert_eq!(result.is_delta, false);
     }
 
     #[test]
@@ -381,7 +386,6 @@ mod tests {
 
         let result = classifier.classify(&event);
         assert_eq!(result.event_type, StreamEventType::Partial);
-        assert_eq!(result.is_delta, true);
     }
 
     #[test]
@@ -394,19 +398,6 @@ mod tests {
 
         let result = classifier.classify(&event);
         assert_eq!(result.event_type, StreamEventType::Control);
-    }
-
-    #[test]
-    fn test_extract_content() {
-        let classifier = StreamEventClassifier::new();
-        let event = json!({
-            "type": "message",
-            "content": "Hello, world!"
-        });
-
-        let obj = event.as_object().unwrap();
-        let content = classifier.extract_content(obj);
-        assert_eq!(content, Some("Hello, world!".to_string()));
     }
 
     #[test]

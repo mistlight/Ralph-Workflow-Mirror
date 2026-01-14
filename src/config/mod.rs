@@ -41,26 +41,6 @@ pub(crate) use unified::{
     UnifiedConfig,
 };
 
-impl Config {
-    /// Load configuration from the unified config file with environment overrides.
-    ///
-    /// This loads configuration from `~/.config/ralph-workflow.toml` (if it exists),
-    /// then applies environment variable overrides. Any deprecation warnings from
-    /// legacy config files are silently ignored (use `loader::load_config()` if
-    /// you need warnings).
-    ///
-    /// # Configuration Priority
-    ///
-    /// 1. `~/.config/ralph-workflow.toml` (base configuration)
-    /// 2. Environment variables (RALPH_*) as overrides
-    /// 3. CLI arguments (applied separately after this call)
-    #[allow(dead_code)] // Used in tests and kept for backwards compatibility
-    pub(crate) fn from_env() -> Self {
-        let (config, _unified, _warnings) = loader::load_config();
-        config
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,7 +190,7 @@ mod tests {
         env::remove_var("RALPH_DEVELOPER_AGENT");
         env::remove_var("RALPH_DRIVER_AGENT");
 
-        let config = Config::from_env().with_commit_msg("custom message".to_string());
+        let config = Config::default().with_commit_msg("custom message".to_string());
         assert_eq!(config.commit_msg, "custom message");
     }
 }
