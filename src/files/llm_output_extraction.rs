@@ -18,6 +18,7 @@
 //! 3. **Auto-detection**: Can detect format from content if not specified
 //! 4. **Validation**: Optional validation for extracted content
 
+use regex::Regex;
 use serde_json::Value as JsonValue;
 
 /// Parser types supported by the extraction system.
@@ -543,6 +544,78 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         }
     }
 
+    // Check for bad commit message patterns (vague, meaningless messages)
+    // Use regex to catch ALL variants, not just hardcoded numbers
+
+    // Pattern 1: "chore: N file(s) changed" for ANY number N
+    // Handles: "file(s) changed", "files changed", "file changed" variations
+    let file_count_pattern = Regex::new(r"^chore:\s*\d+\s+(?:file\(s\)|files?)\s+changed$")
+        .expect("file count regex should be valid");
+    if file_count_pattern.is_match(&content_lower) {
+        return Err(format!(
+            "Commit message matches bad pattern (file count pattern): '{}'. Use semantic description instead.",
+            content
+        ));
+    }
+
+    // Pattern 2: Generic vague patterns
+    let vague_patterns = [
+        ("chore: apply changes", "vague 'apply changes' pattern"),
+        ("chore: update code", "vague 'update code' pattern"),
+    ];
+    for (pattern, description) in vague_patterns {
+        if content_lower == pattern {
+            return Err(format!(
+                "Commit message matches bad pattern ({}): {}",
+                description, pattern
+            ));
+        }
+    }
+
+    // Check for filename list patterns like "chore: update src/file.rs" or "chore: src/file.rs, src/other.rs"
+    // These are bad because they just list filenames without semantic meaning
+    let first_line = content.lines().next().unwrap_or(content);
+    let first_line_lower = first_line.to_lowercase();
+
+    // Check both "chore: update <path>" and "chore: <path>" patterns
+    if first_line_lower.starts_with("chore: update ") ||
+       first_line_lower.starts_with("chore:") {
+        let subject = first_line_lower
+            .replacen("chore: update ", "", 1)
+            .replacen("chore:", "", 1)
+            .trim().to_string();
+
+        // Check if subject looks like a file path or list of file paths
+        // File paths contain '/' or end with common extensions
+        // We need to check for multiple patterns:
+        // 1. Single file path: "src/file.rs"
+        // 2. Multiple files with commas: "src/a.rs, src/b.rs"
+        // 3. Multiple files with "and": "src/a.rs and src/b.rs"
+
+        // Common code file extensions
+        let code_extensions = [".rs", ".js", ".ts", ".py", ".go", ".java", ".c", ".cpp", ".h", ".cs", ".php", ".rb", ".swift", ".kt"];
+
+        // Check if subject looks like a file path or list of file paths
+        let looks_like_file_list = subject.contains('/') ||
+            subject.contains('\\') ||  // Windows paths
+            code_extensions.iter().any(|ext| subject.ends_with(ext));
+
+        // Additional check: if there are commas and file extensions, it's definitely a file list
+        let has_comma_separated_files = subject.contains(", ") &&
+            code_extensions.iter().any(|ext| subject.contains(ext));
+
+        // Check for "and" separated files
+        let has_and_separated_files = subject.contains(" and ") &&
+            code_extensions.iter().any(|ext| subject.contains(ext));
+
+        if looks_like_file_list || has_comma_separated_files || has_and_separated_files {
+            return Err(format!(
+                "Commit message appears to be a file list: '{}'. Use semantic description instead.",
+                first_line.trim()
+            ));
+        }
+    }
+
     Ok(())
 }
 
@@ -893,6 +966,111 @@ Done."#;
     fn test_validate_rejects_placeholder() {
         let err = validate_commit_message("[commit message] goes here").unwrap_err();
         assert!(err.contains("placeholder"));
+    }
+
+    #[test]
+    fn test_validate_rejects_apply_changes_pattern() {
+        let err = validate_commit_message("chore: apply changes").unwrap_err();
+        assert!(err.contains("bad pattern"));
+        assert!(err.contains("apply changes"));
+    }
+
+    #[test]
+    fn test_validate_rejects_update_code_pattern() {
+        let err = validate_commit_message("chore: update code").unwrap_err();
+        assert!(err.contains("bad pattern"));
+        assert!(err.contains("update code"));
+    }
+
+    #[test]
+    fn test_validate_rejects_file_count_pattern() {
+        let err = validate_commit_message("chore: 6 file(s) changed").unwrap_err();
+        assert!(err.contains("bad pattern"));
+        assert!(err.contains("file count"));
+    }
+
+    #[test]
+    fn test_validate_rejects_file_count_pattern_7_files() {
+        // Regression test for commits with 7+ files that were bypassing validation
+        let err = validate_commit_message("chore: 7 file(s) changed").unwrap_err();
+        assert!(err.contains("file count pattern"));
+    }
+
+    #[test]
+    fn test_validate_rejects_file_count_pattern_8_files() {
+        // Regression test for commits with 8+ files that were bypassing validation
+        let err = validate_commit_message("chore: 8 file(s) changed").unwrap_err();
+        assert!(err.contains("file count pattern"));
+    }
+
+    #[test]
+    fn test_validate_rejects_file_count_pattern_many_files() {
+        // Regression test for commits with many files (e.g., 15, 20, 100)
+        let err = validate_commit_message("chore: 15 file(s) changed").unwrap_err();
+        assert!(err.contains("file count pattern"));
+        assert!(validate_commit_message("chore: 100 files changed").is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_file_count_pattern_with_spaces() {
+        // Test with different spacing variations
+        assert!(validate_commit_message("chore:  7  file(s)  changed").is_err());
+        assert!(validate_commit_message("chore:  8 file(s) changed").is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_single_file_path_pattern() {
+        let err = validate_commit_message("chore: update src/files/result_extraction.rs").unwrap_err();
+        assert!(err.contains("file list"));
+    }
+
+    #[test]
+    fn test_validate_rejects_multiple_file_paths_pattern() {
+        let err = validate_commit_message("chore: update src/a.rs, src/b.rs, src/c.rs").unwrap_err();
+        assert!(err.contains("file list"));
+    }
+
+    #[test]
+    fn test_validate_rejects_multiple_file_paths_js() {
+        // Test with JavaScript files
+        let err = validate_commit_message("chore: update a.js, b.js, c.js").unwrap_err();
+        assert!(err.contains("file list"));
+    }
+
+    #[test]
+    fn test_validate_rejects_multiple_file_paths_py() {
+        // Test with Python files
+        let err = validate_commit_message("chore: update module.py, test.py").unwrap_err();
+        assert!(err.contains("file list"));
+    }
+
+    #[test]
+    fn test_validate_rejects_multiple_file_paths_mixed() {
+        // Test with mixed file types
+        let err = validate_commit_message("chore: update src/lib.rs, tests/test.rs, README.md").unwrap_err();
+        assert!(err.contains("file list"));
+    }
+
+    #[test]
+    fn test_validate_rejects_file_paths_with_and() {
+        // Test with "and" separator
+        let err = validate_commit_message("chore: update src/a.rs and src/b.rs").unwrap_err();
+        assert!(err.contains("file list"));
+    }
+
+    #[test]
+    fn test_validate_accepts_good_chore_message() {
+        // A good chore message should be accepted
+        assert!(validate_commit_message("chore: update dependencies").is_ok());
+        assert!(validate_commit_message("chore: fix formatting").is_ok());
+    }
+
+    #[test]
+    fn test_validate_accepts_semantic_messages() {
+        // Semantic messages should be accepted
+        assert!(validate_commit_message("feat: add new feature").is_ok());
+        assert!(validate_commit_message("fix: prevent null pointer").is_ok());
+        assert!(validate_commit_message("refactor(api): extract validation").is_ok());
     }
 
     // =========================================================================

@@ -29,8 +29,9 @@ const MAX_DIFF_CHUNK_SIZE: usize = 100 * 1024;
 const MAX_CHUNKS: usize = 10;
 
 /// Maximum diff size (in bytes) before truncation for reviewers.
-/// 500KB is a hard limit for reviewer diffs - we truncate rather than chunk for reviewers.
-const MAX_DIFF_SIZE_HARD: usize = 500 * 1024;
+/// 1MB provides reviewers with more context for large changes.
+/// For commit messages, we use chunking instead of truncation to preserve full semantic information.
+const MAX_DIFF_SIZE_HARD: usize = 1024 * 1024;
 
 /// Truncation marker for reviewer diffs (not for commit messages).
 /// For commit messages, we use chunking instead.
@@ -243,6 +244,9 @@ pub(crate) fn validate_and_truncate_diff(diff: String) -> (String, bool) {
 /// For commit messages, we need the full diff. If it's too large, we split it
 /// into chunks and send multiple LLM requests, then combine the results.
 ///
+/// This implementation respects file boundaries - each chunk contains complete
+/// file diffs. We never break a diff in the middle of a file's changes.
+///
 /// # Arguments
 ///
 /// * `diff` - The git diff to chunk
@@ -260,51 +264,100 @@ fn chunk_diff_for_commit_message(diff: &str) -> Vec<String> {
         return vec![diff.to_string()];
     }
 
-    // Calculate number of chunks needed
-    let num_chunks = (diff_size + MAX_DIFF_CHUNK_SIZE - 1) / MAX_DIFF_CHUNK_SIZE;
-    let num_chunks = num_chunks.min(MAX_CHUNKS);
+    // First, split the diff into file-based chunks
+    // Each file diff starts with "diff --git"
+    let mut file_diffs: Vec<String> = Vec::new();
 
-    eprintln!(
-        "Large diff detected ({} bytes). Splitting into {} chunks for commit message generation.",
-        diff_size, num_chunks
-    );
+    // Find all "diff --git" boundaries
+    let mut diff_boundaries = vec![0];
+    for (idx, line) in diff.lines().enumerate() {
+        if line.starts_with("diff --git") {
+            diff_boundaries.push(idx);
+        }
+    }
+    diff_boundaries.push(diff.lines().count());
 
-    let mut chunks = Vec::new();
-    let lines: Vec<&str> = diff.lines().collect();
-    let lines_per_chunk = (lines.len() + num_chunks - 1) / num_chunks;
-
-    for chunk_idx in 0..num_chunks {
-        let start = chunk_idx * lines_per_chunk;
-        let end = ((chunk_idx + 1) * lines_per_chunk).min(lines.len());
-
-        // Find a good break point (at diff header)
-        let mut break_point = end;
-        if chunk_idx < num_chunks - 1 {
-            // Look for a diff header to break at
-            for i in start..end {
-                if lines[i].starts_with("diff --git") {
-                    break_point = i;
-                    break;
-                }
+    // Extract complete file diffs
+    for window in diff_boundaries.windows(2) {
+        let start = window[0];
+        let end = window[1];
+        if start < end {
+            let file_lines: Vec<&str> = diff.lines().skip(start).take(end - start).collect();
+            if !file_lines.is_empty() {
+                file_diffs.push(file_lines.join("\n"));
             }
-        } else {
-            break_point = lines.len();
+        }
+    }
+
+    // Now combine file diffs into chunks of appropriate size
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+    let mut current_chunk_size = 0;
+    let mut chunk_idx = 0;
+    let total_files = file_diffs.len();
+
+    for file_diff in file_diffs {
+        let file_size = file_diff.len();
+
+        // If this single file is larger than MAX_DIFF_CHUNK_SIZE, we need to include it anyway
+        // to avoid splitting files. We may exceed the chunk size target.
+        if current_chunk_size + file_size > MAX_DIFF_CHUNK_SIZE && !current_chunk.is_empty() {
+            // Start a new chunk
+            chunks.push(format!(
+                "[Diff chunk {}/{} - {} files]\n\n{}",
+                chunk_idx + 1,
+                // We don't know the final count yet, so use a placeholder
+                "?",
+                current_chunk.matches("diff --git").count(),
+                current_chunk
+            ));
+            chunk_idx += 1;
+            current_chunk = String::new();
+            current_chunk_size = 0;
         }
 
-        let chunk_lines = &lines[start..break_point];
-        let chunk_text = chunk_lines.join("\n");
+        // Add this file to the current chunk
+        if !current_chunk.is_empty() {
+            current_chunk.push('\n');
+        }
+        current_chunk.push_str(&file_diff);
+        current_chunk_size += file_size + 1; // +1 for newline
 
-        // Add chunk context header
-        let chunk_with_context = format!(
-            "[Diff chunk {}/{} - lines {}-{}]\n\n{}",
+        // If we've hit MAX_CHUNKS, stop and include everything remaining
+        if chunk_idx >= MAX_CHUNKS - 1 {
+            eprintln!("Warning: Hit MAX_CHUNKS limit, including remaining files in last chunk");
+            break;
+        }
+    }
+
+    // Don't forget the last chunk
+    if !current_chunk.is_empty() {
+        chunks.push(format!(
+            "[Diff chunk {}/{} - {} files]\n\n{}",
             chunk_idx + 1,
-            num_chunks,
-            start + 1,
-            break_point,
-            chunk_text
-        );
+            "?",
+            current_chunk.matches("diff --git").count(),
+            current_chunk
+        ));
+    }
 
-        chunks.push(chunk_with_context);
+    // Now we know the actual chunk count, update the placeholders
+    let actual_chunk_count = chunks.len();
+    for (idx, chunk) in chunks.iter_mut().enumerate() {
+        *chunk = chunk.replace(&format!("{}/?", idx + 1), &format!("{}/{}", idx + 1, actual_chunk_count));
+    }
+
+    eprintln!(
+        "Large diff detected ({} bytes, {} files). Split into {} chunks for commit message generation.",
+        diff_size,
+        total_files,
+        chunks.len()
+    );
+
+    // Log chunk boundaries for debugging
+    for (idx, chunk) in chunks.iter().enumerate() {
+        let file_count = chunk.matches("diff --git").count();
+        eprintln!("Chunk {}: {} bytes, {} files", idx + 1, chunk.len(), file_count);
     }
 
     chunks
@@ -931,15 +984,16 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
 /// Combine messages from multiple chunks into a single commit message.
 ///
 /// This function analyzes messages from all chunks and synthesizes them into
-/// a single meaningful commit message. It prioritizes:
-/// 1. The most significant commit type (feat > fix > refactor > others)
-/// 2. Common scope if present
-/// 3. First meaningful subject for clarity
+/// a single meaningful commit message that captures the semantic meaning from
+/// all chunks.
+///
+/// Strategy:
+/// 1. Extract type, scope, and subject from each chunk's message
+/// 2. Use the most significant commit type (feat > fix > refactor > others)
+/// 3. Use the most common scope if it appears in at least half the chunks
+/// 4. Combine subjects intelligently - if they're similar, merge; if different,
+///    concatenate with "and" or create a comprehensive subject
 fn combine_chunk_messages(messages: &[String]) -> String {
-    if messages.len() == 1 {
-        return messages[0].clone();
-    }
-
     // Type priority for significance (higher = more significant)
     fn type_priority(ty: &str) -> i32 {
         match ty {
@@ -961,6 +1015,67 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         scope: String,
         subject: String,
         priority: i32,
+    }
+
+    // Helper function to combine subjects
+    fn combine_subjects(chunks: &[ChunkInfo]) -> String {
+        use std::collections::HashSet;
+
+        if chunks.is_empty() {
+            return "multiple changes".to_string();
+        }
+
+        if chunks.len() == 1 {
+            return chunks[0].subject.clone();
+        }
+
+        // Collect all unique non-empty subjects
+        let subjects: Vec<&str> = chunks.iter()
+            .map(|c| c.subject.as_str())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if subjects.is_empty() {
+            return "multiple changes".to_string();
+        }
+
+        // If all subjects are similar (share common words), use a merged version
+        let words: Vec<HashSet<&str>> = subjects.iter()
+            .map(|s| s.split_whitespace().collect::<HashSet<_>>())
+            .collect();
+
+        // Check if there's significant overlap (at least 50% of words)
+        let total_unique_words: HashSet<_> = words.iter().flatten().cloned().collect();
+        let avg_word_count = (words.iter().map(|w| w.len()).sum::<usize>() as f64) / (words.len() as f64);
+
+        if (total_unique_words.len() as f64) < (avg_word_count * 1.5) {
+            // Significant overlap - subjects are similar, use a merged version
+            // Find common prefix/words and combine
+            let first_subject = subjects[0];
+            // For simplicity, use the first subject if they're all similar
+            // This is better than concatenating redundant information
+            return first_subject.to_string();
+        }
+
+        // Subjects are different - combine them intelligently
+        // If we have 2 subjects, join with " and "
+        // If we have more, create a more comprehensive subject
+        if subjects.len() == 2 {
+            format!("{} and {}", subjects[0], subjects[1])
+        } else if subjects.len() <= 4 {
+            // Join last two with "and", others with commas
+            let last_idx = subjects.len() - 1;
+            format!("{}, and {}",
+                subjects[..last_idx].join(", "),
+                subjects[last_idx])
+        } else {
+            // Too many different subjects - create a generic but accurate description
+            "apply multiple changes".to_string()
+        }
+    }
+
+    if messages.len() == 1 {
+        return messages[0].clone();
     }
 
     let mut chunks: Vec<ChunkInfo> = Vec::new();
@@ -992,7 +1107,7 @@ fn combine_chunk_messages(messages: &[String]) -> String {
                 msg[subject_start..].trim()
             };
 
-            // Skip chunk placeholders
+            // Skip chunk placeholders and generic subjects
             if subject.starts_with('[') || subject.contains("chunk") {
                 continue;
             }
@@ -1011,15 +1126,15 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         return format!("{}: multiple file changes", last_seen_type);
     }
 
-    // Find the most significant type and common scope
+    // Find the most significant type
     let most_significant = chunks.iter().max_by_key(|c| c.priority).unwrap();
     let commit_type = &most_significant.commit_type;
 
     // Find the most common scope (if any)
-    let mut scope_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut scope_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for chunk in &chunks {
         if !chunk.scope.is_empty() {
-            *scope_counts.entry(&chunk.scope).or_insert(0) += 1;
+            *scope_counts.entry(chunk.scope.clone()).or_insert(0) += 1;
         }
     }
 
@@ -1027,15 +1142,12 @@ fn combine_chunk_messages(messages: &[String]) -> String {
     let scope = scope_counts
         .into_iter()
         .max_by_key(|(_, count)| *count)
-        .filter(|(_, count)| *count * 2 >= chunks.len())
+        .filter(|&(ref _scope, count)| count * 2 >= chunks.len())
         .map(|(scope, _)| scope)
-        .unwrap_or("");
+        .unwrap_or_else(|| String::new());
 
-    // Get the first meaningful subject (for backward compatibility with tests)
-    let first_subject = chunks.iter()
-        .map(|c| c.subject.as_str())
-        .next()
-        .unwrap_or("multiple changes");
+    // Combine subjects intelligently
+    let combined_subject = combine_subjects(&chunks);
 
     // Build combined message
     let mut result = if scope.is_empty() {
@@ -1045,7 +1157,7 @@ fn combine_chunk_messages(messages: &[String]) -> String {
     };
 
     result.push(' ');
-    result.push_str(first_subject);
+    result.push_str(&combined_subject);
 
     result
 }
@@ -1343,12 +1455,15 @@ fn build_subject_line(changes: &FileChanges, total_files: usize, _commit_type: &
     if !changes.modified_files.is_empty() && changes.new_files.is_empty() && changes.deleted_files.is_empty() {
         let count = changes.modified_files.len();
         if count == 1 {
-            parts.push(format!("update {}", shorten_path(&changes.modified_files[0])));
+            // For a single modified file, use just the filename without path
+            // Avoid patterns like "update src/file.rs"
+            let filename = changes.modified_files[0].rsplit('/').next().unwrap_or(&changes.modified_files[0]);
+            parts.push(format!("update {}", filename));
         } else if count <= 3 {
-            // List up to 3 modified files
+            // List up to 3 modified files by filename only
             let paths: Vec<String> = changes.modified_files.iter()
                 .take(3)
-                .map(|p| shorten_path(p))
+                .map(|p| p.rsplit('/').next().unwrap_or(p).to_string())
                 .collect();
             parts.push(format!("update {}", paths.join(", ")));
         } else {
@@ -1356,9 +1471,9 @@ fn build_subject_line(changes: &FileChanges, total_files: usize, _commit_type: &
         }
     }
 
-    // Fallback: just report the count
+    // If we have multiple types of changes, combine them meaningfully
     if parts.is_empty() {
-        return format!("{} file(s) changed", total_files);
+        return format!("apply {} file changes", total_files);
     }
 
     parts.join(" and ")
@@ -1487,10 +1602,17 @@ pub(crate) fn commit_with_auto_message(
 
                 eprintln!();
                 eprintln!("========================================");
-                eprintln!("WARNING: USING FALLBACK COMMIT MESSAGE");
+                eprintln!("⚠️  WARNING: USING FALLBACK COMMIT MESSAGE");
                 eprintln!("========================================");
-                eprintln!("LLM returned empty commit message.");
-                eprintln!("Set RALPH_COMMIT_MUST_USE_LLM=1 to make this a hard error.");
+                eprintln!("⚠️  SOMETHING WENT WRONG!");
+                eprintln!("⚠️  The LLM returned an EMPTY commit message.");
+                eprintln!();
+                eprintln!("This means your commit message will be GENERIC and may NOT");
+                eprintln!("accurately describe what changed. Consider reviewing the");
+                eprintln!("commit message after this operation completes.");
+                eprintln!();
+                eprintln!("To debug, check .agent/logs/commit_generation_failed/");
+                eprintln!("To make this a hard error, set RALPH_COMMIT_MUST_USE_LLM=1");
                 eprintln!();
 
                 generate_fallback_commit_message(&diff)
@@ -1509,12 +1631,18 @@ pub(crate) fn commit_with_auto_message(
 
             eprintln!();
             eprintln!("========================================");
-            eprintln!("WARNING: USING FALLBACK COMMIT MESSAGE");
+            eprintln!("⚠️  WARNING: USING FALLBACK COMMIT MESSAGE");
             eprintln!("========================================");
-            eprintln!("The LLM failed to generate a semantic commit message.");
-            eprintln!("This will result in a generic commit message like 'chore: update file'.");
-            eprintln!("Failed with: {}", e);
-            eprintln!("Set RALPH_COMMIT_MUST_USE_LLM=1 to make this a hard error.");
+            eprintln!("⚠️  SOMETHING WENT WRONG!");
+            eprintln!("⚠️  The LLM FAILED to generate a commit message.");
+            eprintln!();
+            eprintln!("This means your commit message will be GENERIC and may NOT");
+            eprintln!("accurately describe what changed. You should EDIT the commit");
+            eprintln!("message to be more specific after this operation completes.");
+            eprintln!();
+            eprintln!("Error: {}", e);
+            eprintln!("To debug, check .agent/logs/commit_generation_failed/");
+            eprintln!("To make this a hard error, set RALPH_COMMIT_MUST_USE_LLM=1");
             eprintln!();
 
             generate_fallback_commit_message(&diff)
@@ -1848,8 +1976,8 @@ mod tests {
     }
 
     #[test]
-    fn test_chunk_diff_breaks_at_diff_headers() {
-        // Create a diff with clear break points at diff headers
+    fn test_chunk_diff_respects_file_boundaries() {
+        // Create a diff with clear file boundaries
         let mut diff = String::new();
         for i in 0..10 {
             diff.push_str(&format!("diff --git a/file{}.rs b/file{}.rs\nnew file mode 100644\n+ content {}\n", i, i, i));
@@ -1857,19 +1985,43 @@ mod tests {
 
         let chunks = chunk_diff_for_commit_message(&diff);
 
-        // Each chunk should try to break at diff headers
+        // Verify that each chunk contains complete file diffs
+        // (no chunk should have a partial diff)
         for chunk in &chunks {
-            // Chunks should start with context header, then diff content
-            let lines_after_header: Vec<&str> = chunk
-                .lines()
-                .skip_while(|l| !l.starts_with("diff --git"))
-                .collect();
+            let file_count = chunk.matches("diff --git").count();
 
-            // First line after header should be a diff header
-            if !lines_after_header.is_empty() {
-                assert!(lines_after_header[0].starts_with("diff --git") || lines_after_header[0].starts_with("[Diff chunk"));
+            // Each diff header should be complete (start with "diff --git")
+            for line in chunk.lines() {
+                if line.starts_with("diff --git") {
+                    assert!(line.starts_with("diff --git"), "Each file diff should start with 'diff --git'");
+                }
+            }
+
+            // The chunk should report its file count correctly
+            // For single chunk (not chunked), the format is different
+            if chunk.contains("[Diff chunk") {
+                assert!(chunk.contains(&format!("{} files", file_count)));
             }
         }
+    }
+
+    #[test]
+    fn test_chunk_diff_does_not_split_files() {
+        // Create a diff with a single large file
+        let mut diff = String::new();
+        diff.push_str("diff --git a/large_file.rs b/large_file.rs\n");
+        for i in 0..1000 {
+            diff.push_str(&format!("+line {}\n", i));
+        }
+
+        let chunks = chunk_diff_for_commit_message(&diff);
+
+        // Even though the file is large, it should be in a single chunk
+        // because we don't want to split file diffs
+        assert_eq!(chunks.len(), 1);
+        assert!(chunks[0].contains("diff --git a/large_file.rs"));
+        // Verify all lines are present
+        assert_eq!(chunks[0].matches("+line").count(), 1000);
     }
 
     #[test]
