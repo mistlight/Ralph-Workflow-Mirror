@@ -38,7 +38,7 @@ mod review_metrics;
 mod templates;
 
 use crate::cli::Args;
-use crate::git_helpers::cleanup_agent_phase_silent;
+use crate::git_helpers::wrapper::cleanup_agent_phase_silent;
 use clap::Parser;
 
 fn main() -> anyhow::Result<()> {

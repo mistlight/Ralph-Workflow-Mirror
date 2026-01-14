@@ -17,7 +17,7 @@ mod hooks;
 pub mod identity;
 mod repo;
 mod start_commit;
-mod wrapper;
+pub mod wrapper;
 
 pub(crate) use hooks::uninstall_hooks;
 pub(crate) use repo::{
@@ -25,10 +25,7 @@ pub(crate) use repo::{
     require_git_repo, validate_and_truncate_diff, CommitResultFallback,
 };
 pub(crate) use start_commit::{reset_start_commit, save_start_commit};
-pub(crate) use wrapper::{
-    cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
-    start_agent_phase, GitHelpers,
-};
+pub(crate) use wrapper::{cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase, start_agent_phase, GitHelpers};
 
 #[cfg(test)]
 mod tests;

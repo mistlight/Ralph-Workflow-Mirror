@@ -18,9 +18,9 @@
 //!
 //! Instead of running `ccs glm -p --output-format=stream-json ...`, we run:
 //! ```bash
-//! ANTHROPIC_BASE_URL="..." \
-//! ANTHROPIC_AUTH_TOKEN="..." \
-//! ANTHROPIC_MODEL="..." \
+//! ANTHROPIC_BASE_URL="..." \\
+//! ANTHROPIC_AUTH_TOKEN="..." \\
+//! ANTHROPIC_MODEL="..." \\
 //! claude -p --output-format=stream-json ...
 //! ```
 //!
@@ -63,10 +63,7 @@
 //! gemini = { cmd = "ccs gemini", output_flag = "", verbose_flag = "", json_parser = "generic" }
 //! ```
 
-use super::config::{
-    find_ccs_profile_suggestions, find_claude_binary, load_ccs_env_vars, AgentConfig,
-    CcsEnvVarsError,
-};
+use super::config::{find_ccs_profile_suggestions, find_claude_binary, load_ccs_env_vars, AgentConfig, CcsEnvVarsError};
 use super::parser::JsonParserType;
 use crate::config::{CcsAliasConfig, CcsConfig};
 use crate::utils::split_command;
@@ -81,14 +78,6 @@ const CCS_PREFIX: &str = "ccs/";
 /// Returns `Some(alias)` if the agent name matches `ccs/alias` pattern,
 /// or `Some("")` if it's just `ccs` (for default profile).
 /// Returns `None` if the name doesn't match the CCS pattern.
-///
-/// # Examples
-///
-/// ```ignore
-/// assert_eq!(parse_ccs_ref("ccs/work"), Some("work"));
-/// assert_eq!(parse_ccs_ref("ccs"), Some(""));
-/// assert_eq!(parse_ccs_ref("claude"), None);
-/// ```
 fn parse_ccs_ref(agent_name: &str) -> Option<&str> {
     if agent_name == "ccs" {
         Some("")
@@ -100,6 +89,10 @@ fn parse_ccs_ref(agent_name: &str) -> Option<&str> {
 }
 
 /// Check if an agent name is a CCS reference.
+///
+/// CCS references include:
+/// - `ccs` - Default CCS profile
+/// - `ccs/<alias>` - Named CCS alias (e.g., `ccs/work`, `ccs/gemini`)
 pub fn is_ccs_ref(agent_name: &str) -> bool {
     parse_ccs_ref(agent_name).is_some()
 }
@@ -182,7 +175,7 @@ fn load_ccs_env_vars_with_guess(
 ///
 /// Returns `Some(AgentConfig)` if the alias is found or if using default,
 /// `None` if the alias is not found in the map.
-pub fn resolve_ccs_agent(
+fn resolve_ccs_agent(
     alias: &str,
     aliases: &HashMap<String, CcsAliasConfig>,
     defaults: &CcsConfig,
@@ -476,24 +469,6 @@ impl CcsAliasResolver {
         Self::default()
     }
 
-    /// Check if the resolver has any aliases configured.
-    #[cfg(test)]
-    pub fn has_aliases(&self) -> bool {
-        !self.aliases.is_empty()
-    }
-
-    /// Get the number of configured aliases.
-    #[cfg(test)]
-    pub fn alias_count(&self) -> usize {
-        self.aliases.len()
-    }
-
-    /// List all configured alias names.
-    #[cfg(test)]
-    pub fn list_aliases(&self) -> Vec<&str> {
-        self.aliases.keys().map(|s| s.as_str()).collect()
-    }
-
     /// Try to resolve an agent name as a CCS reference.
     ///
     /// Returns `Some(AgentConfig)` if the name is a valid CCS reference.
@@ -521,33 +496,19 @@ impl CcsAliasResolver {
             alias,
         ))
     }
-
-    /// Check if a given agent name would resolve to a CCS alias.
-    /// Now returns true for any CCS reference since we support direct execution.
-    #[cfg(test)]
-    pub fn can_resolve(&self, agent_name: &str) -> bool {
-        parse_ccs_ref(agent_name).is_some()
-    }
-
-    /// Add a new alias.
-    #[cfg(test)]
-    pub fn add_alias(&mut self, name: String, cmd: String) {
-        self.aliases.insert(
-            name,
-            CcsAliasConfig {
-                cmd,
-                ..CcsAliasConfig::default()
-            },
-        );
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn default_ccs() -> CcsConfig {
-        CcsConfig::default()
+    #[test]
+    fn test_is_ccs_ref() {
+        assert!(is_ccs_ref("ccs"));
+        assert!(is_ccs_ref("ccs/work"));
+        assert!(is_ccs_ref("ccs/gemini"));
+        assert!(!is_ccs_ref("claude"));
+        assert!(!is_ccs_ref("codex"));
     }
 
     #[test]
@@ -571,18 +532,9 @@ mod tests {
     }
 
     #[test]
-    fn test_is_ccs_ref() {
-        assert!(is_ccs_ref("ccs"));
-        assert!(is_ccs_ref("ccs/work"));
-        assert!(is_ccs_ref("ccs/gemini"));
-        assert!(!is_ccs_ref("claude"));
-        assert!(!is_ccs_ref("codex"));
-    }
-
-    #[test]
     fn test_resolve_ccs_agent_default() {
         let aliases = HashMap::new();
-        let config = resolve_ccs_agent("", &aliases, &default_ccs());
+        let config = resolve_ccs_agent("", &aliases, &CcsConfig::default());
         assert!(config.is_some());
         let config = config.unwrap();
         // When claude binary is found, it replaces "ccs" with the path to claude
@@ -614,7 +566,7 @@ mod tests {
             },
         );
 
-        let config = resolve_ccs_agent("work", &aliases, &default_ccs());
+        let config = resolve_ccs_agent("work", &aliases, &CcsConfig::default());
         assert!(config.is_some());
         let config = config.unwrap();
         // When claude binary is found, it replaces "ccs work" with the path to claude
@@ -624,7 +576,7 @@ mod tests {
             config.cmd
         );
 
-        let config = resolve_ccs_agent("gemini", &aliases, &default_ccs());
+        let config = resolve_ccs_agent("gemini", &aliases, &CcsConfig::default());
         assert!(config.is_some());
         let config = config.unwrap();
         assert!(
@@ -634,7 +586,7 @@ mod tests {
         );
 
         // Unknown alias returns None
-        let config = resolve_ccs_agent("unknown", &aliases, &default_ccs());
+        let config = resolve_ccs_agent("unknown", &aliases, &CcsConfig::default());
         assert!(config.is_none());
     }
 
@@ -645,7 +597,7 @@ mod tests {
                 cmd: "ccs work".to_string(),
                 ..CcsAliasConfig::default()
             },
-            &default_ccs(),
+            &CcsConfig::default(),
             "ccs-work".to_string(),
             "work",
         );
@@ -674,16 +626,14 @@ mod tests {
                 ..CcsAliasConfig::default()
             },
         );
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-        assert!(resolver.has_aliases());
-        assert_eq!(resolver.alias_count(), 1);
+        let resolver = CcsAliasResolver::new(aliases, CcsConfig::default());
+        assert_eq!(resolver.aliases.len(), 1);
     }
 
     #[test]
     fn test_ccs_alias_resolver_empty() {
         let resolver = CcsAliasResolver::empty();
-        assert!(!resolver.has_aliases());
-        assert_eq!(resolver.alias_count(), 0);
+        assert_eq!(resolver.aliases.len(), 0);
     }
 
     #[test]
@@ -703,7 +653,7 @@ mod tests {
                 ..CcsAliasConfig::default()
             },
         );
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
+        let resolver = CcsAliasResolver::new(aliases, CcsConfig::default());
 
         // Resolve ccs/work
         let config = resolver.try_resolve("ccs/work");
@@ -748,411 +698,5 @@ mod tests {
         // Not a CCS ref
         let config = resolver.try_resolve("claude");
         assert!(config.is_none());
-    }
-
-    #[test]
-    fn test_ccs_alias_resolver_can_resolve() {
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "work".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs work".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-
-        // All CCS references now resolve (including unregistered ones)
-        assert!(resolver.can_resolve("ccs"));
-        assert!(resolver.can_resolve("ccs/work"));
-        assert!(resolver.can_resolve("ccs/unknown")); // Now true - direct CCS execution
-        assert!(!resolver.can_resolve("claude"));
-    }
-
-    #[test]
-    fn test_ccs_alias_resolver_list_aliases() {
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "work".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs work".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        aliases.insert(
-            "personal".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs personal".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-
-        let list = resolver.list_aliases();
-        assert_eq!(list.len(), 2);
-        assert!(list.contains(&"work"));
-        assert!(list.contains(&"personal"));
-    }
-
-    #[test]
-    fn test_ccs_alias_resolver_add_alias() {
-        let mut resolver = CcsAliasResolver::empty();
-        assert!(!resolver.has_aliases());
-
-        resolver.add_alias("work".to_string(), "ccs work".to_string());
-        assert!(resolver.has_aliases());
-        assert!(resolver.can_resolve("ccs/work"));
-    }
-
-    // Additional tests for various CCS command patterns per Step 2 of plan
-
-    #[test]
-    fn test_ccs_command_variants() {
-        // Tests for different CCS command patterns as used in the wild:
-        // - ccs (default profile)
-        // - ccs <profile> (named profile)
-        // - ccs gemini / ccs codex / ccs glm (built-in providers)
-        // - ccs api <custom> (custom API profiles)
-
-        let mut aliases = HashMap::new();
-        // Named profiles
-        aliases.insert(
-            "work".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs work".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        aliases.insert(
-            "personal".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs personal".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-
-        // Built-in provider profiles
-        aliases.insert(
-            "gemini".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs gemini".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        aliases.insert(
-            "codex".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs codex".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        aliases.insert(
-            "glm".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs glm".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-
-        // Custom API profiles
-        aliases.insert(
-            "openrouter".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs api openrouter".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        aliases.insert(
-            "custom-api".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs api custom-profile".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-
-        // Test named profiles - when claude binary is found, it replaces "ccs ..." with claude path
-        let config = resolver.try_resolve("ccs/work").unwrap();
-        assert!(
-            config.cmd.ends_with("claude") || config.cmd == "ccs work",
-            "cmd should be 'ccs work' or a path ending with 'claude', got: {}",
-            config.cmd
-        );
-
-        // Test built-in providers
-        let config = resolver.try_resolve("ccs/gemini").unwrap();
-        assert!(
-            config.cmd.ends_with("claude") || config.cmd == "ccs gemini",
-            "cmd should be 'ccs gemini' or a path ending with 'claude', got: {}",
-            config.cmd
-        );
-
-        let config = resolver.try_resolve("ccs/codex").unwrap();
-        assert!(
-            config.cmd.ends_with("claude") || config.cmd == "ccs codex",
-            "cmd should be 'ccs codex' or a path ending with 'claude', got: {}",
-            config.cmd
-        );
-
-        let config = resolver.try_resolve("ccs/glm").unwrap();
-        assert!(
-            config.cmd.ends_with("claude") || config.cmd == "ccs glm",
-            "cmd should be 'ccs glm' or a path ending with 'claude', got: {}",
-            config.cmd
-        );
-
-        // Test custom API profiles
-        let config = resolver.try_resolve("ccs/openrouter").unwrap();
-        assert!(
-            config.cmd.ends_with("claude") || config.cmd == "ccs api openrouter",
-            "cmd should be 'ccs api openrouter' or a path ending with 'claude', got: {}",
-            config.cmd
-        );
-
-        let config = resolver.try_resolve("ccs/custom-api").unwrap();
-        assert!(
-            config.cmd.ends_with("claude") || config.cmd == "ccs api custom-profile",
-            "cmd should be 'ccs api custom-profile' or a path ending with 'claude', got: {}",
-            config.cmd
-        );
-    }
-
-    #[test]
-    fn test_ccs_config_has_correct_flags() {
-        // Verify that CCS agent configs default to Claude-compatible flags
-        // (users can override these via the unified config).
-        let config = build_ccs_agent_config(
-            &CcsAliasConfig {
-                cmd: "ccs gemini".to_string(),
-                ..CcsAliasConfig::default()
-            },
-            &default_ccs(),
-            "ccs-gemini".to_string(),
-            "gemini",
-        );
-
-        // CCS wraps Claude Code, so it uses Claude's stream-json format
-        assert_eq!(config.output_flag, "--output-format=stream-json");
-        assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
-        assert_eq!(config.verbose_flag, "--verbose");
-        // CCS requires -p for non-interactive mode
-        assert_eq!(config.print_flag, "-p");
-        assert!(config.can_commit);
-
-        // CCS always outputs stream-json format, so always use Claude parser
-        assert_eq!(config.json_parser, JsonParserType::Claude);
-        assert_eq!(config.display_name, Some("ccs-gemini".to_string()));
-    }
-
-    #[test]
-    fn test_parse_ccs_ref_edge_cases() {
-        // Test edge cases in CCS reference parsing
-        assert_eq!(parse_ccs_ref("ccs/"), Some("")); // Empty after prefix
-        assert_eq!(parse_ccs_ref("ccs/a"), Some("a")); // Single char
-        assert_eq!(
-            parse_ccs_ref("ccs/with-dashes-and_underscores"),
-            Some("with-dashes-and_underscores")
-        );
-        assert_eq!(parse_ccs_ref("ccs/with.dots"), Some("with.dots"));
-        assert_eq!(parse_ccs_ref("ccs/MixedCase"), Some("MixedCase"));
-        assert_eq!(parse_ccs_ref("ccs/123numeric"), Some("123numeric"));
-
-        // These should NOT be CCS refs
-        assert_eq!(parse_ccs_ref("CCS"), None); // Case sensitive
-        assert_eq!(parse_ccs_ref("CCS/work"), None);
-        assert_eq!(parse_ccs_ref(" ccs"), None); // Leading space
-        assert_eq!(parse_ccs_ref("ccs "), None); // Trailing space (invalid ref, not just "ccs")
-    }
-
-    #[test]
-    fn test_ccs_in_agent_chain_context() {
-        // Simulate how CCS aliases would be used in agent chain context
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "work".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs work".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        aliases.insert(
-            "personal".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs personal".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-
-        // Simulate agent chain: ["ccs/work", "claude", "codex"]
-        let chain = ["ccs/work", "claude", "codex"];
-
-        // First in chain should resolve
-        assert!(resolver.can_resolve(chain[0]));
-        assert!(!resolver.can_resolve(chain[1])); // claude is not a CCS ref
-        assert!(!resolver.can_resolve(chain[2])); // codex is not a CCS ref
-
-        // The resolved config should be usable
-        let config = resolver.try_resolve(chain[0]).unwrap();
-        assert!(config.can_commit);
-        assert!(!config.cmd.is_empty());
-    }
-
-    #[test]
-    fn test_ccs_display_names() {
-        // Test that CCS aliases get proper display names like "ccs-glm", "ccs-gemini"
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "glm".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs glm".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        aliases.insert(
-            "gemini".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs gemini".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        aliases.insert(
-            "work".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs work".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-
-        // Test display names for various aliases
-        let glm_config = resolver.try_resolve("ccs/glm").unwrap();
-        assert_eq!(glm_config.display_name, Some("ccs-glm".to_string()));
-
-        let gemini_config = resolver.try_resolve("ccs/gemini").unwrap();
-        assert_eq!(gemini_config.display_name, Some("ccs-gemini".to_string()));
-
-        let work_config = resolver.try_resolve("ccs/work").unwrap();
-        assert_eq!(work_config.display_name, Some("ccs-work".to_string()));
-
-        // Default CCS (no alias) should just be "ccs"
-        let default_config = resolver.try_resolve("ccs").unwrap();
-        assert_eq!(default_config.display_name, Some("ccs".to_string()));
-    }
-
-    // Step 7: Test coverage for GLM command building
-
-    #[test]
-    fn test_ccs_glm_command_has_print_flag() {
-        // Verify that GLM commands include the -p flag for non-interactive mode
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "glm".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs glm".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-        let glm_config = resolver.try_resolve("ccs/glm").unwrap();
-
-        // Verify print_flag is set to "-p" (from defaults)
-        assert_eq!(glm_config.print_flag, "-p");
-
-        // Build the command and verify -p is included
-        let cmd = glm_config.build_cmd(true, true, true);
-        assert!(cmd.contains(" -p"), "GLM command must include -p flag");
-        // When claude binary is found, command should contain "claude" as the base command
-        // The actual command is now "claude -p ..." instead of "ccs glm -p ..."
-        // We check if the first word (before any space) ends with "claude"
-        let first_word = cmd.split_whitespace().next().unwrap_or("");
-        assert!(
-            first_word.ends_with("claude") || cmd.contains("ccs glm"),
-            "Command should start with a path ending in 'claude' or contain 'ccs glm', got: {}",
-            cmd
-        );
-    }
-
-    #[test]
-    fn test_ccs_glm_flag_ordering() {
-        // Verify that flags are in the correct order for CCS GLM
-        // The -p flag must come AFTER the command name (e.g., "claude -p" not "-p claude")
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "glm".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs glm".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-        let glm_config = resolver.try_resolve("ccs/glm").unwrap();
-
-        let cmd = glm_config.build_cmd(true, true, true);
-
-        // Split command into parts and verify ordering
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-
-        // First part should be the claude command (path ending in "claude")
-        // When using ccs directly, it would be "ccs" then "glm"
-        // When using claude directly, it's just the path to claude
-        let first_part = parts[0];
-        assert!(
-            first_part.ends_with("claude") || first_part == "ccs",
-            "First part should end with 'claude' or be 'ccs', got: {}",
-            first_part
-        );
-
-        // -p flag should come after the command name
-        let p_index = parts.iter().position(|&s| s == "-p");
-        assert!(p_index.is_some(), "-p flag must be present");
-        assert!(p_index.unwrap() > 0, "-p flag must come after command name");
-    }
-
-    #[test]
-    fn test_ccs_glm_with_empty_print_override() {
-        // Test that if user explicitly sets print_flag to empty, it stays empty
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "glm".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs glm".to_string(),
-                print_flag: Some("".to_string()), // Explicit empty override
-                ..CcsAliasConfig::default()
-            },
-        );
-
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-        let glm_config = resolver.try_resolve("ccs/glm").unwrap();
-
-        // User override should take precedence
-        assert_eq!(glm_config.print_flag, "");
-
-        // Command should NOT include -p (user explicitly disabled it)
-        let cmd = glm_config.build_cmd(true, true, true);
-        assert!(
-            !cmd.contains(" -p"),
-            "Command should not include -p when explicitly disabled"
-        );
-    }
-
-    #[test]
-    fn test_glm_error_classification() {
-        // Verify that GLM exit code 1 is classified as AgentSpecificQuirk
-        use crate::agents::error::AgentErrorKind;
-
-        let error = AgentErrorKind::classify_with_agent(1, "", Some("ccs/glm"), None);
-        assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
-
-        let error = AgentErrorKind::classify_with_agent(1, "some error", Some("glm"), None);
-        assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
-
-        let error = AgentErrorKind::classify_with_agent(1, "glm failed", Some("ccs"), Some("glm"));
-        assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
     }
 }
