@@ -10,11 +10,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <!-- Fonts: JetBrains Mono for code, Syne for distinctive display, General Sans for refined body -->
-    <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
-    <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&f[]=syne@700,800&display=swap" rel="stylesheet">
-    <link rel="preload" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+    <!-- Fonts: JetBrains Mono for code, Syne for distinctive display, Outfit for refined body -->
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
         *, *::before, *::after {
@@ -24,18 +21,25 @@
         }
 
         :root {
-            --color-bg: #0A0A0A;
-            --color-bg-alt: #111111;
-            --color-text: #E8E4D9;
-            --color-text-muted: #8A8A8A;
-            --color-text-dim: #4A4A4A;
+            --color-bg: #080808;
+            --color-bg-alt: #0E0E0E;
+            --color-bg-card: #121212;
+            --color-text: #F2EDE4;
+            --color-text-muted: #B8B3AC;
+            --color-text-dim: #6A6560;
             --color-primary: #FFB800;
-            --color-success: #00FF66;
-            --color-error: #FF3B30;
-            --color-warning: #FFD60A;
+            --color-primary-dim: rgba(255, 184, 0, 0.12);
+            --color-accent: #FF6B00;
+            --color-success: #00FF77;
+            --color-success-dim: rgba(0, 255, 119, 0.12);
+            --color-error: #FF4B40;
+            --color-warning: #FFE03A;
+            --color-info: #00D9FF;
             --border-color: #2A2A2A;
+            --border-strong: #3A3A3A;
+            --grid-color: rgba(255, 184, 0, 0.04);
             --font-display: 'Syne', 'Big Shoulders Display', 'Archivo Black', -apple-system, sans-serif;
-            --font-body: 'General Sans', 'Founders Grotesk', 'Neue Montreal', -apple-system, sans-serif;
+            --font-body: 'Outfit', 'DM Sans', 'Neue Montreal', -apple-system, sans-serif;
             --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
         }
 
@@ -66,16 +70,48 @@
             height: 100%;
             pointer-events: none;
             z-index: 1;
-            opacity: 0.3;
             background-image:
-                linear-gradient(90deg, var(--border-color) 1px, transparent 1px),
-                linear-gradient(var(--border-color) 1px, transparent 1px);
-            background-size: 40px 40px;
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 48px 48px;
+        }
+
+        /* Scanline Effect */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 0.02;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(255, 255, 255, 0.02) 2px,
+                rgba(255, 255, 255, 0.02) 4px
+            );
         }
 
         body > * {
             position: relative;
-            z-index: 2;
+            z-index: 3;
+        }
+
+        /* Grain Texture Overlay */
+        .grain-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.025;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
         }
 
         .container {
@@ -240,6 +276,9 @@
     </style>
 </head>
 <body>
+    <!-- Grain Texture Overlay -->
+    <div class="grain-overlay" aria-hidden="true"></div>
+
     <div class="container">
         <div class="error-code">404</div>
         <div class="content">
