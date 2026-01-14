@@ -188,7 +188,8 @@ impl StreamingSession {
             expected.contains(&self.state),
             "Invalid lifecycle state: expected {:?}, got {:?}. \
             This indicates a bug in the parser's event handling.",
-            expected, self.state
+            expected,
+            self.state
         );
     }
 
@@ -236,10 +237,7 @@ impl StreamingSession {
 
         // Track delta size for pattern detection
         let content_key = (ContentType::Text, key.to_string());
-        let sizes = self
-            .delta_sizes
-            .entry(content_key.clone())
-            .or_default();
+        let sizes = self.delta_sizes.entry(content_key.clone()).or_default();
         sizes.push(delta_size);
 
         // Keep only the most recent delta sizes
@@ -424,6 +422,86 @@ impl StreamingSession {
             self.key_order.retain(|k| k != &key);
         }
     }
+
+    /// Check if incoming text is likely a snapshot (full accumulated content) rather than a delta.
+    ///
+    /// This performs content-based detection by checking if the incoming text starts with
+    /// the previously accumulated content. This catches snapshot-as-delta violations that
+    /// are within size limits but still represent full accumulated content.
+    ///
+    /// # Arguments
+    /// * `text` - The incoming text to check
+    /// * `key` - The content key to compare against
+    ///
+    /// # Returns
+    /// * `true` - The text appears to be a snapshot (starts with previous accumulated content)
+    /// * `false` - The text appears to be a genuine delta
+    pub fn is_likely_snapshot(&self, text: &str, key: &str) -> bool {
+        let content_key = (ContentType::Text, key.to_string());
+
+        // Check if we have accumulated content for this key
+        if let Some(previous) = self.accumulated.get(&content_key) {
+            // A snapshot would start with the previous accumulated content
+            // Only consider it a snapshot if:
+            // 1. The incoming text is at least as long as previous content
+            // 2. The incoming text starts with the exact previous content
+            // 3. The incoming text is not identical to previous content (that's just a duplicate, not a snapshot)
+            if text.len() > previous.len() && text.starts_with(previous) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Extract the delta portion from a snapshot.
+    ///
+    /// When a snapshot is detected (full accumulated content sent as a "delta"),
+    /// this method extracts only the new portion that hasn't been accumulated yet.
+    ///
+    /// # Arguments
+    /// * `text` - The snapshot text (full accumulated content + new content)
+    /// * `key` - The content key to compare against
+    ///
+    /// # Returns
+    /// * The delta portion (new content only)
+    ///
+    /// # Panics
+    /// Panics if the text is not actually a snapshot (doesn't start with accumulated content).
+    /// Callers should check with `is_likely_snapshot()` first.
+    ///
+    /// # Note
+    /// Returns the length of the delta portion as `usize` since we can't return
+    /// a reference to `text` with the correct lifetime. Callers can slice `text`
+    /// themselves using `&text[delta_len..]`.
+    pub fn extract_delta_from_snapshot(&self, text: &str, key: &str) -> usize {
+        let content_key = (ContentType::Text, key.to_string());
+
+        if let Some(previous) = self.accumulated.get(&content_key) {
+            if text.starts_with(previous) {
+                return previous.len();
+            }
+        }
+
+        // If we get here, the text wasn't actually a snapshot
+        // This indicates a bug in the caller's logic
+        panic!(
+            "extract_delta_from_snapshot called on non-snapshot text. \
+            key={key:?}, text={text:?}. This is a bug - callers must check is_likely_snapshot first."
+        );
+    }
+
+    /// Get the delta portion as a string slice from a snapshot.
+    ///
+    /// This is a convenience wrapper that returns the actual substring
+    /// instead of just the length.
+    ///
+    /// # Panics
+    /// Panics if the text is not actually a snapshot.
+    pub fn get_delta_from_snapshot<'a>(&self, text: &'a str, key: &str) -> &'a str {
+        let delta_len = self.extract_delta_from_snapshot(text, key);
+        &text[delta_len..]
+    }
 }
 
 #[cfg(test)]
@@ -548,5 +626,112 @@ mod tests {
             session.get_accumulated(ContentType::Text, "0"),
             Some(small_delta)
         );
+    }
+
+    // Tests for snapshot-as-delta detection methods
+
+    #[test]
+    fn test_is_likely_snapshot_detects_snapshot() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_content_block_start(0);
+
+        // First delta is "Hello"
+        session.on_text_delta(0, "Hello");
+
+        // Simulate GLM sending full accumulated content as next "delta"
+        // "Hello World" contains "Hello" at the start
+        let is_snapshot = session.is_likely_snapshot("Hello World", "0");
+        assert!(is_snapshot, "Should detect snapshot-as-delta");
+    }
+
+    #[test]
+    fn test_is_likely_snapshot_returns_false_for_genuine_delta() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_content_block_start(0);
+
+        // First delta is "Hello"
+        session.on_text_delta(0, "Hello");
+
+        // Genuine delta " World" doesn't start with previous content
+        let is_snapshot = session.is_likely_snapshot(" World", "0");
+        assert!(
+            !is_snapshot,
+            "Genuine delta should not be flagged as snapshot"
+        );
+    }
+
+    #[test]
+    fn test_is_likely_snapshot_returns_false_when_no_previous_content() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_content_block_start(0);
+
+        // No previous content, so anything is a genuine first delta
+        let is_snapshot = session.is_likely_snapshot("Hello", "0");
+        assert!(
+            !is_snapshot,
+            "First delta should not be flagged as snapshot"
+        );
+    }
+
+    #[test]
+    fn test_extract_delta_from_snapshot() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_content_block_start(0);
+
+        // First delta is "Hello"
+        session.on_text_delta(0, "Hello");
+
+        // Snapshot "Hello World" should extract " World" as delta
+        let delta = session.get_delta_from_snapshot("Hello World", "0");
+        assert_eq!(delta, " World");
+    }
+
+    #[test]
+    fn test_extract_delta_from_snapshot_empty_delta() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_content_block_start(0);
+
+        // First delta is "Hello"
+        session.on_text_delta(0, "Hello");
+
+        // Snapshot "Hello" (identical to previous) should extract "" as delta
+        let delta = session.get_delta_from_snapshot("Hello", "0");
+        assert_eq!(delta, "");
+    }
+
+    #[test]
+    #[should_panic(expected = "extract_delta_from_snapshot called on non-snapshot text")]
+    fn test_extract_delta_from_snapshot_panics_on_non_snapshot() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_content_block_start(0);
+
+        // First delta is "Hello"
+        session.on_text_delta(0, "Hello");
+
+        // Calling on non-snapshot should panic
+        session.get_delta_from_snapshot("World", "0");
+    }
+
+    #[test]
+    fn test_snapshot_detection_with_string_keys() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Test with string keys (like Codex/Gemini use)
+        session.on_text_delta_key("main", "Hello");
+
+        // Should detect snapshot for string key
+        let is_snapshot = session.is_likely_snapshot("Hello World", "main");
+        assert!(is_snapshot);
+
+        // Should extract delta correctly
+        let delta = session.get_delta_from_snapshot("Hello World", "main");
+        assert_eq!(delta, " World");
     }
 }

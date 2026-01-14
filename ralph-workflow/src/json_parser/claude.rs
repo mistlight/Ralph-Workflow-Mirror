@@ -78,6 +78,16 @@ impl ClaudeParser {
         self
     }
 
+    /// Check if this parser is handling a GLM agent.
+    ///
+    /// GLM agents are known to send snapshot-style content when deltas are expected,
+    /// so we apply stricter validation and automatic conversion for them.
+    fn is_glm_agent(&self) -> bool {
+        // GLM agents are identified by display names containing "glm" or "ccs-glm"
+        let name = self.display_name.to_lowercase();
+        name.contains("glm") || name.contains("ccs")
+    }
+
     /// Parse and display a single Claude JSON event
     ///
     /// Returns `Some(formatted_output)` for valid events, or None for:
@@ -396,7 +406,7 @@ impl ClaudeParser {
                         let input_str = if let serde_json::Value::String(s) = i {
                             s.clone()
                         } else {
-                            format_tool_input(i)
+                            format_tool_input(&i)
                         };
                         session.on_tool_input_delta(index, &input_str);
                     }
@@ -421,12 +431,40 @@ impl ClaudeParser {
                 delta: Some(delta),
             } => match delta {
                 ContentBlockDelta::TextDelta { text: Some(text) } => {
+                    // Check for snapshot-as-delta bug (GLM sending full accumulated content)
+                    // If detected, extract only the delta portion
+                    let index_str = index.to_string();
+                    let is_glm = self.is_glm_agent();
+                    let text_to_process = if session.is_likely_snapshot(&text, &index_str) {
+                        // Snapshot detected - log warning and extract delta
+                        if is_glm {
+                            eprintln!(
+                                "GLM contract violation: Detected snapshot-as-delta for index {index}. \
+                                This is a known GLM streaming bug. Automatically converting to delta. \
+                                Previous: {:?}, Received (first 100 chars): {:?}",
+                                session.get_accumulated(ContentType::Text, &index_str),
+                                &text.chars().take(100).collect::<String>()
+                            );
+                        } else {
+                            eprintln!(
+                                "Warning: Detected snapshot-as-delta for index {index}. \
+                                Converting to delta. Previous: {:?}, Received: {:?}",
+                                session.get_accumulated(ContentType::Text, &index_str),
+                                text
+                            );
+                        }
+                        session.get_delta_from_snapshot(&text, &index_str)
+                    } else {
+                        // Genuine delta - use as-is
+                        &text
+                    };
+
                     // Use StreamingSession to track state and determine prefix display
-                    let show_prefix = session.on_text_delta(index, &text);
+                    let show_prefix = session.on_text_delta(index, text_to_process);
 
                     // Get accumulated text for streaming display
                     let accumulated_text = session
-                        .get_accumulated(ContentType::Text, &index.to_string())
+                        .get_accumulated(ContentType::Text, &index_str)
                         .unwrap_or("");
 
                     // Use TextDeltaRenderer for consistent rendering
@@ -476,9 +514,21 @@ impl ClaudeParser {
                 // Standalone text delta (not part of content block)
                 // Use default index "0" for standalone text
                 let default_index = 0u64;
-                let show_prefix = session.on_text_delta(default_index, &text);
+                let default_index_str = "0";
+
+                // Check for snapshot-as-delta bug
+                let text_to_process = if session.is_likely_snapshot(&text, default_index_str) {
+                    eprintln!(
+                        "Warning: Detected snapshot-as-delta for standalone text. Converting to delta."
+                    );
+                    session.get_delta_from_snapshot(&text, default_index_str)
+                } else {
+                    &text
+                };
+
+                let show_prefix = session.on_text_delta(default_index, text_to_process);
                 let accumulated_text = session
-                    .get_accumulated(ContentType::Text, &default_index.to_string())
+                    .get_accumulated(ContentType::Text, default_index_str)
                     .unwrap_or("");
 
                 // Use TextDeltaRenderer for consistent rendering
