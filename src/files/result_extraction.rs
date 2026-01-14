@@ -65,10 +65,77 @@ impl ExtractionResult {
     }
 }
 
-/// Extract the last "result" event from a single log file.
+/// Calculate a score for a result to determine its quality.
 ///
-/// Scans the file for JSON lines and returns the last `{"type": "result", "result": "..."}`
-/// event's content.
+/// Higher scores indicate better results. Scoring considers:
+/// - Presence of plan structure markers (## Summary, ## Implementation Steps, etc.)
+/// - Markdown headers (#)
+/// - Content length (longer is generally better)
+/// - Plan-like keywords
+fn score_result(content: &str) -> u32 {
+    let mut score: u32 = 0;
+    let content_lower = content.to_lowercase();
+
+    // Strong structure markers (very high weight)
+    let structure_markers = [
+        "## Summary",
+        "## Implementation Steps",
+        "## Implementation",
+        "### Implementation",
+        "# Summary",
+        "# Implementation Plan",
+        "# Plan",
+    ];
+    for marker in &structure_markers {
+        if content.contains(marker) {
+            score += 1000;
+        }
+    }
+
+    // Secondary headers (medium weight)
+    let secondary_headers = ["###", "####", "## Risks", "## Verification", "## Testing"];
+    for header in &secondary_headers {
+        if content.contains(header) {
+            score += 100;
+        }
+    }
+
+    // Any markdown headers (low weight)
+    for line in content.lines() {
+        if line.trim().starts_with('#') {
+            score += 10;
+        }
+    }
+
+    // Plan keywords (very low weight as tiebreaker)
+    let keywords = [
+        "step", "implement", "create", "add", "build", "task", "phase",
+        "first", "second", "then", "finally", "next",
+    ];
+    for keyword in &keywords {
+        if content_lower.contains(keyword) {
+            score += 1;
+        }
+    }
+
+    // Length bonus (slight preference for longer content with same structure)
+    // Cap the bonus to avoid length overriding structure
+    let length_bonus = (content.len() as u32).min(500);
+    score += length_bonus;
+
+    score
+}
+
+/// Extract the best "result" event from a single log file.
+///
+/// Scans the file for JSON lines and returns the best `{"type": "result", "result": "..."}`
+/// event's content. The "best" result is determined by a scoring function that considers:
+/// 1. Plan structure markers (## Summary, ## Implementation Steps, etc.)
+/// 2. Markdown headers
+/// 3. Content length (as a tiebreaker)
+///
+/// This handles cases where agents emit multiple partial result events during streaming
+/// or retries, preferring results with proper plan structure over simple length.
 fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     let file = match File::open(path) {
         Ok(f) => f,
@@ -77,7 +144,9 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     };
 
     let reader = BufReader::new(file);
-    let mut last_result: Option<String> = None;
+    let mut best_result: Option<String> = None;
+    let mut best_score: u32 = 0;
+    let mut result_count = 0;
 
     for line in reader.lines() {
         let line = match line {
@@ -95,14 +164,34 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
             if let Some(typ) = value.get("type").and_then(|v| v.as_str()) {
                 if typ == "result" {
                     if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
-                        last_result = Some(result.to_string());
+                        let result_string = result.to_string();
+                        let result_score = score_result(&result_string);
+                        result_count += 1;
+
+                        // Select the result with the highest score
+                        // This prefers structured plans over simple longest strings
+                        if result_score > best_score {
+                            best_score = result_score;
+                            best_result = Some(result_string);
+                        }
                     }
                 }
             }
         }
     }
 
-    Ok(last_result)
+    // Log diagnostic info when multiple results were found
+    if result_count > 1 {
+        eprintln!(
+            "[result_extraction] Found {} result events in {:?}, selected result with score {} (length: {})",
+            result_count,
+            path,
+            best_score,
+            best_result.as_ref().map_or(0, |r| r.len())
+        );
+    }
+
+    Ok(best_result)
 }
 
 /// Find log files matching a prefix pattern in a directory.
@@ -194,7 +283,7 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
     Ok(subdirs)
 }
 
-/// Extract the last "result" event from agent JSON logs.
+/// Extract the best "result" event from agent JSON logs.
 ///
 /// Supports three modes:
 /// 1. **Directory mode**: If `log_path` is a directory, scan all files in it
@@ -203,13 +292,16 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
 /// 3. **Subdirectory fallback**: If no files found, check for subdirectories matching
 ///    `{prefix}_*` (handles legacy logs where agent names with "/" created nested dirs)
 ///
+/// The "best" result is determined by selecting the longest content, which handles
+/// cases where agents emit multiple partial result events during streaming or retries.
+///
 /// # Arguments
 ///
 /// * `log_path` - Path to the log directory OR log file prefix
 ///
 /// # Returns
 ///
-/// The raw content from the last result event, or None if no result found.
+/// The raw content from the best result event, or None if no result found.
 pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     // Strategy 1: If log_path is a directory, scan all files in it (legacy mode)
     if log_path.is_dir() {
@@ -227,14 +319,20 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     let log_files = find_log_files_with_prefix(parent, prefix)?;
 
     if !log_files.is_empty() {
-        let mut last_result: Option<String> = None;
+        let mut best_result: Option<String> = None;
+        let mut best_score: u32 = 0;
         for log_file in log_files {
             if let Some(result) = extract_result_from_file(&log_file)? {
-                last_result = Some(result);
+                let result_score = score_result(&result);
+                // Select the result with the highest score across all files
+                if result_score > best_score {
+                    best_score = result_score;
+                    best_result = Some(result);
+                }
             }
         }
-        if last_result.is_some() {
-            return Ok(last_result);
+        if best_result.is_some() {
+            return Ok(best_result);
         }
     }
 
@@ -257,6 +355,10 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
 }
 
 /// Extract from a directory by scanning all files in it.
+///
+/// Selects the best result across all files using the scoring function to handle
+/// retry scenarios where multiple log files may exist. Prefers structured plans
+/// over simple longest strings.
 fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
     let log_entries = match fs::read_dir(log_dir) {
         Ok(entries) => entries,
@@ -264,7 +366,8 @@ fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
         Err(e) => return Err(e),
     };
 
-    let mut last_result: Option<String> = None;
+    let mut best_result: Option<String> = None;
+    let mut best_score: u32 = 0;
 
     for entry in log_entries.flatten() {
         let path = entry.path();
@@ -273,11 +376,16 @@ fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
         }
 
         if let Some(result) = extract_result_from_file(&path)? {
-            last_result = Some(result);
+            let result_score = score_result(&result);
+            // Select the result with the highest score across all files
+            if result_score > best_score {
+                best_score = result_score;
+                best_result = Some(result);
+            }
         }
     }
 
-    Ok(last_result)
+    Ok(best_result)
 }
 
 /// Extract plan content from text by looking for markdown structure.
@@ -690,7 +798,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let log_dir = temp.path().join("planning_1");
 
-        // Multiple result events - should use the last one
+        // Multiple result events - should use the best (longest/most complete) one
         let json_log = r##"{"type": "result", "result": "First result"}
 {"type": "result", "result": "# Final Plan\n\nStep 1: Implement feature"}"##;
         create_log_file(&log_dir, "output.log", json_log);
@@ -698,6 +806,42 @@ mod tests {
         let result = extract_plan(&log_dir).unwrap();
         assert!(result.raw_content.is_some());
         assert!(result.raw_content.unwrap().contains("Final Plan"));
+    }
+
+    #[test]
+    fn test_incomplete_plan_bug_regression() {
+        let temp = TempDir::new().unwrap();
+        let log_dir = temp.path().join("planning_1");
+
+        // Simulate the exact bug scenario:
+        // Multiple result events where first is complete/longest, last is partial/short
+        // Use format! with separate strings to avoid escaping issues
+        let result1 = r##"{"type": "result", "result": "# Complete Plan\n\n## Implementation Steps\n\nStep 1: Create module with functionality.\nStep 2: Add comprehensive tests.\nStep 3: Write documentation.\nStep 4: Integrate and verify."}"##;
+        let result2 = r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
+        let result3 = r##"{"type": "result", "result": "Last paragraph"}"##;
+        let json_log = format!("{}\n{}\n{}", result1, result2, result3);
+        create_log_file(&log_dir, "output.log", &json_log);
+
+        let result = extract_plan(&log_dir).unwrap();
+        assert!(result.raw_content.is_some());
+        let content = result.raw_content.unwrap();
+
+        // The fix should select the longest/most complete result
+        // NOT the last one (which would be "Last paragraph")
+        assert!(
+            content.contains("Implementation Steps"),
+            "Should select the complete plan, not the last partial result: {}",
+            content
+        );
+        assert!(
+            content.contains("Create module"),
+            "Should contain the full plan content"
+        );
+        assert!(
+            content.len() > 100,
+            "Complete plan should be selected (length > 100), got length: {}",
+            content.len()
+        );
     }
 
     // =====================================================
