@@ -8,9 +8,9 @@ use crate::agents::AgentRegistry;
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::guidelines::ReviewGuidelines;
+use crate::logger::Logger;
 use crate::pipeline::Stats;
 use crate::timer::Timer;
-use crate::utils::Logger;
 
 /// Shared context for all pipeline phases.
 ///
@@ -37,4 +37,4 @@ pub struct PhaseContext<'a> {
     pub review_guidelines: Option<&'a ReviewGuidelines>,
 }
 
-impl<'a> PhaseContext<'a> {}
+impl PhaseContext<'_> {}

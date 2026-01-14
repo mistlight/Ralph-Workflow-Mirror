@@ -20,7 +20,7 @@ pub enum JsonParserType {
     Codex,
     /// Gemini's stream-json format.
     Gemini,
-    /// OpenCode's NDJSON format.
+    /// `OpenCode`'s NDJSON format.
     OpenCode,
     /// Generic line-based output (no parsing, pass-through).
     Generic,
@@ -35,12 +35,11 @@ impl JsonParserType {
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             // CCS wraps Claude Code, so it uses the same stream-json format
-            "claude" | "ccs" => JsonParserType::Claude,
-            "codex" => JsonParserType::Codex,
-            "gemini" => JsonParserType::Gemini,
-            "opencode" => JsonParserType::OpenCode,
-            "generic" | "none" | "raw" => JsonParserType::Generic,
-            _ => JsonParserType::Generic,
+            "claude" | "ccs" => Self::Claude,
+            "codex" => Self::Codex,
+            "gemini" => Self::Gemini,
+            "opencode" => Self::OpenCode,
+            _ => Self::Generic,
         }
     }
 }
@@ -48,11 +47,11 @@ impl JsonParserType {
 impl std::fmt::Display for JsonParserType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JsonParserType::Claude => write!(f, "claude"),
-            JsonParserType::Codex => write!(f, "codex"),
-            JsonParserType::Gemini => write!(f, "gemini"),
-            JsonParserType::OpenCode => write!(f, "opencode"),
-            JsonParserType::Generic => write!(f, "generic"),
+            Self::Claude => write!(f, "claude"),
+            Self::Codex => write!(f, "codex"),
+            Self::Gemini => write!(f, "gemini"),
+            Self::OpenCode => write!(f, "opencode"),
+            Self::Generic => write!(f, "generic"),
         }
     }
 }

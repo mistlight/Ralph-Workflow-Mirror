@@ -21,6 +21,7 @@
 //! [Codex] Hello World\n     (item.completed shows final result with prefix)
 //! ```
 
+#![expect(clippy::too_many_lines)]
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
@@ -35,7 +36,7 @@ use super::types::{
 };
 
 /// Codex event parser
-pub(crate) struct CodexParser {
+pub struct CodexParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
@@ -70,21 +71,20 @@ impl CodexParser {
 
     /// Parse and display a single Codex JSON event
     ///
-    /// Returns Some(formatted_output) for valid events, or None for:
+    /// Returns `Some(formatted_output)` for valid events, or None for:
     /// - Malformed JSON (non-JSON text passed through if meaningful)
     /// - Unknown event types
     /// - Empty or whitespace-only output
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
-        let event: CodexEvent = match serde_json::from_str(line) {
-            Ok(e) => e,
-            Err(_) => {
-                // Non-JSON line - pass through as-is if meaningful
-                let trimmed = line.trim();
-                if !trimmed.is_empty() && !trimmed.starts_with('{') {
-                    return Some(format!("{}\n", trimmed));
-                }
-                return None;
+        let event: CodexEvent = if let Ok(e) = serde_json::from_str(line) {
+            e
+        } else {
+            // Non-JSON line - pass through as-is if meaningful
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                return Some(format!("{trimmed}\n"));
             }
+            return None;
         };
         let c = &self.colors;
         let name = &self.display_name;
@@ -115,9 +115,9 @@ impl CodexParser {
                 )
             }
             CodexEvent::TurnCompleted { usage } => {
-                let (input, output) = usage
-                    .map(|u| (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0)))
-                    .unwrap_or((0, 0));
+                let (input, output) = usage.map_or((0, 0), |u| {
+                    (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0))
+                });
                 format!(
                     "{}[{}]{} {}{} Turn completed{} {}(in:{} out:{}){}\n",
                     c.dim(),
@@ -218,7 +218,7 @@ impl CodexParser {
 
                                 // Show reasoning in real-time using delta display formatter
                                 let formatter = DeltaDisplayFormatter::new();
-                                return Some(formatter.format_thinking(text, name, c));
+                                return Some(formatter.format_thinking(text, name, *c));
                             }
                             // No reasoning yet
                             if self.verbosity.is_verbose() {
@@ -269,15 +269,17 @@ impl CodexParser {
                                     let limit = self.verbosity.truncate_limit("tool_input");
                                     let preview = truncate_text(&args_str, limit);
                                     if !preview.is_empty() {
-                                        out.push_str(&format!(
-                                            "{}[{}]{} {}  └─ {}{}\n",
+                                        use std::fmt::Write;
+                                        let _ = writeln!(
+                                            out,
+                                            "{}[{}]{} {}  └─ {}{}",
                                             c.dim(),
                                             name,
                                             c.reset(),
                                             c.dim(),
                                             preview,
                                             c.reset()
-                                        ));
+                                        );
                                     }
                                 }
                             }
@@ -347,7 +349,7 @@ impl CodexParser {
                                 .delta_accumulator
                                 .borrow()
                                 .get(ContentType::Text, "agent_msg")
-                                .map(|s| s.to_string());
+                                .map(std::string::ToString::to_string);
                             self.delta_accumulator
                                 .borrow_mut()
                                 .clear_key(ContentType::Text, "agent_msg");
@@ -396,16 +398,14 @@ impl CodexParser {
                                 .delta_accumulator
                                 .borrow()
                                 .get(ContentType::Thinking, "reasoning")
-                                .map(|s| s.to_string());
+                                .map(std::string::ToString::to_string);
                             self.delta_accumulator
                                 .borrow_mut()
                                 .clear_key(ContentType::Thinking, "reasoning");
 
                             // Show reasoning content in verbose mode
                             if self.verbosity.is_verbose() {
-                                if let Some(ref text) =
-                                    full_reasoning.as_ref().or(item.text.as_ref())
-                                {
+                                if let Some(text) = full_reasoning.as_ref().or(item.text.as_ref()) {
                                     let limit = self.verbosity.truncate_limit("text");
                                     let preview = truncate_text(text, limit);
                                     return Some(format!(
@@ -491,29 +491,32 @@ impl CodexParser {
                         }
                         Some("plan_update") => {
                             if self.verbosity.is_verbose() {
-                                if let Some(ref plan) = item.plan {
-                                    let limit = self.verbosity.truncate_limit("text");
-                                    let preview = truncate_text(plan, limit);
-                                    format!(
-                                        "{}[{}]{} {}Plan:{} {}\n",
-                                        c.dim(),
-                                        name,
-                                        c.reset(),
-                                        c.blue(),
-                                        c.reset(),
-                                        preview
-                                    )
-                                } else {
-                                    format!(
-                                        "{}[{}]{} {}{} Plan updated{}\n",
-                                        c.dim(),
-                                        name,
-                                        c.reset(),
-                                        c.green(),
-                                        CHECK,
-                                        c.reset()
-                                    )
-                                }
+                                let limit = self.verbosity.truncate_limit("text");
+                                item.plan.as_ref().map_or_else(
+                                    || {
+                                        format!(
+                                            "{}[{}]{} {}{} Plan updated{}\n",
+                                            c.dim(),
+                                            name,
+                                            c.reset(),
+                                            c.green(),
+                                            CHECK,
+                                            c.reset()
+                                        )
+                                    },
+                                    |plan| {
+                                        let preview = truncate_text(plan, limit);
+                                        format!(
+                                            "{}[{}]{} {}Plan:{} {}\n",
+                                            c.dim(),
+                                            name,
+                                            c.reset(),
+                                            c.blue(),
+                                            c.reset(),
+                                            preview
+                                        )
+                                    },
+                                )
                             } else {
                                 String::new()
                             }
@@ -676,15 +679,15 @@ impl CodexParser {
 
             // Log raw JSON to file if configured
             if let Some(ref mut file) = log_writer {
-                writeln!(file, "{}", line)?;
+                writeln!(file, "{line}")?;
             }
         }
 
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
-            writeln!(writer, "{}", warning)?;
+        if let Some(warning) = monitor.check_and_warn(*c) {
+            writeln!(writer, "{warning}")?;
         }
         Ok(())
     }

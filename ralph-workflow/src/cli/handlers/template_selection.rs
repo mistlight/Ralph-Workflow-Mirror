@@ -33,7 +33,7 @@ pub type TemplateSelectionResult = Option<String>;
 ///
 /// * `Some(template_name)` - User selected a template
 /// * `None` - User declined, input was not a terminal, or input errored/ended
-pub fn prompt_template_selection(colors: &Colors) -> TemplateSelectionResult {
+pub fn prompt_template_selection(colors: Colors) -> TemplateSelectionResult {
     // Interactive prompts require both stdin and stdout to be terminals.
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return None;
@@ -50,9 +50,8 @@ pub fn prompt_template_selection(colors: &Colors) -> TemplateSelectionResult {
 
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
-        Ok(0) => return None, // EOF
+        Ok(0) | Err(_) => return None, // EOF or error
         Ok(_) => {}
-        Err(_) => return None,
     }
 
     let response = input.trim().to_lowercase();
@@ -93,9 +92,8 @@ pub fn prompt_template_selection(colors: &Colors) -> TemplateSelectionResult {
 
     let mut template_input = String::new();
     match io::stdin().read_line(&mut template_input) {
-        Ok(0) => return None, // EOF
+        Ok(0) | Err(_) => return None, // EOF or error
         Ok(_) => {}
-        Err(_) => return None,
     }
 
     let template_name = template_input.trim();
@@ -132,7 +130,7 @@ pub fn prompt_template_selection(colors: &Colors) -> TemplateSelectionResult {
 ///
 /// * `Ok(())` - File created successfully
 /// * `Err(e)` - Failed to create file
-pub fn create_prompt_from_template(template_name: &str, colors: &Colors) -> anyhow::Result<()> {
+pub fn create_prompt_from_template(template_name: &str, colors: Colors) -> anyhow::Result<()> {
     let prompt_path = Path::new("PROMPT.md");
 
     // Check if PROMPT.md already exists (shouldn't happen in our flow, but safety check)
@@ -146,11 +144,8 @@ pub fn create_prompt_from_template(template_name: &str, colors: &Colors) -> anyh
     }
 
     // Get the template
-    let template = match get_template(template_name) {
-        Some(t) => t,
-        None => {
-            return Err(anyhow::anyhow!("Template '{}' not found", template_name));
-        }
+    let Some(template) = get_template(template_name) else {
+        return Err(anyhow::anyhow!("Template '{template_name}' not found"));
     };
 
     // Write the template content to PROMPT.md
@@ -205,13 +200,11 @@ mod tests {
                 let content = template.content();
                 assert!(
                     content.contains("## Goal"),
-                    "Template {} missing Goal section",
-                    name
+                    "Template {name} missing Goal section"
                 );
                 assert!(
                     content.contains("Acceptance") || content.contains("## Acceptance Checks"),
-                    "Template {} missing Acceptance section",
-                    name
+                    "Template {name} missing Acceptance section"
                 );
             }
         }

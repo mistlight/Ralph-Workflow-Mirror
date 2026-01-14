@@ -9,15 +9,16 @@
 use crate::agents::AgentRegistry;
 use crate::colors::Colors;
 use crate::config::Config;
+use crate::files::{
+    delete_commit_message_file, read_commit_message_file, write_commit_message_file,
+};
 use crate::git_helpers::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
 };
+use crate::logger::Logger;
 use crate::phases::generate_commit_message;
 use crate::pipeline::PipelineRuntime;
 use crate::timer::Timer;
-use crate::utils::{
-    delete_commit_message_file, read_commit_message_file, write_commit_message_file, Logger,
-};
 use std::env;
 
 /// Handles the `--show-commit-msg` command.
@@ -34,11 +35,11 @@ pub fn handle_show_commit_msg() -> anyhow::Result<()> {
 
     match read_commit_message_file() {
         Ok(msg) => {
-            println!("{}", msg);
+            println!("{msg}");
             Ok(())
         }
         Err(e) => {
-            anyhow::bail!("Failed to read commit message: {}", e);
+            anyhow::bail!("Failed to read commit message: {e}");
         }
     }
 }
@@ -56,7 +57,7 @@ pub fn handle_show_commit_msg() -> anyhow::Result<()> {
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if commit fails.
-pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<()> {
+pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()> {
     require_git_repo()?;
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
@@ -88,10 +89,10 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
     // Note: Plumbing commands don't have access to config, so we use None
     // for git identity and fall back to git config (via repo.signature())
     if let Some(oid) = git_commit(&commit_msg, None, None)? {
-        logger.success(&format!("Commit created successfully: {}", oid));
+        logger.success(&format!("Commit created successfully: {oid}"));
         // Clean up the commit message file
         if let Err(err) = delete_commit_message_file() {
-            logger.warn(&format!("Failed to delete commit-message.txt: {}", err));
+            logger.warn(&format!("Failed to delete commit-message.txt: {err}"));
         }
     } else {
         logger.warn("Nothing to commit (working tree clean)");
@@ -113,7 +114,7 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
 /// * `logger` - Logger for info/warning messages
 /// * `colors` - Color configuration for output
 /// * `developer_agent` - Name of the developer agent to use (for commit generation)
-/// * `reviewer_agent` - Name of the reviewer agent (not used, kept for API compatibility)
+/// * `_reviewer_agent` - Name of the reviewer agent (not used, kept for API compatibility)
 ///
 /// # Returns
 ///
@@ -122,7 +123,7 @@ pub fn handle_generate_commit_msg(
     config: &Config,
     registry: &AgentRegistry,
     logger: &Logger,
-    colors: &Colors,
+    colors: Colors,
     developer_agent: &str,
     _reviewer_agent: &str,
 ) -> anyhow::Result<()> {
@@ -142,7 +143,7 @@ pub fn handle_generate_commit_msg(
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger,
-        colors,
+        colors: &colors,
         config,
     };
 

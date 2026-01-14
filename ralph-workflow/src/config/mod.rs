@@ -4,7 +4,7 @@
 //!
 //! # Module Structure
 //!
-//! - [`types`]: Core configuration types (Config, ReviewDepth, Verbosity)
+//! - [`types`]: Core configuration types (Config, `ReviewDepth`, Verbosity)
 //! - [`truncation`]: Truncation limits for verbosity levels
 //! - [`parser`]: Environment variable parsing (legacy)
 //! - [`unified`]: Unified configuration format types
@@ -33,10 +33,10 @@ pub mod types;
 pub mod unified;
 
 // Re-export main types at module level for convenience
-pub(crate) use types::{Config, ReviewDepth, Verbosity};
+pub use types::{Config, ReviewDepth, Verbosity};
 
 // Re-export unified config types for --init-global handling
-pub(crate) use unified::{
+pub use unified::{
     unified_config_path, CcsAliasConfig, CcsConfig, ConfigInitResult as UnifiedConfigInitResult,
     UnifiedConfig,
 };

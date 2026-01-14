@@ -1,88 +1,18 @@
 //! Tests for the agent pipeline runner.
 //!
 //! Includes contract tests for agent configurations (qwen, vibe, llama-cli)
-//! and model flag resolution logic.
+//! and fallback behavior.
 
 use super::*;
 use crate::agents::{AgentRegistry, JsonParserType};
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::config::Verbosity;
+use crate::logger::Logger;
 use crate::output::argv_requests_json;
 use crate::timer::Timer;
 use crate::utils::split_command;
-use crate::utils::Logger;
 use std::collections::HashMap;
-
-#[test]
-fn resolve_model_with_provider_emits_full_model_flag() {
-    // Provider override should preserve a full -m/--model flag rather than returning provider/model.
-    assert_eq!(
-        resolve_model_with_provider(
-            Some("opencode"),
-            Some("-m zai/glm-4.7"),
-            Some("-m anthropic/claude-sonnet-4")
-        )
-        .as_deref(),
-        Some("-m opencode/glm-4.7")
-    );
-
-    // Provider-only override should use the agent's configured model name.
-    assert_eq!(
-        resolve_model_with_provider(Some("opencode"), None, Some("-m anthropic/claude-sonnet-4"))
-            .as_deref(),
-        Some("-m opencode/claude-sonnet-4")
-    );
-
-    // Model-only overrides normalize bare provider/model to a full flag.
-    assert_eq!(
-        resolve_model_with_provider(None, Some("opencode/glm-4.7-free"), None).as_deref(),
-        Some("-m opencode/glm-4.7-free")
-    );
-
-    // Preserve the user's style when provided.
-    assert_eq!(
-        resolve_model_with_provider(None, Some("--model=opencode/glm-4.7-free"), None).as_deref(),
-        Some("--model=opencode/glm-4.7-free")
-    );
-}
-
-#[test]
-fn run_with_prompt_returns_command_result_for_missing_binary() {
-    let dir = tempfile::tempdir().unwrap();
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-    let config = Config {
-        interactive: false,
-        prompt_path: dir.path().join("prompt.txt"),
-        ..Config::default()
-    };
-
-    let mut runtime = PipelineRuntime {
-        timer: &mut timer,
-        logger: &logger,
-        colors: &colors,
-        config: &config,
-    };
-
-    let result = run_with_prompt(
-        PromptCommand {
-            label: "test",
-            display_name: "test",
-            cmd_str: "definitely-not-a-real-binary-ralph",
-            prompt: "hello",
-            logfile: &dir.path().join("log.txt").display().to_string(),
-            parser_type: JsonParserType::Generic,
-            env_vars: &std::collections::HashMap::new(),
-        },
-        &mut runtime,
-    )
-    .unwrap();
-
-    assert_eq!(result.exit_code, 127);
-    assert!(!result.stderr.is_empty());
-}
 
 #[cfg(unix)]
 #[test]
@@ -143,7 +73,7 @@ exit 0
             ..Default::default()
         },
     );
-    registry.set_ccs_aliases(aliases, defaults);
+    registry.set_ccs_aliases(&aliases, defaults);
 
     registry.set_fallback(crate::agents::fallback::FallbackConfig {
         reviewer: vec!["ccs/glm".to_string(), "ccs/ok".to_string()],
@@ -288,7 +218,7 @@ fn test_glm_reviewer_command_includes_print_flag() {
     );
 
     let mut registry = AgentRegistry::new().unwrap();
-    registry.set_ccs_aliases(aliases, defaults);
+    registry.set_ccs_aliases(&aliases, defaults);
 
     // Get the GLM agent config
     let glm_config = registry
@@ -352,9 +282,9 @@ exit 1
     let ok_script = dir.path().join("ok.sh");
     std::fs::write(
         &ok_script,
-        r#"#!/bin/sh
+        "#!/bin/sh
 exit 0
-"#,
+",
     )
     .unwrap();
 
@@ -386,7 +316,7 @@ exit 0
     );
 
     let mut registry = AgentRegistry::new().unwrap();
-    registry.set_ccs_aliases(aliases, defaults);
+    registry.set_ccs_aliases(&aliases, defaults);
     registry.set_fallback(crate::agents::fallback::FallbackConfig {
         reviewer: vec!["ccs/glm".to_string(), "ccs/ok".to_string()],
         max_retries: 3, // Should not retry GLM

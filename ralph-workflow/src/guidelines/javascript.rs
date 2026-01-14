@@ -1,13 +1,13 @@
 //! JavaScript and TypeScript review guidelines
 //!
 //! Contains guidelines for JavaScript/TypeScript projects including React, Vue, Angular,
-//! Node.js backends (Express, Fastify, NestJS), and SSR frameworks (Next.js, Nuxt).
+//! Node.js backends (Express, Fastify, `NestJS`), and SSR frameworks (Next.js, Nuxt).
 
 use super::base::ReviewGuidelines;
 use crate::language_detector::ProjectStack;
 
 /// Add JavaScript-specific guidelines to the review
-pub(crate) fn add_javascript_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+pub fn add_javascript_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
     guidelines.quality_checks.extend([
         "Use const/let, never var".to_string(),
         "Handle Promise rejections".to_string(),
@@ -44,7 +44,7 @@ pub(crate) fn add_javascript_guidelines(guidelines: &mut ReviewGuidelines, stack
 }
 
 /// Add TypeScript-specific guidelines to the review
-pub(crate) fn add_typescript_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+pub fn add_typescript_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
     // First add all JavaScript guidelines
     add_javascript_guidelines(guidelines, stack);
 
@@ -144,7 +144,7 @@ fn add_angular_guidelines(guidelines: &mut ReviewGuidelines) {
     ]);
 }
 
-/// Add Node.js backend framework guidelines (Express, Fastify, NestJS)
+/// Add Node.js backend framework guidelines (Express, Fastify, `NestJS`)
 fn add_node_backend_guidelines(guidelines: &mut ReviewGuidelines) {
     guidelines.quality_checks.extend([
         "Use middleware pattern effectively".to_string(),

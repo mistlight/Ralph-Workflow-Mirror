@@ -10,7 +10,7 @@ use clap::ValueEnum;
 /// Preset configurations for common agent combinations.
 #[derive(Clone, Debug, ValueEnum)]
 pub enum Preset {
-    /// Use agent_chain defaults (no explicit agent override)
+    /// Use `agent_chain` defaults (no explicit agent override)
     Default,
     /// Use opencode for both developer and reviewer
     Opencode,
@@ -24,7 +24,7 @@ pub enum Preset {
 /// - Quick mode (--quick)
 /// - Agent and model overrides
 /// - Isolation mode
-pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: &Colors) {
+pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Colors) {
     // Handle verbosity shorthand flags (--quiet, --full, --debug take precedence)
     let base_verbosity = config.verbosity;
     config.verbosity = if args.quiet {

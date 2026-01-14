@@ -1,14 +1,19 @@
 //! Command execution helpers and fallback orchestration.
 
+#![expect(clippy::too_many_arguments)]
+#![expect(clippy::needless_pass_by_value)]
+#![expect(clippy::map_unwrap_or)]
+#![expect(clippy::needless_continue)]
+#![expect(clippy::too_many_lines)]
 use crate::agents::{
-    auth_failure_advice, is_glm_like_agent, validate_model_flag, AgentErrorKind, AgentRegistry,
-    AgentRole, JsonParserType,
+    is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType,
 };
 use crate::colors::Colors;
 use crate::config::Config;
+use crate::logger::Logger;
 use crate::output::{argv_requests_json, format_generic_json_for_display};
 use crate::timer::Timer;
-use crate::utils::{format_argv_for_log, split_command, truncate_text, Logger};
+use crate::utils::{format_argv_for_log, split_command, truncate_text};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
@@ -17,8 +22,21 @@ use std::process::{Command, Stdio};
 use super::model_flag::resolve_model_with_provider;
 use super::types::CommandResult;
 
+/// Result of attempting to run an agent with retries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TryAgentResult {
+    /// Agent succeeded - return success from main function
+    Success,
+    /// Unrecoverable error - abort immediately
+    Unrecoverable(i32),
+    /// Should fall back to next agent/model
+    Fallback,
+    /// Should retry (non-retriable error on last retry)
+    NoRetry,
+}
+
 /// Runtime services required for running agent commands.
-pub(crate) struct PipelineRuntime<'a> {
+pub struct PipelineRuntime<'a> {
     pub(crate) timer: &'a mut Timer,
     pub(crate) logger: &'a Logger,
     pub(crate) colors: &'a Colors,
@@ -26,7 +44,7 @@ pub(crate) struct PipelineRuntime<'a> {
 }
 
 /// A single prompt-based agent invocation.
-pub(crate) struct PromptCommand<'a> {
+pub struct PromptCommand<'a> {
     pub(crate) label: &'a str,
     pub(crate) display_name: &'a str,
     pub(crate) cmd_str: &'a str,
@@ -39,7 +57,7 @@ pub(crate) struct PromptCommand<'a> {
 /// Run a command with a prompt argument.
 ///
 /// This is an internal helper for `run_with_fallback`.
-pub(crate) fn run_with_prompt(
+pub fn run_with_prompt(
     cmd: PromptCommand<'_>,
     runtime: &mut PipelineRuntime<'_>,
 ) -> io::Result<CommandResult> {
@@ -104,7 +122,7 @@ pub(crate) fn run_with_prompt(
     if is_glm_cmd && runtime.config.verbosity.is_debug() {
         runtime
             .logger
-            .info(&format!("GLM command details: {}", display_cmd));
+            .info(&format!("GLM command details: {display_cmd}"));
         // Verify -p flag is present
         if argv.iter().any(|arg| arg == "-p") {
             runtime
@@ -140,7 +158,7 @@ pub(crate) fn run_with_prompt(
             ));
             // Show env var keys only (redact values for security)
             for key in cmd.env_vars.keys() {
-                runtime.logger.info(&format!("  - {}", key));
+                runtime.logger.info(&format!("  - {key}"));
             }
         }
         for (key, value) in cmd.env_vars {
@@ -283,8 +301,8 @@ pub(crate) fn run_with_prompt(
 
         for line in reader.lines() {
             let line = line?;
-            writeln!(out, "{}", line)?;
-            writeln!(logfile, "{}", line)?;
+            writeln!(out, "{line}")?;
+            writeln!(logfile, "{line}")?;
         }
     }
 
@@ -304,7 +322,7 @@ pub(crate) fn run_with_prompt(
         ));
         // Show first few lines of stderr for debugging
         for (i, line) in stderr_output.lines().take(5).enumerate() {
-            runtime.logger.info(&format!("  stderr[{}]: {}", i, line));
+            runtime.logger.info(&format!("  stderr[{i}]: {line}"));
         }
         if stderr_output.lines().count() > 5 {
             runtime.logger.info(&format!(
@@ -327,8 +345,194 @@ pub(crate) fn run_with_prompt(
     })
 }
 
+/// Try a single agent/model configuration with retries.
+///
+/// Returns the result of the attempt: success, unrecoverable error, or should-fallback.
+fn try_agent_with_retries(
+    agent_name: &str,
+    model_flag: Option<&str>,
+    label: &str,
+    display_name: &str,
+    cmd_str: &str,
+    prompt: &str,
+    logfile: &str,
+    parser_type: crate::agents::JsonParserType,
+    env_vars: &std::collections::HashMap<String, String>,
+    model_index: usize,
+    agent_index: usize,
+    cycle: usize,
+    runtime: &mut PipelineRuntime<'_>,
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+) -> io::Result<TryAgentResult> {
+    let model_suffix = model_flag
+        .as_ref()
+        .map(|m| format!(" [{m}]"))
+        .unwrap_or_default();
+    let is_glm_agent = is_glm_like_agent(agent_name);
+
+    // GLM-specific diagnostic output (only on first try to avoid spam)
+    if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
+        let cmd_argv = split_command(cmd_str).ok();
+        let full_cmd_log = cmd_argv
+            .as_ref()
+            .map(|argv| {
+                let mut argv_for_log = argv.clone();
+                argv_for_log.push("<PROMPT>".to_string());
+                truncate_text(&format_argv_for_log(&argv_for_log), 160)
+            })
+            .unwrap_or_else(|| "<unparseable command>".to_string());
+
+        if runtime.config.verbosity.is_debug() {
+            runtime
+                .logger
+                .info(&format!("GLM agent '{agent_name}' command configuration:"));
+            runtime
+                .logger
+                .info(&format!("  Full command: {full_cmd_log}"));
+        }
+    }
+
+    // Try with retries
+    for retry in 0..fallback_config.max_retries {
+        if retry > 0 {
+            runtime.logger.info(&format!(
+                "Retry {}/{} for {}{}...",
+                retry, fallback_config.max_retries, display_name, model_suffix,
+            ));
+        }
+
+        let result = run_with_prompt(
+            PromptCommand {
+                label,
+                display_name,
+                cmd_str,
+                prompt,
+                logfile,
+                parser_type,
+                env_vars,
+            },
+            runtime,
+        )?;
+
+        if result.exit_code == 0 {
+            return Ok(TryAgentResult::Success);
+        }
+
+        // Classify the error with agent context for better handling
+        let error_kind = crate::agents::AgentErrorKind::classify_with_agent(
+            result.exit_code,
+            &result.stderr,
+            Some(agent_name),
+            model_flag,
+        );
+
+        runtime.logger.warn(&format!(
+            "Agent '{}'{} failed: {} (exit code {})",
+            agent_name,
+            model_suffix,
+            error_kind.description(),
+            result.exit_code
+        ));
+
+        // GLM-specific diagnostics
+        if is_glm_agent
+            && matches!(
+                error_kind,
+                crate::agents::AgentErrorKind::AgentSpecificQuirk
+                    | crate::agents::AgentErrorKind::ToolExecutionFailed
+            )
+        {
+            runtime.logger.warn(&format!(
+                "{}GLM Agent Issue Detected:{} GLM has known compatibility issues with Ralph.",
+                runtime.colors.yellow(),
+                runtime.colors.reset()
+            ));
+            runtime.logger.info("Suggested workarounds:");
+            runtime
+                .logger
+                .info("  1. Try: ralph --reviewer-agent codex");
+            runtime
+                .logger
+                .info("  2. Try: ralph --reviewer-json-parser generic");
+            runtime
+                .logger
+                .info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
+            runtime
+                .logger
+                .info("See docs/agent-compatibility.md for details.");
+        }
+
+        // Provide provider-specific auth advice for auth failures
+        if matches!(error_kind, crate::agents::AgentErrorKind::AuthFailure) {
+            runtime
+                .logger
+                .info(&crate::agents::auth_failure_advice(model_flag));
+        } else {
+            runtime.logger.info(error_kind.recovery_advice());
+        }
+
+        // Provide installation guidance for command not found errors
+        if error_kind.is_command_not_found() {
+            let binary = cmd_str.split_whitespace().next().unwrap_or(agent_name);
+            let guidance = crate::platform::InstallGuidance::for_binary(binary);
+            runtime.logger.info(&guidance.format());
+        }
+
+        // Provide network-specific guidance
+        if error_kind.is_network_error() {
+            runtime
+                .logger
+                .info("Tip: Check your internet connection, firewall, or VPN settings.");
+        }
+
+        // Provide context reduction hint for memory-related errors
+        if error_kind.suggests_smaller_context() {
+            runtime.logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
+        }
+
+        // Check for unrecoverable errors - abort immediately
+        if error_kind.is_unrecoverable() {
+            runtime
+                .logger
+                .error("Unrecoverable error - cannot continue pipeline");
+            return Ok(TryAgentResult::Unrecoverable(result.exit_code));
+        }
+
+        // Check if we should fallback to next agent
+        if error_kind.should_fallback() {
+            runtime.logger.info(&format!(
+                "Switching from '{display_name}'{model_suffix} to next configured fallback..."
+            ));
+            return Ok(TryAgentResult::Fallback);
+        }
+
+        if !error_kind.should_retry() {
+            runtime.logger.info("Not retrying (non-retriable error)");
+            return Ok(TryAgentResult::NoRetry);
+        }
+
+        // Otherwise, continue retrying the same model/agent
+        if retry + 1 < fallback_config.max_retries {
+            runtime.logger.info(&format!(
+                "Retrying '{}'{} (attempt {}/{})",
+                display_name,
+                model_suffix,
+                retry + 2,
+                fallback_config.max_retries
+            ));
+            let wait_ms = error_kind
+                .suggested_wait_ms()
+                .max(fallback_config.retry_delay_ms);
+            std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+        }
+    }
+
+    // All retries exhausted
+    Ok(TryAgentResult::Fallback)
+}
+
 /// Run a command with automatic fallback to alternative agents on failure.
-pub(crate) fn run_with_fallback(
+pub fn run_with_fallback(
     role: AgentRole,
     base_label: &str,
     prompt: &str,
@@ -341,8 +545,7 @@ pub(crate) fn run_with_fallback(
     let fallbacks = registry.available_fallbacks(role);
     if !fallback_config.has_fallbacks(role) {
         runtime.logger.info(&format!(
-            "No configured fallbacks for {}, using primary only",
-            role
+            "No configured fallbacks for {role}, using primary only"
         ));
     }
 
@@ -353,9 +556,6 @@ pub(crate) fn run_with_fallback(
             agents_to_try.push(fb);
         }
     }
-
-    // Track the last error for final reporting
-    let mut last_exit_code = 1;
 
     // Get the CLI model and provider overrides based on role (if any)
     let (cli_model_override, cli_provider_override) = match role {
@@ -386,8 +586,7 @@ pub(crate) fn run_with_fallback(
         for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
             let Some(agent_config) = registry.resolve_config(agent_name) else {
                 runtime.logger.warn(&format!(
-                    "Agent '{}' not found in registry, skipping",
-                    agent_name
+                    "Agent '{agent_name}' not found in registry, skipping"
                 ));
                 continue;
             };
@@ -454,8 +653,7 @@ pub(crate) fn run_with_fallback(
                         // Only log on first try to avoid spam
                         if agent_index == 0 && cycle == 0 && model_index == 0 {
                             runtime.logger.info(&format!(
-                                "Using JSON parser override '{}' for reviewer",
-                                parser_override
+                                "Using JSON parser override '{parser_override}' for reviewer"
                             ));
                         }
                     }
@@ -490,61 +688,25 @@ pub(crate) fn run_with_fallback(
                     )
                 };
 
-                // GLM-specific diagnostic output
-                // Check for GLM-like agents using the shared detection function
-                let is_glm_agent = is_glm_like_agent(agent_name);
-
-                if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
+                // GLM-specific diagnostic output for print flag validation
+                if is_glm_like_agent(agent_name)
+                    && agent_index == 0
+                    && cycle == 0
+                    && model_index == 0
+                {
                     let cmd_argv = split_command(&cmd_str).ok();
-                    let full_cmd_log = cmd_argv
-                        .as_ref()
-                        .map(|argv| {
-                            let mut argv_for_log = argv.clone();
-                            argv_for_log.push("<PROMPT>".to_string());
-                            truncate_text(&format_argv_for_log(&argv_for_log), 160)
-                        })
-                        .unwrap_or_else(|| "<unparseable command>".to_string());
-
-                    if runtime.config.verbosity.is_debug() {
-                        runtime.logger.info(&format!(
-                            "GLM agent '{}' command configuration:",
-                            agent_name
-                        ));
-                        runtime
-                            .logger
-                            .info(&format!("  Base command: {}", agent_config.cmd));
-                        runtime
-                            .logger
-                            .info(&format!("  Print flag: '{}'", agent_config.print_flag));
-                        runtime
-                            .logger
-                            .info(&format!("  Output flag: '{}'", agent_config.output_flag));
-                        runtime
-                            .logger
-                            .info(&format!("  YOLO flag: '{}'", agent_config.yolo_flag));
-                        runtime
-                            .logger
-                            .info(&format!("  JSON parser: {:?}", agent_config.json_parser));
-                        runtime
-                            .logger
-                            .info(&format!("  Full command: {}", full_cmd_log));
-                    }
-                    // Validate -p flag is present (warn if missing regardless of print_flag value)
                     let has_print_flag = cmd_argv
                         .as_ref()
-                        .map(|argv| argv.iter().any(|arg| arg == "-p"))
-                        .unwrap_or(false);
+                        .is_some_and(|argv| argv.iter().any(|arg| arg == "-p"));
                     if !has_print_flag {
                         if agent_config.print_flag.is_empty() {
                             runtime.logger.warn(&format!(
-                                "GLM agent '{}' is missing '-p' flag: print_flag is empty in configuration. \
-                                 Add 'print_flag = \"-p\"' to [ccs] section in ~/.config/ralph-workflow.toml",
-                                agent_name
+                                "GLM agent '{agent_name}' is missing '-p' flag: print_flag is empty in configuration. \
+                                 Add 'print_flag = \"-p\"' to [ccs] section in ~/.config/ralph-workflow.toml"
                             ));
                         } else {
                             runtime.logger.warn(&format!(
-                                "GLM agent '{}' may be missing '-p' flag in command. Check configuration.",
-                                agent_name
+                                "GLM agent '{agent_name}' may be missing '-p' flag in command. Check configuration."
                             ));
                         }
                     }
@@ -552,151 +714,42 @@ pub(crate) fn run_with_fallback(
 
                 let model_suffix = model_flag
                     .as_ref()
-                    .map(|m| format!(" [{}]", m))
+                    .map(|m| format!(" [{m}]"))
                     .unwrap_or_default();
-                let display_name = registry.display_name(agent_name);
-                let label = format!("{} ({}{})", base_label, display_name, model_suffix);
+                let label = format!("{base_label} ({display_name}{model_suffix})");
                 // Sanitize agent name for log file path - replace "/" with "-" to avoid
                 // creating subdirectories (e.g., "ccs/glm" -> "ccs-glm")
                 let safe_agent_name = agent_name.replace('/', "-");
-                let logfile = format!("{}_{}_{}.log", logfile_prefix, safe_agent_name, model_index);
+                let logfile = format!("{logfile_prefix}_{safe_agent_name}_{model_index}.log");
 
-                // Try with retries
-                for retry in 0..fallback_config.max_retries {
-                    if retry > 0 {
-                        runtime.logger.info(&format!(
-                            "Retry {}/{} for {}{}...",
-                            retry, fallback_config.max_retries, display_name, model_suffix,
-                        ));
-                    }
+                // Try this agent/model configuration with retries
+                let result = try_agent_with_retries(
+                    agent_name,
+                    model_flag.as_deref(),
+                    &label,
+                    &display_name,
+                    &cmd_str,
+                    prompt,
+                    &logfile,
+                    parser_type,
+                    &agent_config.env_vars,
+                    model_index,
+                    agent_index,
+                    cycle as usize,
+                    runtime,
+                    fallback_config,
+                )?;
 
-                    let result = run_with_prompt(
-                        PromptCommand {
-                            label: &label,
-                            display_name: &display_name,
-                            cmd_str: &cmd_str,
-                            prompt,
-                            logfile: &logfile,
-                            parser_type,
-                            env_vars: &agent_config.env_vars,
-                        },
-                        runtime,
-                    )?;
-
-                    if result.exit_code == 0 {
-                        return Ok(0);
-                    }
-
-                    last_exit_code = result.exit_code;
-
-                    // Classify the error with agent context for better handling
-                    let error_kind = AgentErrorKind::classify_with_agent(
-                        result.exit_code,
-                        &result.stderr,
-                        Some(agent_name),
-                        model_flag.as_deref(),
-                    );
-
-                    runtime.logger.warn(&format!(
-                        "Agent '{}'{} failed: {} (exit code {})",
-                        agent_name,
-                        model_suffix,
-                        error_kind.description(),
-                        result.exit_code
-                    ));
-
-                    // GLM-specific diagnostics
-                    // GLM (via CCS) has known issues that deserve special guidance
-                    let is_glm_agent = is_glm_like_agent(agent_name);
-
-                    if is_glm_agent
-                        && matches!(
-                            error_kind,
-                            AgentErrorKind::AgentSpecificQuirk
-                                | AgentErrorKind::ToolExecutionFailed
-                        )
-                    {
-                        runtime.logger.warn(&format!(
-                            "{}GLM Agent Issue Detected:{} GLM has known compatibility issues with Ralph.",
-                            runtime.colors.yellow(),
-                            runtime.colors.reset()
-                        ));
-                        runtime.logger.info("Suggested workarounds:");
-                        runtime
-                            .logger
-                            .info("  1. Try: ralph --reviewer-agent codex");
-                        runtime
-                            .logger
-                            .info("  2. Try: ralph --reviewer-json-parser generic");
-                        runtime
-                            .logger
-                            .info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
-                        runtime
-                            .logger
-                            .info("See docs/agent-compatibility.md for details.");
-                    }
-
-                    // Provide provider-specific auth advice for auth failures
-                    if matches!(error_kind, AgentErrorKind::AuthFailure) {
-                        runtime.logger.info(&auth_failure_advice(model_ref));
-                    } else {
-                        runtime.logger.info(error_kind.recovery_advice());
-                    }
-
-                    // Provide installation guidance for command not found errors
-                    if error_kind.is_command_not_found() {
-                        let binary = cmd_str.split_whitespace().next().unwrap_or(agent_name);
-                        let guidance = crate::platform::InstallGuidance::for_binary(binary);
-                        runtime.logger.info(&guidance.format());
-                    }
-
-                    // Provide network-specific guidance
-                    if error_kind.is_network_error() {
-                        runtime.logger.info(
-                            "Tip: Check your internet connection, firewall, or VPN settings.",
-                        );
-                    }
-
-                    // Provide context reduction hint for memory-related errors
-                    if error_kind.suggests_smaller_context() {
-                        runtime.logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
-                    }
-
-                    // Check for unrecoverable errors - abort immediately
-                    if error_kind.is_unrecoverable() {
-                        runtime
-                            .logger
-                            .error("Unrecoverable error - cannot continue pipeline");
-                        return Ok(last_exit_code);
-                    }
-
-                    // Check if we should fallback to next agent
-                    if error_kind.should_fallback() {
-                        runtime.logger.info(&format!(
-                            "Switching from '{}'{} to next configured fallback...",
-                            display_name, model_suffix
-                        ));
-                        break; // break retry loop and model loop
-                    }
-
-                    if !error_kind.should_retry() {
-                        runtime.logger.info("Not retrying (non-retriable error)");
+                match result {
+                    TryAgentResult::Success => return Ok(0),
+                    TryAgentResult::Unrecoverable(exit_code) => return Ok(exit_code),
+                    TryAgentResult::Fallback => {
+                        // Break to next model/agent
                         break;
                     }
-
-                    // Otherwise, continue retrying the same model/agent
-                    if retry + 1 < fallback_config.max_retries {
-                        runtime.logger.info(&format!(
-                            "Retrying '{}'{} (attempt {}/{})",
-                            display_name,
-                            model_suffix,
-                            retry + 2,
-                            fallback_config.max_retries
-                        ));
-                        let wait_ms = error_kind
-                            .suggested_wait_ms()
-                            .max(fallback_config.retry_delay_ms);
-                        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+                    TryAgentResult::NoRetry => {
+                        // Non-retriable error - continue to next model/agent
+                        continue;
                     }
                 }
             }
@@ -708,5 +761,5 @@ pub(crate) fn run_with_fallback(
         "All agents exhausted after {} cycles with exponential backoff",
         fallback_config.max_cycles
     ));
-    Ok(last_exit_code)
+    Ok(1)
 }

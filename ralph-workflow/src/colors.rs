@@ -1,9 +1,10 @@
 //! Colors & Formatting Module
 //!
 //! Provides ANSI escape codes for terminal coloring.
-//! Respects NO_COLOR env var (<https://no-color.org/>).
+//! Respects `NO_COLOR` env var (<https://no-color.org/>).
 //! Falls back to no colors if terminal doesn't support them.
 
+#![expect(clippy::redundant_pub_crate)]
 use std::env;
 use std::io::IsTerminal;
 
@@ -26,7 +27,7 @@ impl Colors {
     }
 
     // Style codes
-    pub(crate) fn bold(&self) -> &'static str {
+    pub(crate) const fn bold(self) -> &'static str {
         if self.enabled {
             "\x1b[1m"
         } else {
@@ -34,7 +35,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn dim(&self) -> &'static str {
+    pub(crate) const fn dim(self) -> &'static str {
         if self.enabled {
             "\x1b[2m"
         } else {
@@ -42,7 +43,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn reset(&self) -> &'static str {
+    pub(crate) const fn reset(self) -> &'static str {
         if self.enabled {
             "\x1b[0m"
         } else {
@@ -51,7 +52,7 @@ impl Colors {
     }
 
     // Foreground colors
-    pub(crate) fn red(&self) -> &'static str {
+    pub(crate) const fn red(self) -> &'static str {
         if self.enabled {
             "\x1b[31m"
         } else {
@@ -59,7 +60,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn green(&self) -> &'static str {
+    pub(crate) const fn green(self) -> &'static str {
         if self.enabled {
             "\x1b[32m"
         } else {
@@ -67,7 +68,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn yellow(&self) -> &'static str {
+    pub(crate) const fn yellow(self) -> &'static str {
         if self.enabled {
             "\x1b[33m"
         } else {
@@ -75,7 +76,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn blue(&self) -> &'static str {
+    pub(crate) const fn blue(self) -> &'static str {
         if self.enabled {
             "\x1b[34m"
         } else {
@@ -83,7 +84,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn magenta(&self) -> &'static str {
+    pub(crate) const fn magenta(self) -> &'static str {
         if self.enabled {
             "\x1b[35m"
         } else {
@@ -91,7 +92,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn cyan(&self) -> &'static str {
+    pub(crate) const fn cyan(self) -> &'static str {
         if self.enabled {
             "\x1b[36m"
         } else {
@@ -99,7 +100,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn white(&self) -> &'static str {
+    pub(crate) const fn white(self) -> &'static str {
         if self.enabled {
             "\x1b[37m"
         } else {

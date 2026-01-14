@@ -113,7 +113,7 @@ If no issues found, return "No issues found.""#
 pub fn prompt_incremental_review_with_diff(context: ContextLevel, diff: &str) -> String {
     match context {
         ContextLevel::Minimal => format!(
-            r#"You are in INCREMENTAL REVIEW MODE with fresh eyes.
+            "You are in INCREMENTAL REVIEW MODE with fresh eyes.
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
@@ -126,7 +126,7 @@ Review ONLY the changes in the DIFF below. Focus on:
 
 DIFF TO REVIEW:
 ```diff
-{}
+{diff}
 ```
 
 OUTPUT (prioritized checklist):
@@ -135,26 +135,24 @@ OUTPUT (prioritized checklist):
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found, return "No issues found in changed files.""#,
-            diff
+If no issues found, return \"No issues found in changed files.\""
         ),
         ContextLevel::Normal => format!(
-            r#"You are in INCREMENTAL REVIEW MODE.
+            "You are in INCREMENTAL REVIEW MODE.
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
 
 DIFF TO REVIEW:
 ```diff
-{}
+{diff}
 ```
 
 OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"#,
-            diff
+- [ ] Low: [file:line] Description"
         ),
     }
 }
@@ -170,7 +168,7 @@ OUTPUT (prioritized checklist):
 /// The reviewer returns structured issues data (captured by JSON parser)
 /// and the orchestrator writes it to .agent/ISSUES.md.
 ///
-/// Use this for agents like GLM, ZhipuAI, and other models that may struggle
+/// Use this for agents like GLM, `ZhipuAI`, and other models that may struggle
 /// with more complex prompts.
 pub fn prompt_universal_review(context: ContextLevel) -> String {
     match context {

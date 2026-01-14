@@ -10,7 +10,7 @@ use crate::agents::{is_ccs_ref, AgentRegistry};
 /// - Agent name
 /// - Command to invoke the agent
 /// - JSON parser type
-/// - Whether the agent can create commits (can_commit flag)
+/// - Whether the agent can create commits (`can_commit` flag)
 ///
 /// CCS aliases (ccs/...) are displayed separately for clarity.
 /// Output is sorted alphabetically by agent name within each section.
@@ -54,7 +54,7 @@ pub fn handle_list_agents(registry: &AgentRegistry) {
 /// Output is sorted alphabetically by agent name within each section.
 pub fn handle_list_available_agents(registry: &AgentRegistry) {
     let mut items = registry.list_available();
-    items.sort();
+    items.sort_unstable();
 
     // Separate regular agents from CCS aliases
     let (ccs_aliases, regular_agents): (Vec<_>, Vec<_>) =
@@ -65,7 +65,7 @@ pub fn handle_list_available_agents(registry: &AgentRegistry) {
         println!("Available agents:");
         for name in regular_agents {
             let display_name = registry.display_name(name);
-            println!("  {}", display_name);
+            println!("  {display_name}");
         }
     }
 
@@ -74,7 +74,7 @@ pub fn handle_list_available_agents(registry: &AgentRegistry) {
         println!("\nAvailable CCS aliases:");
         for name in ccs_aliases {
             let display_name = registry.display_name(name);
-            println!("  {}", display_name);
+            println!("  {display_name}");
         }
     }
 }

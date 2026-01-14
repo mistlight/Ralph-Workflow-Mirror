@@ -3,6 +3,7 @@
 //! This module handles creation, modification, and cleanup of files
 //! in the `.agent/` directory that are used during pipeline execution.
 
+#![expect(clippy::unnecessary_debug_formatting)]
 use crate::files::{integrity, recovery};
 use crate::logger::Logger;
 use std::fs::{self, File};
@@ -33,7 +34,7 @@ fn overwrite_one_liner(path: &Path, line: &str) -> io::Result<()> {
     let content = if first_line.is_empty() {
         "\n".to_string()
     } else {
-        format!("{}\n", first_line)
+        format!("{first_line}\n")
     };
     integrity::write_file_atomic(path, &content)
 }
@@ -180,8 +181,7 @@ pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
     // If the state is unrecoverable, fail early with a clear error.
     if let recovery::RecoveryStatus::Unrecoverable(msg) = recovery::auto_repair(agent_dir)? {
         return Err(io::Error::other(format!(
-            "Failed to repair .agent state: {}",
-            msg
+            "Failed to repair .agent state: {msg}"
         )));
     }
 
@@ -240,7 +240,7 @@ pub fn read_commit_message_file() -> io::Result<String> {
     let content = fs::read_to_string(msg_path).map_err(|e| {
         io::Error::new(
             e.kind(),
-            format!("Failed to read .agent/commit-message.txt: {}", e),
+            format!("Failed to read .agent/commit-message.txt: {e}"),
         )
     })?;
     let trimmed = content.trim();
@@ -316,7 +316,7 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
     let content = fs::read_to_string(prompt_path).map_err(|e| {
         io::Error::new(
             e.kind(),
-            format!("Failed to read PROMPT.md for backup: {}", e),
+            format!("Failed to read PROMPT.md for backup: {e}"),
         )
     })?;
 
@@ -338,9 +338,8 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
     }
 
     // Write new backup atomically
-    integrity::write_file_atomic(backup_base, &content).map_err(|e| {
-        io::Error::new(e.kind(), format!("Failed to write PROMPT.md backup: {}", e))
-    })?;
+    integrity::write_file_atomic(backup_base, &content)
+        .map_err(|e| io::Error::new(e.kind(), format!("Failed to write PROMPT.md backup: {e}")))?;
 
     // Set read-only permissions on all backups and track any failure
     let mut readonly_warning = None;
@@ -356,7 +355,7 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
                 if fs::set_permissions(path, perms).is_err() {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
-                        format!("Failed to set read-only on {:?}", path),
+                        format!("Failed to set read-only on {path:?}"),
                     ));
                 }
             }
@@ -423,12 +422,12 @@ pub fn cleanup_generated_files() {
 /// Returns `Ok(Option<String>)` where:
 /// - `Ok(None)` - permissions set successfully or file doesn't exist
 /// - `Ok(Some(warning))` - couldn't set read-only permissions
-pub fn make_prompt_read_only() -> io::Result<Option<String>> {
+pub fn make_prompt_read_only() -> Option<String> {
     let prompt_path = Path::new("PROMPT.md");
 
     // If PROMPT.md doesn't exist, that's fine - nothing to protect
     if !prompt_path.exists() {
-        return Ok(None);
+        return None;
     }
 
     // Try to set read-only permissions and track any failure
@@ -469,7 +468,7 @@ pub fn make_prompt_read_only() -> io::Result<Option<String>> {
         }
     }
 
-    Ok(readonly_warning)
+    readonly_warning
 }
 
 #[cfg(test)]
@@ -743,7 +742,7 @@ mod tests {
 
             // Create 4 backups - oldest should be deleted
             for i in 1..=4 {
-                fs::write("PROMPT.md", &format!("# Version {}\n", i)).unwrap();
+                fs::write("PROMPT.md", format!("# Version {i}\n")).unwrap();
                 create_prompt_backup().unwrap();
             }
 
@@ -777,7 +776,7 @@ mod tests {
             fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
 
             // Make it read-only
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
 
             // On Unix, verify permissions are read-only
             #[cfg(unix)]
@@ -807,7 +806,7 @@ mod tests {
             assert!(!Path::new("PROMPT.md").exists());
 
             // Should succeed without error
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
         });
     }
 
@@ -818,8 +817,8 @@ mod tests {
             fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
 
             // Make it read-only twice
-            make_prompt_read_only().unwrap();
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
+            make_prompt_read_only();
 
             // File should still exist and be readable
             let content = fs::read_to_string("PROMPT.md").unwrap();

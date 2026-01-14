@@ -7,16 +7,16 @@
 //! 3. Deletes PLAN.md
 //! 4. Optionally runs fast checks
 
+#![expect(clippy::too_many_lines)]
 use crate::agents::AgentRole;
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::files::{delete_plan_file, update_status};
 use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_needed};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
+use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
-use crate::utils::{
-    delete_plan_file, print_progress, save_checkpoint, update_status, PipelineCheckpoint,
-    PipelinePhase,
-};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -34,24 +34,19 @@ fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, iteratio
             // File exists with content, no action needed
         }
         Ok(false) => {
+            logger.warn("[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup");
             logger.warn(&format!(
-                "[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup",
-            ));
-            logger.warn(&format!(
-                "[PROMPT_INTEGRITY] Deletion detected during {} phase (iteration {})",
-                phase, iteration
+                "[PROMPT_INTEGRITY] Deletion detected during {phase} phase (iteration {iteration})"
             ));
             logger.warn("[PROMPT_INTEGRITY] Possible cause: Agent used 'rm' or file write tools on PROMPT.md");
             logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
         }
         Err(e) => {
             logger.error(&format!(
-                "[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}",
-                e
+                "[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {e}"
             ));
             logger.error(&format!(
-                "[PROMPT_INTEGRITY] Error occurred during {} phase (iteration {})",
-                phase, iteration
+                "[PROMPT_INTEGRITY] Error occurred during {phase} phase (iteration {iteration})"
             ));
             logger.error("Pipeline may not function correctly without PROMPT.md");
         }
@@ -101,11 +96,11 @@ pub fn run_development_phase(
         let resuming_into_development = resuming_from_development && i == start_iter;
 
         // Step 1: Create PLAN from PROMPT (skip if resuming into development)
-        if !resuming_into_development {
-            run_planning_step(ctx, i)?;
-        } else {
+        if resuming_into_development {
             ctx.logger
                 .info("Resuming at development step; skipping plan generation");
+        } else {
+            run_planning_step(ctx, i)?;
         }
 
         // Verify PLAN.md was created (required)
@@ -151,9 +146,9 @@ pub fn run_development_phase(
             };
             run_with_fallback(
                 AgentRole::Developer,
-                &format!("run #{}", i),
+                &format!("run #{i}"),
                 &prompt,
-                &format!(".agent/logs/developer_{}", i),
+                &format!(".agent/logs/developer_{i}"),
                 &mut runtime,
                 ctx.registry,
                 ctx.developer_agent,
@@ -162,8 +157,7 @@ pub fn run_development_phase(
 
         if exit_code != 0 {
             ctx.logger.error(&format!(
-                "Iteration {} encountered an error but continuing",
-                i
+                "Iteration {i} encountered an error but continuing"
             ));
             had_errors = true;
         }
@@ -186,8 +180,7 @@ pub fn run_development_phase(
 
             if let Some(agent) = commit_agent {
                 ctx.logger.info(&format!(
-                    "Creating commit with auto-generated message (agent: {})...",
-                    agent
+                    "Creating commit with auto-generated message (agent: {agent})..."
                 ));
 
                 // Get the diff for commit message generation
@@ -195,7 +188,7 @@ pub fn run_development_phase(
                     Ok(d) => d,
                     Err(e) => {
                         ctx.logger
-                            .error(&format!("Failed to get diff for commit: {}", e));
+                            .error(&format!("Failed to get diff for commit: {e}"));
                         return Err(anyhow::anyhow!(e));
                     }
                 };
@@ -217,7 +210,7 @@ pub fn run_development_phase(
                 ) {
                     CommitResultFallback::Success(oid) => {
                         ctx.logger
-                            .success(&format!("Commit created successfully: {}", oid));
+                            .success(&format!("Commit created successfully: {oid}"));
                         ctx.stats.commits_created += 1;
                     }
                     CommitResultFallback::NoChanges => {
@@ -227,8 +220,7 @@ pub fn run_development_phase(
                     CommitResultFallback::Failed(err) => {
                         // Actual git operation failed - this is critical
                         ctx.logger.error(&format!(
-                            "Failed to create commit (git operation failed): {}",
-                            err
+                            "Failed to create commit (git operation failed): {err}"
                         ));
                         // Don't continue - this is a real error that needs attention
                         return Err(anyhow::anyhow!(err));
@@ -253,8 +245,7 @@ pub fn run_development_phase(
         // Step 3: Delete the PLAN
         ctx.logger.info("Deleting PLAN.md...");
         if let Err(err) = delete_plan_file() {
-            ctx.logger
-                .warn(&format!("Failed to delete PLAN.md: {}", err));
+            ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
         }
         ctx.logger.success("PLAN.md deleted");
     }
@@ -298,7 +289,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         prompt_md_content.as_deref(),
     );
 
-    let log_dir = format!(".agent/logs/planning_{}", iteration);
+    let log_dir = format!(".agent/logs/planning_{iteration}");
     let _exit_code = {
         let mut runtime = PipelineRuntime {
             timer: ctx.timer,
@@ -308,7 +299,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         };
         run_with_fallback(
             AgentRole::Developer,
-            &format!("planning #{}", iteration),
+            &format!("planning #{iteration}"),
             &plan_prompt,
             &log_dir,
             &mut runtime,
@@ -358,8 +349,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
                 .exists()
                 .then(|| fs::read_to_string(plan_path).ok())
                 .flatten()
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
+                .is_some_and(|s| !s.trim().is_empty());
 
             if agent_wrote_file {
                 ctx.logger.info("Using agent-written PLAN.md (legacy mode)");
@@ -383,7 +373,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
 
 /// Verify that PLAN.md exists and is non-empty.
 ///
-/// With orchestrator-controlled file I/O, run_planning_step always writes
+/// With orchestrator-controlled file I/O, `run_planning_step` always writes
 /// PLAN.md (even if just a placeholder). This function checks if the file
 /// exists and has meaningful content. If resuming and plan is missing,
 /// re-run planning.
@@ -398,8 +388,7 @@ fn verify_plan_exists(
         .exists()
         .then(|| fs::read_to_string(plan_path).ok())
         .flatten()
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false);
+        .is_some_and(|s| !s.trim().is_empty());
 
     // If resuming and plan is missing, re-run planning to recover
     if !plan_ok && resuming_into_development {
@@ -412,8 +401,7 @@ fn verify_plan_exists(
             .exists()
             .then(|| fs::read_to_string(plan_path).ok())
             .flatten()
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
 
         return Ok(plan_ok);
     }
@@ -423,13 +411,8 @@ fn verify_plan_exists(
 
 /// Run fast check command.
 fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> anyhow::Result<()> {
-    let argv = crate::utils::split_command(fast_cmd).map_err(|e| {
-        anyhow::anyhow!(
-            "FAST_CHECK_CMD parse error (iteration {}): {}",
-            iteration,
-            e
-        )
-    })?;
+    let argv = crate::utils::split_command(fast_cmd)
+        .map_err(|e| anyhow::anyhow!("FAST_CHECK_CMD parse error (iteration {iteration}): {e}"))?;
     if argv.is_empty() {
         ctx.logger
             .warn("FAST_CHECK_CMD is empty; skipping fast check");
@@ -474,13 +457,13 @@ fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
     let commit_agents = fallback_config.get_fallbacks(AgentRole::Commit);
     if !commit_agents.is_empty() {
         // Return the first commit agent as the primary
-        return commit_agents.first().map(|s| s.to_string());
+        return commit_agents.first().cloned();
     }
 
     // Fallback to using developer agents for commit generation
     let developer_agents = fallback_config.get_fallbacks(AgentRole::Developer);
     if !developer_agents.is_empty() {
-        return developer_agents.first().map(|s| s.to_string());
+        return developer_agents.first().cloned();
     }
 
     // Last resort: use the current developer agent

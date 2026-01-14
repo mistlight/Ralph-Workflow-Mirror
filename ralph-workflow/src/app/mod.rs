@@ -12,13 +12,21 @@
 //! - [`config_init`]: Configuration loading and agent registry initialization
 //! - [`plumbing`]: Low-level git operations (show/apply commit messages)
 //! - [`validation`]: Agent validation and chain validation
+//! - [`resume`]: Checkpoint resume functionality
+//! - [`detection`]: Project stack detection
+//! - [`finalization`]: Pipeline cleanup and finalization
 
+#![expect(clippy::too_many_lines)]
 pub mod config_init;
+pub mod detection;
+pub mod finalization;
 pub mod plumbing;
+pub mod resume;
 pub mod validation;
 
 use crate::agents::AgentRegistry;
-use crate::banner::{print_final_summary, print_welcome_banner};
+use crate::banner::print_welcome_banner;
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
     handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
@@ -26,25 +34,26 @@ use crate::cli::{
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::monitoring::PromptMonitor;
+use crate::files::{
+    create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
+    update_status, validate_prompt_md,
+};
 use crate::git_helpers::{
     cleanup_orphaned_marker, get_repo_root, require_git_repo, reset_start_commit,
     save_start_commit, start_agent_phase,
 };
-use crate::guidelines::ReviewGuidelines;
-use crate::language_detector::{detect_stack, ProjectStack};
+use crate::logger::Logger;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use crate::pipeline::{AgentPhaseGuard, Stats};
 use crate::timer::Timer;
-use crate::utils::{
-    clear_checkpoint, create_prompt_backup, ensure_files, load_checkpoint, make_prompt_read_only,
-    reset_context_for_isolation, save_checkpoint, update_status, validate_prompt_md, Logger,
-    PipelineCheckpoint, PipelinePhase,
-};
 use std::env;
 use std::process::Command;
 
 use config_init::initialize_config;
+use detection::detect_project_stack;
+use finalization::finalize_pipeline;
 use plumbing::{handle_apply_commit, handle_generate_commit_msg, handle_show_commit_msg};
+use resume::{handle_resume, phase_rank, should_run_from};
 use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
@@ -89,9 +98,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let mut logger = Logger::new(colors);
 
     // Initialize configuration and agent registry
-    let init_result = match initialize_config(&args, &colors, &mut logger)? {
-        Some(result) => result,
-        None => return Ok(()), // Early exit (--init/--init-global/--init-legacy)
+    let Some(init_result) = initialize_config(&args, colors, &logger)? else {
+        return Ok(()); // Early exit (--init/--init-global/--init-legacy)
     };
 
     let config_init::ConfigInitResult {
@@ -111,25 +119,25 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let reviewer_display = registry.display_name(&reviewer_agent);
 
     // Handle listing commands (these can run without git repo)
-    if handle_listing_commands(&args, &registry, &colors) {
+    if handle_listing_commands(&args, &registry, colors) {
         return Ok(());
     }
 
     // Handle --diagnose
     if args.diagnose {
-        handle_diagnose(&colors, &config, &registry, &config_path, &config_sources);
+        handle_diagnose(colors, &config, &registry, &config_path, &config_sources);
         return Ok(());
     }
 
     // Validate agent chains
-    validate_agent_chains(&registry, &colors);
+    validate_agent_chains(&registry, colors);
 
     // Handle plumbing commands (these need git repo but not full validation)
     if args.show_commit_msg {
         return handle_show_commit_msg();
     }
     if args.apply_commit {
-        return handle_apply_commit(&logger, &colors);
+        return handle_apply_commit(&logger, colors);
     }
     if args.reset_start_commit {
         require_git_repo()?;
@@ -143,7 +151,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
                 return Ok(());
             }
             Err(e) => {
-                logger.error(&format!("Failed to reset starting commit: {}", e));
+                logger.error(&format!("Failed to reset starting commit: {e}"));
                 anyhow::bail!("Failed to reset starting commit");
             }
         }
@@ -175,28 +183,24 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
     // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
     if args.interactive && !std::path::Path::new("PROMPT.md").exists() {
-        match prompt_template_selection(&colors) {
-            Some(template_name) => {
-                create_prompt_from_template(&template_name, &colors)?;
-                println!();
-                logger.info(
-                    "PROMPT.md created. Please edit it with your task details, then run ralph again.",
-                );
-                logger.info(&format!(
-                    "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-                    config.commit_msg
-                ));
-                return Ok(());
-            }
-            None => {
-                println!();
-                logger.info("PROMPT.md is required to run the pipeline.");
-                logger.info(
-                    "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-                );
-                return Ok(());
-            }
+        if let Some(template_name) = prompt_template_selection(colors) {
+            create_prompt_from_template(&template_name, colors)?;
+            println!();
+            logger.info(
+                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+            );
+            logger.info(&format!(
+                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                config.commit_msg
+            ));
+            return Ok(());
         }
+        println!();
+        logger.info("PROMPT.md is required to run the pipeline.");
+        logger.info(
+            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+        );
+        return Ok(());
     }
 
     ensure_files(config.isolation_mode)?;
@@ -212,7 +216,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     if args.dry_run {
         return handle_dry_run(
             &logger,
-            &colors,
+            colors,
             &config,
             &developer_display,
             &reviewer_display,
@@ -226,7 +230,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
             &config,
             &registry,
             &logger,
-            &colors,
+            colors,
             &developer_agent,
             &reviewer_agent,
         );
@@ -250,7 +254,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
 /// Handles listing commands that don't require the full pipeline.
 ///
 /// Returns `true` if a listing command was handled and we should exit.
-fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: &Colors) -> bool {
+fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors) -> bool {
     if args.list_agents {
         handle_list_agents(registry);
         return true;
@@ -282,11 +286,8 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
     start_agent_phase(&mut git_helpers)?;
     let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger);
 
-    let mut timer = Timer::new();
-    let mut stats = Stats::new();
-
     // Welcome banner
-    print_welcome_banner(&ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
+    print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
     ctx.logger.info(&format!(
         "Working directory: {}{}{}",
         ctx.colors.cyan(),
@@ -339,19 +340,13 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
 
     // Make PROMPT.md read-only to protect against accidental deletion.
     // This is a best-effort protection - it may not work on all filesystems.
-    // If PROMPT.md doesn't exist, make_prompt_read_only() returns Ok(None).
+    // If PROMPT.md doesn't exist, make_prompt_read_only() returns None.
     match make_prompt_read_only() {
-        Ok(None) => {
+        None => {
             // Read-only permissions set successfully
         }
-        Ok(Some(warning)) => {
+        Some(warning) => {
             ctx.logger.warn(&format!("{}. Continuing anyway.", warning));
-        }
-        Err(e) => {
-            ctx.logger.warn(&format!(
-                "Failed to make PROMPT.md read-only: {}. Continuing anyway.",
-                e
-            ));
         }
     }
 
@@ -384,7 +379,7 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
 
     // Detect project stack and generate review guidelines
     let (_project_stack, review_guidelines) =
-        detect_project_stack(&ctx.config, &ctx.repo_root, &ctx.logger, &ctx.colors);
+        detect_project_stack(&ctx.config, &ctx.repo_root, &ctx.logger, ctx.colors);
 
     if let Some(ref guidelines) = review_guidelines {
         ctx.logger.info(&format!(
@@ -398,6 +393,8 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
     println!();
 
     // Create phase context
+    let mut timer = Timer::new();
+    let mut stats = Stats::new();
     let mut phase_ctx = PhaseContext {
         config: &ctx.config,
         registry: &ctx.registry,
@@ -463,110 +460,13 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
     finalize_pipeline(
         &mut agent_phase_guard,
         &ctx.logger,
-        &ctx.colors,
+        ctx.colors,
         &ctx.config,
         &timer,
         &stats,
         prompt_monitor,
-    )
-}
-
-/// Handles the --resume flag and loads checkpoint if applicable.
-fn handle_resume(
-    args: &Args,
-    logger: &Logger,
-    developer_agent: &str,
-    reviewer_agent: &str,
-) -> Option<PipelineCheckpoint> {
-    if !args.resume {
-        return None;
-    }
-
-    match load_checkpoint() {
-        Ok(Some(checkpoint)) => {
-            logger.header("RESUME: Loading Checkpoint", |c| c.yellow());
-            logger.info(&format!("Resuming from: {}", checkpoint.description()));
-            logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
-
-            // Verify agents match
-            if checkpoint.developer_agent != developer_agent {
-                logger.warn(&format!(
-                    "Developer agent changed: {} -> {}",
-                    checkpoint.developer_agent, developer_agent
-                ));
-            }
-            if checkpoint.reviewer_agent != reviewer_agent {
-                logger.warn(&format!(
-                    "Reviewer agent changed: {} -> {}",
-                    checkpoint.reviewer_agent, reviewer_agent
-                ));
-            }
-
-            Some(checkpoint)
-        }
-        Ok(None) => {
-            logger.warn("No checkpoint found. Starting fresh pipeline...");
-            None
-        }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to load checkpoint (starting fresh): {}",
-                e
-            ));
-            None
-        }
-    }
-}
-
-/// Detects project stack and generates review guidelines.
-fn detect_project_stack(
-    config: &Config,
-    repo_root: &std::path::Path,
-    logger: &Logger,
-    colors: &Colors,
-) -> (Option<ProjectStack>, Option<ReviewGuidelines>) {
-    if !config.auto_detect_stack {
-        return (None, None);
-    }
-
-    match detect_stack(repo_root) {
-        Ok(stack) => {
-            logger.info(&format!(
-                "Detected stack: {}{}{}",
-                colors.cyan(),
-                stack.summary(),
-                colors.reset()
-            ));
-            let guidelines = ReviewGuidelines::for_stack(&stack);
-            (Some(stack), Some(guidelines))
-        }
-        Err(e) => {
-            logger.warn(&format!("Could not detect project stack: {}", e));
-            (None, None)
-        }
-    }
-}
-
-/// Helper to get phase rank for resume logic.
-fn phase_rank(p: PipelinePhase) -> u8 {
-    match p {
-        PipelinePhase::Planning => 0,
-        PipelinePhase::Development => 1,
-        PipelinePhase::Review => 2,
-        PipelinePhase::Fix => 3,
-        PipelinePhase::ReviewAgain => 4,
-        PipelinePhase::CommitMessage => 5,
-        PipelinePhase::FinalValidation => 6,
-        PipelinePhase::Complete => 7,
-    }
-}
-
-/// Determines if a phase should run based on resume checkpoint.
-fn should_run_from(phase: PipelinePhase, resume_checkpoint: Option<&PipelineCheckpoint>) -> bool {
-    match resume_checkpoint {
-        None => true,
-        Some(checkpoint) => phase_rank(phase) >= phase_rank(checkpoint.phase),
-    }
+    );
+    Ok(())
 }
 
 /// Runs the development phase.
@@ -575,7 +475,8 @@ fn run_development(
     args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger.header("PHASE 1: Development", |c| c.blue());
+    ctx.logger
+        .header("PHASE 1: Development", super::colors::Colors::blue);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
     let resume_rank = resume_phase.map(phase_rank);
@@ -594,8 +495,7 @@ fn run_development(
 
     let start_iter = match resume_phase {
         Some(PipelinePhase::Planning | PipelinePhase::Development) => resume_checkpoint
-            .map(|c| c.iteration)
-            .unwrap_or(1)
+            .map_or(1, |c| c.iteration)
             .clamp(1, ctx.config.developer_iters),
         _ => 1,
     };
@@ -617,7 +517,8 @@ fn run_review_and_fix(
     _args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger.header("PHASE 2: Review & Fix", |c| c.magenta());
+    ctx.logger
+        .header("PHASE 2: Review & Fix", super::colors::Colors::magenta);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
 
@@ -635,8 +536,7 @@ fn run_review_and_fix(
         let start_pass = match resume_phase {
             Some(PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain) => {
                 resume_checkpoint
-                    .map(|c| c.reviewer_pass)
-                    .unwrap_or(1)
+                    .map_or(1, |c| c.reviewer_pass)
                     .clamp(1, ctx.config.reviewer_reviews.max(1))
             }
             _ => 1,
@@ -672,14 +572,14 @@ fn run_final_validation(
 
     if !should_run_from(PipelinePhase::FinalValidation, resume_checkpoint) {
         ctx.logger
-            .header("PHASE 3: Final Validation", |c| c.yellow());
+            .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
         ctx.logger
             .info("Skipping final validation (resuming from a later checkpoint phase)");
         return Ok(());
     }
 
     let argv = crate::utils::split_command(full_cmd)
-        .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {e}"))?;
     if argv.is_empty() {
         ctx.logger
             .warn("FULL_CHECK_CMD is empty; skipping final validation");
@@ -699,7 +599,7 @@ fn run_final_validation(
     }
 
     ctx.logger
-        .header("PHASE 3: Final Validation", |c| c.yellow());
+        .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
     let display_cmd = crate::utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running full check: {}{}{}",
@@ -722,46 +622,5 @@ fn run_final_validation(
         anyhow::bail!("Full check failed");
     }
 
-    Ok(())
-}
-
-/// Finalizes the pipeline: cleans up and prints summary.
-///
-/// Commits now happen per-iteration during development and per-cycle during review,
-/// so this function only handles cleanup and final summary.
-fn finalize_pipeline(
-    agent_phase_guard: &mut AgentPhaseGuard,
-    logger: &Logger,
-    colors: &Colors,
-    config: &Config,
-    timer: &Timer,
-    stats: &Stats,
-    prompt_monitor: Option<PromptMonitor>,
-) -> anyhow::Result<()> {
-    // Stop the PROMPT.md monitor if it was started
-    if let Some(monitor) = prompt_monitor {
-        monitor.stop();
-    }
-
-    // End agent phase and clean up
-    crate::git_helpers::end_agent_phase()?;
-    crate::git_helpers::disable_git_wrapper(agent_phase_guard.git_helpers);
-    if let Err(err) = crate::git_helpers::uninstall_hooks(logger) {
-        logger.warn(&format!("Failed to uninstall Ralph hooks: {}", err));
-    }
-
-    // Note: Individual commits were created per-iteration during development
-    // and per-cycle during review. The final commit phase has been removed.
-
-    // Final summary
-    print_final_summary(colors, config, timer, stats, logger);
-
-    if config.checkpoint_enabled {
-        if let Err(err) = clear_checkpoint() {
-            logger.warn(&format!("Failed to clear checkpoint: {}", err));
-        }
-    }
-
-    agent_phase_guard.disarm();
     Ok(())
 }
