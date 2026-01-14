@@ -2789,3 +2789,50 @@ body[data-audience="newcomer"] .audience-vibe-coder-content {
     opacity: 1;
     transform: translate(0, 0);
 }
+
+/* === COLLAPSIBLE GLOSSARY DETAILS === */
+.glossary-details {
+    --glossary-transition: var(--duration-normal) var(--ease-out);
+}
+
+.glossary-details summary {
+    list-style: none;
+}
+
+.glossary-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.glossary-details summary {
+    box-shadow: var(--shadow-sm);
+}
+
+.glossary-details summary:hover {
+    box-shadow: var(--shadow-terracotta);
+    transform: translateY(-1px);
+}
+
+.glossary-details[open] summary svg {
+    transform: rotate(180deg);
+}
+
+.glossary-details[open] summary {
+    border-color: var(--color-primary-dark);
+    background: var(--color-bg-warm);
+}
+
+/* Smooth expand animation for details content */
+.glossary-details[open] summary ~ div {
+    animation: glossaryExpand var(--glossary-transition);
+}
+
+@keyframes glossaryExpand {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

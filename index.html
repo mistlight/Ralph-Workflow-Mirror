@@ -278,7 +278,7 @@
             </div>
         </section>
 
-        <!-- What is Ralph Section -->
+        <!-- What is Ralph & How It Works - Consolidated Section -->
         <section id="what-is-ralph" class="section what-section">
             <div class="what-grid">
                 <div class="what-content">
@@ -552,7 +552,7 @@
             </p>
         </section>
 
-        <!-- CLI Glossary Section (for newcomers) -->
+        <!-- CLI Glossary Section (for newcomers) - Collapsible -->
         <section class="section" id="glossary" style="background: var(--color-bg);">
             <div class="section-header">
                 <span class="section-number">Glossary</span>
@@ -561,7 +561,14 @@
             </div>
 
             <div style="max-width: var(--container-lg); margin: 0 auto;">
-                <div class="audience-newcomer-content" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-6);">
+                <details class="glossary-details audience-newcomer-content" style="margin-bottom: var(--space-8);">
+                    <summary style="cursor: pointer; padding: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--color-primary); border-radius: var(--radius-xl); display: flex; align-items: center; justify-content: space-between; transition: all var(--duration-normal) var(--ease-out);">
+                        <span style="font-family: var(--font-heading); font-size: var(--text-lg); color: var(--color-primary); font-weight: var(--font-semibold);">Show CLI Glossary</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform var(--duration-normal) var(--ease-out);">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </summary>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-6); margin-top: var(--space-6);">
                     <!-- Term: Terminal -->
                     <div style="background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6);">
                         <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
@@ -680,6 +687,8 @@
                 <p style="text-align: center; margin-top: var(--space-8); padding: var(--space-6); background: var(--color-bg-elevated); border-radius: var(--radius-lg); border: 1px solid var(--border-subtle);">
                     <strong style="color: var(--color-accent);">Don't worry!</strong> You don't need to memorize these. Ralph's installation will guide you through everything step by step.
                 </p>
+                </div>
+                </details>
             </div>
         </section>
 
@@ -1117,6 +1126,26 @@ cargo install --path .</code></pre>
                         <p style="margin-top: 1rem; padding: var(--space-4); background: rgba(107, 142, 74, 0.1); border-left: 3px solid var(--color-success); border-radius: var(--radius-sm); font-size: 0.875rem;">
                             <strong style="color: var(--color-success);">Verify installation:</strong> Run <code class="inline" style="font-size: 0.85em;">ralph --version</code> to confirm Ralph is installed correctly. You should see version output.
                         </p>
+
+                        <!-- Troubleshooting -->
+                        <details style="margin-top: var(--space-6);">
+                            <summary style="cursor: pointer; font-size: var(--text-sm); color: var(--color-text-muted); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); transition: all var(--duration-fast) var(--ease-out);">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                                </svg>
+                                <span style="font-weight: var(--font-medium);">Troubleshooting</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: auto; transition: transform var(--duration-normal) var(--ease-out);">
+                                    <polyline points="6 9 12 15 18 9"/>
+                                </svg>
+                            </summary>
+                            <div style="margin-top: var(--space-4); padding: var(--space-5); background: var(--color-bg-warm); border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--color-text-muted);">
+                                <ul style="margin: 0; padding-left: var(--space-5); line-height: var(--leading-relaxed);">
+                                    <li style="margin-bottom: var(--space-3);"><strong style="color: var(--color-text);">Command not found?</strong> Make sure <code class="inline">~/.cargo/bin</code> is in your PATH. Add this to your shell config: <code class="inline">export PATH="$HOME/.cargo/bin:$PATH"</code></li>
+                                    <li style="margin-bottom: var(--space-3);"><strong style="color: var(--color-text);">Rust not installed?</strong> Install via <a href="https://rustup.rs" target="_blank" style="color: var(--color-primary);">rustup.rs</a> — it's the recommended way</li>
+                                    <li style="margin-bottom: 0;"><strong style="color: var(--color-text);">SSH clone fails?</strong> Make sure your SSH key is added to your Codeberg account, or use HTTPS instead</li>
+                                </ul>
+                            </div>
+                        </details>
                     </div>
 
                     <div class="install-content" data-content="config" style="display: none;">
