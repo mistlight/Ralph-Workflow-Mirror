@@ -92,12 +92,6 @@ fn is_problematic_prompt_target(agent: &str, model_flag: Option<&str>) -> bool {
     is_glm_like_agent(agent) || model_flag.is_some_and(is_glm_like_agent)
 }
 
-/// Check if an agent is GLM-based (for validation purposes).
-/// NOTE: This function is deprecated. Use `is_glm_like_agent` instead.
-fn is_glm_agent(agent: &str) -> bool {
-    is_glm_like_agent(agent)
-}
-
 /// Run pre-flight validation checks before starting a review pass.
 ///
 /// These checks verify that the environment is suitable for running
@@ -128,7 +122,7 @@ fn pre_flight_review_check(
     }
 
     // Check 0.1: GLM-specific command validation (diagnostic only)
-    if is_glm_agent(reviewer_agent) {
+    if is_glm_like_agent(reviewer_agent) {
         // Log diagnostic info about GLM agent configuration
         logger.info(&format!(
             "GLM agent detected: '{reviewer_agent}'. Command will include '-p' flag for non-interactive mode."

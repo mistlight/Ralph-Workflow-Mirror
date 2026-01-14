@@ -453,7 +453,13 @@ impl ClaudeParser {
                                 text
                             );
                         }
-                        session.get_delta_from_snapshot(&text, &index_str)
+                        match session.get_delta_from_snapshot(&text, &index_str) {
+                            Ok(delta) => delta,
+                            Err(e) => {
+                                eprintln!("Warning: Snapshot extraction failed: {e}. Using original delta.");
+                                &text
+                            }
+                        }
                     } else {
                         // Genuine delta - use as-is
                         &text
@@ -521,7 +527,13 @@ impl ClaudeParser {
                     eprintln!(
                         "Warning: Detected snapshot-as-delta for standalone text. Converting to delta."
                     );
-                    session.get_delta_from_snapshot(&text, default_index_str)
+                    match session.get_delta_from_snapshot(&text, default_index_str) {
+                        Ok(delta) => delta,
+                        Err(e) => {
+                            eprintln!("Warning: Snapshot extraction failed: {e}. Using original delta.");
+                            &text
+                        }
+                    }
                 } else {
                     &text
                 };

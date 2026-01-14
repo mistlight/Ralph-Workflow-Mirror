@@ -69,11 +69,26 @@ static SECRET_LIKE_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock:
     Regex::new(
         r"(?ix)
         \b(
+          # OpenAI API keys
           sk-[a-z0-9]{20,} |
+          # GitHub tokens
           ghp_[a-z0-9]{20,} |
           github_pat_[a-z0-9_]{20,} |
+          # Slack tokens
           xox[baprs]-[a-z0-9-]{10,} |
-          AKIA[0-9A-Z]{16}
+          # AWS access keys
+          AKIA[0-9A-Z]{16} |
+          # AWS session tokens
+          (?:Aws)?[A-Z0-9]{40,} |
+          # Stripe keys
+          sk_live_[a-zA-Z0-9]{24,} |
+          sk_test_[a-zA-Z0-9]{24,} |
+          # Firebase tokens
+          [a-zA-Z0-9_/+-]{40,}\\.firebaseio\\.com |
+          [a-z0-9:_-]{40,}@apps\\.googleusercontent\\.com |
+          # Generic JWT patterns
+          ey[a-zA-Z0-9_-]+\\.ey[a-zA-Z0-9_-]+\\.ey[a-zA-Z0-9_-]+ |
+          ey[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+
         )\b
         ",
     )

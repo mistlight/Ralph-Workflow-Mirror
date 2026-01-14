@@ -12,6 +12,7 @@ use crate::colors::Colors;
 use crate::config::Config;
 use crate::logger::Logger;
 use crate::output::{argv_requests_json, format_generic_json_for_display};
+use crate::platform::Platform;
 use crate::timer::Timer;
 use crate::utils::{format_argv_for_log, split_command, truncate_text};
 use std::fs::{self, File, OpenOptions};
@@ -81,18 +82,25 @@ pub fn run_with_prompt(
         runtime.colors.reset()
     ));
 
-    // Copy to clipboard if interactive and pbcopy available
+    // Copy to clipboard if interactive
     if runtime.config.interactive {
-        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(cmd.prompt.as_bytes());
+        if let Some(clipboard_cmd) = get_platform_clipboard_command() {
+            if let Ok(mut child) = Command::new(clipboard_cmd.binary)
+                .args(clipboard_cmd.args)
+                .stdin(Stdio::piped())
+                .spawn()
+            {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(cmd.prompt.as_bytes());
+                }
+                let _ = child.wait();
+                runtime.logger.info(&format!(
+                    "Prompt copied to clipboard {}({}){}",
+                    runtime.colors.dim(),
+                    clipboard_cmd.paste_hint,
+                    runtime.colors.reset()
+                ));
             }
-            let _ = child.wait();
-            runtime.logger.info(&format!(
-                "Prompt copied to clipboard {}(pbpaste to view){}",
-                runtime.colors.dim(),
-                runtime.colors.reset()
-            ));
         }
     }
 
@@ -354,6 +362,52 @@ pub fn run_with_prompt(
         exit_code,
         stderr: stderr_output,
     })
+}
+
+/// Platform-specific clipboard command configuration.
+struct ClipboardCommand {
+    binary: &'static str,
+    args: &'static [&'static str],
+    paste_hint: &'static str,
+}
+
+/// Get the platform-specific clipboard command.
+///
+/// Returns None if no clipboard command is available for the current platform.
+fn get_platform_clipboard_command() -> Option<ClipboardCommand> {
+    let platform = Platform::detect();
+
+    match platform {
+        Platform::MacWithBrew | Platform::MacWithoutBrew => Some(ClipboardCommand {
+            binary: "pbcopy",
+            args: &[],
+            paste_hint: "pbpaste to view",
+        }),
+        Platform::DebianLinux | Platform::RhelLinux | Platform::ArchLinux | Platform::GenericLinux => {
+            // Try wl-copy (Wayland) first, then xclip (X11)
+            if Command::new("which").arg("wl-copy").output().map(|o| o.status.success()).unwrap_or(false) {
+                Some(ClipboardCommand {
+                    binary: "wl-copy",
+                    args: &[],
+                    paste_hint: "wl-paste to view",
+                })
+            } else if Command::new("which").arg("xclip").output().map(|o| o.status.success()).unwrap_or(false) {
+                Some(ClipboardCommand {
+                    binary: "xclip",
+                    args: &["-selection", "clipboard"],
+                    paste_hint: "xclip -o -selection clipboard to view",
+                })
+            } else {
+                None
+            }
+        }
+        Platform::Windows => Some(ClipboardCommand {
+            binary: "clip",
+            args: &[],
+            paste_hint: "paste to view",
+        }),
+        Platform::Unknown => None,
+    }
 }
 
 /// Try a single agent/model configuration with retries.
