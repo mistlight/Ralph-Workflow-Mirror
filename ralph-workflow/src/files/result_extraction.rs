@@ -1119,14 +1119,14 @@ mod tests {
 
     #[test]
     fn test_extract_plan_from_text_with_summary() {
-        let content = r#"Some random output
+        let content = r"Some random output
 ## Summary
 This is the plan summary with enough content to pass validation.
 
 ## Implementation Steps
 1. Do the thing
 2. Do the other thing
-"#;
+";
         let result = extract_plan_from_text(content);
         assert!(result.is_some());
         assert!(result.unwrap().starts_with("## Summary"));
@@ -1134,11 +1134,11 @@ This is the plan summary with enough content to pass validation.
 
     #[test]
     fn test_extract_plan_from_text_with_implementation_steps() {
-        let content = r#"Agent thinking...
+        let content = r"Agent thinking...
 ## Implementation Steps
 Step 1: Create the component with all necessary features
 Step 2: Add tests and documentation
-"#;
+";
         let result = extract_plan_from_text(content);
         assert!(result.is_some());
         assert!(result.unwrap().starts_with("## Implementation Steps"));
