@@ -99,7 +99,7 @@ impl StreamEventClassifier {
         let is_delta = obj.get("delta").and_then(|v| v.as_bool()).unwrap_or(false);
 
         // Check for control event patterns
-        if self.is_control_event(&type_name, obj) {
+        if Self::is_control_event(&type_name, obj) {
             return ClassificationResult {
                 event_type: StreamEventType::Control,
                 type_name,
@@ -112,7 +112,7 @@ impl StreamEventClassifier {
             return ClassificationResult {
                 event_type: StreamEventType::Partial,
                 type_name,
-                content_field: self.find_content_field(obj),
+                content_field: Self::find_content_field(obj),
             };
         }
 
@@ -121,13 +121,12 @@ impl StreamEventClassifier {
         ClassificationResult {
             event_type: StreamEventType::Complete,
             type_name,
-            content_field: self.find_content_field(obj),
+            content_field: Self::find_content_field(obj),
         }
     }
 
     /// Check if an event is a control/metadata event
     fn is_control_event(
-        &self,
         type_name: &Option<String>,
         obj: &serde_json::Map<String, Value>,
     ) -> bool {
@@ -165,7 +164,7 @@ impl StreamEventClassifier {
 
         // Check for status/error fields without content
         let has_status = obj.contains_key("status") || obj.contains_key("error");
-        let has_content = self.has_content_field(obj);
+        let has_content = Self::has_content_field(obj);
         has_status && !has_content
     }
 
@@ -229,7 +228,7 @@ impl StreamEventClassifier {
                         || n_lower.contains("chunk")
                 }))
         {
-            if let Some(content) = self.find_content_field(obj) {
+            if let Some(content) = Self::find_content_field(obj) {
                 if let Some(text) = obj.get(&content).and_then(|v| v.as_str()) {
                     // Short text fragments are likely partial, BUT check for complete patterns
                     if text.len() < self.substantial_content_threshold {
@@ -299,7 +298,7 @@ impl StreamEventClassifier {
     }
 
     /// Find the primary content field in an object
-    fn find_content_field(&self, obj: &serde_json::Map<String, Value>) -> Option<String> {
+    fn find_content_field(obj: &serde_json::Map<String, Value>) -> Option<String> {
         // Common content field names in priority order
         let content_fields = [
             "content",
@@ -328,8 +327,8 @@ impl StreamEventClassifier {
     }
 
     /// Check if an object has any content field
-    fn has_content_field(&self, obj: &serde_json::Map<String, Value>) -> bool {
-        self.find_content_field(obj).is_some()
+    fn has_content_field(obj: &serde_json::Map<String, Value>) -> bool {
+        Self::find_content_field(obj).is_some()
     }
 }
 
