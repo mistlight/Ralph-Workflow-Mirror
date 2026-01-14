@@ -11,8 +11,8 @@ pub use guided::{
     prompt_security_focused_review,
 };
 pub use unguided::{
-    prompt_detailed_review_without_guidelines,
-    prompt_incremental_review_with_diff, prompt_reviewer_review, prompt_universal_review,
+    prompt_detailed_review_without_guidelines, prompt_incremental_review_with_diff,
+    prompt_reviewer_review, prompt_universal_review,
 };
 
 #[cfg(test)]

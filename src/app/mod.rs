@@ -20,12 +20,12 @@ pub mod validation;
 use crate::agents::AgentRegistry;
 use crate::banner::{print_final_summary, print_welcome_banner};
 use crate::cli::{
-    create_prompt_from_template, handle_diagnose, handle_dry_run,
-    handle_list_agents, handle_list_available_agents, handle_list_providers, prompt_template_selection,
-    Args,
+    create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
+    handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
 };
 use crate::colors::Colors;
 use crate::config::Config;
+use crate::files::monitoring::PromptMonitor;
 use crate::git_helpers::{
     cleanup_orphaned_marker, get_repo_root, require_git_repo, reset_start_commit,
     save_start_commit, start_agent_phase,
@@ -40,7 +40,6 @@ use crate::utils::{
     reset_context_for_isolation, save_checkpoint, update_status, validate_prompt_md, Logger,
     PipelineCheckpoint, PipelinePhase,
 };
-use crate::files::monitoring::PromptMonitor;
 use std::env;
 use std::process::Command;
 
@@ -315,10 +314,16 @@ fn run_pipeline(
             // Backup created successfully with read-only permissions
         }
         Ok(Some(warning)) => {
-            logger.warn(&format!("PROMPT.md backup created but: {}. Continuing anyway.", warning));
+            logger.warn(&format!(
+                "PROMPT.md backup created but: {}. Continuing anyway.",
+                warning
+            ));
         }
         Err(e) => {
-            logger.warn(&format!("Failed to create PROMPT.md backup: {}. Continuing anyway.", e));
+            logger.warn(&format!(
+                "Failed to create PROMPT.md backup: {}. Continuing anyway.",
+                e
+            ));
         }
     }
 
@@ -333,7 +338,10 @@ fn run_pipeline(
             logger.warn(&format!("{}. Continuing anyway.", warning));
         }
         Err(e) => {
-            logger.warn(&format!("Failed to make PROMPT.md read-only: {}. Continuing anyway.", e));
+            logger.warn(&format!(
+                "Failed to make PROMPT.md read-only: {}. Continuing anyway.",
+                e
+            ));
         }
     }
 
@@ -343,7 +351,10 @@ fn run_pipeline(
     let mut prompt_monitor = match PromptMonitor::new() {
         Ok(mut monitor) => {
             if let Err(e) = monitor.start() {
-                logger.warn(&format!("Failed to start PROMPT.md monitoring: {}. Continuing anyway.", e));
+                logger.warn(&format!(
+                    "Failed to start PROMPT.md monitoring: {}. Continuing anyway.",
+                    e
+                ));
                 None
             } else {
                 if config.verbosity.is_debug() {
@@ -353,7 +364,10 @@ fn run_pipeline(
             }
         }
         Err(e) => {
-            logger.warn(&format!("Failed to create PROMPT.md monitor: {}. Continuing anyway.", e));
+            logger.warn(&format!(
+                "Failed to create PROMPT.md monitor: {}. Continuing anyway.",
+                e
+            ));
             None
         }
     };

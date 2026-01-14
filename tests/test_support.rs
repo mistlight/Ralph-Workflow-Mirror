@@ -8,7 +8,8 @@ pub fn init_git_repo(dir: &TempDir) -> Repository {
 
     // Configure user for libgit2's repo.signature() and Ralph's git_commit().
     let mut cfg = repo.config().expect("repo config");
-    cfg.set_str("user.name", "Test User").expect("set user.name");
+    cfg.set_str("user.name", "Test User")
+        .expect("set user.name");
     cfg.set_str("user.email", "test@example.com")
         .expect("set user.email");
 
@@ -17,13 +18,20 @@ pub fn init_git_repo(dir: &TempDir) -> Repository {
         ".agent/\n.no_agent_commit\nPROMPT.md\n",
     )
     .expect("write .gitignore");
-    fs::write(dir.path().join("PROMPT.md"), "# Test Requirements\nTest task")
-        .expect("write PROMPT.md");
+    fs::write(
+        dir.path().join("PROMPT.md"),
+        "# Test Requirements\nTest task",
+    )
+    .expect("write PROMPT.md");
     fs::create_dir_all(dir.path().join(".agent")).expect("create .agent");
 
     repo
 }
 
+// Test support utilities - used by integration tests but flagged as dead code
+// because each test file is compiled as a separate binary. These functions
+// are genuinely used across multiple test files (see git_workflow.rs,
+// workflow_requirements.rs, commit_message_generation.rs).
 #[allow(dead_code)]
 pub fn write_file<P: AsRef<Path>>(path: P, contents: &str) {
     if let Some(parent) = path.as_ref().parent() {
@@ -92,4 +100,3 @@ pub fn stage_all(repo: &Repository) {
         .expect("add_all");
     index.write().expect("write index");
 }
-

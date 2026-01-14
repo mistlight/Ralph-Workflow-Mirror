@@ -58,21 +58,10 @@ impl AgentRegistry {
         Ok(registry)
     }
 
-    /// Create a new registry with CCS aliases.
-    #[allow(dead_code)] // Part of CCS API, used in tests
-    pub fn with_ccs_aliases(
-        ccs_aliases: HashMap<String, CcsAliasConfig>,
-        defaults: CcsConfig,
-    ) -> Result<Self, AgentConfigError> {
-        let mut registry = Self::new()?;
-        registry.set_ccs_aliases(ccs_aliases, defaults);
-        Ok(registry)
-    }
-
     /// Set CCS aliases for the registry.
     ///
     /// This eagerly registers CCS aliases as agents so they can be
-    /// looked up with `get()` like regular agents.
+    /// resolved with `resolve_config()`.
     pub fn set_ccs_aliases(
         &mut self,
         aliases: HashMap<String, CcsAliasConfig>,
@@ -93,19 +82,8 @@ impl AgentRegistry {
         self.agents.insert(name.to_string(), config);
     }
 
-    /// Get agent configuration.
-    ///
-    /// Looks up agents by name, including CCS aliases that were registered
-    /// via `set_ccs_aliases()`. CCS aliases like `ccs/work` are pre-registered
-    /// and can be looked up like any other agent.
-    #[allow(dead_code)] // Kept for API clarity; prefer resolve_config() for dynamic CCS refs.
-    pub fn get(&self, name: &str) -> Option<&AgentConfig> {
-        self.agents.get(name)
-    }
-
     /// Resolve an agent's configuration, including on-the-fly CCS references.
     ///
-    /// This differs from `get()` which only returns agents registered in the map.
     /// CCS supports direct execution via `ccs/<alias>` even when the alias isn't
     /// pre-registered in config; those are resolved lazily here.
     pub fn resolve_config(&self, name: &str) -> Option<AgentConfig> {
@@ -224,14 +202,6 @@ impl AgentRegistry {
         }
 
         alternatives
-    }
-
-    /// Check if an agent name can be resolved.
-    ///
-    /// Since CCS aliases are eagerly registered, this just checks the agents map.
-    #[allow(dead_code)] // Part of CCS API, used in tests
-    pub fn can_resolve(&self, name: &str) -> bool {
-        self.agents.contains_key(name)
     }
 
     /// Check if agent exists (registered only, not CCS aliases).
@@ -697,7 +667,7 @@ mod tests {
         assert!(registry.is_known("ccs/gemini"));
 
         // Get should return valid config
-        let config = registry.get("ccs/work").unwrap();
+        let config = registry.resolve_config("ccs/work").unwrap();
         // When claude binary is found, it replaces "ccs work" with the path to claude
         assert!(
             config.cmd.ends_with("claude") || config.cmd == "ccs work",
@@ -762,13 +732,15 @@ mod tests {
 
     #[test]
     fn test_ccs_aliases_with_registry_constructor() {
-        let registry = AgentRegistry::with_ccs_aliases(HashMap::new(), default_ccs()).unwrap();
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.set_ccs_aliases(HashMap::new(), default_ccs());
 
         // Should have built-in agents
         assert!(registry.is_known("claude"));
         assert!(registry.is_known("codex"));
 
         // Now test with actual aliases
+        let mut registry2 = AgentRegistry::new().unwrap();
         let mut aliases = HashMap::new();
         aliases.insert(
             "work".to_string(),
@@ -778,8 +750,8 @@ mod tests {
             },
         );
 
-        let registry = AgentRegistry::with_ccs_aliases(aliases, default_ccs()).unwrap();
-        assert!(registry.is_known("ccs/work"));
+        registry2.set_ccs_aliases(aliases, default_ccs());
+        assert!(registry2.is_known("ccs/work"));
     }
 
     #[test]

@@ -14,7 +14,8 @@ use clap::Parser;
     quality assurance, automatically staging and committing the final result."
 )]
 #[command(version)]
-#[command(after_help = "╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
+#[command(
+    after_help = "╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
 NEW TO RALPH?\n\
     Just want to get started? Run:\n\
@@ -49,7 +50,8 @@ QUICK EXAMPLES:\n\
     ralph -U \"feat: add button\"      Rapid mode for minor features\n\
     ralph -a claude \"fix: bug\"       Use specific agent\n\
     ralph --list-templates            See all prompt templates\n\
-╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")]
+╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+)]
 pub struct Args {
     /// Commit message for the final commit
     #[arg(
@@ -198,7 +200,12 @@ pub struct Args {
     pub full: bool,
 
     /// Shorthand for --verbosity=4 (maximum verbosity with raw JSON)
-    #[arg(long, conflicts_with = "verbosity", help = "Debug mode (same as -v4)", hide = true)]
+    #[arg(
+        long,
+        conflicts_with = "verbosity",
+        help = "Debug mode (same as -v4)",
+        hide = true
+    )]
     pub debug: bool,
 
     /// Quick mode: 1 developer iteration, 1 review pass (fast turnaround)
@@ -250,11 +257,19 @@ pub struct Args {
     pub no_isolation: bool,
 
     /// List all configured agents and exit
-    #[arg(long, help = "Show all agents from registry and config file", hide = true)]
+    #[arg(
+        long,
+        help = "Show all agents from registry and config file",
+        hide = true
+    )]
     pub list_agents: bool,
 
     /// List only agents found in PATH and exit
-    #[arg(long, help = "Show only agents that are installed and available", hide = true)]
+    #[arg(
+        long,
+        help = "Show only agents that are installed and available",
+        hide = true
+    )]
     pub list_available_agents: bool,
 
     /// List OpenCode provider types and their configuration
@@ -295,7 +310,11 @@ pub struct Args {
     // === Plumbing Commands ===
     // These are low-level operations for scripting and automation
     /// Generate commit message only (writes to .agent/commit-message.txt)
-    #[arg(long, help = "Run only the commit message generation phase, then exit", hide = true)]
+    #[arg(
+        long,
+        help = "Run only the commit message generation phase, then exit",
+        hide = true
+    )]
     pub generate_commit_msg: bool,
 
     /// Apply commit using existing .agent/commit-message.txt

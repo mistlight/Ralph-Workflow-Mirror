@@ -565,9 +565,9 @@ fn ralph_generate_commit_msg_fails_if_agent_doesnt_create_file() {
         // Agent that fails (returns non-zero exit code)
         .env("RALPH_DEVELOPER_CMD", "sh -c 'echo error >&2; exit 1'");
 
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Failed to generate commit message"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Failed to generate commit message",
+    ));
 }
 
 // ============================================================================

@@ -12,8 +12,8 @@ use std::rc::Rc;
 use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
 use super::types::{
-    format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock,
-    ContentBlockDelta, ContentType, DeltaAccumulator, StreamInnerEvent,
+    format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock, ContentBlockDelta,
+    ContentType, DeltaAccumulator, StreamInnerEvent,
 };
 
 /// Claude event parser
@@ -327,7 +327,10 @@ impl ClaudeParser {
                     ContentBlock::Text { text: Some(t) } if !t.is_empty() => {
                         acc.add_text_delta(index, t);
                     }
-                    ContentBlock::ToolUse { name: _, input: Some(i) } => {
+                    ContentBlock::ToolUse {
+                        name: _,
+                        input: Some(i),
+                    } => {
                         // Initialize tool input accumulator
                         if let serde_json::Value::String(s) = i {
                             acc.add_delta(ContentType::ToolInput, &index.to_string(), s);
@@ -374,7 +377,9 @@ impl ClaudeParser {
                         c.reset()
                     )
                 }
-                ContentBlockDelta::ThinkingDelta { thinking: Some(text) } => {
+                ContentBlockDelta::ThinkingDelta {
+                    thinking: Some(text),
+                } => {
                     // Accumulate thinking content
                     acc.add_thinking_delta(index, &text);
                     // Display thinking with visual distinction
@@ -433,7 +438,9 @@ impl ClaudeParser {
             StreamInnerEvent::Error {
                 error: Some(err), ..
             } => {
-                let msg = err.message.unwrap_or_else(|| "Unknown streaming error".to_string());
+                let msg = err
+                    .message
+                    .unwrap_or_else(|| "Unknown streaming error".to_string());
                 format!(
                     "{}[{}]{} {}Error: {}{}\n",
                     c.dim(),
@@ -493,8 +500,7 @@ impl ClaudeParser {
             // Stream events that produce incremental content
             ClaudeEvent::StreamEvent { event } => matches!(
                 event,
-                StreamInnerEvent::ContentBlockDelta { .. }
-                    | StreamInnerEvent::TextDelta { .. }
+                StreamInnerEvent::ContentBlockDelta { .. } | StreamInnerEvent::TextDelta { .. }
             ),
             _ => false,
         }

@@ -35,7 +35,8 @@ const MAX_DIFF_SIZE_HARD: usize = 1024 * 1024;
 
 /// Truncation marker for reviewer diffs (not for commit messages).
 /// For commit messages, we use chunking instead.
-const DIFF_TRUNCATED_MARKER: &str = "\n\n[Diff truncated due to size. Showing first portion above.]";
+const DIFF_TRUNCATED_MARKER: &str =
+    "\n\n[Diff truncated due to size. Showing first portion above.]";
 
 /// Convert git2 error to io::Error.
 fn git2_to_io_error(err: git2::Error) -> io::Error {
@@ -217,11 +218,7 @@ pub(crate) fn validate_and_truncate_diff(diff: String) -> (String, bool) {
     // Truncate if over the hard limit
     if diff_size > MAX_DIFF_SIZE_HARD {
         let truncate_size = MAX_DIFF_SIZE_HARD - DIFF_TRUNCATED_MARKER.len();
-        let truncated = if let Some(idx) = diff
-            .char_indices()
-            .nth(truncate_size)
-            .map(|(i, _)| i)
-        {
+        let truncated = if let Some(idx) = diff.char_indices().nth(truncate_size).map(|(i, _)| i) {
             format!("{}{}", &diff[..idx], DIFF_TRUNCATED_MARKER)
         } else {
             format!("{}{}", diff, DIFF_TRUNCATED_MARKER)
@@ -344,7 +341,10 @@ fn chunk_diff_for_commit_message(diff: &str) -> Vec<String> {
     // Now we know the actual chunk count, update the placeholders
     let actual_chunk_count = chunks.len();
     for (idx, chunk) in chunks.iter_mut().enumerate() {
-        *chunk = chunk.replace(&format!("{}/?", idx + 1), &format!("{}/{}", idx + 1, actual_chunk_count));
+        *chunk = chunk.replace(
+            &format!("{}/?", idx + 1),
+            &format!("{}/{}", idx + 1, actual_chunk_count),
+        );
     }
 
     eprintln!(
@@ -357,7 +357,12 @@ fn chunk_diff_for_commit_message(diff: &str) -> Vec<String> {
     // Log chunk boundaries for debugging
     for (idx, chunk) in chunks.iter().enumerate() {
         let file_count = chunk.matches("diff --git").count();
-        eprintln!("Chunk {}: {} bytes, {} files", idx + 1, chunk.len(), file_count);
+        eprintln!(
+            "Chunk {}: {} bytes, {} files",
+            idx + 1,
+            chunk.len(),
+            file_count
+        );
     }
 
     chunks
@@ -478,7 +483,10 @@ fn resolve_commit_identity(
         Ok((identity, _source)) => {
             // Identity resolved from CLI, env, or config - validate and return
             if let Err(e) = identity.validate() {
-                return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Invalid git identity from config: {}", e)));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Invalid git identity from config: {}", e),
+                ));
             }
             return Ok(identity);
         }
@@ -588,7 +596,8 @@ pub(crate) fn git_commit(
 
     // Resolve git identity using the identity resolution system.
     // This implements the full priority chain with proper fallbacks.
-    let GitIdentity { name, email } = resolve_commit_identity(&repo, git_user_name, git_user_email)?;
+    let GitIdentity { name, email } =
+        resolve_commit_identity(&repo, git_user_name, git_user_email)?;
 
     // Create the signature with the resolved identity
     let sig = git2::Signature::now(&name, &email).map_err(git2_to_io_error)?;
@@ -694,9 +703,16 @@ impl std::fmt::Display for CommitGenerationError {
         match self {
             CommitGenerationError::Timeout => write!(f, "LLM agent timed out"),
             CommitGenerationError::Empty => write!(f, "LLM returned empty response"),
-            CommitGenerationError::ExtractionFailed(msg) => write!(f, "Failed to extract commit message: {}", msg),
+            CommitGenerationError::ExtractionFailed(msg) => {
+                write!(f, "Failed to extract commit message: {}", msg)
+            }
             CommitGenerationError::ValidationFailed(msg) => write!(f, "Validation failed: {}", msg),
-            CommitGenerationError::AgentFailed { exit_code, stderr, agent_cmd, message } => {
+            CommitGenerationError::AgentFailed {
+                exit_code,
+                stderr,
+                agent_cmd,
+                message,
+            } => {
                 write!(f, "Agent '{}' failed: ", agent_cmd)?;
                 if let Some(code) = exit_code {
                     write!(f, "Exit code: {}. ", code)?;
@@ -754,7 +770,12 @@ impl CommitGenerationError {
 
                 // Use the existing AgentErrorKind classifier
                 let exit_code_val = exit_code.unwrap_or(-1);
-                let kind = AgentErrorKind::classify_with_agent(exit_code_val, stderr, agent_name, model_flag);
+                let kind = AgentErrorKind::classify_with_agent(
+                    exit_code_val,
+                    stderr,
+                    agent_name,
+                    model_flag,
+                );
 
                 // Log classification for debugging
                 eprintln!(
@@ -781,29 +802,33 @@ impl CommitGenerationError {
 /// Call the LLM agent with a prompt and return the raw output.
 ///
 /// This is a helper function that handles the actual LLM invocation.
-fn call_llm_agent(prompt: &str, agent_cmd: &str, timeout_secs: u64) -> Result<String, CommitGenerationError> {
+fn call_llm_agent(
+    prompt: &str,
+    agent_cmd: &str,
+    timeout_secs: u64,
+) -> Result<String, CommitGenerationError> {
     use crate::utils::split_command;
     use std::io::{Read, Write};
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
-    let argv = split_command(agent_cmd).map_err(|e| {
-        CommitGenerationError::AgentFailed {
-            exit_code: None,
-            stderr: String::new(),
-            agent_cmd: agent_cmd.to_string(),
-            message: format!("Failed to parse agent command: {}", e),
-        }
+    let argv = split_command(agent_cmd).map_err(|e| CommitGenerationError::AgentFailed {
+        exit_code: None,
+        stderr: String::new(),
+        agent_cmd: agent_cmd.to_string(),
+        message: format!("Failed to parse agent command: {}", e),
     })?;
 
     let (program, args) = match argv.split_first() {
         Some(pair) => pair,
-        None => return Err(CommitGenerationError::AgentFailed {
-            exit_code: None,
-            stderr: String::new(),
-            agent_cmd: agent_cmd.to_string(),
-            message: "Agent command is empty".to_string(),
-        }),
+        None => {
+            return Err(CommitGenerationError::AgentFailed {
+                exit_code: None,
+                stderr: String::new(),
+                agent_cmd: agent_cmd.to_string(),
+                message: "Agent command is empty".to_string(),
+            })
+        }
     };
 
     let mut child = Command::new(program)
@@ -839,21 +864,25 @@ fn call_llm_agent(prompt: &str, agent_cmd: &str, timeout_secs: u64) -> Result<St
             Ok(Some(exit_status)) => {
                 let mut stdout = Vec::new();
                 if let Some(mut out) = child.stdout.take() {
-                    out.read_to_end(&mut stdout).map_err(|e| CommitGenerationError::AgentFailed {
-                        exit_code: None,
-                        stderr: String::new(),
-                        agent_cmd: agent_cmd.to_string(),
-                        message: format!("Failed to read stdout: {}", e),
+                    out.read_to_end(&mut stdout).map_err(|e| {
+                        CommitGenerationError::AgentFailed {
+                            exit_code: None,
+                            stderr: String::new(),
+                            agent_cmd: agent_cmd.to_string(),
+                            message: format!("Failed to read stdout: {}", e),
+                        }
                     })?;
                 }
 
                 let mut stderr = Vec::new();
                 if let Some(mut err) = child.stderr.take() {
-                    err.read_to_end(&mut stderr).map_err(|e| CommitGenerationError::AgentFailed {
-                        exit_code: None,
-                        stderr: String::new(),
-                        agent_cmd: agent_cmd.to_string(),
-                        message: format!("Failed to read stderr: {}", e),
+                    err.read_to_end(&mut stderr).map_err(|e| {
+                        CommitGenerationError::AgentFailed {
+                            exit_code: None,
+                            stderr: String::new(),
+                            agent_cmd: agent_cmd.to_string(),
+                            message: format!("Failed to read stderr: {}", e),
+                        }
                     })?;
                 }
 
@@ -891,8 +920,13 @@ fn call_llm_agent(prompt: &str, agent_cmd: &str, timeout_secs: u64) -> Result<St
 }
 
 /// Extract and validate commit message from LLM output.
-fn extract_and_validate_commit_message(raw_output: &str, agent_cmd: &str) -> Result<String, CommitGenerationError> {
-    use crate::files::llm_output_extraction::{extract_llm_output, validate_commit_message, OutputFormat};
+fn extract_and_validate_commit_message(
+    raw_output: &str,
+    agent_cmd: &str,
+) -> Result<String, CommitGenerationError> {
+    use crate::files::llm_output_extraction::{
+        extract_llm_output, validate_commit_message, OutputFormat,
+    };
 
     if raw_output.trim().is_empty() {
         return Err(CommitGenerationError::Empty);
@@ -921,8 +955,7 @@ fn extract_and_validate_commit_message(raw_output: &str, agent_cmd: &str) -> Res
     // Log extraction metadata for debugging
     eprintln!(
         "LLM output extraction: {:?} format, structured={}",
-        extraction.format,
-        extraction.was_structured
+        extraction.format, extraction.was_structured
     );
 
     if let Some(warning) = &extraction.warning {
@@ -968,7 +1001,10 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
     // Show first and last few lines for verification
     let first_lines = diff_lines.iter().take(5).collect::<Vec<_>>();
     let last_lines = if diff_lines.len() > 5 {
-        diff_lines.iter().skip(diff_lines.len().saturating_sub(5)).collect::<Vec<_>>()
+        diff_lines
+            .iter()
+            .skip(diff_lines.len().saturating_sub(5))
+            .collect::<Vec<_>>()
     } else {
         vec![]
     };
@@ -1029,16 +1065,30 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
 /// # Returns
 ///
 /// Returns `Ok(String)` with the generated commit message, or an error if all agents fail.
-pub(crate) fn generate_commit_message_with_fallback(diff: &str, agent_cmds: &[String]) -> io::Result<String> {
+pub(crate) fn generate_commit_message_with_fallback(
+    diff: &str,
+    agent_cmds: &[String],
+) -> io::Result<String> {
     if agent_cmds.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "No agent commands provided"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "No agent commands provided",
+        ));
     }
 
-    eprintln!("Generating commit message with {} agent(s) in fallback chain...", agent_cmds.len());
+    eprintln!(
+        "Generating commit message with {} agent(s) in fallback chain...",
+        agent_cmds.len()
+    );
 
     // Try each agent in the fallback chain
     for (agent_idx, agent_cmd) in agent_cmds.iter().enumerate() {
-        eprintln!("Trying agent {}/{}: {}", agent_idx + 1, agent_cmds.len(), agent_cmd);
+        eprintln!(
+            "Trying agent {}/{}: {}",
+            agent_idx + 1,
+            agent_cmds.len(),
+            agent_cmd
+        );
 
         match generate_commit_message_with_llm(diff, agent_cmd) {
             Ok(msg) => {
@@ -1071,8 +1121,14 @@ pub(crate) fn generate_commit_message_with_fallback(diff: &str, agent_cmds: &[St
 /// 2. Uses error classification to decide whether to retry or fallback immediately
 /// 3. Only retries transient errors (rate limits, network issues, timeouts)
 /// 4. Immediately returns for permanent/agent-specific errors (auth failures, GLM quirks)
-fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: usize) -> io::Result<String> {
-    use crate::prompts::{prompt_generate_commit_message_with_diff, prompt_retry_commit_message_with_feedback};
+fn generate_commit_message_with_retries(
+    diff: &str,
+    agent_cmd: &str,
+    chunk_idx: usize,
+) -> io::Result<String> {
+    use crate::prompts::{
+        prompt_generate_commit_message_with_diff, prompt_retry_commit_message_with_feedback,
+    };
     use std::time::Duration;
 
     let max_retries = 3;
@@ -1084,27 +1140,40 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
 
     for attempt in 0..max_retries {
         if attempt > 0 {
-            eprintln!("Retry attempt {}/{} for chunk {}...", attempt + 1, max_retries, chunk_idx + 1);
+            eprintln!(
+                "Retry attempt {}/{} for chunk {}...",
+                attempt + 1,
+                max_retries,
+                chunk_idx + 1
+            );
             // Exponential backoff between retries
             let backoff_ms = 1000 * (1 << attempt.min(3)); // 1s, 2s, 4s
             std::thread::sleep(Duration::from_millis(backoff_ms));
         }
 
         // Use the retry prompt with feedback if we have a previous bad message
-        let prompt = if let (Some(bad_msg), Some(val_err)) = (&last_bad_message, &last_validation_error) {
-            eprintln!("Using retry prompt with validation feedback...");
-            prompt_retry_commit_message_with_feedback(diff, bad_msg, val_err)
-        } else {
-            prompt_generate_commit_message_with_diff(diff)
-        };
+        let prompt =
+            if let (Some(bad_msg), Some(val_err)) = (&last_bad_message, &last_validation_error) {
+                eprintln!("Using retry prompt with validation feedback...");
+                prompt_retry_commit_message_with_feedback(diff, bad_msg, val_err)
+            } else {
+                prompt_generate_commit_message_with_diff(diff)
+            };
 
-        match call_llm_agent(&prompt, agent_cmd, timeouts[attempt.min(timeouts.len() - 1)]) {
+        match call_llm_agent(
+            &prompt,
+            agent_cmd,
+            timeouts[attempt.min(timeouts.len() - 1)],
+        ) {
             Ok(raw_output) => {
                 match extract_and_validate_commit_message(&raw_output, agent_cmd) {
                     Ok(commit_message) => {
                         // Success!
                         if attempt > 0 {
-                            eprintln!("Successfully generated commit message after {} retries", attempt);
+                            eprintln!(
+                                "Successfully generated commit message after {} retries",
+                                attempt
+                            );
                         }
                         return Ok(commit_message);
                     }
@@ -1131,13 +1200,19 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
                     Err(CommitGenerationError::Empty) => {
                         eprintln!("LLM returned empty output on attempt {}", attempt + 1);
                         if attempt == max_retries - 1 {
-                            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "LLM returned empty response after all retries"));
+                            return Err(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                "LLM returned empty response after all retries",
+                            ));
                         }
                     }
                     Err(CommitGenerationError::Timeout) => {
                         eprintln!("LLM timed out on attempt {}", attempt + 1);
                         if attempt == max_retries - 1 {
-                            return Err(io::Error::new(io::ErrorKind::TimedOut, "LLM timed out after all retries"));
+                            return Err(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "LLM timed out after all retries",
+                            ));
                         }
                     }
                     Err(err @ CommitGenerationError::AgentFailed { .. }) => {
@@ -1171,7 +1246,10 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
             Err(CommitGenerationError::Timeout) => {
                 eprintln!("LLM timed out on attempt {}", attempt + 1);
                 if attempt == max_retries - 1 {
-                    return Err(io::Error::new(io::ErrorKind::TimedOut, format!("LLM timed out after {} attempts", max_retries)));
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!("LLM timed out after {} attempts", max_retries),
+                    ));
                 }
             }
             Err(err @ CommitGenerationError::AgentFailed { .. }) => {
@@ -1258,7 +1336,8 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         }
 
         // Collect all unique non-empty subjects
-        let subjects: Vec<&str> = chunks.iter()
+        let subjects: Vec<&str> = chunks
+            .iter()
             .map(|c| c.subject.as_str())
             .filter(|s| !s.is_empty())
             .collect();
@@ -1268,13 +1347,15 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         }
 
         // If all subjects are similar (share common words), use a merged version
-        let words: Vec<HashSet<&str>> = subjects.iter()
+        let words: Vec<HashSet<&str>> = subjects
+            .iter()
             .map(|s| s.split_whitespace().collect::<HashSet<_>>())
             .collect();
 
         // Check if there's significant overlap (at least 50% of words)
         let total_unique_words: HashSet<_> = words.iter().flatten().cloned().collect();
-        let avg_word_count = (words.iter().map(|w| w.len()).sum::<usize>() as f64) / (words.len() as f64);
+        let avg_word_count =
+            (words.iter().map(|w| w.len()).sum::<usize>() as f64) / (words.len() as f64);
 
         if (total_unique_words.len() as f64) < (avg_word_count * 1.5) {
             // Significant overlap - subjects are similar, use a merged version
@@ -1293,9 +1374,11 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         } else if subjects.len() <= 4 {
             // Join last two with "and", others with commas
             let last_idx = subjects.len() - 1;
-            format!("{}, and {}",
+            format!(
+                "{}, and {}",
                 subjects[..last_idx].join(", "),
-                subjects[last_idx])
+                subjects[last_idx]
+            )
         } else {
             // Too many different subjects - create a generic but descriptive message
             // Avoid bad patterns like "N files changed" or "apply multiple changes"
@@ -1318,7 +1401,9 @@ fn combine_chunk_messages(messages: &[String]) -> String {
                 // Has scope: type(scope)
                 (
                     &type_part[..space_pos],
-                    type_part[space_pos + 1..].trim_start_matches('(').trim_end_matches(')'),
+                    type_part[space_pos + 1..]
+                        .trim_start_matches('(')
+                        .trim_end_matches(')'),
                 )
             } else {
                 // No scope: just type
@@ -1364,7 +1449,8 @@ fn combine_chunk_messages(messages: &[String]) -> String {
     let commit_type = &most_significant.commit_type;
 
     // Find the most common scope (if any)
-    let mut scope_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut scope_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for chunk in &chunks {
         if !chunk.scope.is_empty() {
             *scope_counts.entry(chunk.scope.clone()).or_insert(0) += 1;
@@ -1601,7 +1687,8 @@ fn generate_fallback_commit_message(diff: &str) -> String {
     }
 
     // Determine the most appropriate commit type
-    let total_files = changes.new_files.len() + changes.modified_files.len() + changes.deleted_files.len();
+    let total_files =
+        changes.new_files.len() + changes.modified_files.len() + changes.deleted_files.len();
 
     if total_files == 0 {
         return "chore: uncommitted changes".to_string();
@@ -1624,15 +1711,27 @@ fn determine_commit_type(changes: &FileChanges) -> String {
     let mut src_count = 0;
     let mut build_count = 0;
 
-    for file in changes.new_files.iter().chain(changes.modified_files.iter()).chain(changes.deleted_files.iter()) {
+    for file in changes
+        .new_files
+        .iter()
+        .chain(changes.modified_files.iter())
+        .chain(changes.deleted_files.iter())
+    {
         let lower = file.to_lowercase();
         if lower.contains("test") || lower.ends_with("_test.rs") || lower.ends_with(".test.js") {
             test_count += 1;
         } else if lower.contains("readme") || lower.contains("doc") || lower.ends_with(".md") {
             doc_count += 1;
-        } else if lower.contains("src") || lower.ends_with(".rs") || lower.ends_with(".js") || lower.ends_with(".py") {
+        } else if lower.contains("src")
+            || lower.ends_with(".rs")
+            || lower.ends_with(".js")
+            || lower.ends_with(".py")
+        {
             src_count += 1;
-        } else if lower.contains("build") || lower.contains("cargo.toml") || lower.contains("package.json") {
+        } else if lower.contains("build")
+            || lower.contains("cargo.toml")
+            || lower.contains("package.json")
+        {
             build_count += 1;
         }
     }
@@ -1644,7 +1743,8 @@ fn determine_commit_type(changes: &FileChanges) -> String {
         "docs".to_string()
     } else if build_count > 0 && build_count >= total_files_count(changes) / 2 {
         "build".to_string()
-    } else if changes.new_files.len() > changes.modified_files.len() && changes.new_files.len() > 0 {
+    } else if changes.new_files.len() > changes.modified_files.len() && changes.new_files.len() > 0
+    {
         "feat".to_string()
     } else if changes.deleted_files.len() > 0 {
         "chore".to_string()
@@ -1667,7 +1767,9 @@ fn total_files_count(changes: &FileChanges) -> usize {
 /// "update N files" by extracting module/directory names from the file paths.
 fn build_subject_line(changes: &FileChanges, total_files: usize, _commit_type: &str) -> String {
     // Collect all changed files for analysis
-    let all_files: Vec<&String> = changes.new_files.iter()
+    let all_files: Vec<&String> = changes
+        .new_files
+        .iter()
         .chain(changes.modified_files.iter())
         .chain(changes.deleted_files.iter())
         .collect();
@@ -1740,16 +1842,12 @@ fn find_common_path_prefix(files: &[&String]) -> Option<String> {
     }
 
     // Split all file paths into components
-    let all_paths: Vec<Vec<&str>> = files.iter()
-        .map(|f| f.split('/').collect())
-        .collect();
+    let all_paths: Vec<Vec<&str>> = files.iter().map(|f| f.split('/').collect()).collect();
 
     // Find common prefix
     let mut common_prefix = Vec::new();
     for (i, component) in all_paths[0].iter().enumerate() {
-        let all_match = all_paths.iter().all(|path| {
-            path.get(i) == Some(component)
-        });
+        let all_match = all_paths.iter().all(|path| path.get(i) == Some(component));
         if all_match && i < all_paths[0].len() - 1 {
             // Keep the common component (but not the filename itself)
             common_prefix.push(*component);
@@ -1774,7 +1872,8 @@ fn extract_module_info(files: &[&String], common_prefix: &Option<String>) -> Mod
     for file in files {
         // Remove the common prefix and extract the module/submodule
         let relative_path = if let Some(prefix) = common_prefix {
-            file.strip_prefix(&format!("{}/", prefix)).unwrap_or(file.as_str())
+            file.strip_prefix(&format!("{}/", prefix))
+                .unwrap_or(file.as_str())
         } else {
             file.as_str()
         };
@@ -1783,7 +1882,9 @@ fn extract_module_info(files: &[&String], common_prefix: &Option<String>) -> Mod
         let components: Vec<&str> = relative_path.split('/').collect();
         if components.len() > 1 {
             // Has at least one directory level
-            *submodule_counts.entry(components[0].to_string()).or_insert(0) += 1;
+            *submodule_counts
+                .entry(components[0].to_string())
+                .or_insert(0) += 1;
         }
     }
 
@@ -1795,12 +1896,14 @@ fn extract_module_info(files: &[&String], common_prefix: &Option<String>) -> Mod
         }
     } else {
         // Find the most common module as the main module
-        let main_module = submodule_counts.iter()
+        let main_module = submodule_counts
+            .iter()
             .max_by_key(|(_, &count)| count)
             .map(|(name, _)| name.clone());
 
         // Collect other submodules
-        let mut submodules: Vec<String> = submodule_counts.into_iter()
+        let mut submodules: Vec<String> = submodule_counts
+            .into_iter()
             .filter(|(name, _)| Some(name) != main_module.as_ref())
             .map(|(name, _)| name)
             .collect();
@@ -2013,13 +2116,19 @@ pub(crate) fn commit_with_auto_message_using_fallback(
             } else {
                 // LLM succeeded - log the path and final message
                 eprintln!("✓ COMMIT MESSAGE GENERATION PATH: LLM SUCCESS WITH FALLBACK");
-                eprintln!("✓ Final commit message: {}", msg.lines().next().unwrap_or(&msg));
+                eprintln!(
+                    "✓ Final commit message: {}",
+                    msg.lines().next().unwrap_or(&msg)
+                );
                 msg
             }
         }
         Err(e) => {
             // Save the failed output for debugging
-            let error_msg = format!("LLM commit message generation failed (all agents in fallback chain): {}", e);
+            let error_msg = format!(
+                "LLM commit message generation failed (all agents in fallback chain): {}",
+                e
+            );
             let _ = save_failed_llm_output(&diff, &error_msg);
 
             if must_use_llm {
@@ -2060,7 +2169,6 @@ pub enum CommitResultFallback {
     /// The commit operation failed with an error message.
     Failed(String),
 }
-
 
 /// Create a commit with an automatically generated commit message using fallback chain, returning a detailed result.
 ///
@@ -2315,7 +2423,10 @@ mod tests {
         // Create a diff that's larger than MAX_DIFF_CHUNK_SIZE
         let mut diff = String::new();
         for i in 0..2000 {
-            diff.push_str(&format!("diff --git a/file{}.rs b/file{}.rs\nnew file mode 100644\n+ content {}\n", i, i, i));
+            diff.push_str(&format!(
+                "diff --git a/file{}.rs b/file{}.rs\nnew file mode 100644\n+ content {}\n",
+                i, i, i
+            ));
         }
 
         // Verify the diff is larger than the chunk size
@@ -2338,7 +2449,10 @@ mod tests {
         // Create a diff with clear file boundaries
         let mut diff = String::new();
         for i in 0..10 {
-            diff.push_str(&format!("diff --git a/file{}.rs b/file{}.rs\nnew file mode 100644\n+ content {}\n", i, i, i));
+            diff.push_str(&format!(
+                "diff --git a/file{}.rs b/file{}.rs\nnew file mode 100644\n+ content {}\n",
+                i, i, i
+            ));
         }
 
         let chunks = chunk_diff_for_commit_message(&diff);
@@ -2351,7 +2465,10 @@ mod tests {
             // Each diff header should be complete (start with "diff --git")
             for line in chunk.lines() {
                 if line.starts_with("diff --git") {
-                    assert!(line.starts_with("diff --git"), "Each file diff should start with 'diff --git'");
+                    assert!(
+                        line.starts_with("diff --git"),
+                        "Each file diff should start with 'diff --git'"
+                    );
                 }
             }
 
@@ -2387,7 +2504,10 @@ mod tests {
         // Create an extremely large diff
         let mut diff = String::new();
         for i in 0..50000 {
-            diff.push_str(&format!("diff --git a/file{}.rs b/file{}.rs\n+ content {}\n", i, i, i));
+            diff.push_str(&format!(
+                "diff --git a/file{}.rs b/file{}.rs\n+ content {}\n",
+                i, i, i
+            ));
         }
 
         let chunks = chunk_diff_for_commit_message(&diff);
@@ -2441,7 +2561,11 @@ mod tests {
         // The function now uses the most significant type (feat > fix > test > others)
         assert!(combined.starts_with("feat:"));
         // Should have one of the subjects
-        assert!(combined.contains("feature") || combined.contains("bug") || combined.contains("coverage"));
+        assert!(
+            combined.contains("feature")
+                || combined.contains("bug")
+                || combined.contains("coverage")
+        );
     }
 
     #[test]

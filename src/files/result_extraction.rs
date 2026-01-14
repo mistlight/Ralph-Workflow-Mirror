@@ -109,8 +109,18 @@ fn score_result(content: &str) -> u32 {
 
     // Plan keywords (very low weight as tiebreaker)
     let keywords = [
-        "step", "implement", "create", "add", "build", "task", "phase",
-        "first", "second", "then", "finally", "next",
+        "step",
+        "implement",
+        "create",
+        "add",
+        "build",
+        "task",
+        "phase",
+        "first",
+        "second",
+        "then",
+        "finally",
+        "next",
     ];
     for keyword in &keywords {
         if content_lower.contains(keyword) {
@@ -429,8 +439,18 @@ fn score_text_plan(content: &str) -> u32 {
 
     // Plan keywords (very low weight as tiebreaker)
     let keywords = [
-        "step", "implement", "create", "add", "build", "task", "phase",
-        "first", "second", "then", "finally", "next",
+        "step",
+        "implement",
+        "create",
+        "add",
+        "build",
+        "task",
+        "phase",
+        "first",
+        "second",
+        "then",
+        "finally",
+        "next",
     ];
     for keyword in &keywords {
         if content_lower.contains(keyword) {
@@ -553,10 +573,29 @@ fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
 
     // Check for plan-like keywords (case-insensitive)
     let plan_keywords = [
-        "step", "implement", "create", "add", "build", "develop", "write",
-        "function", "feature", "component", "module", "task", "phase",
-        "first", "second", "third", "next", "then", "finally",
-        "approach", "strategy", "design", "architecture",
+        "step",
+        "implement",
+        "create",
+        "add",
+        "build",
+        "develop",
+        "write",
+        "function",
+        "feature",
+        "component",
+        "module",
+        "task",
+        "phase",
+        "first",
+        "second",
+        "third",
+        "next",
+        "then",
+        "finally",
+        "approach",
+        "strategy",
+        "design",
+        "architecture",
     ];
 
     let filtered_lower = filtered.to_lowercase();
@@ -924,7 +963,8 @@ mod tests {
         // Multiple result events where first is complete/longest, last is partial/short
         // Use format! with separate strings to avoid escaping issues
         let result1 = r##"{"type": "result", "result": "# Complete Plan\n\n## Implementation Steps\n\nStep 1: Create module with functionality.\nStep 2: Add comprehensive tests.\nStep 3: Write documentation.\nStep 4: Integrate and verify."}"##;
-        let result2 = r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
+        let result2 =
+            r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
         let result3 = r##"{"type": "result", "result": "Last paragraph"}"##;
         let json_log = format!("{}\n{}\n{}", result1, result2, result3);
         create_log_file(&log_dir, "output.log", &json_log);

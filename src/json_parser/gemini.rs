@@ -10,7 +10,9 @@ use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, GeminiEvent};
+use super::types::{
+    format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, GeminiEvent,
+};
 
 /// Gemini event parser
 pub(crate) struct GeminiParser {

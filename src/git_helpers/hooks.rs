@@ -39,11 +39,14 @@ pub(crate) fn install_hook(hook_name: &str, hook_path: &Path) -> io::Result<()> 
     // Use absolute path for orig backup.
     // Handle the case where hook_path has no parent or file_name gracefully.
     let hook_dir = hook_path.parent().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "Hook path has no parent directory")
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Hook path has no parent directory",
+        )
     })?;
-    let hook_file_name = hook_path.file_name().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "Hook path has no file name")
-    })?;
+    let hook_file_name = hook_path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Hook path has no file name"))?;
     let hook_path_abs = fs::canonicalize(hook_dir)?.join(hook_file_name);
     let orig_path = format!("{}.ralph.orig", hook_path_abs.display());
 
@@ -119,7 +122,10 @@ pub(crate) fn uninstall_hook(hook_path: &Path, logger: &Logger) -> io::Result<bo
     } else {
         // Handle the case where hook_path has no parent or file_name gracefully.
         let hook_dir = hook_path.parent().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "Hook path has no parent directory")
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Hook path has no parent directory",
+            )
         })?;
         let hook_file_name = hook_path.file_name().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "Hook path has no file name")

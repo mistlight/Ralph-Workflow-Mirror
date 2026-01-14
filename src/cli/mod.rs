@@ -24,8 +24,8 @@ mod providers;
 // Re-export all public items for backward compatibility
 pub use args::Args;
 pub use handlers::{
-    create_prompt_from_template, handle_diagnose, handle_dry_run,
-    handle_list_agents, handle_list_available_agents, prompt_template_selection,
+    create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
+    handle_list_available_agents, prompt_template_selection,
 };
 pub use init::{handle_init_global, handle_init_legacy, handle_init_prompt, handle_list_templates};
 pub use presets::apply_args_to_config;

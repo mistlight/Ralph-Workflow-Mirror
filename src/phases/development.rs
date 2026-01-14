@@ -10,8 +10,8 @@
 use crate::agents::AgentRole;
 use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_needed};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
-use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::phases::commit::commit_with_generated_message;
+use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use crate::utils::{
     delete_plan_file, print_progress, save_checkpoint, update_status, PipelineCheckpoint,
@@ -45,7 +45,10 @@ fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, iteratio
             logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
         }
         Err(e) => {
-            logger.error(&format!("[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}", e));
+            logger.error(&format!(
+                "[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}",
+                e
+            ));
             logger.error(&format!(
                 "[PROMPT_INTEGRITY] Error occurred during {} phase (iteration {})",
                 phase, iteration
@@ -182,14 +185,17 @@ pub fn run_development_phase(
             let commit_agent = get_primary_commit_agent(ctx);
 
             if let Some(agent) = commit_agent {
-                ctx.logger
-                    .info(&format!("Creating commit with auto-generated message (agent: {})...", agent));
+                ctx.logger.info(&format!(
+                    "Creating commit with auto-generated message (agent: {})...",
+                    agent
+                ));
 
                 // Get the diff for commit message generation
                 let diff = match crate::git_helpers::git_diff() {
                     Ok(d) => d,
                     Err(e) => {
-                        ctx.logger.error(&format!("Failed to get diff for commit: {}", e));
+                        ctx.logger
+                            .error(&format!("Failed to get diff for commit: {}", e));
                         return Err(anyhow::anyhow!(e));
                     }
                 };
@@ -210,7 +216,8 @@ pub fn run_development_phase(
                     ctx.timer,
                 ) {
                     CommitResultFallback::Success(oid) => {
-                        ctx.logger.success(&format!("Commit created successfully: {}", oid));
+                        ctx.logger
+                            .success(&format!("Commit created successfully: {}", oid));
                         ctx.stats.commits_created += 1;
                     }
                     CommitResultFallback::NoChanges => {
@@ -219,8 +226,10 @@ pub fn run_development_phase(
                     }
                     CommitResultFallback::Failed(err) => {
                         // Actual git operation failed - this is critical
-                        ctx.logger
-                            .error(&format!("Failed to create commit (git operation failed): {}", err));
+                        ctx.logger.error(&format!(
+                            "Failed to create commit (git operation failed): {}",
+                            err
+                        ));
                         // Don't continue - this is a real error that needs attention
                         return Err(anyhow::anyhow!(err));
                     }
@@ -326,7 +335,8 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         fs::write(plan_path, &content)?;
 
         if extraction.is_valid {
-            ctx.logger.success("Plan extracted from agent output (JSON)");
+            ctx.logger
+                .success("Plan extracted from agent output (JSON)");
         } else {
             ctx.logger.warn(&format!(
                 "Plan written but validation failed: {}",

@@ -11,7 +11,9 @@ use std::rc::Rc;
 
 use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, CodexEvent};
+use super::types::{
+    format_tool_input, format_unknown_json_event, CodexEvent, ContentType, DeltaAccumulator,
+};
 
 /// Codex event parser
 pub(crate) struct CodexParser {
@@ -298,10 +300,14 @@ impl CodexParser {
                     match item.item_type.as_deref() {
                         Some("agent_message") => {
                             // Show final accumulated message and clear accumulator
-                            let full_text = self.delta_accumulator.borrow()
+                            let full_text = self
+                                .delta_accumulator
+                                .borrow()
                                 .get(ContentType::Text, "agent_msg")
                                 .map(|s| s.to_string());
-                            self.delta_accumulator.borrow_mut().clear_key(ContentType::Text, "agent_msg");
+                            self.delta_accumulator
+                                .borrow_mut()
+                                .clear_key(ContentType::Text, "agent_msg");
 
                             if let Some(text) = full_text {
                                 let limit = self.verbosity.truncate_limit("agent_msg");
@@ -334,14 +340,20 @@ impl CodexParser {
                         }
                         Some("reasoning") => {
                             // Clear reasoning accumulator on completion
-                            let full_reasoning = self.delta_accumulator.borrow()
+                            let full_reasoning = self
+                                .delta_accumulator
+                                .borrow()
                                 .get(ContentType::Thinking, "reasoning")
                                 .map(|s| s.to_string());
-                            self.delta_accumulator.borrow_mut().clear_key(ContentType::Thinking, "reasoning");
+                            self.delta_accumulator
+                                .borrow_mut()
+                                .clear_key(ContentType::Thinking, "reasoning");
 
                             // Show reasoning content in verbose mode
                             if self.verbosity.is_verbose() {
-                                if let Some(ref text) = full_reasoning.as_ref().or(item.text.as_ref()) {
+                                if let Some(ref text) =
+                                    full_reasoning.as_ref().or(item.text.as_ref())
+                                {
                                     let limit = self.verbosity.truncate_limit("text");
                                     let preview = truncate_text(text, limit);
                                     return Some(format!(
@@ -502,12 +514,10 @@ impl CodexParser {
             | CodexEvent::TurnFailed { .. } => true,
             // Item started/completed events are control events for certain item types
             CodexEvent::ItemStarted { item } => {
-                item.as_ref().and_then(|i| i.item_type.as_deref())
-                    == Some("plan_update")
+                item.as_ref().and_then(|i| i.item_type.as_deref()) == Some("plan_update")
             }
             CodexEvent::ItemCompleted { item } => {
-                item.as_ref().and_then(|i| i.item_type.as_deref())
-                    == Some("plan_update")
+                item.as_ref().and_then(|i| i.item_type.as_deref()) == Some("plan_update")
             }
             _ => false,
         }

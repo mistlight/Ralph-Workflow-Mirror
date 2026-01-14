@@ -62,7 +62,10 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'")
         .assert()
         .success();
@@ -73,7 +76,10 @@ exit 0
 
     // The commit message should be generated (we just verify it exists and isn't empty)
     let message = get_last_commit_message(&repo);
-    assert!(!message.trim().is_empty(), "Commit message should not be empty");
+    assert!(
+        !message.trim().is_empty(),
+        "Commit message should not be empty"
+    );
 }
 
 #[test]
@@ -100,7 +106,10 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'")
         .assert()
         .success();
@@ -150,7 +159,10 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'")
         .assert()
         .success();
@@ -185,9 +197,15 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     let _ = base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'")
-        .env("RALPH_COMMIT_CMD", "non-existent-llm-command-that-does-not-exist")
+        .env(
+            "RALPH_COMMIT_CMD",
+            "non-existent-llm-command-that-does-not-exist",
+        )
         .env("RALPH_COMMIT_MUST_USE_LLM", "1")
         .assert();
 
@@ -223,7 +241,10 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'")
         .assert()
         .success();
@@ -256,7 +277,10 @@ exit 0
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     let _ = base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", format!("sh {}", script_path.display()))
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'")
         .env("RALPH_COMMIT_CMD", "this-command-does-not-exist-xyz")
         .assert();
@@ -268,8 +292,14 @@ exit 0
         // Should have at least one log file
         let mut entries = fs::read_dir(&log_dir).unwrap();
         let _has_log = entries.any(|e| {
-            e.map(|entry| entry.path().extension().map(|ext| ext == "log").unwrap_or(false))
-                .unwrap_or(false)
+            e.map(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .map(|ext| ext == "log")
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
         });
         // Note: has_log might be false if fallback was used without error
     }

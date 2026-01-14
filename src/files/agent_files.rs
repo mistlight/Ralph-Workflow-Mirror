@@ -339,10 +339,7 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
 
     // Write new backup atomically
     integrity::write_file_atomic(backup_base, &content).map_err(|e| {
-        io::Error::new(
-            e.kind(),
-            format!("Failed to write PROMPT.md backup: {}", e),
-        )
+        io::Error::new(e.kind(), format!("Failed to write PROMPT.md backup: {}", e))
     })?;
 
     // Set read-only permissions on all backups and track any failure
@@ -445,15 +442,12 @@ pub fn make_prompt_read_only() -> io::Result<Option<String>> {
                 let mut perms = metadata.permissions();
                 perms.set_mode(0o444); // Read-only for all
                 if fs::set_permissions(prompt_path, perms).is_err() {
-                    readonly_warning = Some(
-                        "Failed to set read-only permissions on PROMPT.md".to_string()
-                    );
+                    readonly_warning =
+                        Some("Failed to set read-only permissions on PROMPT.md".to_string());
                 }
             }
             Err(_) => {
-                readonly_warning = Some(
-                    "Failed to read metadata for PROMPT.md".to_string()
-                );
+                readonly_warning = Some("Failed to read metadata for PROMPT.md".to_string());
             }
         }
     }
@@ -465,15 +459,12 @@ pub fn make_prompt_read_only() -> io::Result<Option<String>> {
                 let mut perms = metadata.permissions();
                 perms.set_readonly(true);
                 if fs::set_permissions(prompt_path, perms).is_err() {
-                    readonly_warning = Some(
-                        "Failed to set read-only permissions on PROMPT.md".to_string()
-                    );
+                    readonly_warning =
+                        Some("Failed to set read-only permissions on PROMPT.md".to_string());
                 }
             }
             Err(_) => {
-                readonly_warning = Some(
-                    "Failed to read metadata for PROMPT.md".to_string()
-                );
+                readonly_warning = Some("Failed to read metadata for PROMPT.md".to_string());
             }
         }
     }

@@ -32,7 +32,10 @@ fn backup_created_at_pipeline_start() {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd.assert()
@@ -61,7 +64,10 @@ fn auto_restore_works_when_prompt_deleted() {
     let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd1)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd1.assert()
@@ -81,7 +87,10 @@ fn auto_restore_works_when_prompt_deleted() {
     let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd2)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd2.assert()
@@ -105,7 +114,10 @@ fn backup_not_deleted_during_cleanup() {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd.assert()
@@ -119,7 +131,10 @@ fn backup_not_deleted_during_cleanup() {
     let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd2)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd2.assert()
@@ -141,7 +156,10 @@ fn backup_has_readonly_permissions() {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd.assert()
@@ -161,7 +179,10 @@ fn backup_has_readonly_permissions() {
 
         // Check if read-only (0o444 means read for all, no write)
         // The file should have read permission but not write permission
-        assert!(mode & 0o222 == 0, "Backup file should not have write permissions");
+        assert!(
+            mode & 0o222 == 0,
+            "Backup file should not have write permissions"
+        );
     }
 
     #[cfg(windows)]
@@ -171,7 +192,10 @@ fn backup_has_readonly_permissions() {
         let attrs = metadata.file_attributes();
 
         // Check if readonly flag is set (FILE_ATTRIBUTE_READONLY = 0x1)
-        assert!(attrs & 0x1 != 0, "Backup file should have readonly attribute set");
+        assert!(
+            attrs & 0x1 != 0,
+            "Backup file should have readonly attribute set"
+        );
     }
 }
 
@@ -220,7 +244,10 @@ fn backup_rotation_maintains_multiple_backups() {
         let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
         base_env(&mut cmd)
             .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+            )
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         cmd.assert()
@@ -241,7 +268,10 @@ fn backup_rotation_maintains_multiple_backups() {
             let metadata = fs::metadata(backup_path).unwrap();
             let permissions = metadata.permissions();
             let mode = permissions.mode();
-            assert!(mode & 0o222 == 0, "Backup file should not have write permissions");
+            assert!(
+                mode & 0o222 == 0,
+                "Backup file should not have write permissions"
+            );
         }
     }
 }
@@ -259,7 +289,10 @@ fn backup_oldest_deleted_when_exceeding_limit() {
         let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
         base_env(&mut cmd)
             .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+            )
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         cmd.assert()
@@ -289,7 +322,10 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
         let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
         base_env(&mut cmd)
             .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+            )
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         cmd.assert()
@@ -334,7 +370,10 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     // Just run it - the important part is to verify the restore happened
@@ -369,7 +408,10 @@ fn agent_chmod_rm_is_caught_and_restored() {
     let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd1)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd1.assert()
@@ -409,7 +451,10 @@ fn agent_overwrite_is_detected_and_restored() {
     let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd1)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd1.assert()
@@ -420,7 +465,10 @@ fn agent_overwrite_is_detected_and_restored() {
     let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd2)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'echo > PROMPT.md && mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'echo > PROMPT.md && mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd2.assert()
@@ -452,7 +500,10 @@ fn multiple_deletions_are_logged_with_context() {
     let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd1)
         .current_dir(dir.path())
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd1.assert()
@@ -464,7 +515,10 @@ fn multiple_deletions_are_logged_with_context() {
     base_env(&mut cmd2)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "3")
-        .env("RALPH_DEVELOPER_CMD", "sh -c 'rm -f PROMPT.md && mkdir -p .agent; echo plan > .agent/PLAN.md'")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'rm -f PROMPT.md && mkdir -p .agent; echo plan > .agent/PLAN.md'",
+        )
         .env("RALPH_REVIEWER_REVIEWS", "0");
 
     let output = cmd2.output().unwrap();

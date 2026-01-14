@@ -314,7 +314,10 @@ fn build_ccs_agent_config(
 
         // Debug logging
         if debug_mode {
-            eprintln!("CCS DEBUG: Claude binary found at: {}", claude_path.display());
+            eprintln!(
+                "CCS DEBUG: Claude binary found at: {}",
+                claude_path.display()
+            );
             eprintln!("CCS DEBUG: Original command: {}", original_cmd);
             eprintln!("CCS DEBUG: Alias name: '{}'", alias_name);
             eprintln!("CCS DEBUG: Env vars loaded: {}", env_vars_loaded);
@@ -326,9 +329,7 @@ fn build_ccs_agent_config(
                 let profile = ccs_profile_from_command(original_cmd)
                     .or_else(|| profile_used_for_env.clone())
                     .unwrap_or_else(|| alias_name.to_string());
-                let is_ccs_cmd = parts
-                    .first()
-                    .is_some_and(|p| looks_like_ccs_executable(p));
+                let is_ccs_cmd = parts.first().is_some_and(|p| looks_like_ccs_executable(p));
                 let skip = if parts.get(1).is_some_and(|p| p == &profile) {
                     Some(2)
                 } else if parts.get(1).is_some_and(|p| p == "api")
@@ -447,7 +448,7 @@ fn build_ccs_agent_config(
         model_flag: alias_config.model_flag.clone(),
         print_flag, // CCS requires -p for non-interactive mode (from defaults or alias override)
         streaming_flag, // Required for JSON streaming when using -p
-        env_vars, // Loaded from CCS settings for the resolved profile, if available
+        env_vars,   // Loaded from CCS settings for the resolved profile, if available
         display_name: Some(display_name),
     }
 }

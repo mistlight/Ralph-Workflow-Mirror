@@ -14,7 +14,6 @@
 //! - [`codex`] - OpenAI Codex CLI output parser (with streaming support)
 //! - [`gemini`] - Google Gemini CLI output parser (with streaming support)
 //! - [`opencode`] - OpenCode CLI output parser (with streaming support)
-//! - [`generic`] - Generic parser using algorithmic event classification
 //! - [`health`] - Parser health monitoring and graceful degradation
 //!
 //! # Streaming Support
@@ -24,7 +23,6 @@
 //! - **Gemini**: Streaming with delta flag support for message content
 //! - **Codex**: Streaming for agent_message and reasoning item types
 //! - **OpenCode**: Streaming for text events
-//! - **Generic**: Algorithmic detection of delta events for unknown protocols
 //!
 //! In verbose mode, parsers show full accumulated content. In normal mode,
 //! they show real-time deltas for immediate feedback.
@@ -42,7 +40,6 @@ mod claude;
 mod codex;
 mod delta_display;
 mod gemini;
-mod generic;
 pub mod health;
 mod opencode;
 mod stream_classifier;
@@ -52,9 +49,6 @@ pub(crate) use claude::ClaudeParser;
 pub(crate) use codex::CodexParser;
 pub(crate) use gemini::GeminiParser;
 pub(crate) use opencode::OpenCodeParser;
-
-#[allow(unused_imports)]
-pub(crate) use generic::GenericParser;
 
 // Re-export format_tool_input for tests
 #[cfg(test)]

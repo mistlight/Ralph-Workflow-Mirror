@@ -110,15 +110,6 @@ impl ParserHealth {
         self.partial_events += 1;
     }
 
-    /// Get the percentage of ignored events (excluding control events)
-    #[allow(dead_code)]
-    pub fn ignored_percentage(&self) -> f64 {
-        if self.total_events == 0 {
-            return 0.0;
-        }
-        (self.ignored_events as f64 / self.total_events as f64) * 100.0
-    }
-
     /// Get the percentage of parse errors (excluding unknown events)
     pub fn parse_error_percentage(&self) -> f64 {
         if self.total_events == 0 {
@@ -297,20 +288,6 @@ mod tests {
         assert_eq!(health.total_events, 1);
         assert_eq!(health.parsed_events, 0);
         assert_eq!(health.ignored_events, 1);
-    }
-
-    #[test]
-    fn test_parser_health_ignored_percentage() {
-        let mut health = ParserHealth::new();
-        assert_eq!(health.ignored_percentage(), 0.0);
-
-        for _ in 0..5 {
-            health.record_parsed();
-        }
-        for _ in 0..5 {
-            health.record_ignored();
-        }
-        assert_eq!(health.ignored_percentage(), 50.0);
     }
 
     #[test]
@@ -551,28 +528,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parser_health_control_events_not_in_ignored_percentage() {
-        let mut health = ParserHealth::new();
-
-        // Add many control events (simulating many state management events)
-        for _ in 0..2000 {
-            health.record_control_event();
-        }
-        // Add some parsed events
-        for _ in 0..50 {
-            health.record_parsed();
-        }
-
-        // Control events should NOT affect ignored percentage
-        // Only unknown and parse errors count as ignored
-        assert_eq!(health.ignored_events, 0);
-        assert_eq!(health.ignored_percentage(), 0.0);
-
-        // Not concerning
-        assert!(!health.is_concerning());
-    }
-
-    #[test]
     fn test_health_monitor_control_events() {
         let monitor = HealthMonitor::new("test");
         let colors = Colors { enabled: false };
@@ -718,27 +673,5 @@ mod tests {
         // Warning should mention both control and partial events
         assert!(warning_text.contains("2 control events"));
         assert!(warning_text.contains("10 partial events"));
-    }
-
-    #[test]
-    fn test_parser_health_partial_events_not_in_ignored_percentage() {
-        let mut health = ParserHealth::new();
-
-        // Add many partial events (simulating streaming deltas)
-        for _ in 0..2000 {
-            health.record_partial_event();
-        }
-        // Add some parsed events
-        for _ in 0..50 {
-            health.record_parsed();
-        }
-
-        // Partial events should NOT affect ignored percentage
-        // Only unknown and parse errors count as ignored
-        assert_eq!(health.ignored_events, 0);
-        assert_eq!(health.ignored_percentage(), 0.0);
-
-        // Not concerning
-        assert!(!health.is_concerning());
     }
 }

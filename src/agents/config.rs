@@ -58,7 +58,10 @@ pub enum CcsEnvVarsError {
     #[error("CCS settings JSON at {path} contains unsafe env value for key '{key}'")]
     UnsafeEnvVarValue { path: PathBuf, key: String },
     #[error("CCS config at {path} contains unsafe settings path '{settings_path}' (path traversal not allowed)")]
-    UnsafeSettingsPath { path: PathBuf, settings_path: String },
+    UnsafeSettingsPath {
+        path: PathBuf,
+        settings_path: String,
+    },
 }
 
 /// List of dangerous environment variable names that should not be allowed from external config.
@@ -154,7 +157,9 @@ fn list_ccs_json_files(ccs_dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
 
 fn ccs_home_dir() -> Option<PathBuf> {
     // Matches CCS behavior: respects CCS_HOME env var for test isolation.
-    env::var_os("CCS_HOME").map(PathBuf::from).or_else(dirs::home_dir)
+    env::var_os("CCS_HOME")
+        .map(PathBuf::from)
+        .or_else(dirs::home_dir)
 }
 
 fn ccs_dir() -> Option<PathBuf> {
@@ -164,7 +169,9 @@ fn ccs_dir() -> Option<PathBuf> {
 fn ccs_config_json_path() -> Option<PathBuf> {
     // Matches CCS behavior: CCS_CONFIG overrides config.json path.
     // Source (CCS): `dist/utils/config-manager.js` getConfigPath().
-    env::var_os("CCS_CONFIG").map(PathBuf::from).or_else(|| ccs_dir().map(|d| d.join("config.json")))
+    env::var_os("CCS_CONFIG")
+        .map(PathBuf::from)
+        .or_else(|| ccs_dir().map(|d| d.join("config.json")))
 }
 
 fn ccs_config_yaml_path() -> Option<PathBuf> {
@@ -283,12 +290,18 @@ fn extract_yaml_inline_settings_value(inline: &str) -> Option<String> {
         .trim_end_matches('}')
         .trim();
     let value = unquote_yaml_scalar(token);
-    if value.is_empty() { None } else { Some(value) }
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn unquote_yaml_scalar(value: &str) -> String {
     let v = value.trim();
-    if v.len() >= 2 && ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\''))) {
+    if v.len() >= 2
+        && ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\'')))
+    {
         let inner = &v[1..v.len() - 1];
         // CCS uses js-yaml with double quotes; keep unescaping minimal for paths.
         inner.replace("\\\"", "\"").replace("\\\\", "\\")
@@ -834,12 +847,18 @@ mod ccs_env_tests {
 
         fs::write(
             ccs_dir.join("config.json"),
-            format!(r#"{{"profiles":{{"glm":"{}"}}}}"#, settings_path.to_string_lossy()),
+            format!(
+                r#"{{"profiles":{{"glm":"{}"}}}}"#,
+                settings_path.to_string_lossy()
+            ),
         )
         .unwrap();
 
         let env_vars = load_ccs_env_vars("glm").unwrap();
-        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://example");
+        assert_eq!(
+            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://example"
+        );
         assert_eq!(env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "token");
     }
 
@@ -875,7 +894,10 @@ profiles:
         .unwrap();
 
         let env_vars = load_ccs_env_vars("custom").unwrap();
-        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://yaml-test");
+        assert_eq!(
+            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://yaml-test"
+        );
         assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "test-model");
     }
 
@@ -912,7 +934,10 @@ profiles:
         .unwrap();
 
         let env_vars = load_ccs_env_vars("indent").unwrap();
-        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://indent-test");
+        assert_eq!(
+            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://indent-test"
+        );
         assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "indent-model");
     }
 
@@ -934,8 +959,14 @@ profiles:
         .unwrap();
 
         let env_vars = load_ccs_env_vars("direct").unwrap();
-        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://direct");
-        assert_eq!(env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "direct-token");
+        assert_eq!(
+            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://direct"
+        );
+        assert_eq!(
+            env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(),
+            "direct-token"
+        );
     }
 
     #[test]
@@ -1032,11 +1063,7 @@ profiles:
         fs::create_dir_all(&ccs_dir).unwrap();
 
         let settings_path = ccs_dir.join("expand.settings.json");
-        fs::write(
-            &settings_path,
-            r#"{"env":{"FROM_EXPAND":"success"}}"#,
-        )
-        .unwrap();
+        fs::write(&settings_path, r#"{"env":{"FROM_EXPAND":"success"}}"#).unwrap();
 
         // Config with ~/ path that needs expansion
         fs::write(

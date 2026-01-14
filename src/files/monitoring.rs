@@ -108,10 +108,7 @@ impl PromptMonitor {
     ///
     /// This thread watches the current directory for deletion events on
     /// PROMPT.md and restores from backup when detected.
-    fn monitor_thread_main(
-        restoration_detected: Arc<AtomicBool>,
-        stop_signal: Arc<AtomicBool>,
-    ) {
+    fn monitor_thread_main(restoration_detected: Arc<AtomicBool>, stop_signal: Arc<AtomicBool>) {
         use notify::Watcher;
 
         // Create a channel to receive file system events
@@ -144,7 +141,11 @@ impl PromptMonitor {
             // Check for events with a short timeout
             match rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(Ok(event)) => {
-                    Self::handle_fs_event(&event, &restoration_detected, &mut prompt_existed_last_check);
+                    Self::handle_fs_event(
+                        &event,
+                        &restoration_detected,
+                        &mut prompt_existed_last_check,
+                    );
                 }
                 Ok(Err(_)) => {
                     // Error in watcher - continue anyway
@@ -185,10 +186,7 @@ impl PromptMonitor {
     ///
     /// Some filesystems (NFS, network drives) don't support file system
     /// events. This fallback polls every 100ms to check if PROMPT.md exists.
-    fn polling_monitor(
-        restoration_detected: Arc<AtomicBool>,
-        stop_signal: Arc<AtomicBool>,
-    ) {
+    fn polling_monitor(restoration_detected: Arc<AtomicBool>, stop_signal: Arc<AtomicBool>) {
         let mut prompt_existed = Path::new("PROMPT.md").exists();
 
         while !stop_signal.load(Ordering::Relaxed) {
@@ -295,8 +293,7 @@ impl PromptMonitor {
     /// }
     /// ```
     pub fn check_and_restore(&mut self) -> bool {
-        self.restoration_detected
-            .swap(false, Ordering::Acquire)
+        self.restoration_detected.swap(false, Ordering::Acquire)
     }
 
     /// Stop monitoring and cleanup resources.

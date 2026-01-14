@@ -13,7 +13,9 @@
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::colors::Colors;
 use crate::config::Config;
-use crate::files::llm_output_extraction::{extract_llm_output, validate_commit_message, OutputFormat};
+use crate::files::llm_output_extraction::{
+    extract_llm_output, validate_commit_message, OutputFormat,
+};
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::prompt_generate_commit_message_with_diff;
@@ -92,7 +94,9 @@ pub fn generate_commit_message(
             },
             Ok(None) => {
                 // Agent succeeded but no commit message found
-                runtime.logger.warn("Agent succeeded but no commit message was extracted");
+                runtime
+                    .logger
+                    .warn("Agent succeeded but no commit message was extracted");
                 CommitMessageResult {
                     message: String::new(),
                     success: false,
@@ -100,7 +104,9 @@ pub fn generate_commit_message(
                 }
             }
             Err(e) => {
-                runtime.logger.error(&format!("Failed to extract commit message: {}", e));
+                runtime
+                    .logger
+                    .error(&format!("Failed to extract commit message: {}", e));
                 CommitMessageResult {
                     message: String::new(),
                     success: false,
@@ -110,10 +116,14 @@ pub fn generate_commit_message(
         }
     } else {
         // Agent failed - check if we can extract a partial result
-        runtime.logger.warn("Commit agent failed, checking logs for partial output...");
+        runtime
+            .logger
+            .warn("Commit agent failed, checking logs for partial output...");
         match extract_commit_message_from_logs(log_dir, diff, commit_agent, runtime.logger) {
             Ok(Some(message)) => {
-                runtime.logger.warn("Using partially generated commit message from failed agent");
+                runtime
+                    .logger
+                    .warn("Using partially generated commit message from failed agent");
                 CommitMessageResult {
                     message,
                     success: false,
@@ -186,7 +196,10 @@ pub fn commit_with_generated_message(
     let result = match generate_commit_message(diff, registry, &mut runtime, commit_agent) {
         Ok(r) => r,
         Err(e) => {
-            return CommitResultFallback::Failed(format!("Failed to generate commit message: {}", e));
+            return CommitResultFallback::Failed(format!(
+                "Failed to generate commit message: {}",
+                e
+            ));
         }
     };
 
@@ -237,7 +250,10 @@ fn extract_commit_message_from_logs(
         }
     };
 
-    logger.info(&format!("Reading commit message from log: {}", log_file.display()));
+    logger.info(&format!(
+        "Reading commit message from log: {}",
+        log_file.display()
+    ));
 
     // Read the log file
     let mut content = String::new();
@@ -325,10 +341,7 @@ fn find_most_recent_log(log_prefix: &str) -> anyhow::Result<Option<std::path::Pa
     let mut most_recent: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
 
     // Extract the base name to match (e.g., "commit_generation" from ".agent/logs/commit_generation")
-    let base_name = log_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let base_name = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     for entry in entries {
         let entry = entry?;
@@ -336,7 +349,9 @@ fn find_most_recent_log(log_prefix: &str) -> anyhow::Result<Option<std::path::Pa
 
         // Only look at .log files that start with the base name
         if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-            if !file_name.starts_with(base_name) || path.extension().and_then(|s| s.to_str()) != Some("log") {
+            if !file_name.starts_with(base_name)
+                || path.extension().and_then(|s| s.to_str()) != Some("log")
+            {
                 continue;
             }
         } else {
