@@ -75,14 +75,20 @@ DIFF:
 
 ---
 
-## ANALYSIS INSTRUCTIONS
+## CRITICAL: DO NOT PRODUCE THESE BAD COMMIT MESSAGES
 
-Before generating the commit message, analyze the diff to understand:
+These are WRONG - they are vague, meaningless, and unhelpful:
+❌ chore: apply changes
+❌ chore: update code
+❌ chore: 6 file(s) changed
+❌ chore: update src/files/result_extraction.rs
+❌ fix: fixed bug
+❌ feat: Add New Feature.
 
-1. **What actually changed?** Look at the code changes, not just file counts
-2. **Why was this change made?** What problem does it solve or what feature does it add?
-3. **What is the scope?** Which module, component, or area is affected?
-4. **Is this a breaking change?** Does it change public APIs or expected behavior?
+NEVER say "apply changes", "update code", "update [filename]", or "N files changed".
+ALWAYS describe WHAT changed and WHY.
+
+---
 
 ## COMMIT MESSAGE FORMAT
 
@@ -94,7 +100,6 @@ Before generating the commit message, analyze the diff to understand:
 
 ## TYPE GUIDELINES
 
-Choose the most appropriate type:
 - **feat**: A new feature (user-visible change)
 - **fix**: A bug fix (correcting incorrect behavior)
 - **docs**: Documentation changes only
@@ -106,120 +111,57 @@ Choose the most appropriate type:
 - **ci**: CI/CD configuration changes
 - **chore**: Other changes that don't modify src/test files
 
-## SUBJECT LINE RULES
+## SUBJECT LINE RULES (CRITICAL)
 
 - Use **imperative mood** ("add" not "added", "fix" not "fixed")
 - Use **lowercase** (except for proper nouns)
 - **No period** at the end
 - **Maximum 50 characters**
-- Be specific and descriptive
-
-## BODY RULES (when needed)
-
-- Explain **what** and **why**, not **how**
-- Wrap at **72 characters**
-- Use for complex changes that need context
-- Mention **breaking changes** explicitly
-
-## FOOTER RULES (when needed)
-
-- **Breaking changes**: Start with "BREAKING CHANGE: "
-- **Issue references**: "Fixes #123" or "Refs #456"
-
----
+- **Be specific**: describe WHAT changed, not THAT something changed
 
 ## GOOD EXAMPLES
 
-### Simple feature
-```
 feat(auth): add OAuth2 login flow
-```
-
-### Bug fix
-```
 fix: prevent null pointer in user lookup
-```
-
-### Code restructuring
-```
 refactor(api): extract validation into middleware
-```
+docs: clarify API authentication flow
+test: add coverage for user registration edge cases
 
-### Breaking change
-```
 feat!: drop Python 3.7 support
 
 BREAKING CHANGE: Minimum Python version is now 3.8.
-```
 
-### Complex feature with body
-```
 feat: add CSV export for reports
 
 Add ability to export analytics reports as CSV files.
 Supports filtering by date range and custom column selection.
 
 Fixes #42
-```
-
-### Documentation
-```
-docs: clarify API authentication flow
-```
-
-### Tests
-```
-test: add coverage for user registration edge cases
-```
-
----
-
-## BAD EXAMPLES (AVOID THESE)
-
-```
-chore: apply changes
-```
-❌ Too vague - what changes?
-
-```
-chore: update code
-```
-❌ Meaningless - what was updated?
-
-```
-chore: 3 files changed
-```
-❌ File count is not a description
-
-```
-feat: Add new feature.
-```
-❌ Capitalized, has period, vague
-
-```
-refactoring the code
-```
-❌ No type, not imperative mood
-
-```
-fix bug
-```
-❌ What bug? Where?
 
 ---
 
 ## YOUR TASK
 
 1. **Analyze the actual code changes** in the diff above
-2. **Identify the type** based on what actually changed
+2. **Identify the semantic type** (feat/fix/refactor/docs/etc.) based on what changed
 3. **Determine the scope** (if applicable) based on which files/components are affected
-4. **Write a clear, descriptive subject line** using imperative mood
-5. **Add a body** if the change needs explanation (why, what for)
-6. **Include a footer** for breaking changes or issue references
+4. **Write a clear, descriptive subject line** that says WHAT was done
+5. **Add a body** only if the change needs context (why, what for)
 
-**IMPORTANT**: Focus on the semantic meaning of the changes, not the number of files. A single-file change can be significant, and multi-file changes can be minor.
+**OUTPUT REQUIREMENT**: Respond with ONLY the commit message.
+- NO markdown fences (no ``` ``` )
+- NO explanations
+- NO "Here is the commit message:" prefix
+- JUST the commit message itself
 
-Respond with ONLY the commit message (no markdown fences, no explanations, no extra text)."#,
+Example of WRONG output:
+```
+Here is the commit message:
+feat: add feature
+```
+
+Example of CORRECT output:
+feat: add feature"#,
         diff_content
     )
 }

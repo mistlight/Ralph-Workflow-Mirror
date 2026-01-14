@@ -748,6 +748,13 @@ fn extract_and_validate_commit_message(raw_output: &str, agent_cmd: &str) -> Res
 
     let extraction = extract_llm_output(raw_output, format_hint);
 
+    // Log extraction metadata for debugging
+    eprintln!(
+        "LLM output extraction: {} format, structured={}",
+        format!("{:?}", extraction.format),
+        extraction.was_structured
+    );
+
     if let Some(warning) = &extraction.warning {
         eprintln!("Warning: LLM output extraction warning: {}", warning);
     }
@@ -782,6 +789,30 @@ fn extract_and_validate_commit_message(raw_output: &str, agent_cmd: &str) -> Res
 /// Returns `Ok(String)` with the generated commit message, or an error if all retries fail.
 pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> io::Result<String> {
     eprintln!("Generating commit message with LLM...");
+
+    // Log diff size and sample for debugging
+    let diff_size = diff.len();
+    let diff_lines: Vec<&str> = diff.lines().collect();
+    eprintln!("Diff size: {} bytes, {} lines", diff_size, diff_lines.len());
+
+    // Show first and last few lines for verification
+    let first_lines = diff_lines.iter().take(5).collect::<Vec<_>>();
+    let last_lines = if diff_lines.len() > 5 {
+        diff_lines.iter().skip(diff_lines.len().saturating_sub(5)).collect::<Vec<_>>()
+    } else {
+        vec![]
+    };
+
+    eprintln!("First 5 lines of diff:");
+    for line in first_lines {
+        eprintln!("  {}", line);
+    }
+    if !last_lines.is_empty() {
+        eprintln!("Last 5 lines of diff:");
+        for line in last_lines {
+            eprintln!("  {}", line);
+        }
+    }
 
     // Chunk the diff for commit message generation
     let chunks = chunk_diff_for_commit_message(diff);
@@ -898,44 +929,113 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
 }
 
 /// Combine messages from multiple chunks into a single commit message.
+///
+/// This function analyzes messages from all chunks and synthesizes them into
+/// a single meaningful commit message. It prioritizes:
+/// 1. The most significant commit type (feat > fix > refactor > others)
+/// 2. Common scope if present
+/// 3. First meaningful subject for clarity
 fn combine_chunk_messages(messages: &[String]) -> String {
     if messages.len() == 1 {
         return messages[0].clone();
     }
 
-    // Analyze all messages to extract the best type and scope
-    let mut commit_type = "chore";
-    let mut scope = String::new();
-    let mut subjects = Vec::new();
+    // Type priority for significance (higher = more significant)
+    fn type_priority(ty: &str) -> i32 {
+        match ty {
+            "feat" => 5,
+            "fix" => 4,
+            "refactor" => 3,
+            "perf" => 3,
+            "docs" => 2,
+            "test" => 2,
+            "style" => 1,
+            "build" | "ci" | "chore" => 0,
+            _ => 0,
+        }
+    }
+
+    // Analyze all messages to extract type, scope, and subjects
+    struct ChunkInfo {
+        commit_type: String,
+        scope: String,
+        subject: String,
+        priority: i32,
+    }
+
+    let mut chunks: Vec<ChunkInfo> = Vec::new();
+    let mut last_seen_type = "chore";
 
     for msg in messages {
         // Extract type and scope from conventional commit format
         if let Some(colon_pos) = msg.find(':') {
             let type_part = &msg[..colon_pos];
-            if let Some(space_pos) = type_part.rfind(' ') {
-                // Has scope
-                commit_type = &type_part[..space_pos];
-                scope = type_part[space_pos + 1..].to_string();
+            let (commit_type, scope) = if let Some(space_pos) = type_part.rfind(' ') {
+                // Has scope: type(scope)
+                (
+                    &type_part[..space_pos],
+                    type_part[space_pos + 1..].trim_start_matches('(').trim_end_matches(')'),
+                )
             } else {
-                // No scope
-                commit_type = type_part;
-            }
+                // No scope: just type
+                (type_part, "")
+            };
+
+            // Track the last seen type for backward compatibility
+            last_seen_type = commit_type;
 
             // Extract subject (after colon, before newline)
             let subject_start = colon_pos + 1;
-            if let Some(newline_pos) = msg[subject_start..].find('\n') {
-                let subject = msg[subject_start..subject_start + newline_pos].trim();
-                if !subject.is_empty() && !subject.starts_with('[') {
-                    subjects.push(subject.to_string());
-                }
+            let subject = if let Some(newline_pos) = msg[subject_start..].find('\n') {
+                msg[subject_start..subject_start + newline_pos].trim()
             } else {
-                let subject = msg[subject_start..].trim();
-                if !subject.is_empty() && !subject.starts_with('[') {
-                    subjects.push(subject.to_string());
-                }
+                msg[subject_start..].trim()
+            };
+
+            // Skip chunk placeholders
+            if subject.starts_with('[') || subject.contains("chunk") {
+                continue;
             }
+
+            chunks.push(ChunkInfo {
+                commit_type: commit_type.to_string(),
+                scope: scope.to_string(),
+                subject: subject.to_string(),
+                priority: type_priority(commit_type),
+            });
         }
     }
+
+    // If no valid chunks were extracted, fall back to generic message
+    if chunks.is_empty() {
+        return format!("{}: multiple file changes", last_seen_type);
+    }
+
+    // Find the most significant type and common scope
+    let most_significant = chunks.iter().max_by_key(|c| c.priority).unwrap();
+    let commit_type = &most_significant.commit_type;
+
+    // Find the most common scope (if any)
+    let mut scope_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for chunk in &chunks {
+        if !chunk.scope.is_empty() {
+            *scope_counts.entry(&chunk.scope).or_insert(0) += 1;
+        }
+    }
+
+    // Use the most common scope if it appears in at least half the chunks
+    let scope = scope_counts
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .filter(|(_, count)| *count * 2 >= chunks.len())
+        .map(|(scope, _)| scope)
+        .unwrap_or("");
+
+    // Get the first meaningful subject (for backward compatibility with tests)
+    let first_subject = chunks.iter()
+        .map(|c| c.subject.as_str())
+        .next()
+        .unwrap_or("multiple changes");
 
     // Build combined message
     let mut result = if scope.is_empty() {
@@ -944,22 +1044,8 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         format!("{}({}):", commit_type, scope)
     };
 
-    // Combine subjects intelligently
-    if subjects.len() == 1 {
-        result.push(' ');
-        result.push_str(&subjects[0]);
-    } else if subjects.len() > 1 {
-        // Take the first meaningful subject
-        for subject in &subjects {
-            if !subject.is_empty() && !subject.contains("chunk") {
-                result.push(' ');
-                result.push_str(subject);
-                break;
-            }
-        }
-    } else {
-        result.push_str(" multiple changes");
-    }
+    result.push(' ');
+    result.push_str(first_subject);
 
     result
 }
@@ -1294,6 +1380,37 @@ fn shorten_path(path: &str) -> String {
     }
 }
 
+/// Save failed LLM output to a log file for debugging.
+fn save_failed_llm_output(diff: &str, error: &str) -> io::Result<()> {
+    use std::fs::{self, File};
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // Create the logs directory if it doesn't exist
+    let log_dir = ".agent/logs/commit_generation_failed";
+    fs::create_dir_all(log_dir)?;
+
+    // Create a timestamped filename
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let filename = format!("{}/failed_{}.log", log_dir, timestamp);
+    let mut file = File::create(&filename)?;
+
+    writeln!(file, "=== Failed LLM Commit Message Generation ===")?;
+    writeln!(file, "Timestamp: {}", timestamp)?;
+    writeln!(file, "\n=== Error ===")?;
+    writeln!(file, "{}", error)?;
+    writeln!(file, "\n=== Diff ===")?;
+    writeln!(file, "{}", diff)?;
+    writeln!(file, "\n=== End of Report ===")?;
+
+    eprintln!("Failed LLM output saved to: {}", filename);
+    Ok(())
+}
+
 /// Create a commit with an automatically generated commit message.
 ///
 /// This function:
@@ -1320,11 +1437,25 @@ fn shorten_path(path: &str) -> String {
 /// If the LLM fails to generate a commit message, a generic fallback message
 /// is used to ensure changes are still committed. This prevents the loss of
 /// progress if the LLM is temporarily unavailable or misconfigured.
+///
+/// # Environment Variables
+///
+/// * `RALPH_COMMIT_MUST_USE_LLM` - If set to "1" or "true", LLM commit message
+///   generation failures will result in an error instead of using a fallback message.
 pub(crate) fn commit_with_auto_message(
     agent_cmd: &str,
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
 ) -> io::Result<Option<git2::Oid>> {
+    // Check if LLM failures should be hard errors
+    let must_use_llm = std::env::var("RALPH_COMMIT_MUST_USE_LLM")
+        .ok()
+        .and_then(|v| match v.to_lowercase().as_str() {
+            "1" | "true" | "yes" => Some(true),
+            _ => None,
+        })
+        .unwrap_or(false);
+
     // Check if there are meaningful changes
     if !has_meaningful_changes()? {
         return Ok(None);
@@ -1347,16 +1478,45 @@ pub(crate) fn commit_with_auto_message(
         Ok(msg) => {
             // Validate the commit message is not empty
             if msg.trim().is_empty() {
-                eprintln!("Warning: LLM returned empty commit message. Using fallback.");
+                let error = "LLM returned empty commit message".to_string();
+                let _ = save_failed_llm_output(&diff, &error);
+
+                if must_use_llm {
+                    return Err(io::Error::new(io::ErrorKind::Other, error));
+                }
+
+                eprintln!();
+                eprintln!("========================================");
+                eprintln!("WARNING: USING FALLBACK COMMIT MESSAGE");
+                eprintln!("========================================");
+                eprintln!("LLM returned empty commit message.");
+                eprintln!("Set RALPH_COMMIT_MUST_USE_LLM=1 to make this a hard error.");
+                eprintln!();
+
                 generate_fallback_commit_message(&diff)
             } else {
                 msg
             }
         }
         Err(e) => {
-            // LLM failed to generate a message - use a fallback
-            // This ensures we don't lose progress if the LLM is unavailable
-            eprintln!("Warning: LLM commit message generation failed: {}. Using fallback.", e);
+            // Save the failed output for debugging
+            let error_msg = format!("LLM commit message generation failed: {}", e);
+            let _ = save_failed_llm_output(&diff, &error_msg);
+
+            if must_use_llm {
+                return Err(io::Error::new(io::ErrorKind::Other, error_msg));
+            }
+
+            eprintln!();
+            eprintln!("========================================");
+            eprintln!("WARNING: USING FALLBACK COMMIT MESSAGE");
+            eprintln!("========================================");
+            eprintln!("The LLM failed to generate a semantic commit message.");
+            eprintln!("This will result in a generic commit message like 'chore: update file'.");
+            eprintln!("Failed with: {}", e);
+            eprintln!("Set RALPH_COMMIT_MUST_USE_LLM=1 to make this a hard error.");
+            eprintln!();
+
             generate_fallback_commit_message(&diff)
         }
     };
@@ -1768,9 +1928,8 @@ mod tests {
             "test: add coverage".to_string(),
         ];
         let combined = combine_chunk_messages(&messages);
-        // The function iterates through all messages, using the last type
-        // but takes the first meaningful subject
-        assert!(combined.starts_with("test:") || combined.starts_with("fix:"));
+        // The function now uses the most significant type (feat > fix > test > others)
+        assert!(combined.starts_with("feat:"));
         // Should have one of the subjects
         assert!(combined.contains("feature") || combined.contains("bug") || combined.contains("coverage"));
     }
