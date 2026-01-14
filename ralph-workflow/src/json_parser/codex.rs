@@ -5,7 +5,7 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -23,6 +23,8 @@ pub(crate) struct CodexParser {
     display_name: String,
     /// Delta accumulator for streaming content
     delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Track if we're currently streaming an agent message
+    in_agent_message: Rc<RefCell<Cell<bool>>>,
 }
 
 impl CodexParser {
@@ -33,6 +35,7 @@ impl CodexParser {
             log_file: None,
             display_name: "Codex".to_string(),
             delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            in_agent_message: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -148,7 +151,19 @@ impl CodexParser {
                                 let mut acc = self.delta_accumulator.borrow_mut();
                                 acc.add_delta(ContentType::Text, "agent_msg", text);
 
-                                // Show delta in real-time (both verbose and normal mode)
+                                // Check if we're already streaming an agent message
+                                let in_msg = self.in_agent_message.borrow();
+                                let was_in_msg = in_msg.get();
+                                drop(in_msg);
+
+                                // Only show prefix on the first chunk
+                                if was_in_msg {
+                                    // Subsequent chunks: show text without prefix
+                                    self.in_agent_message.borrow_mut().set(true);
+                                    return Some(format!("{}{}", c.white(), text));
+                                }
+                                // First chunk: show prefix + text + newline
+                                self.in_agent_message.borrow_mut().set(true);
                                 return Some(format!(
                                     "{}[{}]{} {}{}{}\n",
                                     c.dim(),
@@ -211,7 +226,7 @@ impl CodexParser {
                                 path
                             )
                         }
-                        Some("mcp_tool_call") | Some("mcp") => {
+                        Some("mcp_tool_call" | "mcp") => {
                             let tool_name =
                                 item.tool.clone().unwrap_or_else(|| "unknown".to_string());
                             let mut out = format!(
@@ -299,6 +314,12 @@ impl CodexParser {
                 if let Some(item) = item {
                     match item.item_type.as_deref() {
                         Some("agent_message") => {
+                            // Check if we were streaming an agent message
+                            let in_msg = self.in_agent_message.borrow();
+                            let was_in_msg = in_msg.get();
+                            drop(in_msg);
+                            self.in_agent_message.borrow_mut().set(false);
+
                             // Show final accumulated message and clear accumulator
                             let full_text = self
                                 .delta_accumulator
@@ -309,16 +330,24 @@ impl CodexParser {
                                 .borrow_mut()
                                 .clear_key(ContentType::Text, "agent_msg");
 
+                            // Add final newline if we were streaming
+                            let newline_suffix = if was_in_msg {
+                                format!("{}\n", c.reset())
+                            } else {
+                                String::new()
+                            };
+
                             if let Some(text) = full_text {
                                 let limit = self.verbosity.truncate_limit("agent_msg");
                                 let preview = truncate_text(&text, limit);
                                 return Some(format!(
-                                    "{}[{}]{} {}{}{}\n",
+                                    "{}[{}]{} {}{}{}{}",
                                     c.dim(),
                                     name,
                                     c.reset(),
                                     c.white(),
                                     preview,
+                                    newline_suffix,
                                     c.reset()
                                 ));
                             }
@@ -327,12 +356,13 @@ impl CodexParser {
                                 let limit = self.verbosity.truncate_limit("agent_msg");
                                 let preview = truncate_text(text, limit);
                                 return Some(format!(
-                                    "{}[{}]{} {}{}{}\n",
+                                    "{}[{}]{} {}{}{}{}\n",
                                     c.dim(),
                                     name,
                                     c.reset(),
                                     c.white(),
                                     preview,
+                                    newline_suffix,
                                     c.reset()
                                 ));
                             }
@@ -382,7 +412,7 @@ impl CodexParser {
                                 c.reset()
                             )
                         }
-                        Some("file_change") | Some("file_write") => {
+                        Some("file_change" | "file_write") => {
                             let path = item.path.clone().unwrap_or_else(|| "unknown".to_string());
                             format!(
                                 "{}[{}]{} {}File{}: {}\n",
@@ -413,7 +443,7 @@ impl CodexParser {
                                 String::new()
                             }
                         }
-                        Some("mcp_tool_call") | Some("mcp") => {
+                        Some("mcp_tool_call" | "mcp") => {
                             let tool_name = item.tool.clone().unwrap_or_else(|| "tool".to_string());
                             format!(
                                 "{}[{}]{} {}{} MCP:{} {} done\n",
@@ -535,7 +565,7 @@ impl CodexParser {
                 if let Some(item) = item {
                     matches!(
                         item.item_type.as_deref(),
-                        Some("agent_message") | Some("reasoning")
+                        Some("agent_message" | "reasoning")
                     )
                 } else {
                     false
