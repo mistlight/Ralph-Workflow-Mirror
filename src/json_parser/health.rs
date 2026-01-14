@@ -10,8 +10,12 @@
 //!
 //! - **Parsed events**: Successfully processed and displayed, including:
 //!   - Complete content events
-//!   - Streaming delta events (text deltas, thinking deltas, tool input deltas)
 //!   - Successfully handled event types
+//!
+//! - **Partial events**: Streaming delta events (text deltas, thinking deltas,
+//!   tool input deltas) that are displayed incrementally. These are NOT errors
+//!   and are tracked separately to show real-time streaming activity without
+//!   inflating "ignored" percentages.
 //!
 //! - **Control events**: State management events that don't produce user-facing
 //!   output. These are NOT errors and are tracked separately to avoid inflating
@@ -38,6 +42,8 @@ pub struct ParserHealth {
     pub total_events: u64,
     /// Number of events successfully parsed and displayed
     pub parsed_events: u64,
+    /// Number of partial/delta events (streaming content displayed incrementally)
+    pub partial_events: u64,
     /// Number of events ignored (malformed JSON, unknown events, etc.)
     pub ignored_events: u64,
     /// Number of control events (state management, no user output)
@@ -94,6 +100,16 @@ impl ParserHealth {
         self.control_events += 1;
     }
 
+    /// Record a partial/delta event (streaming content displayed incrementally)
+    ///
+    /// Partial events represent streaming content that is shown to the user
+    /// in real-time as deltas. These are NOT errors and should not trigger
+    /// health warnings. They are tracked separately to show streaming activity.
+    pub fn record_partial_event(&mut self) {
+        self.total_events += 1;
+        self.partial_events += 1;
+    }
+
     /// Get the percentage of ignored events (excluding control events)
     pub fn ignored_percentage(&self) -> f64 {
         if self.total_events == 0 {
@@ -125,11 +141,12 @@ impl ParserHealth {
             return None;
         }
 
-        let msg = if self.unknown_events > 0 || self.control_events > 0 {
+        let msg = if self.unknown_events > 0 || self.control_events > 0 || self.partial_events > 0 {
             format!(
                 "{}[Parser Health Warning]{} {} parser has {} parse errors ({}% of {} events). \
-                 Also encountered {} unknown event types (valid JSON but unhandled) \
-                 and {} control events (state management). \
+                 Also encountered {} unknown event types (valid JSON but unhandled), \
+                 {} control events (state management), \
+                 and {} partial events (streaming deltas). \
                  This may indicate a parser mismatch. Consider using a different json_parser in your agent config.",
                 colors.yellow(),
                 colors.reset(),
@@ -138,7 +155,8 @@ impl ParserHealth {
                 self.parse_error_percentage() as u32,
                 self.total_events,
                 self.unknown_events,
-                self.control_events
+                self.control_events,
+                self.partial_events
             )
         } else {
             format!(
@@ -209,6 +227,17 @@ impl HealthMonitor {
     pub fn record_control_event(&self) {
         let mut h = self.health.get();
         h.record_control_event();
+        self.health.set(h);
+    }
+
+    /// Record a partial/delta event (streaming content displayed incrementally)
+    ///
+    /// Partial events represent streaming content that is shown to the user
+    /// in real-time as deltas. These are NOT errors and should not trigger
+    /// health warnings.
+    pub fn record_partial_event(&self) {
+        let mut h = self.health.get();
+        h.record_partial_event();
         self.health.set(h);
     }
 
@@ -587,5 +616,128 @@ mod tests {
         let warning_text = warning.unwrap();
         // Warning should mention control events
         assert!(warning_text.contains("10 control events"));
+    }
+
+    #[test]
+    fn test_parser_health_partial_events() {
+        let mut health = ParserHealth::new();
+        assert_eq!(health.partial_events, 0);
+
+        health.record_partial_event();
+        health.record_partial_event();
+        health.record_partial_event();
+        assert_eq!(health.partial_events, 3);
+        assert_eq!(health.total_events, 3);
+        // Partial events do NOT count as ignored
+        assert_eq!(health.ignored_events, 0);
+        assert_eq!(health.unknown_events, 0);
+
+        // Partial events don't make it concerning
+        assert!(!health.is_concerning());
+    }
+
+    #[test]
+    fn test_parser_health_partial_events_with_other_types() {
+        let mut health = ParserHealth::new();
+
+        // Mix of partial, control, parsed, and unknown events
+        for _ in 0..100 {
+            health.record_partial_event();
+        }
+        for _ in 0..50 {
+            health.record_control_event();
+        }
+        for _ in 0..30 {
+            health.record_parsed();
+        }
+        for _ in 0..20 {
+            health.record_unknown_event();
+        }
+
+        // 200 total events
+        assert_eq!(health.total_events, 200);
+        assert_eq!(health.partial_events, 100);
+        assert_eq!(health.control_events, 50);
+        assert_eq!(health.parsed_events, 30);
+        assert_eq!(health.unknown_events, 20);
+        assert_eq!(health.ignored_events, 20); // only unknown counts as ignored
+
+        // Not concerning - no parse errors
+        assert!(!health.is_concerning());
+        assert_eq!(health.parse_error_percentage(), 0.0);
+    }
+
+    #[test]
+    fn test_health_monitor_partial_events() {
+        let monitor = HealthMonitor::new("test");
+        let colors = Colors { enabled: false };
+
+        // Add many partial events (simulating streaming deltas)
+        for _ in 0..2049 {
+            monitor.record_partial_event();
+        }
+        // Add some parsed events
+        for _ in 0..53 {
+            monitor.record_parsed();
+        }
+
+        let health = monitor.health();
+        assert_eq!(health.partial_events, 2049);
+        assert_eq!(health.parsed_events, 53);
+        assert_eq!(health.total_events, 2102);
+
+        // Should NOT warn even with 97.5% "partial" events
+        // because partial events are valid streaming content, not errors
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_none());
+    }
+
+    #[test]
+    fn test_health_monitor_warning_includes_partial_events() {
+        let monitor = HealthMonitor::new("test");
+        let colors = Colors { enabled: false };
+
+        // Add parse errors to trigger warning (need >50% of total)
+        for _ in 0..15 {
+            monitor.record_parse_error();
+        }
+        // Add some partial events (these don't count toward parse error %)
+        for _ in 0..10 {
+            monitor.record_partial_event();
+        }
+        // Add some control events (these also don't count toward parse error %)
+        for _ in 0..2 {
+            monitor.record_control_event();
+        }
+
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_some());
+
+        let warning_text = warning.unwrap();
+        // Warning should mention both control and partial events
+        assert!(warning_text.contains("2 control events"));
+        assert!(warning_text.contains("10 partial events"));
+    }
+
+    #[test]
+    fn test_parser_health_partial_events_not_in_ignored_percentage() {
+        let mut health = ParserHealth::new();
+
+        // Add many partial events (simulating streaming deltas)
+        for _ in 0..2000 {
+            health.record_partial_event();
+        }
+        // Add some parsed events
+        for _ in 0..50 {
+            health.record_parsed();
+        }
+
+        // Partial events should NOT affect ignored percentage
+        // Only unknown and parse errors count as ignored
+        assert_eq!(health.ignored_events, 0);
+        assert_eq!(health.ignored_percentage(), 0.0);
+
+        // Not concerning
+        assert!(!health.is_concerning());
     }
 }
