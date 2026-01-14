@@ -9,8 +9,13 @@ mod known_binaries;
 pub use binary_guidance::InstallGuidance;
 
 /// Detected platform type
+///
+/// This enum is `pub(crate)` because it is only used internally by the
+/// `InstallGuidance` functionality. External code should use `InstallGuidance`
+/// which handles platform detection automatically.
+#[expect(clippy::redundant_pub_crate)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Platform {
+pub(crate) enum Platform {
     /// macOS with Homebrew available
     MacWithBrew,
     /// macOS without Homebrew
