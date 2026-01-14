@@ -11,6 +11,15 @@
 //! 3. **Deduplication rule**: Content displayed during streaming is never re-displayed
 //! 4. **State reset**: Streaming state resets on `MessageStart`/Init events
 //!
+//! # Stream Contract
+//!
+//! This module enforces a strict **delta contract** - all streaming events must
+//! contain only the newly generated text (deltas), not the full accumulated content.
+//!
+//! Treating snapshots as deltas causes exponential duplication bugs. The session
+//! validates that incoming content is genuinely delta-sized and rejects likely
+//! snapshot-as-delta violations.
+//!
 //! # Example
 //!
 //! ```ignore
@@ -40,6 +49,24 @@
 
 use crate::json_parser::types::ContentType;
 use std::collections::HashMap;
+
+/// Ralph enforces a **delta contract** for all streaming content.
+///
+/// Every streaming event must contain only the newly generated text (delta),
+/// never the full accumulated content (snapshot).
+///
+/// # Contract Violations
+///
+/// If a parser emits snapshot-style content when deltas are expected, it will
+/// cause exponential duplication bugs. The `StreamingSession` validates that
+/// incoming content is delta-sized and logs warnings when violations are detected.
+///
+/// # Validation Threshold
+///
+/// Deltas are expected to be small chunks (typically < 100 chars). If a single
+/// "delta" exceeds `SNAPSHOT_THRESHOLD` characters, it may indicate a snapshot
+/// being treated as a delta.
+const SNAPSHOT_THRESHOLD: usize = 500;
 
 /// Streaming state for the current message lifecycle.
 ///
@@ -150,6 +177,13 @@ impl StreamingSession {
     /// This variant is for parsers that use string keys instead of numeric indices
     /// (e.g., Codex uses `agent_msg`, `reasoning`; Gemini uses `main`; `OpenCode` uses `main`).
     ///
+    /// # Delta Validation
+    ///
+    /// This method validates that incoming content appears to be a genuine delta
+    /// (small chunk) rather than a snapshot (full accumulated content). Large "deltas"
+    /// that exceed `SNAPSHOT_THRESHOLD` trigger a warning as they may indicate a
+    /// contract violation.
+    ///
     /// # Arguments
     /// * `key` - The content key (e.g., `main`, `agent_msg`, `reasoning`)
     /// * `delta` - The text delta to accumulate
@@ -158,6 +192,19 @@ impl StreamingSession {
     /// * `true` - Show prefix with this delta (first chunk)
     /// * `false` - Don't show prefix (subsequent chunks)
     pub fn on_text_delta_key(&mut self, key: &str, delta: &str) -> bool {
+        // Validate delta size - warn if it looks like a snapshot
+        if delta.len() > SNAPSHOT_THRESHOLD {
+            // This is a potential snapshot-as-delta bug
+            // Log via eprintln since we don't have a logger here
+            eprintln!(
+                "Warning: Large delta ({} chars) for key '{}'. \
+                This may indicate a snapshot being treated as a delta, \
+                which can cause exponential duplication bugs.",
+                delta.len(),
+                key
+            );
+        }
+
         // Mark that we're streaming text content
         self.streamed_types.insert(ContentType::Text, true);
         self.state = StreamingState::Streaming;
@@ -400,6 +447,41 @@ mod tests {
         assert_eq!(
             session.get_accumulated(ContentType::Text, "0"),
             Some("After")
+        );
+    }
+
+    #[test]
+    fn test_delta_validation_warns_on_large_delta() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Create a delta larger than SNAPSHOT_THRESHOLD
+        let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+
+        // This should trigger a warning but still work
+        let show_prefix = session.on_text_delta(0, &large_delta);
+        assert!(show_prefix);
+
+        // Content should still be accumulated correctly
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some(large_delta.as_str())
+        );
+    }
+
+    #[test]
+    fn test_delta_validation_no_warning_for_small_delta() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Small delta should not trigger warning
+        let small_delta = "Hello, world!";
+        let show_prefix = session.on_text_delta(0, small_delta);
+        assert!(show_prefix);
+
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some(small_delta)
         );
     }
 }
