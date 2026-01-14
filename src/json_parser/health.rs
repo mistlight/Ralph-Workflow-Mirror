@@ -105,7 +105,6 @@ impl ParserHealth {
     /// Partial events represent streaming content that is shown to the user
     /// in real-time as deltas. These are NOT errors and should not trigger
     /// health warnings. They are tracked separately to show streaming activity.
-    #[allow(dead_code)]
     pub fn record_partial_event(&mut self) {
         self.total_events += 1;
         self.partial_events += 1;
@@ -237,7 +236,6 @@ impl HealthMonitor {
     /// Partial events represent streaming content that is shown to the user
     /// in real-time as deltas. These are NOT errors and should not trigger
     /// health warnings.
-    #[allow(dead_code)]
     pub fn record_partial_event(&self) {
         let mut h = self.health.get();
         h.record_partial_event();

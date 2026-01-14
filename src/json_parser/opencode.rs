@@ -384,6 +384,18 @@ impl OpenCodeParser {
         }
     }
 
+    /// Check if an OpenCode event is a partial/delta event (streaming content displayed incrementally)
+    ///
+    /// Partial events represent streaming text deltas that are shown to the user
+    /// in real-time. These should be tracked separately to avoid inflating "ignored" percentages.
+    fn is_partial_event(event: &OpenCodeEvent) -> bool {
+        match event.event_type.as_str() {
+            // Text events produce streaming content
+            "text" => true,
+            _ => false,
+        }
+    }
+
     /// Parse a stream of OpenCode NDJSON events
     pub(crate) fn parse_stream<R: BufRead, W: Write>(
         &self,
@@ -423,7 +435,20 @@ impl OpenCodeParser {
             // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
-                    monitor.record_parsed();
+                    // Check if this is a partial/delta event (streaming content)
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<OpenCodeEvent>(&line) {
+                            if Self::is_partial_event(&event) {
+                                monitor.record_partial_event();
+                            } else {
+                                monitor.record_parsed();
+                            }
+                        } else {
+                            monitor.record_parsed();
+                        }
+                    } else {
+                        monitor.record_parsed();
+                    }
                     write!(writer, "{}", output)?;
                 }
                 None => {
