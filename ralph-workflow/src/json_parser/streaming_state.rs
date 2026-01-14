@@ -241,7 +241,14 @@ impl StreamingSession {
         let is_snapshot = self.is_likely_snapshot(delta, key);
         let actual_delta = if is_snapshot {
             // Extract only the new portion to prevent exponential duplication
-            self.get_delta_from_snapshot(delta, key).to_string()
+            match self.get_delta_from_snapshot(delta, key) {
+                Ok(extracted) => extracted.to_string(),
+                Err(e) => {
+                    // Snapshot detection had a false positive - use the original delta
+                    eprintln!("Warning: Snapshot extraction failed: {e}. Using original delta.");
+                    delta.to_string()
+                }
+            }
         } else {
             // Genuine delta - use as-is
             delta.to_string()
@@ -474,31 +481,28 @@ impl StreamingSession {
     /// * `key` - The content key to compare against
     ///
     /// # Returns
-    /// * The delta portion (new content only)
-    ///
-    /// # Panics
-    /// Panics if the text is not actually a snapshot (doesn't start with accumulated content).
-    /// Callers should check with `is_likely_snapshot()` first.
+    /// * `Ok(usize)` - The length of the delta portion (new content only)
+    /// * `Err` - If the text is not actually a snapshot (doesn't start with accumulated content)
     ///
     /// # Note
     /// Returns the length of the delta portion as `usize` since we can't return
     /// a reference to `text` with the correct lifetime. Callers can slice `text`
     /// themselves using `&text[delta_len..]`.
-    pub fn extract_delta_from_snapshot(&self, text: &str, key: &str) -> usize {
+    pub fn extract_delta_from_snapshot(&self, text: &str, key: &str) -> Result<usize, String> {
         let content_key = (ContentType::Text, key.to_string());
 
         if let Some(previous) = self.accumulated.get(&content_key) {
             if text.starts_with(previous) {
-                return previous.len();
+                return Ok(previous.len());
             }
         }
 
         // If we get here, the text wasn't actually a snapshot
-        // This indicates a bug in the caller's logic
-        panic!(
+        // This could indicate a false positive from is_likely_snapshot
+        Err(format!(
             "extract_delta_from_snapshot called on non-snapshot text. \
-            key={key:?}, text={text:?}. This is a bug - callers must check is_likely_snapshot first."
-        );
+            key={key:?}, text={text:?}. Snapshot detection may have had a false positive."
+        ))
     }
 
     /// Get the delta portion as a string slice from a snapshot.
@@ -506,11 +510,12 @@ impl StreamingSession {
     /// This is a convenience wrapper that returns the actual substring
     /// instead of just the length.
     ///
-    /// # Panics
-    /// Panics if the text is not actually a snapshot.
-    pub fn get_delta_from_snapshot<'a>(&self, text: &'a str, key: &str) -> &'a str {
-        let delta_len = self.extract_delta_from_snapshot(text, key);
-        &text[delta_len..]
+    /// # Returns
+    /// * `Ok(&str)` - The delta portion (new content only)
+    /// * `Err` - If the text is not actually a snapshot
+    pub fn get_delta_from_snapshot<'a>(&self, text: &'a str, key: &str) -> Result<&'a str, String> {
+        let delta_len = self.extract_delta_from_snapshot(text, key)?;
+        Ok(&text[delta_len..])
     }
 }
 
@@ -696,7 +701,7 @@ mod tests {
         session.on_text_delta(0, "Hello");
 
         // Snapshot "Hello World" should extract " World" as delta
-        let delta = session.get_delta_from_snapshot("Hello World", "0");
+        let delta = session.get_delta_from_snapshot("Hello World", "0").unwrap();
         assert_eq!(delta, " World");
     }
 
@@ -710,13 +715,12 @@ mod tests {
         session.on_text_delta(0, "Hello");
 
         // Snapshot "Hello" (identical to previous) should extract "" as delta
-        let delta = session.get_delta_from_snapshot("Hello", "0");
+        let delta = session.get_delta_from_snapshot("Hello", "0").unwrap();
         assert_eq!(delta, "");
     }
 
     #[test]
-    #[should_panic(expected = "extract_delta_from_snapshot called on non-snapshot text")]
-    fn test_extract_delta_from_snapshot_panics_on_non_snapshot() {
+    fn test_extract_delta_from_snapshot_returns_error_on_non_snapshot() {
         let mut session = StreamingSession::new();
         session.on_message_start();
         session.on_content_block_start(0);
@@ -724,8 +728,10 @@ mod tests {
         // First delta is "Hello"
         session.on_text_delta(0, "Hello");
 
-        // Calling on non-snapshot should panic
-        session.get_delta_from_snapshot("World", "0");
+        // Calling on non-snapshot should return error (not panic)
+        let result = session.get_delta_from_snapshot("World", "0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("extract_delta_from_snapshot called on non-snapshot text"));
     }
 
     #[test]
@@ -741,7 +747,7 @@ mod tests {
         assert!(is_snapshot);
 
         // Should extract delta correctly
-        let delta = session.get_delta_from_snapshot("Hello World", "main");
+        let delta = session.get_delta_from_snapshot("Hello World", "main").unwrap();
         assert_eq!(delta, " World");
     }
 }

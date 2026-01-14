@@ -456,7 +456,19 @@ pub fn git_commit(
             repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head_commit])
         }
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => {
-            // Initial commit: no parents
+            // Initial commit: no parents, but verify tree is not empty
+            // An empty tree can happen in edge cases where files were staged and then removed
+            let mut has_entries = false;
+            tree.walk(git2::TreeWalkMode::PreOrder, |_, _| {
+                has_entries = true;
+                1 // Stop iteration after first entry
+            })
+            .ok(); // Ignore errors, we just want to know if there's at least one entry
+
+            if !has_entries {
+                // Tree is empty, return None instead of creating empty commit
+                return Ok(None);
+            }
             repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[])
         }
         Err(e) => return Err(git2_to_io_error(e)),
