@@ -380,14 +380,14 @@ impl ClaudeParser {
 
                     // Only show prefix on the first chunk of a content block
                     if was_in_block {
-                        // Subsequent chunks: show text without prefix and without newline
+                        // Subsequent chunks: overwrite with carriage return, show text without prefix
                         self.in_content_block.borrow_mut().set(true);
-                        format!("{}{}", c.white(), sanitized_text)
+                        format!("{}\r{}", c.white(), sanitized_text)
                     } else {
-                        // First chunk: show prefix + text + newline
+                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                         self.in_content_block.borrow_mut().set(true);
                         format!(
-                            "{}[{}]{} {}{}{}\n",
+                            "{}[{}]{} {}{}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
@@ -442,14 +442,14 @@ impl ClaudeParser {
                 drop(in_block);
 
                 if was_in_block {
-                    // Subsequent chunks: show text without prefix
+                    // Subsequent chunks: overwrite with carriage return, show text without prefix
                     self.in_content_block.borrow_mut().set(true);
-                    format!("{}{}", c.white(), sanitized_text)
+                    format!("{}\r{}", c.white(), sanitized_text)
                 } else {
-                    // First chunk: show prefix + text + newline
+                    // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                     self.in_content_block.borrow_mut().set(true);
                     format!(
-                        "{}[{}]{} {}{}{}\n",
+                        "{}[{}]{} {}{}{}",
                         c.dim(),
                         prefix,
                         c.reset(),

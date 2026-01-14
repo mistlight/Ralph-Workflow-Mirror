@@ -111,14 +111,14 @@ impl GeminiParser {
 
                         // Only show prefix on the first delta chunk
                         if was_in_delta {
-                            // Subsequent chunks: show text without prefix
+                            // Subsequent chunks: overwrite with carriage return, show text without prefix
                             self.in_delta_content.borrow_mut().set(true);
-                            return Some(format!("{}{}", c.white(), text));
+                            return Some(format!("{}\r{}", c.white(), text));
                         }
-                        // First chunk: show prefix + text + newline
+                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                         self.in_delta_content.borrow_mut().set(true);
                         return Some(format!(
-                            "{}[{}]{} {}{}{}\n",
+                            "{}[{}]{} {}{}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
