@@ -140,13 +140,22 @@ impl CodexParser {
             }
             CodexEvent::TurnCompleted { usage } => {
                 // Mark the turn message as complete
-                self.streaming_session.borrow_mut().on_message_stop();
+                let was_in_block = self.streaming_session.borrow_mut().on_message_stop();
 
                 let (input, output) = usage.map_or((0, 0), |u| {
                     (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0))
                 });
+
+                // Add completion newline if we were in a content block
+                let completion = if was_in_block {
+                    TextDeltaRenderer::render_completion()
+                } else {
+                    String::new()
+                };
+
                 format!(
-                    "{}[{}]{} {}{} Turn completed{} {}(in:{} out:{}){}\n",
+                    "{}{}[{}]{} {}{} Turn completed{} {}(in:{} out:{}){}\n",
+                    completion,
                     c.dim(),
                     name,
                     c.reset(),
@@ -161,11 +170,19 @@ impl CodexParser {
             }
             CodexEvent::TurnFailed { error } => {
                 // Mark the turn message as complete even on failure
-                self.streaming_session.borrow_mut().on_message_stop();
+                let was_in_block = self.streaming_session.borrow_mut().on_message_stop();
+
+                // Add completion newline if we were in a content block
+                let completion = if was_in_block {
+                    TextDeltaRenderer::render_completion()
+                } else {
+                    String::new()
+                };
 
                 let err = error.unwrap_or_else(|| "unknown error".to_string());
                 format!(
-                    "{}[{}]{} {}{} Turn failed:{} {}\n",
+                    "{}{}[{}]{} {}{} Turn failed:{} {}\n",
+                    completion,
                     c.dim(),
                     name,
                     c.reset(),
