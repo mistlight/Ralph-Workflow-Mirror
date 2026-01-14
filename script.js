@@ -682,6 +682,250 @@
     handleReducedMotion();
     prefersReducedMotion.addEventListener('change', handleReducedMotion);
 
+    // === Audience Selector ===
+    const audienceOptions = document.querySelectorAll('.audience-option');
+    const audienceSelector = document.getElementById('audience-selector');
+
+    // Check localStorage for saved audience preference
+    const savedAudience = localStorage.getItem('ralph-audience');
+    if (savedAudience && audienceSelector) {
+        document.body.setAttribute('data-audience', savedAudience);
+        audienceOptions.forEach(option => {
+            if (option.dataset.audience === savedAudience) {
+                option.setAttribute('aria-pressed', 'true');
+            }
+        });
+    }
+
+    audienceOptions.forEach(option => {
+        option.addEventListener('click', () => {
+            const audience = option.dataset.audience;
+
+            // Update button states
+            audienceOptions.forEach(opt => {
+                opt.setAttribute('aria-pressed', 'false');
+            });
+            option.setAttribute('aria-pressed', 'true');
+
+            // Update body attribute for content filtering
+            if (document.body.getAttribute('data-audience') === audience) {
+                // Toggle off if clicking the same option
+                document.body.removeAttribute('data-audience');
+                localStorage.removeItem('ralph-audience');
+            } else {
+                document.body.setAttribute('data-audience', audience);
+                localStorage.setItem('ralph-audience', audience);
+            }
+
+            // Smooth scroll to relevant section based on audience
+            const sectionMap = {
+                'developer': '#features',
+                'vibe-coder': '#how-it-works',
+                'newcomer': '#install'
+            };
+
+            const targetSection = sectionMap[audience];
+            if (targetSection && document.body.getAttribute('data-audience')) {
+                setTimeout(() => {
+                    const target = document.querySelector(targetSection);
+                    if (target) {
+                        const navHeight = document.querySelector('.nav')?.offsetHeight || 0;
+                        const targetPosition = target.offsetTop - navHeight - 20;
+
+                        window.scrollTo({
+                            top: targetPosition,
+                            behavior: 'smooth'
+                        });
+                    }
+                }, 300);
+            }
+        });
+    });
+
+    // === Interactive Demo ===
+    const demoTabs = document.querySelectorAll('.demo-tab');
+    const demoPanels = document.querySelectorAll('.demo-panel');
+    const demoRunBtn = document.getElementById('demo-run-btn');
+    const demoTerminal = document.getElementById('demo-terminal');
+    const demoCode = document.getElementById('demo-code');
+    const demoStatus = document.getElementById('demo-status');
+    const demoIteration = document.getElementById('demo-iteration');
+    const demoSteps = document.querySelectorAll('.demo-step');
+
+    // Tab switching
+    demoTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const targetTab = tab.dataset.tab;
+
+            demoTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            demoPanels.forEach(panel => {
+                if (panel.dataset.panel === targetTab) {
+                    panel.classList.add('active');
+                } else {
+                    panel.classList.remove('active');
+                }
+            });
+        });
+    });
+
+    // Demo simulation
+    let demoRunning = false;
+    let demoTimeouts = [];
+
+    const demoWorkflow = [
+        { step: 1, status: 'Developer agent analyzing...', delay: 1000, terminal: '<span class="demo-success">✓</span> Reading PROMPT.md\n<span class="demo-prompt">$</span> Developer agent: Analyzing requirements...' },
+        { step: 1, status: 'Developer writing code...', delay: 2500, terminal: '<span class="demo-success">✓</span> Reading PROMPT.md\n<span class="demo-success">✓</span> Developer agent: Analyzing requirements...\n<span class="demo-prompt">$</span> Developer agent: Writing authentication module...' },
+        { step: 2, status: 'Developer writing code...', delay: 4000, code: true },
+        { step: 2, status: 'Reviewing code...', delay: 5500, terminal: '<span class="demo-success">✓</span> Reading PROMPT.md\n<span class="demo-success">✓</span> Developer agent: Analyzing requirements...\n<span class="demo-success">✓</span> Developer agent: Writing authentication module...\n<span class="demo-prompt">$</span> Reviewer agent: Checking code quality...' },
+        { step: 3, status: 'Reviewer checking...', delay: 7000, terminal: '<span class="demo-success">✓</span> Reading PROMPT.md\n<span class="demo-success">✓</span> Developer agent: Analyzing requirements...\n<span class="demo-success">✓</span> Developer agent: Writing authentication module...\n<span class="demo-success">✓</span> Reviewer agent: Checking code quality...\n<span class="demo-warning">⚠</span> Found 2 issues: missing password validation, no rate limiting' },
+        { step: 4, status: 'Fixing issues...', delay: 9000, terminal: '<span class="demo-success">✓</span> Reading PROMPT.md\n<span class="demo-success">✓</span> Developer agent: Analyzing requirements...\n<span class="demo-success">✓</span> Developer agent: Writing authentication module...\n<span class="demo-success">✓</span> Reviewer agent: Checking code quality...\n<span class="demo-warning">⚠</span> Found 2 issues: missing password validation, no rate limiting\n<span class="demo-prompt">$</span> Developer agent: Applying fixes...' },
+        { step: 4, status: 'Re-reviewing...', delay: 11000, iteration: 2, terminal: '<span class="demo-success">✓</span> Reading PROMPT.md\n<span class="demo-success">✓</span> Developer agent: Analyzing requirements...\n<span class="demo-success">✓</span> Developer agent: Writing authentication module...\n<span class="demo-success">✓</span> Reviewer agent: Checking code quality...\n<span class="demo-warning">⚠</span> Found 2 issues: missing password validation, no rate limiting\n<span class="demo-success">✓</span> Developer agent: Applying fixes...\n<span class="demo-prompt">$</span> Reviewer agent: Re-checking code...' },
+        { step: 5, status: 'Creating commit...', delay: 13000, terminal: '<span class="demo-success">✓</span> Reading PROMPT.md\n<span class="demo-success">✓</span> Developer agent: Analyzing requirements...\n<span class="demo-success">✓</span> Developer agent: Writing authentication module...\n<span class="demo-success">✓</span> Reviewer agent: Checking code quality...\n<span class="demo-warning">⚠</span> Found 2 issues: missing password validation, no rate limiting\n<span class="demo-success">✓</span> Developer agent: Applying fixes...\n<span class="demo-success">✓</span> Reviewer agent: Re-checking code...\n<span class="demo-success">✓</span> Code approved! Creating commit...' },
+        { step: 5, status: 'Complete!', delay: 14500, terminal: '<span class="demo-success">✓</span> Reading PROMPT.md\n<span class="demo-success">✓</span> Developer agent: Analyzing requirements...\n<span class="demo-success">✓</span> Developer agent: Writing authentication module...\n<span class="demo-success">✓</span> Reviewer agent: Checking code quality...\n<span class="demo-warning">⚠</span> Found 2 issues: missing password validation, no rate limiting\n<span class="demo-success">✓</span> Developer agent: Applying fixes...\n<span class="demo-success">✓</span> Reviewer agent: Re-checking code...\n<span class="demo-success">✓</span> Code approved! Creating commit...\n<span class="demo-success">✓</span> Commit created: feat(auth): add user authentication with JWT sessions\n<span class="demo-time">Time: 2m 34s</span>' }
+    ];
+
+    const generatedCode = `// src/auth/mod.rs
+use jwt::{decode, encode, Header, Validation};
+use redis::AsyncCommands;
+
+pub struct AuthService {
+    redis: redis::Client,
+    jwt_secret: String,
+}
+
+impl AuthService {
+    pub async fn login(&self, email: &str, password: &str)
+        -> Result<String, AuthError>
+    {
+        // Validate email format
+        if !email.contains('@') {
+            return Err(AuthError::InvalidEmail);
+        }
+
+        // Validate password strength (min 8 chars)
+        if password.len() < 8 {
+            return Err(AuthError::WeakPassword);
+        }
+
+        // Check credentials and generate JWT
+        let token = self.generate_jwt(email)?;
+
+        // Store session in Redis
+        let mut conn = self.redis.get_async_connection().await?;
+        conn.set_ex(format!("session:{}", email),
+                   &token, 3600).await?;
+
+        Ok(token)
+    }
+
+    pub async fn reset_password(&self, email: &str)
+        -> Result<(), AuthError>
+    {
+        // Generate reset token
+        let reset_token = self.generate_reset_token(email)?;
+
+        // Send email with reset link
+        self.send_reset_email(email, &reset_token).await?;
+
+        Ok(())
+    }
+}`;
+
+    function clearDemo() {
+        demoTimeouts.forEach(t => clearTimeout(t));
+        demoTimeouts = [];
+        demoRunning = false;
+        demoRunBtn.disabled = false;
+        demoRunBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            Run Demo
+        `;
+        demoSteps.forEach(step => step.classList.remove('active'));
+    }
+
+    function runDemo() {
+        if (demoRunning) return;
+        demoRunning = true;
+        demoRunBtn.disabled = true;
+        demoRunBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: demo-spin 1s linear infinite">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+            </svg>
+            Running...
+        `;
+
+        demoWorkflow.forEach((action, index) => {
+            const timeout = setTimeout(() => {
+                // Update status
+                if (demoStatus) demoStatus.textContent = action.status;
+
+                // Update iteration counter
+                if (action.iteration && demoIteration) {
+                    demoIteration.textContent = action.iteration;
+                }
+
+                // Update terminal
+                if (action.terminal && demoTerminal) {
+                    demoTerminal.innerHTML = action.terminal.split('\n')
+                        .map(line => `<div class="demo-terminal-line">${line}</div>`)
+                        .join('');
+                }
+
+                // Update code panel
+                if (action.code && demoCode) {
+                    demoCode.innerHTML = generatedCode.split('\n')
+                        .map(line => `<div class="demo-code-line">${line}</div>`)
+                        .join('');
+
+                    // Auto-switch to code tab
+                    const codeTab = document.querySelector('.demo-tab[data-tab="code"]');
+                    if (codeTab) codeTab.click();
+                } else if (action.terminal && index > 0) {
+                    // Auto-switch to terminal tab
+                    const terminalTab = document.querySelector('.demo-tab[data-tab="terminal"]');
+                    if (terminalTab) terminalTab.click();
+                }
+
+                // Update active step
+                demoSteps.forEach(step => step.classList.remove('active'));
+                const activeStep = document.querySelector(`.demo-step[data-step="${action.step}"]`);
+                if (activeStep) activeStep.classList.add('active');
+
+                // Reset on completion
+                if (index === demoWorkflow.length - 1) {
+                    setTimeout(() => {
+                        clearDemo();
+                    }, 3000);
+                }
+            }, action.delay);
+
+            demoTimeouts.push(timeout);
+        });
+    }
+
+    if (demoRunBtn) {
+        demoRunBtn.addEventListener('click', () => {
+            if (!demoRunning) {
+                // Reset demo state
+                demoTerminal.innerHTML = `
+                    <div class="demo-terminal-line">
+                        <span class="demo-prompt">$</span> ralph -S
+                    </div>
+                `;
+                demoCode.innerHTML = '<div class="demo-code-line">// Generated code will appear here...</div>';
+                demoIteration.textContent = '0';
+                demoSteps.forEach(step => step.classList.remove('active'));
+
+                runDemo();
+            }
+        });
+    }
+
     // === Platform Detection for Install Tabs (Optional Enhancement) ===
     function detectPlatform() {
         // All users use the same install method now (git clone)
