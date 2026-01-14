@@ -365,10 +365,8 @@ pub fn handle_security_check(
 /// Handle the --build-image command
 ///
 /// Builds a container image for container mode.
-pub fn handle_build_image(
-    tag: Option<String>,
-    colors: &Colors,
-) -> anyhow::Result<()> {
+#[cfg(feature = "build-image")]
+pub fn handle_build_image(tag: Option<String>, colors: &Colors) -> anyhow::Result<()> {
     use crate::container::image::ContainerImage;
 
     println!("{}", colors.bold());

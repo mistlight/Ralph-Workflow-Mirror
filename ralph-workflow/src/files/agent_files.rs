@@ -476,8 +476,39 @@ pub fn make_prompt_read_only() -> io::Result<Option<String>> {
 mod tests {
     use super::*;
     use crate::colors::Colors;
-    use crate::test_utils::testing::with_temp_cwd;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
+
+    /// Global mutex for tests that modify the current working directory.
+    static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    /// RAII guard to restore the working directory on drop.
+    struct DirGuard(PathBuf);
+
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+
+    /// Run a test function in a temporary directory.
+    fn with_temp_cwd<F: FnOnce(&TempDir)>(f: F) {
+        let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
+
+        // Clear poison if a previous test panicked
+        let _cwd_guard = match lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        let dir = TempDir::new().expect("Failed to create temp directory");
+        let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+        std::env::set_current_dir(dir.path()).expect("Failed to change to temp directory");
+        let _guard = DirGuard(old_dir);
+
+        f(&dir);
+    }
 
     #[test]
     fn test_file_contains_marker() {

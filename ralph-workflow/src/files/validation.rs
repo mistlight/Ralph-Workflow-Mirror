@@ -32,7 +32,6 @@ fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
 ///
 /// Contains flags indicating what was found and any errors or warnings.
 #[derive(Debug, Clone)]
-#[expect(clippy::struct_excessive_bools)]
 pub struct PromptValidationResult {
     /// Whether PROMPT.md exists
     pub exists: bool,
@@ -104,8 +103,9 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     for backup_path in &backup_paths {
         if backup_path.exists() {
             // Verify backup has content
-            let Ok(backup_content) = fs::read_to_string(backup_path) else {
-                continue;
+            let backup_content = match fs::read_to_string(backup_path) {
+                Ok(c) => c,
+                Err(_) => continue, // Try next backup
             };
 
             if backup_content.trim().is_empty() {
@@ -192,24 +192,31 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
         for (idx, backup_path) in backup_paths.iter().enumerate() {
             if backup_path.exists() {
                 // Check if backup has content before restoring
-                let Ok(backup_content) = fs::read_to_string(backup_path) else {
-                    continue;
+                let backup_content = match fs::read_to_string(backup_path) {
+                    Ok(c) => c,
+                    Err(_) => continue, // Try next backup
                 };
 
                 if backup_content.trim().is_empty() {
                     continue; // Try next backup
                 }
 
-                if fs::copy(backup_path, prompt_path).is_ok() {
-                    result.exists = true;
-                    restored = true;
-                    backup_used = Some(match idx {
-                        0 => ".agent/PROMPT.md.backup",
-                        1 => ".agent/PROMPT.md.backup.1",
-                        2 => ".agent/PROMPT.md.backup.2",
-                        _ => "unknown",
-                    });
-                    break;
+                match fs::copy(backup_path, prompt_path) {
+                    Ok(_) => {
+                        result.exists = true;
+                        restored = true;
+                        backup_used = Some(match idx {
+                            0 => ".agent/PROMPT.md.backup",
+                            1 => ".agent/PROMPT.md.backup.1",
+                            2 => ".agent/PROMPT.md.backup.2",
+                            _ => "unknown",
+                        });
+                        break;
+                    }
+                    Err(_) => {
+                        // Try next backup
+                        continue;
+                    }
                 }
             }
         }
@@ -284,7 +291,39 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_helpers::with_temp_cwd;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::TempDir;
+
+    /// Global mutex for tests that modify the current working directory.
+    static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    /// RAII guard to restore the working directory on drop.
+    struct DirGuard(PathBuf);
+
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+
+    /// Run a test function in a temporary directory.
+    fn with_temp_cwd<F: FnOnce(&TempDir)>(f: F) {
+        let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
+
+        // Clear poison if a previous test panicked
+        let _cwd_guard = match lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        let dir = TempDir::new().expect("Failed to create temp directory");
+        let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+        std::env::set_current_dir(dir.path()).expect("Failed to change to temp directory");
+        let _guard = DirGuard(old_dir);
+
+        f(&dir);
+    }
 
     #[test]
     fn test_restore_prompt_if_needed_ok() {

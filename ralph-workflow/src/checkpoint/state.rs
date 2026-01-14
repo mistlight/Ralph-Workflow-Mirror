@@ -9,21 +9,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-/// Default directory for Ralph's internal files.
-const AGENT_DIR: &str = ".agent";
-
-/// Default checkpoint file name.
-const CHECKPOINT_FILE: &str = "checkpoint.json";
-
-/// Get the checkpoint file path.
-///
-/// By default, the checkpoint is stored in `.agent/checkpoint.json`
-/// relative to the current working directory. This function provides
-/// a single point of control for the checkpoint location, making it
-/// easier to configure or override in the future if needed.
-fn checkpoint_path() -> String {
-    format!("{AGENT_DIR}/{CHECKPOINT_FILE}")
-}
+/// Path to the checkpoint file.
+const CHECKPOINT_PATH: &str = ".agent/checkpoint.json";
 
 /// Pipeline phases for checkpoint tracking.
 ///
@@ -177,25 +164,10 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
         )
     })?;
 
-    // Ensure the .agent directory exists before attempting to write
-    fs::create_dir_all(AGENT_DIR)?;
-
     // Write atomically by writing to temp file then renaming
-    let checkpoint = checkpoint_path();
-    let temp_path = format!("{checkpoint}.tmp");
-
-    // Ensure temp file is cleaned up even if write or rename fails
-    let write_result = fs::write(&temp_path, &json);
-    if write_result.is_err() {
-        let _ = fs::remove_file(&temp_path);
-        return write_result;
-    }
-
-    let rename_result = fs::rename(&temp_path, &checkpoint);
-    if rename_result.is_err() {
-        let _ = fs::remove_file(&temp_path);
-        return rename_result;
-    }
+    let temp_path = format!("{CHECKPOINT_PATH}.tmp");
+    fs::write(&temp_path, &json)?;
+    fs::rename(&temp_path, CHECKPOINT_PATH)?;
 
     Ok(())
 }
@@ -211,8 +183,7 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
 /// Returns an error if the checkpoint file exists but cannot be read
 /// or contains invalid JSON.
 pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
-    let checkpoint = checkpoint_path();
-    let path = Path::new(&checkpoint);
+    let path = Path::new(CHECKPOINT_PATH);
     if !path.exists() {
         return Ok(None);
     }
@@ -237,8 +208,7 @@ pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
 ///
 /// Returns an error if the file exists but cannot be deleted.
 pub fn clear_checkpoint() -> io::Result<()> {
-    let checkpoint = checkpoint_path();
-    let path = Path::new(&checkpoint);
+    let path = Path::new(CHECKPOINT_PATH);
     if path.exists() {
         fs::remove_file(path)?;
     }
@@ -249,13 +219,45 @@ pub fn clear_checkpoint() -> io::Result<()> {
 ///
 /// Returns `true` if a checkpoint file exists, `false` otherwise.
 pub fn checkpoint_exists() -> bool {
-    Path::new(&checkpoint_path()).exists()
+    Path::new(CHECKPOINT_PATH).exists()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_helpers::with_temp_cwd;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::TempDir;
+
+    /// Global mutex for tests that modify the current working directory.
+    static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    /// RAII guard to restore the working directory on drop.
+    struct DirGuard(PathBuf);
+
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+
+    /// Run a test function in a temporary directory.
+    fn with_temp_cwd<F: FnOnce(&TempDir)>(f: F) {
+        let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
+
+        // Clear poison if a previous test panicked
+        let _cwd_guard = match lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        let dir = TempDir::new().expect("Failed to create temp directory");
+        let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+        std::env::set_current_dir(dir.path()).expect("Failed to change to temp directory");
+        let _guard = DirGuard(old_dir);
+
+        f(&dir);
+    }
 
     #[test]
     fn test_timestamp_format() {
@@ -323,9 +325,7 @@ mod tests {
             save_checkpoint(&checkpoint).unwrap();
             assert!(checkpoint_exists());
 
-            let loaded = load_checkpoint()
-                .unwrap()
-                .expect("checkpoint should exist after save_checkpoint");
+            let loaded = load_checkpoint().unwrap().unwrap();
             assert_eq!(loaded.phase, PipelinePhase::Review);
             assert_eq!(loaded.iteration, 5);
             assert_eq!(loaded.developer_agent, "claude");

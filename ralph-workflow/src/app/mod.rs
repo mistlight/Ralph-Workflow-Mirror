@@ -20,10 +20,13 @@ pub mod validation;
 use crate::agents::AgentRegistry;
 use crate::banner::{print_final_summary, print_welcome_banner};
 use crate::cli::{
-    create_prompt_from_template, handle_build_image, handle_diagnose, handle_dry_run,
-    handle_list_agents, handle_list_available_agents, handle_list_providers, handle_security_check,
+    create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
+    handle_list_available_agents, handle_list_providers, handle_security_check,
     handle_setup_security, prompt_template_selection, Args,
 };
+
+#[cfg(feature = "build-image")]
+use crate::cli::handle_build_image;
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::monitoring::PromptMonitor;
@@ -133,6 +136,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    #[cfg(feature = "build-image")]
     if args.build_image.is_some() {
         handle_build_image(args.build_image, &colors)?;
         return Ok(());

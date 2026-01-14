@@ -37,6 +37,7 @@ pub mod config;
 pub mod engine;
 pub mod error;
 pub mod executor;
+#[cfg(feature = "build-image")]
 pub mod image;
 pub mod network;
 pub mod port;

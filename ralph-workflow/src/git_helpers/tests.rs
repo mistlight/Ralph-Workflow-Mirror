@@ -6,17 +6,47 @@
 use super::hooks::HOOK_MARKER;
 use super::repo::get_hooks_dir;
 use super::*;
-use crate::logger::Logger;
+use crate::utils::Logger;
 use std::fs::{self, File};
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
 // Note: Tests that change working directory need to run serially.
 // Run with: cargo test -- --test-threads=1
 
+/// Global mutex for tests that modify the current working directory.
+static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+/// RAII guard to restore the working directory on drop.
+struct DirGuard(PathBuf);
+
+impl Drop for DirGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.0);
+    }
+}
+
+/// Run a test function in a temporary directory.
+fn with_temp_cwd<F: FnOnce(&TempDir)>(f: F) {
+    let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
+
+    // Clear poison if a previous test panicked
+    let _cwd_guard = match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+
+    let dir = TempDir::new().expect("Failed to create temp directory");
+    let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+    std::env::set_current_dir(dir.path()).expect("Failed to change to temp directory");
+    let _guard = DirGuard(old_dir);
+
+    f(&dir);
+}
+
 #[test]
 fn test_git_snapshot() {
-    use test_helpers::with_temp_cwd;
-
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
 
@@ -30,8 +60,6 @@ fn test_git_snapshot() {
 
 #[test]
 fn test_install_hook() {
-    use test_helpers::with_temp_cwd;
-
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
 
@@ -69,8 +97,7 @@ fn test_git_helpers_new() {
 
 #[test]
 fn test_uninstall_hook_restores_original() {
-    use test_helpers::with_temp_cwd;
-    let logger = Logger::new(crate::logger::Colors { enabled: false });
+    let logger = Logger::new(crate::colors::Colors { enabled: false });
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -101,8 +128,6 @@ fn test_uninstall_hook_restores_original() {
 
 #[test]
 fn test_install_hook_uses_absolute_path() {
-    use test_helpers::with_temp_cwd;
-
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
 
@@ -126,10 +151,8 @@ fn test_install_hook_uses_absolute_path() {
 
 #[test]
 fn test_cleanup_orphaned_marker() {
-    use test_helpers::with_temp_cwd;
-
     with_temp_cwd(|dir| {
-        let logger = Logger::new(crate::logger::Colors { enabled: false });
+        let logger = Logger::new(crate::colors::Colors { enabled: false });
         let dir_path = dir.path();
 
         git2::Repository::init(dir_path).unwrap();
