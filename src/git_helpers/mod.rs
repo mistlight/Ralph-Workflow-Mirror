@@ -21,7 +21,6 @@ mod wrapper;
 
 pub(crate) use hooks::uninstall_hooks;
 pub(crate) use repo::{
-    commit_with_auto_message_fallback_result,
     generate_commit_message_with_llm, get_git_diff_from_start, get_repo_root, git_add_all, git_commit,
     git_diff, git_snapshot, require_git_repo, validate_and_truncate_diff,
     CommitResultFallback,
