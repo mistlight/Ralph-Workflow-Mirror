@@ -43,6 +43,7 @@ mod gemini;
 pub mod health;
 mod opencode;
 mod stream_classifier;
+mod streaming_state;
 mod types;
 
 pub use claude::ClaudeParser;

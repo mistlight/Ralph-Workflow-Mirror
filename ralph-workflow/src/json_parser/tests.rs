@@ -416,8 +416,8 @@ fn test_gemini_parser_non_json_passthrough() {
 #[test]
 fn test_delta_accumulator_text() {
     let mut acc = super::types::DeltaAccumulator::new();
-    acc.add_text_delta(0, "Hello, ");
-    acc.add_text_delta(0, "World!");
+    acc.add_delta(super::types::ContentType::Text, "0", "Hello, ");
+    acc.add_delta(super::types::ContentType::Text, "0", "World!");
 
     assert_eq!(
         acc.get(super::types::ContentType::Text, "0"),
@@ -429,8 +429,8 @@ fn test_delta_accumulator_text() {
 #[test]
 fn test_delta_accumulator_thinking() {
     let mut acc = super::types::DeltaAccumulator::new();
-    acc.add_thinking_delta(0, "Let me think...");
-    acc.add_thinking_delta(0, " Done.");
+    acc.add_delta(super::types::ContentType::Thinking, "0", "Let me think...");
+    acc.add_delta(super::types::ContentType::Thinking, "0", " Done.");
 
     assert_eq!(
         acc.get(super::types::ContentType::Thinking, "0"),
@@ -453,7 +453,7 @@ fn test_delta_accumulator_generic() {
 #[test]
 fn test_delta_accumulator_clear() {
     let mut acc = super::types::DeltaAccumulator::new();
-    acc.add_text_delta(0, "Some text");
+    acc.add_delta(super::types::ContentType::Text, "0", "Some text");
     assert!(!acc.is_empty());
 
     acc.clear();
@@ -464,8 +464,8 @@ fn test_delta_accumulator_clear() {
 #[test]
 fn test_delta_accumulator_clear_key() {
     let mut acc = super::types::DeltaAccumulator::new();
-    acc.add_text_delta(0, "Text 0");
-    acc.add_text_delta(1, "Text 1");
+    acc.add_delta(super::types::ContentType::Text, "0", "Text 0");
+    acc.add_delta(super::types::ContentType::Text, "1", "Text 1");
 
     acc.clear_key(super::types::ContentType::Text, "0");
     assert_eq!(acc.get(super::types::ContentType::Text, "0"), None);
