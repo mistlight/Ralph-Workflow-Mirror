@@ -447,7 +447,18 @@ fn remove_thought_process_patterns(content: &str) -> String {
         if let Some(rest) = result.strip_prefix(pattern) {
             // Find the first blank line after the pattern
             if let Some(blank_line_pos) = rest.find("\n\n") {
-                return rest[blank_line_pos + 2..].to_string();
+                // Don't return immediately - there might be more analysis after the blank line
+                // Instead, update result to continue processing
+                let remaining = rest[blank_line_pos + 2..].trim();
+                if !remaining.is_empty() {
+                    // Continue processing with the remaining content
+                    // Check if it still starts with analysis patterns (numbered lists, etc.)
+                    // If it looks like a clean commit message, return it
+                    if looks_like_commit_message_start(remaining) {
+                        return remaining.to_string();
+                    }
+                    // Otherwise, continue to aggressive filtering below
+                }
             } else if let Some(single_newline) = rest.find('\n') {
                 // If no double newline, try to skip to after the first single newline
                 let after_newline = &rest[single_newline + 1..];
@@ -1876,6 +1887,49 @@ Done."#;
         assert!(result.content.contains("feat: add feature"));
         assert!(!result.content.contains("I can see"));
 
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    // =========================================================================
+    // Exact Bug Scenario Reproduction Test (Task-Specific)
+    // =========================================================================
+
+    #[test]
+    fn test_exact_bug_scenario_from_task() {
+        // Reproduction test for the exact bug scenario from the task description.
+        // This test demonstrates that the AI thought process leakage bug is fixed.
+        //
+        // The bug manifested when AI agents included their internal analysis
+        // before the actual commit message, and the entire output (including the
+        // analysis) was used as the commit message.
+        //
+        // Example broken output:
+        // Looking at this diff, I can see several distinct types of changes...
+        // 1. **Test assertion style**...
+        // 2. **Refactoring**...
+        // The main cohesive theme is **code quality improvements**...
+        // refactor: extract PipelineContext and improve error handling
+
+        // Note: Using single-line JSON with \n escape sequences to match how
+        // real JSONL output would format this (the extract_claude_result function
+        // processes content line-by-line)
+        let broken_output = r#"{"result":"Looking at this diff, I can see several distinct types of changes across multiple files:\n\n1. **Test assertion style** (agents/config.rs, pipeline/tests.rs): Replacing...\n2. **Refactoring** (app/mod.rs): Extracting...\n3. **String literal consistency**...\n\nThe main cohesive theme is **code quality improvements**...\n\nrefactor: extract PipelineContext and improve error handling"}"#;
+
+        let result = extract_llm_output(broken_output, Some(OutputFormat::Claude));
+
+        // Should extract structured content
+        assert!(result.was_structured);
+
+        // The extracted content should be just the commit message, not the analysis
+        assert!(result.content.contains("refactor: extract PipelineContext"));
+        assert!(!result.content.contains("Looking at this diff"));
+        assert!(!result.content.contains("1. **Test assertion style**"));
+        assert!(!result.content.contains("2. **Refactoring**"));
+        assert!(!result.content.contains("3. **String literal consistency**"));
+        assert!(!result.content.contains("The main cohesive theme"));
+        assert!(!result.content.contains("code quality improvements"));
+
+        // The result should pass validation
         assert!(validate_commit_message(&result.content).is_ok());
     }
 }
