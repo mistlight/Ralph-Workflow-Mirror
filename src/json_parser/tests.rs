@@ -1071,3 +1071,58 @@ fn test_normal_and_verbose_mode_show_same_deltas() {
     assert!(normal_output.unwrap().contains("Hello"));
     assert!(verbose_output.unwrap().contains("Hello"));
 }
+
+// Regression test for delta text with embedded newlines
+// Ensures that newlines within delta text don't cause artificial line breaks
+// that would result in duplicate prefixes being added to each line
+#[test]
+fn test_delta_with_embedded_newline_displays_inline() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate a delta that contains a newline character within the text
+    // For example: "Now I understand\n1. In src/..."
+    let json = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Now I understand\n1. In src/"}}}"#;
+
+    let output = parser.parse_event(json);
+
+    assert!(output.is_some());
+    let out = output.unwrap();
+
+    // The newline should be replaced with a space to prevent artificial line breaks
+    // This ensures we don't get duplicate prefixes like:
+    // [Claude] Now I understand
+    // [Claude] 1. In src/
+    // Instead we should get a single line:
+    // [Claude] Now I understand 1. In src/
+    assert!(out.contains("Now I understand"));
+    assert!(out.contains("1. In src/"));
+
+    // Verify that the output doesn't have an actual newline in the delta text portion
+    // (there should only be one line from the prefix+text, not two)
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 1, "Delta with embedded newline should produce a single output line");
+}
+
+// Regression test for generic parser with embedded newlines
+#[test]
+fn test_generic_parser_delta_with_embedded_newline() {
+    let parser = crate::json_parser::generic::GenericParser::new(
+        Colors { enabled: false },
+        Verbosity::Normal,
+    );
+
+    // Generic parser should also sanitize newlines in delta text
+    let json = r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"Line 1\nLine 2"}}"#;
+
+    let output = parser.parse_event(json);
+    assert!(output.is_some());
+    let out = output.unwrap();
+
+    // Should contain both parts but newline should be replaced with space
+    assert!(out.contains("Line 1"));
+    assert!(out.contains("Line 2"));
+
+    // Should produce a single line output
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 1, "Generic parser delta with embedded newline should produce a single output line");
+}

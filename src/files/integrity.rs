@@ -7,6 +7,7 @@
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::Path;
+use tempfile::NamedTempFile;
 
 /// Maximum reasonable file size for agent text files (10MB).
 pub const MAX_AGENT_FILE_SIZE: u64 = 10 * 1024 * 1024;
@@ -15,26 +16,27 @@ pub const MAX_AGENT_FILE_SIZE: u64 = 10 * 1024 * 1024;
 ///
 /// This ensures the file is either fully written or not written at all,
 /// preventing partial writes or corruption from crashes/interruptions.
+///
+/// Uses `tempfile::NamedTempFile` which creates secure, unpredictable
+/// temporary file names to prevent symlink attacks.
 pub fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let temp_path = path.with_extension(format!("tmp.{}", std::process::id()));
-    {
-        let mut file = File::create(&temp_path)?;
-        file.write_all(content.as_bytes())?;
-        file.sync_all()?;
-    }
+    // Create a NamedTempFile in the same directory as the target file.
+    // This ensures atomic rename works (same filesystem).
+    let parent_dir = path.parent().unwrap_or(Path::new("."));
+    let mut temp_file = NamedTempFile::new_in(parent_dir)?;
 
-    // Read back to ensure the temp file contains what we wrote.
-    let read_back = fs::read_to_string(&temp_path)?;
-    if read_back != content {
-        let _ = fs::remove_file(&temp_path);
-        return Err(io::Error::other("Write verification failed: content mismatch"));
-    }
+    // Write content to the temp file
+    temp_file.write_all(content.as_bytes())?;
+    temp_file.flush()?;
+    temp_file.as_file().sync_all()?;
 
-    fs::rename(&temp_path, path)?;
+    // Persist the temp file to the target location (atomic rename)
+    temp_file.persist(path)?;
+
     Ok(())
 }
 

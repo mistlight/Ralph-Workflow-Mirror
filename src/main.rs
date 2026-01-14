@@ -1,4 +1,12 @@
-#![deny(unsafe_code)]
+// DO NOT CHANGE THESE CLIPPY SETTINGS, YOU MUST REFACTOR INSTEAD, EVEN IF IT TAKES YOU 100 YEARS
+#![deny(
+    warnings,
+    unsafe_code,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo
+)]
 //! Ralph: PROMPT-driven agent loop for git repos
 //!
 //! Runs:

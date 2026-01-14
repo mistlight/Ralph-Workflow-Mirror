@@ -361,13 +361,16 @@ impl ClaudeParser {
                     // Accumulate the text delta for completion events
                     acc.add_text_delta(index, &text);
                     // Show the delta (real-time streaming) - both verbose and normal mode
+                    // Replace embedded newlines with spaces to prevent artificial line breaks
+                    // in streaming output (each line would get a new prefix, causing duplicates)
+                    let sanitized_text = text.replace('\n', " ");
                     format!(
                         "{}[{}]{} {}{}{}\n",
                         c.dim(),
                         prefix,
                         c.reset(),
                         c.white(),
-                        text,
+                        sanitized_text,
                         c.reset()
                     )
                 }
@@ -409,13 +412,15 @@ impl ClaudeParser {
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Standalone text delta (not part of content block)
                 // Display incrementally for real-time feedback
+                // Replace embedded newlines with spaces to prevent artificial line breaks
+                let sanitized_text = text.replace('\n', " ");
                 format!(
                     "{}[{}]{} {}{}{}\n",
                     c.dim(),
                     prefix,
                     c.reset(),
                     c.white(),
-                    text,
+                    sanitized_text,
                     c.reset()
                 )
             }

@@ -64,10 +64,18 @@ pub(crate) fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
     let wrapper_dir = tempfile::tempdir()?;
     let wrapper_path = wrapper_dir.path().join("git");
 
+    // Properly escape the git path for shell script to prevent command injection.
+    // Replace single quotes with '\'' (end quote, escaped quote, start quote) and
+    // wrap the entire path in single quotes.
+    let git_path_escaped = real_git
+        .to_str()
+        .expect("git path must be valid UTF-8")
+        .replace('\'', "'\\''");
+
     let wrapper_content = format!(
         r#"#!/usr/bin/env sh
 set -eu
-repo_root="$("{}" rev-parse --show-toplevel 2>/dev/null || pwd)"
+repo_root="$('{0}' rev-parse --show-toplevel 2>/dev/null || pwd)"
 if [ -f "$repo_root/.no_agent_commit" ]; then
   subcmd="${{1-}}"
   case "$subcmd" in
@@ -77,10 +85,9 @@ if [ -f "$repo_root/.no_agent_commit" ]; then
       ;;
   esac
 fi
-exec "{}" "$@"
+exec '{0}' "$@"
 "#,
-        real_git.display(),
-        real_git.display()
+        git_path_escaped
     );
 
     let mut file = File::create(&wrapper_path)?;
