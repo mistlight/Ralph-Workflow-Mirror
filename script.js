@@ -7,7 +7,7 @@
 (function() {
     'use strict';
 
-    // === Magnetic Button Effect ===
+    // === Enhanced Magnetic Button Effect ===
     const buttons = document.querySelectorAll('.btn');
 
     buttons.forEach(btn => {
@@ -16,7 +16,13 @@
             const x = e.clientX - rect.left - rect.width / 2;
             const y = e.clientY - rect.top - rect.height / 2;
 
-            btn.style.transform = `translate(${x * 0.15}px, ${y * 0.15}px)`;
+            // Enhanced magnetic effect with subtle scaling
+            const moveX = x * 0.2;
+            const moveY = y * 0.2;
+            const distance = Math.sqrt(x * x + y * y);
+            const scale = 1 + Math.min(distance * 0.001, 0.02); // Subtle scale up to 1.02
+
+            btn.style.transform = `translate(${moveX}px, ${moveY}px) scale(${scale})`;
         });
 
         btn.addEventListener('mouseleave', function() {
@@ -611,6 +617,57 @@
         el.style.transitionDelay = `${index * 0.05}s`;
         animationObserver.observe(el);
     });
+
+    // === Character-Level Kinetic Typography ===
+    // Wrap each character in hero words for individual animation
+    const heroTitle = document.querySelector('.hero-title');
+
+    function initCharacterTypography() {
+        if (!heroTitle) return;
+
+        const heroWords = document.querySelectorAll('.hero-word');
+
+        heroWords.forEach((word, wordIndex) => {
+            const text = word.textContent;
+            const charCount = text.length;
+
+            // Clear existing content
+            word.innerHTML = '';
+
+            // Wrap each character in a span
+            [...text].forEach((char, charIndex) => {
+                const span = document.createElement('span');
+                span.textContent = char;
+                span.className = 'hero-char';
+
+                // Add character index for staggered animation
+                span.style.setProperty('--char-index', charIndex);
+                span.style.setProperty('--word-index', wordIndex);
+
+                // Mark spaces and punctuation for special handling
+                if (char === ' ') {
+                    span.classList.add('space');
+                } else if (['.', ',', '!', '?', '&', '-'].includes(char)) {
+                    span.classList.add('punctuation');
+                }
+
+                word.appendChild(span);
+            });
+
+            // Mark word as complete after animation
+            const totalDelay = (charCount * 0.05 + wordIndex * 0.3 + 0.3) * 1000;
+            setTimeout(() => {
+                word.classList.add('word-complete');
+            }, totalDelay + 600);
+        });
+    }
+
+    // Initialize character typography on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initCharacterTypography);
+    } else {
+        initCharacterTypography();
+    }
 
     // === Kinetic Typography on Scroll ===
     const heroWords = document.querySelectorAll('.hero-word');

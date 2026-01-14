@@ -119,13 +119,13 @@
 
                     <h1 class="hero-title">
                         <span class="hero-title-line">
-                            <span class="hero-word" style="--word-index: 0;">Multi-Agent AI</span>
+                            <span class="hero-word" style="--word-index: 0;">Multi-Agent AI That</span>
                         </span>
                         <span class="hero-title-line">
-                            <span class="hero-word" style="--word-index: 1;">That Loops Until</span>
+                            <span class="hero-word" style="--word-index: 1;">Writes, Reviews, &</span>
                         </span>
                         <span class="hero-title-line">
-                            <span class="hero-word hero-title-accent" style="--word-index: 2;">Your Code Ships</span>
+                            <span class="hero-word hero-title-accent" style="--word-index: 2;">Loops Until Ready</span>
                         </span>
                     </h1>
 
@@ -475,7 +475,7 @@
                         </svg>
                     </div>
                     <h3>Run</h3>
-                    <p>Execute <code class="inline">ralph -S</code> and let AI work</p>
+                    <p>Developer and Reviewer agents iterate automatically until approved</p>
                 </div>
 
                 <div class="how-step">
@@ -493,7 +493,7 @@
         <!-- What is PROMPT.md Section -->
         <section class="section prompt-section">
             <div class="section-header">
-                <span class="section-number">01.5</span>
+                <span class="section-number">02</span>
                 <h2 class="section-title">What is PROMPT.md?</h2>
                 <p class="section-subtitle">Your requirements, AI's implementation</p>
             </div>
@@ -563,7 +563,7 @@
         <!-- Comparison Section -->
         <section class="section comparison-section">
             <div class="section-header">
-                <span class="section-number">01.75</span>
+                <span class="section-number">03</span>
                 <h2 class="section-title">Ralph vs. Manual AI Chat</h2>
                 <p class="section-subtitle">Why orchestration beats copy-paste</p>
             </div>
@@ -616,7 +616,7 @@
         <!-- INTERACTIVE DEMO SECTION -->
         <section id="try-ralph" class="section">
             <div class="section-header">
-                <span class="section-number">05</span>
+                <span class="section-number">04</span>
                 <h2 class="section-title">Try Ralph Now</h2>
                 <p class="section-subtitle">Experience the multi-agent workflow without installing anything</p>
             </div>
@@ -737,7 +737,7 @@ The API should return proper error messages.</textarea>
         <!-- Install Section -->
         <section id="install" class="section install-section">
             <div class="section-header">
-                <span class="section-number">02</span>
+                <span class="section-number">05</span>
                 <h2 class="section-title">Get started in minutes</h2>
                 <p class="section-subtitle">Install Ralph and run your first automated workflow</p>
             </div>
@@ -835,11 +835,12 @@ The API should return proper error messages.</textarea>
                                     </svg>
                                 </button>
                             </div>
-                            <pre><code>git clone ssh://git@codeberg.org/mistlight/Ralph-Workflow.git
-cd Ralph-Workflow
+                            <pre><code>git clone https://codeberg.org/mistlight/ralph.git
+cd ralph
 cargo install --path .</code></pre>
                         </div>
                         <p style="margin-top: 1rem; color: var(--color-text-dim); font-size: 0.875rem;">Requires Rust 1.70+ and cargo in PATH. Get Rust from <a href="https://rustup.rs" target="_blank" rel="noopener" style="color: var(--color-primary);">rustup.rs</a></p>
+                        <p style="margin-top: 0.5rem; color: var(--color-text-dim); font-size: 0.875rem;">For SSH cloning, use: <code class="inline" style="font-size: 0.8em;">git clone ssh://git@codeberg.org/mistlight/ralph.git</code></p>
                     </div>
 
                     <div class="install-content" data-content="config" style="display: none;">
@@ -871,7 +872,7 @@ max_iterations = 10</code></pre>
         <!-- Features Section -->
         <section id="features" class="section features-section">
             <div class="section-header">
-                <span class="section-number">03</span>
+                <span class="section-number">06</span>
                 <h2 class="section-title">Features</h2>
                 <p class="section-subtitle">Built for developers who value autonomy and quality</p>
             </div>
@@ -947,7 +948,7 @@ max_iterations = 10</code></pre>
         <!-- Audience Section -->
         <section class="section audience-section">
             <div class="section-header">
-                <span class="section-number">04</span>
+                <span class="section-number">07</span>
                 <h2 class="section-title">Built for how you work</h2>
                 <p class="section-subtitle">Whether you're a terminal power user or just getting started</p>
             </div>
@@ -994,12 +995,15 @@ max_iterations = 10</code></pre>
         <!-- FAQ Section -->
         <section class="section" style="background: var(--color-bg);">
             <div class="section-header">
-                <span class="section-number">05</span>
+                <span class="section-number">08</span>
                 <h2 class="section-title">Frequently Asked Questions</h2>
                 <p class="section-subtitle">Common questions about Ralph Workflow</p>
             </div>
 
             <div style="max-width: 900px; margin: 0 auto;">
+                <!-- Getting Started Category -->
+                <h3 style="margin-top: 0; margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-primary);">Getting Started</h3>
+
                 <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
                     <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
                         <span>What AI providers does Ralph support?</span>
@@ -1050,6 +1054,9 @@ max_iterations = 10</code></pre>
                     </div>
                 </details>
 
+                <!-- Technical Category -->
+                <h3 style="margin-top: var(--space-10); margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-accent);">Technical</h3>
+
                 <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
                     <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
                         <span>Can Ralph work with my existing codebase?</span>
@@ -1090,6 +1097,9 @@ max_iterations = 10</code></pre>
                     </div>
                 </details>
 
+                <!-- Newcomer Category -->
+                <h3 class="audience-newcomer-content" style="margin-top: var(--space-10); margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-accent);">New to CLI?</h3>
+
                 <!-- Newcomer FAQ items -->
                 <details class="audience-newcomer-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
                     <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-accent); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
@@ -1121,6 +1131,9 @@ max_iterations = 10</code></pre>
                     </div>
                 </details>
 
+                <!-- Developer Category -->
+                <h3 class="audience-developer-content" style="margin-top: var(--space-10); margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-magenta);">For Developers</h3>
+
                 <!-- Developer FAQ items -->
                 <details class="audience-developer-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
                     <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-magenta); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
@@ -1141,6 +1154,9 @@ max_iterations = 10</code></pre>
                         <p style="margin: 0;">In your <code class="inline">~/.ralph/config.toml</code>, specify a primary agent and fallback agents: <code class="inline">agent = "claude-code"</code> and <code class="inline">fallback = ["codex", "opencode"]</code>. Ralph will automatically try the next agent if one fails, ensuring your workflow continues uninterrupted.</p>
                     </div>
                 </details>
+
+                <!-- Vibe Coder Category -->
+                <h3 class="audience-vibe-coder-content" style="margin-top: var(--space-10); margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 2px solid var(--border-subtle); color: var(--color-violet);">For Vibe Coders</h3>
 
                 <!-- Vibe Coder FAQ items -->
                 <details class="audience-vibe-coder-content" style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
