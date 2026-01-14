@@ -456,8 +456,14 @@ impl ClaudeParser {
                         match session.get_delta_from_snapshot(&text, &index_str) {
                             Ok(delta) => delta,
                             Err(e) => {
-                                eprintln!("Warning: Snapshot extraction failed: {e}. Using original delta.");
-                                &text
+                                // Snapshot extraction failed - use empty string to prevent
+                                // exponential duplication bug that would occur if we used
+                                // the full snapshot text
+                                eprintln!(
+                                    "Warning: Snapshot extraction failed: {e}. \
+                                     Using empty delta to prevent duplication bug."
+                                );
+                                ""
                             }
                         }
                     } else {
@@ -530,10 +536,14 @@ impl ClaudeParser {
                     match session.get_delta_from_snapshot(&text, default_index_str) {
                         Ok(delta) => delta,
                         Err(e) => {
+                            // Snapshot extraction failed - use empty string to prevent
+                            // exponential duplication bug that would occur if we used
+                            // the full snapshot text
                             eprintln!(
-                                "Warning: Snapshot extraction failed: {e}. Using original delta."
+                                "Warning: Snapshot extraction failed: {e}. \
+                                 Using empty delta to prevent duplication bug."
                             );
-                            &text
+                            ""
                         }
                     }
                 } else {

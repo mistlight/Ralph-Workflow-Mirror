@@ -299,9 +299,21 @@ impl PromptMonitor {
         // Signal the thread to stop
         self.stop_signal.store(true, Ordering::Release);
 
-        // Wait for the thread to finish
+        // Wait for the thread to finish and check for panics
         if let Some(handle) = self.monitor_thread.take() {
-            let _ = handle.join();
+            if let Err(panic_payload) = handle.join() {
+                // Thread panicked - extract and log panic message for diagnostics
+                let panic_msg = panic_payload.downcast_ref::<String>().map_or_else(
+                    || {
+                        panic_payload.downcast_ref::<&str>().map_or_else(
+                            || "<unknown panic>".to_string(),
+                            std::string::ToString::to_string,
+                        )
+                    },
+                    std::clone::Clone::clone,
+                );
+                eprintln!("Warning: File monitoring thread panicked: {panic_msg}");
+            }
         }
     }
 }

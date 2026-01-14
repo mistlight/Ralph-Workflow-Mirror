@@ -89,6 +89,19 @@ pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
         )
     })?;
 
+    // Validate that the git path is an absolute path.
+    // This prevents potential issues with relative paths and ensures
+    // we're using a known, trusted git binary location.
+    if !real_git.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "git binary path is not absolute: '{git_path_str}'. \
+                 Using absolute paths prevents potential security issues."
+            ),
+        ));
+    }
+
     let wrapper_dir = tempfile::tempdir()?;
     let wrapper_path = wrapper_dir.path().join("git");
 
