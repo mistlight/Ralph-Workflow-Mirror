@@ -215,6 +215,7 @@ impl DeltaAccumulator {
     }
 
     /// Get the accumulated text for a specific index
+    #[allow(dead_code)]
     pub(crate) fn get_text(&self, index: &u64) -> Option<&str> {
         self.get(ContentType::Text, &index.to_string())
     }
