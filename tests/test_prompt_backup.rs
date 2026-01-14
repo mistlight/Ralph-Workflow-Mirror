@@ -247,7 +247,7 @@ fn backup_rotation_maintains_multiple_backups() {
 }
 
 #[test]
-fn backup_olest_deleted_when_exceeding_limit() {
+fn backup_oldest_deleted_when_exceeding_limit() {
     let dir = TempDir::new().unwrap();
     init_git_repo(&dir);
 
@@ -381,7 +381,7 @@ fn agent_chmod_rm_is_caught_and_restored() {
     base_env(&mut cmd2)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_CMD", "sh -c 'chmod 644 PROMPT.md && rm PROMPT.md && mkdir -p .agent; echo plan > .agent/PLAN.md'")
-        .env("RALPH_DEVIEWER_CMD", "sh -c 'exit 0'");
+        .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
     cmd2.assert()
         .success()
@@ -403,7 +403,7 @@ fn agent_overwrite_is_detected_and_restored() {
     init_git_repo(&dir);
 
     let prompt_path = dir.path().join("PROMPT.md");
-    let original_content = "# Test Requirements\nTest task";
+    let _original_content = "# Test Requirements\nTest task";
 
     // Initial run to create backup
     let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
@@ -431,7 +431,7 @@ fn agent_overwrite_is_detected_and_restored() {
     // Note: Current implementation only checks for missing file, not empty content
     // So this test verifies the file exists and has non-empty content
     assert!(prompt_path.exists());
-    let content = fs::read_to_string(&prompt_path).unwrap();
+    let _content = fs::read_to_string(&prompt_path).unwrap();
     // Content might be empty if agent overwrote it and periodic check hasn't run yet
     // The key is that backup exists for restoration
     assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
