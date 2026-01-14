@@ -3,7 +3,6 @@
 //! Analyzes configuration files like Cargo.toml, package.json, etc.
 //! to detect frameworks, test frameworks, and package managers.
 
-#![expect(clippy::too_many_lines)]
 use super::scanner::{should_skip_dir_name, MAX_FILES_TO_SCAN, MAX_SIGNATURE_SEARCH_DEPTH};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
@@ -132,300 +131,355 @@ fn collect_signature_files(root: &Path) -> SignatureFiles {
     result
 }
 
-/// Detect signature files that indicate specific frameworks or package managers.
-///
-/// Returns a tuple of (frameworks, `test_framework`, `package_manager`).
-pub(super) fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String>, Option<String>) {
-    let signatures = collect_signature_files(root);
+/// Detection results accumulator
+struct DetectionResults {
+    frameworks: Vec<String>,
+    test_frameworks: Vec<String>,
+    package_managers: Vec<String>,
+}
 
-    let mut frameworks: Vec<String> = Vec::new();
-    let mut test_frameworks: Vec<String> = Vec::new();
-    let mut package_managers: Vec<String> = Vec::new();
-
-    // Rust
-    if let Some(paths) = signatures.by_name_lower.get("cargo.toml") {
-        push_unique(&mut package_managers, "Cargo");
-
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains("[dev-dependencies]")
-                    || content_lower.contains("[[test]]")
-                {
-                    push_unique(&mut test_frameworks, "cargo test");
-                }
-                // Common Rust frameworks
-                if content_lower.contains("actix") {
-                    push_unique(&mut frameworks, "Actix");
-                }
-                if content_lower.contains("axum") {
-                    push_unique(&mut frameworks, "Axum");
-                }
-                if content_lower.contains("rocket") {
-                    push_unique(&mut frameworks, "Rocket");
-                }
-                if content_lower.contains("tokio") {
-                    push_unique(&mut frameworks, "Tokio");
-                }
-                if content_lower.contains("warp") {
-                    push_unique(&mut frameworks, "Warp");
-                }
-                if content_lower.contains("tauri") {
-                    push_unique(&mut frameworks, "Tauri");
-                }
-                if content_lower.contains("leptos") {
-                    push_unique(&mut frameworks, "Leptos");
-                }
-                if content_lower.contains("yew") {
-                    push_unique(&mut frameworks, "Yew");
-                }
-            }
+impl DetectionResults {
+    #[expect(clippy::missing_const_for_fn)]
+    fn new() -> Self {
+        Self {
+            frameworks: Vec::new(),
+            test_frameworks: Vec::new(),
+            package_managers: Vec::new(),
         }
     }
 
-    // Python
+    fn push_framework(&mut self, framework: impl Into<String>) {
+        push_unique(&mut self.frameworks, framework);
+    }
+
+    fn push_test_framework(&mut self, framework: impl Into<String>) {
+        push_unique(&mut self.test_frameworks, framework);
+    }
+
+    fn push_package_manager(&mut self, manager: impl Into<String>) {
+        push_unique(&mut self.package_managers, manager);
+    }
+
+    fn finish(self) -> (Vec<String>, Option<String>, Option<String>) {
+        (
+            self.frameworks,
+            combine_unique(&self.test_frameworks),
+            combine_unique(&self.package_managers),
+        )
+    }
+}
+
+/// Detect Rust-specific frameworks and tools
+fn detect_rust(signatures: &SignatureFiles, results: &mut DetectionResults) {
+    let Some(paths) = signatures.by_name_lower.get("cargo.toml") else {
+        return;
+    };
+
+    results.push_package_manager("Cargo");
+
+    for path in paths {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        if content_lower.contains("[dev-dependencies]") || content_lower.contains("[[test]]") {
+            results.push_test_framework("cargo test");
+        }
+
+        for (name, framework) in [
+            ("actix", "Actix"),
+            ("axum", "Axum"),
+            ("rocket", "Rocket"),
+            ("tokio", "Tokio"),
+            ("warp", "Warp"),
+            ("tauri", "Tauri"),
+            ("leptos", "Leptos"),
+            ("yew", "Yew"),
+        ] {
+            if content_lower.contains(name) {
+                results.push_framework(framework);
+            }
+        }
+    }
+}
+
+/// Detect Python-specific frameworks and tools
+fn detect_python(signatures: &SignatureFiles, results: &mut DetectionResults) {
     if let Some(paths) = signatures.by_name_lower.get("pyproject.toml") {
-        push_unique(&mut package_managers, "Poetry/pip");
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains("pytest") {
-                    push_unique(&mut test_frameworks, "pytest");
-                }
-                if content_lower.contains("django") {
-                    push_unique(&mut frameworks, "Django");
-                }
-                if content_lower.contains("fastapi") {
-                    push_unique(&mut frameworks, "FastAPI");
-                }
-                if content_lower.contains("flask") {
-                    push_unique(&mut frameworks, "Flask");
-                }
-            }
-        }
+        results.push_package_manager("Poetry/pip");
+        detect_python_frameworks(paths, results);
     } else if let Some(paths) = signatures.by_name_lower.get("requirements.txt") {
-        push_unique(&mut package_managers, "pip");
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains("pytest") {
-                    push_unique(&mut test_frameworks, "pytest");
-                }
-                if content_lower.contains("django") {
-                    push_unique(&mut frameworks, "Django");
-                }
-                if content_lower.contains("fastapi") {
-                    push_unique(&mut frameworks, "FastAPI");
-                }
-                if content_lower.contains("flask") {
-                    push_unique(&mut frameworks, "Flask");
-                }
-            }
-        }
+        results.push_package_manager("pip");
+        detect_python_frameworks(paths, results);
     } else if signatures.by_name_lower.contains_key("setup.py") {
-        push_unique(&mut package_managers, "setuptools");
+        results.push_package_manager("setuptools");
     } else if signatures.by_name_lower.contains_key("pipfile") {
-        push_unique(&mut package_managers, "Pipenv");
+        results.push_package_manager("Pipenv");
     }
+}
 
-    // JavaScript/TypeScript
-    if let Some(paths) = signatures.by_name_lower.get("package.json") {
-        for path in paths {
-            let pkg_dir = path.parent().unwrap_or(root);
-            if pkg_dir.join("pnpm-lock.yaml").exists() {
-                push_unique(&mut package_managers, "pnpm");
-            } else if pkg_dir.join("yarn.lock").exists() {
-                push_unique(&mut package_managers, "yarn");
-            } else {
-                // Default to npm when package.json exists without pnpm or yarn locks
-                push_unique(&mut package_managers, "npm");
-            }
+/// Helper to detect Python frameworks from file content
+fn detect_python_frameworks(paths: &[PathBuf], results: &mut DetectionResults) {
+    for path in paths {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
 
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                // Test frameworks
-                if content_lower.contains("\"jest\"") {
-                    push_unique(&mut test_frameworks, "Jest");
-                } else if content_lower.contains("\"vitest\"") {
-                    push_unique(&mut test_frameworks, "Vitest");
-                } else if content_lower.contains("\"mocha\"") {
-                    push_unique(&mut test_frameworks, "Mocha");
-                }
-
-                // Frameworks
-                if content_lower.contains("\"react\"") {
-                    push_unique(&mut frameworks, "React");
-                }
-                if content_lower.contains("\"vue\"") {
-                    push_unique(&mut frameworks, "Vue");
-                }
-                if content_lower.contains("\"svelte\"") {
-                    push_unique(&mut frameworks, "Svelte");
-                }
-                if content_lower.contains("\"angular\"") || content_lower.contains("\"@angular") {
-                    push_unique(&mut frameworks, "Angular");
-                }
-                if content_lower.contains("\"next\"") {
-                    push_unique(&mut frameworks, "Next.js");
-                }
-                if content_lower.contains("\"nuxt\"") {
-                    push_unique(&mut frameworks, "Nuxt");
-                }
-                if content_lower.contains("\"express\"") {
-                    push_unique(&mut frameworks, "Express");
-                }
-                if content_lower.contains("\"fastify\"") {
-                    push_unique(&mut frameworks, "Fastify");
-                }
-                if content_lower.contains("\"nest\"") || content_lower.contains("\"@nestjs") {
-                    push_unique(&mut frameworks, "NestJS");
-                }
-                if content_lower.contains("\"electron\"") {
-                    push_unique(&mut frameworks, "Electron");
-                }
+        if content_lower.contains("pytest") {
+            results.push_test_framework("pytest");
+        }
+        for (name, framework) in [
+            ("django", "Django"),
+            ("fastapi", "FastAPI"),
+            ("flask", "Flask"),
+        ] {
+            if content_lower.contains(name) {
+                results.push_framework(framework);
             }
         }
     }
+}
 
-    // Go
-    if let Some(paths) = signatures.by_name_lower.get("go.mod") {
-        push_unique(&mut package_managers, "Go modules");
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains("gin-gonic/gin") {
-                    push_unique(&mut frameworks, "Gin");
-                }
-                if content_lower.contains("go-chi/chi") {
-                    push_unique(&mut frameworks, "Chi");
-                }
-                if content_lower.contains("gofiber/fiber") {
-                    push_unique(&mut frameworks, "Fiber");
-                }
-                if content_lower.contains("labstack/echo") {
-                    push_unique(&mut frameworks, "Echo");
-                }
+/// Detect JavaScript/TypeScript frameworks and tools
+fn detect_javascript(signatures: &SignatureFiles, root: &Path, results: &mut DetectionResults) {
+    let Some(paths) = signatures.by_name_lower.get("package.json") else {
+        return;
+    };
+
+    for path in paths {
+        let pkg_dir = path.parent().unwrap_or(root);
+        if pkg_dir.join("pnpm-lock.yaml").exists() {
+            results.push_package_manager("pnpm");
+        } else if pkg_dir.join("yarn.lock").exists() {
+            results.push_package_manager("yarn");
+        } else {
+            results.push_package_manager("npm");
+        }
+
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        // Test frameworks
+        for (pattern, name) in [
+            ("\"jest\"", "Jest"),
+            ("\"vitest\"", "Vitest"),
+            ("\"mocha\"", "Mocha"),
+        ] {
+            if content_lower.contains(pattern) {
+                results.push_test_framework(name);
+                break;
             }
         }
-        // Go uses built-in testing
-        push_unique(&mut test_frameworks, "go test");
-    }
 
-    // Ruby
-    if let Some(paths) = signatures.by_name_lower.get("gemfile") {
-        push_unique(&mut package_managers, "Bundler");
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains("rspec") {
-                    push_unique(&mut test_frameworks, "RSpec");
-                } else if content_lower.contains("minitest") {
-                    push_unique(&mut test_frameworks, "Minitest");
-                }
-                if content_lower.contains("rails") {
-                    push_unique(&mut frameworks, "Rails");
-                }
-                if content_lower.contains("sinatra") {
-                    push_unique(&mut frameworks, "Sinatra");
-                }
+        // Frameworks
+        for (pattern, name) in [
+            ("\"react\"", "React"),
+            ("\"vue\"", "Vue"),
+            ("\"svelte\"", "Svelte"),
+            ("\"angular\"", "Angular"),
+            ("\"@angular\"", "Angular"),
+            ("\"next\"", "Next.js"),
+            ("\"nuxt\"", "Nuxt"),
+            ("\"express\"", "Express"),
+            ("\"fastify\"", "Fastify"),
+            ("\"nest\"", "NestJS"),
+            ("\"@nestjs\"", "NestJS"),
+            ("\"electron\"", "Electron"),
+        ] {
+            if content_lower.contains(pattern) {
+                results.push_framework(name);
             }
         }
     }
+}
 
-    // Java
+/// Detect Go-specific frameworks and tools
+fn detect_go(signatures: &SignatureFiles, results: &mut DetectionResults) {
+    let Some(paths) = signatures.by_name_lower.get("go.mod") else {
+        return;
+    };
+
+    results.push_package_manager("Go modules");
+    results.push_test_framework("go test");
+
+    for path in paths {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        for (pattern, name) in [
+            ("gin-gonic/gin", "Gin"),
+            ("go-chi/chi", "Chi"),
+            ("gofiber/fiber", "Fiber"),
+            ("labstack/echo", "Echo"),
+        ] {
+            if content_lower.contains(pattern) {
+                results.push_framework(name);
+            }
+        }
+    }
+}
+
+/// Detect Ruby-specific frameworks and tools
+fn detect_ruby(signatures: &SignatureFiles, results: &mut DetectionResults) {
+    let Some(paths) = signatures.by_name_lower.get("gemfile") else {
+        return;
+    };
+
+    results.push_package_manager("Bundler");
+
+    for path in paths {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        if content_lower.contains("rspec") {
+            results.push_test_framework("RSpec");
+        } else if content_lower.contains("minitest") {
+            results.push_test_framework("Minitest");
+        }
+
+        for (name, framework) in [("rails", "Rails"), ("sinatra", "Sinatra")] {
+            if content_lower.contains(name) {
+                results.push_framework(framework);
+            }
+        }
+    }
+}
+
+/// Detect Java-specific frameworks and tools
+fn detect_java(signatures: &SignatureFiles, results: &mut DetectionResults) {
     if let Some(paths) = signatures.by_name_lower.get("pom.xml") {
-        push_unique(&mut package_managers, "Maven");
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains("junit") {
-                    push_unique(&mut test_frameworks, "JUnit");
-                }
-                if content_lower.contains("spring") {
-                    push_unique(&mut frameworks, "Spring");
-                }
-            }
-        }
+        results.push_package_manager("Maven");
+        detect_java_frameworks(paths, results);
     } else if signatures.by_name_lower.contains_key("build.gradle")
         || signatures.by_name_lower.contains_key("build.gradle.kts")
     {
-        push_unique(&mut package_managers, "Gradle");
+        results.push_package_manager("Gradle");
         let paths = signatures
             .by_name_lower
             .get("build.gradle.kts")
             .or_else(|| signatures.by_name_lower.get("build.gradle"));
         if let Some(paths) = paths {
-            for path in paths {
-                if let Ok(content) = fs::read_to_string(path) {
-                    let content_lower = content.to_lowercase();
-                    if content_lower.contains("junit") {
-                        push_unique(&mut test_frameworks, "JUnit");
-                    }
-                    if content_lower.contains("spring") {
-                        push_unique(&mut frameworks, "Spring");
-                    }
-                }
+            detect_java_frameworks(paths, results);
+        }
+    }
+}
+
+/// Helper to detect Java frameworks from file content
+fn detect_java_frameworks(paths: &[PathBuf], results: &mut DetectionResults) {
+    for path in paths {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        if content_lower.contains("junit") {
+            results.push_test_framework("JUnit");
+        }
+        if content_lower.contains("spring") {
+            results.push_framework("Spring");
+        }
+    }
+}
+
+/// Detect PHP-specific frameworks and tools
+fn detect_php(signatures: &SignatureFiles, results: &mut DetectionResults) {
+    let Some(paths) = signatures.by_name_lower.get("composer.json") else {
+        return;
+    };
+
+    results.push_package_manager("Composer");
+
+    for path in paths {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        if content_lower.contains("phpunit") {
+            results.push_test_framework("PHPUnit");
+        }
+        for (name, framework) in [("laravel", "Laravel"), ("symfony", "Symfony")] {
+            if content_lower.contains(name) {
+                results.push_framework(framework);
             }
         }
     }
+}
 
-    // PHP
-    if let Some(paths) = signatures.by_name_lower.get("composer.json") {
-        push_unique(&mut package_managers, "Composer");
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains("phpunit") {
-                    push_unique(&mut test_frameworks, "PHPUnit");
-                }
-                if content_lower.contains("laravel") {
-                    push_unique(&mut frameworks, "Laravel");
-                }
-                if content_lower.contains("symfony") {
-                    push_unique(&mut frameworks, "Symfony");
-                }
-            }
-        }
-    }
-
-    // .NET / C#
+/// Detect .NET/C# tools
+fn detect_dotnet(signatures: &SignatureFiles, results: &mut DetectionResults) {
     if signatures.by_extension_lower.contains_key("csproj") {
-        push_unique(&mut package_managers, "NuGet");
+        results.push_package_manager("NuGet");
     }
+}
 
-    // Elixir
-    if let Some(paths) = signatures.by_name_lower.get("mix.exs") {
-        push_unique(&mut package_managers, "Mix");
-        push_unique(&mut test_frameworks, "ExUnit");
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains(":phoenix") {
-                    push_unique(&mut frameworks, "Phoenix");
-                }
-            }
+/// Detect Elixir-specific frameworks and tools
+fn detect_elixir(signatures: &SignatureFiles, results: &mut DetectionResults) {
+    let Some(paths) = signatures.by_name_lower.get("mix.exs") else {
+        return;
+    };
+
+    results.push_package_manager("Mix");
+    results.push_test_framework("ExUnit");
+
+    for path in paths {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        if content.to_lowercase().contains(":phoenix") {
+            results.push_framework("Phoenix");
         }
     }
+}
 
-    // Dart/Flutter
-    if let Some(paths) = signatures.by_name_lower.get("pubspec.yaml") {
-        push_unique(&mut package_managers, "pub");
-        for path in paths {
-            if let Ok(content) = fs::read_to_string(path) {
-                let content_lower = content.to_lowercase();
-                if content_lower.contains("flutter") {
-                    push_unique(&mut frameworks, "Flutter");
-                }
-                if content_lower.contains("test:") {
-                    push_unique(&mut test_frameworks, "dart test");
-                }
-            }
+/// Detect Dart/Flutter-specific frameworks and tools
+fn detect_dart(signatures: &SignatureFiles, results: &mut DetectionResults) {
+    let Some(paths) = signatures.by_name_lower.get("pubspec.yaml") else {
+        return;
+    };
+
+    results.push_package_manager("pub");
+
+    for path in paths {
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        if content_lower.contains("flutter") {
+            results.push_framework("Flutter");
+        }
+        if content_lower.contains("test:") {
+            results.push_test_framework("dart test");
         }
     }
+}
 
-    (
-        frameworks,
-        combine_unique(&test_frameworks),
-        combine_unique(&package_managers),
-    )
+/// Detect signature files that indicate specific frameworks or package managers.
+///
+/// Returns a tuple of (frameworks, `test_framework`, `package_manager`).
+pub(super) fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String>, Option<String>) {
+    let signatures = collect_signature_files(root);
+    let mut results = DetectionResults::new();
+
+    detect_rust(&signatures, &mut results);
+    detect_python(&signatures, &mut results);
+    detect_javascript(&signatures, root, &mut results);
+    detect_go(&signatures, &mut results);
+    detect_ruby(&signatures, &mut results);
+    detect_java(&signatures, &mut results);
+    detect_php(&signatures, &mut results);
+    detect_dotnet(&signatures, &mut results);
+    detect_elixir(&signatures, &mut results);
+    detect_dart(&signatures, &mut results);
+
+    results.finish()
 }

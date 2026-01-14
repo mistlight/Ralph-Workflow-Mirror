@@ -28,13 +28,6 @@ fn test_parse_single_issue() {
     assert_eq!(metrics.total_issues, 1);
     assert_eq!(metrics.critical_issues, 1);
     assert_eq!(metrics.resolved_issues, 0);
-    assert_eq!(metrics.issues.len(), 1);
-
-    let issue = &metrics.issues[0];
-    assert_eq!(issue.severity, IssueSeverity::Critical);
-    assert!(!issue.resolved);
-    assert_eq!(issue.file_path, Some("src/main.rs".to_string()));
-    assert_eq!(issue.line_number, Some(42));
 }
 
 #[test]
@@ -45,7 +38,6 @@ fn test_parse_resolved_issue() {
     assert_eq!(metrics.total_issues, 1);
     assert_eq!(metrics.high_issues, 1);
     assert_eq!(metrics.resolved_issues, 1);
-    assert!(metrics.issues[0].resolved);
 }
 
 #[test]
@@ -65,47 +57,6 @@ fn test_parse_multiple_issues() {
     assert_eq!(metrics.medium_issues, 1);
     assert_eq!(metrics.low_issues, 1);
     assert_eq!(metrics.resolved_issues, 2);
-    assert!((metrics.resolution_rate() - 50.0).abs() < 0.01);
-}
-
-#[test]
-fn test_unresolved_blocking_issues() {
-    let content = "
-- [ ] Critical: Unresolved critical
-- [x] Critical: Resolved critical
-- [ ] High: Unresolved high
-- [ ] Medium: Unresolved medium
-";
-    let metrics = ReviewMetrics::from_issues_content(content);
-
-    assert_eq!(metrics.unresolved_blocking_issues(), 2);
-    assert!(metrics.has_blocking_issues());
-}
-
-#[test]
-fn test_summary_format() {
-    let content = "
-- [ ] Critical: Issue 1
-- [x] High: Issue 2
-";
-    let metrics = ReviewMetrics::from_issues_content(content);
-    let summary = metrics.summary();
-
-    assert!(summary.contains("2 issues"));
-    assert!(summary.contains("1 critical"));
-    assert!(summary.contains("1 high"));
-    assert!(summary.contains("1 resolved"));
-    assert!(summary.contains("50%"));
-}
-
-#[test]
-fn test_detailed_summary_format() {
-    let content = "- [ ] High: Test issue";
-    let metrics = ReviewMetrics::from_issues_content(content);
-    let detailed = metrics.detailed_summary();
-
-    assert!(detailed.contains("High"));
-    assert!(detailed.contains("Resolved"));
 }
 
 #[test]
@@ -114,8 +65,6 @@ fn test_issue_without_file_reference() {
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert_eq!(metrics.total_issues, 1);
-    assert_eq!(metrics.issues[0].file_path, None);
-    assert_eq!(metrics.issues[0].line_number, None);
 }
 
 #[test]
@@ -124,14 +73,6 @@ fn test_issue_with_only_file_no_line() {
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert_eq!(metrics.total_issues, 1);
-    assert_eq!(metrics.issues[0].file_path, Some("README.md".to_string()));
-    assert_eq!(metrics.issues[0].line_number, None);
-}
-
-#[test]
-fn test_resolution_rate_no_issues() {
-    let metrics = ReviewMetrics::new();
-    assert!((metrics.resolution_rate() - 100.0).abs() < 0.01);
 }
 
 #[test]
@@ -163,12 +104,7 @@ fn test_parse_uppercase_checkbox() {
     let metrics = ReviewMetrics::from_issues_content(content);
 
     assert_eq!(metrics.total_issues, 1);
-    assert!(metrics.issues[0].resolved);
 }
-
-// ============================================================================
-// Additional Edge Case Tests
-// ============================================================================
 
 #[test]
 fn test_parse_all_issues_resolved_declaration() {
@@ -215,140 +151,12 @@ fn test_parse_mixed_format() {
 }
 
 #[test]
-fn test_parse_nested_file_paths() {
-    let content = "- [ ] High: [src/handlers/api/v2/users.rs:142] Potential SQL injection";
-    let metrics = ReviewMetrics::from_issues_content(content);
-
-    assert_eq!(metrics.total_issues, 1);
-    let issue = &metrics.issues[0];
-    assert_eq!(
-        issue.file_path,
-        Some("src/handlers/api/v2/users.rs".to_string())
-    );
-    assert_eq!(issue.line_number, Some(142));
-}
-
-#[test]
-fn test_unresolved_issues_count() {
-    let content = "
-- [ ] Critical: Issue 1
-- [x] High: Issue 2
-- [ ] Medium: Issue 3
-- [x] Low: Issue 4
-";
-    let metrics = ReviewMetrics::from_issues_content(content);
-
-    assert_eq!(metrics.unresolved_issues(), 2);
-}
-
-#[test]
-fn test_has_blocking_issues_only_critical_high() {
-    // Medium and low issues shouldn't be blocking
-    let content = "
-- [ ] Medium: Code style issue
-- [ ] Low: Minor improvement needed
-";
-    let metrics = ReviewMetrics::from_issues_content(content);
-
-    assert!(!metrics.has_blocking_issues());
-    assert_eq!(metrics.unresolved_blocking_issues(), 0);
-}
-
-#[test]
-fn test_has_blocking_issues_with_resolved_critical() {
-    // Resolved critical/high issues shouldn't be blocking
-    let content = "
-- [x] Critical: Fixed security issue
-- [x] High: Fixed memory leak
-- [ ] Medium: Pending style fix
-";
-    let metrics = ReviewMetrics::from_issues_content(content);
-
-    assert!(!metrics.has_blocking_issues());
-}
-
-#[test]
-fn test_resolution_rate_partial() {
-    let content = "
-- [x] Critical: Fixed
-- [ ] High: Pending
-- [x] Medium: Fixed
-- [ ] Low: Pending
-";
-    let metrics = ReviewMetrics::from_issues_content(content);
-
-    // 2 out of 4 = 50%
-    assert!((metrics.resolution_rate() - 50.0).abs() < 0.01);
-}
-
-#[test]
-fn test_resolution_rate_all_resolved() {
-    let content = "
-- [x] Critical: Fixed
-- [x] High: Fixed
-";
-    let metrics = ReviewMetrics::from_issues_content(content);
-
-    assert!((metrics.resolution_rate() - 100.0).abs() < 0.01);
-}
-
-#[test]
-fn test_detailed_summary_no_file() {
-    let metrics = ReviewMetrics::new();
-    let summary = metrics.detailed_summary();
-    assert!(summary.contains("No ISSUES.md found"));
-}
-
-#[test]
-fn test_detailed_summary_no_issues() {
-    let content = "# Review\n\nNo issues found.";
-    let metrics = ReviewMetrics::from_issues_content(content);
-    let summary = metrics.detailed_summary();
-    assert!(summary.contains("No issues found"));
-}
-
-#[test]
-fn test_detailed_summary_with_issues() {
-    let content = "
-- [ ] Critical: Security issue
-- [ ] High: Bug
-- [x] Medium: Fixed style
-";
-    let metrics = ReviewMetrics::from_issues_content(content);
-    let summary = metrics.detailed_summary();
-
-    assert!(summary.contains("Critical"));
-    assert!(summary.contains("High"));
-    assert!(summary.contains("Medium"));
-    assert!(summary.contains("Resolved"));
-}
-
-#[test]
-fn test_summary_no_file() {
-    let metrics = ReviewMetrics::new();
-    let summary = metrics.summary();
-    assert!(summary.contains("No ISSUES.md found"));
-}
-
-#[test]
-fn test_malformed_file_reference() {
-    // Brackets without proper format
-    let content = "- [ ] High: [malformed] Some issue";
-    let metrics = ReviewMetrics::from_issues_content(content);
-
-    assert_eq!(metrics.total_issues, 1);
-    // Should still parse but treat as file without line number
-    let issue = &metrics.issues[0];
-    assert_eq!(issue.file_path, Some("malformed".to_string()));
-    assert_eq!(issue.line_number, None);
-}
-
-#[test]
 fn test_whitespace_handling() {
     let content = "
     - [ ]   Critical:   [  file.rs:10  ]   Spaced issue
 
 ";
+
     let metrics = ReviewMetrics::from_issues_content(content);
 
     // Should handle extra whitespace gracefully
@@ -384,28 +192,6 @@ fn test_review_metrics_default() {
     assert_eq!(metrics.medium_issues, 0);
     assert_eq!(metrics.low_issues, 0);
     assert_eq!(metrics.resolved_issues, 0);
-    assert!(metrics.issues.is_empty());
     assert!(!metrics.issues_file_found);
     assert!(!metrics.no_issues_declared);
-}
-
-#[test]
-fn test_extract_file_line_various_formats() {
-    // Test the extract_file_line helper with various formats
-    let content1 = "- [ ] High: [src/main.rs:100] Issue";
-    let metrics1 = ReviewMetrics::from_issues_content(content1);
-    assert_eq!(
-        metrics1.issues[0].file_path,
-        Some("src/main.rs".to_string())
-    );
-    assert_eq!(metrics1.issues[0].line_number, Some(100));
-
-    // Windows-style path
-    let content2 = "- [ ] High: [src\\main.rs:50] Issue";
-    let metrics2 = ReviewMetrics::from_issues_content(content2);
-    assert_eq!(
-        metrics2.issues[0].file_path,
-        Some("src\\main.rs".to_string())
-    );
-    assert_eq!(metrics2.issues[0].line_number, Some(50));
 }

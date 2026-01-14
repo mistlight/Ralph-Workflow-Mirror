@@ -19,6 +19,7 @@
 pub mod commit;
 mod context;
 mod development;
+mod integrity;
 mod review;
 
 pub use commit::generate_commit_message;

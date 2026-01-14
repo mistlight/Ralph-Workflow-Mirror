@@ -20,585 +20,23 @@
 //! This dual-mode support handles both legacy directory-based logs and the current
 //! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
 
-use serde_json::Value as JsonValue;
-use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader, Read};
-use std::path::{Path, PathBuf};
-
-/// Safely convert usize to u32, capping at `u32::MAX` to avoid truncation.
-fn saturate_u32(value: usize) -> u32 {
-    value.try_into().unwrap_or(u32::MAX)
-}
-
-/// Result of extracting content from an agent's JSON log.
-#[derive(Debug, Clone)]
-pub struct ExtractionResult {
-    /// The raw content extracted from the log (if any)
-    pub raw_content: Option<String>,
-    /// Whether the content passed validation
-    pub is_valid: bool,
-    /// Validation warning message (if validation failed but content exists)
-    pub validation_warning: Option<String>,
-}
-
-impl ExtractionResult {
-    /// Create a result with valid content
-    const fn valid(content: String) -> Self {
-        Self {
-            raw_content: Some(content),
-            is_valid: true,
-            validation_warning: None,
-        }
-    }
-
-    /// Create a result with invalid content
-    fn invalid(content: String, warning: &str) -> Self {
-        Self {
-            raw_content: Some(content),
-            is_valid: false,
-            validation_warning: Some(warning.to_string()),
-        }
-    }
-
-    /// Create an empty result (no content found)
-    const fn empty() -> Self {
-        Self {
-            raw_content: None,
-            is_valid: false,
-            validation_warning: None,
-        }
-    }
-}
-
-/// Calculate a score for a result to determine its quality.
-///
-/// Higher scores indicate better results. Scoring considers:
-/// - Presence of plan structure markers (## Summary, ## Implementation Steps, etc.)
-/// - Markdown headers (#)
-/// - Content length (longer is generally better)
-/// - Plan-like keywords
-fn score_result(content: &str) -> u32 {
-    let mut score: u32 = 0;
-    let content_lower = content.to_lowercase();
-
-    // Strong structure markers (very high weight)
-    let structure_markers = [
-        "## Summary",
-        "## Implementation Steps",
-        "## Implementation",
-        "### Implementation",
-        "# Summary",
-        "# Implementation Plan",
-        "# Plan",
-    ];
-    for marker in &structure_markers {
-        if content.contains(marker) {
-            score += 1000;
-        }
-    }
-
-    // Secondary headers (medium weight)
-    let secondary_headers = ["###", "####", "## Risks", "## Verification", "## Testing"];
-    for header in &secondary_headers {
-        if content.contains(header) {
-            score += 100;
-        }
-    }
-
-    // Any markdown headers (low weight)
-    for line in content.lines() {
-        if line.trim().starts_with('#') {
-            score += 10;
-        }
-    }
-
-    // Plan keywords (very low weight as tiebreaker)
-    let keywords = [
-        "step",
-        "implement",
-        "create",
-        "add",
-        "build",
-        "task",
-        "phase",
-        "first",
-        "second",
-        "then",
-        "finally",
-        "next",
-    ];
-    for keyword in &keywords {
-        if content_lower.contains(keyword) {
-            score += 1;
-        }
-    }
-
-    // Length bonus (slight preference for longer content with same structure)
-    // Cap the bonus to avoid length overriding structure
-    let length_bonus = saturate_u32(content.len()).min(500);
-    score += length_bonus;
-
-    score
-}
-
-/// Extract the best "result" event from a single log file.
-///
-/// Scans the file for JSON lines and returns the best `{"type": "result", "result": "..."}`
-/// event's content. The "best" result is determined by a scoring function that considers:
-/// 1. Plan structure markers (## Summary, ## Implementation Steps, etc.)
-/// 2. Markdown headers
-/// 3. Content length (as a tiebreaker)
-///
-/// This handles cases where agents emit multiple partial result events during streaming
-/// or retries, preferring results with proper plan structure over simple length.
-fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
-    let file = match File::open(path) {
-        Ok(f) => f,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
-    };
-
-    let reader = BufReader::new(file);
-    let mut best_result: Option<String> = None;
-    let mut best_score: u32 = 0;
-
-    for line in reader.lines() {
-        let Ok(line) = line else { continue };
-
-        // Skip non-JSON lines
-        if !line.trim().starts_with('{') {
-            continue;
-        }
-
-        // Parse JSON and look for "result" events
-        if let Ok(value) = serde_json::from_str::<JsonValue>(&line) {
-            if let Some(typ) = value.get("type").and_then(|v| v.as_str()) {
-                if typ == "result" {
-                    if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
-                        let result_string = result.to_string();
-                        let result_score = score_result(&result_string);
-
-                        // Select the result with the highest score
-                        // This prefers structured plans over simple longest strings
-                        if result_score > best_score {
-                            best_score = result_score;
-                            best_result = Some(result_string);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(best_result)
-}
-
-/// Find log files matching a prefix pattern in a directory.
-///
-/// Returns all files that start with `{prefix}_` and end with `.log`.
-fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<PathBuf>> {
-    let entries = match fs::read_dir(parent_dir) {
-        Ok(e) => e,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e),
-    };
-
-    let mut log_files = Vec::new();
-    let prefix_pattern = format!("{prefix}_");
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-
-        // Match files like "planning_1_glm_0.log" when prefix is "planning_1"
-        if file_name.starts_with(&prefix_pattern)
-            && file_name.to_ascii_lowercase().ends_with(".log")
-        {
-            log_files.push(path);
-        }
-    }
-
-    // Sort by modification time (most recent last) to ensure consistent ordering
-    log_files.sort_by(|a, b| {
-        let time_a = fs::metadata(a)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        let time_b = fs::metadata(b)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        time_a.cmp(&time_b)
-    });
-
-    Ok(log_files)
-}
-
-/// Find subdirectories matching a prefix pattern.
-///
-/// This handles the legacy case where agent names containing "/" created
-/// nested directories (e.g., "`planning_1_ccs/glm_0.log`" instead of flat files).
-fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<PathBuf>> {
-    let entries = match fs::read_dir(parent_dir) {
-        Ok(e) => e,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e),
-    };
-
-    let mut subdirs = Vec::new();
-    let prefix_pattern = format!("{prefix}_");
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        let Some(dir_name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-
-        // Match directories like "planning_1_ccs" when prefix is "planning_1"
-        if dir_name.starts_with(&prefix_pattern) {
-            subdirs.push(path);
-        }
-    }
-
-    // Sort by modification time (most recent last) to ensure consistent ordering
-    subdirs.sort_by(|a, b| {
-        let time_a = fs::metadata(a)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        let time_b = fs::metadata(b)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        time_a.cmp(&time_b)
-    });
-
-    Ok(subdirs)
-}
-
-/// Extract the best "result" event from agent JSON logs.
-///
-/// Supports three modes:
-/// 1. **Directory mode**: If `log_path` is a directory, scan all files in it
-/// 2. **Prefix mode**: If `log_path` is not a directory, treat it as a prefix and
-///    search for files matching `{prefix}_*.log` in the parent directory
-/// 3. **Subdirectory fallback**: If no files found, check for subdirectories matching
-///    `{prefix}_*` (handles legacy logs where agent names with "/" created nested dirs)
-///
-/// The "best" result is determined by selecting the longest content, which handles
-/// cases where agents emit multiple partial result events during streaming or retries.
-///
-/// # Arguments
-///
-/// * `log_path` - Path to the log directory OR log file prefix
-///
-/// # Returns
-///
-/// The raw content from the best result event, or None if no result found.
-pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
-    // Strategy 1: If log_path is a directory, scan all files in it (legacy mode)
-    if log_path.is_dir() {
-        return extract_from_directory(log_path);
-    }
-
-    // Strategy 2: Treat log_path as a prefix and search parent directory
-    let parent = log_path.parent().unwrap_or_else(|| Path::new("."));
-    let prefix = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-
-    if prefix.is_empty() {
-        return Ok(None);
-    }
-
-    let log_files = find_log_files_with_prefix(parent, prefix)?;
-
-    if !log_files.is_empty() {
-        let mut best_result: Option<String> = None;
-        let mut best_score: u32 = 0;
-        for log_file in log_files {
-            if let Some(result) = extract_result_from_file(&log_file)? {
-                let result_score = score_result(&result);
-                // Select the result with the highest score across all files
-                if result_score > best_score {
-                    best_score = result_score;
-                    best_result = Some(result);
-                }
-            }
-        }
-        if best_result.is_some() {
-            return Ok(best_result);
-        }
-    }
-
-    // Strategy 3: Check for subdirectories matching prefix pattern
-    // This handles the legacy case where agent names with "/" created nested directories
-    // (e.g., "planning_1_ccs/glm_0.log" instead of "planning_1_ccs-glm_0.log")
-    let subdirs = find_subdirs_with_prefix(parent, prefix)?;
-    for subdir in subdirs {
-        if let Some(result) = extract_from_directory(&subdir)? {
-            return Ok(Some(result));
-        }
-    }
-
-    // Final fallback: check if the exact path exists as a file
-    if log_path.is_file() {
-        return extract_result_from_file(log_path);
-    }
-
-    Ok(None)
-}
-
-/// Extract from a directory by scanning all files in it.
-///
-/// Selects the best result across all files using the scoring function to handle
-/// retry scenarios where multiple log files may exist. Prefers structured plans
-/// over simple longest strings.
-fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
-    let log_entries = match fs::read_dir(log_dir) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
-    };
-
-    let mut best_result: Option<String> = None;
-    let mut best_score: u32 = 0;
-
-    for entry in log_entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        if let Some(result) = extract_result_from_file(&path)? {
-            let result_score = score_result(&result);
-            // Select the result with the highest score across all files
-            if result_score > best_score {
-                best_score = result_score;
-                best_result = Some(result);
-            }
-        }
-    }
-
-    Ok(best_result)
-}
-
-/// Calculate a score for text content to determine plan completeness.
-///
-/// This is similar to `score_result()` but works on raw text content rather than
-/// JSON result events. Higher scores indicate more complete plans.
-fn score_text_plan(content: &str) -> u32 {
-    let mut score: u32 = 0;
-    let content_lower = content.to_lowercase();
-
-    // Strong structure markers (very high weight)
-    let structure_markers = [
-        "## Summary",
-        "## Implementation Steps",
-        "## Implementation",
-        "### Implementation",
-        "# Summary",
-        "# Implementation Plan",
-        "# Plan",
-    ];
-    for marker in &structure_markers {
-        if content.contains(marker) {
-            score += 1000;
-        }
-    }
-
-    // Secondary headers (medium weight)
-    let secondary_headers = ["###", "####", "## Risks", "## Verification", "## Testing"];
-    for header in &secondary_headers {
-        if content.contains(header) {
-            score += 100;
-        }
-    }
-
-    // Any markdown headers (low weight)
-    for line in content.lines() {
-        if line.trim().starts_with('#') {
-            score += 10;
-        }
-    }
-
-    // Plan keywords (very low weight as tiebreaker)
-    let keywords = [
-        "step",
-        "implement",
-        "create",
-        "add",
-        "build",
-        "task",
-        "phase",
-        "first",
-        "second",
-        "then",
-        "finally",
-        "next",
-    ];
-    for keyword in &keywords {
-        if content_lower.contains(keyword) {
-            score += 1;
-        }
-    }
-
-    // Length bonus (slight preference for longer content with same structure)
-    // Cap the bonus to avoid length overriding structure
-    let length_bonus = saturate_u32(content.len()).min(500);
-    score += length_bonus;
-
-    score
-}
-
-/// Extract plan content from text by looking for markdown structure.
-///
-/// This is a fallback method for cases where JSON result events are not available.
-/// It looks for common plan markers like `## Summary` and `## Implementation Steps`.
-/// If multiple plan candidates are found, it returns the highest-scoring one.
-/// If no markers are found, it falls back to extracting substantial text content
-/// that contains plan-like keywords.
-pub fn extract_plan_from_text(content: &str) -> Option<String> {
-    // Look for plan start markers - these indicate where a plan begins
-    let start_markers = [
-        "## Summary",
-        "# Plan",
-        "# Implementation Plan",
-        "## Implementation Steps",
-    ];
-
-    // Find all potential plan candidates
-    // Each candidate starts at a marker and continues to the end of content
-    let mut candidates: Vec<(usize, &str)> = Vec::new();
-
-    for marker in start_markers {
-        if let Some(start) = content.find(marker) {
-            // Extract from the marker to the end of the content
-            let plan_content = &content[start..];
-            let trimmed = plan_content.trim();
-
-            if trimmed.len() > 50 {
-                candidates.push((start, trimmed));
-            }
-        }
-    }
-
-    if !candidates.is_empty() {
-        // Score each candidate and return the best one
-        let mut best_candidate: Option<&str> = None;
-        let mut best_score: u32 = 0;
-
-        for (_start, candidate) in &candidates {
-            let score = score_text_plan(candidate);
-            if score > best_score {
-                best_score = score;
-                best_candidate = Some(candidate);
-            }
-        }
-
-        if candidates.len() > 1 {
-            eprintln!(
-                "[result_extraction] Found {} plan candidates in text, selected one with score {}",
-                candidates.len(),
-                best_score
-            );
-        }
-
-        return best_candidate.map(std::string::ToString::to_string);
-    }
-
-    // Permissive fallback: if no markdown markers found, look for substantial
-    // content that contains plan-like keywords. This handles plaintext mode where
-    // the agent outputs plan content without structured markdown.
-    extract_plan_from_text_permissive(content)
-}
-
-/// Permissive extraction that finds substantial plan-like content without
-/// requiring specific markdown markers.
-///
-/// This is a final fallback for plaintext mode logs where the agent may have
-/// output a valid plan but without the expected markdown structure.
-#[expect(clippy::items_after_statements)]
-fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
-    let content = content.trim();
-
-    // Filter out obvious non-plan content
-    // - JSON lines
-    // - Debug/tool output patterns
-    let filtered: String = content
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            // Skip JSON lines
-            if trimmed.starts_with('{') || trimmed.starts_with('[') {
-                return false;
-            }
-            // Skip debug/tool markers
-            if trimmed.starts_with("[debug]")
-                || trimmed.starts_with("[tool]")
-                || trimmed.starts_with("[error]")
-                || trimmed.starts_with("[warn]")
-            {
-                return false;
-            }
-            // Skip empty lines
-            if trimmed.is_empty() {
-                return false;
-            }
-            true
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    // Minimum content length (increased from 50 to 200 for permissive mode)
-    const MIN_PERMISSIVE_LENGTH: usize = 200;
-
-    if filtered.len() < MIN_PERMISSIVE_LENGTH {
-        return None;
-    }
-
-    // Check for plan-like keywords (case-insensitive)
-    let plan_keywords = [
-        "step",
-        "implement",
-        "create",
-        "add",
-        "build",
-        "develop",
-        "write",
-        "function",
-        "feature",
-        "component",
-        "module",
-        "task",
-        "phase",
-        "first",
-        "second",
-        "third",
-        "next",
-        "then",
-        "finally",
-        "approach",
-        "strategy",
-        "design",
-        "architecture",
-    ];
-
-    let filtered_lower = filtered.to_lowercase();
-    let has_plan_keyword = plan_keywords
-        .iter()
-        .any(|keyword| filtered_lower.contains(keyword));
-
-    if has_plan_keyword {
-        return Some(filtered);
-    }
-
-    None
-}
+mod file_finder;
+mod json_extraction;
+mod scoring;
+mod text_extraction;
+mod types;
+mod validation;
+
+pub use json_extraction::extract_last_result;
+pub use types::ExtractionResult;
+pub use validation::{validate_issues_content, validate_plan_content};
+
+use file_finder::{find_log_files_with_prefix, find_subdirs_with_prefix};
+use text_extraction::extract_plan_from_text;
+
+use std::fs::File;
+use std::io::{self, Read};
+use std::path::Path;
 
 /// Extract plan content from log files using text-based fallback.
 ///
@@ -606,8 +44,10 @@ fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
 /// Also checks subdirectories matching the prefix pattern (for legacy logs where agent
 /// names with "/" created nested directories).
 pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
+    use scoring::score_text_plan;
+
     // Helper to extract from a list of files by finding the best plan across all files
-    fn extract_from_files(files: &[PathBuf]) -> Option<String> {
+    fn extract_from_files(files: &[std::path::PathBuf]) -> Option<String> {
         let mut best_plan: Option<String> = None;
         let mut best_score: u32 = 0;
         let mut candidates_count = 0;
@@ -644,7 +84,7 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
 
     // Strategy 1: If log_path is a directory, scan all files in it
     if log_path.is_dir() {
-        let log_files: Vec<_> = fs::read_dir(log_path)?
+        let log_files: Vec<_> = std::fs::read_dir(log_path)?
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.is_file())
@@ -672,7 +112,7 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
     // This handles the legacy case where agent names with "/" created nested directories
     let subdirs = find_subdirs_with_prefix(parent, prefix)?;
     for subdir in subdirs {
-        let subdir_files: Vec<_> = fs::read_dir(&subdir)?
+        let subdir_files: Vec<_> = std::fs::read_dir(&subdir)?
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.is_file())
@@ -683,79 +123,6 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
     }
 
     Ok(None)
-}
-
-/// Validate plan content.
-///
-/// Checks if the content looks like a valid plan:
-/// - Contains markdown headers (lines starting with #)
-/// - Has reasonable length (> 50 chars)
-/// - Contains plan-like structure indicators
-fn validate_plan_content(content: &str) -> (bool, Option<String>) {
-    let content_clean = content.trim();
-
-    let has_header = content_clean
-        .lines()
-        .any(|line| line.trim().starts_with('#'));
-    let has_min_length = content_clean.len() > 50;
-    let has_structure = content_clean.contains("step")
-        || content_clean.contains("task")
-        || content_clean.contains("phase")
-        || content_clean.contains("implement")
-        || content_clean.contains("create")
-        || content_clean.contains("add")
-        || content_clean.contains("Step")
-        || content_clean.contains("Task")
-        || content_clean.contains("Phase");
-
-    if has_header && has_min_length && has_structure {
-        (true, None)
-    } else {
-        let mut warnings = Vec::new();
-        if !has_header {
-            warnings.push("no markdown headers");
-        }
-        if !has_min_length {
-            warnings.push("content too short");
-        }
-        if !has_structure {
-            warnings.push("no plan structure keywords");
-        }
-        (false, Some(warnings.join(", ")))
-    }
-}
-
-/// Validate issues content.
-///
-/// Checks if the content looks like valid issues:
-/// - Contains checkboxes (- \[ ] or - \[x])
-/// - Contains severity markers (Critical:, High:, etc.)
-/// - Or contains "no issues" declaration
-fn validate_issues_content(content: &str) -> (bool, Option<String>) {
-    let content_clean = content.trim();
-
-    let has_checkbox = content_clean.contains("- [")
-        || content_clean.contains("- [x]")
-        || content_clean.contains("- [ ]");
-    let has_severity = content_clean.contains("Critical:")
-        || content_clean.contains("High:")
-        || content_clean.contains("Medium:")
-        || content_clean.contains("Low:");
-    let has_no_issues = content_clean.to_lowercase().contains("no issues");
-    let has_min_length = content_clean.len() > 10;
-
-    if (has_checkbox || has_severity || has_no_issues) && has_min_length {
-        (true, None)
-    } else {
-        let mut warnings = Vec::new();
-        if !has_checkbox && !has_severity && !has_no_issues {
-            warnings.push("no issue markers found");
-        }
-        if !has_min_length {
-            warnings.push("content too short");
-        }
-        (false, Some(warnings.join(", ")))
-    }
 }
 
 /// Extract and validate plan content from agent logs.
@@ -770,25 +137,21 @@ fn validate_issues_content(content: &str) -> (bool, Option<String>) {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like a valid plan)
 /// - Warning message (if validation failed)
-#[expect(clippy::option_if_let_else)]
 pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
-    match raw_content {
-        Some(content) => {
+    raw_content.map_or_else(
+        || Ok(ExtractionResult::empty()),
+        |content| {
             let content_clean = content.trim().to_string();
             let (is_valid, warning) = validate_plan_content(&content_clean);
-            if is_valid {
-                Ok(ExtractionResult::valid(content_clean))
+            Ok(if is_valid {
+                ExtractionResult::valid(content_clean)
             } else {
-                Ok(ExtractionResult::invalid(
-                    content_clean,
-                    &warning.unwrap_or_default(),
-                ))
-            }
-        }
-        None => Ok(ExtractionResult::empty()),
-    }
+                ExtractionResult::invalid(content_clean, &warning.unwrap_or_default())
+            })
+        },
+    )
 }
 
 /// Extract and validate issues content from agent logs.
@@ -803,30 +166,27 @@ pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like valid issues)
 /// - Warning message (if validation failed)
-#[expect(clippy::option_if_let_else)]
 pub fn extract_issues(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
-    match raw_content {
-        Some(content) => {
+    raw_content.map_or_else(
+        || Ok(ExtractionResult::empty()),
+        |content| {
             let content_clean = content.trim().to_string();
             let (is_valid, warning) = validate_issues_content(&content_clean);
-            if is_valid {
-                Ok(ExtractionResult::valid(content_clean))
+            Ok(if is_valid {
+                ExtractionResult::valid(content_clean)
             } else {
-                Ok(ExtractionResult::invalid(
-                    content_clean,
-                    &warning.unwrap_or_default(),
-                ))
-            }
-        }
-        None => Ok(ExtractionResult::empty()),
-    }
+                ExtractionResult::invalid(content_clean, &warning.unwrap_or_default())
+            })
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::files::result_extraction::json_extraction::extract_result_from_file;
     use std::fs;
     use tempfile::TempDir;
 
@@ -935,11 +295,11 @@ mod tests {
     }
 
     #[test]
-    fn test_uses_last_result_event() {
+    fn test_uses_best_result_event() {
         let temp = TempDir::new().unwrap();
         let log_dir = temp.path().join("planning_1");
 
-        // Multiple result events - should use the best (longest/most complete) one
+        // Multiple result events - should use the best (most complete) one
         let json_log = r##"{"type": "result", "result": "First result"}
 {"type": "result", "result": "# Final Plan\n\nStep 1: Implement feature"}"##;
         create_log_file(&log_dir, "output.log", json_log);
@@ -950,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn test_incomplete_plan_bug_regression() {
+    fn test_best_result_bug_regression() {
         let temp = TempDir::new().unwrap();
         let log_dir = temp.path().join("planning_1");
 
@@ -968,7 +328,7 @@ mod tests {
         assert!(result.raw_content.is_some());
         let content = result.raw_content.unwrap();
 
-        // The fix should select the longest/most complete result
+        // The fix should select the best (most complete) result
         // NOT the last one (which would be "Last paragraph")
         assert!(
             content.contains("Implementation Steps"),
@@ -1384,7 +744,7 @@ The module will integrate with the existing database layer."#;
 
     #[test]
     fn test_extract_plan_from_text_permissive_no_plan_keywords() {
-        // Substantial content without plan-like keywords (avoiding: step, implement, create, add, build, develop, write, then, etc.)
+        // Substantial content without plan-like keywords
         let content = "The quick brown fox jumps over the lazy dog repeatedly.
 This text was composed to be long enough to pass the length requirement.
 It avoids using technical terminology that might trigger extraction.

@@ -12,7 +12,7 @@
 //! - Subsequent chunks update in-place (no prefix, carriage return)
 //! - Final newline on completion only
 
-use crate::colors::Colors;
+use crate::logger::Colors;
 
 /// Renderer for streaming delta content.
 ///

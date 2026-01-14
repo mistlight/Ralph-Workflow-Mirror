@@ -1,46 +1,15 @@
-//! Tests for JSON parsers.
+//! Shared tests for JSON parsers.
+//!
+//! This module contains tests for cross-parser behavior, shared utilities,
+//! and streaming functionality that applies to multiple parsers.
 
 use super::*;
-use crate::colors::Colors;
 use crate::config::Verbosity;
+use crate::logger::Colors;
 use std::cell::RefCell;
 use std::io::{self, Cursor, Write};
 
-#[test]
-fn test_parse_claude_system_init() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"system","subtype":"init","session_id":"abc123"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Session started"));
-}
-
-#[test]
-fn test_parse_claude_result_success() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"result","subtype":"success","duration_ms":60000,"num_turns":5,"total_cost_usd":0.05}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Completed"));
-}
-
-#[test]
-fn test_parse_codex_thread_started() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"thread.started","thread_id":"xyz789"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Thread started"));
-}
-
-#[test]
-fn test_parse_codex_turn_completed() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":50}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Turn completed"));
-}
+// Cross-parser behavior tests
 
 #[test]
 fn test_verbosity_affects_output() {
@@ -103,316 +72,13 @@ fn test_parser_uses_custom_display_name_prefix() {
 }
 
 #[test]
-fn test_parse_claude_tool_result_object_payload() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"assistant","message":{"content":[{"type":"tool_result","content":{"ok":true,"n":1}}]}}"#;
-    let output = parser.parse_event(json).unwrap();
-    assert!(output.contains("Result"));
-    assert!(output.contains("ok"));
-}
-
-#[test]
-fn test_parse_opencode_tool_output_object_payload() {
-    let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Verbose);
-    let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"/test.rs"},"output":{"ok":true,"bytes":123}}}}"#;
-    let output = parser.parse_event(json).unwrap();
-    assert!(output.contains("Output"));
-    assert!(output.contains("ok"));
-}
-
-#[test]
 fn test_debug_verbosity_is_recognized() {
     let debug_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Debug);
     // Debug mode should be detectable via is_debug()
     assert!(debug_parser.verbosity.is_debug());
 }
 
-#[test]
-fn test_codex_file_operations_shown() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Verbose);
-    let json = r#"{"type":"item.started","item":{"type":"file_read","path":"/src/main.rs"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("file_read"));
-    assert!(out.contains("/src/main.rs"));
-}
-
-#[test]
-fn test_parse_claude_text_with_unicode() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json =
-        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello 世界! 🌍"}]}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Hello 世界! 🌍"));
-}
-
-#[test]
-fn test_codex_reasoning_event() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Verbose);
-    let json = r#"{"type":"item.started","item":{"type":"reasoning","id":"item_1"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Reasoning"));
-}
-
-#[test]
-fn test_codex_reasoning_completed_shows_text() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Verbose);
-    let json = r#"{"type":"item.completed","item":{"type":"reasoning","id":"item_1","text":"I should analyze this file first"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Thought"));
-    assert!(out.contains("analyze"));
-}
-
-#[test]
-fn test_codex_mcp_tool_call() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"item.started","item":{"type":"mcp_tool_call","tool":"search_files","arguments":{"query":"main"}}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("MCP Tool"));
-    assert!(out.contains("search_files"));
-    assert!(out.contains("query=main"));
-}
-
-#[test]
-fn test_codex_web_search() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json =
-        r#"{"type":"item.started","item":{"type":"web_search","query":"rust async tutorial"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Search"));
-    assert!(out.contains("rust async tutorial"));
-}
-
-#[test]
-fn test_codex_plan_update() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Verbose);
-    let json = r#"{"type":"item.started","item":{"type":"plan_update","id":"item_1"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Updating plan"));
-}
-
-#[test]
-fn test_codex_turn_completed_with_cached_tokens() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Turn completed"));
-    assert!(out.contains("in:24763"));
-    assert!(out.contains("out:122"));
-}
-
-#[test]
-fn test_codex_item_with_status() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls","status":"in_progress"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Exec"));
-    assert!(out.contains("ls"));
-}
-
-#[test]
-fn test_codex_file_write_completed() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"item.completed","item":{"type":"file_write","path":"/src/main.rs"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("File"));
-    assert!(out.contains("/src/main.rs"));
-}
-
-#[test]
-fn test_codex_mcp_completed() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"item.completed","item":{"type":"mcp_tool_call","tool":"read_file"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("MCP"));
-    assert!(out.contains("read_file"));
-    assert!(out.contains("done"));
-}
-
-#[test]
-fn test_codex_web_search_completed() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"item.completed","item":{"type":"web_search"}}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Search completed"));
-}
-
-// Gemini parser tests
-#[test]
-fn test_gemini_init_event() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"init","timestamp":"2025-10-10T12:00:00.000Z","session_id":"abc123","model":"gemini-2.0-flash-exp"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Session started"));
-    assert!(out.contains("gemini-2.0-flash-exp"));
-}
-
-#[test]
-fn test_gemini_message_assistant() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"message","role":"assistant","content":"Here are the files...","timestamp":"2025-10-10T12:00:04.000Z"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Here are the files"));
-}
-
-#[test]
-fn test_gemini_message_user() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"message","role":"user","content":"List files in current directory","timestamp":"2025-10-10T12:00:01.000Z"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("user"));
-    assert!(out.contains("List files"));
-}
-
-#[test]
-fn test_gemini_tool_use() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"tool_use","tool_name":"Bash","tool_id":"bash-123","parameters":{"command":"ls -la"},"timestamp":"2025-10-10T12:00:02.000Z"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Tool"));
-    assert!(out.contains("Bash"));
-    assert!(out.contains("command=ls -la"));
-}
-
-#[test]
-fn test_gemini_tool_result_success() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Verbose);
-    let json = r#"{"type":"tool_result","tool_id":"bash-123","status":"success","output":"file1.txt\nfile2.txt","timestamp":"2025-10-10T12:00:03.000Z"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Tool result"));
-    assert!(out.contains("file1.txt"));
-}
-
-#[test]
-fn test_gemini_tool_result_error() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"tool_result","tool_id":"bash-123","status":"error","output":"command not found","timestamp":"2025-10-10T12:00:03.000Z"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Tool result"));
-}
-
-#[test]
-fn test_gemini_error_event() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"error","message":"Rate limit exceeded","code":"429","timestamp":"2025-10-10T12:00:05.000Z"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Error"));
-    assert!(out.contains("Rate limit exceeded"));
-    assert!(out.contains("429"));
-}
-
-#[test]
-fn test_gemini_result_success() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"result","status":"success","stats":{"total_tokens":250,"input_tokens":50,"output_tokens":200,"duration_ms":3000,"tool_calls":1},"timestamp":"2025-10-10T12:00:05.000Z"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("success"));
-    assert!(out.contains("in:50"));
-    assert!(out.contains("out:200"));
-    assert!(out.contains("1 tools"));
-}
-
-#[test]
-fn test_gemini_message_delta() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"message","role":"assistant","content":"Streaming","delta":true,"timestamp":"2025-10-10T12:00:04.000Z"}"#;
-    let output = parser.parse_event(json);
-    assert!(output.is_some());
-    let out = output.unwrap();
-    assert!(out.contains("Streaming"));
-    // Delta content displays naturally without "..." marker
-}
-
-#[test]
-fn test_gemini_unknown_event() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let json = r#"{"type":"unknown_event_type","data":"something"}"#;
-    let output = parser.parse_event(json);
-    // Unknown events should return None (empty output)
-    assert!(output.is_none());
-}
-
-// Tests for JSON parser robustness - malformed line handling
-
-#[test]
-fn test_claude_parser_non_json_passthrough() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-    // Plain text that isn't JSON should be passed through
-    let output = parser.parse_event("Hello, this is plain text output");
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Hello, this is plain text output"));
-}
-
-#[test]
-fn test_claude_parser_malformed_json_ignored() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-    // Malformed JSON that looks like JSON should be ignored
-    let output = parser.parse_event("{invalid json here}");
-    assert!(output.is_none());
-}
-
-#[test]
-fn test_claude_parser_empty_line_ignored() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let output = parser.parse_event("");
-    assert!(output.is_none());
-    let output2 = parser.parse_event("   ");
-    assert!(output2.is_none());
-}
-
-#[test]
-fn test_codex_parser_non_json_passthrough() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let output = parser.parse_event("Error: something went wrong");
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Error: something went wrong"));
-}
-
-#[test]
-fn test_gemini_parser_non_json_passthrough() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let output = parser.parse_event("Warning: rate limit approaching");
-    assert!(output.is_some());
-    assert!(output.unwrap().contains("Warning: rate limit approaching"));
-}
-
-// Test for DeltaAccumulator
+// Tests for DeltaAccumulator (shared type)
 #[test]
 fn test_delta_accumulator_text() {
     let mut acc = super::types::DeltaAccumulator::new();
@@ -475,6 +141,7 @@ fn test_delta_accumulator_clear_key() {
     );
 }
 
+// Tests for format_unknown_json_event (shared utility)
 #[test]
 fn test_format_unknown_json_event_control_event() {
     let colors = Colors { enabled: false };
@@ -593,8 +260,6 @@ fn test_format_unknown_json_event_nested_delta_text() {
     assert!(!output.is_empty());
     assert!(output.contains("nested content"));
 }
-
-// Edge case tests for format_unknown_json_event
 
 #[test]
 fn test_format_unknown_json_event_deeply_nested_content() {
@@ -716,8 +381,7 @@ fn test_format_unknown_json_event_very_long_content() {
     // Content should be shown in full for deltas (not truncated)
 }
 
-// Tests for stream classifier edge cases
-
+// Tests for stream classifier
 #[test]
 fn test_stream_classifies_short_content_as_partial() {
     use super::stream_classifier::{StreamEventClassifier, StreamEventType};
@@ -729,99 +393,6 @@ fn test_stream_classifies_short_content_as_partial() {
 
     let result = classifier.classify(&event);
     assert_eq!(result.event_type, StreamEventType::Partial);
-}
-
-// Tests for partial event tracking in health monitoring
-
-#[test]
-fn test_claude_parser_tracks_partial_events_in_health_monitoring() {
-    use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-
-    // Create a stream with mixed events: control, partial (delta), and complete
-    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
-{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
-{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
-{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}
-{"type":"stream_event","event":{"type":"message_stop"}}
-{"type":"assistant","message":{"content":[{"type":"text","text":"Complete message"}]}}"#;
-
-    let reader = Cursor::new(input);
-    let mut writer = Vec::new();
-
-    // Parse stream - should handle all events without health warnings
-    let result = parser.parse_stream(reader, &mut writer);
-    assert!(result.is_ok());
-
-    // Verify output contains delta content
-    let output = String::from_utf8(writer).unwrap();
-    assert!(output.contains("Hello") || output.contains("World") || output.contains("Complete"));
-}
-
-#[test]
-fn test_health_monitor_no_warning_with_high_partial_percentage() {
-    use super::health::HealthMonitor;
-    use crate::colors::Colors;
-
-    let monitor = HealthMonitor::new("test");
-    let colors = Colors { enabled: false };
-
-    // Simulate the bug report scenario: 97.5% partial events (2049 of 2102)
-    // These should NOT trigger a warning because partial events are valid streaming content
-    for _ in 0..2049 {
-        monitor.record_partial_event();
-    }
-    for _ in 0..53 {
-        monitor.record_parsed();
-    }
-
-    // Should NOT warn even with 97.5% "partial" events
-    let warning = monitor.check_and_warn(colors);
-    assert!(
-        warning.is_none(),
-        "Should not warn with high percentage of partial events"
-    );
-}
-
-#[test]
-fn test_health_monitor_warning_only_for_parse_errors() {
-    use super::health::HealthMonitor;
-    use crate::colors::Colors;
-
-    let monitor = HealthMonitor::new("test");
-    let colors = Colors { enabled: false };
-
-    // Mix of partial, control, and parsed events should NOT trigger warning
-    for _ in 0..1000 {
-        monitor.record_partial_event();
-    }
-    for _ in 0..500 {
-        monitor.record_control_event();
-    }
-    for _ in 0..50 {
-        monitor.record_parsed();
-    }
-
-    let warning = monitor.check_and_warn(colors);
-    assert!(
-        warning.is_none(),
-        "Should not warn with mix of partial, control, and parsed events"
-    );
-
-    // Reset and test with actual parse errors
-    monitor.reset();
-
-    // Add parse errors exceeding 50% threshold
-    for _ in 0..60 {
-        monitor.record_parse_error();
-    }
-    for _ in 0..40 {
-        monitor.record_parsed();
-    }
-
-    let warning = monitor.check_and_warn(colors);
-    assert!(warning.is_some(), "Should warn with >50% parse errors");
-    assert!(warning.unwrap().contains("parse errors"));
 }
 
 #[test]
@@ -864,7 +435,97 @@ fn test_stream_classifies_error_as_control() {
     assert_eq!(result.event_type, StreamEventType::Control);
 }
 
-// Test for verbose mode streaming fix - ensures accumulated text output
+// Tests for health monitoring
+#[test]
+fn test_claude_parser_tracks_partial_events_in_health_monitoring() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Create a stream with mixed events: control, partial (delta), and complete
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Complete message"}]}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    // Parse stream - should handle all events without health warnings
+    let result = parser.parse_stream(reader, &mut writer);
+    assert!(result.is_ok());
+
+    // Verify output contains delta content
+    let output = String::from_utf8(writer).unwrap();
+    assert!(output.contains("Hello") || output.contains("World") || output.contains("Complete"));
+}
+
+#[test]
+fn test_health_monitor_no_warning_with_high_partial_percentage() {
+    use super::health::HealthMonitor;
+
+    let monitor = HealthMonitor::new("test");
+    let colors = Colors { enabled: false };
+
+    // Simulate the bug report scenario: 97.5% partial events (2049 of 2102)
+    // These should NOT trigger a warning because partial events are valid streaming content
+    for _ in 0..2049 {
+        monitor.record_partial_event();
+    }
+    for _ in 0..53 {
+        monitor.record_parsed();
+    }
+
+    // Should NOT warn even with 97.5% "partial" events
+    let warning = monitor.check_and_warn(colors);
+    assert!(
+        warning.is_none(),
+        "Should not warn with high percentage of partial events"
+    );
+}
+
+#[test]
+fn test_health_monitor_warning_only_for_parse_errors() {
+    use super::health::HealthMonitor;
+
+    let monitor = HealthMonitor::new("test");
+    let colors = Colors { enabled: false };
+
+    // Mix of partial, control, and parsed events should NOT trigger warning
+    for _ in 0..1000 {
+        monitor.record_partial_event();
+    }
+    for _ in 0..500 {
+        monitor.record_control_event();
+    }
+    for _ in 0..50 {
+        monitor.record_parsed();
+    }
+
+    let warning = monitor.check_and_warn(colors);
+    assert!(
+        warning.is_none(),
+        "Should not warn with mix of partial, control, and parsed events"
+    );
+
+    // Reset and test with actual parse errors
+    monitor.reset();
+
+    // Add parse errors exceeding 50% threshold
+    for _ in 0..60 {
+        monitor.record_parse_error();
+    }
+    for _ in 0..40 {
+        monitor.record_parsed();
+    }
+
+    let warning = monitor.check_and_warn(colors);
+    assert!(warning.is_some(), "Should warn with >50% parse errors");
+    assert!(warning.unwrap().contains("parse errors"));
+}
+
+// Tests for verbose mode streaming
 #[test]
 fn test_verbose_mode_streaming_no_duplicate_lines() {
     use std::io::Cursor;
@@ -916,7 +577,6 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
     );
 }
 
-// Test that normal and verbose mode show the same delta content
 #[test]
 fn test_normal_and_verbose_mode_show_same_deltas() {
     let normal_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
@@ -936,9 +596,6 @@ fn test_normal_and_verbose_mode_show_same_deltas() {
     assert!(verbose_output.unwrap().contains("Hello"));
 }
 
-// Regression test for delta text with embedded newlines
-// Ensures that newlines within delta text don't cause artificial line breaks
-// that would result in duplicate prefixes being added to each line
 #[test]
 fn test_delta_with_embedded_newline_displays_inline() {
     let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
@@ -970,9 +627,7 @@ fn test_delta_with_embedded_newline_displays_inline() {
     );
 }
 
-// Integration test for real-time streaming behavior
-// Verifies that flush() is called after each streaming write to ensure
-// output is displayed immediately rather than being buffered
+// Integration tests for streaming flush behavior
 
 /// A mock writer that tracks whether `flush()` is called after each `write()`
 struct FlushTrackingWriter {
@@ -1061,26 +716,6 @@ fn test_gemini_streaming_flushes_after_write() {
     let input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true,"timestamp":"2025-10-10T12:00:01.000Z"}
 {"type":"message","role":"assistant","content":" World","delta":true,"timestamp":"2025-10-10T12:00:02.000Z"}
 {"type":"result","status":"success","timestamp":"2025-10-10T12:00:03.000Z"}"#;
-
-    let reader = Cursor::new(input);
-    let mut writer = FlushTrackingWriter::new();
-
-    parser.parse_stream(reader, &mut writer).unwrap();
-
-    // Verify flush was called after writes
-    assert!(
-        writer.flush_called_after_writes(),
-        "flush() should be called after writes for real-time streaming"
-    );
-}
-
-#[test]
-fn test_opencode_streaming_flushes_after_write() {
-    let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
-
-    // Simulate streaming tool_use events
-    let input = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"started","input":{"filePath":"/test.rs"}}}}
-{"type":"tool_use","timestamp":1768191346713,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool","read","state":{"status":"completed","input":{"filePath":"/test.rs"}}}}"#;
 
     let reader = Cursor::new(input);
     let mut writer = FlushTrackingWriter::new();
