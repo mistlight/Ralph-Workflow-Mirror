@@ -1092,6 +1092,72 @@ profiles:
         let env_vars = load_ccs_env_vars("expand").unwrap();
         assert_eq!(env_vars.get("FROM_EXPAND").unwrap(), "success");
     }
+
+    #[test]
+    fn load_ccs_env_vars_does_not_pollute_global_environment() {
+        // Regression test for: https://github.com/...
+        // Ensures that loading CCS env vars does NOT set them globally.
+        // The env vars should only be returned in the HashMap, not set via std::env::set_var.
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        // Create a CCS settings file with GLM-like env vars
+        let settings_path = ccs_dir.join("glm.settings.json");
+        fs::write(
+            &settings_path,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"test-token-glm","ANTHROPIC_MODEL":"glm-4.7"}}"#,
+        )
+        .unwrap();
+
+        fs::write(
+            ccs_dir.join("config.json"),
+            r#"{"profiles":{"glm":"glm.settings.json"}}"#,
+        )
+        .unwrap();
+
+        // Remember the original state of these env vars
+        let original_base_url = env::var("ANTHROPIC_BASE_URL");
+        let original_auth_token = env::var("ANTHROPIC_AUTH_TOKEN");
+        let original_model = env::var("ANTHROPIC_MODEL");
+
+        // Load CCS env vars - this should ONLY return them in a HashMap
+        let env_vars = load_ccs_env_vars("glm").unwrap();
+
+        // Verify the returned HashMap has the correct values
+        assert_eq!(
+            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://api.z.ai/api/anthropic"
+        );
+        assert_eq!(
+            env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(),
+            "test-token-glm"
+        );
+        assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "glm-4.7");
+
+        // CRITICAL: Verify that the global environment is unchanged
+        // This is the regression test - loading CCS env vars should NOT set them globally
+        let after_base_url = env::var("ANTHROPIC_BASE_URL");
+        let after_auth_token = env::var("ANTHROPIC_AUTH_TOKEN");
+        let after_model = env::var("ANTHROPIC_MODEL");
+
+        assert_eq!(
+            original_base_url, after_base_url,
+            "ANTHROPIC_BASE_URL global environment should be unchanged after load_ccs_env_vars"
+        );
+        assert_eq!(
+            original_auth_token, after_auth_token,
+            "ANTHROPIC_AUTH_TOKEN global environment should be unchanged after load_ccs_env_vars"
+        );
+        assert_eq!(
+            original_model, after_model,
+            "ANTHROPIC_MODEL global environment should be unchanged after load_ccs_env_vars"
+        );
+    }
 }
 
 /// Root TOML configuration structure.
