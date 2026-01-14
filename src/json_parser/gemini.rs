@@ -81,24 +81,22 @@ impl GeminiParser {
             GeminiEvent::Message {
                 role,
                 content,
-                delta,
                 ..
             } => {
                 let role_str = role.unwrap_or_else(|| "unknown".to_string());
                 if let Some(text) = content {
                     let limit = self.verbosity.truncate_limit("text");
                     let preview = truncate_text(&text, limit);
-                    // Show delta indicator if streaming
-                    let delta_marker = if delta.unwrap_or(false) { "..." } else { "" };
+                    // Display content naturally - delta streaming is handled seamlessly
+                    // No visual indicator needed for partial/streaming content
                     if role_str == "assistant" {
                         format!(
-                            "{}[{}]{} {}{}{}{}\n",
+                            "{}[{}]{} {}{}{}\n",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.white(),
                             preview,
-                            delta_marker,
                             c.reset()
                         )
                     } else {

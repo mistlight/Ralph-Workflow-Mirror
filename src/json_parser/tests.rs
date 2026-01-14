@@ -436,7 +436,7 @@ fn test_gemini_message_delta() {
     assert!(output.is_some());
     let out = output.unwrap();
     assert!(out.contains("Streaming"));
-    assert!(out.contains("..."));
+    // Delta content displays naturally without "..." marker
 }
 
 #[test]

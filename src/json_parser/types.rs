@@ -68,8 +68,152 @@ pub(crate) enum ClaudeEvent {
         result: Option<String>,
         error: Option<String>,
     },
+    /// Streaming event with nested inner events for delta/partial updates
+    StreamEvent {
+        event: StreamInnerEvent,
+    },
     #[serde(other)]
     Unknown,
+}
+
+/// Inner events within a Claude stream_event
+///
+/// These events represent the streaming protocol used by Claude CLI
+/// when --include-partial-messages is enabled. The streaming protocol
+/// uses SSE-style events with deltas for incremental content delivery.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StreamInnerEvent {
+    /// Message start - initialization of a new message stream
+    MessageStart {
+        message: Option<AssistantMessage>,
+    },
+    /// Content block start - initialization of a new content block (text, tool use, etc.)
+    ContentBlockStart {
+        index: Option<u64>,
+        content_block: Option<ContentBlock>,
+    },
+    /// Content block delta - incremental update to a content block
+    ContentBlockDelta {
+        index: Option<u64>,
+        delta: Option<ContentBlockDelta>,
+    },
+    /// Text delta - incremental text content update
+    TextDelta {
+        text: Option<String>,
+    },
+    /// Message stop - completion of the message stream
+    MessageStop,
+    /// Error event during streaming
+    Error {
+        error: Option<StreamError>,
+    },
+    /// Ping/keepalive event
+    Ping,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Delta content for streaming updates
+///
+/// Represents incremental updates to content blocks during streaming.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ContentBlockDelta {
+    /// Delta for text content blocks
+    TextDelta {
+        text: Option<String>,
+    },
+    /// Delta for tool use content blocks (input streaming)
+    ToolUseDelta {
+        tool_use: Option<serde_json::Value>,
+    },
+    /// Delta for thinking/reasoning content blocks
+    ThinkingDelta {
+        thinking: Option<String>,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+/// Error information for streaming errors
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct StreamError {
+    pub(crate) message: Option<String>,
+    pub(crate) code: Option<String>,
+}
+
+/// Delta accumulator for streaming content
+///
+/// Tracks partial content across multiple streaming events, accumulating
+/// deltas for text and other content types. Uses a simple key-based approach
+/// to track content by (event_type, index).
+#[derive(Debug, Default, Clone)]
+pub(crate) struct DeltaAccumulator {
+    /// Accumulated text content for each stream index
+    text_buffers: std::collections::HashMap<u64, String>,
+    /// Accumulated thinking/reasoning content
+    thinking_buffers: std::collections::HashMap<u64, String>,
+}
+
+impl DeltaAccumulator {
+    /// Create a new delta accumulator
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a text delta for a specific index
+    pub(crate) fn add_text_delta(&mut self, index: u64, delta: &str) {
+        self.text_buffers
+            .entry(index)
+            .and_modify(|buf| buf.push_str(delta))
+            .or_insert_with(|| delta.to_string());
+    }
+
+    /// Add a thinking delta for a specific index
+    pub(crate) fn add_thinking_delta(&mut self, index: u64, delta: &str) {
+        self.thinking_buffers
+            .entry(index)
+            .and_modify(|buf| buf.push_str(delta))
+            .or_insert_with(|| delta.to_string());
+    }
+
+    /// Get the accumulated text for a specific index
+    pub(crate) fn get_text(&self, index: &u64) -> Option<&str> {
+        self.text_buffers.get(index).map(|s| s.as_str())
+    }
+
+    /// Get the accumulated thinking for a specific index
+    pub(crate) fn get_thinking(&self, index: &u64) -> Option<&str> {
+        self.thinking_buffers.get(index).map(|s| s.as_str())
+    }
+
+    /// Get the most recent text (highest index)
+    pub(crate) fn get_most_recent_text(&self) -> Option<&str> {
+        self.text_buffers
+            .iter()
+            .max_by_key(|(k, _)| *k)
+            .map(|(_, s)| s.as_str())
+    }
+
+    /// Clear all accumulated content
+    pub(crate) fn clear(&mut self) {
+        self.text_buffers.clear();
+        self.thinking_buffers.clear();
+    }
+
+    /// Clear content for a specific index
+    pub(crate) fn clear_index(&mut self, index: u64) {
+        self.text_buffers.remove(&index);
+        self.thinking_buffers.remove(&index);
+    }
+
+    /// Check if there is any accumulated content
+    pub(crate) fn is_empty(&self) -> bool {
+        self.text_buffers.is_empty() && self.thinking_buffers.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

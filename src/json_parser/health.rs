@@ -16,7 +16,9 @@ pub struct ParserHealth {
     pub parsed_events: u64,
     /// Number of events ignored (malformed JSON, unknown events, etc.)
     pub ignored_events: u64,
-    /// Number of JSON parse errors
+    /// Number of unknown event types (valid JSON but unhandled)
+    pub unknown_events: u64,
+    /// Number of JSON parse errors (malformed JSON)
     pub parse_errors: u64,
 }
 
@@ -38,7 +40,18 @@ impl ParserHealth {
         self.ignored_events += 1;
     }
 
-    /// Record a parse error
+    /// Record an unknown event type (valid JSON but unhandled)
+    ///
+    /// Unknown events are valid JSON that the parser deserialized successfully
+    /// but doesn't have specific handling for. These should not trigger health
+    /// warnings as they represent future/new event types, not parser errors.
+    pub fn record_unknown_event(&mut self) {
+        self.total_events += 1;
+        self.unknown_events += 1;
+        self.ignored_events += 1;
+    }
+
+    /// Record a parse error (malformed JSON)
     pub fn record_parse_error(&mut self) {
         self.total_events += 1;
         self.parse_errors += 1;
@@ -53,9 +66,21 @@ impl ParserHealth {
         (self.ignored_events as f64 / self.total_events as f64) * 100.0
     }
 
-    /// Check if the parser health is concerning (>50% ignored)
+    /// Get the percentage of parse errors (excluding unknown events)
+    pub fn parse_error_percentage(&self) -> f64 {
+        if self.total_events == 0 {
+            return 0.0;
+        }
+        (self.parse_errors as f64 / self.total_events as f64) * 100.0
+    }
+
+    /// Check if the parser health is concerning
+    ///
+    /// Only returns true if there are actual parse errors (malformed JSON),
+    /// not just unknown event types. Unknown events are valid JSON that we
+    /// don't have specific handling for, which is not a health concern.
     pub fn is_concerning(&self) -> bool {
-        self.total_events > 10 && self.ignored_percentage() > 50.0
+        self.total_events > 10 && self.parse_error_percentage() > 50.0
     }
 
     /// Get a warning message if health is concerning
@@ -64,16 +89,33 @@ impl ParserHealth {
             return None;
         }
 
-        Some(format!(
-            "{}[Parser Health Warning]{} {} parser ignored {:.1}% of events ({} of {}). \
-             This may indicate a parser mismatch. Consider using a different json_parser in your agent config.",
-            colors.yellow(),
-            colors.reset(),
-            parser_name,
-            self.ignored_percentage(),
-            self.ignored_events,
-            self.total_events
-        ))
+        let msg = if self.unknown_events > 0 {
+            format!(
+                "{}[Parser Health Warning]{} {} parser has {} parse errors ({}% of {} events). \
+                 Also encountered {} unknown event types (valid JSON but unhandled). \
+                 This may indicate a parser mismatch. Consider using a different json_parser in your agent config.",
+                colors.yellow(),
+                colors.reset(),
+                parser_name,
+                self.parse_errors,
+                self.parse_error_percentage() as u32,
+                self.total_events,
+                self.unknown_events
+            )
+        } else {
+            format!(
+                "{}[Parser Health Warning]{} {} parser has {} parse errors ({}% of {} events). \
+                 This may indicate malformed JSON output. Consider using a different json_parser in your agent config.",
+                colors.yellow(),
+                colors.reset(),
+                parser_name,
+                self.parse_errors,
+                self.parse_error_percentage() as u32,
+                self.total_events
+            )
+        };
+
+        Some(msg)
     }
 }
 
@@ -111,7 +153,14 @@ impl HealthMonitor {
         self.health.set(h);
     }
 
-    /// Record a parse error
+    /// Record an unknown event type (valid JSON but unhandled)
+    pub fn record_unknown_event(&self) {
+        let mut h = self.health.get();
+        h.record_unknown_event();
+        self.health.set(h);
+    }
+
+    /// Record a parse error (malformed JSON)
     pub fn record_parse_error(&self) {
         let mut h = self.health.get();
         h.record_parse_error();
@@ -198,21 +247,49 @@ mod tests {
         }
         assert!(!health.is_concerning());
 
-        // Concerning with many ignored events
-        for _ in 0..8 {
-            health.record_ignored();
+        // Unknown events should NOT trigger concerning state (they're valid JSON)
+        for _ in 0..20 {
+            health.record_unknown_event();
         }
-        assert!(health.is_concerning()); // 11 total, >50% ignored
+        assert!(!health.is_concerning()); // Even with many unknown events, not concerning
 
-        // Not concerning when most are parsed
+        // Only parse errors trigger concerning state
         let mut health2 = ParserHealth::new();
-        for _ in 0..15 {
+        for _ in 0..10 {
             health2.record_parsed();
         }
-        for _ in 0..5 {
-            health2.record_ignored();
+        for _ in 0..15 {
+            health2.record_parse_error();
         }
-        assert!(!health2.is_concerning()); // 20 total, 25% ignored
+        assert!(health2.is_concerning()); // 25 total, 60% parse errors
+
+        // Not concerning when most are parsed or unknown (but few parse errors)
+        let mut health3 = ParserHealth::new();
+        for _ in 0..15 {
+            health3.record_parsed();
+        }
+        for _ in 0..10 {
+            health3.record_unknown_event();
+        }
+        for _ in 0..2 {
+            health3.record_parse_error();
+        }
+        assert!(!health3.is_concerning()); // 27 total, only 7% parse errors
+    }
+
+    #[test]
+    fn test_parser_health_unknown_events() {
+        let mut health = ParserHealth::new();
+        assert_eq!(health.unknown_events, 0);
+
+        health.record_unknown_event();
+        health.record_unknown_event();
+        assert_eq!(health.unknown_events, 2);
+        assert_eq!(health.ignored_events, 2); // unknown counts as ignored
+        assert_eq!(health.parse_errors, 0); // but not as parse error
+
+        // Unknown events don't make it concerning
+        assert!(!health.is_concerning());
     }
 
     #[test]
@@ -240,9 +317,9 @@ mod tests {
         let monitor = HealthMonitor::new("test");
         let colors = Colors { enabled: false };
 
-        // Add enough ignored events to trigger warning
+        // Add enough parse errors to trigger warning (unknown events shouldn't trigger)
         for _ in 0..15 {
-            monitor.record_ignored();
+            monitor.record_parse_error();
         }
 
         let warning1 = monitor.check_and_warn(&colors);
