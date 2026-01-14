@@ -14,12 +14,14 @@
 //! - [`providers`] - Provider listing and info display
 //! - [`handlers`] - Command handlers (list-agents, diagnose, dry-run, template-selection)
 //! - [`init`] - Config initialization handlers (--init, --init-global, --init-legacy)
+//! - [`security`] - Security mode handlers (--setup-security, --security-check, --build-image)
 
 mod args;
 mod handlers;
 mod init;
 pub mod presets;
 mod providers;
+pub mod security;
 
 // Re-export common utility functions for backward compatibility
 pub use crate::common::{format_argv_for_log, split_command, truncate_text};

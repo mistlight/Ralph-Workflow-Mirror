@@ -85,6 +85,67 @@ ralph -f "feat: complex change"        # Full output
 ralph --diagnose                       # Show diagnostic info
 ```
 
+## Security Mode
+
+Ralph Workflow supports multiple security modes to isolate AI agents from your system:
+
+| Mode | Platform | Description |
+|------|----------|-------------|
+| **auto** (default) | All | Auto-detects best mode (Container on Linux, User-Account on macOS) |
+| **container** | Linux | Runs agents in Docker/Podman containers |
+| **user-account** | macOS/Linux | Runs agents as dedicated `ralph-agent` user |
+| **none** | All | No isolation (runs as current user) |
+
+### Setting Up Security Mode
+
+**For macOS (User-Account Mode):**
+```bash
+# Set up the dedicated user account
+ralph --setup-security
+
+# Verify setup
+ralph --security-check
+
+# Run with user-account mode (default on macOS)
+ralph --security-mode user-account "feat: add feature"
+```
+
+**For Linux (Container Mode):**
+```bash
+# Build a container image for your stack
+ralph --build-image ralph-agent:latest
+
+# Verify setup
+ralph --security-check
+
+# Run with container mode (default on Linux)
+ralph --security-mode container "feat: add feature"
+```
+
+### Security Features
+
+- **Filesystem isolation**: Agents can only access your project directory
+- **Network access**: Agents can make API calls (e.g., to Claude Code, MCP services)
+- **Port forwarding**: Development servers started by agents are accessible on localhost
+- **Tool access**: All your host tools (rails, npm, python, etc.) work seamlessly
+- **MCP/Skills support**: Claude Code MCP servers and skills work in isolated mode
+
+### Configuration
+
+Configure security mode in `~/.config/ralph-workflow.toml`:
+
+```toml
+[security]
+mode = "auto"  # auto, container, user-account, none
+container_engine = "auto"  # auto, docker, podman
+container_image = "ralph-agent:latest"
+```
+
+Or use environment variables:
+- `RALPH_SECURITY_MODE` - Security mode to use
+- `RALPH_CONTAINER_ENGINE` - Container engine (docker/podman)
+- `RALPH_CONTAINER_IMAGE` - Container image name
+
 ## Configuration
 
 Ralph uses `~/.config/ralph-workflow.toml` for configuration:
@@ -112,15 +173,25 @@ Environment variables override config settings:
 ## Documentation
 
 - **[Quick Reference](docs/quick-reference.md)** - Cheat sheet for all commands and flags
-- **[Getting Started Guide](docs/getting-started.md)** - Detailed installation and first steps
-- **[Configuration Guide](docs/configuration.md)** - All configuration options
-- **[Agent Setup](docs/agents.md)** - Agent installation and provider configuration
-- **[Advanced Features](docs/advanced.md)** - Checkpoint, metrics, isolation, review depth
-- **[Presets Guide](docs/presets.md)** - Detailed preset documentation
-- **[Workflows](docs/workflows.md)** - Common workflow examples
-- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 - **[Agent Compatibility](docs/agent-compatibility.md)** - Supported AI agents and configurations
 - **[Git Workflow](docs/git-workflow.md)** - How Ralph handles commits and diffs
+
+### CLI Commands
+
+**Setup Commands:**
+- `ralph --init-global` - Create global config file
+- `ralph --init-prompt` - Create PROMPT.md template
+- `ralph --setup-security` - Set up security mode (user account or container)
+- `ralph --security-check` - Verify security mode configuration
+- `ralph --build-image <tag>` - Build container image for container mode
+
+**Listing Commands:**
+- `ralph --list-agents` - Show configured agents
+- `ralph --list-providers` - Show available LLM providers
+
+**Diagnostic Commands:**
+- `ralph --diagnose` - Show diagnostic information
+- `ralph --dry-run` - Show what would run without executing
 
 ## FAQ
 

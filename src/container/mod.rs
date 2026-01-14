@@ -50,3 +50,4 @@ pub use engine::{ContainerEngine, EngineType};
 pub use executor::ContainerExecutor;
 pub use tool::ToolManager;
 pub use user_executor::UserAccountExecutor;
+pub use volume::VolumeManager;

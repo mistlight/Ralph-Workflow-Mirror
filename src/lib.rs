@@ -31,7 +31,7 @@ mod utils;
 // Public exports for integration tests
 pub use container::{
     ContainerEngine, ContainerExecutor, EngineType, SecurityMode, ToolManager, UserAccountExecutor,
-    UserAccountExecutor as UserAccountExecutorAlias,
+    UserAccountExecutor as UserAccountExecutorAlias, VolumeManager,
 };
 
 // Re-export specific container types for testing

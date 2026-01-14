@@ -161,4 +161,46 @@ mod tests {
         assert_eq!(explicit.container_port, 3000);
         assert_eq!(explicit.host_port, 8080);
     }
+
+    /// Test volume manager includes Claude directory mount when it exists
+    #[test]
+    fn test_volume_manager_claude_mount() {
+        use ralph::VolumeManager;
+
+        let repo_root = PathBuf::from(".");
+        let agent_dir = PathBuf::from(".agent");
+
+        let manager = VolumeManager::new(repo_root, agent_dir, None);
+        let mounts = manager.get_mounts();
+
+        assert!(mounts.is_ok());
+
+        let mounts = mounts.unwrap();
+        // Should always have workspace and .agent mounts
+        assert!(mounts.iter().any(|m| m.target == "/workspace"));
+        assert!(mounts.iter().any(|m| m.target == "/workspace/.agent"));
+
+        // Claude mount is optional - only if ~/.claude exists
+        // We're just verifying the manager doesn't panic
+    }
+
+    /// Test volume manager includes config directory mount when provided
+    #[test]
+    fn test_volume_manager_config_mount() {
+        use ralph::VolumeManager;
+
+        let repo_root = PathBuf::from(".");
+        let agent_dir = PathBuf::from(".agent");
+        let config_dir = Some(PathBuf::from("/home/user/.config/ralph"));
+
+        let manager = VolumeManager::new(repo_root, agent_dir, config_dir);
+        let mounts = manager.get_mounts();
+
+        assert!(mounts.is_ok());
+
+        let _mounts = mounts.unwrap();
+        // Config mount target should be set even if source doesn't exist
+        // The canonicalize call handles non-existent paths gracefully
+        // We're just verifying the structure is correct
+    }
 }

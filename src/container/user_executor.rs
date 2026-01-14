@@ -42,10 +42,48 @@ impl UserAccountExecutor {
         // Verify the user exists
         if !Self::user_exists(&user_name)? {
             return Err(ContainerError::Other(format!(
-                "User account '{}' does not exist. \
-                Create it with: sudo useradd -m -s /bin/bash {}",
-                user_name, user_name
+                "User account '{}' does not exist.\n\n\
+                To set up user-account security mode:\n\
+                1. Run: ralph --setup-security\n\
+                2. Or manually: sudo useradd -m -s /bin/bash {}\n\
+                3. Then: sudo echo '{} ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/ralph-agent\n\
+                4. And: sudo chmod 440 /etc/sudoers.d/ralph-agent\n\n\
+                For more information, run: ralph --security-check",
+                user_name, user_name, user_name
             )));
+        }
+
+        // Verify workspace access
+        let has_access = Command::new("sudo")
+            .arg("-u")
+            .arg(&user_name)
+            .arg("test")
+            .arg("-r")
+            .arg(&workspace_path)
+            .output();
+
+        match has_access {
+            Ok(output) if !output.status.success() => {
+                let parent_dir = workspace_path.parent()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| ".".to_string());
+
+                return Err(ContainerError::Other(format!(
+                    "User '{}' cannot read the workspace at: {}\n\n\
+                    Fix with: sudo chmod +rx {}\n\
+                    Or run: sudo chown -R $USER:{} {}",
+                    user_name,
+                    workspace_path.display(),
+                    parent_dir,
+                    user_name,
+                    workspace_path.display()
+                )));
+            }
+            Err(_) => {
+                // Failed to check access - might be a sudo configuration issue
+                // We'll let execution fail with better error message later
+            }
+            _ => {}
         }
 
         Ok(Self {

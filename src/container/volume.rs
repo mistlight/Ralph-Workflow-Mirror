@@ -15,6 +15,8 @@ pub struct VolumeManager {
     agent_dir: PathBuf,
     /// User's config directory (optional)
     config_dir: Option<PathBuf>,
+    /// Claude config directory for MCP/Skills (optional)
+    claude_dir: Option<PathBuf>,
 }
 
 impl VolumeManager {
@@ -24,10 +26,16 @@ impl VolumeManager {
         agent_dir: PathBuf,
         config_dir: Option<PathBuf>,
     ) -> Self {
+        // Detect Claude config directory
+        let claude_dir = dirs::home_dir()
+            .map(|home| home.join(".claude"))
+            .filter(|path| path.exists());
+
         Self {
             repository_root,
             agent_dir,
             config_dir,
+            claude_dir,
         }
     }
 
@@ -62,6 +70,17 @@ impl VolumeManager {
                 mounts.push(Mount::read_only(
                     config_path.to_string_lossy().to_string(),
                     "/home/ralph/.config".to_string(),
+                ));
+            }
+        }
+
+        // Mount Claude config directory read-only if available (for MCP/Skills)
+        if let Some(ref claude_dir) = self.claude_dir {
+            if let Ok(claude_path) = self.canonicalize(claude_dir) {
+                Self::validate_mount_source(&claude_path)?;
+                mounts.push(Mount::read_only(
+                    claude_path.to_string_lossy().to_string(),
+                    "/home/ralph/.claude".to_string(),
                 ));
             }
         }

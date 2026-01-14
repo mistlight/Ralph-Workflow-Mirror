@@ -472,4 +472,26 @@ pub struct Args {
         help = "Disable network access in containers (air-gapped mode)"
     )]
     pub no_network: bool,
+
+    /// Setup security mode (create user account for user-account mode)
+    #[arg(
+        long,
+        help = "Setup user account for user-account security mode (requires sudo)"
+    )]
+    pub setup_security: bool,
+
+    /// Check security mode configuration and report status
+    #[arg(
+        long,
+        help = "Check security mode configuration and report status"
+    )]
+    pub security_check: bool,
+
+    /// Build container image for container mode
+    #[arg(
+        long,
+        value_name = "TAG",
+        help = "Build container image for container mode (auto-generates Dockerfile based on project stack)"
+    )]
+    pub build_image: Option<String>,
 }

@@ -41,6 +41,7 @@ use crate::files::{
     create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
     update_status, validate_prompt_md,
 };
+use crate::cli::security::{handle_build_image, handle_security_check, handle_setup_security};
 use crate::git_helpers::{
     cleanup_orphaned_marker, get_repo_root, require_git_repo, reset_start_commit,
     save_start_commit, start_agent_phase,
@@ -112,6 +113,24 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // Handle --diagnose
     if args.diagnose {
         handle_diagnose(colors, &config, &registry, &config_path, &config_sources);
+        return Ok(());
+    }
+
+    // Handle --setup-security
+    if args.setup_security {
+        handle_setup_security(&colors)?;
+        return Ok(());
+    }
+
+    // Handle --security-check
+    if args.security_check {
+        handle_security_check(&colors, &config, &mut logger)?;
+        return Ok(());
+    }
+
+    // Handle --build-image
+    if args.build_image.is_some() {
+        handle_build_image(args.build_image, &colors)?;
         return Ok(());
     }
 
