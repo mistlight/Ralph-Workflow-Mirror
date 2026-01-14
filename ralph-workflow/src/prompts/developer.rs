@@ -16,7 +16,7 @@ use super::types::ContextLevel;
 pub fn prompt_developer_iteration(_iteration: u32, _total: u32, context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal | ContextLevel::Normal => {
-            r#"You are in IMPLEMENTATION MODE. Execute the plan and make progress.
+            r"You are in IMPLEMENTATION MODE. Execute the plan and make progress.
 
 INPUTS TO READ:
 1. .agent/PLAN.md - The implementation plan (execute these steps)
@@ -27,7 +27,7 @@ Execute the next steps from .agent/PLAN.md that haven't been completed yet.
 GUIDELINES:
 - Make meaningful progress in each iteration
 - Write clean, idiomatic code following project patterns
-- Add tests where appropriate"#
+- Add tests where appropriate"
                 .to_string()
         }
     }
