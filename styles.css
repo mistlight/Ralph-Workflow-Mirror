@@ -18,8 +18,8 @@
 
     /* Text Colors - High Contrast with Refined Muted Scale */
     --color-text: #F2F2F2;
-    --color-text-muted: #9A9A9A;
-    --color-text-dim: #4A4A4A;
+    --color-text-muted: #C4C4C4; /* Increased from #9A9A9A for WCAG AA contrast (4.5:1) */
+    --color-text-dim: #727272; /* Increased from #4A4A4A for WCAG AA contrast (4.5:1) */
     --color-text-bright: #FFFFFF;
     --color-text-accent: #D4D4D4;
 
@@ -37,6 +37,21 @@
     --color-success: #CCFF00;
     --color-warning: #FFB800;
     --color-error: #FF3366;
+
+    /* NEW: Tertiary Accent - Electric Magenta for differentiation */
+    --color-magenta: #FF00AA;
+    --color-magenta-dim: rgba(255, 0, 170, 0.15);
+    --color-magenta-glow: rgba(255, 0, 170, 0.5);
+
+    /* NEW: Deep Violet for rich secondary accents */
+    --color-violet: #9D4EDD;
+    --color-violet-dim: rgba(157, 78, 221, 0.15);
+    --color-violet-glow: rgba(157, 78, 221, 0.4);
+
+    /* NEW: Electric Orange for warm contrast */
+    --color-orange: #FF6B00;
+    --color-orange-dim: rgba(255, 107, 0, 0.15);
+    --color-orange-glow: rgba(255, 107, 0, 0.4);
 
     /* Neutral Scale - Sophisticated Grays */
     --neutral-50: #FAFAFA;
@@ -172,6 +187,12 @@
     --shadow-glow-lime: 0 0 40px rgba(204, 255, 0, 0.5), 0 0 80px rgba(204, 255, 0, 0.3);
     --shadow-glow-cyan: 0 0 40px rgba(0, 255, 240, 0.5), 0 0 80px rgba(0, 255, 240, 0.3);
     --shadow-glow-pink: 0 0 40px rgba(255, 0, 110, 0.5), 0 0 80px rgba(255, 0, 110, 0.3);
+
+    /* NEW: Enhanced glow effects with new colors */
+    --shadow-glow-magenta: 0 0 50px rgba(255, 0, 170, 0.6), 0 0 100px rgba(255, 0, 170, 0.4);
+    --shadow-glow-violet: 0 0 50px rgba(157, 78, 221, 0.6), 0 0 100px rgba(157, 78, 221, 0.4);
+    --shadow-glow-orange: 0 0 50px rgba(255, 107, 0, 0.6), 0 0 100px rgba(255, 107, 0, 0.4);
+    --shadow-glow-combo: 0 0 60px rgba(204, 255, 0, 0.4), 0 0 80px rgba(255, 0, 170, 0.3), 0 0 100px rgba(0, 255, 240, 0.2);
     --shadow-inset-glow: inset 0 0 60px rgba(204, 255, 0, 0.1);
 
     /* Z-Index Layers */
@@ -186,11 +207,15 @@
     --gradient-primary: linear-gradient(135deg, #CCFF00 0%, #00FFF0 100%);
     --gradient-reverse: linear-gradient(315deg, #CCFF00 0%, #00FFF0 100%);
     --gradient-radial: radial-gradient(circle at center, #CCFF00 0%, #00FFF0 100%);
+
+    /* NEW: Enhanced gradient mesh with more color variety */
     --gradient-mesh:
-        radial-gradient(at 20% 30%, rgba(204, 255, 0, 0.15) 0px, transparent 50%),
-        radial-gradient(at 80% 20%, rgba(0, 255, 240, 0.12) 0px, transparent 50%),
-        radial-gradient(at 40% 80%, rgba(255, 0, 110, 0.08) 0px, transparent 50%),
-        radial-gradient(at 90% 80%, rgba(157, 0, 255, 0.1) 0px, transparent 50%);
+        radial-gradient(at 20% 30%, rgba(204, 255, 0, 0.18) 0px, transparent 50%),
+        radial-gradient(at 80% 20%, rgba(0, 255, 240, 0.15) 0px, transparent 50%),
+        radial-gradient(at 40% 80%, rgba(255, 0, 170, 0.12) 0px, transparent 50%),
+        radial-gradient(at 90% 80%, rgba(157, 78, 221, 0.15) 0px, transparent 50%),
+        radial-gradient(at 10% 70%, rgba(255, 107, 0, 0.08) 0px, transparent 50%),
+        radial-gradient(at 60% 50%, rgba(204, 255, 0, 0.1) 0px, transparent 50%);
 }
 
 /* === RESET & BASE === */
@@ -635,7 +660,7 @@ code.inline {
     width: 800px;
     height: 800px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(204, 255, 0, 0.25) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(204, 255, 0, 0.3) 0%, transparent 70%);
     filter: blur(120px);
     animation: glow-pulse 10s ease-in-out infinite;
     pointer-events: none;
@@ -649,13 +674,14 @@ code.inline {
     width: 600px;
     height: 600px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(0, 255, 240, 0.18) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(0, 255, 240, 0.22) 0%, transparent 70%);
     filter: blur(100px);
     animation: glow-pulse 12s ease-in-out infinite reverse;
     pointer-events: none;
     z-index: 0;
 }
 
+/* NEW: Enhanced third glow with magenta */
 .hero-glow-3 {
     position: absolute;
     top: 50%;
@@ -664,17 +690,47 @@ code.inline {
     width: 1200px;
     height: 1200px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 0, 110, 0.08) 0%, transparent 60%);
+    background: radial-gradient(circle, rgba(255, 0, 170, 0.15) 0%, transparent 60%);
     filter: blur(150px);
     animation: glow-pulse 15s ease-in-out infinite;
     pointer-events: none;
     z-index: 0;
 }
 
+/* NEW: Fourth glow with violet for depth */
+.hero-glow-4 {
+    position: absolute;
+    top: 25%;
+    left: 15%;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(157, 78, 221, 0.18) 0%, transparent 65%);
+    filter: blur(90px);
+    animation: glow-pulse 18s ease-in-out infinite reverse;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* NEW: Fifth glow with orange for warm contrast */
+.hero-glow-5 {
+    position: absolute;
+    bottom: 20%;
+    right: 15%;
+    width: 450px;
+    height: 450px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 107, 0, 0.15) 0%, transparent 65%);
+    filter: blur(80px);
+    animation: glow-pulse 14s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 0;
+}
+
 @keyframes glow-pulse {
     0%, 100% { opacity: 0.7; transform: scale(1) translate(0, 0); }
-    33% { opacity: 1; transform: scale(1.1) translate(20px, -20px); }
-    66% { opacity: 0.8; transform: scale(1.05) translate(-20px, 20px); }
+    33% { opacity: 1; transform: scale(1.15) translate(25px, -25px); }
+    66% { opacity: 0.85; transform: scale(1.08) translate(-20px, 20px); }
 }
 
 .hero-grid {
@@ -710,6 +766,33 @@ code.inline {
     letter-spacing: 0.1em;
     transition: var(--transition-base);
     box-shadow: 0 0 15px rgba(204, 255, 0, 0.2);
+}
+
+/* NEW: Badge color variants for visual variety */
+.badge-lime {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    box-shadow: 0 0 15px rgba(204, 255, 0, 0.2);
+}
+
+.badge-magenta {
+    border-color: var(--color-magenta);
+    color: var(--color-magenta);
+    box-shadow: 0 0 15px rgba(255, 0, 170, 0.2);
+}
+
+.badge-magenta .badge-dot {
+    background: var(--color-magenta);
+}
+
+.badge-cyan {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    box-shadow: 0 0 15px rgba(0, 255, 240, 0.2);
+}
+
+.badge-cyan .badge-dot {
+    background: var(--color-accent);
 }
 
 .badge:hover {
@@ -913,6 +996,41 @@ code.inline {
 
 .btn:hover .btn-arrow {
     transform: translateX(8px);
+}
+
+/* === Accessibility: Focus Styles === */
+.btn:focus-visible,
+.nav-link:focus-visible,
+.copy-btn:focus-visible,
+.install-tab:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(204, 255, 0, 0.15);
+}
+
+.btn:focus-visible {
+    box-shadow: 0 0 0 4px rgba(204, 255, 0, 0.2), var(--shadow-glow-lime);
+}
+
+.nav-link:focus-visible {
+    box-shadow: 0 0 0 3px rgba(204, 255, 0, 0.1);
+    border-radius: 4px;
+}
+
+.copy-btn:focus-visible {
+    outline-offset: 1px;
+}
+
+.install-tab:focus-visible {
+    border-radius: 4px;
+}
+
+/* Ensure focus styles work with :focus too for browsers without :focus-visible support */
+.btn:focus:not(:focus-visible),
+.nav-link:focus:not(:focus-visible),
+.copy-btn:focus:not(:focus-visible),
+.install-tab:focus:not(:focus-visible) {
+    outline: none;
 }
 
 /* Hero Visual - Enhanced Terminal */
@@ -1955,6 +2073,87 @@ code.inline {
 .feature-card p {
     color: var(--color-text-muted);
     font-size: var(--text-base);
+}
+
+/* NEW: Feature card color variants for visual variety */
+.feature-card:nth-child(1)::before {
+    background: var(--gradient-primary);
+}
+
+.feature-card:nth-child(2)::before {
+    background: linear-gradient(135deg, var(--color-magenta) 0%, var(--color-violet) 100%);
+}
+
+.feature-card:nth-child(2)::after {
+    background: radial-gradient(circle at top right, rgba(255, 0, 170, 0.08), transparent 60%);
+}
+
+.feature-card:nth-child(2):hover {
+    border-color: var(--color-magenta);
+    box-shadow: 0 0 35px rgba(255, 0, 170, 0.25), 15px 15px 45px rgba(0, 0, 0, 0.4);
+}
+
+.feature-card:nth-child(2):hover .feature-icon {
+    background: var(--color-magenta);
+}
+
+.feature-card:nth-child(3)::before {
+    background: linear-gradient(135deg, var(--color-violet) 0%, var(--color-accent) 100%);
+}
+
+.feature-card:nth-child(3)::after {
+    background: radial-gradient(circle at bottom left, rgba(157, 78, 221, 0.08), transparent 60%);
+}
+
+.feature-card:nth-child(3):hover {
+    border-color: var(--color-violet);
+    box-shadow: 0 0 35px rgba(157, 78, 221, 0.25), 15px 15px 45px rgba(0, 0, 0, 0.4);
+}
+
+.feature-card:nth-child(3):hover .feature-icon {
+    background: var(--color-violet);
+}
+
+.feature-card:nth-child(4)::before {
+    background: linear-gradient(135deg, var(--color-orange) 0%, var(--color-magenta) 100%);
+}
+
+.feature-card:nth-child(4)::after {
+    background: radial-gradient(circle at center, rgba(255, 107, 0, 0.08), transparent 60%);
+}
+
+.feature-card:nth-child(4):hover {
+    border-color: var(--color-orange);
+    box-shadow: 0 0 35px rgba(255, 107, 0, 0.25), 15px 15px 45px rgba(0, 0, 0, 0.4);
+}
+
+.feature-card:nth-child(4):hover .feature-icon {
+    background: var(--color-orange);
+}
+
+.feature-card:nth-child(5)::before {
+    background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-primary) 100%);
+}
+
+.feature-card:nth-child(5)::after {
+    background: radial-gradient(circle at top right, rgba(0, 255, 240, 0.08), transparent 60%);
+}
+
+.feature-card:nth-child(6)::before {
+    background: linear-gradient(135deg, var(--color-magenta) 0%, var(--color-primary) 100%);
+}
+
+.feature-card:nth-child(6)::after {
+    background: radial-gradient(circle at bottom right, rgba(255, 0, 170, 0.08), transparent 60%);
+}
+
+.feature-card:nth-child(6):hover {
+    border-color: var(--color-magenta);
+    box-shadow: 0 0 35px rgba(255, 0, 170, 0.25), 15px 15px 45px rgba(0, 0, 0, 0.4);
+}
+
+.feature-card:nth-child(6):hover .feature-icon {
+    background: var(--color-magenta);
 }
 
 /* === AUDIENCE SECTION === */

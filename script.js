@@ -25,7 +25,7 @@
     });
 
     // === Enhanced Parallax Effect for Hero Glows ===
-    const heroGlows = document.querySelectorAll('.hero-glow, .hero-glow-2, .hero-glow-3');
+    const heroGlows = document.querySelectorAll('.hero-glow, .hero-glow-2, .hero-glow-3, .hero-glow-4, .hero-glow-5');
 
     function updateParallax() {
         const scrollY = window.scrollY;
@@ -35,8 +35,9 @@
             const parallaxValue = scrollY * 0.15;
 
             heroGlows.forEach((glow, index) => {
-                const factor = (index + 1) * 0.5;
-                glow.style.transform = `translate(${parallaxValue * factor}px, ${parallaxValue * factor * 0.5}px)`;
+                const factor = (index + 1) * 0.6;
+                const rotation = (index + 1) * 0.05;
+                glow.style.transform = `translate(${parallaxValue * factor}px, ${parallaxValue * factor * 0.5}px) rotate(${rotation}deg)`;
             });
         }
     }
