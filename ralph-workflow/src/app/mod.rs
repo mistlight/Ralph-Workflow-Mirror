@@ -17,7 +17,9 @@
 //! - [`finalization`]: Pipeline cleanup and finalization
 
 #![expect(clippy::too_many_lines)]
+
 pub mod config_init;
+pub mod context;
 pub mod detection;
 pub mod finalization;
 pub mod plumbing;
@@ -25,14 +27,15 @@ pub mod resume;
 pub mod validation;
 
 use crate::agents::AgentRegistry;
+use crate::app::finalization::finalize_pipeline;
+use crate::app::resume::{phase_rank, should_run_from};
 use crate::banner::print_welcome_banner;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
     handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
 };
-use crate::colors::Colors;
-use crate::config::Config;
+use crate::common::utils;
 use crate::files::monitoring::PromptMonitor;
 use crate::files::{
     create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
@@ -42,38 +45,21 @@ use crate::git_helpers::{
     cleanup_orphaned_marker, get_repo_root, require_git_repo, reset_start_commit,
     save_start_commit, start_agent_phase,
 };
+use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
-use crate::pipeline::{AgentPhaseGuard, Stats};
-use crate::timer::Timer;
+use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
 use std::env;
 use std::process::Command;
 
 use config_init::initialize_config;
+use context::PipelineContext;
 use detection::detect_project_stack;
-use finalization::finalize_pipeline;
 use plumbing::{handle_apply_commit, handle_generate_commit_msg, handle_show_commit_msg};
-use resume::{handle_resume, phase_rank, should_run_from};
+use resume::handle_resume;
 use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
-
-/// Context for running the pipeline.
-///
-/// Groups together the various parameters needed to run the development/review/commit
-/// pipeline, reducing function parameter count and improving maintainability.
-struct PipelineContext {
-    args: Args,
-    config: Config,
-    registry: AgentRegistry,
-    developer_agent: String,
-    reviewer_agent: String,
-    developer_display: String,
-    reviewer_display: String,
-    repo_root: std::path::PathBuf,
-    logger: Logger,
-    colors: Colors,
-}
 
 /// Main application entry point.
 ///
@@ -471,7 +457,8 @@ fn run_development(
     args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger.header("PHASE 1: Development", Colors::blue);
+    ctx.logger
+        .header("PHASE 1: Development", crate::logger::Colors::blue);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
     let resume_rank = resume_phase.map(phase_rank);
@@ -513,7 +500,7 @@ fn run_review_and_fix(
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
     ctx.logger
-        .header("PHASE 2: Review & Fix", super::colors::Colors::magenta);
+        .header("PHASE 2: Review & Fix", crate::logger::Colors::magenta);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
 
@@ -567,13 +554,13 @@ fn run_final_validation(
 
     if !should_run_from(PipelinePhase::FinalValidation, resume_checkpoint) {
         ctx.logger
-            .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
+            .header("PHASE 3: Final Validation", crate::logger::Colors::yellow);
         ctx.logger
             .info("Skipping final validation (resuming from a later checkpoint phase)");
         return Ok(());
     }
 
-    let argv = crate::utils::split_command(full_cmd)
+    let argv = utils::split_command(full_cmd)
         .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {e}"))?;
     if argv.is_empty() {
         ctx.logger
@@ -594,8 +581,8 @@ fn run_final_validation(
     }
 
     ctx.logger
-        .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
-    let display_cmd = crate::utils::format_argv_for_log(&argv);
+        .header("PHASE 3: Final Validation", crate::logger::Colors::yellow);
+    let display_cmd = utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running full check: {}{}{}",
         ctx.colors.dim(),

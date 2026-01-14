@@ -7,7 +7,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
-use crate::colors::Colors;
+use crate::logger::Colors;
 use crate::templates::{get_template, list_templates};
 
 /// Result of interactive template selection.

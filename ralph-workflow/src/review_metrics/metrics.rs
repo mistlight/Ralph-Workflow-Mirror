@@ -7,8 +7,6 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use super::issue::Issue;
-use super::parser::{extract_description, extract_file_line};
 use super::severity::IssueSeverity;
 
 /// Review metrics collected from a pipeline run
@@ -23,8 +21,6 @@ pub struct ReviewMetrics {
     pub(crate) low_issues: u32,
     /// Number of resolved issues
     pub(crate) resolved_issues: u32,
-    /// Individual issues (for detailed reporting)
-    pub(crate) issues: Vec<Issue>,
     /// Whether the issues file was found
     pub(crate) issues_file_found: bool,
     /// Whether no issues were found (explicit statement)
@@ -81,20 +77,6 @@ impl ReviewMetrics {
 
             // Try to extract severity
             if let Some(severity) = IssueSeverity::from_str(rest) {
-                // Find the description (after severity marker)
-                let description = extract_description(rest, &severity.to_string());
-
-                // Try to extract file:line reference
-                let (file_path, line_number) = extract_file_line(rest);
-
-                let issue = Issue {
-                    severity,
-                    resolved,
-                    file_path,
-                    line_number,
-                    description,
-                };
-
                 // Update counts
                 metrics.total_issues += 1;
                 if resolved {
@@ -106,8 +88,6 @@ impl ReviewMetrics {
                     IssueSeverity::Medium => metrics.medium_issues += 1,
                     IssueSeverity::Low => metrics.low_issues += 1,
                 }
-
-                metrics.issues.push(issue);
             }
         }
 
@@ -123,112 +103,5 @@ impl ReviewMetrics {
 
         let content = fs::read_to_string(path)?;
         Ok(Self::from_issues_content(&content))
-    }
-
-    /// Calculate the resolution rate as a percentage
-    pub(crate) fn resolution_rate(&self) -> f64 {
-        if self.total_issues == 0 {
-            100.0
-        } else {
-            (f64::from(self.resolved_issues) / f64::from(self.total_issues)) * 100.0
-        }
-    }
-
-    /// Get unresolved issues count
-    pub(crate) const fn unresolved_issues(&self) -> u32 {
-        self.total_issues.saturating_sub(self.resolved_issues)
-    }
-
-    /// Get unresolved critical/high issues count
-    pub(crate) fn unresolved_blocking_issues(&self) -> u32 {
-        u32::try_from(
-            self.issues
-                .iter()
-                .filter(|i| {
-                    !i.resolved
-                        && (i.severity == IssueSeverity::Critical
-                            || i.severity == IssueSeverity::High)
-                })
-                .count(),
-        )
-        .unwrap_or(u32::MAX)
-    }
-
-    /// Format as a summary string
-    pub(crate) fn summary(&self) -> String {
-        if !self.issues_file_found {
-            return "No ISSUES.md found".to_string();
-        }
-
-        if self.no_issues_declared && self.total_issues == 0 {
-            return "No issues found".to_string();
-        }
-
-        format!(
-            "{} issues ({} critical, {} high, {} medium, {} low) | {} resolved ({:.0}%)",
-            self.total_issues,
-            self.critical_issues,
-            self.high_issues,
-            self.medium_issues,
-            self.low_issues,
-            self.resolved_issues,
-            self.resolution_rate()
-        )
-    }
-
-    /// Format detailed breakdown for display
-    pub(crate) fn detailed_summary(&self) -> String {
-        let mut lines = vec![];
-
-        if !self.issues_file_found {
-            return "  No ISSUES.md found".to_string();
-        }
-
-        if self.no_issues_declared && self.total_issues == 0 {
-            return "  No issues found".to_string();
-        }
-
-        if self.critical_issues > 0 {
-            lines.push(format!("  Critical: {}", self.critical_issues));
-        }
-        if self.high_issues > 0 {
-            lines.push(format!("  High:     {}", self.high_issues));
-        }
-        if self.medium_issues > 0 {
-            lines.push(format!("  Medium:   {}", self.medium_issues));
-        }
-        if self.low_issues > 0 {
-            lines.push(format!("  Low:      {}", self.low_issues));
-        }
-
-        if !lines.is_empty() {
-            lines.push(format!(
-                "  Resolved: {}/{} ({:.0}%)",
-                self.resolved_issues,
-                self.total_issues,
-                self.resolution_rate()
-            ));
-        }
-
-        if lines.is_empty() {
-            "  No categorized issues found".to_string()
-        } else {
-            lines.join("\n")
-        }
-    }
-
-    /// Check if review found any blocking issues (critical or high severity unresolved)
-    pub(crate) fn has_blocking_issues(&self) -> bool {
-        self.unresolved_blocking_issues() > 0
-    }
-
-    /// Return up to `limit` unresolved issues as human-readable one-liners.
-    pub(crate) fn unresolved_issue_summaries(&self, limit: usize) -> Vec<String> {
-        self.issues
-            .iter()
-            .filter(|i| !i.resolved)
-            .take(limit)
-            .map(Issue::summary)
-            .collect()
     }
 }

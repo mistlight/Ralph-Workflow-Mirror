@@ -18,10 +18,7 @@ pub fn handle_resume(
 
     match load_checkpoint() {
         Ok(Some(checkpoint)) => {
-            logger.header(
-                "RESUME: Loading Checkpoint",
-                super::super::colors::Colors::yellow,
-            );
+            logger.header("RESUME: Loading Checkpoint", crate::logger::Colors::yellow);
             logger.info(&format!("Resuming from: {}", checkpoint.description()));
             logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
 

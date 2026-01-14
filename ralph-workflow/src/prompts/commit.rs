@@ -194,8 +194,18 @@ Here is the commit message:
 {{"subject": "feat: add feature", "body": null}}
 
 WRONG (with analysis):
-Looking at this diff, I can see changes.
-{{"subject": "feat: add feature", "body": null}}
+```
+Looking at this diff, I can see:
+1. Updated parser
+
+feat: add feature
+```
+
+WRONG (with prefix):
+```
+Here is the commit message:
+feat: add feature
+```
 
 WRONG (literal newline in JSON - this is INVALID JSON):
 {{"subject": "feat: add feature", "body": "First line
@@ -209,10 +219,10 @@ CORRECT (with body using \\n for newline):
     )
 }
 
-/// Generate strict re-prompt when initial JSON extraction fails.
+/// Generate strict JSON-only prompt for commit message retry.
 ///
-/// This is a simplified prompt used when the agent's first response was not valid JSON.
-/// It provides a shorter, more direct instruction to maximize compliance.
+/// This is used when the initial attempt fails to produce valid JSON,
+/// providing a simpler, more focused prompt to encourage proper JSON output.
 pub fn prompt_strict_json_commit(diff: &str) -> String {
     let diff_content = diff.trim();
     format!(

@@ -474,9 +474,9 @@ pub fn make_prompt_read_only() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::colors::Colors;
-    use crate::test_utils::testing::with_temp_cwd;
+    use crate::logger::Colors;
     use tempfile::TempDir;
+    use test_helpers::with_temp_cwd;
 
     #[test]
     fn test_file_contains_marker() {

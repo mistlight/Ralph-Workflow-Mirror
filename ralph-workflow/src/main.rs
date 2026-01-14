@@ -20,25 +20,21 @@ mod app;
 mod banner;
 mod checkpoint;
 mod cli;
-mod colors;
+mod common;
 mod config;
+mod diagnostics;
 mod files;
 mod git_helpers;
 mod guidelines;
 mod json_parser;
 mod language_detector;
 mod logger;
-mod output;
 mod phases;
 mod pipeline;
 mod platform;
 mod prompts;
 mod review_metrics;
 mod templates;
-#[cfg(test)]
-mod test_utils;
-mod timer;
-mod utils;
 
 use crate::cli::Args;
 use crate::git_helpers::cleanup_agent_phase_silent;

@@ -1,659 +1,15 @@
 //! Command execution helpers and fallback orchestration.
 
-// The `try_agent_with_retries` function has many parameters due to orchestrating
-// complex retry logic across multiple agent configurations. Refactoring to use
-// a config struct would be a larger change.
-#![expect(clippy::too_many_arguments)]
-// Functions exceed 100 lines due to the nature of command execution and fallback
-// orchestration. Breaking them up further would harm readability.
-#![expect(clippy::too_many_lines)]
-// The explicit `continue` statement makes intent clearer even though it's
-// technically redundant at the end of a match arm in a loop.
-#![expect(clippy::needless_continue)]
+use crate::agents::{validate_model_flag, AgentRegistry, AgentRole, JsonParserType};
+use crate::cli::split_command;
 
-use crate::agents::{
-    is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType,
-};
-use crate::colors::Colors;
-use crate::config::Config;
-use crate::logger::Logger;
-use crate::output::{argv_requests_json, format_generic_json_for_display};
-use crate::platform::Platform;
-use crate::timer::Timer;
-use crate::utils::{format_argv_for_log, split_command, truncate_text};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::Path;
-use std::process::{Command, Stdio};
-
+use super::fallback::try_agent_with_retries;
+use super::fallback::TryAgentResult;
 use super::model_flag::resolve_model_with_provider;
-use super::types::CommandResult;
-
-/// Result of attempting to run an agent with retries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TryAgentResult {
-    /// Agent succeeded - return success from main function
-    Success,
-    /// Unrecoverable error - abort immediately
-    Unrecoverable(i32),
-    /// Should fall back to next agent/model
-    Fallback,
-    /// Should retry (non-retriable error on last retry)
-    NoRetry,
-}
-
-/// Runtime services required for running agent commands.
-pub struct PipelineRuntime<'a> {
-    pub(crate) timer: &'a mut Timer,
-    pub(crate) logger: &'a Logger,
-    pub(crate) colors: &'a Colors,
-    pub(crate) config: &'a Config,
-}
-
-/// A single prompt-based agent invocation.
-pub struct PromptCommand<'a> {
-    pub(crate) label: &'a str,
-    pub(crate) display_name: &'a str,
-    pub(crate) cmd_str: &'a str,
-    pub(crate) prompt: &'a str,
-    pub(crate) logfile: &'a str,
-    pub(crate) parser_type: JsonParserType,
-    pub(crate) env_vars: &'a std::collections::HashMap<String, String>,
-}
-
-/// Run a command with a prompt argument.
-///
-/// This is an internal helper for `run_with_fallback`.
-pub fn run_with_prompt(
-    cmd: &PromptCommand<'_>,
-    runtime: &mut PipelineRuntime<'_>,
-) -> io::Result<CommandResult> {
-    // Anthropic environment variables to sanitize before spawning agent subprocesses.
-    // This prevents GLM/CCS env vars from the parent shell from leaking into agents
-    // that rely on default credentials (like ANTHROPIC_API_KEY for the standard Claude agent).
-    const ANTHROPIC_ENV_VARS_TO_SANITIZE: &[&str] = &[
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_BASE_URL",
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_MODEL",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-        "ANTHROPIC_DEFAULT_OPUS_MODEL",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    ];
-
-    runtime.timer.start_phase();
-    runtime.logger.step(&format!(
-        "{}{}{}",
-        runtime.colors.bold(),
-        cmd.label,
-        runtime.colors.reset()
-    ));
-
-    // Save prompt to file
-    if let Some(parent) = Path::new(&runtime.config.prompt_path).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&runtime.config.prompt_path, cmd.prompt)?;
-    runtime.logger.info(&format!(
-        "Prompt saved to {}{}{}",
-        runtime.colors.cyan(),
-        runtime.config.prompt_path.display(),
-        runtime.colors.reset()
-    ));
-
-    // Copy to clipboard if interactive
-    if runtime.config.interactive {
-        if let Some(clipboard_cmd) = get_platform_clipboard_command() {
-            if let Ok(mut child) = Command::new(clipboard_cmd.binary)
-                .args(clipboard_cmd.args)
-                .stdin(Stdio::piped())
-                .spawn()
-            {
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(cmd.prompt.as_bytes());
-                }
-                let _ = child.wait();
-                runtime.logger.info(&format!(
-                    "Prompt copied to clipboard {}({}){}",
-                    runtime.colors.dim(),
-                    clipboard_cmd.paste_hint,
-                    runtime.colors.reset()
-                ));
-            }
-        }
-    }
-
-    // Build full command
-    let argv = split_command(cmd.cmd_str)?;
-    if argv.is_empty() || cmd.cmd_str.trim().is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Agent command is empty or contains only whitespace",
-        ));
-    }
-
-    let mut argv_for_log = argv.clone();
-    argv_for_log.push("<PROMPT>".to_string());
-    let display_cmd = truncate_text(&format_argv_for_log(&argv_for_log), 160);
-    runtime.logger.info(&format!(
-        "Executing: {}{}{}",
-        runtime.colors.dim(),
-        display_cmd,
-        runtime.colors.reset()
-    ));
-
-    // GLM-specific debug logging
-    // Check for GLM-like agents using the shared detection function
-    let is_glm_cmd = is_glm_like_agent(cmd.cmd_str);
-
-    if is_glm_cmd && runtime.config.verbosity.is_debug() {
-        runtime
-            .logger
-            .info(&format!("GLM command details: {display_cmd}"));
-        // Verify -p flag is present
-        if argv.iter().any(|arg| arg == "-p") {
-            runtime
-                .logger
-                .info("GLM command includes '-p' flag (correct)");
-        } else {
-            runtime.logger.warn("GLM command may be missing '-p' flag");
-        }
-    }
-
-    // Determine if JSON parsing is needed (based on parser type and command flags)
-    let uses_json = cmd.parser_type != JsonParserType::Generic || argv_requests_json(&argv);
-
-    runtime
-        .logger
-        .info(&format!("Using {} parser...", cmd.parser_type));
-    if let Some(parent) = Path::new(cmd.logfile).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    File::create(cmd.logfile)?;
-
-    // Execute command
-    let mut command = Command::new(&argv[0]);
-    command.args(&argv[1..]);
-    command.arg(cmd.prompt);
-
-    // Inject environment variables from agent config
-    if !cmd.env_vars.is_empty() {
-        if runtime.config.verbosity.is_debug() {
-            runtime.logger.info(&format!(
-                "Injecting {} environment variable(s) into subprocess",
-                cmd.env_vars.len()
-            ));
-            // Show env var keys only (redact values for security)
-            for key in cmd.env_vars.keys() {
-                runtime.logger.info(&format!("  - {key}"));
-            }
-        }
-        for (key, value) in cmd.env_vars {
-            command.env(key, value);
-        }
-    }
-
-    // Clear problematic Anthropic env vars that weren't explicitly set by the agent.
-    for &var in ANTHROPIC_ENV_VARS_TO_SANITIZE {
-        if !cmd.env_vars.contains_key(var) {
-            command.env_remove(var);
-        }
-    }
-
-    let mut child = match command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(e)
-            if matches!(
-                e.kind(),
-                io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
-            ) =>
-        {
-            let exit_code = if e.kind() == io::ErrorKind::NotFound {
-                127
-            } else {
-                126
-            };
-            return Ok(CommandResult {
-                exit_code,
-                stderr: format!("{}: {}", argv[0], e),
-            });
-        }
-        Err(e) => return Err(e),
-    };
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
-    let reader = BufReader::new(stdout);
-
-    // Drain stderr concurrently to avoid deadlocks when stderr output is large.
-    let stderr_join_handle = child.stderr.take().map(|stderr| {
-        std::thread::spawn(move || -> io::Result<String> {
-            const STDERR_MAX_BYTES: usize = 512 * 1024;
-
-            let mut reader = BufReader::new(stderr);
-            let mut buf = [0u8; 8192];
-            let mut collected = Vec::<u8>::new();
-            let mut truncated = false;
-
-            loop {
-                let n = reader.read(&mut buf)?;
-                if n == 0 {
-                    break;
-                }
-
-                let remaining = STDERR_MAX_BYTES.saturating_sub(collected.len());
-                if remaining == 0 {
-                    truncated = true;
-                    break;
-                }
-
-                let to_take = remaining.min(n);
-                collected.extend_from_slice(&buf[..to_take]);
-                if to_take < n {
-                    truncated = true;
-                    break;
-                }
-            }
-
-            let mut stderr_output = String::from_utf8_lossy(&collected).into_owned();
-            if truncated {
-                if !stderr_output.ends_with('\n') {
-                    stderr_output.push('\n');
-                }
-                stderr_output.push_str("<stderr truncated>");
-            }
-
-            Ok(stderr_output)
-        })
-    });
-
-    if uses_json {
-        let stdout = io::stdout();
-        let mut out = stdout.lock();
-
-        match cmd.parser_type {
-            JsonParserType::Claude => {
-                let p = crate::json_parser::ClaudeParser::new(
-                    *runtime.colors,
-                    runtime.config.verbosity,
-                )
-                .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile);
-                p.parse_stream(reader, &mut out)?;
-            }
-            JsonParserType::Codex => {
-                let p =
-                    crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
-                        .with_display_name(cmd.display_name)
-                        .with_log_file(cmd.logfile);
-                p.parse_stream(reader, &mut out)?;
-            }
-            JsonParserType::Gemini => {
-                let p = crate::json_parser::GeminiParser::new(
-                    *runtime.colors,
-                    runtime.config.verbosity,
-                )
-                .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile);
-                p.parse_stream(reader, &mut out)?;
-            }
-            JsonParserType::OpenCode => {
-                let p = crate::json_parser::OpenCodeParser::new(
-                    *runtime.colors,
-                    runtime.config.verbosity,
-                )
-                .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile);
-                p.parse_stream(reader, &mut out)?;
-            }
-            JsonParserType::Generic => {
-                // This branch shouldn't happen when uses_json=true, but keep it safe.
-                let mut buf = String::new();
-                for line in reader.lines() {
-                    buf.push_str(&line?);
-                    buf.push('\n');
-                }
-                let formatted = format_generic_json_for_display(&buf, runtime.config.verbosity);
-                out.write_all(formatted.as_bytes())?;
-            }
-        }
-    } else {
-        // Plain-text mode: stream output and log it.
-        let mut logfile = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(cmd.logfile)?;
-
-        let stdout = io::stdout();
-        let mut out = stdout.lock();
-
-        for line in reader.lines() {
-            let line = line?;
-            writeln!(out, "{line}")?;
-            writeln!(logfile, "{line}")?;
-        }
-    }
-
-    // Wait for command completion and collect stderr.
-    let status = child.wait()?;
-    // If status.code() returns None (process terminated by signal on Unix),
-    // we default to exit code 1 (failure). This treats signal termination
-    // as a failure, which is appropriate for agent execution.
-    let exit_code = status.code().unwrap_or(1);
-
-    // Log if process was terminated by signal (no exit code available)
-    if status.code().is_none() && runtime.config.verbosity.is_debug() {
-        runtime
-            .logger
-            .warn("Process terminated by signal (no exit code), treating as failure");
-    }
-
-    let stderr_output = match stderr_join_handle {
-        Some(handle) => match handle.join() {
-            Ok(result) => result?,
-            Err(panic_payload) => {
-                // Thread panicked - try to extract panic message for diagnostics
-                let panic_msg = panic_payload.downcast_ref::<String>().map_or_else(
-                    || {
-                        panic_payload.downcast_ref::<&str>().map_or_else(
-                            || "<unknown panic>".to_string(),
-                            std::string::ToString::to_string,
-                        )
-                    },
-                    std::clone::Clone::clone,
-                );
-                runtime.logger.warn(&format!(
-                    "Stderr collection thread panicked: {panic_msg}. This may indicate a bug."
-                ));
-                String::new()
-            }
-        },
-        None => String::new(),
-    };
-
-    // Debug logging for stderr output to help diagnose agent issues
-    if !stderr_output.is_empty() && runtime.config.verbosity.is_debug() {
-        runtime.logger.warn(&format!(
-            "Agent stderr output detected ({} bytes):",
-            stderr_output.len()
-        ));
-        // Show first few lines of stderr for debugging
-        for (i, line) in stderr_output.lines().take(5).enumerate() {
-            runtime.logger.info(&format!("  stderr[{i}]: {line}"));
-        }
-        if stderr_output.lines().count() > 5 {
-            runtime.logger.info(&format!(
-                "  ... ({} more lines, see log file for full output)",
-                stderr_output.lines().count() - 5
-            ));
-        }
-    }
-
-    if runtime.config.verbosity.is_verbose() {
-        runtime.logger.info(&format!(
-            "Phase elapsed: {}",
-            runtime.timer.phase_elapsed_formatted()
-        ));
-    }
-
-    Ok(CommandResult {
-        exit_code,
-        stderr: stderr_output,
-    })
-}
-
-/// Platform-specific clipboard command configuration.
-struct ClipboardCommand {
-    binary: &'static str,
-    args: &'static [&'static str],
-    paste_hint: &'static str,
-}
-
-/// Get the platform-specific clipboard command.
-///
-/// Returns None if no clipboard command is available for the current platform.
-fn get_platform_clipboard_command() -> Option<ClipboardCommand> {
-    let platform = Platform::detect();
-
-    match platform {
-        Platform::MacWithBrew | Platform::MacWithoutBrew => Some(ClipboardCommand {
-            binary: "pbcopy",
-            args: &[],
-            paste_hint: "pbpaste to view",
-        }),
-        Platform::DebianLinux
-        | Platform::RhelLinux
-        | Platform::ArchLinux
-        | Platform::GenericLinux => {
-            // Try wl-copy (Wayland) first, then xclip (X11)
-            if Command::new("which")
-                .arg("wl-copy")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                Some(ClipboardCommand {
-                    binary: "wl-copy",
-                    args: &[],
-                    paste_hint: "wl-paste to view",
-                })
-            } else if Command::new("which")
-                .arg("xclip")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                Some(ClipboardCommand {
-                    binary: "xclip",
-                    args: &["-selection", "clipboard"],
-                    paste_hint: "xclip -o -selection clipboard to view",
-                })
-            } else {
-                None
-            }
-        }
-        Platform::Windows => Some(ClipboardCommand {
-            binary: "clip",
-            args: &[],
-            paste_hint: "paste to view",
-        }),
-        Platform::Unknown => None,
-    }
-}
-
-/// Try a single agent/model configuration with retries.
-///
-/// Returns the result of the attempt: success, unrecoverable error, or should-fallback.
-fn try_agent_with_retries(
-    agent_name: &str,
-    model_flag: Option<&str>,
-    label: &str,
-    display_name: &str,
-    cmd_str: &str,
-    prompt: &str,
-    logfile: &str,
-    parser_type: crate::agents::JsonParserType,
-    env_vars: &std::collections::HashMap<String, String>,
-    model_index: usize,
-    agent_index: usize,
-    cycle: usize,
-    runtime: &mut PipelineRuntime<'_>,
-    fallback_config: &crate::agents::fallback::FallbackConfig,
-) -> io::Result<TryAgentResult> {
-    let model_suffix = model_flag
-        .as_ref()
-        .map(|m| format!(" [{m}]"))
-        .unwrap_or_default();
-    let is_glm_agent = is_glm_like_agent(agent_name);
-
-    // GLM-specific diagnostic output (only on first try to avoid spam)
-    if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
-        let cmd_argv = split_command(cmd_str).ok();
-        let full_cmd_log = cmd_argv.as_ref().map_or_else(
-            || "<unparseable command>".to_string(),
-            |argv| {
-                let mut argv_for_log = argv.clone();
-                argv_for_log.push("<PROMPT>".to_string());
-                truncate_text(&format_argv_for_log(&argv_for_log), 160)
-            },
-        );
-
-        if runtime.config.verbosity.is_debug() {
-            runtime
-                .logger
-                .info(&format!("GLM agent '{agent_name}' command configuration:"));
-            runtime
-                .logger
-                .info(&format!("  Full command: {full_cmd_log}"));
-        }
-    }
-
-    // Try with retries
-    for retry in 0..fallback_config.max_retries {
-        if retry > 0 {
-            runtime.logger.info(&format!(
-                "Retry {}/{} for {}{}...",
-                retry, fallback_config.max_retries, display_name, model_suffix,
-            ));
-        }
-
-        let result = run_with_prompt(
-            &PromptCommand {
-                label,
-                display_name,
-                cmd_str,
-                prompt,
-                logfile,
-                parser_type,
-                env_vars,
-            },
-            runtime,
-        )?;
-
-        if result.exit_code == 0 {
-            return Ok(TryAgentResult::Success);
-        }
-
-        // Classify the error with agent context for better handling
-        let error_kind = crate::agents::AgentErrorKind::classify_with_agent(
-            result.exit_code,
-            &result.stderr,
-            Some(agent_name),
-            model_flag,
-        );
-
-        runtime.logger.warn(&format!(
-            "Agent '{}'{} failed: {} (exit code {})",
-            agent_name,
-            model_suffix,
-            error_kind.description(),
-            result.exit_code
-        ));
-
-        // GLM-specific diagnostics
-        if is_glm_agent
-            && matches!(
-                error_kind,
-                crate::agents::AgentErrorKind::AgentSpecificQuirk
-                    | crate::agents::AgentErrorKind::ToolExecutionFailed
-            )
-        {
-            runtime.logger.warn(&format!(
-                "{}GLM Agent Issue Detected:{} GLM has known compatibility issues with Ralph.",
-                runtime.colors.yellow(),
-                runtime.colors.reset()
-            ));
-            runtime.logger.info("Suggested workarounds:");
-            runtime
-                .logger
-                .info("  1. Try: ralph --reviewer-agent codex");
-            runtime
-                .logger
-                .info("  2. Try: ralph --reviewer-json-parser generic");
-            runtime
-                .logger
-                .info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
-            runtime
-                .logger
-                .info("See docs/agent-compatibility.md for details.");
-        }
-
-        // Provide provider-specific auth advice for auth failures
-        if matches!(error_kind, crate::agents::AgentErrorKind::AuthFailure) {
-            runtime
-                .logger
-                .info(&crate::agents::auth_failure_advice(model_flag));
-        } else {
-            runtime.logger.info(error_kind.recovery_advice());
-        }
-
-        // Provide installation guidance for command not found errors
-        if error_kind.is_command_not_found() {
-            let binary = cmd_str.split_whitespace().next().unwrap_or(agent_name);
-            let guidance = crate::platform::InstallGuidance::for_binary(binary);
-            runtime.logger.info(&guidance.format());
-        }
-
-        // Provide network-specific guidance
-        if error_kind.is_network_error() {
-            runtime
-                .logger
-                .info("Tip: Check your internet connection, firewall, or VPN settings.");
-        }
-
-        // Provide context reduction hint for memory-related errors
-        if error_kind.suggests_smaller_context() {
-            runtime.logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
-        }
-
-        // Check for unrecoverable errors - abort immediately
-        if error_kind.is_unrecoverable() {
-            runtime
-                .logger
-                .error("Unrecoverable error - cannot continue pipeline");
-            return Ok(TryAgentResult::Unrecoverable(result.exit_code));
-        }
-
-        // Check if we should fallback to next agent
-        if error_kind.should_fallback() {
-            runtime.logger.info(&format!(
-                "Switching from '{display_name}'{model_suffix} to next configured fallback..."
-            ));
-            return Ok(TryAgentResult::Fallback);
-        }
-
-        if !error_kind.should_retry() {
-            runtime.logger.info("Not retrying (non-retriable error)");
-            return Ok(TryAgentResult::NoRetry);
-        }
-
-        // Otherwise, continue retrying the same model/agent
-        if retry + 1 < fallback_config.max_retries {
-            runtime.logger.info(&format!(
-                "Retrying '{}'{} (attempt {}/{})",
-                display_name,
-                model_suffix,
-                retry + 2,
-                fallback_config.max_retries
-            ));
-            let wait_ms = error_kind
-                .suggested_wait_ms()
-                .max(fallback_config.retry_delay_ms);
-            std::thread::sleep(std::time::Duration::from_millis(wait_ms));
-        }
-    }
-
-    // All retries exhausted
-    Ok(TryAgentResult::Fallback)
-}
+use super::prompt::PipelineRuntime;
 
 /// Run a command with automatic fallback to alternative agents on failure.
+#[expect(clippy::too_many_lines)]
 pub fn run_with_fallback(
     role: AgentRole,
     base_label: &str,
@@ -662,7 +18,7 @@ pub fn run_with_fallback(
     runtime: &mut PipelineRuntime<'_>,
     registry: &AgentRegistry,
     primary_agent: &str,
-) -> io::Result<i32> {
+) -> std::io::Result<i32> {
     let fallback_config = registry.fallback_config();
     let fallbacks = registry.available_fallbacks(role);
     if !fallback_config.has_fallbacks(role) {
@@ -811,7 +167,7 @@ pub fn run_with_fallback(
                 };
 
                 // GLM-specific diagnostic output for print flag validation
-                if is_glm_like_agent(agent_name)
+                if crate::agents::is_glm_like_agent(agent_name)
                     && agent_index == 0
                     && cycle == 0
                     && model_index == 0
@@ -872,7 +228,6 @@ pub fn run_with_fallback(
                     }
                     TryAgentResult::NoRetry => {
                         // Non-retriable error - continue to next model/agent
-                        continue;
                     }
                 }
             }
@@ -889,7 +244,6 @@ pub fn run_with_fallback(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::Mutex;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -947,107 +301,53 @@ mod tests {
             "ANTHROPIC_DEFAULT_SONNET_MODEL",
         ];
 
-        // Set GLM-like env vars in test process (simulating parent shell with GLM configured)
-        let _guards = EnvGuard::set_multiple(&[
-            ("ANTHROPIC_API_KEY", "sk-ant-invalid-key-123"),
-            ("ANTHROPIC_BASE_URL", "https://api.z.ai/api/anthropic"),
-            ("ANTHROPIC_AUTH_TOKEN", "test-token-glm"),
-            ("ANTHROPIC_MODEL", "glm-4.7"),
-            ("ANTHROPIC_DEFAULT_HAIKU_MODEL", "glm-flash"),
-            ("ANTHROPIC_DEFAULT_OPUS_MODEL", "glm-opus"),
-            ("ANTHROPIC_DEFAULT_SONNET_MODEL", "glm-sonnet"),
+        let _guard = EnvGuard::set_multiple(&[
+            ("ANTHROPIC_API_KEY", "test-token-glm"),
+            ("ANTHROPIC_BASE_URL", "https://glm.example.com"),
         ]);
 
-        // Verify the env vars are set in the current process
-        assert_eq!(
-            std::env::var("ANTHROPIC_BASE_URL").unwrap(),
-            "https://api.z.ai/api/anthropic"
-        );
-        assert_eq!(
-            std::env::var("ANTHROPIC_AUTH_TOKEN").unwrap(),
-            "test-token-glm"
-        );
-        assert_eq!(std::env::var("ANTHROPIC_MODEL").unwrap(), "glm-4.7");
-
-        // Create a command as if we're running an agent with empty env_vars
-        // (like the standard "claude" agent)
-        let mut command = Command::new("echo");
-        command.arg("test");
-
-        // Simulate what runner.rs does: inject env_vars (empty in this case)
-        let env_vars = std::collections::HashMap::<String, String>::new();
-
-        // Then sanitize Anthropic env vars that weren't explicitly set
+        // Simulate running an agent with empty env_vars (like codex)
+        // The ANTHROPIC_* vars should be sanitized from the parent environment
+        let mut cmd = std::process::Command::new("printenv");
         for &var in ANTHROPIC_ENV_VARS_TO_SANITIZE {
-            if !env_vars.contains_key(var) {
-                command.env_remove(var);
-            }
+            cmd.env_remove(var);
         }
 
-        // Verify the command does NOT have these env vars set
-        // We can't directly inspect the Command's environment, but we can
-        // verify the logic by checking that our conditional is correct
-        for var in ANTHROPIC_ENV_VARS_TO_SANITIZE {
-            assert!(!env_vars.contains_key(*var));
-        }
+        // Execute the command and check that GLM variables are NOT present
+        let output = cmd.output().expect("Failed to execute printenv");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // The GLM-set variables should NOT be in the subprocess environment
+        // (they were sanitized by env_remove)
+        assert!(!stdout.contains("test-token-glm"));
+        assert!(!stdout.contains("https://glm.example.com"));
     }
 
-    /// Test that environment variable sanitization preserves explicitly set vars.
-    ///
-    /// This ensures that CCS agents that explicitly set ANTHROPIC_* vars
-    /// in their `env_vars` still work correctly - the vars should NOT be cleared.
     #[test]
-    fn test_runner_preserves_explicitly_set_anthropic_env_vars() {
-        // Anthropic environment variables to sanitize
-        const ANTHROPIC_ENV_VARS_TO_SANITIZE: &[&str] = &[
-            "ANTHROPIC_API_KEY",
-            "ANTHROPIC_BASE_URL",
-            "ANTHROPIC_AUTH_TOKEN",
-            "ANTHROPIC_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-        ];
+    fn test_runner_does_not_sanitize_explicit_env_vars() {
+        // If an agent explicitly sets ANTHROPIC_API_KEY in its env_vars,
+        // that should NOT be sanitized
 
-        // Set GLM-like env vars in test process
-        let _guards = EnvGuard::set_multiple(&[
-            ("ANTHROPIC_API_KEY", "sk-ant-invalid-key-123"),
-            ("ANTHROPIC_BASE_URL", "https://api.z.ai/api/anthropic"),
-            ("ANTHROPIC_AUTH_TOKEN", "test-token-glm"),
-            ("ANTHROPIC_MODEL", "glm-4.7"),
-        ]);
+        let mut cmd = std::process::Command::new("printenv");
 
-        // Create a command as if we're running a CCS agent with explicit env_vars
-        let mut command = Command::new("echo");
-        command.arg("test");
+        // Simulate agent setting its own ANTHROPIC_API_KEY
+        let agent_env_vars =
+            std::collections::HashMap::from([("ANTHROPIC_API_KEY", "agent-specific-key")]);
 
-        // Simulate CCS agent with explicitly set env_vars
-        let mut env_vars = std::collections::HashMap::<String, String>::new();
-        env_vars.insert(
-            "ANTHROPIC_BASE_URL".to_string(),
-            "https://api.z.ai/api/anthropic".to_string(),
-        );
-        env_vars.insert(
-            "ANTHROPIC_AUTH_TOKEN".to_string(),
-            "test-token-glm".to_string(),
-        );
-        env_vars.insert("ANTHROPIC_MODEL".to_string(), "glm-4.7".to_string());
-
-        // Inject env vars
-        for (key, value) in &env_vars {
-            command.env(key, value);
+        // First, sanitize all Anthropic vars
+        for &var in &["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] {
+            cmd.env_remove(var);
         }
 
-        // Then sanitize - these should NOT be removed since they're in env_vars
-        for &var in ANTHROPIC_ENV_VARS_TO_SANITIZE {
-            if !env_vars.contains_key(var) {
-                command.env_remove(var);
-            }
+        // Then, apply agent's env_vars (which should NOT be sanitized)
+        for (key, value) in &agent_env_vars {
+            cmd.env(key, value);
         }
 
-        // Verify that the vars we explicitly set are still in env_vars
-        assert!(env_vars.contains_key("ANTHROPIC_BASE_URL"));
-        assert!(env_vars.contains_key("ANTHROPIC_AUTH_TOKEN"));
-        assert!(env_vars.contains_key("ANTHROPIC_MODEL"));
+        let output = cmd.output().expect("Failed to execute printenv");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // The agent-specific key should be present
+        assert!(stdout.contains("agent-specific-key"));
     }
 }

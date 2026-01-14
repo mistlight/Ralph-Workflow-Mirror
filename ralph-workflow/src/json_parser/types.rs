@@ -5,7 +5,7 @@
 
 #![expect(clippy::too_many_lines)]
 #![expect(clippy::redundant_pub_crate)]
-use crate::utils::truncate_text;
+use crate::common::truncate_text;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -485,7 +485,7 @@ fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
 pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,
-    colors: &crate::colors::Colors,
+    colors: &crate::logger::Colors,
     is_verbose: bool,
 ) -> String {
     // Try to parse as generic JSON to extract type and key fields

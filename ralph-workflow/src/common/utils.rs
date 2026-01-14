@@ -1,41 +1,13 @@
-//! General utilities module.
+//! Common utility functions.
 //!
-//! This module re-exports utilities from specialized modules for backward
-//! compatibility and convenience. New code should import directly from
-//! the appropriate module:
-//!
-//! - [`crate::checkpoint`] - Pipeline checkpoint system
-//! - [`crate::logger`] - Logging utilities
-//! - [`crate::files`] - File management utilities
-//!
-//! # Utility Functions
-//!
-//! This module also provides small utility functions that don't fit
-//! in a specific module:
-//!
-//! - [`split_command`] - Parse shell command strings
-//! - [`truncate_text`] - Truncate text with ellipsis
+//! This module provides utility functions for command-line interface operations:
+//! - Shell command parsing
+//! - Text truncation for display
+//! - Secret redaction for logging
 
 use std::io;
 
 use regex::Regex;
-
-// Re-exports from checkpoint module
-// Note: Most checkpoint items are now imported directly from crate::checkpoint
-
-// Re-exports from logger module
-pub use crate::logger::{strip_ansi_codes, timestamp};
-
-// Re-exports from files module
-pub use crate::files::{cleanup_generated_files, PromptValidationResult, GENERATED_FILES};
-
-// Keep backward-compatibility re-exports "used" without suppressing lints.
-const _: () = {
-    let _ = strip_ansi_codes as fn(&str) -> String;
-    let _ = timestamp as fn() -> String;
-    let _ = GENERATED_FILES;
-    let _ = std::mem::size_of::<PromptValidationResult>();
-};
 
 /// Split a shell-like command string into argv parts.
 ///

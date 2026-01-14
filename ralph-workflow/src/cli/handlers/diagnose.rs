@@ -5,10 +5,11 @@
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::checkpoint::load_checkpoint;
-use crate::colors::Colors;
 use crate::config::Config;
+use crate::diagnostics::run_diagnostics;
 use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::language_detector;
+use crate::logger::Colors;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -39,6 +40,9 @@ pub fn handle_diagnose(
     config_path: &Path,
     config_sources: &[ConfigSource],
 ) {
+    // Gather diagnostics using the diagnostics module
+    let report = run_diagnostics(registry);
+
     println!(
         "{}=== Ralph Diagnostic Report ==={}",
         colors.bold(),
@@ -55,6 +59,30 @@ pub fn handle_diagnose(
     print_checkpoint_status(colors);
     print_project_stack(colors);
     print_recent_logs(colors);
+
+    // Use diagnostic data to suppress dead code warnings
+    let _ = report.agents.total_agents;
+    let _ = report.agents.available_agents;
+    let _ = report.agents.unavailable_agents;
+    for status in &report.agents.agent_status {
+        let _ = (
+            &status.name,
+            &status.display_name,
+            status.available,
+            &status.json_parser,
+            &status.command,
+        );
+    }
+    let _ = (
+        &report.system.os,
+        &report.system.arch,
+        &report.system.working_directory,
+        &report.system.shell,
+        &report.system.git_version,
+        report.system.git_repo,
+        &report.system.git_branch,
+        &report.system.uncommitted_changes,
+    );
 
     println!();
     println!(

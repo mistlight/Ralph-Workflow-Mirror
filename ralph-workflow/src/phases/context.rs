@@ -5,12 +5,11 @@
 //! logging utilities, and runtime state that all phases need access to.
 
 use crate::agents::{AgentRegistry, AgentRole};
-use crate::colors::Colors;
 use crate::config::Config;
 use crate::guidelines::ReviewGuidelines;
-use crate::logger::Logger;
+use crate::logger::{Colors, Logger};
 use crate::pipeline::Stats;
-use crate::timer::Timer;
+use crate::pipeline::Timer;
 
 /// Shared context for all pipeline phases.
 ///

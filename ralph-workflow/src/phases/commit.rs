@@ -10,12 +10,9 @@
 //! 3. Extracts the commit message from agent output
 //! 4. Returns the generated message for use by the caller
 
-#![expect(clippy::trivially_copy_pass_by_ref)]
-#![expect(clippy::too_many_arguments)]
 #![expect(clippy::too_many_lines)]
+use super::context::PhaseContext;
 use crate::agents::{AgentRegistry, AgentRole};
-use crate::colors::Colors;
-use crate::config::Config;
 use crate::files::llm_output_extraction::{
     extract_llm_output, generate_fallback_commit_message, try_extract_structured_commit,
     try_salvage_commit_message, validate_commit_message, CommitExtractionResult, OutputFormat,
@@ -27,7 +24,6 @@ use crate::prompts::{
     prompt_emergency_commit, prompt_generate_commit_message_with_diff, prompt_strict_json_commit,
     prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
 };
-use crate::timer::Timer;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::Read;
@@ -53,7 +49,7 @@ enum CommitRetryStrategy {
 
 impl CommitRetryStrategy {
     /// Get the description of this retry stage for logging
-    const fn description(&self) -> &'static str {
+    const fn description(self) -> &'static str {
         match self {
             Self::Initial => "initial prompt",
             Self::StrictJson => "strict JSON prompt",
@@ -64,7 +60,7 @@ impl CommitRetryStrategy {
     }
 
     /// Get the next retry strategy, or None if this is the last stage
-    const fn next(&self) -> Option<Self> {
+    const fn next(self) -> Option<Self> {
         match self {
             Self::Initial => Some(Self::StrictJson),
             Self::StrictJson => Some(Self::StrictJsonV2),
@@ -306,11 +302,7 @@ pub fn generate_commit_message(
 /// * `commit_agent` - The primary agent to use for commit generation
 /// * `git_user_name` - Optional git user name
 /// * `git_user_email` - Optional git user email
-/// * `registry` - The agent registry for resolving fallbacks
-/// * `logger` - Logger for output
-/// * `colors` - Color formatting
-/// * `config` - Configuration
-/// * `timer` - Timer for tracking execution time
+/// * `ctx` - The phase context containing registry, logger, colors, config, and timer
 ///
 /// # Returns
 ///
@@ -320,11 +312,7 @@ pub fn commit_with_generated_message(
     commit_agent: &str,
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
-    registry: &AgentRegistry,
-    logger: &Logger,
-    colors: &Colors,
-    config: &Config,
-    timer: &mut Timer,
+    ctx: &mut PhaseContext<'_>,
 ) -> CommitResultFallback {
     // Stage all changes first
     let staged = match git_add_all() {
@@ -340,14 +328,14 @@ pub fn commit_with_generated_message(
 
     // Set up the runtime
     let mut runtime = PipelineRuntime {
-        timer,
-        logger,
-        colors,
-        config,
+        timer: ctx.timer,
+        logger: ctx.logger,
+        colors: ctx.colors,
+        config: ctx.config,
     };
 
     // Generate commit message using the standard pipeline
-    let result = match generate_commit_message(diff, registry, &mut runtime, commit_agent) {
+    let result = match generate_commit_message(diff, ctx.registry, &mut runtime, commit_agent) {
         Ok(r) => r,
         Err(e) => {
             return CommitResultFallback::Failed(format!("Failed to generate commit message: {e}"));

@@ -5,8 +5,8 @@
 //! and PROMPT.md from templates.
 
 use crate::agents::{AgentsConfigFile, ConfigInitResult};
-use crate::colors::Colors;
 use crate::config::{unified_config_path, UnifiedConfig, UnifiedConfigInitResult};
+use crate::logger::Colors;
 use crate::templates::{get_template, list_templates};
 use std::fs;
 use std::path::Path;

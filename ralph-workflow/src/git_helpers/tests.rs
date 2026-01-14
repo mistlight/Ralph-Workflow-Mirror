@@ -15,7 +15,7 @@ use tempfile::TempDir;
 
 #[test]
 fn test_git_snapshot() {
-    use crate::test_utils::testing::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -30,7 +30,7 @@ fn test_git_snapshot() {
 
 #[test]
 fn test_install_hook() {
-    use crate::test_utils::testing::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -69,8 +69,8 @@ fn test_git_helpers_new() {
 
 #[test]
 fn test_uninstall_hook_restores_original() {
-    use crate::test_utils::testing::with_temp_cwd;
-    let logger = Logger::new(crate::colors::Colors { enabled: false });
+    use test_helpers::with_temp_cwd;
+    let logger = Logger::new(crate::logger::Colors { enabled: false });
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -101,7 +101,7 @@ fn test_uninstall_hook_restores_original() {
 
 #[test]
 fn test_install_hook_uses_absolute_path() {
-    use crate::test_utils::testing::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -126,10 +126,10 @@ fn test_install_hook_uses_absolute_path() {
 
 #[test]
 fn test_cleanup_orphaned_marker() {
-    use crate::test_utils::testing::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     with_temp_cwd(|dir| {
-        let logger = Logger::new(crate::colors::Colors { enabled: false });
+        let logger = Logger::new(crate::logger::Colors { enabled: false });
         let dir_path = dir.path();
 
         git2::Repository::init(dir_path).unwrap();
