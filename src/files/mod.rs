@@ -8,6 +8,7 @@
 //! - Result extraction from agent JSON logs
 //! - File integrity verification and checksums
 //! - Error recovery and state repair
+//! - Real-time file system monitoring for PROMPT.md protection
 //!
 //! # Isolation Mode
 //!
@@ -24,16 +25,17 @@
 mod agent_files;
 pub mod integrity;
 pub mod llm_output_extraction;
+pub mod monitoring;
 pub mod recovery;
 pub mod result_extraction;
-mod validation;
+pub mod validation;
 
 pub use agent_files::{
-    clean_context_for_reviewer, cleanup_generated_files, delete_commit_message_file,
-    delete_issues_file_for_isolation, delete_plan_file, ensure_files, file_contains_marker,
-    read_commit_message_file, reset_context_for_isolation, update_status,
-    write_commit_message_file, GENERATED_FILES,
+    clean_context_for_reviewer, cleanup_generated_files, create_prompt_backup,
+    delete_commit_message_file, delete_issues_file_for_isolation, delete_plan_file, ensure_files,
+    file_contains_marker, make_prompt_read_only, read_commit_message_file, reset_context_for_isolation,
+    update_status, write_commit_message_file, GENERATED_FILES,
 };
 
 pub use result_extraction::{extract_issues, extract_plan, extract_plan_from_logs_text};
-pub use validation::{validate_prompt_md, PromptValidationResult};
+pub use validation::{restore_prompt_if_needed, validate_prompt_md, PromptValidationResult};

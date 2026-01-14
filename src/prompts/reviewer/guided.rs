@@ -29,11 +29,10 @@ pub fn prompt_reviewer_review_with_guidelines(
             r#"You are in REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
-- PROMPT.md
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
 
 YOUR TASK:
-Evaluate the codebase against PROMPT.md (goal + acceptance checks), then apply:
+Evaluate the codebase, then apply language-specific checks:
 
 Language-Specific checks:
 {guidelines}
@@ -49,9 +48,6 @@ If no issues found, return "No issues found.""#,
         ),
         ContextLevel::Normal => format!(
             r#"You are in REVIEW MODE.
-
-INPUTS TO READ:
-- PROMPT.md
 
 Language-Specific checks:
 {guidelines}
@@ -80,12 +76,11 @@ pub fn prompt_comprehensive_review(context: ContextLevel, guidelines: &ReviewGui
             r#"You are in COMPREHENSIVE REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
-- PROMPT.md
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
 
 YOUR TASK:
 Perform a thorough review:
-1) Goal alignment + each acceptance check (explicit pass/fail)
+1) Code quality and correctness
 2) Security (injection, auth, secrets)
 3) Performance/resources (bottlenecks, leaks)
 4) Maintainability (error handling, tests)
@@ -102,9 +97,6 @@ OUTPUT (prioritized checklist with [file:line]):
         ),
         ContextLevel::Normal => format!(
             r#"You are in COMPREHENSIVE REVIEW MODE.
-
-INPUTS TO READ:
-- PROMPT.md
 
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
 {priorities}
@@ -134,7 +126,6 @@ pub fn prompt_security_focused_review(
             r#"You are in SECURITY REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
-- PROMPT.md
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
 
 SECURITY FOCUS (OWASP TOP 10):
@@ -157,9 +148,6 @@ If no issues found, return "No security issues found.""#,
         ),
         ContextLevel::Normal => format!(
             r#"You are in SECURITY REVIEW MODE.
-
-INPUTS TO READ:
-- PROMPT.md
 
 LANGUAGE-SPECIFIC SECURITY:
 {security_section}

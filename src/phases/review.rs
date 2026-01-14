@@ -8,7 +8,7 @@
 
 use crate::agents::{is_glm_like_agent, AgentRole};
 use crate::config::ReviewDepth;
-use crate::files::extract_issues;
+use crate::files::{extract_issues, restore_prompt_if_needed};
 use crate::git_helpers::{commit_with_auto_message_result, get_git_diff_from_start, git_snapshot};
 use crate::guidelines::ReviewGuidelines;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
@@ -26,6 +26,40 @@ use crate::utils::{
 use super::context::PhaseContext;
 use std::fs;
 use std::path::Path;
+
+/// Periodically restore PROMPT.md if it was deleted by an agent.
+///
+/// This is a defense-in-depth measure to ensure PROMPT.md is always available
+/// even if an agent accidentally deletes it during pipeline execution.
+///
+/// The enhanced logging helps identify which phase/agent likely caused
+/// the deletion for debugging purposes.
+fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, cycle: u32) {
+    match restore_prompt_if_needed() {
+        Ok(true) => {
+            // File exists with content, no action needed
+        }
+        Ok(false) => {
+            logger.warn(&format!(
+                "[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup",
+            ));
+            logger.warn(&format!(
+                "[PROMPT_INTEGRITY] Deletion detected during {} phase (cycle {})",
+                phase, cycle
+            ));
+            logger.warn("[PROMPT_INTEGRITY] Possible cause: Agent used 'rm' or file write tools on PROMPT.md");
+            logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
+        }
+        Err(e) => {
+            logger.error(&format!("[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}", e));
+            logger.error(&format!(
+                "[PROMPT_INTEGRITY] Error occurred during {} phase (cycle {})",
+                phase, cycle
+            ));
+            logger.error("Pipeline may not function correctly without PROMPT.md");
+        }
+    }
+}
 
 /// Result of the review phase.
 pub struct ReviewResult {
@@ -593,6 +627,7 @@ pub fn run_review_phase(
             None,
             None,
             None,
+            None,
         );
 
         let _ = {
@@ -618,6 +653,10 @@ pub fn run_review_phase(
         if ctx.config.isolation_mode {
             delete_issues_file_for_isolation(ctx.logger)?;
         }
+
+        // Periodic restoration check - ensure PROMPT.md still exists
+        // This catches agent deletions and restores from backup
+        ensure_prompt_integrity(ctx.logger, "review", j);
 
         // Check for changes and create commit if modified
         let snap = git_snapshot()?;
@@ -835,6 +874,7 @@ fn build_review_prompt(
                         None,
                         None,
                         Some(g),
+                        None,
                     ),
                 )
             } else {

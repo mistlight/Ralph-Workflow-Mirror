@@ -1,6 +1,6 @@
 [package]
 name = "ralph-workflow"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "PROMPT-driven multi-agent orchestrator for git repos"
 authors = ["Mistlight"]
@@ -54,6 +54,9 @@ ctrlc = "3.4"
 
 # Git library for direct git operations (bypasses CLI)
 git2 = "0.18"
+
+# File system monitoring for PROMPT.md protection
+notify = "6.1"
 
 [dev-dependencies]
 # Testing utilities
