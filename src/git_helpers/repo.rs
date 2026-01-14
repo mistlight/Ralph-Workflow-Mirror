@@ -898,13 +898,70 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
     Ok(combined)
 }
 
+/// Generate commit message with fallback to alternative agents.
+///
+/// This function tries each agent in the fallback chain until one succeeds.
+/// For each agent, it attempts chunked commit message generation with retries.
+/// This provides robustness against agent failures (timeout, rate limits, etc.).
+///
+/// # Arguments
+///
+/// * `diff` - The git diff to generate a commit message for
+/// * `agent_cmds` - Slice of agent commands to try in order (first is primary, rest are fallbacks)
+///
+/// # Returns
+///
+/// Returns `Ok(String)` with the generated commit message, or an error if all agents fail.
+pub(crate) fn generate_commit_message_with_fallback(diff: &str, agent_cmds: &[String]) -> io::Result<String> {
+    if agent_cmds.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "No agent commands provided"));
+    }
+
+    eprintln!("Generating commit message with {} agent(s) in fallback chain...", agent_cmds.len());
+
+    // Try each agent in the fallback chain
+    for (agent_idx, agent_cmd) in agent_cmds.iter().enumerate() {
+        eprintln!("Trying agent {}/{}: {}", agent_idx + 1, agent_cmds.len(), agent_cmd);
+
+        match generate_commit_message_with_llm(diff, agent_cmd) {
+            Ok(msg) => {
+                eprintln!("✓ Agent {} succeeded: {}", agent_idx + 1, agent_cmd);
+                return Ok(msg);
+            }
+            Err(e) => {
+                eprintln!("✗ Agent {} failed: {}", agent_idx + 1, agent_cmd);
+                eprintln!("  Error: {}", e);
+
+                // If this was the last agent, return the error
+                if agent_idx == agent_cmds.len() - 1 {
+                    eprintln!("All agents in fallback chain failed");
+                    return Err(e);
+                }
+                // Otherwise, continue to the next agent
+                eprintln!("  Trying next agent in chain...");
+            }
+        }
+    }
+
+    // Should never reach here, but handle the case
+    Err(io::Error::new(io::ErrorKind::Other, "All agents failed"))
+}
+
 /// Generate commit message with retry logic.
+///
+/// This function includes smart retry logic that provides feedback to the LLM
+/// when validation fails. If the LLM generates a bad commit message (e.g., "N file(s) changed"),
+/// the retry will include the bad message and validation error to help the LLM improve.
 fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: usize) -> io::Result<String> {
-    use crate::prompts::prompt_generate_commit_message_with_diff;
+    use crate::prompts::{prompt_generate_commit_message_with_diff, prompt_retry_commit_message_with_feedback};
     use std::time::Duration;
 
     let max_retries = 3;
     let timeouts = [60, 90, 120]; // Exponential backoff: 60s, 90s, 120s
+
+    // Track the last bad message and validation error for feedback on retry
+    let mut last_bad_message: Option<String> = None;
+    let mut last_validation_error: Option<String> = None;
 
     for attempt in 0..max_retries {
         if attempt > 0 {
@@ -914,7 +971,13 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
             std::thread::sleep(Duration::from_millis(backoff_ms));
         }
 
-        let prompt = prompt_generate_commit_message_with_diff(diff);
+        // Use the retry prompt with feedback if we have a previous bad message
+        let prompt = if let (Some(bad_msg), Some(val_err)) = (&last_bad_message, &last_validation_error) {
+            eprintln!("Using retry prompt with validation feedback...");
+            prompt_retry_commit_message_with_feedback(diff, bad_msg, val_err)
+        } else {
+            prompt_generate_commit_message_with_diff(diff)
+        };
 
         match call_llm_agent(&prompt, agent_cmd, timeouts[attempt.min(timeouts.len() - 1)]) {
             Ok(raw_output) => {
@@ -931,13 +994,20 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
                         return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
                     }
                     Err(CommitGenerationError::ValidationFailed(msg)) => {
-                        // Validation failed - log but try retry as it might be a transient issue
+                        // Validation failed - save the bad message and error for retry with feedback
                         eprintln!("Validation failed on attempt {}: {}", attempt + 1, msg);
+                        eprintln!("Bad message will be provided as feedback on next retry");
+
+                        // Save the raw output as the bad message for feedback
+                        let cleaned_bad = clean_commit_message(&raw_output);
+                        last_bad_message = Some(cleaned_bad);
+                        last_validation_error = Some(msg.clone());
+
                         if attempt == max_retries - 1 {
                             // Last attempt failed - return error
                             return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
                         }
-                        // Continue to retry
+                        // Continue to retry with feedback
                     }
                     Err(CommitGenerationError::Empty) => {
                         eprintln!("LLM returned empty output on attempt {}", attempt + 1);
@@ -1022,7 +1092,7 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         use std::collections::HashSet;
 
         if chunks.is_empty() {
-            return "multiple changes".to_string();
+            return "apply changes across multiple files".to_string();
         }
 
         if chunks.len() == 1 {
@@ -1036,7 +1106,7 @@ fn combine_chunk_messages(messages: &[String]) -> String {
             .collect();
 
         if subjects.is_empty() {
-            return "multiple changes".to_string();
+            return "apply changes across multiple files".to_string();
         }
 
         // If all subjects are similar (share common words), use a merged version
@@ -1069,8 +1139,9 @@ fn combine_chunk_messages(messages: &[String]) -> String {
                 subjects[..last_idx].join(", "),
                 subjects[last_idx])
         } else {
-            // Too many different subjects - create a generic but accurate description
-            "apply multiple changes".to_string()
+            // Too many different subjects - create a generic but descriptive message
+            // Avoid bad patterns like "N files changed" or "apply multiple changes"
+            "apply changes across multiple files".to_string()
         }
     }
 
@@ -1121,9 +1192,13 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         }
     }
 
-    // If no valid chunks were extracted, fall back to generic message
+    // If no valid chunks were extracted (all chunks were placeholders like "[chunk 1]"),
+    // this means LLM failed for all chunks. Return a more descriptive message
+    // that indicates the need for manual review or fallback analysis.
     if chunks.is_empty() {
-        return format!("{}: multiple file changes", last_seen_type);
+        // Use a descriptive message that avoids bad patterns like "N file(s) changed"
+        // The message indicates that processing failed but provides semantic context
+        return format!("{}: apply changes across multiple files", last_seen_type);
     }
 
     // Find the most significant type
@@ -1428,55 +1503,207 @@ fn total_files_count(changes: &FileChanges) -> usize {
 }
 
 /// Build a descriptive subject line for the commit message.
+///
+/// This function analyzes file paths to extract semantic meaning and create
+/// a descriptive commit message subject. It avoids generic patterns like
+/// "update N files" by extracting module/directory names from the file paths.
 fn build_subject_line(changes: &FileChanges, total_files: usize, _commit_type: &str) -> String {
-    let mut parts = Vec::new();
+    // Collect all changed files for analysis
+    let all_files: Vec<&String> = changes.new_files.iter()
+        .chain(changes.modified_files.iter())
+        .chain(changes.deleted_files.iter())
+        .collect();
 
-    // Add new files if any
-    if !changes.new_files.is_empty() {
-        let count = changes.new_files.len();
-        if count == 1 {
-            parts.push(format!("add {}", shorten_path(&changes.new_files[0])));
+    if all_files.is_empty() {
+        return "uncommitted changes".to_string();
+    }
+
+    // Analyze file paths to extract semantic meaning
+    let common_prefix = find_common_path_prefix(&all_files);
+    let module_info = extract_module_info(&all_files, &common_prefix);
+
+    // Determine action verb based on what changed
+    let action = determine_action_verb(changes);
+
+    // Build the subject line based on the analysis
+    if total_files == 1 {
+        // Single file - use filename with semantic context
+        let file = &all_files[0];
+        let filename = file.rsplit('/').next().unwrap_or(file);
+        let shortened = shorten_path(file);
+        if shortened != filename {
+            // Has parent directory, use "parent/filename"
+            format!("{} {}", action, shortened)
         } else {
-            parts.push(format!("add {} files", count));
+            format!("{} {}", action, filename)
+        }
+    } else if let Some(module) = module_info.main_module {
+        // Multiple files in a common module - use module as scope
+        if module_info.submodules.len() <= 2 {
+            // List submodules if there are only a few
+            let sub_parts: Vec<&str> = module_info.submodules.iter().map(|s| s.as_str()).collect();
+            if sub_parts.is_empty() {
+                format!("{} {} module", action, module)
+            } else {
+                format!("{} {} module ({})", action, module, sub_parts.join(", "))
+            }
+        } else {
+            // Many submodules, use generic but descriptive message
+            format!("{} {} module", action, module)
+        }
+    } else if let Some(prefix) = common_prefix {
+        // Files share a common path prefix
+        format!("{} files in {}", action, prefix)
+    } else {
+        // Files are spread across different locations - use semantic analysis
+        let locations = extract_semantic_locations(&all_files);
+        if locations.len() == 1 {
+            format!("{} {}", action, locations[0])
+        } else if locations.len() <= 3 {
+            format!("{} {}", action, locations.join(" and "))
+        } else {
+            // Too many different locations - use a descriptive message
+            // Avoid bad patterns like "update N files" or "apply N file changes"
+            format!("{} changes across multiple modules", action)
+        }
+    }
+}
+
+/// Information about the modules affected by changes.
+struct ModuleInfo {
+    main_module: Option<String>,
+    submodules: Vec<String>,
+}
+
+/// Find the common path prefix among all files.
+fn find_common_path_prefix(files: &[&String]) -> Option<String> {
+    if files.is_empty() {
+        return None;
+    }
+
+    // Split all file paths into components
+    let all_paths: Vec<Vec<&str>> = files.iter()
+        .map(|f| f.split('/').collect())
+        .collect();
+
+    // Find common prefix
+    let mut common_prefix = Vec::new();
+    for (i, component) in all_paths[0].iter().enumerate() {
+        let all_match = all_paths.iter().all(|path| {
+            path.get(i) == Some(component)
+        });
+        if all_match && i < all_paths[0].len() - 1 {
+            // Keep the common component (but not the filename itself)
+            common_prefix.push(*component);
+        } else {
+            break;
         }
     }
 
-    // Add deleted files if any (and this is the primary action)
-    if !changes.deleted_files.is_empty() && changes.new_files.is_empty() {
-        let count = changes.deleted_files.len();
-        if count == 1 {
-            parts.push(format!("remove {}", shorten_path(&changes.deleted_files[0])));
+    if common_prefix.is_empty() {
+        None
+    } else {
+        Some(common_prefix.join("/"))
+    }
+}
+
+/// Extract module information from file paths.
+fn extract_module_info(files: &[&String], common_prefix: &Option<String>) -> ModuleInfo {
+    use std::collections::HashMap;
+
+    let mut submodule_counts: HashMap<String, usize> = HashMap::new();
+
+    for file in files {
+        // Remove the common prefix and extract the module/submodule
+        let relative_path = if let Some(prefix) = common_prefix {
+            file.strip_prefix(&format!("{}/", prefix)).unwrap_or(file.as_str())
         } else {
-            parts.push(format!("remove {} files", count));
+            file.as_str()
+        };
+
+        // Get the first component after the prefix (this is the module)
+        let components: Vec<&str> = relative_path.split('/').collect();
+        if components.len() > 1 {
+            // Has at least one directory level
+            *submodule_counts.entry(components[0].to_string()).or_insert(0) += 1;
         }
     }
 
-    // Add modified files if this is primarily a modification
-    if !changes.modified_files.is_empty() && changes.new_files.is_empty() && changes.deleted_files.is_empty() {
-        let count = changes.modified_files.len();
-        if count == 1 {
-            // For a single modified file, use just the filename without path
-            // Avoid patterns like "update src/file.rs"
-            let filename = changes.modified_files[0].rsplit('/').next().unwrap_or(&changes.modified_files[0]);
-            parts.push(format!("update {}", filename));
-        } else if count <= 3 {
-            // List up to 3 modified files by filename only
-            let paths: Vec<String> = changes.modified_files.iter()
-                .take(3)
-                .map(|p| p.rsplit('/').next().unwrap_or(p).to_string())
-                .collect();
-            parts.push(format!("update {}", paths.join(", ")));
-        } else {
-            parts.push(format!("update {} files", count));
+    // Determine the main module and submodules
+    if submodule_counts.is_empty() {
+        ModuleInfo {
+            main_module: None,
+            submodules: Vec::new(),
+        }
+    } else {
+        // Find the most common module as the main module
+        let main_module = submodule_counts.iter()
+            .max_by_key(|(_, &count)| count)
+            .map(|(name, _)| name.clone());
+
+        // Collect other submodules
+        let mut submodules: Vec<String> = submodule_counts.into_iter()
+            .filter(|(name, _)| Some(name) != main_module.as_ref())
+            .map(|(name, _)| name)
+            .collect();
+
+        submodules.sort();
+        submodules.truncate(3); // Limit to 3 submodules
+
+        ModuleInfo {
+            main_module,
+            submodules,
+        }
+    }
+}
+
+/// Extract semantic location names from file paths.
+fn extract_semantic_locations(files: &[&String]) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let mut locations = HashSet::new();
+
+    for file in files {
+        let parts: Vec<&str> = file.split('/').collect();
+        if parts.len() >= 2 {
+            // Get the directory name (second to last component)
+            let dir = parts[parts.len() - 2];
+            // Map common directory names to semantic names
+            let semantic_name = match dir {
+                "src" => "source code",
+                "tests" | "test" => "tests",
+                "docs" | "doc" => "documentation",
+                "examples" => "examples",
+                "benches" | "bench" => "benchmarks",
+                "scripts" => "scripts",
+                _ => dir,
+            };
+            locations.insert(semantic_name.to_string());
         }
     }
 
-    // If we have multiple types of changes, combine them meaningfully
-    if parts.is_empty() {
-        return format!("apply {} file changes", total_files);
-    }
+    let mut locs: Vec<String> = locations.into_iter().collect();
+    locs.sort();
+    locs.truncate(3);
+    locs
+}
 
-    parts.join(" and ")
+/// Determine the action verb based on what changed.
+fn determine_action_verb(changes: &FileChanges) -> &'static str {
+    let has_new = !changes.new_files.is_empty();
+    let has_modified = !changes.modified_files.is_empty();
+    let has_deleted = !changes.deleted_files.is_empty();
+
+    match (has_new, has_modified, has_deleted) {
+        (true, false, false) => "add",
+        (false, true, false) => "update",
+        (false, false, true) => "remove",
+        (true, true, false) => "add and update",
+        (true, false, true) => "add and remove",
+        (false, true, true) => "update and remove",
+        (true, true, true) => "modify",
+        (false, false, false) => "modify", // Should not happen since total_files > 0 is checked above
+    }
 }
 
 /// Shorten a file path to just the filename and maybe parent directory.
@@ -1604,8 +1831,8 @@ pub(crate) fn commit_with_auto_message(
                 eprintln!("========================================");
                 eprintln!("⚠️  WARNING: USING FALLBACK COMMIT MESSAGE");
                 eprintln!("========================================");
-                eprintln!("⚠️  SOMETHING WENT WRONG!");
-                eprintln!("⚠️  The LLM returned an EMPTY commit message.");
+                eprintln!("⚠️  COMMIT MESSAGE GENERATION PATH: FALLBACK");
+                eprintln!("⚠️  REASON: LLM returned empty commit message");
                 eprintln!();
                 eprintln!("This means your commit message will be GENERIC and may NOT");
                 eprintln!("accurately describe what changed. Consider reviewing the");
@@ -1617,6 +1844,9 @@ pub(crate) fn commit_with_auto_message(
 
                 generate_fallback_commit_message(&diff)
             } else {
+                // LLM succeeded - log the path and final message
+                eprintln!("✓ COMMIT MESSAGE GENERATION PATH: LLM SUCCESS");
+                eprintln!("✓ Final commit message: {}", msg.lines().next().unwrap_or(&msg));
                 msg
             }
         }
@@ -1633,14 +1863,13 @@ pub(crate) fn commit_with_auto_message(
             eprintln!("========================================");
             eprintln!("⚠️  WARNING: USING FALLBACK COMMIT MESSAGE");
             eprintln!("========================================");
-            eprintln!("⚠️  SOMETHING WENT WRONG!");
-            eprintln!("⚠️  The LLM FAILED to generate a commit message.");
+            eprintln!("⚠️  COMMIT MESSAGE GENERATION PATH: FALLBACK");
+            eprintln!("⚠️  REASON: LLM failed - {}", e);
             eprintln!();
             eprintln!("This means your commit message will be GENERIC and may NOT");
             eprintln!("accurately describe what changed. You should EDIT the commit");
             eprintln!("message to be more specific after this operation completes.");
             eprintln!();
-            eprintln!("Error: {}", e);
             eprintln!("To debug, check .agent/logs/commit_generation_failed/");
             eprintln!("To make this a hard error, set RALPH_COMMIT_MUST_USE_LLM=1");
             eprintln!();
@@ -1717,6 +1946,163 @@ pub(crate) fn commit_with_auto_message_result(
         Ok(Some(oid)) => CommitResult::Success(oid),
         Ok(None) => CommitResult::NoChanges,
         Err(e) => CommitResult::Failed(e.to_string()),
+    }
+}
+
+/// Create a commit with an automatically generated commit message using fallback chain.
+///
+/// This function is similar to `commit_with_auto_message` but uses a fallback chain
+/// of agents instead of a single agent. If the primary agent fails, it will try
+/// each fallback agent in order until one succeeds or all fail.
+///
+/// # Arguments
+///
+/// * `agent_cmds` - Slice of agent commands to try in order (first is primary, rest are fallbacks)
+/// * `git_user_name` - Optional git user name
+/// * `git_user_email` - Optional git user email
+///
+/// # Returns
+///
+/// Returns `Ok(Some(oid))` with the commit OID if successful, `Ok(None)` if there
+/// were no meaningful changes, or an error if all agents fail and git operations fail.
+pub(crate) fn commit_with_auto_message_using_fallback(
+    agent_cmds: &[String],
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+) -> io::Result<Option<git2::Oid>> {
+    // Check if LLM failures should be hard errors
+    let must_use_llm = std::env::var("RALPH_COMMIT_MUST_USE_LLM")
+        .ok()
+        .and_then(|v| match v.to_lowercase().as_str() {
+            "1" | "true" | "yes" => Some(true),
+            _ => None,
+        })
+        .unwrap_or(false);
+
+    // Check if there are meaningful changes
+    if !has_meaningful_changes()? {
+        return Ok(None);
+    }
+
+    // Get the diff
+    let diff = git_diff()?;
+
+    // Pre-validate the diff before attempting LLM call
+    let diff_trimmed = diff.trim();
+    if diff_trimmed.is_empty() {
+        // This shouldn't happen after has_meaningful_changes check, but handle it defensively
+        eprintln!("Warning: Unexpected empty diff after meaningful changes check. Using fallback message.");
+        let commit_message = generate_fallback_commit_message(&diff);
+        return stage_and_commit(&commit_message, git_user_name, git_user_email);
+    }
+
+    // Generate commit message via LLM with fallback chain
+    let commit_message = match generate_commit_message_with_fallback(&diff, agent_cmds) {
+        Ok(msg) => {
+            // Validate the commit message is not empty
+            if msg.trim().is_empty() {
+                let error = "LLM returned empty commit message".to_string();
+                let _ = save_failed_llm_output(&diff, &error);
+
+                if must_use_llm {
+                    return Err(io::Error::new(io::ErrorKind::Other, error));
+                }
+
+                eprintln!();
+                eprintln!("========================================");
+                eprintln!("⚠️  WARNING: USING FALLBACK COMMIT MESSAGE");
+                eprintln!("========================================");
+                eprintln!("⚠️  COMMIT MESSAGE GENERATION PATH: FALLBACK");
+                eprintln!("⚠️  REASON: LLM returned empty commit message");
+                eprintln!();
+                eprintln!("This means your commit message will be GENERIC and may NOT");
+                eprintln!("accurately describe what changed. Consider reviewing the");
+                eprintln!("commit message after this operation completes.");
+                eprintln!();
+                eprintln!("To debug, check .agent/logs/commit_generation_failed/");
+                eprintln!("To make this a hard error, set RALPH_COMMIT_MUST_USE_LLM=1");
+                eprintln!();
+
+                generate_fallback_commit_message(&diff)
+            } else {
+                // LLM succeeded - log the path and final message
+                eprintln!("✓ COMMIT MESSAGE GENERATION PATH: LLM SUCCESS WITH FALLBACK");
+                eprintln!("✓ Final commit message: {}", msg.lines().next().unwrap_or(&msg));
+                msg
+            }
+        }
+        Err(e) => {
+            // Save the failed output for debugging
+            let error_msg = format!("LLM commit message generation failed (all agents in fallback chain): {}", e);
+            let _ = save_failed_llm_output(&diff, &error_msg);
+
+            if must_use_llm {
+                return Err(io::Error::new(io::ErrorKind::Other, error_msg));
+            }
+
+            eprintln!();
+            eprintln!("========================================");
+            eprintln!("⚠️  WARNING: USING FALLBACK COMMIT MESSAGE");
+            eprintln!("========================================");
+            eprintln!("⚠️  COMMIT MESSAGE GENERATION PATH: FALLBACK");
+            eprintln!("⚠️  REASON: All agents in fallback chain failed - {}", e);
+            eprintln!();
+            eprintln!("This means your commit message will be GENERIC and may NOT");
+            eprintln!("accurately describe what changed. You should EDIT the commit");
+            eprintln!("message to be more specific after this operation completes.");
+            eprintln!();
+            eprintln!("To debug, check .agent/logs/commit_generation_failed/");
+            eprintln!("To make this a hard error, set RALPH_COMMIT_MUST_USE_LLM=1");
+            eprintln!();
+
+            generate_fallback_commit_message(&diff)
+        }
+    };
+
+    stage_and_commit(&commit_message, git_user_name, git_user_email)
+}
+
+/// Result of commit operation with fallback.
+///
+/// This is the fallback-aware version of `CommitResult`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommitResultFallback {
+    /// A commit was successfully created with the given OID.
+    Success(git2::Oid),
+    /// No commit was created because there were no meaningful changes.
+    NoChanges,
+    /// The commit operation failed with an error message.
+    Failed(String),
+}
+
+impl CommitResultFallback {
+    /// Check if the commit was successful.
+    pub fn is_success(&self) -> bool {
+        matches!(self, CommitResultFallback::Success(_))
+    }
+
+    /// Get the OID if successful, returns None otherwise.
+    pub fn oid(&self) -> Option<git2::Oid> {
+        match self {
+            CommitResultFallback::Success(oid) => Some(*oid),
+            _ => None,
+        }
+    }
+}
+
+/// Create a commit with an automatically generated commit message using fallback chain, returning a detailed result.
+///
+/// This is a convenience wrapper around `commit_with_auto_message_using_fallback` that returns
+/// a `CommitResultFallback` enum for easier error handling and logging in the orchestrator.
+pub(crate) fn commit_with_auto_message_fallback_result(
+    agent_cmds: &[String],
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+) -> CommitResultFallback {
+    match commit_with_auto_message_using_fallback(agent_cmds, git_user_name, git_user_email) {
+        Ok(Some(oid)) => CommitResultFallback::Success(oid),
+        Ok(None) => CommitResultFallback::NoChanges,
+        Err(e) => CommitResultFallback::Failed(e.to_string()),
     }
 }
 
