@@ -679,7 +679,14 @@ enum CommitGenerationError {
     Empty,
     ExtractionFailed(String),
     ValidationFailed(String),
-    AgentFailed(String),
+    /// Agent failed with detailed context for error classification.
+    /// Includes: exit code, stderr output, agent command
+    AgentFailed {
+        exit_code: Option<i32>,
+        stderr: String,
+        agent_cmd: String,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for CommitGenerationError {
@@ -689,12 +696,87 @@ impl std::fmt::Display for CommitGenerationError {
             CommitGenerationError::Empty => write!(f, "LLM returned empty response"),
             CommitGenerationError::ExtractionFailed(msg) => write!(f, "Failed to extract commit message: {}", msg),
             CommitGenerationError::ValidationFailed(msg) => write!(f, "Validation failed: {}", msg),
-            CommitGenerationError::AgentFailed(msg) => write!(f, "Agent failed: {}", msg),
+            CommitGenerationError::AgentFailed { exit_code, stderr, agent_cmd, message } => {
+                write!(f, "Agent '{}' failed: ", agent_cmd)?;
+                if let Some(code) = exit_code {
+                    write!(f, "Exit code: {}. ", code)?;
+                }
+                write!(f, "{}", message)?;
+                if !stderr.trim().is_empty() {
+                    write!(f, "\nStderr: {}", stderr.trim())?;
+                }
+                Ok(())
+            }
         }
     }
 }
 
 impl std::error::Error for CommitGenerationError {}
+
+impl CommitGenerationError {
+    /// Classify this error to determine if it should trigger a retry or fallback.
+    ///
+    /// Returns `Some(true)` if the error should be retried with the same agent,
+    /// `Some(false)` if it should trigger immediate fallback to the next agent,
+    /// or `None` if the error type doesn't support classification (e.g., ValidationFailed).
+    fn should_retry_with_classification(&self) -> Option<bool> {
+        use crate::agents::AgentErrorKind;
+
+        match self {
+            // Empty responses can be retried (might be transient)
+            CommitGenerationError::Empty => Some(true),
+
+            // Timeout can be retried
+            CommitGenerationError::Timeout => Some(true),
+
+            // ExtractionFailed is a parsing issue - don't retry
+            CommitGenerationError::ExtractionFailed(_) => Some(false),
+
+            // ValidationFailed is handled separately with feedback - always retry
+            CommitGenerationError::ValidationFailed(_) => Some(true),
+
+            // AgentFailed needs classification based on exit code and stderr
+            CommitGenerationError::AgentFailed {
+                exit_code,
+                stderr,
+                agent_cmd,
+                ..
+            } => {
+                // Parse agent_cmd to get the agent name for classification
+                let agent_name = agent_cmd.split_whitespace().next();
+                let model_flag = agent_cmd.split_whitespace().find_map(|tok| {
+                    if tok.starts_with("-m") || tok.starts_with("--model") {
+                        Some(tok.trim_start_matches("-m").trim_start_matches("--model"))
+                    } else {
+                        None
+                    }
+                });
+
+                // Use the existing AgentErrorKind classifier
+                let exit_code_val = exit_code.unwrap_or(-1);
+                let kind = AgentErrorKind::classify_with_agent(exit_code_val, stderr, agent_name, model_flag);
+
+                // Log classification for debugging
+                eprintln!(
+                    "  Classified as: {} ({})",
+                    kind.description(),
+                    if kind.should_retry() {
+                        "will retry"
+                    } else if kind.should_fallback() {
+                        "will fallback"
+                    } else {
+                        "unrecoverable"
+                    }
+                );
+
+                // Log recovery advice
+                eprintln!("  Recovery: {}", kind.recovery_advice());
+
+                Some(kind.should_retry())
+            }
+        }
+    }
+}
 
 /// Call the LLM agent with a prompt and return the raw output.
 ///
@@ -706,12 +788,22 @@ fn call_llm_agent(prompt: &str, agent_cmd: &str, timeout_secs: u64) -> Result<St
     use std::time::{Duration, Instant};
 
     let argv = split_command(agent_cmd).map_err(|e| {
-        CommitGenerationError::AgentFailed(format!("Failed to parse agent command: {}", e))
+        CommitGenerationError::AgentFailed {
+            exit_code: None,
+            stderr: String::new(),
+            agent_cmd: agent_cmd.to_string(),
+            message: format!("Failed to parse agent command: {}", e),
+        }
     })?;
 
     let (program, args) = match argv.split_first() {
         Some(pair) => pair,
-        None => return Err(CommitGenerationError::AgentFailed("Agent command is empty".to_string())),
+        None => return Err(CommitGenerationError::AgentFailed {
+            exit_code: None,
+            stderr: String::new(),
+            agent_cmd: agent_cmd.to_string(),
+            message: "Agent command is empty".to_string(),
+        }),
     };
 
     let mut child = Command::new(program)
@@ -720,11 +812,22 @@ fn call_llm_agent(prompt: &str, agent_cmd: &str, timeout_secs: u64) -> Result<St
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| CommitGenerationError::AgentFailed(format!("Failed to spawn agent: {}", e)))?;
+        .map_err(|e| CommitGenerationError::AgentFailed {
+            exit_code: None,
+            stderr: String::new(),
+            agent_cmd: agent_cmd.to_string(),
+            message: format!("Failed to spawn agent: {}", e),
+        })?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes())
-            .map_err(|e| CommitGenerationError::AgentFailed(format!("Failed to write prompt: {}", e)))?;
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|e| CommitGenerationError::AgentFailed {
+                exit_code: None,
+                stderr: String::new(),
+                agent_cmd: agent_cmd.to_string(),
+                message: format!("Failed to write prompt: {}", e),
+            })?;
         drop(stdin);
     }
 
@@ -736,23 +839,32 @@ fn call_llm_agent(prompt: &str, agent_cmd: &str, timeout_secs: u64) -> Result<St
             Ok(Some(exit_status)) => {
                 let mut stdout = Vec::new();
                 if let Some(mut out) = child.stdout.take() {
-                    out.read_to_end(&mut stdout)
-                        .map_err(|e| CommitGenerationError::AgentFailed(format!("Failed to read stdout: {}", e)))?;
+                    out.read_to_end(&mut stdout).map_err(|e| CommitGenerationError::AgentFailed {
+                        exit_code: None,
+                        stderr: String::new(),
+                        agent_cmd: agent_cmd.to_string(),
+                        message: format!("Failed to read stdout: {}", e),
+                    })?;
                 }
 
                 let mut stderr = Vec::new();
                 if let Some(mut err) = child.stderr.take() {
-                    err.read_to_end(&mut stderr)
-                        .map_err(|e| CommitGenerationError::AgentFailed(format!("Failed to read stderr: {}", e)))?;
+                    err.read_to_end(&mut stderr).map_err(|e| CommitGenerationError::AgentFailed {
+                        exit_code: None,
+                        stderr: String::new(),
+                        agent_cmd: agent_cmd.to_string(),
+                        message: format!("Failed to read stderr: {}", e),
+                    })?;
                 }
 
                 if !exit_status.success() {
-                    let stderr_str = String::from_utf8_lossy(&stderr);
-                    return Err(CommitGenerationError::AgentFailed(format!(
-                        "Exit code: {:?}{}",
-                        exit_status.code(),
-                        if stderr_str.trim().is_empty() { String::new() } else { format!("\n{}", stderr_str.trim()) }
-                    )));
+                    let stderr_str = String::from_utf8_lossy(&stderr).to_string();
+                    return Err(CommitGenerationError::AgentFailed {
+                        exit_code: exit_status.code(),
+                        stderr: stderr_str,
+                        agent_cmd: agent_cmd.to_string(),
+                        message: format!("Agent process exited unsuccessfully"),
+                    });
                 }
 
                 return Ok(String::from_utf8_lossy(&stdout).to_string());
@@ -767,7 +879,12 @@ fn call_llm_agent(prompt: &str, agent_cmd: &str, timeout_secs: u64) -> Result<St
             }
             Err(e) => {
                 let _ = child.kill();
-                return Err(CommitGenerationError::AgentFailed(format!("Failed to wait: {}", e)));
+                return Err(CommitGenerationError::AgentFailed {
+                    exit_code: None,
+                    stderr: String::new(),
+                    agent_cmd: agent_cmd.to_string(),
+                    message: format!("Failed to wait: {}", e),
+                });
             }
         }
     }
@@ -898,13 +1015,72 @@ pub(crate) fn generate_commit_message_with_llm(diff: &str, agent_cmd: &str) -> i
     Ok(combined)
 }
 
+/// Generate commit message with fallback to alternative agents.
+///
+/// This function tries each agent in the fallback chain until one succeeds.
+/// For each agent, it attempts chunked commit message generation with retries.
+/// This provides robustness against agent failures (timeout, rate limits, etc.).
+///
+/// # Arguments
+///
+/// * `diff` - The git diff to generate a commit message for
+/// * `agent_cmds` - Slice of agent commands to try in order (first is primary, rest are fallbacks)
+///
+/// # Returns
+///
+/// Returns `Ok(String)` with the generated commit message, or an error if all agents fail.
+pub(crate) fn generate_commit_message_with_fallback(diff: &str, agent_cmds: &[String]) -> io::Result<String> {
+    if agent_cmds.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "No agent commands provided"));
+    }
+
+    eprintln!("Generating commit message with {} agent(s) in fallback chain...", agent_cmds.len());
+
+    // Try each agent in the fallback chain
+    for (agent_idx, agent_cmd) in agent_cmds.iter().enumerate() {
+        eprintln!("Trying agent {}/{}: {}", agent_idx + 1, agent_cmds.len(), agent_cmd);
+
+        match generate_commit_message_with_llm(diff, agent_cmd) {
+            Ok(msg) => {
+                eprintln!("✓ Agent {} succeeded: {}", agent_idx + 1, agent_cmd);
+                return Ok(msg);
+            }
+            Err(e) => {
+                eprintln!("✗ Agent {} failed: {}", agent_idx + 1, agent_cmd);
+                eprintln!("  Error: {}", e);
+
+                // If this was the last agent, return the error
+                if agent_idx == agent_cmds.len() - 1 {
+                    eprintln!("All agents in fallback chain failed");
+                    return Err(e);
+                }
+                // Otherwise, continue to the next agent
+                eprintln!("  Trying next agent in chain...");
+            }
+        }
+    }
+
+    // Should never reach here, but handle the case
+    Err(io::Error::new(io::ErrorKind::Other, "All agents failed"))
+}
+
 /// Generate commit message with retry logic.
+///
+/// This function includes smart retry logic that:
+/// 1. Provides feedback to the LLM when validation fails
+/// 2. Uses error classification to decide whether to retry or fallback immediately
+/// 3. Only retries transient errors (rate limits, network issues, timeouts)
+/// 4. Immediately returns for permanent/agent-specific errors (auth failures, GLM quirks)
 fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: usize) -> io::Result<String> {
-    use crate::prompts::prompt_generate_commit_message_with_diff;
+    use crate::prompts::{prompt_generate_commit_message_with_diff, prompt_retry_commit_message_with_feedback};
     use std::time::Duration;
 
     let max_retries = 3;
     let timeouts = [60, 90, 120]; // Exponential backoff: 60s, 90s, 120s
+
+    // Track the last bad message and validation error for feedback on retry
+    let mut last_bad_message: Option<String> = None;
+    let mut last_validation_error: Option<String> = None;
 
     for attempt in 0..max_retries {
         if attempt > 0 {
@@ -914,7 +1090,13 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
             std::thread::sleep(Duration::from_millis(backoff_ms));
         }
 
-        let prompt = prompt_generate_commit_message_with_diff(diff);
+        // Use the retry prompt with feedback if we have a previous bad message
+        let prompt = if let (Some(bad_msg), Some(val_err)) = (&last_bad_message, &last_validation_error) {
+            eprintln!("Using retry prompt with validation feedback...");
+            prompt_retry_commit_message_with_feedback(diff, bad_msg, val_err)
+        } else {
+            prompt_generate_commit_message_with_diff(diff)
+        };
 
         match call_llm_agent(&prompt, agent_cmd, timeouts[attempt.min(timeouts.len() - 1)]) {
             Ok(raw_output) => {
@@ -931,13 +1113,20 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
                         return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
                     }
                     Err(CommitGenerationError::ValidationFailed(msg)) => {
-                        // Validation failed - log but try retry as it might be a transient issue
+                        // Validation failed - save the bad message and error for retry with feedback
                         eprintln!("Validation failed on attempt {}: {}", attempt + 1, msg);
+                        eprintln!("Bad message will be provided as feedback on next retry");
+
+                        // Save the raw output as the bad message for feedback
+                        let cleaned_bad = clean_commit_message(&raw_output);
+                        last_bad_message = Some(cleaned_bad);
+                        last_validation_error = Some(msg.clone());
+
                         if attempt == max_retries - 1 {
                             // Last attempt failed - return error
                             return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
                         }
-                        // Continue to retry
+                        // Continue to retry with feedback
                     }
                     Err(CommitGenerationError::Empty) => {
                         eprintln!("LLM returned empty output on attempt {}", attempt + 1);
@@ -951,10 +1140,30 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
                             return Err(io::Error::new(io::ErrorKind::TimedOut, "LLM timed out after all retries"));
                         }
                     }
-                    Err(CommitGenerationError::AgentFailed(msg)) => {
-                        eprintln!("Agent failed on attempt {}: {}", attempt + 1, msg);
-                        if attempt == max_retries - 1 {
-                            return Err(io::Error::other(msg));
+                    Err(err @ CommitGenerationError::AgentFailed { .. }) => {
+                        // Use error classification to decide whether to retry or fallback immediately
+                        eprintln!("Agent failed on attempt {}: {}", attempt + 1, err);
+
+                        match err.should_retry_with_classification() {
+                            Some(true) => {
+                                // Error is transient - retry with same agent
+                                eprintln!("  -> Retrying same agent (transient error)");
+                                if attempt == max_retries - 1 {
+                                    return Err(io::Error::other(err.to_string()));
+                                }
+                                // Continue to next retry
+                            }
+                            Some(false) => {
+                                // Error is permanent or agent-specific - fallback immediately
+                                eprintln!("  -> Falling back to next agent (non-retryable error)");
+                                return Err(io::Error::other(err.to_string()));
+                            }
+                            None => {
+                                // No classification available - use default retry behavior
+                                if attempt == max_retries - 1 {
+                                    return Err(io::Error::other(err.to_string()));
+                                }
+                            }
                         }
                     }
                 }
@@ -965,11 +1174,30 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
                     return Err(io::Error::new(io::ErrorKind::TimedOut, format!("LLM timed out after {} attempts", max_retries)));
                 }
             }
-            Err(CommitGenerationError::AgentFailed(msg)) => {
-                // Agent failed - might be a persistent issue
-                eprintln!("Agent error on attempt {}: {}", attempt + 1, msg);
-                if attempt == max_retries - 1 {
-                    return Err(io::Error::other(msg));
+            Err(err @ CommitGenerationError::AgentFailed { .. }) => {
+                // Use error classification to decide whether to retry or fallback immediately
+                eprintln!("Agent error on attempt {}: {}", attempt + 1, err);
+
+                match err.should_retry_with_classification() {
+                    Some(true) => {
+                        // Error is transient - retry with same agent
+                        eprintln!("  -> Retrying same agent (transient error)");
+                        if attempt == max_retries - 1 {
+                            return Err(io::Error::other(err.to_string()));
+                        }
+                        // Continue to next retry
+                    }
+                    Some(false) => {
+                        // Error is permanent or agent-specific - fallback immediately
+                        eprintln!("  -> Falling back to next agent (non-retryable error)");
+                        return Err(io::Error::other(err.to_string()));
+                    }
+                    None => {
+                        // No classification available - use default retry behavior
+                        if attempt == max_retries - 1 {
+                            return Err(io::Error::other(err.to_string()));
+                        }
+                    }
                 }
             }
             Err(e) => {
@@ -1022,7 +1250,7 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         use std::collections::HashSet;
 
         if chunks.is_empty() {
-            return "multiple changes".to_string();
+            return "apply changes across multiple files".to_string();
         }
 
         if chunks.len() == 1 {
@@ -1036,7 +1264,7 @@ fn combine_chunk_messages(messages: &[String]) -> String {
             .collect();
 
         if subjects.is_empty() {
-            return "multiple changes".to_string();
+            return "apply changes across multiple files".to_string();
         }
 
         // If all subjects are similar (share common words), use a merged version
@@ -1069,8 +1297,9 @@ fn combine_chunk_messages(messages: &[String]) -> String {
                 subjects[..last_idx].join(", "),
                 subjects[last_idx])
         } else {
-            // Too many different subjects - create a generic but accurate description
-            "apply multiple changes".to_string()
+            // Too many different subjects - create a generic but descriptive message
+            // Avoid bad patterns like "N files changed" or "apply multiple changes"
+            "apply changes across multiple files".to_string()
         }
     }
 
@@ -1121,9 +1350,13 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         }
     }
 
-    // If no valid chunks were extracted, fall back to generic message
+    // If no valid chunks were extracted (all chunks were placeholders like "[chunk 1]"),
+    // this means LLM failed for all chunks. Return a more descriptive message
+    // that indicates the need for manual review or fallback analysis.
     if chunks.is_empty() {
-        return format!("{}: multiple file changes", last_seen_type);
+        // Use a descriptive message that avoids bad patterns like "N file(s) changed"
+        // The message indicates that processing failed but provides semantic context
+        return format!("{}: apply changes across multiple files", last_seen_type);
     }
 
     // Find the most significant type
@@ -1428,55 +1661,207 @@ fn total_files_count(changes: &FileChanges) -> usize {
 }
 
 /// Build a descriptive subject line for the commit message.
+///
+/// This function analyzes file paths to extract semantic meaning and create
+/// a descriptive commit message subject. It avoids generic patterns like
+/// "update N files" by extracting module/directory names from the file paths.
 fn build_subject_line(changes: &FileChanges, total_files: usize, _commit_type: &str) -> String {
-    let mut parts = Vec::new();
+    // Collect all changed files for analysis
+    let all_files: Vec<&String> = changes.new_files.iter()
+        .chain(changes.modified_files.iter())
+        .chain(changes.deleted_files.iter())
+        .collect();
 
-    // Add new files if any
-    if !changes.new_files.is_empty() {
-        let count = changes.new_files.len();
-        if count == 1 {
-            parts.push(format!("add {}", shorten_path(&changes.new_files[0])));
+    if all_files.is_empty() {
+        return "uncommitted changes".to_string();
+    }
+
+    // Analyze file paths to extract semantic meaning
+    let common_prefix = find_common_path_prefix(&all_files);
+    let module_info = extract_module_info(&all_files, &common_prefix);
+
+    // Determine action verb based on what changed
+    let action = determine_action_verb(changes);
+
+    // Build the subject line based on the analysis
+    if total_files == 1 {
+        // Single file - use filename with semantic context
+        let file = &all_files[0];
+        let filename = file.rsplit('/').next().unwrap_or(file);
+        let shortened = shorten_path(file);
+        if shortened != filename {
+            // Has parent directory, use "parent/filename"
+            format!("{} {}", action, shortened)
         } else {
-            parts.push(format!("add {} files", count));
+            format!("{} {}", action, filename)
+        }
+    } else if let Some(module) = module_info.main_module {
+        // Multiple files in a common module - use module as scope
+        if module_info.submodules.len() <= 2 {
+            // List submodules if there are only a few
+            let sub_parts: Vec<&str> = module_info.submodules.iter().map(|s| s.as_str()).collect();
+            if sub_parts.is_empty() {
+                format!("{} {} module", action, module)
+            } else {
+                format!("{} {} module ({})", action, module, sub_parts.join(", "))
+            }
+        } else {
+            // Many submodules, use generic but descriptive message
+            format!("{} {} module", action, module)
+        }
+    } else if let Some(prefix) = common_prefix {
+        // Files share a common path prefix
+        format!("{} files in {}", action, prefix)
+    } else {
+        // Files are spread across different locations - use semantic analysis
+        let locations = extract_semantic_locations(&all_files);
+        if locations.len() == 1 {
+            format!("{} {}", action, locations[0])
+        } else if locations.len() <= 3 {
+            format!("{} {}", action, locations.join(" and "))
+        } else {
+            // Too many different locations - use a descriptive message
+            // Avoid bad patterns like "update N files" or "apply N file changes"
+            format!("{} changes across multiple modules", action)
+        }
+    }
+}
+
+/// Information about the modules affected by changes.
+struct ModuleInfo {
+    main_module: Option<String>,
+    submodules: Vec<String>,
+}
+
+/// Find the common path prefix among all files.
+fn find_common_path_prefix(files: &[&String]) -> Option<String> {
+    if files.is_empty() {
+        return None;
+    }
+
+    // Split all file paths into components
+    let all_paths: Vec<Vec<&str>> = files.iter()
+        .map(|f| f.split('/').collect())
+        .collect();
+
+    // Find common prefix
+    let mut common_prefix = Vec::new();
+    for (i, component) in all_paths[0].iter().enumerate() {
+        let all_match = all_paths.iter().all(|path| {
+            path.get(i) == Some(component)
+        });
+        if all_match && i < all_paths[0].len() - 1 {
+            // Keep the common component (but not the filename itself)
+            common_prefix.push(*component);
+        } else {
+            break;
         }
     }
 
-    // Add deleted files if any (and this is the primary action)
-    if !changes.deleted_files.is_empty() && changes.new_files.is_empty() {
-        let count = changes.deleted_files.len();
-        if count == 1 {
-            parts.push(format!("remove {}", shorten_path(&changes.deleted_files[0])));
+    if common_prefix.is_empty() {
+        None
+    } else {
+        Some(common_prefix.join("/"))
+    }
+}
+
+/// Extract module information from file paths.
+fn extract_module_info(files: &[&String], common_prefix: &Option<String>) -> ModuleInfo {
+    use std::collections::HashMap;
+
+    let mut submodule_counts: HashMap<String, usize> = HashMap::new();
+
+    for file in files {
+        // Remove the common prefix and extract the module/submodule
+        let relative_path = if let Some(prefix) = common_prefix {
+            file.strip_prefix(&format!("{}/", prefix)).unwrap_or(file.as_str())
         } else {
-            parts.push(format!("remove {} files", count));
+            file.as_str()
+        };
+
+        // Get the first component after the prefix (this is the module)
+        let components: Vec<&str> = relative_path.split('/').collect();
+        if components.len() > 1 {
+            // Has at least one directory level
+            *submodule_counts.entry(components[0].to_string()).or_insert(0) += 1;
         }
     }
 
-    // Add modified files if this is primarily a modification
-    if !changes.modified_files.is_empty() && changes.new_files.is_empty() && changes.deleted_files.is_empty() {
-        let count = changes.modified_files.len();
-        if count == 1 {
-            // For a single modified file, use just the filename without path
-            // Avoid patterns like "update src/file.rs"
-            let filename = changes.modified_files[0].rsplit('/').next().unwrap_or(&changes.modified_files[0]);
-            parts.push(format!("update {}", filename));
-        } else if count <= 3 {
-            // List up to 3 modified files by filename only
-            let paths: Vec<String> = changes.modified_files.iter()
-                .take(3)
-                .map(|p| p.rsplit('/').next().unwrap_or(p).to_string())
-                .collect();
-            parts.push(format!("update {}", paths.join(", ")));
-        } else {
-            parts.push(format!("update {} files", count));
+    // Determine the main module and submodules
+    if submodule_counts.is_empty() {
+        ModuleInfo {
+            main_module: None,
+            submodules: Vec::new(),
+        }
+    } else {
+        // Find the most common module as the main module
+        let main_module = submodule_counts.iter()
+            .max_by_key(|(_, &count)| count)
+            .map(|(name, _)| name.clone());
+
+        // Collect other submodules
+        let mut submodules: Vec<String> = submodule_counts.into_iter()
+            .filter(|(name, _)| Some(name) != main_module.as_ref())
+            .map(|(name, _)| name)
+            .collect();
+
+        submodules.sort();
+        submodules.truncate(3); // Limit to 3 submodules
+
+        ModuleInfo {
+            main_module,
+            submodules,
+        }
+    }
+}
+
+/// Extract semantic location names from file paths.
+fn extract_semantic_locations(files: &[&String]) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let mut locations = HashSet::new();
+
+    for file in files {
+        let parts: Vec<&str> = file.split('/').collect();
+        if parts.len() >= 2 {
+            // Get the directory name (second to last component)
+            let dir = parts[parts.len() - 2];
+            // Map common directory names to semantic names
+            let semantic_name = match dir {
+                "src" => "source code",
+                "tests" | "test" => "tests",
+                "docs" | "doc" => "documentation",
+                "examples" => "examples",
+                "benches" | "bench" => "benchmarks",
+                "scripts" => "scripts",
+                _ => dir,
+            };
+            locations.insert(semantic_name.to_string());
         }
     }
 
-    // If we have multiple types of changes, combine them meaningfully
-    if parts.is_empty() {
-        return format!("apply {} file changes", total_files);
-    }
+    let mut locs: Vec<String> = locations.into_iter().collect();
+    locs.sort();
+    locs.truncate(3);
+    locs
+}
 
-    parts.join(" and ")
+/// Determine the action verb based on what changed.
+fn determine_action_verb(changes: &FileChanges) -> &'static str {
+    let has_new = !changes.new_files.is_empty();
+    let has_modified = !changes.modified_files.is_empty();
+    let has_deleted = !changes.deleted_files.is_empty();
+
+    match (has_new, has_modified, has_deleted) {
+        (true, false, false) => "add",
+        (false, true, false) => "update",
+        (false, false, true) => "remove",
+        (true, true, false) => "add and update",
+        (true, false, true) => "add and remove",
+        (false, true, true) => "update and remove",
+        (true, true, true) => "modify",
+        (false, false, false) => "modify", // Should not happen since total_files > 0 is checked above
+    }
 }
 
 /// Shorten a file path to just the filename and maybe parent directory.
@@ -1526,39 +1911,48 @@ fn save_failed_llm_output(diff: &str, error: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Create a commit with an automatically generated commit message.
+/// Stage all changes and create a commit with the given message.
 ///
-/// This function:
-/// 1. Gets the git diff
-/// 2. Checks if there are meaningful changes (skip if empty or whitespace only)
-/// 3. Calls the LLM to generate a commit message (with fallback if LLM fails)
-/// 4. Stages all changes
-/// 5. Creates the commit
+/// This is a helper function that encapsulates the staging and committing logic
+/// to avoid code duplication in the commit message generation flow.
+fn stage_and_commit(
+    commit_message: &str,
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+) -> io::Result<Option<git2::Oid>> {
+    // Stage all changes and verify staging succeeded
+    let staged = git_add_all()?;
+
+    // Validate that staging succeeded before attempting to commit
+    // If no files were staged (staged == false), there's nothing to commit
+    if !staged {
+        return Ok(None);
+    }
+
+    // Create the commit
+    let oid = git_commit(commit_message, git_user_name, git_user_email)?;
+
+    Ok(oid)
+}
+
+/// Create a commit with an automatically generated commit message using fallback chain.
+///
+/// This function uses a fallback chain of agents for commit message generation.
+/// If the primary agent fails, it will try each fallback agent in order until one
+/// succeeds or all fail.
 ///
 /// # Arguments
 ///
-/// * `agent_cmd` - The command to invoke the agent (e.g., "claude", "codex")
-/// * `git_user_name` - Optional git user name (overrides git config)
-/// * `git_user_email` - Optional git user email (overrides git config)
+/// * `agent_cmds` - Slice of agent commands to try in order (first is primary, rest are fallbacks)
+/// * `git_user_name` - Optional git user name
+/// * `git_user_email` - Optional git user email
 ///
 /// # Returns
 ///
-/// Returns `Ok(Some(oid))` with the commit OID if a commit was created,
-/// `Ok(None)` if there were no meaningful changes to commit, or an error if
-/// the operation failed.
-///
-/// # Fallback Behavior
-///
-/// If the LLM fails to generate a commit message, a generic fallback message
-/// is used to ensure changes are still committed. This prevents the loss of
-/// progress if the LLM is temporarily unavailable or misconfigured.
-///
-/// # Environment Variables
-///
-/// * `RALPH_COMMIT_MUST_USE_LLM` - If set to "1" or "true", LLM commit message
-///   generation failures will result in an error instead of using a fallback message.
-pub(crate) fn commit_with_auto_message(
-    agent_cmd: &str,
+/// Returns `Ok(Some(oid))` with the commit OID if successful, `Ok(None)` if there
+/// were no meaningful changes, or an error if all agents fail and git operations fail.
+pub(crate) fn commit_with_auto_message_using_fallback(
+    agent_cmds: &[String],
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
 ) -> io::Result<Option<git2::Oid>> {
@@ -1588,8 +1982,8 @@ pub(crate) fn commit_with_auto_message(
         return stage_and_commit(&commit_message, git_user_name, git_user_email);
     }
 
-    // Generate commit message via LLM, with fallback if it fails
-    let commit_message = match generate_commit_message_with_llm(&diff, agent_cmd) {
+    // Generate commit message via LLM with fallback chain
+    let commit_message = match generate_commit_message_with_fallback(&diff, agent_cmds) {
         Ok(msg) => {
             // Validate the commit message is not empty
             if msg.trim().is_empty() {
@@ -1604,8 +1998,8 @@ pub(crate) fn commit_with_auto_message(
                 eprintln!("========================================");
                 eprintln!("⚠️  WARNING: USING FALLBACK COMMIT MESSAGE");
                 eprintln!("========================================");
-                eprintln!("⚠️  SOMETHING WENT WRONG!");
-                eprintln!("⚠️  The LLM returned an EMPTY commit message.");
+                eprintln!("⚠️  COMMIT MESSAGE GENERATION PATH: FALLBACK");
+                eprintln!("⚠️  REASON: LLM returned empty commit message");
                 eprintln!();
                 eprintln!("This means your commit message will be GENERIC and may NOT");
                 eprintln!("accurately describe what changed. Consider reviewing the");
@@ -1617,12 +2011,15 @@ pub(crate) fn commit_with_auto_message(
 
                 generate_fallback_commit_message(&diff)
             } else {
+                // LLM succeeded - log the path and final message
+                eprintln!("✓ COMMIT MESSAGE GENERATION PATH: LLM SUCCESS WITH FALLBACK");
+                eprintln!("✓ Final commit message: {}", msg.lines().next().unwrap_or(&msg));
                 msg
             }
         }
         Err(e) => {
             // Save the failed output for debugging
-            let error_msg = format!("LLM commit message generation failed: {}", e);
+            let error_msg = format!("LLM commit message generation failed (all agents in fallback chain): {}", e);
             let _ = save_failed_llm_output(&diff, &error_msg);
 
             if must_use_llm {
@@ -1633,14 +2030,13 @@ pub(crate) fn commit_with_auto_message(
             eprintln!("========================================");
             eprintln!("⚠️  WARNING: USING FALLBACK COMMIT MESSAGE");
             eprintln!("========================================");
-            eprintln!("⚠️  SOMETHING WENT WRONG!");
-            eprintln!("⚠️  The LLM FAILED to generate a commit message.");
+            eprintln!("⚠️  COMMIT MESSAGE GENERATION PATH: FALLBACK");
+            eprintln!("⚠️  REASON: All agents in fallback chain failed - {}", e);
             eprintln!();
             eprintln!("This means your commit message will be GENERIC and may NOT");
             eprintln!("accurately describe what changed. You should EDIT the commit");
             eprintln!("message to be more specific after this operation completes.");
             eprintln!();
-            eprintln!("Error: {}", e);
             eprintln!("To debug, check .agent/logs/commit_generation_failed/");
             eprintln!("To make this a hard error, set RALPH_COMMIT_MUST_USE_LLM=1");
             eprintln!();
@@ -1652,71 +2048,33 @@ pub(crate) fn commit_with_auto_message(
     stage_and_commit(&commit_message, git_user_name, git_user_email)
 }
 
-/// Stage all changes and create a commit with the given message.
+/// Result of commit operation with fallback.
 ///
-/// This is a helper function that encapsulates the staging and committing logic
-/// to avoid code duplication in the commit message generation flow.
-fn stage_and_commit(
-    commit_message: &str,
-    git_user_name: Option<&str>,
-    git_user_email: Option<&str>,
-) -> io::Result<Option<git2::Oid>> {
-    // Stage all changes and verify staging succeeded
-    let staged = git_add_all()?;
-
-    // Validate that staging succeeded before attempting to commit
-    // If no files were staged (staged == false), there's nothing to commit
-    if !staged {
-        return Ok(None);
-    }
-
-    // Create the commit
-    let oid = git_commit(commit_message, git_user_name, git_user_email)?;
-
-    Ok(oid)
-}
-
-/// Result of an attempted commit operation.
-///
-/// This type provides detailed information about the result of a commit attempt,
-/// which is useful for logging and error handling throughout the pipeline.
+/// This is the fallback-aware version of `CommitResult`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommitResult {
+pub enum CommitResultFallback {
     /// A commit was successfully created with the given OID.
     Success(git2::Oid),
     /// No commit was created because there were no meaningful changes.
     NoChanges,
     /// The commit operation failed with an error message.
-    ///
-    /// This indicates an actual git operation failure (e.g., repository corruption,
-    /// permission issues, merge conflicts). LLM failures for commit message generation
-    /// are handled internally with fallback messages and do not result in this variant.
     Failed(String),
 }
 
-/// Create a commit with an automatically generated commit message, returning a detailed result.
+
+/// Create a commit with an automatically generated commit message using fallback chain, returning a detailed result.
 ///
-/// This is a convenience wrapper around `commit_with_auto_message` that returns
-/// a `CommitResult` enum for more detailed error handling and logging.
-///
-/// # Arguments
-///
-/// * `agent_cmd` - The command to invoke the agent (e.g., "claude", "codex")
-/// * `git_user_name` - Optional git user name (overrides git config)
-/// * `git_user_email` - Optional git user email (overrides git config)
-///
-/// # Returns
-///
-/// Returns a `CommitResult` indicating success with OID, no changes, or failure.
-pub(crate) fn commit_with_auto_message_result(
-    agent_cmd: &str,
+/// This is a convenience wrapper around `commit_with_auto_message_using_fallback` that returns
+/// a `CommitResultFallback` enum for easier error handling and logging in the orchestrator.
+pub(crate) fn commit_with_auto_message_fallback_result(
+    agent_cmds: &[String],
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
-) -> CommitResult {
-    match commit_with_auto_message(agent_cmd, git_user_name, git_user_email) {
-        Ok(Some(oid)) => CommitResult::Success(oid),
-        Ok(None) => CommitResult::NoChanges,
-        Err(e) => CommitResult::Failed(e.to_string()),
+) -> CommitResultFallback {
+    match commit_with_auto_message_using_fallback(agent_cmds, git_user_name, git_user_email) {
+        Ok(Some(oid)) => CommitResultFallback::Success(oid),
+        Ok(None) => CommitResultFallback::NoChanges,
+        Err(e) => CommitResultFallback::Failed(e.to_string()),
     }
 }
 
