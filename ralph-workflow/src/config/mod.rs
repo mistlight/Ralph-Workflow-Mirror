@@ -74,8 +74,8 @@ mod tests {
         assert_eq!(Verbosity::Verbose.truncate_limit("tool_input"), 500);
 
         // Full and Debug have unlimited
-        assert_eq!(Verbosity::Full.truncate_limit("text"), 999999);
-        assert_eq!(Verbosity::Debug.truncate_limit("text"), 999999);
+        assert_eq!(Verbosity::Full.truncate_limit("text"), 999_999);
+        assert_eq!(Verbosity::Debug.truncate_limit("text"), 999_999);
     }
 
     #[test]

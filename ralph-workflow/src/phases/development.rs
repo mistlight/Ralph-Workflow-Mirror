@@ -444,12 +444,12 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
         ctx.colors.reset()
     ));
 
-    let Some((program, args)) = argv.split_first() else {
+    let Some((program, cmd_args)) = argv.split_first() else {
         ctx.logger
             .warn("FAST_CHECK_CMD is empty after parsing; skipping fast check");
         return Ok(());
     };
-    let status = Command::new(program).args(args).status()?;
+    let status = Command::new(program).args(cmd_args).status()?;
 
     if status.success() {
         ctx.logger.success("Fast check passed");
