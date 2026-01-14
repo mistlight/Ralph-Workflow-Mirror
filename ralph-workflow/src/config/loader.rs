@@ -100,6 +100,17 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         ReviewDepth::default()
     });
 
+    // Warn if container_mode is explicitly disabled
+    if !general.container_mode {
+        warnings.push(
+            "DEPRECATION: container_mode = false is set in config. \
+             Security is now enabled by default (container mode on Linux, user-account mode on macOS). \
+             Remove 'container_mode = false' from your config to use the new secure defaults. \
+             Use --no-container-mode flag if you need to temporarily disable security."
+                .to_string(),
+        );
+    }
+
     Config {
         developer_agent: None, // Set from agent_chain or CLI
         reviewer_agent: None,  // Set from agent_chain or CLI
@@ -181,7 +192,7 @@ fn default_config() -> Config {
         isolation_mode: true,
         git_user_name: None,
         git_user_email: None,
-        container_mode: false,
+        container_mode: true,
         security_mode: None,
         container_engine: None,
         container_image: None,

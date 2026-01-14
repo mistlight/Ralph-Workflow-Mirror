@@ -25,9 +25,9 @@ pub(crate) use repo::{
     require_git_repo, validate_and_truncate_diff, CommitResultFallback,
 };
 pub(crate) use start_commit::{reset_start_commit, save_start_commit};
-pub use wrapper::cleanup_agent_phase_silent;
 pub(crate) use wrapper::{
-    cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase, start_agent_phase, GitHelpers,
+    cleanup_orphaned_marker, cleanup_agent_phase_silent, disable_git_wrapper, end_agent_phase,
+    start_agent_phase, GitHelpers,
 };
 
 #[cfg(test)]

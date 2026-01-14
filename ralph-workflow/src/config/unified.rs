@@ -140,7 +140,7 @@ impl Default for GeneralConfig {
             prompt_path: None,
             git_user_name: None,
             git_user_email: None,
-            container_mode: false, // Disabled by default for compatibility
+            container_mode: true, // Enabled by default for security (use --no-container-mode to disable)
             security_mode: "auto".to_string(),
             container_engine: "auto".to_string(),
             container_image: "ralph-agent:latest".to_string(),
