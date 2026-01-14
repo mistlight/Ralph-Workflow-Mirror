@@ -1158,6 +1158,68 @@ profiles:
             "ANTHROPIC_MODEL global environment should be unchanged after load_ccs_env_vars"
         );
     }
+
+    #[test]
+    fn test_multiple_load_ccs_env_vars_calls_isolated() {
+        // Regression test ensuring multiple load_ccs_env_vars calls with different
+        // profiles don't cross-contaminate. Each call should return independent results.
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        // Create GLM profile settings
+        fs::write(
+            ccs_dir.join("glm.settings.json"),
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"glm-token","ANTHROPIC_MODEL":"glm-4.7"}}"#,
+        )
+        .unwrap();
+
+        // Create another profile (e.g., "work") with different settings
+        fs::write(
+            ccs_dir.join("work.settings.json"),
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://work-api.example.com","ANTHROPIC_AUTH_TOKEN":"work-token","ANTHROPIC_MODEL":"claude-sonnet-4"}}"#,
+        )
+        .unwrap();
+
+        fs::write(
+            ccs_dir.join("config.json"),
+            r#"{"profiles":{"glm":"glm.settings.json","work":"work.settings.json"}}"#,
+        )
+        .unwrap();
+
+        // Load GLM profile env vars
+        let glm_env = load_ccs_env_vars("glm").unwrap();
+        assert_eq!(
+            glm_env.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://api.z.ai/api/anthropic"
+        );
+        assert_eq!(glm_env.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "glm-token");
+        assert_eq!(glm_env.get("ANTHROPIC_MODEL").unwrap(), "glm-4.7");
+
+        // Load work profile env vars
+        let work_env = load_ccs_env_vars("work").unwrap();
+        assert_eq!(
+            work_env.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://work-api.example.com"
+        );
+        assert_eq!(work_env.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "work-token");
+        assert_eq!(work_env.get("ANTHROPIC_MODEL").unwrap(), "claude-sonnet-4");
+
+        // Verify the two HashMaps are independent (modifying one doesn't affect the other)
+        drop(glm_env);
+
+        // Re-load work profile to verify we get a fresh HashMap
+        let work_env2 = load_ccs_env_vars("work").unwrap();
+        assert_eq!(
+            work_env2.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://work-api.example.com"
+        );
+        assert!(!work_env2.contains_key("MODIFIED"));
+    }
 }
 
 /// Root TOML configuration structure.

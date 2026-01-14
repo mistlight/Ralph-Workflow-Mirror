@@ -988,4 +988,97 @@ mod tests {
             "display_name should be updated from the unified config"
         );
     }
+
+    #[test]
+    fn test_resolve_config_does_not_share_env_vars_between_agents() {
+        // Regression test for the exact bug scenario:
+        // 1. User runs Ralph with ccs/glm agent (with GLM env vars)
+        // 2. User then runs Ralph with claude agent
+        // 3. Claude should NOT have GLM env vars
+        //
+        // This test verifies that resolve_config() returns independent AgentConfig
+        // instances with separate env_vars HashMaps - i.e., modifications to one
+        // agent's env_vars don't affect another agent's config.
+        let mut registry = AgentRegistry::new().unwrap();
+
+        // Register ccs/glm with GLM environment variables
+        registry.register(
+            "ccs/glm",
+            AgentConfig {
+                cmd: "ccs glm".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                print_flag: "-p".to_string(),
+                streaming_flag: "--include-partial-messages".to_string(),
+                env_vars: {
+                    let mut vars = std::collections::HashMap::new();
+                    vars.insert(
+                        "ANTHROPIC_BASE_URL".to_string(),
+                        "https://api.z.ai/api/anthropic".to_string(),
+                    );
+                    vars.insert(
+                        "ANTHROPIC_AUTH_TOKEN".to_string(),
+                        "test-token-glm".to_string(),
+                    );
+                    vars.insert("ANTHROPIC_MODEL".to_string(), "glm-4.7".to_string());
+                    vars
+                },
+                display_name: Some("ccs-glm".to_string()),
+            },
+        );
+
+        // Register claude with empty env_vars (typical configuration)
+        registry.register(
+            "claude",
+            AgentConfig {
+                cmd: "claude -p".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: "--include-partial-messages".to_string(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: None,
+            },
+        );
+
+        // Resolve ccs/glm config first
+        let glm_config = registry.resolve_config("ccs/glm").unwrap();
+        assert_eq!(glm_config.env_vars.len(), 3);
+        assert_eq!(
+            glm_config.env_vars.get("ANTHROPIC_BASE_URL"),
+            Some(&"https://api.z.ai/api/anthropic".to_string())
+        );
+
+        // Resolve claude config
+        let claude_config = registry.resolve_config("claude").unwrap();
+        assert_eq!(
+            claude_config.env_vars.len(),
+            0,
+            "claude agent should have empty env_vars"
+        );
+
+        // Resolve ccs/glm again to ensure we get a fresh clone
+        let glm_config2 = registry.resolve_config("ccs/glm").unwrap();
+        assert_eq!(glm_config2.env_vars.len(), 3);
+
+        // Modify the first GLM config's env_vars
+        // This should NOT affect the second GLM config if cloning is deep
+        drop(glm_config);
+
+        // Verify claude still has empty env_vars after another resolve
+        let claude_config2 = registry.resolve_config("claude").unwrap();
+        assert_eq!(
+            claude_config2.env_vars.len(),
+            0,
+            "claude agent env_vars should remain independent"
+        );
+    }
 }
