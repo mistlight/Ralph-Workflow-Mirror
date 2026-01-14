@@ -1,7 +1,8 @@
 //! Core pipeline types (stats and cleanup guards).
 
+use crate::files::cleanup_generated_files;
 use crate::git_helpers::{disable_git_wrapper, end_agent_phase, uninstall_hooks, GitHelpers};
-use crate::utils::{cleanup_generated_files, Logger};
+use crate::logger::Logger;
 
 /// Statistics tracking for pipeline execution.
 pub struct Stats {

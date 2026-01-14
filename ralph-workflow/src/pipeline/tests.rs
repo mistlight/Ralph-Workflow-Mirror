@@ -10,8 +10,8 @@ use crate::config::Config;
 use crate::config::Verbosity;
 use crate::output::argv_requests_json;
 use crate::timer::Timer;
+use crate::logger::Logger;
 use crate::utils::split_command;
-use crate::utils::Logger;
 use std::collections::HashMap;
 
 #[test]
@@ -352,9 +352,9 @@ exit 1
     let ok_script = dir.path().join("ok.sh");
     std::fs::write(
         &ok_script,
-        r#"#!/bin/sh
+        "#!/bin/sh
 exit 0
-"#,
+",
     )
     .unwrap();
 

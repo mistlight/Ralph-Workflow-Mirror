@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::guidelines::ReviewGuidelines;
 use crate::pipeline::Stats;
 use crate::timer::Timer;
-use crate::utils::Logger;
+use crate::logger::Logger;
 
 /// Shared context for all pipeline phases.
 ///

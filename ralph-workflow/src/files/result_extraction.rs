@@ -965,7 +965,7 @@ mod tests {
         let result1 = r##"{"type": "result", "result": "# Complete Plan\n\n## Implementation Steps\n\nStep 1: Create module with functionality.\nStep 2: Add comprehensive tests.\nStep 3: Write documentation.\nStep 4: Integrate and verify."}"##;
         let result2 =
             r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
-        let result3 = r##"{"type": "result", "result": "Last paragraph"}"##;
+        let result3 = r#"{"type": "result", "result": "Last paragraph"}"#;
         let json_log = format!("{}\n{}\n{}", result1, result2, result3);
         create_log_file(&log_dir, "output.log", &json_log);
 
@@ -1020,7 +1020,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Create multiple log files simulating fallback/retry scenario
-        let json_log1 = r##"{"type": "result", "result": "First attempt - no plan"}"##;
+        let json_log1 = r#"{"type": "result", "result": "First attempt - no plan"}"#;
         let json_log2 = r##"{"type": "result", "result": "# Plan\n\n## Summary\nSuccess with implementation steps!"}"##;
 
         fs::write(temp.path().join("planning_1_agent1_0.log"), json_log1).unwrap();
@@ -1119,14 +1119,14 @@ mod tests {
 
     #[test]
     fn test_extract_plan_from_text_with_summary() {
-        let content = r#"Some random output
+        let content = "Some random output
 ## Summary
 This is the plan summary with enough content to pass validation.
 
 ## Implementation Steps
 1. Do the thing
 2. Do the other thing
-"#;
+";
         let result = extract_plan_from_text(content);
         assert!(result.is_some());
         assert!(result.unwrap().starts_with("## Summary"));
@@ -1134,11 +1134,11 @@ This is the plan summary with enough content to pass validation.
 
     #[test]
     fn test_extract_plan_from_text_with_implementation_steps() {
-        let content = r#"Agent thinking...
+        let content = "Agent thinking...
 ## Implementation Steps
 Step 1: Create the component with all necessary features
 Step 2: Add tests and documentation
-"#;
+";
         let result = extract_plan_from_text(content);
         assert!(result.is_some());
         assert!(result.unwrap().starts_with("## Implementation Steps"));
@@ -1163,7 +1163,7 @@ Step 2: Add tests and documentation
         let temp = TempDir::new().unwrap();
 
         // Create log file with no JSON result event, but text plan content
-        let text_log = r#"[agent] Starting...
+        let text_log = "[agent] Starting...
 [agent] Thinking about the plan...
 ## Summary
 This is a text-based plan without proper JSON wrapping but with enough content.
@@ -1171,7 +1171,7 @@ This is a text-based plan without proper JSON wrapping but with enough content.
 ## Implementation Steps
 1. First step with detailed explanation
 2. Second step with implementation details
-"#;
+";
         fs::write(temp.path().join("planning_1_glm_0.log"), text_log).unwrap();
 
         let prefix = temp.path().join("planning_1");
@@ -1203,7 +1203,7 @@ This is a text-based plan without proper JSON wrapping but with enough content.
     fn test_extract_issues_no_issues_from_prefix() {
         let temp = TempDir::new().unwrap();
 
-        let json_log = r##"{"type": "result", "result": "No issues found. The code looks good."}"##;
+        let json_log = r#"{"type": "result", "result": "No issues found. The code looks good."}"#;
         fs::write(temp.path().join("reviewer_1_opus_0.log"), json_log).unwrap();
 
         let prefix = temp.path().join("reviewer_1");
@@ -1250,13 +1250,13 @@ This is a text-based plan without proper JSON wrapping but with enough content.
         fs::create_dir(&subdir).unwrap();
 
         // Create log file with text plan content (no JSON result event)
-        let text_log = r#"[agent] Starting...
+        let text_log = "[agent] Starting...
 ## Summary
 This is a text-based plan from nested subdirectory with enough content to pass validation.
 
 ## Implementation Steps
 1. First step with detailed explanation
-"#;
+";
         fs::write(subdir.join("glm_0.log"), text_log).unwrap();
 
         let prefix = temp.path().join("planning_1");
@@ -1338,12 +1338,12 @@ This is a text-based plan from nested subdirectory with enough content to pass v
     #[test]
     fn test_extract_plan_from_text_permissive_no_markers() {
         // Plaintext content without markdown markers but with plan keywords
-        let content = r#"I need to implement a new feature for the user authentication system.
+        let content = "I need to implement a new feature for the user authentication system.
 First, I will create a new module that handles the login logic.
 Then, I will add functions for password validation and session management.
 Finally, I will write tests to ensure everything works correctly.
 
-The approach involves using secure hashing for passwords and JWT tokens for sessions."#;
+The approach involves using secure hashing for passwords and JWT tokens for sessions.";
 
         let result = extract_plan_from_text(content);
         assert!(
@@ -1391,7 +1391,7 @@ The module will integrate with the existing database layer."#;
     #[test]
     fn test_extract_plan_from_text_permissive_no_plan_keywords() {
         // Substantial content without plan-like keywords (avoiding: step, implement, create, add, build, develop, write, then, etc.)
-        let content = r#"The quick brown fox jumps over the lazy dog repeatedly.
+        let content = "The quick brown fox jumps over the lazy dog repeatedly.
 This text was composed to be long enough to pass the length requirement.
 It avoids using technical terminology that might trigger extraction.
 Instead we just talk about random things like animals and weather.
@@ -1399,7 +1399,7 @@ Our purpose is to test that the extraction correctly filters out non-plan conten
 This should definitely be long enough but still rejected due to lack of keywords.
 We're discussing foxes, dogs, weather, and other non-technical subjects today.
 The weather is nice so all of the animals are playing in a large field outside.
-A sunny day with blue skies makes for perfect conditions to observe nature."#;
+A sunny day with blue skies makes for perfect conditions to observe nature.";
 
         let result = extract_plan_from_text(content);
         assert!(
@@ -1411,12 +1411,12 @@ A sunny day with blue skies makes for perfect conditions to observe nature."#;
     #[test]
     fn test_extract_plan_from_text_permissive_filters_debug_output() {
         // Content with debug/tool markers
-        let content = r#"[debug] Starting the process
+        let content = "[debug] Starting the process
 I need to develop the new module by writing code for authentication.
 [tool] Reading file: src/main.rs
 Then I must add functions for handling user sessions and password hashing.
 [warn] Deprecated API usage detected in legacy code
-Finally, I must verify everything works correctly through comprehensive testing."#;
+Finally, I must verify everything works correctly through comprehensive testing.";
 
         let result = extract_plan_from_text(content);
         assert!(
@@ -1436,12 +1436,12 @@ Finally, I must verify everything works correctly through comprehensive testing.
         let temp = TempDir::new().unwrap();
 
         // Create log file with plaintext plan (no JSON result events, no markdown markers)
-        let text_log = r#"The agent needs to implement a user authentication feature.
+        let text_log = "The agent needs to implement a user authentication feature.
 Step 1: Create a new auth module with login and registration functions.
 Step 2: Add password hashing using bcrypt for security.
 Step 3: Implement JWT token generation for session management.
 Step 4: Add middleware to protect routes that require authentication.
-Step 5: Write comprehensive tests for all auth functionality."#;
+Step 5: Write comprehensive tests for all auth functionality.";
 
         fs::write(temp.path().join("planning_1_glm_0.log"), text_log).unwrap();
 
@@ -1458,13 +1458,13 @@ Step 5: Write comprehensive tests for all auth functionality."#;
     #[test]
     fn test_extract_plan_from_text_markers_take_precedence() {
         // When markdown markers exist, they should take precedence over permissive extraction
-        let content = r#"Some initial text without structure.
+        let content = "Some initial text without structure.
 ## Summary
 This is the structured plan that should be extracted.
 The permissive fallback should not be used when markers are present.
 ## Implementation Steps
 1. Step one
-2. Step two"#;
+2. Step two";
 
         let result = extract_plan_from_text(content);
         assert!(result.is_some());
@@ -1482,7 +1482,7 @@ The permissive fallback should not be used when markers are present.
         // Simulate the exact bug scenario:
         // Multiple log files where earlier files have complete plans,
         // later files have only partial/truncated plans
-        let log1_content = r#"Agent output...
+        let log1_content = "Agent output...
 ## Summary
 
 Fix an indeterministic bug where PLAN.md sometimes contains only the last few paragraphs instead of the complete plan.
@@ -1499,19 +1499,19 @@ Step 5: Add diagnostic logging for debugging
 
 1. src/files/result_extraction.rs - Core extraction logic
 2. src/phases/development.rs - Calls the extraction functions
-"#;
+";
 
-        let log2_content = r#"More agent output...
+        let log2_content = "More agent output...
 ## Summary
 
 This is a truncated plan that only has a summary section.
-"#;
+";
 
-        let log3_content = r#"Even more output...
+        let log3_content = "Even more output...
 ## Summary
 
 Just a short paragraph at the end.
-"#;
+";
 
         fs::write(temp.path().join("planning_1_glm_0.log"), log1_content).unwrap();
 

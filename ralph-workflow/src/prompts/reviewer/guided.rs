@@ -26,7 +26,7 @@ pub fn prompt_reviewer_review_with_guidelines(
 
     match context {
         ContextLevel::Minimal => format!(
-            r#"You are in REVIEW MODE with fresh eyes perspective.
+            "You are in REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
@@ -43,11 +43,11 @@ OUTPUT (prioritized checklist):
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found, return "No issues found.""#,
+If no issues found, return \"No issues found.\"",
             guidelines = guidelines_section
         ),
         ContextLevel::Normal => format!(
-            r#"You are in REVIEW MODE.
+            "You are in REVIEW MODE.
 
 Language-Specific checks:
 {guidelines}
@@ -58,7 +58,7 @@ OUTPUT (prioritized checklist):
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues, return "No issues found.""#,
+If no issues, return \"No issues found.\"",
             guidelines = guidelines_section
         ),
     }
@@ -73,7 +73,7 @@ pub fn prompt_comprehensive_review(context: ContextLevel, guidelines: &ReviewGui
 
     match context {
         ContextLevel::Minimal => format!(
-            r#"You are in COMPREHENSIVE REVIEW MODE with fresh eyes perspective.
+            "You are in COMPREHENSIVE REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
@@ -92,11 +92,11 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"#,
+- [ ] Low: [file:line] Description",
             priorities = priority_section
         ),
         ContextLevel::Normal => format!(
-            r#"You are in COMPREHENSIVE REVIEW MODE.
+            "You are in COMPREHENSIVE REVIEW MODE.
 
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
 {priorities}
@@ -105,7 +105,7 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"#,
+- [ ] Low: [file:line] Description",
             priorities = priority_section
         ),
     }
@@ -123,7 +123,7 @@ pub fn prompt_security_focused_review(
 
     match context {
         ContextLevel::Minimal => format!(
-            r#"You are in SECURITY REVIEW MODE with fresh eyes perspective.
+            "You are in SECURITY REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
@@ -143,11 +143,11 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Medium: [file:line] SECURITY - Address as needed
 - [ ] Low: [file:line] SECURITY - Nice to have
 
-If no issues found, return "No security issues found.""#,
+If no issues found, return \"No security issues found.\"",
             security_section = security_section
         ),
         ContextLevel::Normal => format!(
-            r#"You are in SECURITY REVIEW MODE.
+            "You are in SECURITY REVIEW MODE.
 
 LANGUAGE-SPECIFIC SECURITY:
 {security_section}
@@ -156,7 +156,7 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] SECURITY - Description
 - [ ] High: [file:line] SECURITY - Description
 - [ ] Medium: [file:line] SECURITY - Description
-- [ ] Low: [file:line] SECURITY - Description"#,
+- [ ] Low: [file:line] SECURITY - Description",
             security_section = security_section
         ),
     }

@@ -19,10 +19,9 @@ use crate::prompts::{
     Action, ContextLevel, Role,
 };
 use crate::review_metrics::ReviewMetrics;
-use crate::utils::{
-    clean_context_for_reviewer, delete_issues_file_for_isolation, print_progress, save_checkpoint,
-    update_status, PipelineCheckpoint, PipelinePhase,
-};
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
+use crate::logger::print_progress;
 
 use super::context::PhaseContext;
 use std::fs;

@@ -6,7 +6,7 @@
 use super::hooks::HOOK_MARKER;
 use super::repo::get_hooks_dir;
 use super::*;
-use crate::utils::Logger;
+use crate::logger::Logger;
 use std::fs::{self, File};
 use tempfile::TempDir;
 
