@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -31,6 +31,9 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body data-theme="dark">
+    <!-- Skip Link for Accessibility -->
+    <a href="#main" class="skip-link">Skip to main content</a>
+
     <!-- Atmospheric Overlays -->
     <div class="noise-overlay" aria-hidden="true"></div>
     <div class="scanlines" aria-hidden="true"></div>
@@ -46,7 +49,7 @@
                 <span class="logo-text">ralph</span>
             </a>
 
-            <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+            <button type="button" class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
                 <span></span>
                 <span></span>
                 <span></span>
@@ -58,7 +61,7 @@
                 <li><a href="#features" class="nav-link">Features</a></li>
                 <li><a href="#audience" class="nav-link">For You</a></li>
                 <li><a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener" class="nav-link nav-link--external">Codeberg</a></li>
-                <li><button class="theme-toggle" aria-label="Toggle theme">
+                <li><button type="button" class="theme-toggle" aria-label="Toggle theme">
                     <span class="theme-icon" data-theme="dark"></span>
                 </button></li>
             </ul>
@@ -66,6 +69,7 @@
     </nav>
 
     <!-- Hero Section -->
+    <main id="main">
     <section class="hero">
         <div class="hero-bg">
             <div class="grid-pattern" aria-hidden="true"></div>
@@ -103,7 +107,7 @@
                 </div>
 
                 <!-- Terminal Demo -->
-                <div class="terminal" aria-label="Terminal demo showing Ralph in action">
+                <section class="terminal" aria-label="Terminal demo showing Ralph in action">
                     <div class="terminal-header">
                         <span class="terminal-dot terminal-dot--red"></span>
                         <span class="terminal-dot terminal-dot--yellow"></span>
@@ -118,7 +122,7 @@
                         </div>
                         <div class="terminal-output" id="terminal-output"></div>
                     </div>
-                </div>
+                </section>
             </div>
         </div>
     </section>
@@ -332,13 +336,13 @@
             <!-- Installation Tabs -->
             <div class="install-tabs">
                 <div class="install-tabs-nav" role="tablist">
-                    <button class="install-tab install-tab--active" data-tab="quick" role="tab" aria-selected="true">
+                    <button type="button" class="install-tab install-tab--active" data-tab="quick" role="tab" aria-selected="true">
                         Quick Install
                     </button>
-                    <button class="install-tab" data-tab="source" role="tab" aria-selected="false">
+                    <button type="button" class="install-tab" data-tab="source" role="tab" aria-selected="false">
                         Build from Source
                     </button>
-                    <button class="install-tab" data-tab="agent" role="tab" aria-selected="false">
+                    <button type="button" class="install-tab" data-tab="agent" role="tab" aria-selected="false">
                         Agent Setup
                     </button>
                 </div>
@@ -349,7 +353,7 @@
                         <h3>Install with Cargo</h3>
                         <p>The fastest way to get Ralph on your system.</p>
                         <div class="code-block-wrapper">
-                            <button class="copy-btn" aria-label="Copy to clipboard">
+                            <button type="button" class="copy-btn" aria-label="Copy to clipboard">
                                 <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="9" y="9" width="13" height="13" rx="2"/>
                                     <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
@@ -367,7 +371,7 @@
                         <h3>Build from Source</h3>
                         <p>Clone the repository and build locally.</p>
                         <div class="code-block-wrapper">
-                            <button class="copy-btn" aria-label="Copy to clipboard">
+                            <button type="button" class="copy-btn" aria-label="Copy to clipboard">
                                 <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="9" y="9" width="13" height="13" rx="2"/>
                                     <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
@@ -384,7 +388,7 @@ cargo install --path .</code></pre>
                         <h3>Configure Your AI Agent</h3>
                         <p>Ralph works with Claude Code, Codex, or OpenCode. Set your preferred agent in <code class="inline-code">~/.ralph/config.toml</code>:</p>
                         <div class="code-block-wrapper">
-                            <button class="copy-btn" aria-label="Copy to clipboard">
+                            <button type="button" class="copy-btn" aria-label="Copy to clipboard">
                                 <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="9" y="9" width="13" height="13" rx="2"/>
                                     <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
@@ -436,13 +440,13 @@ Use the 'auth' crate and store sessions in Redis.</code></pre>
                     <div class="workflow-step">
                         <div class="workflow-number">3</div>
                         <div class="workflow-content">
-                            <h4>Review & Ship</h4>
+                            <h4>Review &amp; Ship</h4>
                             <p>Ralph implements, reviews, and commits. You review the final result.</p>
                             <div class="code-block-wrapper">
                                 <pre class="code-block"><code class="language-bash">git log -1
 
 commit a1b2c3d4...
-Author: ralph &lt;ralph@cli&gt;
+Author: ralph &amp;lt;ralph@cli&amp;gt;
 Date:   Mon Jan 13 10:30:00 2025
 
     Add user authentication
@@ -647,6 +651,7 @@ Date:   Mon Jan 13 10:30:00 2025
             </div>
         </div>
     </section>
+    </main>
 
     <!-- Footer -->
     <footer class="footer">
@@ -701,6 +706,11 @@ Date:   Mon Jan 13 10:30:00 2025
     </footer>
 
     <!-- Scripts -->
+    <script>
+        // Remove no-js class for JavaScript functionality detection
+        document.documentElement.classList.remove('no-js');
+        document.documentElement.classList.add('js');
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-toml.min.js"></script>

@@ -12,7 +12,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700;800&family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
         *, *::before, *::after {
@@ -26,9 +26,9 @@
             --color-bg-alt: #111111;
             --color-text: #e4e4e7;
             --color-text-muted: #71717a;
-            --color-primary: #00ff00;
-            --color-accent: #00ffff;
-            --font-display: 'Space Grotesk', sans-serif;
+            --color-primary: #39ff14;
+            --color-accent: #00d4ff;
+            --font-display: 'Bricolage Grotesque', sans-serif;
             --font-mono: 'JetBrains Mono', monospace;
         }
 
@@ -77,20 +77,23 @@
         }
 
         .error-code {
-            font-family: var(--font-mono);
+            font-family: var(--font-display);
             font-size: clamp(120px, 25vw, 200px);
-            font-weight: 700;
+            font-weight: 800;
             color: var(--color-primary);
-            line-height: 1;
+            line-height: 0.9;
+            letter-spacing: -0.03em;
             text-shadow:
                 0 0 20px var(--color-primary),
-                0 0 40px rgba(0, 255, 0, 0.5),
-                0 0 60px rgba(0, 255, 0, 0.3);
-            animation: glitch 3s infinite;
+                0 0 40px rgba(57, 255, 20, 0.5),
+                0 0 60px rgba(57, 255, 20, 0.3);
+            animation: glitch 4s infinite;
         }
 
         .error-title {
+            font-family: var(--font-display);
             font-size: clamp(1.5rem, 4vw, 2.5rem);
+            font-weight: 700;
             margin-top: 1rem;
             margin-bottom: 1rem;
         }
@@ -165,9 +168,9 @@
         }
 
         .btn--primary:hover {
-            background: var(--color-accent);
-            transform: translateY(-2px);
-            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+            transform: translateY(-3px);
+            box-shadow: 0 10px 40px rgba(57, 255, 20, 0.4);
         }
 
         .btn--secondary {

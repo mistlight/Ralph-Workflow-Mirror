@@ -38,10 +38,10 @@
     --term-magenta: #bf00ff;
 
     /* Typography - Premium Font Stack */
-    --font-display: 'Syne', 'Space Grotesk', 'Inter', system-ui, sans-serif;
-    --font-body: 'Inter', 'Space Grotesk', system-ui, sans-serif;
+    --font-display: 'Syne', sans-serif;
+    --font-body: 'Inter', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
-    --font-display-alt: 'Bricolage Grotesque', 'Syne', sans-serif;
+    --font-display-alt: 'Bricolage Grotesque', sans-serif;
 
     /* Font Sizes - Dramatic Scale */
     --text-xs: 0.75rem;
@@ -124,6 +124,12 @@
 }
 
 /* === RESET & BASE === */
+/* Enable animations only when JS is available */
+.no-js * {
+    animation: none !important;
+    transition: none !important;
+}
+
 *, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
@@ -142,6 +148,9 @@ body {
     line-height: 1.6;
     color: var(--color-text);
     background-color: var(--color-bg);
+    background-image:
+        radial-gradient(ellipse at 20% 30%, rgba(57, 255, 20, 0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 70%, rgba(0, 212, 255, 0.02) 0%, transparent 50%);
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -195,15 +204,17 @@ h1, h2, h3, h4, h5, h6 {
 
 h1 {
     font-family: var(--font-display-alt);
-    font-size: var(--text-8xl);
-    letter-spacing: -0.03em;
-    line-height: 0.95;
+    font-size: var(--text-9xl);
+    letter-spacing: -0.04em;
+    line-height: 0.9;
+    font-weight: 800;
 }
 
 h2 {
     font-family: var(--font-display);
-    font-size: var(--text-5xl);
-    letter-spacing: -0.02em;
+    font-size: var(--text-6xl);
+    letter-spacing: -0.03em;
+    font-weight: 700;
 }
 
 h3 {
@@ -293,8 +304,8 @@ a:hover {
     text-align: center;
     margin-bottom: var(--space-20);
     opacity: 0;
-    transform: translateY(30px);
-    animation: fadeUp 0.8s ease forwards;
+    transform: translateY(40px);
+    animation: fadeUp 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .section-number {
@@ -495,6 +506,49 @@ a:hover {
     overflow: hidden;
 }
 
+/* Decorative Geometric Shapes */
+.hero::before,
+.hero::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+}
+
+.hero::before {
+    top: 15%;
+    right: 10%;
+    width: 300px;
+    height: 300px;
+    border: 2px solid var(--color-primary);
+    border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
+    opacity: 0.15;
+    animation: morph 15s ease-in-out infinite;
+}
+
+.hero::after {
+    bottom: 20%;
+    left: 8%;
+    width: 200px;
+    height: 200px;
+    border: 2px solid var(--color-accent);
+    opacity: 0.12;
+    transform: rotate(45deg);
+    animation: spin 20s linear infinite;
+}
+
+@keyframes morph {
+    0%, 100% { border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%; transform: rotate(0deg); }
+    25% { border-radius: 58% 42% 75% 25% / 76% 46% 54% 24%; }
+    50% { border-radius: 50% 50% 33% 67% / 55% 27% 73% 45%; transform: rotate(90deg); }
+    75% { border-radius: 33% 67% 58% 42% / 63% 68% 32% 37%; }
+}
+
+@keyframes spin {
+    from { transform: rotate(45deg); }
+    to { transform: rotate(405deg); }
+}
+
 .hero-bg {
     position: absolute;
     top: 0;
@@ -513,17 +567,19 @@ a:hover {
     bottom: 0;
     background-image:
         linear-gradient(var(--color-border) 1px, transparent 1px),
-        linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
-    background-size: 60px 60px;
-    opacity: 0.2;
-    mask-image: radial-gradient(ellipse at center, black 20%, transparent 70%);
-    -webkit-mask-image: radial-gradient(ellipse at center, black 20%, transparent 70%);
-    animation: gridMove 20s linear infinite;
+        linear-gradient(90deg, var(--color-border) 1px, transparent 1px),
+        radial-gradient(circle at 20% 50%, var(--color-primary-dim) 0%, transparent 40%),
+        radial-gradient(circle at 80% 80%, var(--color-accent-dim) 0%, transparent 40%);
+    background-size: 80px 80px, 80px 80px, 100% 100%, 100% 100%;
+    opacity: 0.3;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+    animation: gridMove 30s linear infinite;
 }
 
 @keyframes gridMove {
     0% { transform: translate(0, 0); }
-    100% { transform: translate(60px, 60px); }
+    100% { transform: translate(80px, 80px); }
 }
 
 /* Animated Glow Spots */
@@ -606,8 +662,9 @@ a:hover {
 .hero-title {
     font-family: var(--font-display-alt);
     font-weight: 800;
-    line-height: 0.95;
-    letter-spacing: -0.04em;
+    line-height: 0.88;
+    letter-spacing: -0.05em;
+    text-transform: uppercase;
 }
 
 .hero-title--line {
@@ -703,8 +760,8 @@ a:hover {
 }
 
 .btn--primary:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 30px var(--color-primary-glow);
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 15px 40px rgba(57, 255, 20, 0.35), 0 0 60px rgba(57, 255, 20, 0.2);
 }
 
 .btn--secondary {
@@ -744,18 +801,33 @@ a:hover {
 /* Terminal with Premium Styling */
 .terminal {
     margin-top: var(--space-12);
-    background: var(--color-bg-card);
+    background: linear-gradient(145deg, #0a0a0a 0%, #0f0f0f 100%);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-xl);
     overflow: hidden;
-    box-shadow: var(--shadow-xl), 0 0 0 1px var(--color-border-bright);
+    box-shadow:
+        0 30px 60px rgba(0, 0, 0, 0.5),
+        0 0 0 1px var(--color-border-bright),
+        inset 0 1px 0 rgba(255, 255, 255, 0.03);
     opacity: 0;
-    animation: fadeIn 0.8s 0.7s ease forwards, terminalGlow 3s ease-in-out infinite;
+    animation: fadeIn 0.8s 0.7s ease forwards, terminalGlow 4s ease-in-out infinite;
+    position: relative;
+}
+
+.terminal::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-primary) 50%, transparent);
+    opacity: 0.5;
 }
 
 @keyframes terminalGlow {
-    0%, 100% { box-shadow: var(--shadow-xl), 0 0 0 1px var(--color-border-bright); }
-    50% { box-shadow: var(--shadow-xl), 0 0 0 1px var(--color-primary-dim), 0 0 40px var(--color-primary-dim); }
+    0%, 100% { box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--color-border-bright), inset 0 1px 0 rgba(255, 255, 255, 0.03); }
+    50% { box-shadow: 0 30px 70px rgba(57, 255, 20, 0.1), 0 0 0 1px rgba(57, 255, 20, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05); }
 }
 
 .terminal-header {
@@ -829,13 +901,14 @@ a:hover {
     justify-content: center;
     gap: var(--space-6);
     flex-wrap: wrap;
-    padding: var(--space-10);
-    background: var(--color-bg-card);
+    padding: var(--space-12);
+    background: linear-gradient(145deg, var(--color-bg-card) 0%, var(--color-bg-elevated) 100%);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-xl);
     margin-bottom: var(--space-16);
     position: relative;
     overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .flow-diagram::before {
@@ -886,7 +959,7 @@ a:hover {
 
 .flow-step:hover {
     background: var(--color-bg-elevated);
-    transform: translateY(-4px);
+    transform: translateY(-8px) scale(1.05);
 }
 
 .flow-icon {
@@ -974,8 +1047,8 @@ a:hover {
 
 .value-card:hover {
     border-color: var(--color-primary);
-    transform: translateY(-6px);
-    box-shadow: var(--shadow-glow);
+    transform: translateY(-10px) rotate(-1deg);
+    box-shadow: 0 25px 60px rgba(57, 255, 20, 0.12);
 }
 
 .value-icon {
@@ -1085,9 +1158,10 @@ a:hover {
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), var(--color-primary-dim), transparent 50%);
+    background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), var(--color-primary-dim), transparent 60%);
     opacity: 0;
     transition: opacity var(--transition-base);
+    pointer-events: none;
 }
 
 .preset-card:hover::after {
@@ -1096,8 +1170,8 @@ a:hover {
 
 .preset-card:hover {
     border-color: var(--color-primary);
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: var(--shadow-glow);
+    transform: translateY(-8px) scale(1.03);
+    box-shadow: 0 20px 60px rgba(57, 255, 20, 0.15), 0 0 0 1px var(--color-primary);
 }
 
 .preset-badge {
@@ -1317,7 +1391,8 @@ a:hover {
 
 .feature-card:hover {
     border-color: var(--color-primary);
-    box-shadow: var(--shadow-glow);
+    transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 20px 50px rgba(57, 255, 20, 0.12);
 }
 
 .feature-header {
@@ -1438,15 +1513,19 @@ a:hover {
 }
 
 .audience-card:hover {
-    transform: translateY(-6px);
+    transform: translateY(-10px) rotate(-1deg);
 }
 
 .audience-card--dev:hover {
-    box-shadow: var(--shadow-glow);
+    box-shadow: 0 30px 60px rgba(57, 255, 20, 0.15), 0 0 0 1px var(--color-primary);
 }
 
 .audience-card--vibe:hover {
-    box-shadow: var(--shadow-glow-accent);
+    box-shadow: 0 30px 60px rgba(0, 212, 255, 0.15), 0 0 0 1px var(--color-accent);
+}
+
+.audience-card--newcomer:hover {
+    box-shadow: 0 30px 60px rgba(255, 176, 0, 0.12), 0 0 0 1px var(--term-amber);
 }
 
 .audience-header {
