@@ -47,6 +47,8 @@ Do **not** replace it with other blanket `allow(...)` attributes unless explicit
 
 ## Required verification (before considering work complete)
 
+Ensure you run git rebase on the main branch if working on a feature branch and resolve any merge conflicts AND:
+
 You **must** run the following commands and ensure they succeed.
 
 ```bash
@@ -65,4 +67,3 @@ rg -n --pcre2 '(?x)
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
-
