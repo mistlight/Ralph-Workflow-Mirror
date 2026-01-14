@@ -126,8 +126,8 @@ const ScrollAnimations = {
             document.querySelectorAll(selector).forEach((el, index) => {
                 el.style.opacity = '0';
                 el.style.transform = 'translateY(24px)';
-                el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-                const delay = (index % 6) * 0.08;
+                el.style.transition = 'opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)';
+                const delay = (index % 6) * 0.1;
                 el.style.transitionDelay = `${delay}s`;
                 this.observer.observe(el);
             });
@@ -284,6 +284,78 @@ window.addEventListener('resize', () => {
     }, 250);
 });
 
+// === TERMINAL TYPING EFFECT ===
+const TerminalTyping = {
+    init() {
+        const terminalOutput = document.querySelector('.terminal-output');
+        if (!terminalOutput) return;
+
+        const lines = terminalOutput.querySelectorAll('.terminal-output-line');
+        if (lines.length === 0) return;
+
+        // Store original text and clear
+        lines.forEach(line => {
+            line.dataset.original = line.innerHTML;
+            line.style.opacity = '0';
+        });
+
+        // Animate each line appearing
+        let delay = 500;
+        lines.forEach((line, index) => {
+            setTimeout(() => {
+                line.style.transition = 'opacity 0.3s ease';
+                line.style.opacity = '1';
+            }, delay);
+            delay += 400;
+        });
+    }
+};
+
+// === HERO INITIAL ANIMATION ===
+const HeroAnimation = {
+    init() {
+        if (Utils.prefersReducedMotion()) return;
+
+        const hero = document.querySelector('.hero-primary');
+        if (!hero) return;
+
+        const elements = [
+            hero.querySelector('.hero-meta'),
+            hero.querySelector('.hero-title'),
+            hero.querySelector('.hero-description'),
+            hero.querySelector('.hero-actions')
+        ].filter(Boolean);
+
+        elements.forEach((el, index) => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(20px)';
+        });
+
+        // Stagger reveal
+        setTimeout(() => {
+            elements.forEach((el, index) => {
+                setTimeout(() => {
+                    el.style.transition = 'opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1)';
+                    el.style.opacity = '1';
+                    el.style.transform = 'translateY(0)';
+                }, index * 150);
+            });
+        }, 200);
+
+        // Terminal visual
+        const terminal = document.querySelector('.hero-visual');
+        if (terminal) {
+            terminal.style.opacity = '0';
+            terminal.style.transform = 'perspective(1000px) rotateY(-10deg) translateX(50px)';
+            setTimeout(() => {
+                terminal.style.transition = 'opacity 1s ease, transform 1s cubic-bezier(0.16, 1, 0.3, 1)';
+                terminal.style.opacity = '1';
+                terminal.style.transform = 'perspective(1000px) rotateY(-2deg) rotateX(1deg) translateX(0)';
+            }, 600);
+        }
+    }
+};
+
 // === INITIALIZE ALL ===
 document.addEventListener('DOMContentLoaded', () => {
     MobileNav.init();
@@ -294,6 +366,8 @@ document.addEventListener('DOMContentLoaded', () => {
     CopyButton.init();
     NavHighlight.init();
     PresetCards.init();
+    TerminalTyping.init();
+    HeroAnimation.init();
 });
 
 // === CONSOLE EASTER EGG ===

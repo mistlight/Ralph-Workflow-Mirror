@@ -21,6 +21,9 @@
     <!-- Fonts: Monument Extended for display, Work Sans for body, JetBrains Mono for code -->
     <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' rx='8' fill='%23B84C1E'/%3E%3Cpath d='M18 20h24M18 30h18M18 40h12' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+
     <!-- Styles -->
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -481,11 +484,14 @@ Store sessions in Redis.</code></pre>
                     <h3>New to CLI?</h3>
                     <p>Welcome! Ralph is a great tool to learn with. The terminal is where you run commands—Ralph handles the complexity.</p>
                     <ul>
-                        <li><strong>Terminal:</strong> Text-based interface for commands</li>
-                        <li><strong>Flag:</strong> Options that modify commands (like <code class="inline">-S</code>)</li>
-                        <li><strong>Commit:</strong> Saving changes to your project</li>
-                        <li><strong>Agent:</strong> The AI that does the coding</li>
+                        <li><strong>Terminal:</strong> The text-based interface where you type commands (like an advanced command prompt)</li>
+                        <li><strong>Flag:</strong> Options that modify how a command works (like <code class="inline">-S</code> for "Standard" mode)</li>
+                        <li><strong>Commit:</strong> Saving your changes to the project's history (like a save point in a game)</li>
+                        <li><strong>Agent:</strong> The AI assistant that writes and reviews code for you</li>
                     </ul>
+                    <p style="font-size: var(--text-sm); color: var(--color-text-muted); margin-top: var(--space-4);">
+                        💡 <strong>Getting started:</strong> Just install Ralph, create a <code class="inline">PROMPT.md</code> file describing what you want, and run <code class="inline">ralph -S</code>. That's it!
+                    </p>
                 </article>
             </div>
         </section>
