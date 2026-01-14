@@ -33,6 +33,7 @@ use super::types::{ContentType, DeltaAccumulator};
 pub(crate) struct GenericParser {
     colors: Colors,
     verbosity: Verbosity,
+    #[allow(dead_code)]
     log_file: Option<String>,
     display_name: String,
     /// Delta accumulator for streaming content
@@ -42,6 +43,7 @@ pub(crate) struct GenericParser {
 }
 
 impl GenericParser {
+    #[allow(dead_code)]
     pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
         Self {
             colors,
@@ -53,11 +55,13 @@ impl GenericParser {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
         self.display_name = display_name.to_string();
         self
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
         self
@@ -69,6 +73,7 @@ impl GenericParser {
     /// 1. Parse the JSON value
     /// 2. Classify the event (partial, complete, or control)
     /// 3. Extract and display content based on classification
+    #[allow(dead_code)]
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let value = match serde_json::from_str::<serde_json::Value>(line) {
             Ok(v) => v,
@@ -247,6 +252,7 @@ impl GenericParser {
     }
 
     /// Parse a stream of generic JSON events
+    #[allow(dead_code)]
     pub(crate) fn parse_stream<R: BufRead, W: Write>(
         &self,
         reader: R,
