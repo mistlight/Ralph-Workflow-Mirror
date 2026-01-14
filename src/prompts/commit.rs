@@ -68,49 +68,158 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     }
 
     format!(
-        r#"Generate a Conventional Commits message for the following git diff.
+        r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
 
 DIFF:
 {}
 
-FORMAT:
+---
+
+## ANALYSIS INSTRUCTIONS
+
+Before generating the commit message, analyze the diff to understand:
+
+1. **What actually changed?** Look at the code changes, not just file counts
+2. **Why was this change made?** What problem does it solve or what feature does it add?
+3. **What is the scope?** Which module, component, or area is affected?
+4. **Is this a breaking change?** Does it change public APIs or expected behavior?
+
+## COMMIT MESSAGE FORMAT
+
 <type>[optional scope][!]: <subject>
 
 [optional body]
 
 [optional footer]
 
-RULES:
-- type: feat|fix|docs|refactor|test|chore|perf|build|ci (required)
-- scope: area affected in parentheses, e.g., feat(parser): (optional)
-- !: add before colon for breaking changes, e.g., feat!: or feat(api)!:
-- subject: imperative mood ("add" not "added"), lowercase, no period, max 50 chars
-- body: wrap at 72 chars, explain what/why not how (optional, for complex changes)
-- footer: BREAKING CHANGE: description, or Fixes #123, Refs #456 (optional)
+## TYPE GUIDELINES
 
-GOOD EXAMPLES:
+Choose the most appropriate type:
+- **feat**: A new feature (user-visible change)
+- **fix**: A bug fix (correcting incorrect behavior)
+- **docs**: Documentation changes only
+- **style**: Code style changes (formatting, semicolons, etc.) - no logic change
+- **refactor**: Code restructuring without changing behavior
+- **perf**: Performance improvement
+- **test**: Adding or updating tests
+- **build**: Build system or dependency changes
+- **ci**: CI/CD configuration changes
+- **chore**: Other changes that don't modify src/test files
+
+## SUBJECT LINE RULES
+
+- Use **imperative mood** ("add" not "added", "fix" not "fixed")
+- Use **lowercase** (except for proper nouns)
+- **No period** at the end
+- **Maximum 50 characters**
+- Be specific and descriptive
+
+## BODY RULES (when needed)
+
+- Explain **what** and **why**, not **how**
+- Wrap at **72 characters**
+- Use for complex changes that need context
+- Mention **breaking changes** explicitly
+
+## FOOTER RULES (when needed)
+
+- **Breaking changes**: Start with "BREAKING CHANGE: "
+- **Issue references**: "Fixes #123" or "Refs #456"
+
+---
+
+## GOOD EXAMPLES
+
+### Simple feature
+```
 feat(auth): add OAuth2 login flow
-fix: prevent null pointer in user lookup
-refactor(api): extract validation into middleware
+```
 
+### Bug fix
+```
+fix: prevent null pointer in user lookup
+```
+
+### Code restructuring
+```
+refactor(api): extract validation into middleware
+```
+
+### Breaking change
+```
 feat!: drop Python 3.7 support
 
 BREAKING CHANGE: Minimum Python version is now 3.8.
+```
 
+### Complex feature with body
+```
 feat: add CSV export for reports
 
 Add ability to export analytics reports as CSV files.
 Supports filtering by date range and custom column selection.
 
 Fixes #42
+```
 
-BAD EXAMPLES (avoid these patterns):
-- "chore: apply changes" (too vague - what changes?)
-- "chore: update code" (meaningless)
-- "Updated the code" (no type, not imperative)
-- "feat: Add new feature." (capitalized, has period, vague)
+### Documentation
+```
+docs: clarify API authentication flow
+```
 
-Respond with ONLY the commit message (no markdown fences, no extra text)."#,
+### Tests
+```
+test: add coverage for user registration edge cases
+```
+
+---
+
+## BAD EXAMPLES (AVOID THESE)
+
+```
+chore: apply changes
+```
+❌ Too vague - what changes?
+
+```
+chore: update code
+```
+❌ Meaningless - what was updated?
+
+```
+chore: 3 files changed
+```
+❌ File count is not a description
+
+```
+feat: Add new feature.
+```
+❌ Capitalized, has period, vague
+
+```
+refactoring the code
+```
+❌ No type, not imperative mood
+
+```
+fix bug
+```
+❌ What bug? Where?
+
+---
+
+## YOUR TASK
+
+1. **Analyze the actual code changes** in the diff above
+2. **Identify the type** based on what actually changed
+3. **Determine the scope** (if applicable) based on which files/components are affected
+4. **Write a clear, descriptive subject line** using imperative mood
+5. **Add a body** if the change needs explanation (why, what for)
+6. **Include a footer** for breaking changes or issue references
+
+**IMPORTANT**: Focus on the semantic meaning of the changes, not the number of files. A single-file change can be significant, and multi-file changes can be minor.
+
+Respond with ONLY the commit message (no markdown fences, no explanations, no extra text)."#,
         diff_content
     )
 }

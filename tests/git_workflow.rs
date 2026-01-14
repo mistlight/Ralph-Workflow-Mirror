@@ -756,3 +756,6 @@ exit 0
         "start_commit should persist across runs on empty-repo baseline unless reset"
     );
 }
+
+// Note: Fallback commit message generation is tested via unit tests in
+// src/git_helpers/repo.rs::tests::test_generate_fallback_commit_message_*
