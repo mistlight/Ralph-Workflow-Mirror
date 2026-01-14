@@ -6,7 +6,7 @@ use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -101,6 +101,8 @@ pub(crate) struct OpenCodeParser {
     display_name: String,
     /// Delta accumulator for streaming content
     delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Track if we're currently streaming text content
+    in_text_content: Rc<RefCell<Cell<bool>>>,
 }
 
 impl OpenCodeParser {
@@ -111,6 +113,7 @@ impl OpenCodeParser {
             log_file: None,
             display_name: "OpenCode".to_string(),
             delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            in_text_content: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -149,6 +152,8 @@ impl OpenCodeParser {
             "step_start" => {
                 // Clear accumulator on new step
                 self.delta_accumulator.borrow_mut().clear();
+                // Reset streaming state
+                self.in_text_content.borrow_mut().set(false);
                 let _sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
                 let snapshot = event
                     .part
@@ -169,6 +174,12 @@ impl OpenCodeParser {
                 )
             }
             "step_finish" => {
+                // Check if we were streaming text content
+                let in_text = self.in_text_content.borrow();
+                let was_in_text = in_text.get();
+                drop(in_text);
+                self.in_text_content.borrow_mut().set(false);
+
                 if let Some(ref part) = event.part {
                     let reason = part.reason.as_deref().unwrap_or("unknown");
                     let cost = part.cost.unwrap_or(0.0);
@@ -196,8 +207,16 @@ impl OpenCodeParser {
                     let icon = if is_success { CHECK } else { CROSS };
                     let color = if is_success { c.green() } else { c.yellow() };
 
+                    // Add final newline if we were streaming text
+                    let newline_prefix = if was_in_text {
+                        format!("{}\n", c.reset())
+                    } else {
+                        String::new()
+                    };
+
                     let mut out = format!(
-                        "{}[{}]{} {}{} Step finished{} {}({}",
+                        "{}{}[{}]{} {}{} Step finished{} {}({}",
+                        newline_prefix,
                         c.dim(),
                         prefix,
                         c.reset(),
@@ -326,9 +345,23 @@ impl OpenCodeParser {
                         let mut acc = self.delta_accumulator.borrow_mut();
                         acc.add_delta(ContentType::Text, "main", text);
 
+                        // Check if we're already streaming text content
+                        let in_text = self.in_text_content.borrow();
+                        let was_in_text = in_text.get();
+                        drop(in_text);
+
                         // Show delta in real-time (both verbose and normal mode)
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(text, limit);
+
+                        // Only show prefix on the first text chunk
+                        if was_in_text {
+                            // Subsequent chunks: show text without prefix
+                            self.in_text_content.borrow_mut().set(true);
+                            return Some(format!("{}{}", c.white(), preview));
+                        }
+                        // First chunk: show prefix + text + newline
+                        self.in_text_content.borrow_mut().set(true);
                         return Some(format!(
                             "{}[{}]{} {}{}{}\n",
                             c.dim(),

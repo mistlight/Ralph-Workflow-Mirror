@@ -5,7 +5,7 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -24,6 +24,8 @@ pub(crate) struct ClaudeParser {
     display_name: String,
     /// Delta accumulator for streaming content
     delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Track if we're currently streaming a content block
+    in_content_block: Rc<RefCell<Cell<bool>>>,
 }
 
 impl ClaudeParser {
@@ -34,6 +36,7 @@ impl ClaudeParser {
             log_file: None,
             display_name: "Claude".to_string(),
             delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            in_content_block: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -310,6 +313,7 @@ impl ClaudeParser {
         let c = &self.colors;
         let prefix = &self.display_name;
         let mut acc = self.delta_accumulator.borrow_mut();
+        let in_block = self.in_content_block.borrow();
 
         match event {
             StreamInnerEvent::MessageStart { .. } => {
@@ -341,6 +345,9 @@ impl ClaudeParser {
                     }
                     _ => {}
                 }
+                // Reset streaming state for new content block
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart {
@@ -350,6 +357,9 @@ impl ClaudeParser {
                 // Content block started but no initial content provided
                 // Just clear the index for future deltas
                 acc.clear_index(index);
+                // Reset streaming state
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart { .. } => {
@@ -363,19 +373,29 @@ impl ClaudeParser {
                 ContentBlockDelta::TextDelta { text: Some(text) } => {
                     // Accumulate the text delta for completion events
                     acc.add_text_delta(index, &text);
-                    // Show the delta (real-time streaming) - both verbose and normal mode
                     // Replace embedded newlines with spaces to prevent artificial line breaks
-                    // in streaming output (each line would get a new prefix, causing duplicates)
                     let sanitized_text = text.replace('\n', " ");
-                    format!(
-                        "{}[{}]{} {}{}{}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.white(),
-                        sanitized_text,
-                        c.reset()
-                    )
+                    let was_in_block = in_block.get();
+                    drop(in_block);
+
+                    // Only show prefix on the first chunk of a content block
+                    if was_in_block {
+                        // Subsequent chunks: show text without prefix and without newline
+                        self.in_content_block.borrow_mut().set(true);
+                        format!("{}{}", c.white(), sanitized_text)
+                    } else {
+                        // First chunk: show prefix + text + newline
+                        self.in_content_block.borrow_mut().set(true);
+                        format!(
+                            "{}[{}]{} {}{}{}\n",
+                            c.dim(),
+                            prefix,
+                            c.reset(),
+                            c.white(),
+                            sanitized_text,
+                            c.reset()
+                        )
+                    }
                 }
                 ContentBlockDelta::ThinkingDelta {
                     thinking: Some(text),
@@ -416,24 +436,41 @@ impl ClaudeParser {
             StreamInnerEvent::ContentBlockDelta { .. } => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Standalone text delta (not part of content block)
-                // Display incrementally for real-time feedback
-                // Replace embedded newlines with spaces to prevent artificial line breaks
+                // Use the same streaming logic
                 let sanitized_text = text.replace('\n', " ");
-                format!(
-                    "{}[{}]{} {}{}{}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    c.white(),
-                    sanitized_text,
-                    c.reset()
-                )
+                let was_in_block = in_block.get();
+                drop(in_block);
+
+                if was_in_block {
+                    // Subsequent chunks: show text without prefix
+                    self.in_content_block.borrow_mut().set(true);
+                    format!("{}{}", c.white(), sanitized_text)
+                } else {
+                    // First chunk: show prefix + text + newline
+                    self.in_content_block.borrow_mut().set(true);
+                    format!(
+                        "{}[{}]{} {}{}{}\n",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.white(),
+                        sanitized_text,
+                        c.reset()
+                    )
+                }
             }
             StreamInnerEvent::TextDelta { .. } => String::new(),
             StreamInnerEvent::MessageStop => {
-                // Message complete - clear the accumulator
+                // Message complete - add final newline if we were in a content block
+                let was_in_block = in_block.get();
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
                 acc.clear();
-                String::new()
+                if was_in_block {
+                    format!("{}\n", c.reset())
+                } else {
+                    String::new()
+                }
             }
             StreamInnerEvent::Error {
                 error: Some(err), ..
