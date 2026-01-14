@@ -1,9 +1,11 @@
 //! Container image management and selection
 
+use std::path::Path;
+
 use crate::container::engine::EngineType;
 use crate::container::error::{ContainerError, ContainerResult};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Result of building a container image
@@ -15,125 +17,29 @@ pub struct BuildResult {
     pub dockerfile_path: PathBuf,
     /// Base image that was used
     pub base_image: String,
-    /// Detected project stack
-    pub detected_stack: Option<String>,
 }
 
 /// Container image selection based on project stack
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ContainerImage {
-    /// Use a specific image
-    Specific(String),
     /// Auto-detect based on project stack
+    #[default]
     Auto,
-    /// Build an image from a Dockerfile
-    Build { dockerfile_path: PathBuf, tag: String },
 }
 
 impl ContainerImage {
-    /// Get the image name to use
-    pub fn resolve(&self, project_stack: Option<&str>) -> String {
-        match self {
-            ContainerImage::Specific(image) => image.clone(),
-            ContainerImage::Auto => {
-                // Detect appropriate image based on project stack
-                Self::detect_image_for_stack(project_stack)
-            }
-            ContainerImage::Build { tag, .. } => tag.clone(),
-        }
-    }
-
     /// Detect the appropriate container image based on project stack
     fn detect_image_for_stack(stack: Option<&str>) -> String {
         match stack {
-            Some("rust") | Some("rust-lang") => "rust:latest".to_string(),
-            Some("node") | Some("javascript") | Some("typescript") => {
-                "node:20".to_string()
-            }
+            Some("rust" | "rust-lang") => "rust:latest".to_string(),
+            Some("node" | "javascript" | "typescript") => "node:20".to_string(),
             Some("python") => "python:3.12".to_string(),
-            Some("ruby") | Some("ruby-on-rails") => "ruby:latest".to_string(),
-            Some("go") | Some("golang") => "golang:latest".to_string(),
-            Some("java") | Some("kotlin") => "eclipse-temurin:21".to_string(),
+            Some("ruby" | "ruby-on-rails") => "ruby:latest".to_string(),
+            Some("go" | "golang") => "golang:latest".to_string(),
+            Some("java" | "kotlin") => "eclipse-temurin:21".to_string(),
             Some("php") => "php:latest".to_string(),
             _ => "ubuntu:24.04".to_string(), // Generic fallback
         }
-    }
-
-    /// Create a specific image
-    pub fn specific(image: String) -> Self {
-        Self::Specific(image)
-    }
-
-    /// Create an auto-detecting image selector
-    pub fn auto() -> Self {
-        Self::Auto
-    }
-
-    /// Create a build image selector with Dockerfile path and tag
-    pub fn build(dockerfile_path: PathBuf, tag: String) -> Self {
-        Self::Build {
-            dockerfile_path,
-            tag,
-        }
-    }
-
-    /// Check if this image needs to be built
-    pub fn needs_build(&self) -> bool {
-        matches!(self, ContainerImage::Build { .. })
-    }
-
-    /// Get the Dockerfile path if this is a Build variant
-    pub fn dockerfile_path(&self) -> Option<&Path> {
-        match self {
-            ContainerImage::Build { dockerfile_path, .. } => Some(dockerfile_path),
-            _ => None,
-        }
-    }
-
-    /// Build a container image from a Dockerfile
-    ///
-    /// Creates a Dockerfile for the detected project stack and builds it.
-    pub fn build_ralph_image(
-        repo_path: &Path,
-        tag: &str,
-        engine_type: EngineType,
-    ) -> ContainerResult<BuildResult> {
-        let stack = detect_project_stack(repo_path);
-        let base_image = Self::detect_image_for_stack(stack.as_deref());
-
-        // Generate Dockerfile content
-        let dockerfile_content = Self::generate_dockerfile(&base_image, stack.as_deref());
-
-        // Write Dockerfile to .agent directory
-        let agent_dir = repo_path.join(".agent");
-        fs::create_dir_all(&agent_dir)
-            .map_err(|e| ContainerError::Other(format!("Failed to create .agent directory: {}", e)))?;
-
-        let dockerfile_path = agent_dir.join("Dockerfile.ralph-agent");
-        fs::write(&dockerfile_path, dockerfile_content)
-            .map_err(|e| ContainerError::Other(format!("Failed to write Dockerfile: {}", e)))?;
-
-        // Build the image
-        let binary = engine_type.binary_name();
-        let output = Command::new(binary)
-            .args(["build", "-t", tag, "-f", dockerfile_path.to_str().unwrap(), "."])
-            .current_dir(repo_path)
-            .output()
-            .map_err(|e| ContainerError::Other(format!("Failed to execute build command: {}", e)))?;
-
-        if !output.status.success() {
-            return Err(ContainerError::Other(format!(
-                "Failed to build image: {}",
-                String::from_utf8_lossy(&output.stderr)
-            )));
-        }
-
-        Ok(BuildResult {
-            image_tag: tag.to_string(),
-            dockerfile_path,
-            base_image,
-            detected_stack: stack,
-        })
     }
 
     /// Generate a Dockerfile for the Ralph agent container
@@ -142,7 +48,7 @@ impl ContainerImage {
             r#"# Ralph Agent Container
 # Auto-generated Dockerfile for running AI agents in isolation
 
-FROM {}
+FROM {base_image}
 
 # Set working directory
 WORKDIR /workspace
@@ -164,52 +70,51 @@ RUN useradd -m -s /bin/bash ralph && \
 
 # Install language-specific tools based on detected stack
 "#,
-            base_image
         );
 
         // Add language-specific installations
         match stack {
-            Some("rust") | Some("rust-lang") => {
+            Some("rust" | "rust-lang") => {
                 content.push_str(
-                    r#"# Rust tools are already installed in the rust image
+                    r"# Rust tools are already installed in the rust image
 RUN cargo install cargo-edit 2>/dev/null || true
-"#,
+",
                 );
             }
-            Some("node") | Some("javascript") | Some("typescript") => {
+            Some("node" | "javascript" | "typescript") => {
                 content.push_str(
-                    r#"# Node.js tools - npm and npx are already available
+                    r"# Node.js tools - npm and npx are already available
 RUN npm install -g typescript @types/node 2>/dev/null || true
-"#,
+",
                 );
             }
             Some("python") => {
                 content.push_str(
-                    r#"# Python tools - pip is already available
+                    r"# Python tools - pip is already available
 RUN pip install --upgrade pip && \
     pip install black pylint mypy pytest 2>/dev/null || true
-"#,
+",
                 );
             }
-            Some("ruby") | Some("ruby-on-rails") => {
+            Some("ruby" | "ruby-on-rails") => {
                 content.push_str(
-                    r#"# Ruby tools - gem is already available
+                    r"# Ruby tools - gem is already available
 RUN gem install bundler rubocop rspec rubocop-rails 2>/dev/null || true
-"#,
+",
                 );
             }
-            Some("go") | Some("golang") => {
+            Some("go" | "golang") => {
                 content.push_str(
-                    r#"# Go tools are already installed in the golang image
+                    r"# Go tools are already installed in the golang image
 RUN go install golang.org/x/tools/cmd/goimports@latest 2>/dev/null || true
-"#,
+",
                 );
             }
             _ => {
                 // Generic: add some common tools
                 content.push_str(
-                    r#"# Generic tools available in most images
-"#,
+                    r"# Generic tools available in most images
+",
                 );
             }
         }
@@ -226,11 +131,58 @@ CMD ["/bin/bash"]
 
         content
     }
-}
 
-impl Default for ContainerImage {
-    fn default() -> Self {
-        Self::Auto
+    /// Build a container image from a Dockerfile
+    ///
+    /// Creates a Dockerfile for the detected project stack and builds it.
+    pub fn build_ralph_image(
+        repo_path: &Path,
+        tag: &str,
+        engine_type: EngineType,
+    ) -> ContainerResult<BuildResult> {
+        let stack = detect_project_stack(repo_path);
+        let base_image = Self::detect_image_for_stack(stack.as_deref());
+
+        // Generate Dockerfile content
+        let dockerfile_content = Self::generate_dockerfile(&base_image, stack.as_deref());
+
+        // Write Dockerfile to .agent directory
+        let agent_dir = repo_path.join(".agent");
+        fs::create_dir_all(&agent_dir).map_err(|e| {
+            ContainerError::Other(format!("Failed to create .agent directory: {e}"))
+        })?;
+
+        let dockerfile_path = agent_dir.join("Dockerfile.ralph-agent");
+        fs::write(&dockerfile_path, dockerfile_content)
+            .map_err(|e| ContainerError::Other(format!("Failed to write Dockerfile: {e}")))?;
+
+        // Build the image
+        let binary = engine_type.binary_name();
+        let output = Command::new(binary)
+            .args([
+                "build",
+                "-t",
+                tag,
+                "-f",
+                dockerfile_path.to_str().unwrap(),
+                ".",
+            ])
+            .current_dir(repo_path)
+            .output()
+            .map_err(|e| ContainerError::Other(format!("Failed to execute build command: {e}")))?;
+
+        if !output.status.success() {
+            return Err(ContainerError::Other(format!(
+                "Failed to build image: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        Ok(BuildResult {
+            image_tag: tag.to_string(),
+            dockerfile_path,
+            base_image,
+        })
     }
 }
 
@@ -282,19 +234,15 @@ pub fn detect_project_stack(repo_path: &Path) -> Option<String> {
     None
 }
 
+#[cfg(test)]
 /// Ensure the container image exists locally
 ///
 /// Pulls the image if it's not already present.
-pub fn ensure_image_exists(
-    image: &str,
-    engine_type: EngineType,
-) -> Result<(), String> {
+pub fn ensure_image_exists(image: &str, engine_type: EngineType) -> Result<(), String> {
     let binary = engine_type.binary_name();
 
     // Check if image exists locally
-    let check_output = Command::new(binary)
-        .args(["images", "-q", image])
-        .output();
+    let check_output = Command::new(binary).args(["images", "-q", image]).output();
 
     let needs_pull = match check_output {
         Ok(output) => String::from_utf8_lossy(&output.stdout).trim().is_empty(),
@@ -306,7 +254,7 @@ pub fn ensure_image_exists(
         let pull_output = Command::new(binary)
             .args(["pull", image])
             .output()
-            .map_err(|e| format!("Failed to pull image: {}", e))?;
+            .map_err(|e| format!("Failed to pull image: {e}"))?;
 
         if !pull_output.status.success() {
             return Err(format!(
@@ -325,18 +273,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_container_image_specific() {
-        let image = ContainerImage::specific("ubuntu:24.04".to_string());
-        assert_eq!(image.resolve(None), "ubuntu:24.04");
-    }
-
-    #[test]
-    fn test_container_image_auto() {
-        let image = ContainerImage::auto();
-        assert_eq!(image.resolve(None), "ubuntu:24.04"); // Default
-        assert_eq!(image.resolve(Some("rust")), "rust:latest");
-        assert_eq!(image.resolve(Some("node")), "node:20");
-        assert_eq!(image.resolve(Some("python")), "python:3.12");
+    fn test_container_image_default() {
+        let image = ContainerImage::default();
+        assert_eq!(image, ContainerImage::Auto);
     }
 
     #[test]
@@ -353,5 +292,35 @@ mod tests {
             ContainerImage::detect_image_for_stack(Some("python")),
             "python:3.12"
         );
+    }
+
+    #[test]
+    fn test_ensure_image_exists_with_valid_image() {
+        // Test with a minimal image that's likely available
+        let result = ensure_image_exists("alpine:latest", EngineType::Auto);
+        // We don't assert success since docker might not be available
+        // Just verify the function doesn't panic
+        let _ = result;
+    }
+
+    #[test]
+    fn test_detect_project_stack() {
+        use std::fs;
+        let temp = std::env::temp_dir();
+
+        // Test Rust project detection
+        let rust_repo = temp.join("test-rust-stack");
+        fs::create_dir_all(&rust_repo).ok();
+        fs::write(rust_repo.join("Cargo.toml"), "[package]\nname = \"test\"").ok();
+        let stack = detect_project_stack(&rust_repo);
+        assert_eq!(stack, Some("rust".to_string()));
+        fs::remove_dir_all(&rust_repo).ok();
+
+        // Test empty directory
+        let empty_repo = temp.join("test-empty-stack");
+        fs::create_dir_all(&empty_repo).ok();
+        let stack = detect_project_stack(&empty_repo);
+        assert_eq!(stack, None);
+        fs::remove_dir_all(&empty_repo).ok();
     }
 }

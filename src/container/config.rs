@@ -21,7 +21,7 @@ pub enum SecurityMode {
 
 impl SecurityMode {
     /// Get the default security mode for the current platform
-    pub fn default_for_platform() -> Self {
+    pub const fn default_for_platform() -> Self {
         #[cfg(target_os = "linux")]
         {
             Self::Container
@@ -35,16 +35,6 @@ impl SecurityMode {
             Self::None
         }
     }
-
-    /// Check if this mode requires a container runtime
-    pub fn requires_container(&self) -> bool {
-        matches!(self, Self::Container | Self::Auto)
-    }
-
-    /// Check if this mode requires user account setup
-    pub fn requires_user_account(&self) -> bool {
-        matches!(self, Self::UserAccount)
-    }
 }
 
 impl FromStr for SecurityMode {
@@ -57,8 +47,7 @@ impl FromStr for SecurityMode {
             "user-account" | "useraccount" | "user" => Ok(Self::UserAccount),
             "none" => Ok(Self::None),
             _ => Err(format!(
-                "Invalid security mode: {}. Valid options: auto, container, user-account, none",
-                s
+                "Invalid security mode: {s}. Valid options: auto, container, user-account, none"
             )),
         }
     }
@@ -96,11 +85,7 @@ pub struct ContainerConfig {
 
 impl ContainerConfig {
     /// Create a new container configuration
-    pub fn new(
-        repository_root: PathBuf,
-        agent_dir: PathBuf,
-        image: String,
-    ) -> Self {
+    pub fn new(repository_root: PathBuf, agent_dir: PathBuf, image: String) -> Self {
         Self {
             enabled: true,
             engine: EngineType::Auto,
@@ -108,32 +93,25 @@ impl ContainerConfig {
             network_enabled: true,
             repository_root,
             agent_dir,
-            config_dir: dirs::home_dir()
-                .map(|d| d.join(".config").join("ralph")),
+            config_dir: dirs::home_dir().map(|d| d.join(".config").join("ralph")),
         }
     }
 
     /// Set whether container mode is enabled
-    pub fn with_enabled(mut self, enabled: bool) -> Self {
+    pub const fn with_enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
     }
 
     /// Set the container engine type
-    pub fn with_engine(mut self, engine: EngineType) -> Self {
+    pub const fn with_engine(mut self, engine: EngineType) -> Self {
         self.engine = engine;
         self
     }
 
     /// Set whether network is enabled
-    pub fn with_network(mut self, enabled: bool) -> Self {
+    pub const fn with_network(mut self, enabled: bool) -> Self {
         self.network_enabled = enabled;
-        self
-    }
-
-    /// Set the config directory path
-    pub fn with_config_dir(mut self, config_dir: Option<PathBuf>) -> Self {
-        self.config_dir = config_dir;
         self
     }
 }
@@ -147,54 +125,16 @@ impl Default for ContainerConfig {
             network_enabled: true,
             repository_root: PathBuf::from("."),
             agent_dir: PathBuf::from(".agent"),
-            config_dir: dirs::home_dir()
-                .map(|d| d.join(".config").join("ralph")),
+            config_dir: dirs::home_dir().map(|d| d.join(".config").join("ralph")),
         }
     }
 }
 
 /// Container execution options
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ExecutionOptions {
     /// Environment variables to pass to the container
     pub env_vars: Vec<(String, String)>,
     /// Working directory inside the container (relative to /workspace)
     pub working_dir: Option<String>,
-    /// Command timeout in seconds
-    pub timeout: Option<u64>,
-}
-
-impl ExecutionOptions {
-    /// Create new execution options
-    pub fn new() -> Self {
-        Self {
-            env_vars: Vec::new(),
-            working_dir: None,
-            timeout: None,
-        }
-    }
-
-    /// Add an environment variable
-    pub fn with_env(mut self, key: String, value: String) -> Self {
-        self.env_vars.push((key, value));
-        self
-    }
-
-    /// Set the working directory
-    pub fn with_working_dir(mut self, dir: String) -> Self {
-        self.working_dir = Some(dir);
-        self
-    }
-
-    /// Set the timeout
-    pub fn with_timeout(mut self, timeout_secs: u64) -> Self {
-        self.timeout = Some(timeout_secs);
-        self
-    }
-}
-
-impl Default for ExecutionOptions {
-    fn default() -> Self {
-        Self::new()
-    }
 }

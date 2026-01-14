@@ -21,11 +21,7 @@ pub struct VolumeManager {
 
 impl VolumeManager {
     /// Create a new volume manager
-    pub fn new(
-        repository_root: PathBuf,
-        agent_dir: PathBuf,
-        config_dir: Option<PathBuf>,
-    ) -> Self {
+    pub fn new(repository_root: PathBuf, agent_dir: PathBuf, config_dir: Option<PathBuf>) -> Self {
         // Detect Claude config directory
         let claude_dir = dirs::home_dir()
             .map(|home| home.join(".claude"))
@@ -107,14 +103,14 @@ impl VolumeManager {
         path.canonicalize()
             .or_else(|_| {
                 if path.is_absolute() {
-                    Ok(path.to_path_buf())
+                    Ok(path.clone())
                 } else {
                     std::env::current_dir()
                         .map(|cwd| cwd.join(&path))
-                        .map_err(|e| ContainerError::Io(e))
+                        .map_err(ContainerError::Io)
                 }
             })
-            .map_err(|e| ContainerError::VolumeMount(format!("Failed to resolve path: {}", e)))
+            .map_err(|e| ContainerError::VolumeMount(format!("Failed to resolve path: {e}")))
     }
 
     /// Validate that a mount source is safe to mount
@@ -123,21 +119,13 @@ impl VolumeManager {
 
         // Block mounting of sensitive system paths
         let blocked_paths = [
-            "/etc",
-            "/proc",
-            "/sys",
-            "/dev",
-            "/root",
-            "/boot",
-            "/run",
-            "/var/run",
+            "/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run", "/var/run",
         ];
 
         for blocked in &blocked_paths {
             if path_str.starts_with(blocked) {
                 return Err(ContainerError::VolumeMount(format!(
-                    "Cannot mount sensitive path: {}",
-                    path_str
+                    "Cannot mount sensitive path: {path_str}"
                 )));
             }
         }
@@ -152,72 +140,10 @@ impl VolumeManager {
 
         Ok(())
     }
-
-    /// Get the workspace path inside the container
-    pub fn workspace_path(&self) -> String {
-        "/workspace".to_string()
-    }
-
-    /// Convert a host path to a container path
-    pub fn to_container_path(&self, host_path: &Path) -> ContainerResult<String> {
-        let host_path = if host_path.is_absolute() {
-            host_path.to_path_buf()
-        } else {
-            self.repository_root.join(host_path)
-        };
-
-        // Try to make it relative to repository root
-        if let Ok(relative) = host_path.strip_prefix(&self.repository_root) {
-            Ok(format!("/workspace/{}", relative.to_string_lossy()))
-        } else {
-            // Path is outside repository, return as-is (will likely fail in container)
-            Ok(host_path.to_string_lossy().to_string())
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_workspace_path() {
-        let manager = VolumeManager::new(
-            PathBuf::from("/tmp/repo"),
-            PathBuf::from(".agent"),
-            None,
-        );
-        assert_eq!(manager.workspace_path(), "/workspace");
-    }
-
-    #[test]
-    fn test_to_container_path_relative() {
-        let manager = VolumeManager::new(
-            PathBuf::from("/tmp/repo"),
-            PathBuf::from(".agent"),
-            None,
-        );
-
-        let container_path = manager
-            .to_container_path(Path::new("src/main.rs"))
-            .unwrap();
-        assert_eq!(container_path, "/workspace/src/main.rs");
-    }
-
-    #[test]
-    fn test_to_container_path_absolute() {
-        let manager = VolumeManager::new(
-            PathBuf::from("/tmp/repo"),
-            PathBuf::from(".agent"),
-            None,
-        );
-
-        let container_path = manager
-            .to_container_path(Path::new("/tmp/repo/src/main.rs"))
-            .unwrap();
-        assert_eq!(container_path, "/workspace/src/main.rs");
-    }
-
     #[test]
     fn test_validate_sensitive_paths() {
         // This test validates that sensitive paths are blocked
