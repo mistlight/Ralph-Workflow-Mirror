@@ -284,6 +284,8 @@ fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
 ///
 /// This is a fallback method for cases where JSON result events are not available.
 /// It looks for common plan markers like `## Summary` and `## Implementation Steps`.
+/// If no markers are found, it falls back to extracting substantial text content
+/// that contains plan-like keywords.
 pub fn extract_plan_from_text(content: &str) -> Option<String> {
     // Look for plan markers in order of specificity
     let markers = [
@@ -304,6 +306,72 @@ pub fn extract_plan_from_text(content: &str) -> Option<String> {
                 return Some(trimmed.to_string());
             }
         }
+    }
+
+    // Permissive fallback: if no markdown markers found, look for substantial
+    // content that contains plan-like keywords. This handles plaintext mode where
+    // the agent outputs plan content without structured markdown.
+    extract_plan_from_text_permissive(content)
+}
+
+/// Permissive extraction that finds substantial plan-like content without
+/// requiring specific markdown markers.
+///
+/// This is a final fallback for plaintext mode logs where the agent may have
+/// output a valid plan but without the expected markdown structure.
+fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
+    let content = content.trim();
+
+    // Filter out obvious non-plan content
+    // - JSON lines
+    // - Debug/tool output patterns
+    let filtered: String = content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            // Skip JSON lines
+            if trimmed.starts_with('{') || trimmed.starts_with('[') {
+                return false;
+            }
+            // Skip debug/tool markers
+            if trimmed.starts_with("[debug]")
+                || trimmed.starts_with("[tool]")
+                || trimmed.starts_with("[error]")
+                || trimmed.starts_with("[warn]")
+            {
+                return false;
+            }
+            // Skip empty lines
+            if trimmed.is_empty() {
+                return false;
+            }
+            true
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Minimum content length (increased from 50 to 200 for permissive mode)
+    const MIN_PERMISSIVE_LENGTH: usize = 200;
+
+    if filtered.len() < MIN_PERMISSIVE_LENGTH {
+        return None;
+    }
+
+    // Check for plan-like keywords (case-insensitive)
+    let plan_keywords = [
+        "step", "implement", "create", "add", "build", "develop", "write",
+        "function", "feature", "component", "module", "task", "phase",
+        "first", "second", "third", "next", "then", "finally",
+        "approach", "strategy", "design", "architecture",
+    ];
+
+    let filtered_lower = filtered.to_lowercase();
+    let has_plan_keyword = plan_keywords
+        .iter()
+        .any(|keyword| filtered_lower.contains(keyword));
+
+    if has_plan_keyword {
+        return Some(filtered);
     }
 
     None
@@ -970,5 +1038,149 @@ This is a text-based plan from nested subdirectory with enough content to pass v
 
         let result = extract_result_from_file(&file_path).unwrap();
         assert!(result.is_none());
+    }
+
+    // =====================================================
+    // PERMISSIVE EXTRACTION TESTS (Plaintext mode fallback)
+    // =====================================================
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_no_markers() {
+        // Plaintext content without markdown markers but with plan keywords
+        let content = r#"I need to implement a new feature for the user authentication system.
+First, I will create a new module that handles the login logic.
+Then, I will add functions for password validation and session management.
+Finally, I will write tests to ensure everything works correctly.
+
+The approach involves using secure hashing for passwords and JWT tokens for sessions."#;
+
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_some(),
+            "Should extract substantial content with plan keywords even without markdown markers"
+        );
+        let extracted = result.unwrap();
+        assert!(extracted.contains("implement"));
+        assert!(extracted.contains("create"));
+        assert!(extracted.len() > 200);
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_filters_json() {
+        // Content with JSON lines mixed in - should filter them out
+        let content = r#"{"type": "tool", "tool": "read_file"}
+I need to build a new authentication module that handles user login.
+{"type": "system", "message": "processing"}
+This will handle registration for the web application.
+The development approach should be secure and follow best practices.
+We'll add password hashing, session management, and proper error handling.
+The module will integrate with the existing database layer."#;
+
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_some(),
+            "Should extract content while filtering out JSON lines"
+        );
+        let extracted = result.unwrap();
+        assert!(!extracted.contains("{\"type\":"));
+        assert!(extracted.contains("authentication"));
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_too_short() {
+        // Content with plan keywords but too short
+        let content = "I will build a feature.";
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_none(),
+            "Should reject content that's too short even with plan keywords"
+        );
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_no_plan_keywords() {
+        // Substantial content without plan-like keywords (avoiding: step, implement, create, add, build, develop, write, then, etc.)
+        let content = r#"The quick brown fox jumps over the lazy dog repeatedly.
+This text was composed to be long enough to pass the length requirement.
+It avoids using technical terminology that might trigger extraction.
+Instead we just talk about random things like animals and weather.
+Our purpose is to test that the extraction correctly filters out non-plan content.
+This should definitely be long enough but still rejected due to lack of keywords.
+We're discussing foxes, dogs, weather, and other non-technical subjects today.
+The weather is nice so all of the animals are playing in a large field outside.
+A sunny day with blue skies makes for perfect conditions to observe nature."#;
+
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_none(),
+            "Should reject content without plan-like keywords"
+        );
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_permissive_filters_debug_output() {
+        // Content with debug/tool markers
+        let content = r#"[debug] Starting the process
+I need to develop the new module by writing code for authentication.
+[tool] Reading file: src/main.rs
+Then I must add functions for handling user sessions and password hashing.
+[warn] Deprecated API usage detected in legacy code
+Finally, I must verify everything works correctly through comprehensive testing."#;
+
+        let result = extract_plan_from_text(content);
+        assert!(
+            result.is_some(),
+            "Should extract content while filtering out debug/tool markers"
+        );
+        let extracted = result.unwrap();
+        assert!(!extracted.contains("[debug]"));
+        assert!(!extracted.contains("[tool]"));
+        assert!(!extracted.contains("[warn]"));
+        assert!(extracted.contains("develop"));
+        assert!(extracted.contains("authentication"));
+    }
+
+    #[test]
+    fn test_extract_plan_from_logs_text_permissive_fallback() {
+        let temp = TempDir::new().unwrap();
+
+        // Create log file with plaintext plan (no JSON result events, no markdown markers)
+        let text_log = r#"The agent needs to implement a user authentication feature.
+Step 1: Create a new auth module with login and registration functions.
+Step 2: Add password hashing using bcrypt for security.
+Step 3: Implement JWT token generation for session management.
+Step 4: Add middleware to protect routes that require authentication.
+Step 5: Write comprehensive tests for all auth functionality."#;
+
+        fs::write(temp.path().join("planning_1_glm_0.log"), text_log).unwrap();
+
+        let prefix = temp.path().join("planning_1");
+        let result = extract_plan_from_logs_text(&prefix).unwrap();
+
+        assert!(
+            result.is_some(),
+            "Should extract plaintext plan via permissive fallback"
+        );
+        assert!(result.unwrap().contains("authentication"));
+    }
+
+    #[test]
+    fn test_extract_plan_from_text_markers_take_precedence() {
+        // When markdown markers exist, they should take precedence over permissive extraction
+        let content = r#"Some initial text without structure.
+## Summary
+This is the structured plan that should be extracted.
+The permissive fallback should not be used when markers are present.
+## Implementation Steps
+1. Step one
+2. Step two"#;
+
+        let result = extract_plan_from_text(content);
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert!(
+            extracted.starts_with("## Summary"),
+            "Should use marker-based extraction when markers are present"
+        );
     }
 }
