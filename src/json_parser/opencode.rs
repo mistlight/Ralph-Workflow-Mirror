@@ -326,23 +326,7 @@ impl OpenCodeParser {
                         let mut acc = self.delta_accumulator.borrow_mut();
                         acc.add_delta(ContentType::Text, "main", text);
 
-                        // In verbose mode, show full accumulated text
-                        if self.verbosity.is_verbose() {
-                            if let Some(full_text) = acc.get(ContentType::Text, "main") {
-                                let limit = self.verbosity.truncate_limit("text");
-                                let preview = truncate_text(full_text, limit);
-                                return Some(format!(
-                                    "{}[{}]{} {}{}{}\n",
-                                    c.dim(),
-                                    prefix,
-                                    c.reset(),
-                                    c.white(),
-                                    preview,
-                                    c.reset()
-                                ));
-                            }
-                        }
-                        // Normal mode: show delta in real-time
+                        // Show delta in real-time (both verbose and normal mode)
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(text, limit);
                         return Some(format!(
@@ -380,6 +364,18 @@ impl OpenCodeParser {
         match event.event_type.as_str() {
             // Step lifecycle events are control events
             "step_start" | "step_finish" => true,
+            _ => false,
+        }
+    }
+
+    /// Check if an OpenCode event is a partial/delta event (streaming content displayed incrementally)
+    ///
+    /// Partial events represent streaming text deltas that are shown to the user
+    /// in real-time. These should be tracked separately to avoid inflating "ignored" percentages.
+    fn is_partial_event(event: &OpenCodeEvent) -> bool {
+        match event.event_type.as_str() {
+            // Text events produce streaming content
+            "text" => true,
             _ => false,
         }
     }
@@ -423,7 +419,20 @@ impl OpenCodeParser {
             // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
-                    monitor.record_parsed();
+                    // Check if this is a partial/delta event (streaming content)
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<OpenCodeEvent>(&line) {
+                            if Self::is_partial_event(&event) {
+                                monitor.record_partial_event();
+                            } else {
+                                monitor.record_parsed();
+                            }
+                        } else {
+                            monitor.record_parsed();
+                        }
+                    } else {
+                        monitor.record_parsed();
+                    }
                     write!(writer, "{}", output)?;
                 }
                 None => {

@@ -358,23 +358,9 @@ impl ClaudeParser {
                 delta: Some(delta),
             } => match delta {
                 ContentBlockDelta::TextDelta { text: Some(text) } => {
-                    // Accumulate and display the text delta
+                    // Accumulate the text delta for completion events
                     acc.add_text_delta(index, &text);
-                    // In verbose mode, show the full accumulated text so far
-                    if self.verbosity.is_verbose() {
-                        if let Some(full_text) = acc.get_text(&index) {
-                            return format!(
-                                "{}[{}]{} {}{}{}\n",
-                                c.dim(),
-                                prefix,
-                                c.reset(),
-                                c.white(),
-                                full_text,
-                                c.reset()
-                            );
-                        }
-                    }
-                    // Normal mode: show the delta (real-time streaming)
+                    // Show the delta (real-time streaming) - both verbose and normal mode
                     format!(
                         "{}[{}]{} {}{}{}\n",
                         c.dim(),
@@ -492,6 +478,23 @@ impl ClaudeParser {
         }
     }
 
+    /// Check if a Claude event is a partial/delta event (streaming content displayed incrementally)
+    ///
+    /// Partial events represent streaming content deltas (text deltas, thinking deltas,
+    /// tool input deltas) that are shown to the user in real-time. These should be
+    /// tracked separately to avoid inflating "ignored" percentages.
+    fn is_partial_event(event: &ClaudeEvent) -> bool {
+        match event {
+            // Stream events that produce incremental content
+            ClaudeEvent::StreamEvent { event } => matches!(
+                event,
+                StreamInnerEvent::ContentBlockDelta { .. }
+                    | StreamInnerEvent::TextDelta { .. }
+            ),
+            _ => false,
+        }
+    }
+
     /// Get a shared delta display formatter
     fn formatter() -> DeltaDisplayFormatter {
         DeltaDisplayFormatter::new()
@@ -537,7 +540,20 @@ impl ClaudeParser {
             // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
-                    monitor.record_parsed();
+                    // Check if this is a partial/delta event (streaming content)
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
+                            if Self::is_partial_event(&event) {
+                                monitor.record_partial_event();
+                            } else {
+                                monitor.record_parsed();
+                            }
+                        } else {
+                            monitor.record_parsed();
+                        }
+                    } else {
+                        monitor.record_parsed();
+                    }
                     write!(writer, "{}", output)?;
                 }
                 None => {
