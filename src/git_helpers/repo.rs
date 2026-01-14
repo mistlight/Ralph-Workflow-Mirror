@@ -2061,20 +2061,6 @@ pub enum CommitResultFallback {
     Failed(String),
 }
 
-impl CommitResultFallback {
-    /// Check if the commit was successful.
-    pub fn is_success(&self) -> bool {
-        matches!(self, CommitResultFallback::Success(_))
-    }
-
-    /// Get the OID if successful, returns None otherwise.
-    pub fn oid(&self) -> Option<git2::Oid> {
-        match self {
-            CommitResultFallback::Success(oid) => Some(*oid),
-            _ => None,
-        }
-    }
-}
 
 /// Create a commit with an automatically generated commit message using fallback chain, returning a detailed result.
 ///
