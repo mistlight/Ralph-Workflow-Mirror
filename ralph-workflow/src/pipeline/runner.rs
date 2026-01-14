@@ -143,12 +143,12 @@ fn try_init_security_mode(config: &Config) -> Option<SecurityModeContext<'static
             // Create execution options
             let options = ExecutionOptions::default();
 
-            Some(SecurityModeContext::Container(ContainerContext {
+            Some(SecurityModeContext::Container(Box::new(ContainerContext {
                 engine,
                 executor,
                 options,
                 _phantom: std::marker::PhantomData,
-            }))
+            })))
         }
         SecurityMode::UserAccount => {
             // Get repository root
@@ -183,21 +183,22 @@ fn try_init_security_mode(config: &Config) -> Option<SecurityModeContext<'static
             // Create execution options
             let options = ExecutionOptions::default();
 
-            Some(SecurityModeContext::UserAccount(UserAccountContext {
-                executor,
-                options,
-                _phantom: std::marker::PhantomData,
-            }))
+            Some(SecurityModeContext::UserAccount(Box::new(
+                UserAccountContext {
+                    executor,
+                    options,
+                    _phantom: std::marker::PhantomData,
+                },
+            )))
         }
         SecurityMode::Auto | SecurityMode::None => None,
     }
 }
 
 /// Security mode execution context (enum for different modes)
-#[allow(clippy::large_enum_variant)]
 enum SecurityModeContext<'a> {
-    Container(ContainerContext<'a>),
-    UserAccount(UserAccountContext<'a>),
+    Container(Box<ContainerContext<'a>>),
+    UserAccount(Box<UserAccountContext<'a>>),
 }
 
 /// Runtime services required for running agent commands.
@@ -432,13 +433,15 @@ pub fn run_with_prompt(
                             runtime.colors.reset()
                         ));
                         execute_command_direct(
-                            &argv,
-                            cmd.prompt,
-                            &env_vars_map,
-                            cmd.logfile,
-                            cmd.parser_type,
-                            cmd.display_name,
-                            uses_json,
+                            DirectExecutionConfig {
+                                argv: &argv,
+                                prompt: cmd.prompt,
+                                env_vars: &env_vars_map,
+                                logfile: cmd.logfile,
+                                parser_type: cmd.parser_type,
+                                display_name: cmd.display_name,
+                                uses_json,
+                            },
                             runtime,
                         )?
                     }
@@ -551,13 +554,15 @@ pub fn run_with_prompt(
                             runtime.colors.reset()
                         ));
                         execute_command_direct(
-                            &argv,
-                            cmd.prompt,
-                            &env_vars_map,
-                            cmd.logfile,
-                            cmd.parser_type,
-                            cmd.display_name,
-                            uses_json,
+                            DirectExecutionConfig {
+                                argv: &argv,
+                                prompt: cmd.prompt,
+                                env_vars: &env_vars_map,
+                                logfile: cmd.logfile,
+                                parser_type: cmd.parser_type,
+                                display_name: cmd.display_name,
+                                uses_json,
+                            },
                             runtime,
                         )?
                     }
@@ -567,13 +572,15 @@ pub fn run_with_prompt(
     } else {
         // Direct execution (no security mode or security mode not available)
         execute_command_direct(
-            &argv,
-            cmd.prompt,
-            &env_vars_map,
-            cmd.logfile,
-            cmd.parser_type,
-            cmd.display_name,
-            uses_json,
+            DirectExecutionConfig {
+                argv: &argv,
+                prompt: cmd.prompt,
+                env_vars: &env_vars_map,
+                logfile: cmd.logfile,
+                parser_type: cmd.parser_type,
+                display_name: cmd.display_name,
+                uses_json,
+            },
             runtime,
         )?
     };
@@ -609,22 +616,26 @@ pub fn run_with_prompt(
     })
 }
 
+/// Configuration for direct command execution
+struct DirectExecutionConfig<'a> {
+    argv: &'a [String],
+    prompt: &'a str,
+    env_vars: &'a std::collections::HashMap<String, String>,
+    logfile: &'a str,
+    parser_type: JsonParserType,
+    display_name: &'a str,
+    uses_json: bool,
+}
+
 /// Execute a command directly (not in a container)
 ///
 /// This is the fallback path when container mode is disabled or unavailable.
-#[allow(clippy::too_many_arguments)]
 fn execute_command_direct(
-    argv: &[String],
-    prompt: &str,
-    env_vars: &std::collections::HashMap<String, String>,
-    logfile: &str,
-    parser_type: JsonParserType,
-    display_name: &str,
-    uses_json: bool,
+    config: DirectExecutionConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
 ) -> io::Result<(i32, String)> {
     // Validate prompt for null bytes which are universally invalid in command arguments
-    if prompt.contains('\0') {
+    if config.prompt.contains('\0') {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Prompt contains null byte which is invalid for command execution",
@@ -632,12 +643,12 @@ fn execute_command_direct(
     }
 
     // Build command
-    let mut command = Command::new(&argv[0]);
-    command.args(&argv[1..]);
-    command.arg(prompt);
+    let mut command = Command::new(&config.argv[0]);
+    command.args(&config.argv[1..]);
+    command.arg(config.prompt);
 
     // Inject environment variables
-    for (key, value) in env_vars {
+    for (key, value) in config.env_vars {
         command.env(key, value);
     }
 
@@ -659,7 +670,7 @@ fn execute_command_direct(
             } else {
                 126
             };
-            return Ok((exit_code, format!("{}: {}", argv[0], e)));
+            return Ok((exit_code, format!("{}: {}", config.argv[0], e)));
         }
         Err(e) => return Err(e),
     };
@@ -711,25 +722,25 @@ fn execute_command_direct(
         })
     });
 
-    if uses_json {
+    if config.uses_json {
         let stdout = io::stdout();
         let mut out = stdout.lock();
 
-        match parser_type {
+        match config.parser_type {
             JsonParserType::Claude => {
                 let p = crate::json_parser::ClaudeParser::new(
                     *runtime.colors,
                     runtime.config.verbosity,
                 )
-                .with_display_name(display_name)
-                .with_log_file(logfile);
+                .with_display_name(config.display_name)
+                .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Codex => {
                 let p =
                     crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
-                        .with_display_name(display_name)
-                        .with_log_file(logfile);
+                        .with_display_name(config.display_name)
+                        .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Gemini => {
@@ -737,8 +748,8 @@ fn execute_command_direct(
                     *runtime.colors,
                     runtime.config.verbosity,
                 )
-                .with_display_name(display_name)
-                .with_log_file(logfile);
+                .with_display_name(config.display_name)
+                .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::OpenCode => {
@@ -746,12 +757,12 @@ fn execute_command_direct(
                     *runtime.colors,
                     runtime.config.verbosity,
                 )
-                .with_display_name(display_name)
-                .with_log_file(logfile);
+                .with_display_name(config.display_name)
+                .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Generic => {
-                // This branch shouldn't happen when uses_json=true, but keep it safe.
+                // This branch shouldn't happen when config.uses_json=true, but keep it safe.
                 let mut buf = String::new();
                 for line in reader.lines() {
                     buf.push_str(&line?);
@@ -763,7 +774,10 @@ fn execute_command_direct(
         }
     } else {
         // Plain-text mode: stream output and log it.
-        let mut logfile_handle = OpenOptions::new().create(true).append(true).open(logfile)?;
+        let mut logfile_handle = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(config.logfile)?;
 
         let stdout = io::stdout();
         let mut out = stdout.lock();

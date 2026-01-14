@@ -213,8 +213,7 @@ fn load_ccs_env_vars_for_alias(
     }
 
     let original_cmd = alias_config.cmd.as_str();
-    let profile =
-        ccs_profile_from_command(original_cmd).unwrap_or_else(|| alias_name.to_string());
+    let profile = ccs_profile_from_command(original_cmd).unwrap_or_else(|| alias_name.to_string());
     let profile_clone = profile.clone();
 
     let result = match load_ccs_env_vars_with_guess(&profile) {
@@ -474,7 +473,7 @@ pub struct CcsAliasResolver {
 
 impl CcsAliasResolver {
     /// Create a new CCS alias resolver with the given aliases.
-    pub fn new(aliases: HashMap<String, CcsAliasConfig>, defaults: CcsConfig) -> Self {
+    pub const fn new(aliases: HashMap<String, CcsAliasConfig>, defaults: CcsConfig) -> Self {
         Self { aliases, defaults }
     }
 
@@ -499,10 +498,10 @@ impl CcsAliasResolver {
         // For unknown CCS aliases, generate a default config for direct execution
         // This allows commands like `ccs random` to work without pre-configuration
         let cmd = CcsAliasConfig {
-            cmd: format!("ccs {}", alias),
+            cmd: format!("ccs {alias}"),
             ..CcsAliasConfig::default()
         };
-        let display_name = format!("ccs-{}", alias);
+        let display_name = format!("ccs-{alias}");
         Some(build_ccs_agent_config(
             &cmd,
             &self.defaults,

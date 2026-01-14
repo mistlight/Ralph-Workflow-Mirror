@@ -6,7 +6,7 @@
 
 /// Check if an agent name or command string indicates a GLM-like agent.
 ///
-/// GLM-like agents include GLM, ZhipuAI, ZAI, Qwen, and DeepSeek.
+/// GLM-like agents include GLM, `ZhipuAI`, ZAI, Qwen, and `DeepSeek`.
 /// These agents have known compatibility issues with review tasks and may
 /// require special handling or fallback logic.
 ///
@@ -17,7 +17,7 @@
 /// # Returns
 ///
 /// `true` if the string indicates a GLM-like agent, `false` otherwise
-pub(crate) fn is_glm_like_agent(s: &str) -> bool {
+pub fn is_glm_like_agent(s: &str) -> bool {
     let s_lower = s.to_lowercase();
     s_lower.contains("glm")
         || s_lower.contains("zhipuai")
@@ -33,7 +33,7 @@ pub(crate) fn is_glm_like_agent(s: &str) -> bool {
 /// - `should_fallback()` - Switch to next agent in the chain
 /// - `is_unrecoverable()` - Abort the pipeline
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AgentErrorKind {
+pub enum AgentErrorKind {
     /// API rate limit exceeded - retry after delay.
     RateLimited,
     /// Token/context limit exceeded - may need different agent.
@@ -65,127 +65,288 @@ pub(crate) enum AgentErrorKind {
 }
 
 impl AgentErrorKind {
+    /// Check if stderr matches rate limiting patterns.
+    fn matches_rate_limit(stderr_lower: &str) -> bool {
+        stderr_lower.contains("rate limit")
+            || stderr_lower.contains("too many requests")
+            || stderr_lower.contains("429")
+            || stderr_lower.contains("quota exceeded")
+    }
+
+    /// Check if stderr matches token exhaustion patterns.
+    fn matches_token_exhausted(stderr_lower: &str) -> bool {
+        stderr_lower.contains("token")
+            || stderr_lower.contains("context length")
+            || stderr_lower.contains("maximum context")
+            || stderr_lower.contains("too long")
+            || stderr_lower.contains("input too large")
+    }
+
+    /// Check if stderr matches network error patterns.
+    fn matches_network_error(stderr_lower: &str) -> bool {
+        stderr_lower.contains("connection refused")
+            || stderr_lower.contains("network unreachable")
+            || stderr_lower.contains("dns resolution")
+            || stderr_lower.contains("name resolution")
+            || stderr_lower.contains("no route to host")
+            || stderr_lower.contains("network is down")
+            || stderr_lower.contains("host unreachable")
+            || stderr_lower.contains("connection reset")
+            || stderr_lower.contains("broken pipe")
+            || stderr_lower.contains("econnrefused")
+            || stderr_lower.contains("enetunreach")
+    }
+
+    /// Check if stderr matches API unavailable patterns.
+    fn matches_api_unavailable(stderr_lower: &str) -> bool {
+        stderr_lower.contains("service unavailable")
+            || stderr_lower.contains("503")
+            || stderr_lower.contains("502")
+            || stderr_lower.contains("504")
+            || stderr_lower.contains("500")
+            || stderr_lower.contains("internal server error")
+            || stderr_lower.contains("bad gateway")
+            || stderr_lower.contains("gateway timeout")
+            || stderr_lower.contains("overloaded")
+            || stderr_lower.contains("maintenance")
+    }
+
+    /// Check if stderr matches timeout patterns.
+    fn matches_timeout(stderr_lower: &str) -> bool {
+        stderr_lower.contains("timeout")
+            || stderr_lower.contains("timed out")
+            || stderr_lower.contains("request timeout")
+            || stderr_lower.contains("deadline exceeded")
+    }
+
+    /// Check if stderr matches authentication failure patterns.
+    fn matches_auth_failure(stderr_lower: &str) -> bool {
+        stderr_lower.contains("unauthorized")
+            || stderr_lower.contains("authentication")
+            || stderr_lower.contains("401")
+            || stderr_lower.contains("api key")
+            || stderr_lower.contains("invalid token")
+            || stderr_lower.contains("forbidden")
+            || stderr_lower.contains("403")
+            || stderr_lower.contains("access denied")
+    }
+
+    /// Check if stderr matches disk full patterns.
+    fn matches_disk_full(stderr_lower: &str) -> bool {
+        stderr_lower.contains("no space left")
+            || stderr_lower.contains("disk full")
+            || stderr_lower.contains("enospc")
+            || stderr_lower.contains("out of disk")
+            || stderr_lower.contains("insufficient storage")
+    }
+
+    /// Check if exit code or stderr matches process killed patterns.
+    fn matches_process_killed(exit_code: i32, stderr_lower: &str) -> bool {
+        exit_code == 137
+            || exit_code == 139
+            || exit_code == -9
+            || stderr_lower.contains("killed")
+            || stderr_lower.contains("oom")
+            || stderr_lower.contains("out of memory")
+            || stderr_lower.contains("memory exhausted")
+            || stderr_lower.contains("cannot allocate")
+            || stderr_lower.contains("segmentation fault")
+            || stderr_lower.contains("sigsegv")
+            || stderr_lower.contains("sigkill")
+    }
+
+    /// Check if stderr matches invalid JSON response patterns.
+    fn matches_invalid_response(stderr_lower: &str) -> bool {
+        stderr_lower.contains("invalid json")
+            || stderr_lower.contains("json parse")
+            || stderr_lower.contains("unexpected token")
+            || stderr_lower.contains("malformed")
+            || stderr_lower.contains("truncated response")
+            || stderr_lower.contains("incomplete response")
+    }
+
+    /// Check if stderr matches tool execution failure patterns.
+    fn matches_tool_execution_failed(stderr_lower: &str) -> bool {
+        stderr_lower.contains("write error")
+            || stderr_lower.contains("cannot write")
+            || stderr_lower.contains("failed to write")
+            || stderr_lower.contains("unable to create file")
+            || stderr_lower.contains("file creation failed")
+            || stderr_lower.contains("i/o error")
+            || stderr_lower.contains("io error")
+            || stderr_lower.contains("tool failed")
+            || stderr_lower.contains("tool execution failed")
+            || stderr_lower.contains("tool call failed")
+    }
+
+    /// Check if stderr matches permission denied patterns.
+    fn matches_permission_denied(stderr_lower: &str) -> bool {
+        stderr_lower.contains("permission denied")
+            || stderr_lower.contains("operation not permitted")
+            || stderr_lower.contains("insufficient permissions")
+            || stderr_lower.contains("eacces")
+            || stderr_lower.contains("eperm")
+    }
+
+    /// Check if stderr matches command not found patterns.
+    fn matches_command_not_found(exit_code: i32, stderr_lower: &str) -> bool {
+        exit_code == 127
+            || exit_code == 126
+            || stderr_lower.contains("command not found")
+            || stderr_lower.contains("not found")
+            || stderr_lower.contains("no such file")
+    }
+
+    /// Check if stderr matches transient error patterns.
+    fn matches_transient(stderr_lower: &str) -> bool {
+        stderr_lower.contains("connection reset")
+            || stderr_lower.contains("connection refused")
+            || stderr_lower.contains("timed out")
+            || stderr_lower.contains("timeout")
+            || stderr_lower.contains("temporary")
+            || stderr_lower.contains("temporarily")
+            || stderr_lower.contains("unavailable")
+            || stderr_lower.contains("try again")
+            || stderr_lower.contains("try again later")
+    }
+
+    /// Check if stderr matches GLM/CCS-specific error patterns.
+    fn matches_glm_ccs_specific(stderr_lower: &str, exit_code: i32) -> bool {
+        if stderr_lower.contains("ccs") || stderr_lower.contains("glm") {
+            if exit_code == 1 {
+                return true;
+            }
+            if stderr_lower.contains("ccs") && stderr_lower.contains("failed") {
+                return true;
+            }
+            if stderr_lower.contains("glm")
+                && (stderr_lower.contains("permission")
+                    || stderr_lower.contains("denied")
+                    || stderr_lower.contains("unauthorized"))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Determine if this error should trigger a retry.
-    pub fn should_retry(&self) -> bool {
+    pub const fn should_retry(self) -> bool {
         matches!(
             self,
-            AgentErrorKind::RateLimited
-                | AgentErrorKind::ApiUnavailable
-                | AgentErrorKind::NetworkError
-                | AgentErrorKind::Timeout
-                | AgentErrorKind::InvalidResponse
-                | AgentErrorKind::Transient
+            Self::RateLimited
+                | Self::ApiUnavailable
+                | Self::NetworkError
+                | Self::Timeout
+                | Self::InvalidResponse
+                | Self::Transient
         )
     }
 
     /// Determine if this error should trigger a fallback to another agent.
-    pub fn should_fallback(&self) -> bool {
+    pub const fn should_fallback(self) -> bool {
         matches!(
             self,
-            AgentErrorKind::TokenExhausted
-                | AgentErrorKind::AuthFailure
-                | AgentErrorKind::CommandNotFound
-                | AgentErrorKind::ProcessKilled
-                | AgentErrorKind::ToolExecutionFailed
-                | AgentErrorKind::AgentSpecificQuirk
+            Self::TokenExhausted
+                | Self::AuthFailure
+                | Self::CommandNotFound
+                | Self::ProcessKilled
+                | Self::ToolExecutionFailed
+                | Self::AgentSpecificQuirk
         )
     }
 
     /// Determine if this error is unrecoverable (should abort).
-    pub fn is_unrecoverable(&self) -> bool {
-        matches!(self, AgentErrorKind::DiskFull | AgentErrorKind::Permanent)
+    pub const fn is_unrecoverable(self) -> bool {
+        matches!(self, Self::DiskFull | Self::Permanent)
     }
 
     /// Check if this is a command not found error.
-    pub fn is_command_not_found(&self) -> bool {
-        matches!(self, AgentErrorKind::CommandNotFound)
+    pub const fn is_command_not_found(self) -> bool {
+        matches!(self, Self::CommandNotFound)
     }
 
     /// Check if this is a network-related error.
-    pub fn is_network_error(&self) -> bool {
-        matches!(self, AgentErrorKind::NetworkError | AgentErrorKind::Timeout)
+    pub const fn is_network_error(self) -> bool {
+        matches!(self, Self::NetworkError | Self::Timeout)
     }
 
     /// Check if this error might be resolved by reducing context size.
-    pub fn suggests_smaller_context(&self) -> bool {
-        matches!(
-            self,
-            AgentErrorKind::TokenExhausted | AgentErrorKind::ProcessKilled
-        )
+    pub const fn suggests_smaller_context(self) -> bool {
+        matches!(self, Self::TokenExhausted | Self::ProcessKilled)
     }
 
     /// Get suggested wait time in milliseconds before retry.
-    pub fn suggested_wait_ms(&self) -> u64 {
+    pub const fn suggested_wait_ms(self) -> u64 {
         match self {
-            AgentErrorKind::RateLimited => 5000, // Rate limit: wait 5 seconds
-            AgentErrorKind::ApiUnavailable => 3000, // Server issue: wait 3 seconds
-            AgentErrorKind::NetworkError => 2000, // Network: wait 2 seconds
-            AgentErrorKind::Timeout => 1000,     // Timeout: short wait
-            AgentErrorKind::InvalidResponse => 500, // Bad response: quick retry
-            AgentErrorKind::Transient => 1000,   // Transient: 1 second
-            _ => 0,                              // No wait for non-retryable errors
+            Self::RateLimited => 5000,               // Rate limit: wait 5 seconds
+            Self::ApiUnavailable => 3000,            // Server issue: wait 3 seconds
+            Self::NetworkError => 2000,              // Network: wait 2 seconds
+            Self::Timeout | Self::Transient => 1000, // Timeout/Transient: 1 second
+            Self::InvalidResponse => 500,            // Bad response: quick retry
+            _ => 0,                                  // No wait for non-retryable errors
         }
     }
 
     /// Get a user-friendly description of this error type.
-    pub fn description(&self) -> &'static str {
+    pub const fn description(self) -> &'static str {
         match self {
-            AgentErrorKind::RateLimited => "API rate limit exceeded",
-            AgentErrorKind::TokenExhausted => "Token/context limit exceeded",
-            AgentErrorKind::ApiUnavailable => "API service temporarily unavailable",
-            AgentErrorKind::NetworkError => "Network connectivity issue",
-            AgentErrorKind::AuthFailure => "Authentication failure",
-            AgentErrorKind::CommandNotFound => "Command not found",
-            AgentErrorKind::DiskFull => "Disk space exhausted",
-            AgentErrorKind::ProcessKilled => "Process terminated (possibly OOM)",
-            AgentErrorKind::InvalidResponse => "Invalid response from agent",
-            AgentErrorKind::Timeout => "Request timed out",
-            AgentErrorKind::ToolExecutionFailed => "Tool execution failed (e.g., file write)",
-            AgentErrorKind::AgentSpecificQuirk => "Known agent-specific issue",
-            AgentErrorKind::Transient => "Transient error",
-            AgentErrorKind::Permanent => "Permanent error",
+            Self::RateLimited => "API rate limit exceeded",
+            Self::TokenExhausted => "Token/context limit exceeded",
+            Self::ApiUnavailable => "API service temporarily unavailable",
+            Self::NetworkError => "Network connectivity issue",
+            Self::AuthFailure => "Authentication failure",
+            Self::CommandNotFound => "Command not found",
+            Self::DiskFull => "Disk space exhausted",
+            Self::ProcessKilled => "Process terminated (possibly OOM)",
+            Self::InvalidResponse => "Invalid response from agent",
+            Self::Timeout => "Request timed out",
+            Self::ToolExecutionFailed => "Tool execution failed (e.g., file write)",
+            Self::AgentSpecificQuirk => "Known agent-specific issue",
+            Self::Transient => "Transient error",
+            Self::Permanent => "Permanent error",
         }
     }
 
     /// Get recovery advice for this error type.
-    pub fn recovery_advice(&self) -> &'static str {
+    pub const fn recovery_advice(self) -> &'static str {
         match self {
-            AgentErrorKind::RateLimited => {
+            Self::RateLimited => {
                 "Will retry after delay. Tip: Consider reducing request frequency or using a different provider."
             }
-            AgentErrorKind::TokenExhausted => {
+            Self::TokenExhausted => {
                 "Switching to alternative agent. Tip: Try RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0"
             }
-            AgentErrorKind::ApiUnavailable => {
+            Self::ApiUnavailable => {
                 "API server issue. Will retry automatically. Tip: Check status page or try different provider."
             }
-            AgentErrorKind::NetworkError => {
+            Self::NetworkError => {
                 "Check your internet connection. Will retry automatically. Tip: Check firewall/VPN settings."
             }
-            AgentErrorKind::AuthFailure => {
+            Self::AuthFailure => {
                 "Check API key or run 'agent auth' to authenticate. Tip: Verify credentials for this provider."
             }
-            AgentErrorKind::CommandNotFound => {
+            Self::CommandNotFound => {
                 "Agent binary not installed. See installation guidance below. Tip: Run 'ralph --list-available-agents'"
             }
-            AgentErrorKind::DiskFull => "Free up disk space and try again. Tip: Check .agent directory size.",
-            AgentErrorKind::ProcessKilled => {
+            Self::DiskFull => "Free up disk space and try again. Tip: Check .agent directory size.",
+            Self::ProcessKilled => {
                 "Process was killed (possible OOM). Trying with smaller context. Tip: Reduce context with RALPH_*_CONTEXT=0"
             }
-            AgentErrorKind::InvalidResponse => {
+            Self::InvalidResponse => {
                 "Received malformed response. Retrying... Tip: May indicate parser mismatch with this agent."
             }
-            AgentErrorKind::Timeout => {
+            Self::Timeout => {
                 "Request timed out. Will retry with longer timeout. Tip: Try reducing prompt size or context."
             }
-            AgentErrorKind::ToolExecutionFailed => {
+            Self::ToolExecutionFailed => {
                 "Tool execution failed (file write/permissions). Switching agent. Tip: Check directory write permissions."
             }
-            AgentErrorKind::AgentSpecificQuirk => {
+            Self::AgentSpecificQuirk => {
                 "Known agent-specific issue. Switching to alternative agent. Tip: See docs/agent-compatibility.md"
             }
-            AgentErrorKind::Transient => "Temporary issue. Will retry automatically.",
-            AgentErrorKind::Permanent => {
+            Self::Transient => "Temporary issue. Will retry automatically.",
+            Self::Permanent => {
                 "Unrecoverable error. Check agent logs (.agent/logs/) and see docs/agent-compatibility.md for help."
             }
         }
@@ -218,212 +379,78 @@ impl AgentErrorKind {
         if is_problematic_agent && exit_code == 1 {
             // GLM and similar agents often exit with code 1 for various issues.
             // Treating as AgentSpecificQuirk ensures faster fallback.
-            return AgentErrorKind::AgentSpecificQuirk;
+            return Self::AgentSpecificQuirk;
         }
 
-        // Rate limiting indicators (API-side)
-        if stderr_lower.contains("rate limit")
-            || stderr_lower.contains("too many requests")
-            || stderr_lower.contains("429")
-            || stderr_lower.contains("quota exceeded")
-        {
-            return AgentErrorKind::RateLimited;
+        // Check various error patterns using helper methods
+        if Self::matches_rate_limit(&stderr_lower) {
+            return Self::RateLimited;
         }
 
-        // Token/context exhaustion (API-side)
-        if stderr_lower.contains("token")
-            || stderr_lower.contains("context length")
-            || stderr_lower.contains("maximum context")
-            || stderr_lower.contains("too long")
-            || stderr_lower.contains("input too large")
-        {
-            return AgentErrorKind::TokenExhausted;
+        if Self::matches_token_exhausted(&stderr_lower) {
+            return Self::TokenExhausted;
         }
 
-        // Network errors (client-side connectivity issues)
-        if stderr_lower.contains("connection refused")
-            || stderr_lower.contains("network unreachable")
-            || stderr_lower.contains("dns resolution")
-            || stderr_lower.contains("name resolution")
-            || stderr_lower.contains("no route to host")
-            || stderr_lower.contains("network is down")
-            || stderr_lower.contains("host unreachable")
-            || stderr_lower.contains("connection reset")
-            || stderr_lower.contains("broken pipe")
-            || stderr_lower.contains("econnrefused")
-            || stderr_lower.contains("enetunreach")
-        {
-            return AgentErrorKind::NetworkError;
+        if Self::matches_network_error(&stderr_lower) {
+            return Self::NetworkError;
         }
 
-        // API unavailable (server-side issues)
-        if stderr_lower.contains("service unavailable")
-            || stderr_lower.contains("503")
-            || stderr_lower.contains("502")
-            || stderr_lower.contains("504")
-            || stderr_lower.contains("500")
-            || stderr_lower.contains("internal server error")
-            || stderr_lower.contains("bad gateway")
-            || stderr_lower.contains("gateway timeout")
-            || stderr_lower.contains("overloaded")
-            || stderr_lower.contains("maintenance")
-        {
-            return AgentErrorKind::ApiUnavailable;
+        if Self::matches_api_unavailable(&stderr_lower) {
+            return Self::ApiUnavailable;
         }
 
-        // Request timeout
-        if stderr_lower.contains("timeout")
-            || stderr_lower.contains("timed out")
-            || stderr_lower.contains("request timeout")
-            || stderr_lower.contains("deadline exceeded")
-        {
-            return AgentErrorKind::Timeout;
+        if Self::matches_timeout(&stderr_lower) {
+            return Self::Timeout;
         }
 
-        // Auth failures
-        if stderr_lower.contains("unauthorized")
-            || stderr_lower.contains("authentication")
-            || stderr_lower.contains("401")
-            || stderr_lower.contains("api key")
-            || stderr_lower.contains("invalid token")
-            || stderr_lower.contains("forbidden")
-            || stderr_lower.contains("403")
-            || stderr_lower.contains("access denied")
-        {
-            return AgentErrorKind::AuthFailure;
+        if Self::matches_auth_failure(&stderr_lower) {
+            return Self::AuthFailure;
         }
 
-        // Disk space exhaustion
-        if stderr_lower.contains("no space left")
-            || stderr_lower.contains("disk full")
-            || stderr_lower.contains("enospc")
-            || stderr_lower.contains("out of disk")
-            || stderr_lower.contains("insufficient storage")
-        {
-            return AgentErrorKind::DiskFull;
+        if Self::matches_disk_full(&stderr_lower) {
+            return Self::DiskFull;
         }
 
-        // Process killed (OOM or signals)
-        // Exit code 137 = 128 + 9 (SIGKILL), 139 = 128 + 11 (SIGSEGV)
-        if exit_code == 137
-            || exit_code == 139
-            || exit_code == -9
-            || stderr_lower.contains("killed")
-            || stderr_lower.contains("oom")
-            || stderr_lower.contains("out of memory")
-            || stderr_lower.contains("memory exhausted")
-            || stderr_lower.contains("cannot allocate")
-            || stderr_lower.contains("segmentation fault")
-            || stderr_lower.contains("sigsegv")
-            || stderr_lower.contains("sigkill")
-        {
-            return AgentErrorKind::ProcessKilled;
+        if Self::matches_process_killed(exit_code, &stderr_lower) {
+            return Self::ProcessKilled;
         }
 
-        // Invalid JSON response
-        if stderr_lower.contains("invalid json")
-            || stderr_lower.contains("json parse")
-            || stderr_lower.contains("unexpected token")
-            || stderr_lower.contains("malformed")
-            || stderr_lower.contains("truncated response")
-            || stderr_lower.contains("incomplete response")
-        {
-            return AgentErrorKind::InvalidResponse;
+        if Self::matches_invalid_response(&stderr_lower) {
+            return Self::InvalidResponse;
         }
 
-        // Tool execution failures (file writes, tool calls, etc.)
-        // These should trigger fallback, not retry
-        if stderr_lower.contains("write error")
-            || stderr_lower.contains("cannot write")
-            || stderr_lower.contains("failed to write")
-            || stderr_lower.contains("unable to create file")
-            || stderr_lower.contains("file creation failed")
-            || stderr_lower.contains("i/o error")
-            || stderr_lower.contains("io error")
-            || stderr_lower.contains("tool failed")
-            || stderr_lower.contains("tool execution failed")
-            || stderr_lower.contains("tool call failed")
-        {
-            return AgentErrorKind::ToolExecutionFailed;
+        if Self::matches_tool_execution_failed(&stderr_lower) {
+            return Self::ToolExecutionFailed;
         }
 
-        // Permission denied errors (specific patterns that should fallback)
-        // These need to be checked BEFORE the generic "error" catch-all
-        // Note: "access denied" is already caught by AuthFailure above (for HTTP 403)
-        // This catches file-system permission errors specifically
-        if stderr_lower.contains("permission denied")
-            || stderr_lower.contains("operation not permitted")
-            || stderr_lower.contains("insufficient permissions")
-            || stderr_lower.contains("eacces")
-            || stderr_lower.contains("eperm")
-        {
-            return AgentErrorKind::ToolExecutionFailed;
+        if Self::matches_permission_denied(&stderr_lower) {
+            return Self::ToolExecutionFailed;
         }
 
-        // GLM/CCS-specific known issues
-        // These are known quirks that should trigger fallback
-        // Check for CCS-specific error patterns
-        if stderr_lower.contains("ccs") || stderr_lower.contains("glm") {
-            // CCS/GLM with exit code 1 is likely a permission/tool issue
-            if exit_code == 1 {
-                return AgentErrorKind::AgentSpecificQuirk;
-            }
-            // CCS-specific error patterns
-            if stderr_lower.contains("ccs") && stderr_lower.contains("failed") {
-                return AgentErrorKind::AgentSpecificQuirk;
-            }
-            // GLM-specific permission errors
-            if stderr_lower.contains("glm")
-                && (stderr_lower.contains("permission")
-                    || stderr_lower.contains("denied")
-                    || stderr_lower.contains("unauthorized"))
-            {
-                return AgentErrorKind::AgentSpecificQuirk;
-            }
+        if Self::matches_glm_ccs_specific(&stderr_lower, exit_code) {
+            return Self::AgentSpecificQuirk;
         }
 
         // Fallback for GLM with any error and exit code 1
         if stderr_lower.contains("glm") && exit_code == 1 {
-            return AgentErrorKind::AgentSpecificQuirk;
+            return Self::AgentSpecificQuirk;
         }
 
-        // Command not found (keep this after permission checks since permission
-        // errors also contain "permission denied")
-        if exit_code == 127
-            || exit_code == 126
-            || stderr_lower.contains("command not found")
-            || stderr_lower.contains("not found")
-            || stderr_lower.contains("no such file")
-        {
-            return AgentErrorKind::CommandNotFound;
+        if Self::matches_command_not_found(exit_code, &stderr_lower) {
+            return Self::CommandNotFound;
         }
 
         // Transient errors (exit codes that might succeed on retry)
-        // This is now a more specific catch-all for actual transient issues
         if exit_code == 1 && stderr_lower.contains("error") {
-            // But only if it's not a known permanent issue pattern
-            // (permission, tool failures, GLM issues are already handled above)
-            return AgentErrorKind::Transient;
+            return Self::Transient;
         }
 
-        // Additional transient error patterns that might succeed on retry
-        // These are checked last as a catch-all for potentially transient issues
-        if stderr_lower.contains("connection reset")
-            || stderr_lower.contains("connection refused")
-            || stderr_lower.contains("timed out")
-            || stderr_lower.contains("timeout")
-            || stderr_lower.contains("temporary")
-            || stderr_lower.contains("temporarily")
-            || stderr_lower.contains("unavailable")
-            || stderr_lower.contains("try again")
-            || stderr_lower.contains("try again later")
-        {
-            return AgentErrorKind::Transient;
+        if Self::matches_transient(&stderr_lower) {
+            return Self::Transient;
         }
 
         // Default to Permanent for unknown errors
-        // This ensures we fall back to the next agent rather than retrying indefinitely
-        AgentErrorKind::Permanent
+        Self::Permanent
     }
 }
 

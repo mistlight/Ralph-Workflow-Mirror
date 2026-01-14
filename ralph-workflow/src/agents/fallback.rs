@@ -6,9 +6,6 @@
 //! - Provider-level fallback (try different models within same agent)
 //! - Exponential backoff with cycling
 
-#![expect(clippy::cast_possible_truncation)]
-#![expect(clippy::cast_sign_loss)]
-
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -137,24 +134,14 @@ impl FallbackConfig {
     /// Calculate exponential backoff delay for a given cycle.
     ///
     /// Uses the formula: min(base * multiplier^cycle, `max_backoff`)
-    ///
-    /// Uses integer arithmetic to avoid floating-point casting issues.
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn calculate_backoff(&self, cycle: u32) -> u64 {
-        // Convert multiplier to a fraction (e.g., 2.0 -> 200/100, 1.5 -> 150/100)
-        // This avoids floating-point arithmetic entirely
-        let multiplier_hundredths = (self.backoff_multiplier * 100.0).round() as u64;
-        let base_hundredths = self.retry_delay_ms.saturating_mul(100);
-
-        // Calculate: base * (multiplier^cycle) / 100^cycle
-        // Use saturating arithmetic to avoid overflow
-        let mut delay_hundredths = base_hundredths;
-        for _ in 0..cycle {
-            delay_hundredths = delay_hundredths.saturating_mul(multiplier_hundredths);
-            delay_hundredths = delay_hundredths.saturating_div(100);
-        }
-
-        // Convert back to milliseconds
-        delay_hundredths.div_euclid(100).min(self.max_backoff_ms)
+        // Use f64 for the calculation with powf to avoid casting issues
+        // Note: The values involved (milliseconds, typically 1000-60000) are well within
+        // f64's 52-bit mantissa precision, and truncation is safe due to .min() capping.
+        let delay = self.retry_delay_ms as f64 * self.backoff_multiplier.powf(f64::from(cycle));
+        // Cast back to u64, clamping to max_backoff_ms
+        (delay.min(self.max_backoff_ms as f64)) as u64
     }
 
     /// Get fallback agents for a role.
@@ -201,7 +188,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(clippy::float_cmp)]
     fn test_fallback_config_defaults() {
         let config = FallbackConfig::default();
         assert!(config.developer.is_empty());
@@ -209,7 +195,7 @@ mod tests {
         assert!(config.commit.is_empty());
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.retry_delay_ms, 1000);
-        assert_eq!(config.backoff_multiplier, 2.0);
+        assert!((config.backoff_multiplier - 2.0).abs() < f64::EPSILON);
         assert_eq!(config.max_backoff_ms, 60000);
         assert_eq!(config.max_cycles, 3);
     }

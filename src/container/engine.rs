@@ -41,8 +41,9 @@ impl EngineType {
 ///
 /// Provides a unified interface for running containers with either Docker or Podman.
 pub struct ContainerEngine {
-    /// The detected engine type (stored for potential future use)
-    _engine_type: EngineType,
+    /// The detected engine type (stored for build-image feature)
+    #[cfg(feature = "build-image")]
+    ty: EngineType,
     /// The binary name (docker or podman)
     binary: String,
 }
@@ -57,8 +58,13 @@ impl ContainerEngine {
         for candidate in engine_type.detection_order() {
             let binary = candidate.binary_name();
             if Self::is_available(binary) {
+                #[cfg(feature = "build-image")]
                 return Ok(Self {
-                    _engine_type: candidate,
+                    ty: candidate,
+                    binary: binary.to_string(),
+                });
+                #[cfg(not(feature = "build-image"))]
+                return Ok(Self {
                     binary: binary.to_string(),
                 });
             }
@@ -85,8 +91,9 @@ impl ContainerEngine {
     }
 
     /// Get the engine type
+    #[cfg(feature = "build-image")]
     pub const fn engine_type(&self) -> EngineType {
-        self._engine_type
+        self.ty
     }
 
     /// Check if an image exists locally
