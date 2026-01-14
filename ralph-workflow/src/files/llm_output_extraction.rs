@@ -693,15 +693,112 @@ fn looks_like_analysis_text(text: &str) -> bool {
     false
 }
 
+/// Remove formatted thinking output patterns from CLI display output.
+///
+/// This handles formatted thinking content that appears in log files from display
+/// formatting, such as `[Claude] Thinking: ...` or `[Agent] Thinking: ...`.
+/// These patterns may include ANSI color codes.
+///
+/// The function removes lines that contain formatted thinking markers and any
+/// subsequent content until a blank line or conventional commit pattern is found.
+fn remove_formatted_thinking_patterns(content: &str) -> String {
+    let mut result = String::new();
+    let mut skip_until_blank = false;
+
+    // Check for formatted thinking patterns
+    // Patterns like: "[Claude] Thinking:", "[Agent] Thinking:", "Thinking:" with ANSI codes
+    let thinking_patterns = [
+        "] Thinking:",
+        "] thinking:",
+        "[Claude] Thinking:",
+        "[claude] Thinking:",
+        "[Claude] thinking:",
+        "[claude] thinking:",
+        "[Agent] Thinking:",
+        "[agent] Thinking:",
+        "[Agent] thinking:",
+        "[agent] thinking:",
+        "[Assistant] Thinking:",
+        "[assistant] Thinking:",
+        "[Assistant] thinking:",
+        "[assistant] thinking:",
+    ];
+
+    // Strip ANSI escape codes for pattern matching
+    let strip_ansi = |text: &str| -> String {
+        // ANSI escape codes match pattern: \x1b[...m or \x1b[...K
+        let re = Regex::new(r"\x1b\[[0-9;]*[mK]").expect("ANSI regex should be valid");
+        re.replace_all(text, "").to_string()
+    };
+
+    for line in content.lines() {
+        let stripped_line = strip_ansi(line);
+
+        let is_thinking_marker = thinking_patterns
+            .iter()
+            .any(|pattern| stripped_line.contains(pattern));
+
+        if is_thinking_marker {
+            skip_until_blank = true;
+            continue;
+        }
+
+        // Skip lines while we're in a thinking block
+        if skip_until_blank {
+            // Check if this is a blank line
+            if line.trim().is_empty() {
+                skip_until_blank = false;
+            }
+            // Also check if we've hit a conventional commit pattern
+            else if looks_like_commit_message_start(line.trim()) {
+                skip_until_blank = false;
+                // Don't skip this line - it's the actual content
+                if !result.is_empty() {
+                    result.push('\n');
+                }
+                result.push_str(line);
+            }
+            // Otherwise, continue skipping
+            continue;
+        }
+
+        // Not in a thinking block, keep this line
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(line);
+    }
+
+    // If we ended up with empty content, return a cleaned version of the original
+    // This handles edge cases where the thinking detection was too aggressive
+    if result.trim().is_empty() && !content.trim().is_empty() {
+        // Return the original content minus obvious thinking-only lines
+        content
+            .lines()
+            .filter(|line| {
+                let stripped = strip_ansi(line);
+                !thinking_patterns.iter().any(|p| stripped.contains(p))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        result
+    }
+}
+
 /// Clean plain text output by removing common artifacts.
 ///
 /// This handles:
 /// - Markdown code fences
+/// - Formatted thinking output (e.g., "[Claude] Thinking: ...")
 /// - AI thought process patterns (e.g., "Looking at this diff...")
 /// - Common prefixes like "Commit message:", "Output:", etc.
 /// - Excessive whitespace
 fn clean_plain_text(content: &str) -> String {
     let mut result = content.to_string();
+
+    // Remove formatted thinking patterns from CLI display output
+    result = remove_formatted_thinking_patterns(&result);
 
     // Remove markdown code fences
     if result.starts_with("```") {
@@ -854,6 +951,26 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         return Err(
             "Commit message starts with numbered analysis. This indicates AI thought process leakage.".to_string()
         );
+    }
+
+    // Check for formatted thinking output patterns (e.g., "[Claude] Thinking:")
+    // This catches formatted thinking output from CLI display that leaked into the log
+    let formatted_thinking_patterns = [
+        "[claude] thinking:",
+        "[claude] Thinking:",
+        "[agent] thinking:",
+        "[agent] Thinking:",
+        "[assistant] thinking:",
+        "[assistant] Thinking:",
+        "] thinking:",
+        "] Thinking:",
+    ];
+    for pattern in &formatted_thinking_patterns {
+        if content_lower.starts_with(pattern) || content.contains(pattern) {
+            return Err(format!(
+                "Commit message contains formatted thinking pattern ({pattern}). This indicates AI thinking output leaked into the commit message."
+            ));
+        }
     }
 
     // Check for placeholder content
@@ -2172,6 +2289,119 @@ Fixes #123";
             validate_commit_message(&result.content).is_ok(),
             "Valid extracted commit message should pass validation: {}",
             result.content
+        );
+    }
+
+    // =========================================================================
+    // Regression Test: Formatted Thinking Output in Logs
+    // =========================================================================
+
+    #[test]
+    fn test_regression_formatted_thinking_output_in_logs() {
+        // Regression test for the bug where formatted thinking output like
+        // "[Claude] Thinking: ..." appears in log files from CLI display formatting
+        // and gets extracted as the commit message.
+
+        // Case 1: Simple formatted thinking followed by actual commit message
+        let log_with_thinking = r"[Claude] Thinking: Looking at this diff, I can see the changes...
+
+fix: handle edge case in parsing
+
+The previous implementation did not account for empty strings.";
+
+        let result = extract_llm_output(log_with_thinking, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("[Claude] Thinking:"),
+            "Formatted thinking marker should be removed from: {}",
+            result.content
+        );
+        assert!(
+            !result.content.contains("Looking at this diff"),
+            "Thinking content should be filtered out"
+        );
+        assert!(
+            result.content.contains("fix: handle edge case"),
+            "Actual commit message should be preserved"
+        );
+
+        // Case 2: Formatted thinking with ANSI color codes
+        let log_with_ansi_thinking = "\x1b[1m[claude] Thinking:\x1b[0m Analyzing the changes...\n\nfeat(parser): add support for new syntax";
+
+        let result = extract_llm_output(log_with_ansi_thinking, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("Thinking:"),
+            "Formatted thinking marker should be removed (with ANSI)"
+        );
+        assert!(
+            !result.content.contains("Analyzing"),
+            "Thinking content should be filtered out"
+        );
+        assert!(
+            result.content.contains("feat(parser):"),
+            "Actual commit message should be preserved"
+        );
+
+        // Case 3: Multiple thinking blocks
+        let log_with_multiple_thinking = r"[Agent] Thinking: Let me analyze this diff first...
+[Agent] Thinking: The changes involve error handling...
+
+fix(error): improve error messages
+
+Error messages are now more descriptive.";
+
+        let result = extract_llm_output(log_with_multiple_thinking, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("[Agent] Thinking:"),
+            "All formatted thinking markers should be removed"
+        );
+        assert!(
+            !result.content.contains("analyze") && !result.content.contains("Let me"),
+            "All thinking content should be filtered out"
+        );
+        assert!(
+            result.content.contains("fix(error):"),
+            "Actual commit message should be preserved"
+        );
+
+        // Case 4: Thinking content without blank line separator
+        let log_without_separator =
+            "[Assistant] thinking: Reviewing the code changes\nfix: update imports";
+
+        let result = extract_llm_output(log_without_separator, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("[Assistant] thinking:"),
+            "Formatted thinking marker should be removed"
+        );
+        assert!(
+            result.content.contains("fix:"),
+            "Commit message after thinking content should be found"
+        );
+
+        // Case 5: Only thinking content, no actual commit message
+        let log_only_thinking =
+            "[claude] Thinking: I need to analyze this more carefully to understand the changes";
+
+        let result = extract_llm_output(log_only_thinking, Some(OutputFormat::Generic));
+        // Should return empty or very minimal content since everything was filtered
+        assert!(
+            result.content.trim().len() < 50,
+            "Content should be mostly empty when only thinking is present: '{}'",
+            result.content
+        );
+
+        // Case 6: Verify validation rejects formatted thinking patterns at start
+        let formatted_thinking_at_start =
+            "[Agent] Thinking: Looking at the diff...\n\nfix: actual message";
+
+        let result = extract_llm_output(formatted_thinking_at_start, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("[Agent] Thinking:"),
+            "Formatted thinking should be removed during extraction"
+        );
+        // The result should now be clean (just the actual message)
+        assert!(
+            result.content.contains("fix: actual message") || result.content.contains("fix:"),
+            "Clean commit message should remain after filtering"
         );
     }
 }
