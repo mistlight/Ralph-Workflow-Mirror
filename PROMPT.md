@@ -18,6 +18,10 @@ Before implementing, think through:
 Installation Instructions:
 * If we have installation instructions, ensure they only have git clone from our git repository at ssh://git@codeberg.org/mistlight/Ralph-Workflow.git our cargo name is ralph-workflow
 
+## Feel Free
+* Make RADICAL changes if needed
+* Do not feel constrained by existing code, everything is experimental, if you think we need to use tailwind, use tailwind, if you think we need to get rid of an entire section, get rid of entire section. Acceptance criteria is the must important. Messy code is better deleted than kept around.
+
 ## Acceptance Checks
 * Working professional website that is at the quality of dribble showcase.
 * No design flaws. Bad usability in general.

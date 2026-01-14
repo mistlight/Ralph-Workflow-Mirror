@@ -38,11 +38,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <!-- Fonts: JetBrains Mono for code, Syne for distinctive display, General Sans for refined body -->
-    <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
-    <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&f[]=syne@700,800&display=swap" rel="stylesheet">
-    <link rel="preload" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+    <!-- Fonts: JetBrains Mono for code, Syne for distinctive display, Outfit for refined body -->
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- Preconnect for external resources -->
     <link rel="preconnect" href="https://codeberg.org" crossorigin>
@@ -84,8 +81,8 @@
             "CLI-based with flags and options for power users"
         ],
         "softwareVersion": "1.0.0",
-        "downloadUrl": "https://crates.io/crates/ralph-cli",
-        "installationInstructions": "Install via cargo: cargo install ralph-cli",
+        "downloadUrl": "https://crates.io/crates/ralph-workflow",
+        "installationInstructions": "Install via cargo: cargo install ralph-workflow",
         "screenshot": "https://mistlight.codeberg.page/ralph/og-image.png",
         "aggregateRating": {
             "@type": "AggregateRating",
@@ -835,7 +832,7 @@ Use the 'oauth2' crate and store sessions in Redis.</code></pre>
                                         <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
                                     </svg>
                                 </button>
-                                <pre><code class="language-bash">cargo install ralph-cli</code></pre>
+                                <pre><code class="language-bash">cargo install ralph-workflow</code></pre>
                             </div>
                             <p class="install-note">Requires Rust 1.70+ and cargo in PATH</p>
                         </div>
@@ -850,8 +847,8 @@ Use the 'oauth2' crate and store sessions in Redis.</code></pre>
                                         <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
                                     </svg>
                                 </button>
-                                <pre><code class="language-bash">git clone https://codeberg.org/mistlight/ralph.git
-cd ralph
+                                <pre><code class="language-bash">git clone ssh://git@codeberg.org/mistlight/Ralph-Workflow.git
+cd Ralph-Workflow
 cargo install --path .</code></pre>
                             </div>
                         </div>
