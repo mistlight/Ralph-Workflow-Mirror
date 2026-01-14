@@ -9,7 +9,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=General+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
         *, *::before, *::after {
@@ -19,14 +19,18 @@
         }
 
         :root {
-            --color-bg: #F5F1EA;
-            --color-bg-alt: #EDE8DF;
-            --color-text: #1A1A2E;
-            --color-text-muted: #6B6B7B;
-            --color-accent: #C45C26;
-            --color-primary: #1A1A2E;
-            --font-body: 'Work Sans', -apple-system, sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
+            --color-bg: #0A0A0A;
+            --color-bg-alt: #111111;
+            --color-text: #E8E4D9;
+            --color-text-muted: #8A8A8A;
+            --color-text-dim: #4A4A4A;
+            --color-primary: #FFB800;
+            --color-success: #00FF66;
+            --color-error: #FF3B30;
+            --color-warning: #FFD60A;
+            --border-color: #2A2A2A;
+            --font-display: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+            --font-body: 'General Sans', -apple-system, sans-serif;
         }
 
         html {
@@ -46,6 +50,28 @@
             -moz-osx-font-smoothing: grayscale;
         }
 
+        /* Grid Background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0.3;
+            background-image:
+                linear-gradient(90deg, var(--border-color) 1px, transparent 1px),
+                linear-gradient(var(--border-color) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        body > * {
+            position: relative;
+            z-index: 2;
+        }
+
         .container {
             flex: 1;
             display: flex;
@@ -57,14 +83,14 @@
         }
 
         .error-code {
-            font-family: var(--font-body);
-            font-size: clamp(100px, 20vw, 180px);
-            font-weight: 700;
-            color: var(--color-accent);
+            font-family: var(--font-display);
+            font-size: clamp(120px, 25vw, 220px);
+            font-weight: 500;
+            color: var(--color-primary);
             line-height: 0.9;
-            letter-spacing: -0.04em;
-            opacity: 0.15;
-            margin-bottom: -2rem;
+            letter-spacing: -0.05em;
+            opacity: 0.1;
+            margin-bottom: -3rem;
             position: relative;
             z-index: 0;
         }
@@ -75,9 +101,9 @@
         }
 
         .error-title {
-            font-family: var(--font-body);
+            font-family: var(--font-display);
             font-size: clamp(1.75rem, 4vw, 2.5rem);
-            font-weight: 600;
+            font-weight: 500;
             margin-bottom: 1rem;
             letter-spacing: -0.02em;
         }
@@ -85,21 +111,21 @@
         .error-message {
             color: var(--color-text-muted);
             font-size: 1.125rem;
-            max-width: 450px;
+            max-width: 480px;
             margin: 0 auto 2.5rem;
         }
 
         .terminal-output {
-            font-family: var(--font-mono);
+            font-family: var(--font-display);
             font-size: 0.875rem;
             color: var(--color-text);
-            background: var(--color-primary);
-            border-radius: 8px;
+            background: var(--color-bg-alt);
+            border: 1px solid var(--border-color);
             padding: 1.5rem;
             margin-bottom: 2.5rem;
             text-align: left;
-            max-width: 480px;
-            box-shadow: 0 20px 40px rgba(26, 26, 46, 0.1);
+            max-width: 500px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
         }
 
         .terminal-line {
@@ -112,23 +138,23 @@
         }
 
         .terminal-prompt {
-            color: #C45C26;
+            color: var(--color-primary);
         }
 
         .terminal-error {
-            color: #FF5F57;
+            color: var(--color-error);
         }
 
         .terminal-warn {
-            color: #FEBC2E;
+            color: var(--color-warning);
         }
 
         .terminal-success {
-            color: #6B8E4E;
+            color: var(--color-success);
         }
 
         .terminal-link {
-            color: #6B8E4E;
+            color: var(--color-success);
             text-decoration: underline;
         }
 
@@ -144,30 +170,27 @@
             align-items: center;
             gap: 0.5rem;
             padding: 0.75rem 1.5rem;
-            font-family: var(--font-body);
+            font-family: var(--font-display);
             font-size: 0.875rem;
             font-weight: 500;
-            border-radius: 4px;
             cursor: pointer;
             text-decoration: none;
             transition: all 0.2s ease;
-            border: 2px solid transparent;
+            border: 1px solid var(--border-color);
+            background: var(--color-bg-alt);
+            color: var(--color-text);
+            text-transform: lowercase;
         }
 
         .btn--primary {
             background: var(--color-primary);
-            color: #fff;
+            color: var(--color-bg);
+            border-color: var(--color-primary);
         }
 
         .btn--primary:hover {
-            background: #2D2D47;
-            transform: translateY(-2px);
-        }
-
-        .btn--secondary {
-            background: transparent;
-            color: var(--color-text);
-            border-color: var(--color-text-muted);
+            background: var(--color-error);
+            border-color: var(--color-error);
         }
 
         .btn--secondary:hover {
@@ -178,9 +201,10 @@
         footer {
             padding: 2rem;
             text-align: center;
-            border-top: 1px solid #D4CFC5;
+            border-top: 1px solid var(--border-color);
             color: var(--color-text-muted);
             font-size: 0.875rem;
+            font-family: var(--font-display);
         }
 
         footer a {
@@ -189,7 +213,7 @@
         }
 
         footer a:hover {
-            color: var(--color-accent);
+            color: var(--color-text);
         }
 
         @media (max-width: 480px) {
@@ -213,10 +237,10 @@
     <div class="container">
         <div class="error-code">404</div>
         <div class="content">
-            <h1 class="error-title">Page Not Found</h1>
+            <h1 class="error-title">page not found</h1>
             <p class="error-message">
-                The page you're looking for doesn't exist or has been moved.
-                Let Ralph help you find your way back.
+                Ralph couldn't locate this file—even after 10 reviewer passes.
+                Let us help you find your way back.
             </p>
 
             <div class="terminal-output">
@@ -224,13 +248,13 @@
                     <span class="terminal-prompt">$</span> ralph --search target_page
                 </div>
                 <div class="terminal-line">
-                    <span class="terminal-error">[ERROR]</span> Target not found in repository
+                    <span class="terminal-error">[ERROR]</span> target not found in repository
                 </div>
                 <div class="terminal-line">
-                    <span class="terminal-warn">[WARN]</span> Suggesting alternative routes...
+                    <span class="terminal-warn">[WARN]</span> suggesting alternative routes...
                 </div>
                 <div class="terminal-line">
-                    <span class="terminal-success">[INFO]</span> Best match: <a href="/" class="terminal-link">index.html</a>
+                    <span class="terminal-success">[INFO]</span> best match: <a href="/" class="terminal-link">index.html</a>
                 </div>
                 <div class="terminal-line">
                     <span class="terminal-prompt">$</span> <span style="opacity: 0.5;">_</span>
@@ -242,14 +266,14 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
                     </svg>
-                    Go Home
+                    go home
                 </a>
                 <a href="https://codeberg.org/mistlight/ralph/issues" target="_blank" rel="noopener" class="btn btn--secondary">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
                         <path d="M12 8v4M12 16h.01"/>
                     </svg>
-                    Report Issue
+                    report issue
                 </a>
             </div>
         </div>
@@ -257,8 +281,8 @@
 
     <footer>
         <p>
-            Ralph Workflow &bull; AGPL-3.0 &bull;
-            <a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener">Codeberg</a>
+            ralph workflow • agpl-3.0 •
+            <a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener">codeberg</a>
         </p>
     </footer>
 </body>

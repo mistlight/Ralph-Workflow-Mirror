@@ -216,13 +216,13 @@ const CopyButton = {
     },
 
     showCopied(btn) {
-        const original = btn.innerHTML;
+        btn.classList.add('success');
+        const originalHTML = btn.innerHTML;
         btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
-        btn.style.color = '#28C840';
 
         setTimeout(() => {
-            btn.innerHTML = original;
-            btn.style.color = '';
+            btn.classList.remove('success');
+            btn.innerHTML = originalHTML;
         }, 2000);
     }
 };
@@ -381,4 +381,4 @@ console.log(`
 
 %cAutomate your AI coding workflow.
 https://codeberg.org/mistlight/ralph
-`, 'font-family: monospace; font-size: 16px; color: #C45C26; font-weight: bold;', 'font-family: monospace; font-size: 12px; color: #6B6B7B;');
+`, 'font-family: monospace; font-size: 16px; color: #FFB800; font-weight: bold;', 'font-family: monospace; font-size: 12px; color: #8A8A8A;');
