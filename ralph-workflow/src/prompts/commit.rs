@@ -225,6 +225,73 @@ Example:
     )
 }
 
+/// Generate even stricter re-prompt with negative examples.
+///
+/// This is the second-level re-prompt used when the strict prompt also fails.
+/// It includes explicit examples of what NOT to output to prevent common mistakes.
+pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
+    let diff_content = diff.trim();
+    format!(
+        r#"Your response MUST be ONLY a JSON object. No other text.
+
+DIFF:
+{diff_content}
+
+REQUIRED OUTPUT:
+{{"subject": "feat: brief description", "body": null}}
+
+WHAT NOT TO OUTPUT (these are WRONG):
+❌ "Here is the commit message:"
+❌ "Looking at the diff, I can see..."
+❌ "Based on the changes above..."
+❌ ```json
+   {{"subject": "..."}}
+   ```
+❌ Any explanation or analysis before the JSON
+
+CORRECT OUTPUT (copy this format):
+{{"subject": "fix: prevent null pointer", "body": null}}
+
+RULES:
+1. Start with {{"subject":
+2. End with }}
+3. Nothing before the opening {{
+4. Nothing after the closing }}
+5. subject must be: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
+6. Keep subject under 72 characters"#
+    )
+}
+
+/// Generate ultra-minimal commit prompt.
+///
+/// This is the third-level re-prompt with bare minimum instructions.
+/// Removes all explanatory context to reduce chance of verbose responses.
+pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
+    let diff_content = diff.trim();
+    format!(
+        r#"DIFF:
+{diff_content}
+
+OUTPUT ONLY:
+{{"subject": "feat: description", "body": null}}
+
+Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"#
+    )
+}
+
+/// Generate emergency commit prompt with maximum constraints.
+///
+/// This is the final re-prompt attempt before falling back to the next agent.
+/// It provides the absolute minimum context to elicit a JSON response.
+pub fn prompt_emergency_commit(diff: &str) -> String {
+    let diff_content = diff.trim();
+    format!(
+        r#"{diff_content}
+
+{{"subject": "fix: ", "body": null}}"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,5 +324,55 @@ mod tests {
                 "Fix prompt NOTES.md reference should be optional"
             );
         }
+    }
+
+    #[test]
+    fn test_strict_json_commit_v2_returns_valid_content() {
+        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
+        let result = prompt_strict_json_commit_v2(diff);
+        assert!(!result.is_empty());
+        assert!(result.contains("DIFF:"));
+        assert!(result.contains("WHAT NOT TO OUTPUT"));
+        assert!(result.contains("CORRECT OUTPUT"));
+    }
+
+    #[test]
+    fn test_ultra_minimal_commit_returns_valid_content() {
+        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
+        let result = prompt_ultra_minimal_commit(diff);
+        assert!(!result.is_empty());
+        assert!(result.contains("DIFF:"));
+        assert!(result.contains("OUTPUT ONLY:"));
+        // Ultra-minimal should be shorter than standard prompt
+        let standard = prompt_generate_commit_message_with_diff(diff);
+        assert!(result.len() < standard.len());
+    }
+
+    #[test]
+    fn test_emergency_commit_returns_valid_content() {
+        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
+        let result = prompt_emergency_commit(diff);
+        assert!(!result.is_empty());
+        // Emergency prompt is extremely minimal - just diff + template
+        assert!(result.len() < 200);
+        assert!(result.contains(r#"{"subject": "fix: ", "body": null}"#));
+    }
+
+    #[test]
+    fn test_strict_json_v2_has_negative_examples() {
+        let result = prompt_strict_json_commit_v2("dummy diff");
+        // V2 should explicitly mention what NOT to output
+        assert!(result.contains("WHAT NOT TO OUTPUT"));
+        assert!(result.contains("Looking at the diff"));
+        assert!(result.contains("Here is the commit message"));
+    }
+
+    #[test]
+    fn test_emergency_is_minimal() {
+        let diff = "dummy diff";
+        let emergency = prompt_emergency_commit(diff);
+        let ultra_minimal = prompt_ultra_minimal_commit(diff);
+        // Emergency should be the shortest
+        assert!(emergency.len() < ultra_minimal.len());
     }
 }
