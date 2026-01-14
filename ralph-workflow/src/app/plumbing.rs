@@ -10,9 +10,11 @@ use crate::agents::AgentRegistry;
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::git_helpers::{
-    generate_commit_message_with_llm, get_repo_root, git_add_all, git_commit, git_diff,
-    git_snapshot, require_git_repo,
+    get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
 };
+use crate::phases::generate_commit_message;
+use crate::pipeline::PipelineRuntime;
+use crate::timer::Timer;
 use crate::utils::{
     delete_commit_message_file, read_commit_message_file, write_commit_message_file, Logger,
 };
@@ -100,9 +102,9 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
 
 /// Handles the `--generate-commit-msg` command.
 ///
-/// Generates a commit message for current changes using the LLM directly.
-/// The diff is passed inline to the LLM, which generates a commit message
-/// without any git context or file I/O.
+/// Generates a commit message for current changes using the standard pipeline.
+/// Uses the same `generate_commit_message()` function as the main workflow,
+/// ensuring consistent behavior with proper fallback chain support and logging.
 ///
 /// # Arguments
 ///
@@ -110,7 +112,7 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
 /// * `registry` - The agent registry
 /// * `logger` - Logger for info/warning messages
 /// * `colors` - Color configuration for output
-/// * `developer_agent` - Name of the developer agent to use
+/// * `developer_agent` - Name of the developer agent to use (for commit generation)
 /// * `reviewer_agent` - Name of the reviewer agent (not used, kept for API compatibility)
 ///
 /// # Returns
@@ -126,29 +128,37 @@ pub fn handle_generate_commit_msg(
 ) -> anyhow::Result<()> {
     logger.info("Generating commit message...");
 
-    // Get the developer agent command for LLM invocation
-    // Use config override if available (e.g., RALPH_DEVELOPER_CMD env var)
-    let agent_cmd = if let Some(cmd_override) = &config.developer_cmd {
-        cmd_override.clone()
-    } else {
-        registry
-            .developer_cmd(developer_agent)
-            .ok_or_else(|| anyhow::anyhow!("Developer agent '{}' not found", developer_agent))?
-    };
-
-    // Generate the commit message using the new approach (LLM with diff inline)
-    // Note: This generates the message but doesn't create the commit yet
-    // The user must run --apply-commit to create the actual commit
+    // Generate the commit message using the standard pipeline
     let diff = git_diff()?;
     if diff.trim().is_empty() {
         logger.warn("No changes detected to generate a commit message for");
         anyhow::bail!("No changes to commit");
     }
 
-    // Use the internal commit message generation function
-    // This calls the LLM with the diff inline and returns the message
-    let commit_message = generate_commit_message_with_llm(&diff, &agent_cmd)
+    // Create a timer for the pipeline runtime
+    let mut timer = Timer::new();
+
+    // Set up the pipeline runtime
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger,
+        colors,
+        config,
+    };
+
+    // Use the standard commit message generation from phases/commit.rs
+    // This provides:
+    // - Proper fallback chain support via run_with_fallback()
+    // - Structured logging to .agent/logs/
+    // - Meaningful error diagnostics
+    let result = generate_commit_message(&diff, registry, &mut runtime, developer_agent)
         .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {}", e))?;
+
+    if !result.success || result.message.trim().is_empty() {
+        anyhow::bail!("Commit message generation failed");
+    }
+
+    let commit_message = result.message;
 
     logger.success("Commit message generated:");
     println!();
