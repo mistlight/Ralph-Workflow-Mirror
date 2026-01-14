@@ -62,7 +62,7 @@ impl Default for StreamEventClassifier {
 
 impl StreamEventClassifier {
     /// Create a new classifier with default settings
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             substantial_content_threshold: 50,
         }
@@ -93,10 +93,13 @@ impl StreamEventClassifier {
             .get("type")
             .or_else(|| obj.get("event_type"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         // Check for explicit delta flag
-        let is_delta = obj.get("delta").and_then(|v| v.as_bool()).unwrap_or(false);
+        let is_delta = obj
+            .get("delta")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
 
         // Check for control event patterns
         if self.is_control_event(&type_name, obj) {
@@ -222,7 +225,7 @@ impl StreamEventClassifier {
         // Only apply this heuristic if there's no explicit delta flag or type name
         if !explicit_delta
             && (type_name.is_none()
-                || !type_name.as_ref().map_or(false, |n| {
+                || !type_name.as_ref().is_some_and(|n| {
                     let n_lower = n.to_lowercase();
                     n_lower.contains("delta")
                         || n_lower.contains("partial")
@@ -261,9 +264,7 @@ impl StreamEventClassifier {
                             "null",
                             "empty",
                         ];
-                        let is_complete_response = complete_responses
-                            .iter()
-                            .any(|response| trimmed == *response);
+                        let is_complete_response = complete_responses.contains(&trimmed);
 
                         // 2. Messages ending with terminal punctuation
                         let ends_with_terminal = trimmed.ends_with('.')

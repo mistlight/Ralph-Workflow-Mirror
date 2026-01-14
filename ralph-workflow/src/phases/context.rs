@@ -37,4 +37,4 @@ pub struct PhaseContext<'a> {
     pub review_guidelines: Option<&'a ReviewGuidelines>,
 }
 
-impl<'a> PhaseContext<'a> {}
+impl PhaseContext<'_> {}

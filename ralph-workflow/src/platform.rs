@@ -7,7 +7,7 @@ use std::process::Command;
 
 /// Detected platform type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Platform {
+pub enum Platform {
     /// macOS with Homebrew available
     MacWithBrew,
     /// macOS without Homebrew
@@ -32,14 +32,14 @@ impl Platform {
         match OS {
             "macos" => {
                 if has_command("brew") {
-                    Platform::MacWithBrew
+                    Self::MacWithBrew
                 } else {
-                    Platform::MacWithoutBrew
+                    Self::MacWithoutBrew
                 }
             }
             "linux" => detect_linux_distro(),
-            "windows" => Platform::Windows,
-            _ => Platform::Unknown,
+            "windows" => Self::Windows,
+            _ => Self::Unknown,
         }
     }
 }
@@ -69,7 +69,7 @@ fn detect_linux_distro() -> Platform {
 
 /// Installation guidance for a missing binary
 #[derive(Debug)]
-pub(crate) struct InstallGuidance {
+pub struct InstallGuidance {
     /// The binary that was not found
     pub(crate) binary: String,
     /// Primary suggested command to install it
@@ -89,7 +89,7 @@ impl InstallGuidance {
 
     /// Generate installation guidance for a specific platform
     pub(crate) fn for_binary_on_platform(binary: &str, platform: Platform) -> Self {
-        let mut guidance = InstallGuidance {
+        let mut guidance = Self {
             binary: binary.to_string(),
             install_cmd: None,
             alternative: None,
@@ -145,15 +145,12 @@ impl InstallGuidance {
                 guidance
                     .notes
                     .push("Aider is an AI pair programming tool".to_string());
-                match platform {
-                    Platform::MacWithBrew => {
-                        guidance.install_cmd = Some("brew install aider".to_string());
-                        guidance.alternative = Some("pip install aider-chat".to_string());
-                    }
-                    _ => {
-                        guidance.install_cmd = Some("pip install aider-chat".to_string());
-                        guidance.alternative = Some("pipx install aider-chat".to_string());
-                    }
+                if platform == Platform::MacWithBrew {
+                    guidance.install_cmd = Some("brew install aider".to_string());
+                    guidance.alternative = Some("pip install aider-chat".to_string());
+                } else {
+                    guidance.install_cmd = Some("pip install aider-chat".to_string());
+                    guidance.alternative = Some("pipx install aider-chat".to_string());
                 }
             }
             "opencode" => {
@@ -178,7 +175,7 @@ impl InstallGuidance {
             // Generic binary - provide platform-specific package manager hints
             _ => match platform {
                 Platform::MacWithBrew => {
-                    guidance.install_cmd = Some(format!("brew install {}", binary));
+                    guidance.install_cmd = Some(format!("brew install {binary}"));
                     guidance
                         .notes
                         .push("Or check if available via npm/pip".to_string());
@@ -190,22 +187,22 @@ impl InstallGuidance {
                     guidance.install_cmd = Some(
                             "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"".to_string()
                         );
-                    guidance.alternative = Some(format!("Then: brew install {}", binary));
+                    guidance.alternative = Some(format!("Then: brew install {binary}"));
                 }
                 Platform::DebianLinux => {
-                    guidance.install_cmd = Some(format!("sudo apt-get install {}", binary));
+                    guidance.install_cmd = Some(format!("sudo apt-get install {binary}"));
                     guidance
                         .notes
                         .push("Or check if available via npm/pip".to_string());
                 }
                 Platform::RhelLinux => {
-                    guidance.install_cmd = Some(format!("sudo dnf install {}", binary));
+                    guidance.install_cmd = Some(format!("sudo dnf install {binary}"));
                     guidance
                         .notes
                         .push("Or check if available via npm/pip".to_string());
                 }
                 Platform::ArchLinux => {
-                    guidance.install_cmd = Some(format!("sudo pacman -S {}", binary));
+                    guidance.install_cmd = Some(format!("sudo pacman -S {binary}"));
                     guidance
                         .notes
                         .push("Or check the AUR if not in official repos".to_string());
@@ -219,7 +216,7 @@ impl InstallGuidance {
                         .push("Or try: npm/pip/cargo install".to_string());
                 }
                 Platform::Windows => {
-                    guidance.install_cmd = Some(format!("winget install {}", binary));
+                    guidance.install_cmd = Some(format!("winget install {binary}"));
                     guidance.alternative = Some("Or use Chocolatey: choco install ...".to_string());
                 }
                 Platform::Unknown => {
@@ -241,17 +238,17 @@ impl InstallGuidance {
         lines.push(String::new());
 
         for note in &self.notes {
-            lines.push(format!("  {}", note));
+            lines.push(format!("  {note}"));
         }
 
         if let Some(ref cmd) = self.install_cmd {
             lines.push(String::new());
             lines.push("  To install:".to_string());
-            lines.push(format!("    {}", cmd));
+            lines.push(format!("    {cmd}"));
         }
 
         if let Some(ref alt) = self.alternative {
-            lines.push(format!("  Or: {}", alt));
+            lines.push(format!("  Or: {alt}"));
         }
 
         lines.join("\n")

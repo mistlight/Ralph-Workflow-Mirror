@@ -9,7 +9,7 @@ use std::io;
 use std::path::Path;
 
 /// Status of a recovery operation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryStatus {
     /// No recovery needed - state is valid.
     Valid,
@@ -43,7 +43,7 @@ fn validate_agent_state(agent_dir: &Path) -> io::Result<StateValidation> {
                 continue;
             }
             if fs::read_to_string(&path).is_err() {
-                issues.push(format!("Corrupted file: {:?}", path));
+                issues.push(format!("Corrupted file: {path:?}"));
             }
         }
     }
@@ -62,7 +62,7 @@ fn validate_agent_state(agent_dir: &Path) -> io::Result<StateValidation> {
         }
         let metadata = fs::metadata(&file_path)?;
         if metadata.len() == 0 {
-            issues.push(format!("Zero-length file: {}", filename));
+            issues.push(format!("Zero-length file: {filename}"));
         }
     }
 

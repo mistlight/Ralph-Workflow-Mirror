@@ -61,13 +61,13 @@ impl ParserHealth {
     }
 
     /// Record a parsed event
-    pub fn record_parsed(&mut self) {
+    pub const fn record_parsed(&mut self) {
         self.total_events += 1;
         self.parsed_events += 1;
     }
 
     /// Record an ignored event
-    pub fn record_ignored(&mut self) {
+    pub const fn record_ignored(&mut self) {
         self.total_events += 1;
         self.ignored_events += 1;
     }
@@ -77,14 +77,14 @@ impl ParserHealth {
     /// Unknown events are valid JSON that the parser deserialized successfully
     /// but doesn't have specific handling for. These should not trigger health
     /// warnings as they represent future/new event types, not parser errors.
-    pub fn record_unknown_event(&mut self) {
+    pub const fn record_unknown_event(&mut self) {
         self.total_events += 1;
         self.unknown_events += 1;
         self.ignored_events += 1;
     }
 
     /// Record a parse error (malformed JSON)
-    pub fn record_parse_error(&mut self) {
+    pub const fn record_parse_error(&mut self) {
         self.total_events += 1;
         self.parse_errors += 1;
         self.ignored_events += 1;
@@ -95,7 +95,7 @@ impl ParserHealth {
     /// Control events are valid JSON that represent state transitions
     /// rather than user-facing content. They should not be counted as
     /// "ignored" for health monitoring purposes.
-    pub fn record_control_event(&mut self) {
+    pub const fn record_control_event(&mut self) {
         self.total_events += 1;
         self.control_events += 1;
     }
@@ -105,7 +105,7 @@ impl ParserHealth {
     /// Partial events represent streaming content that is shown to the user
     /// in real-time as deltas. These are NOT errors and should not trigger
     /// health warnings. They are tracked separately to show streaming activity.
-    pub fn record_partial_event(&mut self) {
+    pub const fn record_partial_event(&mut self) {
         self.total_events += 1;
         self.partial_events += 1;
     }
@@ -249,7 +249,7 @@ impl HealthMonitor {
     }
 
     #[cfg(test)]
-    pub fn health(&self) -> ParserHealth {
+    pub const fn health(&self) -> ParserHealth {
         self.health.get()
     }
 

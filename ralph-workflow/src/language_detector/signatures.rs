@@ -128,7 +128,7 @@ fn collect_signature_files(root: &Path) -> SignatureFiles {
 
 /// Detect signature files that indicate specific frameworks or package managers.
 ///
-/// Returns a tuple of (frameworks, test_framework, package_manager).
+/// Returns a tuple of (frameworks, `test_framework`, `package_manager`).
 pub(super) fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String>, Option<String>) {
     let signatures = collect_signature_files(root);
 

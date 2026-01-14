@@ -1,7 +1,7 @@
-//! OpenCode Provider Types and Authentication Helpers
+//! `OpenCode` Provider Types and Authentication Helpers
 //!
 //! This module handles provider detection from model flags and provides
-//! authentication guidance for the 75+ providers supported by OpenCode.
+//! authentication guidance for the 75+ providers supported by `OpenCode`.
 //!
 //! # Module Structure
 //!

@@ -1,7 +1,7 @@
 //! JSON Stream Parsing Module
 //!
 //! Functions for parsing NDJSON (newline-delimited JSON)
-//! streams from Claude, Codex, Gemini, and OpenCode CLI tools.
+//! streams from Claude, Codex, Gemini, and `OpenCode` CLI tools.
 //!
 //! This module uses serde for JSON parsing, which is ~100x faster
 //! than spawning jq for each event.
@@ -11,9 +11,9 @@
 //! - [`types`] - Shared types and event structures
 //! - [`stream_classifier`] - Algorithmic detection of partial vs complete events
 //! - [`claude`] - Claude CLI output parser (with streaming support)
-//! - [`codex`] - OpenAI Codex CLI output parser (with streaming support)
+//! - [`codex`] - `OpenAI` Codex CLI output parser (with streaming support)
 //! - [`gemini`] - Google Gemini CLI output parser (with streaming support)
-//! - [`opencode`] - OpenCode CLI output parser (with streaming support)
+//! - [`opencode`] - `OpenCode` CLI output parser (with streaming support)
 //! - [`health`] - Parser health monitoring and graceful degradation
 //!
 //! # Streaming Support
@@ -21,8 +21,8 @@
 //! All parsers now support delta streaming for real-time content display:
 //! - **Claude**: Full streaming with `DeltaAccumulator` for text and thinking deltas
 //! - **Gemini**: Streaming with delta flag support for message content
-//! - **Codex**: Streaming for agent_message and reasoning item types
-//! - **OpenCode**: Streaming for text events
+//! - **Codex**: Streaming for `agent_message` and reasoning item types
+//! - **`OpenCode`**: Streaming for text events
 //!
 //! In verbose mode, parsers show full accumulated content. In normal mode,
 //! they show real-time deltas for immediate feedback.
@@ -45,14 +45,14 @@ mod opencode;
 mod stream_classifier;
 mod types;
 
-pub(crate) use claude::ClaudeParser;
-pub(crate) use codex::CodexParser;
-pub(crate) use gemini::GeminiParser;
-pub(crate) use opencode::OpenCodeParser;
+pub use claude::ClaudeParser;
+pub use codex::CodexParser;
+pub use gemini::GeminiParser;
+pub use opencode::OpenCodeParser;
 
 // Re-export format_tool_input for tests
 #[cfg(test)]
-pub(crate) use types::format_tool_input;
+pub use types::format_tool_input;
 
 #[cfg(test)]
 mod tests;

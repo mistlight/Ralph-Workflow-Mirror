@@ -10,7 +10,7 @@ use clap::ValueEnum;
 /// Preset configurations for common agent combinations.
 #[derive(Clone, Debug, ValueEnum)]
 pub enum Preset {
-    /// Use agent_chain defaults (no explicit agent override)
+    /// Use `agent_chain` defaults (no explicit agent override)
     Default,
     /// Use opencode for both developer and reviewer
     Opencode,

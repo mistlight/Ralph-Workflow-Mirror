@@ -89,10 +89,7 @@ pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
                 if let Ok(modified) = metadata.modified() {
                     if let Ok(elapsed) = modified.elapsed() {
                         if elapsed > std::time::Duration::from_secs(3600) {
-                            return Err(io::Error::other(format!(
-                                "Stale lock file found: {}",
-                                name
-                            )));
+                            return Err(io::Error::other(format!("Stale lock file found: {name}")));
                         }
                     }
                 }

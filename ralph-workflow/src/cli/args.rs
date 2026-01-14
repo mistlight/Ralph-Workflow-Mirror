@@ -92,7 +92,7 @@ pub struct Args {
     )]
     pub preset: Option<super::presets::Preset>,
 
-    /// Developer/driver agent to use (from agent_chain.developer)
+    /// Developer/driver agent to use (from `agent_chain.developer`)
     #[arg(
         long,
         short = 'a',
@@ -103,7 +103,7 @@ pub struct Args {
     )]
     pub developer_agent: Option<String>,
 
-    /// Reviewer agent to use (from agent_chain.reviewer)
+    /// Reviewer agent to use (from `agent_chain.reviewer`)
     #[arg(
         long,
         short = 'r',
@@ -272,7 +272,7 @@ pub struct Args {
     )]
     pub list_available_agents: bool,
 
-    /// List OpenCode provider types and their configuration
+    /// List `OpenCode` provider types and their configuration
     #[arg(
         long,
         help = "Show OpenCode provider types with model prefixes and auth commands",

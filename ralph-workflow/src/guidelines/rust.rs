@@ -6,7 +6,7 @@ use super::base::ReviewGuidelines;
 use crate::language_detector::ProjectStack;
 
 /// Add Rust-specific guidelines to the review
-pub(crate) fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+pub fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
     // Core Rust guidelines
     guidelines.quality_checks.extend([
         "No unwrap/expect in production paths; use Result + ?".to_string(),

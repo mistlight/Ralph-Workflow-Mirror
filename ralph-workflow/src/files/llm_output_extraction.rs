@@ -8,7 +8,7 @@
 //! - **Claude**: NDJSON with `{"type": "result", "result": "..."}` events
 //! - **Codex**: NDJSON with `item.completed` events containing `agent_message` items
 //! - **Gemini**: NDJSON with `{"type": "result"}` and `{"type": "message"}` events
-//! - **OpenCode**: NDJSON with `{"type": "text"}` events
+//! - **`OpenCode`**: NDJSON with `{"type": "text"}` events
 //! - **Generic**: Plain text output (fallback)
 //!
 //! # Design Principles
@@ -28,11 +28,11 @@ pub enum OutputFormat {
     /// Claude CLI stream-json format (also used by CCS, Qwen)
     #[default]
     Claude,
-    /// OpenAI Codex CLI format
+    /// `OpenAI` Codex CLI format
     Codex,
     /// Google Gemini CLI format
     Gemini,
-    /// OpenCode NDJSON format
+    /// `OpenCode` NDJSON format
     OpenCode,
     /// Generic/plain text (fallback)
     Generic,
@@ -42,11 +42,11 @@ impl OutputFormat {
     /// Parse format from string name
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "claude" | "ccs" | "qwen" => OutputFormat::Claude,
-            "codex" => OutputFormat::Codex,
-            "gemini" => OutputFormat::Gemini,
-            "opencode" => OutputFormat::OpenCode,
-            _ => OutputFormat::Generic,
+            "claude" | "ccs" | "qwen" => Self::Claude,
+            "codex" => Self::Codex,
+            "gemini" => Self::Gemini,
+            "opencode" => Self::OpenCode,
+            _ => Self::Generic,
         }
     }
 }
@@ -65,7 +65,7 @@ pub struct ExtractionOutput {
 }
 
 impl ExtractionOutput {
-    fn structured(content: String, format: OutputFormat) -> Self {
+    const fn structured(content: String, format: OutputFormat) -> Self {
         Self {
             content,
             was_structured: true,
@@ -351,7 +351,7 @@ fn extract_gemini_result(content: &str) -> Option<String> {
                 if let Some(msg_content) = json.get("content").and_then(|v| v.as_str()) {
                     if !msg_content.trim().is_empty() {
                         // For streaming, accumulate or replace based on delta flag
-                        if json.get("delta").and_then(|v| v.as_bool()) == Some(true) {
+                        if json.get("delta").and_then(serde_json::Value::as_bool) == Some(true) {
                             // Delta message - accumulate
                             if let Some(ref mut existing) = last_assistant_content {
                                 existing.push_str(msg_content);
@@ -372,9 +372,9 @@ fn extract_gemini_result(content: &str) -> Option<String> {
     last_assistant_content.map(|content| remove_thought_process_patterns(&content))
 }
 
-/// Extract result from OpenCode CLI NDJSON output.
+/// Extract result from `OpenCode` CLI NDJSON output.
 ///
-/// OpenCode outputs JSONL with nested part structures. The result comes from:
+/// `OpenCode` outputs JSONL with nested part structures. The result comes from:
 /// - `{"type": "text", "part": {"text": "..."}}`
 fn extract_opencode_result(content: &str) -> Option<String> {
     let mut accumulated_text = String::new();
@@ -492,7 +492,7 @@ fn clean_plain_text(content: &str) -> String {
         if let Some(end) = result.rfind("```") {
             if end > 3 {
                 // Find the end of the first line (language specifier)
-                let start = result.find('\n').map(|i| i + 1).unwrap_or(3);
+                let start = result.find('\n').map_or(3, |i| i + 1);
                 result = result[start..end].to_string();
             }
         }
@@ -533,7 +533,7 @@ fn clean_plain_text(content: &str) -> String {
     // Clean up whitespace
     result
         .lines()
-        .map(|l| l.trim())
+        .map(str::trim)
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
@@ -601,10 +601,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
     let content_lower = content.to_lowercase();
     for marker in error_markers {
         if content_lower.starts_with(marker) {
-            return Err(format!(
-                "Commit message starts with error marker: {}",
-                marker
-            ));
+            return Err(format!("Commit message starts with error marker: {marker}"));
         }
     }
 
@@ -620,8 +617,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
     for placeholder in placeholders {
         if content_lower.contains(placeholder) {
             return Err(format!(
-                "Commit message contains placeholder: {}",
-                placeholder
+                "Commit message contains placeholder: {placeholder}"
             ));
         }
     }
@@ -635,8 +631,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         .expect("file count regex should be valid");
     if file_count_pattern.is_match(&content_lower) {
         return Err(format!(
-            "Commit message matches bad pattern (file count pattern): '{}'. Use semantic description instead.",
-            content
+            "Commit message matches bad pattern (file count pattern): '{content}'. Use semantic description instead."
         ));
     }
 
@@ -648,8 +643,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
     for (pattern, description) in vague_patterns {
         if content_lower == pattern {
             return Err(format!(
-                "Commit message matches bad pattern ({}): {}",
-                description, pattern
+                "Commit message matches bad pattern ({description}): {pattern}"
             ));
         }
     }

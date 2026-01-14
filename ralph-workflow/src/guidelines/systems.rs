@@ -5,7 +5,7 @@
 use super::base::ReviewGuidelines;
 
 /// Add C/C++ guidelines to the review
-pub(crate) fn add_c_cpp_guidelines(guidelines: &mut ReviewGuidelines) {
+pub fn add_c_cpp_guidelines(guidelines: &mut ReviewGuidelines) {
     guidelines.quality_checks.extend([
         "Check return values of system calls".to_string(),
         "Use RAII for resource management (C++)".to_string(),
@@ -35,7 +35,7 @@ pub(crate) fn add_c_cpp_guidelines(guidelines: &mut ReviewGuidelines) {
 }
 
 /// Add C# guidelines to the review
-pub(crate) fn add_csharp_guidelines(guidelines: &mut ReviewGuidelines) {
+pub fn add_csharp_guidelines(guidelines: &mut ReviewGuidelines) {
     guidelines.quality_checks.extend([
         "Use async/await for I/O operations".to_string(),
         "Implement IDisposable correctly".to_string(),

@@ -38,7 +38,7 @@ pub struct ExtractionResult {
 
 impl ExtractionResult {
     /// Create a result with valid content
-    fn valid(content: String) -> Self {
+    const fn valid(content: String) -> Self {
         Self {
             raw_content: Some(content),
             is_valid: true,
@@ -56,7 +56,7 @@ impl ExtractionResult {
     }
 
     /// Create an empty result (no content found)
-    fn empty() -> Self {
+    const fn empty() -> Self {
         Self {
             raw_content: None,
             is_valid: false,
@@ -197,7 +197,7 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
             result_count,
             path,
             best_score,
-            best_result.as_ref().map_or(0, |r| r.len())
+            best_result.as_ref().map_or(0, std::string::String::len)
         );
     }
 
@@ -215,7 +215,7 @@ fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec
     };
 
     let mut log_files = Vec::new();
-    let prefix_pattern = format!("{}_", prefix);
+    let prefix_pattern = format!("{prefix}_");
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -251,7 +251,7 @@ fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec
 /// Find subdirectories matching a prefix pattern.
 ///
 /// This handles the legacy case where agent names containing "/" created
-/// nested directories (e.g., "planning_1_ccs/glm_0.log" instead of flat files).
+/// nested directories (e.g., "`planning_1_ccs/glm_0.log`" instead of flat files).
 fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<PathBuf>> {
     let entries = match fs::read_dir(parent_dir) {
         Ok(e) => e,
@@ -260,7 +260,7 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
     };
 
     let mut subdirs = Vec::new();
-    let prefix_pattern = format!("{}_", prefix);
+    let prefix_pattern = format!("{prefix}_");
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -519,7 +519,7 @@ pub fn extract_plan_from_text(content: &str) -> Option<String> {
             );
         }
 
-        return best_candidate.map(|s| s.to_string());
+        return best_candidate.map(std::string::ToString::to_string);
     }
 
     // Permissive fallback: if no markdown markers found, look for substantial
@@ -645,7 +645,7 @@ pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>
                 candidates_count,
                 files.len(),
                 best_score,
-                best_plan.as_ref().map_or(0, |p| p.len())
+                best_plan.as_ref().map_or(0, std::string::String::len)
             );
         }
 
@@ -969,7 +969,7 @@ mod tests {
         let result2 =
             r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
         let result3 = r#"{"type": "result", "result": "Last paragraph"}"#;
-        let json_log = format!("{}\n{}\n{}", result1, result2, result3);
+        let json_log = format!("{result1}\n{result2}\n{result3}");
         create_log_file(&log_dir, "output.log", &json_log);
 
         let result = extract_plan(&log_dir).unwrap();
@@ -980,8 +980,7 @@ mod tests {
         // NOT the last one (which would be "Last paragraph")
         assert!(
             content.contains("Implementation Steps"),
-            "Should select the complete plan, not the last partial result: {}",
-            content
+            "Should select the complete plan, not the last partial result: {content}"
         );
         assert!(
             content.contains("Create module"),
@@ -1537,8 +1536,7 @@ Just a short paragraph at the end.
         // NOT the first or last one found
         assert!(
             content.contains("Implementation Steps"),
-            "Should select the complete plan with Implementation Steps, got: {}",
-            content
+            "Should select the complete plan with Implementation Steps, got: {content}"
         );
         assert!(
             content.contains("scoring utility"),

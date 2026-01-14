@@ -123,7 +123,7 @@ fn derive_ccs_profile_name_from_filename(filename: &str) -> Option<String> {
         .strip_suffix(".settings.json")
         .or_else(|| filename.strip_suffix(".setting.json"))
         .or_else(|| filename.strip_suffix(".json"))
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 fn is_ccs_settings_filename(name: &str) -> bool {
@@ -749,7 +749,7 @@ pub struct AgentConfigToml {
     #[serde(default)]
     pub ccs_profile: Option<String>,
     /// Environment variables to set when running this agent (optional).
-    /// If ccs_profile is set, these are merged with CCS env vars (CCS takes precedence).
+    /// If `ccs_profile` is set, these are merged with CCS env vars (CCS takes precedence).
     #[serde(default)]
     pub env_vars: std::collections::HashMap<String, String>,
     /// Display name for UI/logging (optional, e.g., "My Custom Agent" instead of registry name).
@@ -757,7 +757,7 @@ pub struct AgentConfigToml {
     pub display_name: Option<String>,
 }
 
-fn default_can_commit() -> bool {
+const fn default_can_commit() -> bool {
     true
 }
 
@@ -789,7 +789,7 @@ impl From<AgentConfigToml> for AgentConfig {
             merged_env_vars.insert(key, value);
         }
 
-        AgentConfig {
+        Self {
             cmd: toml.cmd,
             output_flag: toml.output_flag,
             yolo_flag: toml.yolo_flag,
@@ -837,7 +837,9 @@ mod ccs_env_tests {
 
     #[test]
     fn load_ccs_env_vars_uses_config_json_mapping_and_env_key() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -870,7 +872,9 @@ mod ccs_env_tests {
 
     #[test]
     fn load_ccs_env_vars_from_yaml_config() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -907,7 +911,9 @@ profiles:
 
     #[test]
     fn load_ccs_env_vars_from_yaml_config_with_nonstandard_indent() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -973,7 +979,9 @@ profiles:
 
     #[test]
     fn load_ccs_env_vars_profile_not_found() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -995,7 +1003,9 @@ profiles:
 
     #[test]
     fn load_ccs_env_vars_alternate_spelling_setting_json() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -1016,7 +1026,9 @@ profiles:
 
     #[test]
     fn load_ccs_env_vars_missing_env_object() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -1126,7 +1138,7 @@ impl AgentsConfigFile {
         }
 
         let contents = fs::read_to_string(path)?;
-        let config: AgentsConfigFile = toml::from_str(&contents)?;
+        let config: Self = toml::from_str(&contents)?;
         Ok(Some(config))
     }
 

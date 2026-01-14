@@ -7,7 +7,7 @@
 //!
 //! # Module Structure
 //!
-//! - [`types`] - Type definitions (ContextLevel, Role, Action)
+//! - [`types`] - Type definitions (`ContextLevel`, Role, Action)
 //! - [`developer`] - Developer prompts (iteration, planning)
 //! - [`reviewer`] - Reviewer prompts (review, comprehensive, security, incremental)
 //! - [`commit`] - Fix and commit message prompts
@@ -18,15 +18,15 @@ mod reviewer;
 mod types;
 
 // Re-export all public items for backward compatibility
-pub(crate) use commit::{prompt_fix, prompt_generate_commit_message_with_diff};
-pub(crate) use developer::{prompt_developer_iteration, prompt_plan};
-pub(crate) use reviewer::{
+pub use commit::{prompt_fix, prompt_generate_commit_message_with_diff};
+pub use developer::{prompt_developer_iteration, prompt_plan};
+pub use reviewer::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines,
     prompt_incremental_review_with_diff, prompt_reviewer_review,
     prompt_reviewer_review_with_guidelines, prompt_security_focused_review,
     prompt_universal_review,
 };
-pub(crate) use types::{Action, ContextLevel, Role};
+pub use types::{Action, ContextLevel, Role};
 
 use crate::guidelines::ReviewGuidelines;
 
@@ -42,7 +42,7 @@ use crate::guidelines::ReviewGuidelines;
 /// The optional `prompt_md_content` parameter allows providing PROMPT.md content
 /// directly to the planning prompt, preventing agents from discovering it through
 /// file exploration.
-pub(crate) fn prompt_for_agent(
+pub fn prompt_for_agent(
     role: Role,
     action: Action,
     context: ContextLevel,

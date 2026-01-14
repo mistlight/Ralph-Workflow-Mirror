@@ -7,7 +7,7 @@
 /// Used to prioritize review feedback and help developers focus on
 /// the most important issues first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum CheckSeverity {
+pub enum CheckSeverity {
     /// Must fix before merge - security vulnerabilities, data loss, crashes
     Critical,
     /// Should fix before merge - bugs, significant functional issues
@@ -23,18 +23,18 @@ pub(crate) enum CheckSeverity {
 impl std::fmt::Display for CheckSeverity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CheckSeverity::Critical => write!(f, "CRITICAL"),
-            CheckSeverity::High => write!(f, "HIGH"),
-            CheckSeverity::Medium => write!(f, "MEDIUM"),
-            CheckSeverity::Low => write!(f, "LOW"),
-            CheckSeverity::Info => write!(f, "INFO"),
+            Self::Critical => write!(f, "CRITICAL"),
+            Self::High => write!(f, "HIGH"),
+            Self::Medium => write!(f, "MEDIUM"),
+            Self::Low => write!(f, "LOW"),
+            Self::Info => write!(f, "INFO"),
         }
     }
 }
 
 /// A review check with associated severity
 #[derive(Debug, Clone)]
-pub(crate) struct SeverityCheck {
+pub struct SeverityCheck {
     /// The check description
     pub(crate) check: String,
     /// Severity level for this check
@@ -72,7 +72,7 @@ impl SeverityCheck {
 
 /// Review guidelines for a specific technology stack
 #[derive(Debug, Clone)]
-pub(crate) struct ReviewGuidelines {
+pub struct ReviewGuidelines {
     /// Language-specific code quality checks
     pub(crate) quality_checks: Vec<String>,
     /// Security considerations specific to this stack
@@ -159,7 +159,7 @@ impl ReviewGuidelines {
         let mut lines: Vec<String> = items
             .iter()
             .take(limit)
-            .map(|s| format!("  - {}", s))
+            .map(|s| format!("  - {s}"))
             .collect();
         if items.len() > limit {
             lines.push(format!("  - ... (+{} more)", items.len() - limit));
@@ -355,7 +355,7 @@ impl ReviewGuidelines {
     }
 
     /// Get a comprehensive count of all checks
-    pub(crate) fn total_checks(&self) -> usize {
+    pub(crate) const fn total_checks(&self) -> usize {
         self.quality_checks.len()
             + self.security_checks.len()
             + self.performance_checks.len()

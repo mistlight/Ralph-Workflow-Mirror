@@ -49,12 +49,12 @@ pub struct PromptValidationResult {
 
 impl PromptValidationResult {
     /// Returns true if validation passed (no errors).
-    pub fn is_valid(&self) -> bool {
+    pub const fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
 
     /// Returns true if validation passed with no warnings.
-    pub fn is_perfect(&self) -> bool {
+    pub const fn is_perfect(&self) -> bool {
         self.errors.is_empty() && self.warnings.is_empty()
     }
 }
@@ -87,8 +87,7 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
         .exists()
         .then(|| fs::read_to_string(prompt_path).ok())
         .flatten()
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false);
+        .is_some_and(|s| !s.trim().is_empty());
 
     if prompt_ok {
         return Ok(true);
@@ -225,8 +224,7 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
         if restored {
             if let Some(source) = backup_used {
                 result.warnings.push(format!(
-                    "PROMPT.md was missing and was automatically restored from {}",
-                    source
+                    "PROMPT.md was missing and was automatically restored from {source}"
                 ));
             }
         } else {
@@ -251,9 +249,7 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
     let content = match fs::read_to_string(prompt_path) {
         Ok(c) => c,
         Err(e) => {
-            result
-                .errors
-                .push(format!("Failed to read PROMPT.md: {}", e));
+            result.errors.push(format!("Failed to read PROMPT.md: {e}"));
             return result;
         }
     };

@@ -19,7 +19,7 @@ mod stack;
 mod systems;
 
 // Re-export public types.
-pub(crate) use base::{CheckSeverity, ReviewGuidelines};
+pub use base::{CheckSeverity, ReviewGuidelines};
 
 #[cfg(test)]
 mod tests;

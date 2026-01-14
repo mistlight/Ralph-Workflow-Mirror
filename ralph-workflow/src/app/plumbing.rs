@@ -34,11 +34,11 @@ pub fn handle_show_commit_msg() -> anyhow::Result<()> {
 
     match read_commit_message_file() {
         Ok(msg) => {
-            println!("{}", msg);
+            println!("{msg}");
             Ok(())
         }
         Err(e) => {
-            anyhow::bail!("Failed to read commit message: {}", e);
+            anyhow::bail!("Failed to read commit message: {e}");
         }
     }
 }
@@ -88,10 +88,10 @@ pub fn handle_apply_commit(logger: &Logger, colors: &Colors) -> anyhow::Result<(
     // Note: Plumbing commands don't have access to config, so we use None
     // for git identity and fall back to git config (via repo.signature())
     if let Some(oid) = git_commit(&commit_msg, None, None)? {
-        logger.success(&format!("Commit created successfully: {}", oid));
+        logger.success(&format!("Commit created successfully: {oid}"));
         // Clean up the commit message file
         if let Err(err) = delete_commit_message_file() {
-            logger.warn(&format!("Failed to delete commit-message.txt: {}", err));
+            logger.warn(&format!("Failed to delete commit-message.txt: {err}"));
         }
     } else {
         logger.warn("Nothing to commit (working tree clean)");
@@ -152,7 +152,7 @@ pub fn handle_generate_commit_msg(
     // - Structured logging to .agent/logs/
     // - Meaningful error diagnostics
     let result = generate_commit_message(&diff, registry, &mut runtime, developer_agent)
-        .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
 
     if !result.success || result.message.trim().is_empty() {
         anyhow::bail!("Commit message generation failed");

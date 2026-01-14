@@ -1,12 +1,12 @@
 //! Python-specific review guidelines
 //!
-//! Contains guidelines for Python projects including Django, FastAPI, and Flask frameworks.
+//! Contains guidelines for Python projects including Django, `FastAPI`, and Flask frameworks.
 
 use super::base::ReviewGuidelines;
 use crate::language_detector::ProjectStack;
 
 /// Add Python-specific guidelines to the review
-pub(crate) fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+pub fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
     // Core Python guidelines
     guidelines.quality_checks.extend([
         "Follow PEP 8 style guide".to_string(),

@@ -143,7 +143,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
                 return Ok(());
             }
             Err(e) => {
-                logger.error(&format!("Failed to reset starting commit: {}", e));
+                logger.error(&format!("Failed to reset starting commit: {e}"));
                 anyhow::bail!("Failed to reset starting commit");
             }
         }
@@ -175,28 +175,24 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
     // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
     if args.interactive && !std::path::Path::new("PROMPT.md").exists() {
-        match prompt_template_selection(&colors) {
-            Some(template_name) => {
-                create_prompt_from_template(&template_name, &colors)?;
-                println!();
-                logger.info(
-                    "PROMPT.md created. Please edit it with your task details, then run ralph again.",
-                );
-                logger.info(&format!(
-                    "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-                    config.commit_msg
-                ));
-                return Ok(());
-            }
-            None => {
-                println!();
-                logger.info("PROMPT.md is required to run the pipeline.");
-                logger.info(
-                    "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-                );
-                return Ok(());
-            }
+        if let Some(template_name) = prompt_template_selection(&colors) {
+            create_prompt_from_template(&template_name, &colors)?;
+            println!();
+            logger.info(
+                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+            );
+            logger.info(&format!(
+                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                config.commit_msg
+            ));
+            return Ok(());
         }
+        println!();
+        logger.info("PROMPT.md is required to run the pipeline.");
+        logger.info(
+            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+        );
+        return Ok(());
     }
 
     ensure_files(config.isolation_mode)?;
@@ -325,14 +321,12 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Ok(Some(warning)) => {
             ctx.logger.warn(&format!(
-                "PROMPT.md backup created but: {}. Continuing anyway.",
-                warning
+                "PROMPT.md backup created but: {warning}. Continuing anyway."
             ));
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to create PROMPT.md backup: {}. Continuing anyway.",
-                e
+                "Failed to create PROMPT.md backup: {e}. Continuing anyway."
             ));
         }
     }
@@ -345,12 +339,11 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
             // Read-only permissions set successfully
         }
         Ok(Some(warning)) => {
-            ctx.logger.warn(&format!("{}. Continuing anyway.", warning));
+            ctx.logger.warn(&format!("{warning}. Continuing anyway."));
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to make PROMPT.md read-only: {}. Continuing anyway.",
-                e
+                "Failed to make PROMPT.md read-only: {e}. Continuing anyway."
             ));
         }
     }
@@ -362,8 +355,7 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         Ok(mut monitor) => {
             if let Err(e) = monitor.start() {
                 ctx.logger.warn(&format!(
-                    "Failed to start PROMPT.md monitoring: {}. Continuing anyway.",
-                    e
+                    "Failed to start PROMPT.md monitoring: {e}. Continuing anyway."
                 ));
                 None
             } else {
@@ -375,8 +367,7 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to create PROMPT.md monitor: {}. Continuing anyway.",
-                e
+                "Failed to create PROMPT.md monitor: {e}. Continuing anyway."
             ));
             None
         }
@@ -424,9 +415,8 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to save starting commit: {}. \
-                 Incremental diffs may be unavailable as a result.",
-                e
+                "Failed to save starting commit: {e}. \
+                 Incremental diffs may be unavailable as a result."
             ));
             ctx.logger.info(
                 "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
@@ -484,7 +474,7 @@ fn handle_resume(
 
     match load_checkpoint() {
         Ok(Some(checkpoint)) => {
-            logger.header("RESUME: Loading Checkpoint", |c| c.yellow());
+            logger.header("RESUME: Loading Checkpoint", super::colors::Colors::yellow);
             logger.info(&format!("Resuming from: {}", checkpoint.description()));
             logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
 
@@ -509,10 +499,7 @@ fn handle_resume(
             None
         }
         Err(e) => {
-            logger.warn(&format!(
-                "Failed to load checkpoint (starting fresh): {}",
-                e
-            ));
+            logger.warn(&format!("Failed to load checkpoint (starting fresh): {e}"));
             None
         }
     }
@@ -541,14 +528,14 @@ fn detect_project_stack(
             (Some(stack), Some(guidelines))
         }
         Err(e) => {
-            logger.warn(&format!("Could not detect project stack: {}", e));
+            logger.warn(&format!("Could not detect project stack: {e}"));
             (None, None)
         }
     }
 }
 
 /// Helper to get phase rank for resume logic.
-fn phase_rank(p: PipelinePhase) -> u8 {
+const fn phase_rank(p: PipelinePhase) -> u8 {
     match p {
         PipelinePhase::Planning => 0,
         PipelinePhase::Development => 1,
@@ -562,7 +549,10 @@ fn phase_rank(p: PipelinePhase) -> u8 {
 }
 
 /// Determines if a phase should run based on resume checkpoint.
-fn should_run_from(phase: PipelinePhase, resume_checkpoint: Option<&PipelineCheckpoint>) -> bool {
+const fn should_run_from(
+    phase: PipelinePhase,
+    resume_checkpoint: Option<&PipelineCheckpoint>,
+) -> bool {
     match resume_checkpoint {
         None => true,
         Some(checkpoint) => phase_rank(phase) >= phase_rank(checkpoint.phase),
@@ -575,7 +565,8 @@ fn run_development(
     args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger.header("PHASE 1: Development", |c| c.blue());
+    ctx.logger
+        .header("PHASE 1: Development", super::colors::Colors::blue);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
     let resume_rank = resume_phase.map(phase_rank);
@@ -594,8 +585,7 @@ fn run_development(
 
     let start_iter = match resume_phase {
         Some(PipelinePhase::Planning | PipelinePhase::Development) => resume_checkpoint
-            .map(|c| c.iteration)
-            .unwrap_or(1)
+            .map_or(1, |c| c.iteration)
             .clamp(1, ctx.config.developer_iters),
         _ => 1,
     };
@@ -617,7 +607,8 @@ fn run_review_and_fix(
     _args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger.header("PHASE 2: Review & Fix", |c| c.magenta());
+    ctx.logger
+        .header("PHASE 2: Review & Fix", super::colors::Colors::magenta);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
 
@@ -635,8 +626,7 @@ fn run_review_and_fix(
         let start_pass = match resume_phase {
             Some(PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain) => {
                 resume_checkpoint
-                    .map(|c| c.reviewer_pass)
-                    .unwrap_or(1)
+                    .map_or(1, |c| c.reviewer_pass)
                     .clamp(1, ctx.config.reviewer_reviews.max(1))
             }
             _ => 1,
@@ -672,14 +662,14 @@ fn run_final_validation(
 
     if !should_run_from(PipelinePhase::FinalValidation, resume_checkpoint) {
         ctx.logger
-            .header("PHASE 3: Final Validation", |c| c.yellow());
+            .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
         ctx.logger
             .info("Skipping final validation (resuming from a later checkpoint phase)");
         return Ok(());
     }
 
     let argv = crate::utils::split_command(full_cmd)
-        .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {e}"))?;
     if argv.is_empty() {
         ctx.logger
             .warn("FULL_CHECK_CMD is empty; skipping final validation");
@@ -699,7 +689,7 @@ fn run_final_validation(
     }
 
     ctx.logger
-        .header("PHASE 3: Final Validation", |c| c.yellow());
+        .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
     let display_cmd = crate::utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running full check: {}{}{}",
@@ -747,7 +737,7 @@ fn finalize_pipeline(
     crate::git_helpers::end_agent_phase()?;
     crate::git_helpers::disable_git_wrapper(agent_phase_guard.git_helpers);
     if let Err(err) = crate::git_helpers::uninstall_hooks(logger) {
-        logger.warn(&format!("Failed to uninstall Ralph hooks: {}", err));
+        logger.warn(&format!("Failed to uninstall Ralph hooks: {err}"));
     }
 
     // Note: Individual commits were created per-iteration during development
@@ -758,7 +748,7 @@ fn finalize_pipeline(
 
     if config.checkpoint_enabled {
         if let Err(err) = clear_checkpoint() {
-            logger.warn(&format!("Failed to clear checkpoint: {}", err));
+            logger.warn(&format!("Failed to clear checkpoint: {err}"));
         }
     }
 

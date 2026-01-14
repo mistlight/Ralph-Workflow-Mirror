@@ -21,7 +21,7 @@
 //! Hello World\n              (message_stop adds final newline)
 //! ```
 //!
-//! This pattern is consistent across all parsers (Claude, Codex, Gemini, OpenCode)
+//! This pattern is consistent across all parsers (Claude, Codex, Gemini, `OpenCode`)
 //! with variations in when the prefix is shown based on each format's event structure.
 
 use crate::colors::{Colors, CHECK, CROSS};
@@ -43,7 +43,7 @@ use super::types::{
 /// Note: This parser is designed for single-threaded use only.
 /// The internal state uses `Rc<RefCell<>>` for convenience, not for thread safety.
 /// Do not share this parser across threads.
-pub(crate) struct ClaudeParser {
+pub struct ClaudeParser {
     colors: Colors,
     pub(crate) verbosity: Verbosity,
     log_file: Option<String>,
@@ -78,22 +78,21 @@ impl ClaudeParser {
 
     /// Parse and display a single Claude JSON event
     ///
-    /// Returns Some(formatted_output) for valid events, or None for:
+    /// Returns `Some(formatted_output)` for valid events, or None for:
     /// - Malformed JSON (logged at debug level)
     /// - Unknown event types
     /// - Empty or whitespace-only output
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
-        let event: ClaudeEvent = match serde_json::from_str(line) {
-            Ok(e) => e,
-            Err(_) => {
-                // Non-JSON line - could be raw text output from agent
-                // Pass through as-is if it looks like real output (not empty)
-                let trimmed = line.trim();
-                if !trimmed.is_empty() && !trimmed.starts_with('{') {
-                    return Some(format!("{}\n", trimmed));
-                }
-                return None;
+        let event: ClaudeEvent = if let Ok(e) = serde_json::from_str(line) {
+            e
+        } else {
+            // Non-JSON line - could be raw text output from agent
+            // Pass through as-is if it looks like real output (not empty)
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                return Some(format!("{trimmed}\n"));
             }
+            return None;
         };
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -330,7 +329,7 @@ impl ClaudeParser {
     ///
     /// Handles the nested events within `stream_event`:
     /// - MessageStart/Stop: Manage session state
-    /// - ContentBlockStart: Initialize new content blocks
+    /// - `ContentBlockStart`: Initialize new content blocks
     /// - ContentBlockDelta/TextDelta: Accumulate and display incrementally
     /// - Error: Display appropriately
     ///
@@ -449,15 +448,15 @@ impl ClaudeParser {
                         String::new()
                     };
 
-                    if !input_str.is_empty() {
+                    if input_str.is_empty() {
+                        String::new()
+                    } else {
                         // Accumulate tool input
                         acc.add_delta(ContentType::ToolInput, &index.to_string(), &input_str);
 
                         // Show partial tool input in real-time
                         let formatter = DeltaDisplayFormatter::new();
                         formatter.format_tool_input(&input_str, prefix, c)
-                    } else {
-                        String::new()
                     }
                 }
                 _ => String::new(),
@@ -547,7 +546,7 @@ impl ClaudeParser {
     /// Control events are valid JSON that represent state transitions rather than
     /// user-facing content. They should be tracked separately from "ignored" events
     /// to avoid false health warnings.
-    fn is_control_event(event: &ClaudeEvent) -> bool {
+    const fn is_control_event(event: &ClaudeEvent) -> bool {
         match event {
             // Stream events that are control events
             ClaudeEvent::StreamEvent { event } => matches!(
@@ -566,7 +565,7 @@ impl ClaudeParser {
     /// Partial events represent streaming content deltas (text deltas, thinking deltas,
     /// tool input deltas) that are shown to the user in real-time. These should be
     /// tracked separately to avoid inflating "ignored" percentages.
-    fn is_partial_event(event: &ClaudeEvent) -> bool {
+    const fn is_partial_event(event: &ClaudeEvent) -> bool {
         match event {
             // Stream events that produce incremental content
             ClaudeEvent::StreamEvent { event } => matches!(
@@ -578,7 +577,7 @@ impl ClaudeParser {
     }
 
     /// Get a shared delta display formatter
-    fn formatter() -> DeltaDisplayFormatter {
+    const fn formatter() -> DeltaDisplayFormatter {
         DeltaDisplayFormatter::new()
     }
 
@@ -636,7 +635,7 @@ impl ClaudeParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{}", output)?;
+                    write!(writer, "{output}")?;
                     writer.flush()?;
                 }
                 None => {
@@ -662,7 +661,7 @@ impl ClaudeParser {
 
             // Log raw JSON to file if configured
             if let Some(ref mut file) = log_writer {
-                writeln!(file, "{}", line)?;
+                writeln!(file, "{line}")?;
             }
         }
 
@@ -670,7 +669,7 @@ impl ClaudeParser {
             file.flush()?;
         }
         if let Some(warning) = monitor.check_and_warn(c) {
-            writeln!(writer, "{}", warning)?;
+            writeln!(writer, "{warning}")?;
         }
         Ok(())
     }

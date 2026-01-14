@@ -132,31 +132,30 @@ pub fn handle_init_prompt(template_name: &str, colors: &Colors) -> anyhow::Resul
     }
 
     // Validate the template exists
-    let template = match get_template(template_name) {
-        Some(t) => t,
-        None => {
+    let template = if let Some(t) = get_template(template_name) {
+        t
+    } else {
+        println!(
+            "{}Unknown template: '{}'{}",
+            colors.red(),
+            template_name,
+            colors.reset()
+        );
+        println!();
+        println!("Available templates:");
+        for (name, description) in list_templates() {
             println!(
-                "{}Unknown template: '{}'{}",
-                colors.red(),
-                template_name,
-                colors.reset()
+                "  {}{}{}  {}",
+                colors.cyan(),
+                name,
+                colors.reset(),
+                description
             );
-            println!();
-            println!("Available templates:");
-            for (name, description) in list_templates() {
-                println!(
-                    "  {}{}{}  {}",
-                    colors.cyan(),
-                    name,
-                    colors.reset(),
-                    description
-                );
-            }
-            println!();
-            println!("Usage: ralph --init-prompt <template>");
-            println!("       ralph --list-templates");
-            return Ok(true);
         }
+        println!();
+        println!("Usage: ralph --init-prompt <template>");
+        println!("       ralph --list-templates");
+        return Ok(true);
     };
 
     // Write the template content to PROMPT.md

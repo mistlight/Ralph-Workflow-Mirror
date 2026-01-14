@@ -17,7 +17,7 @@ use std::path::PathBuf;
 /// * `Security` - Security-focused analysis emphasizing OWASP Top 10
 /// * `Incremental` - Focused review of changed files only (git diff)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum ReviewDepth {
+pub enum ReviewDepth {
     /// Standard review - balanced coverage of functionality, quality, and security
     #[default]
     Standard,
@@ -49,23 +49,21 @@ impl ReviewDepth {
     /// ```
     pub(crate) fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "standard" | "default" | "normal" => Some(ReviewDepth::Standard),
-            "comprehensive" | "thorough" | "full" => Some(ReviewDepth::Comprehensive),
-            "security" | "secure" | "security-focused" => Some(ReviewDepth::Security),
-            "incremental" | "diff" | "changed" => Some(ReviewDepth::Incremental),
+            "standard" | "default" | "normal" => Some(Self::Standard),
+            "comprehensive" | "thorough" | "full" => Some(Self::Comprehensive),
+            "security" | "secure" | "security-focused" => Some(Self::Security),
+            "incremental" | "diff" | "changed" => Some(Self::Incremental),
             _ => None,
         }
     }
 
     /// Get a description for display.
-    pub(crate) fn description(&self) -> &'static str {
+    pub(crate) const fn description(&self) -> &'static str {
         match self {
-            ReviewDepth::Standard => {
-                "Balanced review covering functionality, quality, and security"
-            }
-            ReviewDepth::Comprehensive => "In-depth analysis with priority-ordered checks",
-            ReviewDepth::Security => "Security-focused analysis emphasizing OWASP Top 10",
-            ReviewDepth::Incremental => "Focused review of changed files only (git diff)",
+            Self::Standard => "Balanced review covering functionality, quality, and security",
+            Self::Comprehensive => "In-depth analysis with priority-ordered checks",
+            Self::Security => "Security-focused analysis emphasizing OWASP Top 10",
+            Self::Incremental => "Focused review of changed files only (git diff)",
         }
     }
 }
@@ -80,7 +78,7 @@ impl ReviewDepth {
 /// * `Full` (3) - No truncation, show all content
 /// * `Debug` (4) - Maximum verbosity, includes raw JSON and detailed info
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Verbosity {
+pub enum Verbosity {
     /// Quiet - minimal output, aggressive truncation
     Quiet = 0,
     /// Normal - balanced output with moderate truncation
@@ -96,11 +94,11 @@ pub(crate) enum Verbosity {
 impl From<u8> for Verbosity {
     fn from(v: u8) -> Self {
         match v {
-            0 => Verbosity::Quiet,
-            1 => Verbosity::Normal,
-            2 => Verbosity::Verbose,
-            3 => Verbosity::Full,
-            _ => Verbosity::Debug,
+            0 => Self::Quiet,
+            1 => Self::Normal,
+            2 => Self::Verbose,
+            3 => Self::Full,
+            _ => Self::Debug,
         }
     }
 }
@@ -112,12 +110,12 @@ impl Verbosity {
     ///
     /// * `content_type` - The type of content:
     ///   - "text": Assistant text output
-    ///   - "tool_result": Tool execution results
-    ///   - "tool_input": Tool input parameters
+    ///   - "`tool_result"`: Tool execution results
+    ///   - "`tool_input"`: Tool input parameters
     ///   - "user": User messages
     ///   - "result": Final result summaries
     ///   - "command": Command execution strings
-    ///   - "agent_msg": Agent messages/thinking
+    ///   - "`agent_msg"`: Agent messages/thinking
     ///
     /// # Returns
     ///
@@ -127,24 +125,21 @@ impl Verbosity {
     }
 
     /// Returns true if this verbosity level should show debug information.
-    pub(crate) fn is_debug(&self) -> bool {
-        matches!(self, Verbosity::Debug)
+    pub(crate) const fn is_debug(&self) -> bool {
+        matches!(self, Self::Debug)
     }
 
     /// Returns true if this verbosity level is at least Verbose.
-    pub(crate) fn is_verbose(&self) -> bool {
-        matches!(
-            self,
-            Verbosity::Verbose | Verbosity::Full | Verbosity::Debug
-        )
+    pub(crate) const fn is_verbose(&self) -> bool {
+        matches!(self, Self::Verbose | Self::Full | Self::Debug)
     }
 
     /// Returns true if tool inputs should be shown (Normal and above).
     ///
     /// Tool inputs provide crucial context for understanding what the agent is doing.
     /// They are shown at Normal level and above for better usability.
-    pub(crate) fn show_tool_input(&self) -> bool {
-        !matches!(self, Verbosity::Quiet)
+    pub(crate) const fn show_tool_input(&self) -> bool {
+        !matches!(self, Self::Quiet)
     }
 }
 
@@ -154,29 +149,29 @@ impl Verbosity {
 /// environment variables and CLI arguments. Default values are applied
 /// via [`Default::default()`].
 #[derive(Debug, Clone)]
-pub(crate) struct Config {
-    /// Developer (driver) agent (set via CLI, env, or agent_chain)
+pub struct Config {
+    /// Developer (driver) agent (set via CLI, env, or `agent_chain`)
     pub(crate) developer_agent: Option<String>,
-    /// Reviewer agent (set via CLI, env, or agent_chain)
+    /// Reviewer agent (set via CLI, env, or `agent_chain`)
     pub(crate) reviewer_agent: Option<String>,
     /// Developer command override
     pub(crate) developer_cmd: Option<String>,
     /// Reviewer command override
     pub(crate) reviewer_cmd: Option<String>,
     /// Developer model override (e.g., "-m opencode/glm-4.7-free")
-    /// Passed to the agent's model_flag parameter
+    /// Passed to the agent's `model_flag` parameter
     pub(crate) developer_model: Option<String>,
     /// Reviewer model override (e.g., "-m opencode/claude-sonnet-4")
-    /// Passed to the agent's model_flag parameter
+    /// Passed to the agent's `model_flag` parameter
     pub(crate) reviewer_model: Option<String>,
     /// Developer provider override (e.g., "opencode", "anthropic", "openai")
-    /// When set, constructs the model flag as "-m {provider}/{model_name}"
+    /// When set, constructs the model flag as "-m {`provider}/{model_name`}"
     pub(crate) developer_provider: Option<String>,
     /// Reviewer provider override (e.g., "opencode", "anthropic", "openai")
-    /// When set, constructs the model flag as "-m {provider}/{model_name}"
+    /// When set, constructs the model flag as "-m {`provider}/{model_name`}"
     pub(crate) reviewer_provider: Option<String>,
     /// JSON parser override for the reviewer agent (claude, codex, gemini, opencode, generic)
-    /// When set, overrides the agent's configured json_parser setting
+    /// When set, overrides the agent's configured `json_parser` setting
     pub(crate) reviewer_json_parser: Option<String>,
     /// Force universal review prompt for all agents (default: auto-detect)
     /// When true, the universal/simplified prompt is always used for review
