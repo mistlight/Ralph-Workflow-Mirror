@@ -16,7 +16,8 @@ use crate::agents::{AgentRegistry, AgentRole};
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::llm_output_extraction::{
-    extract_llm_output, validate_commit_message, OutputFormat,
+    extract_llm_output, generate_fallback_commit_message, try_salvage_commit_message,
+    validate_commit_message, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
@@ -234,7 +235,7 @@ pub fn commit_with_generated_message(
 /// * `Err(e)` - An error occurred during extraction
 fn extract_commit_message_from_logs(
     log_dir: &str,
-    _diff: &str,
+    diff: &str,
     agent_cmd: &str,
     logger: &Logger,
 ) -> anyhow::Result<Option<String>> {
@@ -303,8 +304,30 @@ fn extract_commit_message_from_logs(
         }
         Err(e) => {
             logger.warn(&format!("Commit message validation failed: {e}"));
-            // Return the extracted content anyway - caller can decide whether to use it
-            Ok(Some(extracted))
+
+            // Recovery Layer 1: Attempt to salvage valid commit message from raw content
+            logger.info("Attempting to salvage commit message from output...");
+            if let Some(salvaged) = try_salvage_commit_message(&content) {
+                logger.info("Successfully salvaged commit message");
+                return Ok(Some(salvaged));
+            }
+            logger.warn("Salvage attempt failed");
+
+            // Recovery Layer 2: Generate deterministic fallback from diff metadata
+            logger.info("Generating fallback commit message from diff...");
+            let fallback = generate_fallback_commit_message(diff);
+
+            // Defensive validation (should always pass, but be safe)
+            if validate_commit_message(&fallback).is_ok() {
+                logger.info(&format!(
+                    "Using fallback: {}",
+                    fallback.lines().next().unwrap_or(&fallback)
+                ));
+                return Ok(Some(fallback));
+            }
+
+            logger.error("Fallback commit message failed validation - this is a bug");
+            Ok(None)
         }
     }
 }

@@ -182,16 +182,6 @@ impl DeltaAccumulator {
         Self::default()
     }
 
-    /// Add a text delta for a specific index
-    pub(crate) fn add_text_delta(&mut self, index: u64, delta: &str) {
-        self.add_delta(ContentType::Text, &index.to_string(), delta);
-    }
-
-    /// Add a thinking delta for a specific index
-    pub(crate) fn add_thinking_delta(&mut self, index: u64, delta: &str) {
-        self.add_delta(ContentType::Thinking, &index.to_string(), delta);
-    }
-
     /// Add a delta for a specific content type and key
     ///
     /// This is the generic method that supports both index-based and
@@ -241,20 +231,6 @@ impl DeltaAccumulator {
     pub(crate) fn clear(&mut self) {
         self.buffers.clear();
         self.key_order.clear();
-    }
-
-    /// Clear content for a specific index
-    pub(crate) fn clear_index(&mut self, index: u64) {
-        let index_str = index.to_string();
-        for content_type in [
-            ContentType::Text,
-            ContentType::Thinking,
-            ContentType::ToolInput,
-        ] {
-            let key = (content_type, index_str.clone());
-            self.buffers.remove(&key);
-            self.key_order.retain(|k| k != &key);
-        }
     }
 
     /// Clear content for a specific content type and key
