@@ -61,16 +61,24 @@ pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
         return Ok(());
     };
 
+    // Validate git path is valid UTF-8 for shell script generation.
+    // On Unix systems, paths are typically valid UTF-8, but some filesystems
+    // may contain invalid UTF-8 sequences. In such cases, we cannot safely
+    // generate a shell wrapper and should return an error.
+    let git_path_str = real_git.to_str().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "git binary path contains invalid UTF-8 characters; cannot create wrapper script",
+        )
+    })?;
+
     let wrapper_dir = tempfile::tempdir()?;
     let wrapper_path = wrapper_dir.path().join("git");
 
     // Properly escape the git path for shell script to prevent command injection.
     // Replace single quotes with '\'' (end quote, escaped quote, start quote) and
     // wrap the entire path in single quotes.
-    let git_path_escaped = real_git
-        .to_str()
-        .expect("git path must be valid UTF-8")
-        .replace('\'', "'\\''");
+    let git_path_escaped = git_path_str.replace('\'', "'\\''");
 
     let wrapper_content = format!(
         r#"#!/usr/bin/env sh
