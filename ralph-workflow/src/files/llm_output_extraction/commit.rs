@@ -5,8 +5,183 @@
 //! git diff metadata.
 
 use regex::Regex;
+use serde::Deserialize;
 
 use super::cleaning::{find_conventional_commit_start, looks_like_analysis_text};
+
+/// Result of commit message extraction with detail about the extraction method.
+///
+/// This enum allows callers to distinguish between different extraction outcomes
+/// and take appropriate action (e.g., re-prompt when receiving a Fallback result).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommitExtractionResult {
+    /// Successfully extracted from structured agent output (JSON schema or pattern-based)
+    Extracted(String),
+    /// Recovered via salvage mechanism (found conventional commit within mixed output)
+    Salvaged(String),
+    /// Using deterministic fallback generated from diff metadata
+    Fallback(String),
+}
+
+impl CommitExtractionResult {
+    /// Convert into the inner message string.
+    pub fn into_message(self) -> String {
+        match self {
+            Self::Extracted(msg) | Self::Salvaged(msg) | Self::Fallback(msg) => msg,
+        }
+    }
+
+    /// Check if this was a fallback result (should trigger re-prompt).
+    pub const fn is_fallback(&self) -> bool {
+        matches!(self, Self::Fallback(_))
+    }
+}
+
+/// Structured commit message schema for JSON parsing.
+#[derive(Debug, Deserialize)]
+struct StructuredCommitMessage {
+    subject: String,
+    body: Option<String>,
+}
+
+/// Try to extract commit message from JSON schema output.
+///
+/// This function attempts to parse the LLM output as a structured JSON object
+/// following the schema `{"subject": "...", "body": "..."}`.
+///
+/// Supports multiple input formats:
+/// - Direct JSON: `{"subject": "feat: ...", "body": "..."}`
+/// - JSON in markdown code fence: ` ```json\n{...}\n``` `
+/// - NDJSON streams where commit is in the `result` field
+///
+/// # Returns
+///
+/// * `Some(message)` if valid JSON with a valid conventional commit subject was found
+/// * `None` if parsing fails or subject is invalid
+pub fn try_extract_structured_commit(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+
+    // If content looks like NDJSON stream, extract from result field first
+    if looks_like_ndjson(trimmed) {
+        for line in trimmed.lines() {
+            let line = line.trim();
+            if !line.starts_with('{') {
+                continue;
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                if json.get("type").and_then(|v| v.as_str()) == Some("result") {
+                    if let Some(result_str) = json.get("result").and_then(|v| v.as_str()) {
+                        // Try to extract commit from the result content
+                        if let Some(msg) = try_extract_from_text(result_str) {
+                            return Some(msg);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Try extraction from text content (direct JSON, code fence, or embedded)
+    try_extract_from_text(trimmed)
+}
+
+/// Try to extract a structured commit message from text content.
+///
+/// This handles:
+/// - Direct JSON parsing
+/// - JSON inside markdown code fences
+/// - JSON embedded within other text
+fn try_extract_from_text(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+
+    // Try extracting from markdown code fence first
+    if let Some(json_content) = extract_json_from_code_fence(trimmed) {
+        if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&json_content) {
+            return format_structured_commit(&msg);
+        }
+    }
+
+    // Try direct parse
+    if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(trimmed) {
+        return format_structured_commit(&msg);
+    }
+
+    // Try to find JSON object within content (in case of minor preamble)
+    if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
+            if start < end {
+                let json_str = &trimmed[start..=end];
+                if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(json_str) {
+                    return format_structured_commit(&msg);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Format a structured commit message into the final string format.
+fn format_structured_commit(msg: &StructuredCommitMessage) -> Option<String> {
+    let subject = msg.subject.trim();
+
+    // Validate conventional commit format
+    if !is_conventional_commit_subject(subject) {
+        return None;
+    }
+
+    // Format the commit message
+    match &msg.body {
+        Some(body) if !body.trim().is_empty() => Some(format!("{}\n\n{}", subject, body.trim())),
+        _ => Some(subject.to_string()),
+    }
+}
+
+/// Check if a string is a valid conventional commit subject line.
+fn is_conventional_commit_subject(subject: &str) -> bool {
+    let valid_types = [
+        "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore",
+    ];
+
+    // Find the colon
+    let Some(colon_pos) = subject.find(':') else {
+        return false;
+    };
+
+    let prefix = &subject[..colon_pos];
+
+    // Extract type (before optional scope and !)
+    let type_end = prefix
+        .find('(')
+        .unwrap_or_else(|| prefix.find('!').unwrap_or(prefix.len()));
+    let commit_type = &prefix[..type_end];
+
+    valid_types.contains(&commit_type)
+}
+
+/// Extract JSON content from markdown code fences.
+///
+/// Handles both regular code fences and nested fences (e.g., within NDJSON streams).
+fn extract_json_from_code_fence(content: &str) -> Option<String> {
+    // Look for ```json code fence
+    let fence_start = content.find("```json")?;
+    let after_fence = &content[fence_start + 7..]; // Skip past ```json
+
+    // Find the end of the code fence
+    let fence_end = after_fence.find("\n```")?;
+    let json_content = after_fence[..fence_end].trim();
+
+    if json_content.is_empty() {
+        None
+    } else {
+        Some(json_content.to_string())
+    }
+}
+
+/// Check if content looks like NDJSON stream.
+fn looks_like_ndjson(content: &str) -> bool {
+    content.lines().count() > 1 && content.contains("{\"type\":")
+}
 
 /// Validate extracted content for use as a commit message.
 ///

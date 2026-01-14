@@ -14,8 +14,8 @@
 #![expect(clippy::too_many_lines)]
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
-use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::files::extract_issues;
+use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
@@ -180,17 +180,7 @@ pub fn run_review_phase(
                     let git_name = ctx.config.git_user_name.as_deref();
                     let git_email = ctx.config.git_user_email.as_deref();
 
-                    match commit_with_generated_message(
-                        &diff,
-                        &agent,
-                        git_name,
-                        git_email,
-                        ctx.registry,
-                        ctx.logger,
-                        ctx.colors,
-                        ctx.config,
-                        ctx.timer,
-                    ) {
+                    match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
                         CommitResultFallback::Success(oid) => {
                             ctx.logger
                                 .success(&format!("Commit created successfully: {oid}"));
@@ -424,17 +414,7 @@ pub fn run_review_phase(
                 let git_name = ctx.config.git_user_name.as_deref();
                 let git_email = ctx.config.git_user_email.as_deref();
 
-                match commit_with_generated_message(
-                    &diff,
-                    &agent,
-                    git_name,
-                    git_email,
-                    ctx.registry,
-                    ctx.logger,
-                    ctx.colors,
-                    ctx.config,
-                    ctx.timer,
-                ) {
+                match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
                     CommitResultFallback::Success(oid) => {
                         ctx.logger
                             .success(&format!("Commit created successfully: {oid}"));
