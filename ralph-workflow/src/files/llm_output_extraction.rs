@@ -500,6 +500,21 @@ fn remove_thought_process_patterns(content: &str) -> String {
         }
     }
 
+    // Remove markdown bold analysis patterns (e.g., "1. **Test assertion style** (file.rs): Description")
+    // These patterns use markdown bold formatting for category headers in numbered lists
+    if starts_with_markdown_bold_analysis(result) {
+        if let Some(commit_start) = find_conventional_commit_start(result) {
+            return result[commit_start..].to_string();
+        }
+        // Fallback: look for double newline after the analysis
+        if let Some(blank_pos) = result.find("\n\n") {
+            let after_analysis = &result[blank_pos + 2..];
+            if after_analysis.trim().starts_with(char::is_alphanumeric) {
+                return after_analysis.to_string();
+            }
+        }
+    }
+
     // Additional aggressive filtering: detect if the content starts with
     // multi-line analysis and ends with a conventional commit format
     if let Some(commit_start) = find_conventional_commit_start(result) {
@@ -511,6 +526,59 @@ fn remove_thought_process_patterns(content: &str) -> String {
     }
 
     result.to_string()
+}
+
+/// Check if text starts with markdown bold analysis patterns.
+///
+/// Returns true if the text starts with patterns like:
+/// - "1. **Category** (file.rs): Description"
+/// - "**Category**:"
+/// - Multiple numbered lines with **bold** headers
+fn starts_with_markdown_bold_analysis(text: &str) -> bool {
+    let trimmed = text.trim();
+
+    // Check for patterns like "1. **Category**" or "**Category**:"
+    // These are markdown bold patterns used for analysis headers
+    let lines: Vec<&str> = trimmed.lines().collect();
+
+    if lines.is_empty() {
+        return false;
+    }
+
+    // Check the first line for markdown bold patterns
+    let first_line = lines[0].trim();
+
+    // Pattern 1: "1. **Bold Text**" or "1. **Bold Text** (file.rs): description"
+    if first_line.starts_with("1. **") || first_line.starts_with("1. **") {
+        return true;
+    }
+
+    // Pattern 2: Line starts with ** (markdown bold opening)
+    if first_line.starts_with("**") {
+        // Check if it looks like a header/analysis, not a valid commit message
+        // Valid commits don't start with **, but analysis headers do
+        return true;
+    }
+
+    // Pattern 3: Check if first few lines contain markdown bold patterns
+    // like "**Category**:" which indicates analysis breakdown
+    if lines.len() >= 2 {
+        let mut bold_header_count = 0;
+        for line in lines.iter().take(5) {
+            let trimmed = line.trim();
+            // Check for patterns like "**Category**:" or "**Category** (file):"
+            if (trimmed.contains("**") && trimmed.contains("**:"))
+                || (trimmed.contains("**") && trimmed.contains("** ("))
+            {
+                bold_header_count += 1;
+            }
+        }
+        if bold_header_count >= 1 {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Check if text starts with a conventional commit type pattern.
@@ -1931,6 +1999,85 @@ Done."#;
         assert!(!result.content.contains("code quality improvements"));
 
         // The result should pass validation
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    // =========================================================================
+    // Additional Regression Tests for Markdown Bold Patterns
+    // =========================================================================
+
+    #[test]
+    fn test_regression_markdown_bold_pattern_with_numbered_list() {
+        // Test the exact bug scenario: markdown bold headers in numbered list
+        let agent_output = r#"{"result":"1. **Test assertion style** (agents/config.rs, pipeline/tests.rs): Replacing assertion macros with idiomatically Rust equivalents\n2. **Refactoring** (app/mod.rs): Extracting...\n\nrefactor: extract PipelineContext and improve error handling"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("refactor: extract PipelineContext"));
+        assert!(!result.content.contains("1. **Test assertion style**"));
+        assert!(!result.content.contains("2. **Refactoring**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_regression_markdown_bold_single_line() {
+        // Test single line starting with markdown bold
+        let agent_output = r#"{"result":"**Analysis**: This diff shows changes to the parser module\n\nfix: resolve parsing edge case"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("fix: resolve parsing edge case"));
+        assert!(!result.content.contains("**Analysis**"));
+        assert!(!result.content.contains("**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_regression_markdown_bold_multiple_lines() {
+        // Test multiple lines with markdown bold patterns
+        let agent_output = r#"{"result":"1. **Parser changes**: Updated token handling\n2. **Test updates**: Added edge case coverage\n3. **Documentation**: Updated API docs\n\nfeat(parser): add support for new syntax"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("feat(parser): add support"));
+        assert!(!result.content.contains("**Parser changes**"));
+        assert!(!result.content.contains("**Test updates**"));
+        assert!(!result.content.contains("**Documentation**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_regression_markdown_bold_with_colon_pattern() {
+        // Test pattern like "**Category**:" which is common in analysis
+        let agent_output = r#"{"result":"**Summary**:\nThe main change is improving error handling\n\n**Details**:\n- Updated parser\n- Fixed tests\n\nrefactor: improve error handling"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("refactor: improve error handling"));
+        assert!(!result.content.contains("**Summary**"));
+        assert!(!result.content.contains("**Details**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_regression_markdown_bold_at_start_only() {
+        // Test content that starts with ** but is actually analysis
+        let agent_output = r#"{"result":"**Main Theme**: Code quality improvements across multiple files\n\nChanges include updated tests and refactored parsing logic\n\nstyle: improve code quality and test consistency"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("style: improve code quality"));
+        assert!(!result.content.contains("**Main Theme**"));
+
         assert!(validate_commit_message(&result.content).is_ok());
     }
 

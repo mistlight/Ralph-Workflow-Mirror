@@ -42,6 +42,10 @@ use super::types::{
 };
 
 /// Claude event parser
+///
+/// Note: This parser is designed for single-threaded use only.
+/// The internal state uses `Rc<RefCell<>>` for convenience, not for thread safety.
+/// Do not share this parser across threads.
 pub struct ClaudeParser {
     colors: Colors,
     pub(crate) verbosity: Verbosity,
@@ -51,6 +55,8 @@ pub struct ClaudeParser {
     delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
     /// Track if we're currently streaming a content block
     in_content_block: Rc<RefCell<Cell<bool>>>,
+    /// Track if we've streamed content for the current message (to avoid duplicate display)
+    has_streamed_content: Rc<RefCell<Cell<bool>>>,
 }
 
 impl ClaudeParser {
@@ -62,6 +68,7 @@ impl ClaudeParser {
             display_name: "Claude".to_string(),
             delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
             in_content_block: Rc::new(RefCell::new(Cell::new(false))),
+            has_streamed_content: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -146,23 +153,28 @@ impl ClaudeParser {
                 let mut out = String::new();
                 if let Some(msg) = message {
                     if let Some(content) = msg.content {
+                        // Check if we've already streamed text content for this message
+                        let has_streamed = self.has_streamed_content.borrow().get();
                         for block in content {
                             match block {
                                 ContentBlock::Text { text } => {
-                                    if let Some(text) = text {
-                                        let limit = self.verbosity.truncate_limit("text");
-                                        let preview = truncate_text(&text, limit);
-                                        use std::fmt::Write;
-                                        let _ = writeln!(
-                                            out,
-                                            "{}[{}]{} {}{}{}",
-                                            c.dim(),
-                                            prefix,
-                                            c.reset(),
-                                            c.white(),
-                                            preview,
-                                            c.reset()
-                                        );
+                                    // Skip text display if we've already streamed it
+                                    if !has_streamed {
+                                        if let Some(text) = text {
+                                            let limit = self.verbosity.truncate_limit("text");
+                                            let preview = truncate_text(&text, limit);
+                                            use std::fmt::Write;
+                                            let _ = writeln!(
+                                                out,
+                                                "{}[{}]{} {}{}{}",
+                                                c.dim(),
+                                                prefix,
+                                                c.reset(),
+                                                c.white(),
+                                                preview,
+                                                c.reset()
+                                            );
+                                        }
                                     }
                                 }
                                 ContentBlock::ToolUse { name: tool, input } => {
@@ -354,8 +366,11 @@ impl ClaudeParser {
 
         match event {
             StreamInnerEvent::MessageStart { .. } => {
-                // Clear accumulator on new message
+                // Clear accumulator and reset streaming state on new message
                 acc.clear();
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
+                self.has_streamed_content.borrow_mut().set(false);
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart {
@@ -382,9 +397,8 @@ impl ClaudeParser {
                     }
                     _ => {}
                 }
-                // Reset streaming state for new content block
-                drop(in_block);
-                self.in_content_block.borrow_mut().set(false);
+                // Note: Do NOT reset in_content_block here - state should persist across
+                // content blocks within a message. State only resets on MessageStart.
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart {
@@ -394,9 +408,8 @@ impl ClaudeParser {
                 // Content block started but no initial content provided
                 // Just clear the index for future deltas
                 acc.clear_index(index);
-                // Reset streaming state
-                drop(in_block);
-                self.in_content_block.borrow_mut().set(false);
+                // Note: Do NOT reset in_content_block here - state should persist across
+                // content blocks within a message. State only resets on MessageStart.
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart { .. } => {
@@ -408,6 +421,8 @@ impl ClaudeParser {
                 delta: Some(delta),
             } => match delta {
                 ContentBlockDelta::TextDelta { text: Some(text) } => {
+                    // Mark that we've streamed content for this message
+                    self.has_streamed_content.borrow_mut().set(true);
                     // Accumulate the text delta for completion events
                     acc.add_text_delta(index, &text);
                     // Get accumulated text for streaming display
@@ -418,12 +433,15 @@ impl ClaudeParser {
                     let was_in_block = in_block.get();
                     drop(in_block);
 
+                    // Mark that we're now in a content block
+                    self.in_content_block.borrow_mut().set(true);
+
                     // Only show prefix on the first chunk of a content block
                     // Set this before the branches since both do it
                     self.in_content_block.borrow_mut().set(true);
                     if was_in_block {
-                        // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
-                        format!("{}\r{}", c.white(), sanitized_text)
+                        // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
+                        format!("{}\x1b[0K\r{}", c.white(), sanitized_text)
                     } else {
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                         format!(
@@ -474,6 +492,8 @@ impl ClaudeParser {
             #[expect(clippy::match_same_arms)]
             StreamInnerEvent::ContentBlockDelta { .. } | StreamInnerEvent::Ping => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
+                // Mark that we've streamed content for this message
+                self.has_streamed_content.borrow_mut().set(true);
                 // Standalone text delta (not part of content block)
                 // Use default index "0" for standalone text
                 let default_index = 0u64;
@@ -485,11 +505,12 @@ impl ClaudeParser {
                 let was_in_block = in_block.get();
                 drop(in_block);
 
-                // Set this before the branches since both do it
+                // Mark that we're now in a content block
                 self.in_content_block.borrow_mut().set(true);
+
                 if was_in_block {
-                    // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
-                    format!("{}\r{}", c.white(), sanitized_text)
+                    // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
+                    format!("{}\x1b[0K\r{}", c.white(), sanitized_text)
                 } else {
                     // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                     format!(

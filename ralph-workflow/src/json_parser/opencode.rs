@@ -214,7 +214,7 @@ impl OpenCodeParser {
                         } else if cache_read > 0 {
                             format!("in:{input} out:{output} cache:{cache_read}")
                         } else {
-                            String::new()
+                            format!("in:{input} out:{output}")
                         }
                     });
 
@@ -378,9 +378,9 @@ impl OpenCodeParser {
 
                         // Only show prefix on the first text chunk
                         if was_in_text {
-                            // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                            // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
                             self.in_text_content.borrow_mut().set(true);
-                            return Some(format!("{}\r{}", c.white(), preview));
+                            return Some(format!("{}\x1b[0K\r{}", c.white(), preview));
                         }
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                         self.in_text_content.borrow_mut().set(true);

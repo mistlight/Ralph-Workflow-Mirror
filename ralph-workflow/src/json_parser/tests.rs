@@ -1381,7 +1381,7 @@ fn test_streaming_content_block_reset() {
 }
 
 /// Test streaming behavior across multiple parsers for consistency
-/// Verifies that all parsers (`Claude`, `Codex`, `Gemini`, `OpenCode`) handle streaming consistently
+/// Verifies that all parsers (Claude, Codex, Gemini, `OpenCode`) handle streaming consistently
 #[test]
 fn test_streaming_consistency_across_parsers() {
     use std::io::Cursor;
