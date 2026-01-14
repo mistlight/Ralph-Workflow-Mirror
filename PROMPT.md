@@ -21,6 +21,7 @@ Installation Instructions:
 ## Feel Free
 * Make RADICAL changes if needed
 * Do not feel constrained by existing code, everything is experimental, if you think we need to use tailwind, use tailwind, if you think we need to get rid of an entire section, get rid of entire section. Acceptance criteria is the must important. Messy code is better deleted than kept around.
+* However once you are settled on a design you think has potential, start iterating on it
 
 ## Acceptance Checks
 * Working professional website that is at the quality of dribble showcase.

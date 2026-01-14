@@ -27,10 +27,10 @@
 
     <title>Ralph Workflow - Your Ideas, Shipped by AI</title>
 
-    <!-- Fonts: Righteous (display), DM Sans (headings/body), JetBrains Mono (code) -->
+    <!-- Fonts: Bebas Neue (display), Syne (headings), DM Sans (body), IBM Plex Mono (code) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Righteous&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%2309090B' rx='12'/%3E%3Cpath d='M18 20h24M18 30h18M18 40h12' stroke='%23C8FF00' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -83,12 +83,26 @@
         </div>
     </nav>
 
+    <!-- Grid Overlay -->
+    <div class="grid-overlay" aria-hidden="true"></div>
+
     <main id="main" role="main">
         <!-- Hero Section -->
         <section class="hero">
+            <!-- Floating Particles -->
+            <div class="hero-particles" aria-hidden="true">
+                <span class="particle"></span>
+                <span class="particle"></span>
+                <span class="particle"></span>
+                <span class="particle"></span>
+                <span class="particle"></span>
+                <span class="particle"></span>
+            </div>
+
             <!-- Animated Glow Effects -->
             <div class="hero-glow" aria-hidden="true"></div>
             <div class="hero-glow-2" aria-hidden="true"></div>
+            <div class="hero-glow-3" aria-hidden="true"></div>
 
             <div class="hero-grid">
                 <div class="hero-content">
@@ -105,8 +119,8 @@
                     </h1>
 
                     <p class="hero-description">
-                        Ralph is a multi-agent orchestration tool that coordinates AI Developer and Reviewer agents
-                        to transform your <code class="inline">PROMPT.md</code> into committed code—automatically.
+                        Ralph orchestrates AI Developer and Reviewer agents that collaborate to transform your
+                        <code class="inline">PROMPT.md</code> into committed code—iterating automatically until quality is achieved.
                     </p>
 
                     <div class="hero-actions">
@@ -167,6 +181,14 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Scroll Indicator -->
+            <div class="scroll-indicator">
+                <div class="scroll-indicator-mouse">
+                    <span class="scroll-indicator-wheel"></span>
+                </div>
+                <span>Scroll</span>
             </div>
         </section>
 
@@ -238,16 +260,16 @@
         </section>
 
         <!-- How it Works Section -->
-        <section id="how-it-works" class="section">
+        <section id="how-it-works" class="section how-section">
             <div class="section-header">
                 <span class="section-number">01</span>
                 <h2 class="section-title">How Ralph works</h2>
                 <p class="section-subtitle">Three steps from idea to committed code</p>
             </div>
 
-            <div style="max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; text-align: center;">
-                <div>
-                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
+            <div class="how-steps">
+                <div class="how-step">
+                    <div class="how-icon">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
                             <path d="M14 2v6h6"/>
@@ -255,30 +277,153 @@
                             <line x1="16" y1="17" x2="8" y2="17"/>
                         </svg>
                     </div>
-                    <h3 style="margin-bottom: 0.75rem;">Write</h3>
-                    <p style="color: var(--color-text-muted);">Create <code class="inline">PROMPT.md</code> with your requirements</p>
+                    <h3>Write</h3>
+                    <p>Create <code class="inline">PROMPT.md</code> with your requirements</p>
                 </div>
 
-                <div>
-                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
+                <div class="how-step">
+                    <div class="how-icon">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="16 18 22 12 16 6"/>
                             <polyline points="8 6 2 12 8 18"/>
                         </svg>
                     </div>
-                    <h3 style="margin-bottom: 0.75rem;">Run</h3>
-                    <p style="color: var(--color-text-muted);">Execute <code class="inline">ralph -S</code> and let AI work</p>
+                    <h3>Run</h3>
+                    <p>Execute <code class="inline">ralph -S</code> and let AI work</p>
                 </div>
 
-                <div>
-                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
+                <div class="how-step">
+                    <div class="how-icon">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="20 6 9 17 4 12"/>
                         </svg>
                     </div>
-                    <h3 style="margin-bottom: 0.75rem;">Ship</h3>
-                    <p style="color: var(--color-text-muted);">Review and push the automatic commit</p>
+                    <h3>Ship</h3>
+                    <p>Review and push the automatic commit</p>
                 </div>
+            </div>
+        </section>
+
+        <!-- What is PROMPT.md Section -->
+        <section class="section prompt-section">
+            <div class="section-header">
+                <span class="section-number">01.5</span>
+                <h2 class="section-title">What is PROMPT.md?</h2>
+                <p class="section-subtitle">Your requirements, AI's implementation</p>
+            </div>
+
+            <div class="prompt-grid">
+                <div class="prompt-content">
+                    <div class="prompt-card">
+                        <div class="prompt-header">
+                            <code class="prompt-filename">PROMPT.md</code>
+                            <span class="prompt-badge">Markdown</span>
+                        </div>
+                        <pre class="prompt-example"><code># Add user authentication
+
+## Requirements
+- Email/password login
+- Session management
+- Password reset flow
+
+## Tech Stack
+- Backend: Rust with Actix-web
+- Frontend: React + TypeScript
+- Database: PostgreSQL
+
+## Notes
+- Use JWT for sessions
+- Implement rate limiting
+- Add unit tests for auth module</code></pre>
+                    </div>
+                </div>
+
+                <div class="prompt-explanation">
+                    <h3>The source of truth for your changes</h3>
+                    <p>
+                        <strong>PROMPT.md</strong> is a simple Markdown file where you describe what you want to build.
+                        Think of it as a ticket, a spec, and a prompt all in one.
+                    </p>
+                    <ul class="prompt-features">
+                        <li>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span>Write in plain English with Markdown formatting</span>
+                        </li>
+                        <li>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span>Include requirements, tech stack, and constraints</span>
+                        </li>
+                        <li>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span>Commit it alongside your changes for full context</span>
+                        </li>
+                        <li>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span>AI agents read it and iterate until satisfied</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Comparison Section -->
+        <section class="section comparison-section">
+            <div class="section-header">
+                <span class="section-number">01.75</span>
+                <h2 class="section-title">Ralph vs. Manual AI Chat</h2>
+                <p class="section-subtitle">Why orchestration beats copy-paste</p>
+            </div>
+
+            <div class="comparison-table-wrapper">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Manual AI Chat Workflow</th>
+                            <th>Ralph Workflow</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Code Application</strong></td>
+                            <td>Copy-paste from chat to editor</td>
+                            <td>Direct file modification</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Quality Review</strong></td>
+                            <td>Manual code review</td>
+                            <td>Automated Reviewer agent</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Iteration</strong></td>
+                            <td>Re-prompt with feedback manually</td>
+                            <td>Self-correcting loops</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Commit History</strong></td>
+                            <td>Manual commits, messy messages</td>
+                            <td>Semantic commits with descriptions</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Context</strong></td>
+                            <td>Limited by chat window</td>
+                            <td>Full repo access with each iteration</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Time to Ship</strong></td>
+                            <td>30-60 minutes of back-and-forth</td>
+                            <td>3-10 minutes, unattended</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </section>
 

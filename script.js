@@ -1,10 +1,69 @@
 /**
  * Ralph Workflow - Enhanced JavaScript
- * Handles: mobile nav, install tabs, copy-to-clipboard, smooth scroll, scroll animations
+ * Handles: mobile nav, install tabs, copy-to-clipboard, smooth scroll, scroll animations,
+ * terminal typing effect, nav scroll detection, parallax effects
  */
 
 (function() {
     'use strict';
+
+    // === Navigation Scroll Effect ===
+    const nav = document.querySelector('.nav');
+    let lastScrollY = 0;
+
+    function updateNav() {
+        const scrollY = window.scrollY;
+
+        if (scrollY > 50) {
+            nav.classList.add('scrolled');
+        } else {
+            nav.classList.remove('scrolled');
+        }
+
+        lastScrollY = scrollY;
+    }
+
+    // Throttled scroll handler for nav
+    let navTicking = false;
+    window.addEventListener('scroll', () => {
+        if (!navTicking) {
+            window.requestAnimationFrame(() => {
+                updateNav();
+                navTicking = false;
+            });
+            navTicking = true;
+        }
+    });
+
+    // Initial call
+    updateNav();
+
+    // === Terminal Typing Effect ===
+    const terminalLines = document.querySelectorAll('.terminal-line');
+    const terminal = document.querySelector('.terminal-body');
+
+    function animateTerminal() {
+        if (!terminal) return;
+
+        // Reset all lines
+        terminalLines.forEach(line => {
+            line.classList.remove('typed');
+        });
+
+        // Animate lines sequentially
+        terminalLines.forEach((line, index) => {
+            setTimeout(() => {
+                line.classList.add('typed');
+            }, index * 800);
+        });
+    }
+
+    // Run animation on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', animateTerminal);
+    } else {
+        setTimeout(animateTerminal, 500);
+    }
 
     // === Mobile Navigation ===
     const navToggle = document.querySelector('.nav-toggle');
@@ -82,14 +141,14 @@
             try {
                 await navigator.clipboard.writeText(code);
 
-                // Show success state
+                // Show success state with animation
                 const originalHTML = this.innerHTML;
                 this.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
-                this.style.color = 'var(--color-primary)';
+                this.classList.add('copied');
 
                 setTimeout(() => {
                     this.innerHTML = originalHTML;
-                    this.style.color = '';
+                    this.classList.remove('copied');
                 }, 2000);
             } catch (err) {
                 console.error('Failed to copy:', err);

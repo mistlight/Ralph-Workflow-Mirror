@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200, initial-scale=1.0">
+    <title>Open Graph Image Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 1200px;
+            height: 630px;
+            overflow: hidden;
+            background: #000000;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        .og-canvas {
+            position: relative;
+            width: 1200px;
+            height: 630px;
+            background: #000000;
+            overflow: hidden;
+        }
+
+        /* Gradient mesh glows */
+        .og-glow {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.6;
+        }
+
+        .og-glow-1 {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(204, 255, 0, 0.25) 0%, transparent 70%);
+            top: -150px;
+            left: -100px;
+        }
+
+        .og-glow-2 {
+            width: 450px;
+            height: 450px;
+            background: radial-gradient(circle, rgba(0, 255, 240, 0.2) 0%, transparent 70%);
+            bottom: -100px;
+            right: -80px;
+        }
+
+        .og-glow-3 {
+            width: 350px;
+            height: 350px;
+            background: radial-gradient(circle, rgba(255, 0, 110, 0.15) 0%, transparent 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Grid overlay */
+        .og-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* Brutalist border frame */
+        .og-frame {
+            position: absolute;
+            inset: 30px;
+            border: 4px solid #CCFF00;
+            pointer-events: none;
+        }
+
+        .og-frame::before {
+            content: '';
+            position: absolute;
+            inset: 10px;
+            border: 2px solid #00FFF0;
+        }
+
+        /* Corner accents */
+        .og-corner {
+            position: absolute;
+            width: 60px;
+            height: 6px;
+            background: #CCFF00;
+        }
+
+        .og-corner::after {
+            content: '';
+            position: absolute;
+            width: 6px;
+            height: 60px;
+            background: inherit;
+        }
+
+        .og-corner.tl { top: 30px; left: 30px; }
+        .og-corner.tr { top: 30px; right: 30px; background: #FF006E; }
+        .og-corner.bl { bottom: 30px; left: 30px; background: #00FFF0; }
+        .og-corner.br { bottom: 30px; right: 30px; background: #FF9500; }
+
+        .og-corner.tr::after,
+        .og-corner.br::after {
+            right: 0;
+        }
+
+        .og-corner.bl::after,
+        .og-corner.br::after {
+            bottom: 0;
+            top: auto;
+        }
+
+        /* Content */
+        .og-content {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 80px;
+        }
+
+        .og-logo {
+            font-family: 'Syne', sans-serif;
+            font-size: 160px;
+            font-weight: 800;
+            color: #CCFF00;
+            text-transform: uppercase;
+            letter-spacing: -0.04em;
+            text-shadow: 0 0 60px rgba(204, 255, 0, 0.6);
+            margin-bottom: 20px;
+        }
+
+        .og-tagline {
+            font-size: 46px;
+            font-weight: 700;
+            color: #FFFFFF;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 40px;
+        }
+
+        .og-subtitle {
+            font-size: 30px;
+            font-weight: 500;
+            color: #00FFF0;
+            letter-spacing: 0.03em;
+            margin-bottom: 60px;
+        }
+
+        /* Terminal command */
+        .og-command {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 22px;
+            color: #666666;
+            background: #0A0A0A;
+            padding: 16px 32px;
+            border: 2px solid #1A1A1A;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .og-command-prompt {
+            color: #CCFF00;
+        }
+
+        .og-command-text {
+            color: #00FFF0;
+        }
+
+        /* URL */
+        .og-url {
+            position: absolute;
+            bottom: 60px;
+            right: 80px;
+            font-size: 18px;
+            font-weight: 600;
+            color: #FFFFFF;
+            opacity: 0.8;
+        }
+
+        /* Decorative elements */
+        .og-diagonal {
+            position: absolute;
+            top: 80px;
+            right: 150px;
+            width: 120px;
+            height: 4px;
+            background: #9D00FF;
+            transform: rotate(45deg);
+        }
+
+        .og-dot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .og-dot-1 {
+            top: 150px;
+            left: 150px;
+            background: #CCFF00;
+            box-shadow: 0 0 20px rgba(204, 255, 0, 0.8);
+        }
+
+        .og-dot-2 {
+            top: 200px;
+            right: 180px;
+            background: #00FFF0;
+            box-shadow: 0 0 20px rgba(0, 255, 240, 0.8);
+        }
+
+        .og-dot-3 {
+            bottom: 200px;
+            left: 180px;
+            background: #FF006E;
+            box-shadow: 0 0 20px rgba(255, 0, 110, 0.8);
+        }
+
+        .og-dot-4 {
+            bottom: 150px;
+            right: 150px;
+            background: #FF9500;
+            box-shadow: 0 0 20px rgba(255, 149, 0, 0.8);
+        }
+
+        /* Animated scanline */
+        .og-scanline {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+                transparent 50%,
+                rgba(204, 255, 0, 0.02) 50%
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="og-canvas" id="ogCanvas">
+        <!-- Gradient glows -->
+        <div class="og-glow og-glow-1"></div>
+        <div class="og-glow og-glow-2"></div>
+        <div class="og-glow og-glow-3"></div>
+
+        <!-- Grid overlay -->
+        <div class="og-grid"></div>
+
+        <!-- Scanline effect -->
+        <div class="og-scanline"></div>
+
+        <!-- Brutalist frame -->
+        <div class="og-frame"></div>
+
+        <!-- Corner accents -->
+        <div class="og-corner tl"></div>
+        <div class="og-corner tr"></div>
+        <div class="og-corner bl"></div>
+        <div class="og-corner br"></div>
+
+        <!-- Decorative elements -->
+        <div class="og-diagonal"></div>
+        <div class="og-dot og-dot-1"></div>
+        <div class="og-dot og-dot-2"></div>
+        <div class="og-dot og-dot-3"></div>
+        <div class="og-dot og-dot-4"></div>
+
+        <!-- Main content -->
+        <div class="og-content">
+            <div class="og-logo">RALPH</div>
+            <div class="og-tagline">YOUR IDEAS, SHIPPED BY AI</div>
+            <div class="og-subtitle">FROM PROMPT.MD TO COMMITTED CODE</div>
+            <div class="og-command">
+                <span class="og-command-prompt">$</span>
+                <span class="og-command-text">cargo install ralph-workflow</span>
+            </div>
+        </div>
+
+        <!-- URL -->
+        <div class="og-url">codeberg.org/ralph</div>
+    </div>
+
+    <script>
+        // Auto-download screenshot logic
+        // This would be used with a headless browser or screenshot tool
+        console.log('Open Graph Image - 1200x630px');
+        console.log('To save as image, use a screenshot tool or browser capture');
+    </script>
+</body>
+</html>
