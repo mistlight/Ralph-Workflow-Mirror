@@ -191,6 +191,8 @@ impl StreamingSession {
             expected,
             self.state
         );
+        #[cfg(not(debug_assertions))]
+        let _ = expected;
     }
 
     /// Process a text delta and return whether prefix should be shown.
