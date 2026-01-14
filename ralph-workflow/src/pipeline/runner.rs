@@ -87,18 +87,44 @@ pub fn run_with_prompt(
         runtime.colors.reset()
     ));
 
-    // Copy to clipboard if interactive and pbcopy available
+    // Copy to clipboard if interactive and clipboard command available
     if runtime.config.interactive {
-        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(cmd.prompt.as_bytes());
+        // Try platform-appropriate clipboard command
+        let clipboard_cmd = if cfg!(target_os = "macos") {
+            Some(("pbcopy", "pbpaste"))
+        } else if cfg!(target_os = "linux") {
+            // Try xclip first, then xsel
+            if Command::new("xclip").arg("-version").output().is_ok() {
+                Some(("xclip", "xclip -o -selection clipboard"))
+            } else if Command::new("xsel").arg("--version").output().is_ok() {
+                Some(("xsel --clipboard --input", "xsel --clipboard --output"))
+            } else {
+                None
             }
-            let _ = child.wait();
-            runtime.logger.info(&format!(
-                "Prompt copied to clipboard {}(pbpaste to view){}",
-                runtime.colors.dim(),
-                runtime.colors.reset()
-            ));
+        } else if cfg!(windows) {
+            Some(("clip", "paste"))
+        } else {
+            None
+        };
+
+        if let Some((copy_cmd, paste_cmd)) = clipboard_cmd {
+            let argv: Vec<&str> = copy_cmd.split_whitespace().collect();
+            if let Ok(mut child) = Command::new(argv[0])
+                .args(&argv[1..])
+                .stdin(Stdio::piped())
+                .spawn()
+            {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(cmd.prompt.as_bytes());
+                }
+                let _ = child.wait();
+                runtime.logger.info(&format!(
+                    "Prompt copied to clipboard {}({} to view){}",
+                    runtime.colors.dim(),
+                    paste_cmd,
+                    runtime.colors.reset()
+                ));
+            }
         }
     }
 

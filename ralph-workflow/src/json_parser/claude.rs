@@ -124,7 +124,7 @@ impl ClaudeParser {
                     );
                     if let Some(cwd) = cwd {
                         use std::fmt::Write;
-                        writeln!(
+                        let _ = writeln!(
                             out,
                             "{}[{}]{} {}Working dir: {}{}",
                             c.dim(),
@@ -133,8 +133,7 @@ impl ClaudeParser {
                             c.dim(),
                             cwd,
                             c.reset()
-                        )
-                        .unwrap();
+                        );
                     }
                     out
                 } else {

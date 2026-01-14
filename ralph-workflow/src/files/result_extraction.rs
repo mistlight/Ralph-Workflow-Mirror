@@ -157,7 +157,6 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     let reader = BufReader::new(file);
     let mut best_result: Option<String> = None;
     let mut best_score: u32 = 0;
-    let mut result_count = 0;
 
     for line in reader.lines() {
         let Ok(line) = line else { continue };
@@ -174,7 +173,6 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
                     if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
                         let result_string = result.to_string();
                         let result_score = score_result(&result_string);
-                        result_count += 1;
 
                         // Select the result with the highest score
                         // This prefers structured plans over simple longest strings
@@ -186,17 +184,6 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
                 }
             }
         }
-    }
-
-    // Log diagnostic info when multiple results were found
-    if result_count > 1 {
-        eprintln!(
-            "[result_extraction] Found {} result events in {}, selected result with score {} (length: {})",
-            result_count,
-            path.display(),
-            best_score,
-            best_result.as_ref().map_or(0, std::string::String::len)
-        );
     }
 
     Ok(best_result)
