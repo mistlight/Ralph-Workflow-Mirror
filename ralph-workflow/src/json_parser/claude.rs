@@ -34,7 +34,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::DeltaDisplayFormatter;
+use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{
@@ -428,24 +428,12 @@ impl ClaudeParser {
                     let accumulated_text = session
                         .get_accumulated(ContentType::Text, &index.to_string())
                         .unwrap_or("");
-                    // Replace embedded newlines with spaces to prevent artificial line breaks
-                    let sanitized_text = accumulated_text.replace('\n', " ");
 
-                    // Only show prefix on the first chunk
+                    // Use TextDeltaRenderer for consistent rendering
                     if show_prefix {
-                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                        format!(
-                            "{}[{}]{} {}{}{}",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.white(),
-                            sanitized_text,
-                            c.reset()
-                        )
+                        TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
                     } else {
-                        // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                        format!("{}\x1b[0K\r{}", c.white(), sanitized_text)
+                        TextDeltaRenderer::render_subsequent_delta(accumulated_text, *c)
                     }
                 }
                 ContentBlockDelta::ThinkingDelta {
@@ -492,29 +480,19 @@ impl ClaudeParser {
                 let accumulated_text = session
                     .get_accumulated(ContentType::Text, &default_index.to_string())
                     .unwrap_or("");
-                let sanitized_text = accumulated_text.replace('\n', " ");
 
+                // Use TextDeltaRenderer for consistent rendering
                 if show_prefix {
-                    // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                    format!(
-                        "{}[{}]{} {}{}{}",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.white(),
-                        sanitized_text,
-                        c.reset()
-                    )
+                    TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
                 } else {
-                    // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                    format!("{}\x1b[0K\r{}", c.white(), sanitized_text)
+                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, *c)
                 }
             }
             StreamInnerEvent::MessageStop => {
                 // Message complete - add final newline if we were in a content block
                 let was_in_block = session.on_message_stop();
                 if was_in_block {
-                    format!("{}\n", c.reset())
+                    format!("{}{}", c.reset(), TextDeltaRenderer::render_completion())
                 } else {
                     String::new()
                 }
