@@ -1,6 +1,24 @@
 //! Gemini CLI JSON parser.
 //!
 //! Parses NDJSON output from Gemini CLI and formats it for display.
+//!
+//! # Streaming Output Behavior
+//!
+//! This parser implements real-time streaming output for text deltas. When content
+//! arrives in multiple chunks (via `message` events with `delta: true`), the parser:
+//!
+//! 1. **Accumulates** text deltas from each chunk into a buffer
+//! 2. **Displays** the accumulated text after each chunk
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix** on the first delta event and again on the final non-delta message
+//!
+//! Example output sequence for streaming "Hello World" in two chunks:
+//! ```text
+//! [Gemini] Hello\r         (first delta with prefix, no newline)
+//! Hello World\r             (second delta overwrites with accumulated text)
+//! [Gemini] Hello World\n   (final non-delta message shows complete result)
+//! ```
 
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
@@ -103,6 +121,8 @@ impl GeminiParser {
                         // Accumulate delta content
                         let mut acc = self.delta_accumulator.borrow_mut();
                         acc.add_delta(ContentType::Text, "main", &text);
+                        // Get accumulated text for streaming display
+                        let accumulated_text = acc.get(ContentType::Text, "main").unwrap_or("");
 
                         // Check if we're already streaming delta content
                         let in_delta_state = self.in_delta_content.borrow();
@@ -111,9 +131,9 @@ impl GeminiParser {
 
                         // Only show prefix on the first delta chunk
                         if was_in_delta {
-                            // Subsequent chunks: overwrite with carriage return, show text without prefix
+                            // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
                             self.in_delta_content.borrow_mut().set(true);
-                            return Some(format!("{}\r{}", c.white(), text));
+                            return Some(format!("{}\r{}", c.white(), accumulated_text));
                         }
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                         self.in_delta_content.borrow_mut().set(true);
@@ -123,7 +143,7 @@ impl GeminiParser {
                             prefix,
                             c.reset(),
                             c.white(),
-                            text,
+                            accumulated_text,
                             c.reset()
                         ));
                     } else if !is_delta && role_str == "assistant" {

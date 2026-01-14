@@ -1,6 +1,25 @@
 //! Codex CLI JSON parser.
 //!
 //! Parses NDJSON output from OpenAI Codex CLI and formats it for display.
+//!
+//! # Streaming Output Behavior
+//!
+//! This parser implements real-time streaming output for text deltas. When content
+//! arrives in multiple chunks (via `item.started` events with `agent_message` type),
+//! the parser:
+//!
+//! 1. **Accumulates** text deltas from each chunk into a buffer
+//! 2. **Displays** the accumulated text after each chunk
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix** on the first `item.started` event and again on `item.completed`
+//!
+//! Example output sequence for streaming "Hello World" in two chunks:
+//! ```text
+//! [Codex] Hello\r          (first chunk with prefix, no newline)
+//! Hello World\r              (second chunk overwrites with accumulated text)
+//! [Codex] Hello World\n     (item.completed shows final result with prefix)
+//! ```
 
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
@@ -150,6 +169,9 @@ impl CodexParser {
                             if let Some(ref text) = item.text {
                                 let mut acc = self.delta_accumulator.borrow_mut();
                                 acc.add_delta(ContentType::Text, "agent_msg", text);
+                                // Get accumulated text for streaming display
+                                let accumulated_text =
+                                    acc.get(ContentType::Text, "agent_msg").unwrap_or("");
 
                                 // Check if we're already streaming an agent message
                                 let in_msg = self.in_agent_message.borrow();
@@ -158,9 +180,9 @@ impl CodexParser {
 
                                 // Only show prefix on the first chunk
                                 if was_in_msg {
-                                    // Subsequent chunks: overwrite with carriage return, show text without prefix
+                                    // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
                                     self.in_agent_message.borrow_mut().set(true);
-                                    return Some(format!("{}\r{}", c.white(), text));
+                                    return Some(format!("{}\r{}", c.white(), accumulated_text));
                                 }
                                 // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                                 self.in_agent_message.borrow_mut().set(true);
@@ -170,7 +192,7 @@ impl CodexParser {
                                     name,
                                     c.reset(),
                                     c.white(),
-                                    text,
+                                    accumulated_text,
                                     c.reset()
                                 ));
                             }
