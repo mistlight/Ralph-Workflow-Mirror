@@ -23,6 +23,34 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
+/// Result of commit message extraction with detail about the extraction method.
+///
+/// This enum allows callers to distinguish between different extraction outcomes
+/// and take appropriate action (e.g., re-prompt when receiving a Fallback result).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommitExtractionResult {
+    /// Successfully extracted from structured agent output (JSON schema or pattern-based)
+    Extracted(String),
+    /// Recovered via salvage mechanism (found conventional commit within mixed output)
+    Salvaged(String),
+    /// Using deterministic fallback generated from diff metadata
+    Fallback(String),
+}
+
+impl CommitExtractionResult {
+    /// Convert into the inner message string.
+    pub fn into_message(self) -> String {
+        match self {
+            Self::Extracted(msg) | Self::Salvaged(msg) | Self::Fallback(msg) => msg,
+        }
+    }
+
+    /// Check if this was a fallback result (should trigger re-prompt).
+    pub const fn is_fallback(&self) -> bool {
+        matches!(self, Self::Fallback(_))
+    }
+}
+
 /// Parser types supported by the extraction system.
 /// Matches `crate::agents::parser::JsonParserType` but kept separate to avoid circular deps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1640,6 +1668,47 @@ fn derive_scope_from_path(path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // =========================================================================
+    // CommitExtractionResult Tests
+    // =========================================================================
+
+    #[test]
+    fn test_commit_extraction_result_into_message() {
+        let extracted = CommitExtractionResult::Extracted("feat: add feature".to_string());
+        assert_eq!(extracted.into_message(), "feat: add feature");
+
+        let salvaged = CommitExtractionResult::Salvaged("fix: bug fix".to_string());
+        assert_eq!(salvaged.into_message(), "fix: bug fix");
+
+        let fallback = CommitExtractionResult::Fallback("chore: update module".to_string());
+        assert_eq!(fallback.into_message(), "chore: update module");
+    }
+
+    #[test]
+    fn test_commit_extraction_result_is_fallback() {
+        let extracted = CommitExtractionResult::Extracted("feat: add feature".to_string());
+        assert!(!extracted.is_fallback());
+
+        let salvaged = CommitExtractionResult::Salvaged("fix: bug fix".to_string());
+        assert!(!salvaged.is_fallback());
+
+        let fallback = CommitExtractionResult::Fallback("chore: update module".to_string());
+        assert!(fallback.is_fallback());
+    }
+
+    #[test]
+    fn test_commit_extraction_result_equality() {
+        let a = CommitExtractionResult::Extracted("feat: test".to_string());
+        let b = CommitExtractionResult::Extracted("feat: test".to_string());
+        assert_eq!(a, b);
+
+        let c = CommitExtractionResult::Salvaged("feat: test".to_string());
+        assert_ne!(a, c); // Different variant, same message
+
+        let d = CommitExtractionResult::Extracted("fix: other".to_string());
+        assert_ne!(a, d); // Same variant, different message
+    }
 
     // =========================================================================
     // Format Detection Tests

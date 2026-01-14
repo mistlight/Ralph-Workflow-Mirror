@@ -12,12 +12,13 @@
 
 #![expect(clippy::trivially_copy_pass_by_ref)]
 #![expect(clippy::too_many_arguments)]
+#![expect(clippy::too_many_lines)]
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::llm_output_extraction::{
     extract_llm_output, generate_fallback_commit_message, try_extract_structured_commit,
-    try_salvage_commit_message, validate_commit_message, OutputFormat,
+    try_salvage_commit_message, validate_commit_message, CommitExtractionResult, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
@@ -90,13 +91,72 @@ pub fn generate_commit_message(
     let result = if exit_code == 0 {
         // Agent succeeded - extract commit message from logs
         match extract_commit_message_from_logs(log_dir, diff, commit_agent, runtime.logger) {
-            Ok(Some(message)) => CommitMessageResult {
-                message,
-                success: true,
-                _log_path: log_file,
-            },
+            Ok(Some(extraction)) => {
+                // Check if we got a real extraction or just a fallback
+                // If fallback, try re-prompting with stricter instruction first
+                let final_extraction = if extraction.is_fallback() {
+                    // Fallback was generated - try re-prompting with stricter instruction
+                    // before accepting the generic fallback message
+                    runtime.logger.warn(
+                        "Extraction produced fallback, re-prompting with stricter instruction...",
+                    );
+
+                    // Run agent again with stricter JSON-only prompt
+                    let strict_prompt = prompt_strict_json_commit(diff);
+                    let retry_exit = run_with_fallback(
+                        AgentRole::Commit,
+                        "generate commit message (strict retry)",
+                        &strict_prompt,
+                        log_dir,
+                        runtime,
+                        registry,
+                        commit_agent,
+                    )?;
+
+                    if retry_exit == 0 {
+                        if let Ok(Some(retry_extraction)) = extract_commit_message_from_logs(
+                            log_dir,
+                            diff,
+                            commit_agent,
+                            runtime.logger,
+                        ) {
+                            // Accept retry result if it's not a fallback
+                            if retry_extraction.is_fallback() {
+                                // Re-prompt also produced fallback - use original
+                                runtime
+                                    .logger
+                                    .warn("Re-prompt also failed, using fallback message");
+                                extraction
+                            } else {
+                                retry_extraction
+                            }
+                        } else {
+                            // Extraction failed on retry - use original fallback
+                            runtime
+                                .logger
+                                .warn("Re-prompt also failed, using fallback message");
+                            extraction
+                        }
+                    } else {
+                        // Retry agent failed - use original fallback
+                        runtime
+                            .logger
+                            .warn("Re-prompt also failed, using fallback message");
+                        extraction
+                    }
+                } else {
+                    // Got a real extraction (Extracted or Salvaged) - use it directly
+                    extraction
+                };
+
+                CommitMessageResult {
+                    message: final_extraction.into_message(),
+                    success: true,
+                    _log_path: log_file,
+                }
+            }
             Ok(None) => {
-                // Agent succeeded but no valid commit message found - try re-prompt
+                // Agent succeeded but extraction completely failed - try re-prompt
                 runtime.logger.warn(
                     "No valid commit message extracted, re-prompting with stricter instruction...",
                 );
@@ -114,14 +174,14 @@ pub fn generate_commit_message(
                 )?;
 
                 if retry_exit == 0 {
-                    if let Ok(Some(message)) = extract_commit_message_from_logs(
+                    if let Ok(Some(extraction)) = extract_commit_message_from_logs(
                         log_dir,
                         diff,
                         commit_agent,
                         runtime.logger,
                     ) {
                         return Ok(CommitMessageResult {
-                            message,
+                            message: extraction.into_message(),
                             success: true,
                             _log_path: log_file,
                         });
@@ -155,12 +215,12 @@ pub fn generate_commit_message(
             .logger
             .warn("Commit agent failed, checking logs for partial output...");
         match extract_commit_message_from_logs(log_dir, diff, commit_agent, runtime.logger) {
-            Ok(Some(message)) => {
+            Ok(Some(extraction)) => {
                 runtime
                     .logger
                     .warn("Using partially generated commit message from failed agent");
                 CommitMessageResult {
-                    message,
+                    message: extraction.into_message(),
                     success: false,
                     _log_path: log_file,
                 }
@@ -262,15 +322,17 @@ pub fn commit_with_generated_message(
 ///
 /// # Returns
 ///
-/// * `Ok(Some(message))` - A valid commit message was extracted
-/// * `Ok(None)` - No commit message could be extracted
-/// * `Err(e)` - An error occurred during extraction
+/// * `Ok(CommitExtractionResult)` - A result indicating how the message was obtained:
+///   - `Extracted` - Successfully extracted from structured output
+///   - `Salvaged` - Recovered from mixed output via salvage mechanism
+///   - `Fallback` - Using deterministic fallback (caller should consider re-prompt)
+/// * `Err(e)` - An error occurred during extraction (e.g., file I/O error)
 fn extract_commit_message_from_logs(
     log_dir: &str,
     diff: &str,
     agent_cmd: &str,
     logger: &Logger,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<CommitExtractionResult>> {
     // Find the most recent log file
     let log_path = find_most_recent_log(log_dir)?;
 
@@ -298,7 +360,7 @@ fn extract_commit_message_from_logs(
     // This is the preferred method when the agent outputs JSON schema format
     if let Some(message) = try_extract_structured_commit(&content) {
         logger.info("Successfully extracted commit message from JSON schema");
-        return Ok(Some(message));
+        return Ok(Some(CommitExtractionResult::Extracted(message)));
     }
 
     logger.info("JSON schema extraction failed, falling back to pattern-based extraction");
@@ -341,7 +403,7 @@ fn extract_commit_message_from_logs(
     match validate_commit_message(&extracted) {
         Ok(()) => {
             logger.info("Successfully extracted and validated commit message");
-            Ok(Some(extracted))
+            Ok(Some(CommitExtractionResult::Extracted(extracted)))
         }
         Err(e) => {
             logger.warn(&format!("Commit message validation failed: {e}"));
@@ -350,21 +412,22 @@ fn extract_commit_message_from_logs(
             logger.info("Attempting to salvage commit message from output...");
             if let Some(salvaged) = try_salvage_commit_message(&content) {
                 logger.info("Successfully salvaged commit message");
-                return Ok(Some(salvaged));
+                return Ok(Some(CommitExtractionResult::Salvaged(salvaged)));
             }
             logger.warn("Salvage attempt failed");
 
             // Recovery Layer 2: Generate deterministic fallback from diff metadata
+            // Note: We return Fallback variant to signal the caller should try re-prompting
             logger.info("Generating fallback commit message from diff...");
             let fallback = generate_fallback_commit_message(diff);
 
             // Defensive validation (should always pass, but be safe)
             if validate_commit_message(&fallback).is_ok() {
                 logger.info(&format!(
-                    "Using fallback: {}",
+                    "Generated fallback: {}",
                     fallback.lines().next().unwrap_or(&fallback)
                 ));
-                return Ok(Some(fallback));
+                return Ok(Some(CommitExtractionResult::Fallback(fallback)));
             }
 
             logger.error("Fallback commit message failed validation - this is a bug");
