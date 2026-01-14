@@ -381,11 +381,11 @@
                     <!-- Visual Workflow Diagram -->
                     <div class="workflow-diagram">
                         <svg viewBox="0 0 600 200" class="workflow-svg" xmlns="http://www.w3.org/2000/svg">
-                            <!-- Background Glow - Uses design system primary cyan -->
+                            <!-- Background Glow - Forest Editorial amber gradient -->
                             <defs>
                                 <radialGradient id="diagramGlow" cx="50%" cy="50%" r="50%">
-                                    <stop offset="0%" stop-color="rgba(0, 212, 255, 0.1)" stop-opacity="1" />
-                                    <stop offset="100%" stop-color="rgba(0, 212, 255, 0)" stop-opacity="0" />
+                                    <stop offset="0%" stop-color="rgba(212, 165, 116, 0.1)" stop-opacity="1" />
+                                    <stop offset="100%" stop-color="rgba(212, 165, 116, 0)" stop-opacity="0" />
                                 </radialGradient>
                                 <filter id="glow">
                                     <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
@@ -397,53 +397,53 @@
                             </defs>
                             <ellipse cx="300" cy="100" rx="280" ry="80" fill="url(#diagramGlow)"/>
 
-                            <!-- Connection Lines - Primary cyan -->
-                            <line x1="120" y1="100" x2="200" y2="100" stroke="#00D4FF" stroke-width="2" opacity="0.5"/>
-                            <line x1="280" y1="100" x2="360" y2="100" stroke="#00D4FF" stroke-width="2" opacity="0.5"/>
-                            <line x1="440" y1="100" x2="520" y2="100" stroke="#00D4FF" stroke-width="2" opacity="0.5"/>
+                            <!-- Connection Lines - Warm amber -->
+                            <line x1="120" y1="100" x2="200" y2="100" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
+                            <line x1="280" y1="100" x2="360" y2="100" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
+                            <line x1="440" y1="100" x2="520" y2="100" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
 
-                            <!-- Arrows - Primary cyan -->
-                            <polygon points="195,95 205,100 195,105" fill="#00D4FF" opacity="0.7"/>
-                            <polygon points="275,95 285,100 275,105" fill="#00D4FF" opacity="0.7"/>
-                            <polygon points="355,95 365,100 355,105" fill="#00D4FF" opacity="0.7"/>
-                            <polygon points="435,95 445,100 435,105" fill="#00D4FF" opacity="0.7"/>
+                            <!-- Arrows - Warm amber -->
+                            <polygon points="195,95 205,100 195,105" fill="#d4a574" opacity="0.7"/>
+                            <polygon points="275,95 285,100 275,105" fill="#d4a574" opacity="0.7"/>
+                            <polygon points="355,95 365,100 355,105" fill="#d4a574" opacity="0.7"/>
+                            <polygon points="435,95 445,100 435,105" fill="#d4a574" opacity="0.7"/>
 
-                            <!-- Step 1: User writes PROMPT.md - Primary cyan -->
+                            <!-- Step 1: User writes PROMPT.md - Warm amber -->
                             <g class="workflow-node">
-                                <rect x="40" y="60" width="80" height="80" rx="0" fill="#111" stroke="#00D4FF" stroke-width="2"/>
-                                <text x="80" y="90" text-anchor="middle" fill="#00D4FF" font-size="20" font-weight="bold">📝</text>
-                                <text x="80" y="115" text-anchor="middle" fill="#F4F4F5" font-size="11" font-family="monospace">PROMPT.md</text>
-                                <text x="80" y="130" text-anchor="middle" fill="#71717A" font-size="9">You write</text>
+                                <rect x="40" y="60" width="80" height="80" rx="0" fill="#1a3a2f" stroke="#d4a574" stroke-width="2"/>
+                                <text x="80" y="90" text-anchor="middle" fill="#d4a574" font-size="20" font-weight="bold">📝</text>
+                                <text x="80" y="115" text-anchor="middle" fill="#f5f2ed" font-size="11" font-family="monospace">PROMPT.md</text>
+                                <text x="80" y="130" text-anchor="middle" fill="#8a8478" font-size="9">You write</text>
                             </g>
 
-                            <!-- Step 2: Developer Agent - Accent violet -->
+                            <!-- Step 2: Developer Agent - Sage accent -->
                             <g class="workflow-node">
-                                <rect x="200" y="60" width="80" height="80" rx="0" fill="#111" stroke="#A78BFA" stroke-width="2"/>
-                                <text x="240" y="90" text-anchor="middle" fill="#A78BFA" font-size="20" font-weight="bold">⚙️</text>
-                                <text x="240" y="115" text-anchor="middle" fill="#F4F4F5" font-size="11" font-family="monospace">DEV AGENT</text>
-                                <text x="240" y="130" text-anchor="middle" fill="#71717A" font-size="9">Writes code</text>
+                                <rect x="200" y="60" width="80" height="80" rx="0" fill="#1a3a2f" stroke="#7da58a" stroke-width="2"/>
+                                <text x="240" y="90" text-anchor="middle" fill="#7da58a" font-size="20" font-weight="bold">⚙️</text>
+                                <text x="240" y="115" text-anchor="middle" fill="#f5f2ed" font-size="11" font-family="monospace">DEV AGENT</text>
+                                <text x="240" y="130" text-anchor="middle" fill="#8a8478" font-size="9">Writes code</text>
                             </g>
 
-                            <!-- Step 3: Reviewer Agent - Accent dark violet -->
+                            <!-- Step 3: Reviewer Agent - Dark sage -->
                             <g class="workflow-node">
-                                <rect x="360" y="60" width="80" height="80" rx="0" fill="#111" stroke="#8B5CF6" stroke-width="2"/>
-                                <text x="400" y="90" text-anchor="middle" fill="#8B5CF6" font-size="20" font-weight="bold">🔍</text>
-                                <text x="400" y="115" text-anchor="middle" fill="#F4F4F5" font-size="11" font-family="monospace">REVIEWER</text>
-                                <text x="400" y="130" text-anchor="middle" fill="#71717A" font-size="9">Validates</text>
+                                <rect x="360" y="60" width="80" height="80" rx="0" fill="#1a3a2f" stroke="#5d8c6c" stroke-width="2"/>
+                                <text x="400" y="90" text-anchor="middle" fill="#5d8c6c" font-size="20" font-weight="bold">🔍</text>
+                                <text x="400" y="115" text-anchor="middle" fill="#f5f2ed" font-size="11" font-family="monospace">REVIEWER</text>
+                                <text x="400" y="130" text-anchor="middle" fill="#8a8478" font-size="9">Validates</text>
                             </g>
 
-                            <!-- Step 4: Git Commit - Emerald success -->
+                            <!-- Step 4: Git Commit - Forest emerald success -->
                             <g class="workflow-node">
-                                <rect x="520" y="60" width="80" height="80" rx="0" fill="#111" stroke="#34D399" stroke-width="2"/>
-                                <text x="560" y="90" text-anchor="middle" fill="#34D399" font-size="20" font-weight="bold">✓</text>
-                                <text x="560" y="115" text-anchor="middle" fill="#F4F4F5" font-size="11" font-family="monospace">COMMIT</text>
-                                <text x="560" y="130" text-anchor="middle" fill="#71717A" font-size="9">Ready to push</text>
+                                <rect x="520" y="60" width="80" height="80" rx="0" fill="#1a3a2f" stroke="#5d9e73" stroke-width="2"/>
+                                <text x="560" y="90" text-anchor="middle" fill="#5d9e73" font-size="20" font-weight="bold">✓</text>
+                                <text x="560" y="115" text-anchor="middle" fill="#f5f2ed" font-size="11" font-family="monospace">COMMIT</text>
+                                <text x="560" y="130" text-anchor="middle" fill="#8a8478" font-size="9">Ready to push</text>
                             </g>
 
-                            <!-- Loop Indicator - Accent violet -->
-                            <path d="M 240 150 Q 300 170 360 150" fill="none" stroke="#A78BFA" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.6"/>
-                            <text x="300" y="168" text-anchor="middle" fill="#71717A" font-size="9">iterate until approved</text>
-                            <polygon points="355,148 365,150 355,152" fill="#A78BFA" opacity="0.6"/>
+                            <!-- Loop Indicator - Sage accent -->
+                            <path d="M 240 150 Q 300 170 360 150" fill="none" stroke="#7da58a" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.6"/>
+                            <text x="300" y="168" text-anchor="middle" fill="#8a8478" font-size="9">iterate until approved</text>
+                            <polygon points="355,148 365,150 355,152" fill="#7da58a" opacity="0.6"/>
                         </svg>
                     </div>
                 </div>
@@ -753,36 +753,36 @@
             </div>
 
             <!-- Quick Benefits - Why Ralph? -->
-            <div style="max-width: var(--container-max); margin: 0 auto var(--space-24);">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-6);">
-                    <div style="padding: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2">
+            <div class="quick-benefits">
+                <div class="quick-benefits-grid">
+                    <div class="quick-benefit-card">
+                        <div class="quick-benefit-header">
+                            <svg class="quick-benefit-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2">
                                 <circle cx="12" cy="12" r="10"/>
                                 <polyline points="12 6 12 12 16 14"/>
                             </svg>
-                            <h3 style="margin: 0; color: var(--color-primary); font-family: var(--font-display); text-transform: uppercase;">Save Time</h3>
+                            <h3 class="quick-benefit-title quick-benefit-title--primary">Save Time</h3>
                         </div>
-                        <p style="margin: 0; color: var(--color-text-muted);">Ship changes in 3-10 minutes instead of 30-60 minutes of manual back-and-forth.</p>
+                        <p>Ship changes in 3-10 minutes instead of 30-60 minutes of manual back-and-forth.</p>
                     </div>
-                    <div style="padding: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2">
+                    <div class="quick-benefit-card">
+                        <div class="quick-benefit-header">
+                            <svg class="quick-benefit-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2">
                                 <polyline points="20 6 9 17 4 12"/>
                             </svg>
-                            <h3 style="margin: 0; color: var(--color-accent); font-family: var(--font-display); text-transform: uppercase;">Better Quality</h3>
+                            <h3 class="quick-benefit-title quick-benefit-title--accent">Better Quality</h3>
                         </div>
-                        <p style="margin: 0; color: var(--color-text-muted);">Reviewer agent catches bugs automatically. Iterate until code quality meets standards.</p>
+                        <p>Reviewer agent catches bugs automatically. Iterate until code quality meets standards.</p>
                     </div>
-                    <div style="padding: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
-                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-magenta)" stroke-width="2">
+                    <div class="quick-benefit-card">
+                        <div class="quick-benefit-header">
+                            <svg class="quick-benefit-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-emerald)" stroke-width="2">
                                 <path d="M12 2L2 7l10 5 10-5-10-5z"/>
                                 <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
                             </svg>
-                            <h3 style="margin: 0; color: var(--color-magenta); font-family: var(--font-display); text-transform: uppercase;">Stay in Flow</h3>
+                            <h3 class="quick-benefit-title quick-benefit-title--emerald">Stay in Flow</h3>
                         </div>
-                        <p style="margin: 0; color: var(--color-text-muted);">No context switching. Write requirements, run Ralph, stay in your editor while AI works.</p>
+                        <p>No context switching. Write requirements, run Ralph, stay in your editor while AI works.</p>
                     </div>
                 </div>
             </div>
@@ -1053,47 +1053,47 @@ The API should return proper error messages.</textarea>
                         </ul>
 
                         <!-- Newcomer-specific help -->
-                        <div class="audience-newcomer-content" style="margin-top: var(--space-6); padding: var(--space-5); background: var(--color-bg-elevated); border-left: 3px solid var(--color-accent);">
-                            <h4 style="font-size: var(--text-base); color: var(--color-accent); font-family: var(--font-display); margin-bottom: var(--space-3);">New to the terminal?</h4>
-                            <p style="font-size: var(--text-sm); color: var(--color-text-muted); margin: 0;">The terminal is where you run commands on your computer. Don't worry—Ralph handles the complexity. Just follow the installation steps below.</p>
+                        <div class="audience-newcomer-content install-newcomer-help">
+                            <h4>New to the terminal?</h4>
+                            <p>The terminal is where you run commands on your computer. Don't worry—Ralph handles the complexity. Just follow the installation steps below.</p>
                         </div>
                     </div>
 
                     <!-- Developer-specific quick start -->
-                    <div class="audience-developer-content" style="padding: 2rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);">
-                        <h4 style="margin-bottom: 1rem; color: var(--color-primary); font-family: var(--font-display);">Quick Start</h4>
-                        <ol style="margin: 0; padding-left: 1.25rem; color: var(--color-text-muted);">
-                            <li style="margin-bottom: 0.5rem;">Clone Ralph from Codeberg</li>
-                            <li style="margin-bottom: 0.5rem;">Install via cargo from source</li>
-                            <li style="margin-bottom: 0.5rem;">Configure your AI agent in <code class="inline">~/.ralph/config.toml</code></li>
+                    <div class="audience-developer-content install-quick-start">
+                        <h4>Quick Start</h4>
+                        <ol>
+                            <li>Clone Ralph from Codeberg</li>
+                            <li>Install via cargo from source</li>
+                            <li>Configure your AI agent in <code class="inline">~/.ralph/config.toml</code></li>
                             <li>Run <code class="inline">ralph -S</code> with custom iteration modes</li>
                         </ol>
                     </div>
 
                     <!-- Vibe Coder-specific quick start -->
-                    <div class="audience-vibe-coder-content" style="padding: 2rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);">
-                        <h4 style="margin-bottom: 1rem; color: var(--color-primary); font-family: var(--font-display);">Quick Start</h4>
-                        <ol style="margin: 0; padding-left: 1.25rem; color: var(--color-text-muted);">
-                            <li style="margin-bottom: 0.5rem;">Clone Ralph from Codeberg</li>
-                            <li style="margin-bottom: 0.5rem;">Install with cargo (one command)</li>
-                            <li style="margin-bottom: 0.5rem;">Write what you want in <code class="inline">PROMPT.md</code></li>
+                    <div class="audience-vibe-coder-content install-quick-start">
+                        <h4>Quick Start</h4>
+                        <ol>
+                            <li>Clone Ralph from Codeberg</li>
+                            <li>Install with cargo (one command)</li>
+                            <li>Write what you want in <code class="inline">PROMPT.md</code></li>
                             <li>Run <code class="inline">ralph -S</code> and relax!</li>
                         </ol>
-                        <p style="margin-top: 1rem; padding: var(--space-3); background: var(--color-bg-elevated); font-size: var(--text-sm); color: var(--color-accent);">
+                        <p class="install-time-saved">
                             <strong>Time saved:</strong> 3-10 minutes per task vs 30-60 minutes of manual copy-paste
                         </p>
                     </div>
 
                     <!-- Newcomer-specific quick start -->
-                    <div class="audience-newcomer-content" style="padding: 2rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);">
-                        <h4 style="margin-bottom: 1rem; color: var(--color-primary); font-family: var(--font-display);">Quick Start</h4>
-                        <ol style="margin: 0; padding-left: 1.25rem; color: var(--color-text-muted);">
-                            <li style="margin-bottom: 0.5rem;">Install Rust (one-time setup)</li>
-                            <li style="margin-bottom: 0.5rem;">Clone Ralph from Codeberg</li>
-                            <li style="margin-bottom: 0.5rem;">Install Ralph with cargo</li>
+                    <div class="audience-newcomer-content install-quick-start">
+                        <h4>Quick Start</h4>
+                        <ol>
+                            <li>Install Rust (one-time setup)</li>
+                            <li>Clone Ralph from Codeberg</li>
+                            <li>Install Ralph with cargo</li>
                             <li>Run <code class="inline">ralph -S</code> in your project folder</li>
                         </ol>
-                        <p style="margin-top: 1rem; font-size: var(--text-sm); color: var(--color-text-dim);">
+                        <p class="help-text">
                             Need help? Each step below has detailed instructions.
                         </p>
                     </div>
@@ -1120,28 +1120,28 @@ The API should return proper error messages.</textarea>
 cd Ralph-Workflow
 cargo install --path .</code></pre>
                         </div>
-                        <p style="margin-top: 1rem; color: var(--color-text-dim); font-size: 0.875rem;">Requires Rust 1.70+ and cargo in PATH. Get Rust from <a href="https://rustup.rs" target="_blank" rel="noopener" style="color: var(--color-primary);">rustup.rs</a></p>
-                        <p style="margin-top: 0.5rem; color: var(--color-text-dim); font-size: 0.875rem;">The package will be installed as <code class="inline" style="font-size: 0.8em;">ralph-workflow</code>. Use <code class="inline" style="font-size: 0.8em;">ralph</code> or <code class="inline" style="font-size: 0.8em;">ralph-workflow</code> to run.</p>
-                        <p style="margin-top: 1rem; padding: var(--space-4); background: rgba(107, 142, 74, 0.1); border-left: 3px solid var(--color-success); border-radius: var(--radius-sm); font-size: 0.875rem;">
-                            <strong style="color: var(--color-success);">Verify installation:</strong> Run <code class="inline" style="font-size: 0.85em;">ralph --version</code> to confirm Ralph is installed correctly. You should see version output.
+                        <p class="install-note">Requires Rust 1.70+ and cargo in PATH. Get Rust from <a href="https://rustup.rs" target="_blank" rel="noopener">rustup.rs</a></p>
+                        <p class="install-note">The package will be installed as <code class="inline">ralph-workflow</code>. Use <code class="inline">ralph</code> or <code class="inline">ralph-workflow</code> to run.</p>
+                        <p class="install-verify">
+                            <strong>Verify installation:</strong> Run <code class="inline">ralph --version</code> to confirm Ralph is installed correctly. You should see version output.
                         </p>
 
                         <!-- Troubleshooting -->
-                        <details style="margin-top: var(--space-6);">
-                            <summary style="cursor: pointer; font-size: var(--text-sm); color: var(--color-text-muted); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); transition: all var(--duration-fast) var(--ease-out);">
+                        <details class="troubleshooting-details">
+                            <summary class="troubleshooting-summary">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                                 </svg>
-                                <span style="font-weight: var(--font-medium);">Troubleshooting</span>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: auto; transition: transform var(--duration-normal) var(--ease-out);">
+                                <span class="troubleshooting-summary-text">Troubleshooting</span>
+                                <svg class="troubleshooting-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <polyline points="6 9 12 15 18 9"/>
                                 </svg>
                             </summary>
-                            <div style="margin-top: var(--space-4); padding: var(--space-5); background: var(--color-bg-warm); border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--color-text-muted);">
-                                <ul style="margin: 0; padding-left: var(--space-5); line-height: var(--leading-relaxed);">
-                                    <li style="margin-bottom: var(--space-3);"><strong style="color: var(--color-text);">Command not found?</strong> Make sure <code class="inline">~/.cargo/bin</code> is in your PATH. Add this to your shell config: <code class="inline">export PATH="$HOME/.cargo/bin:$PATH"</code></li>
-                                    <li style="margin-bottom: var(--space-3);"><strong style="color: var(--color-text);">Rust not installed?</strong> Install via <a href="https://rustup.rs" target="_blank" style="color: var(--color-primary);">rustup.rs</a> — it's the recommended way</li>
-                                    <li style="margin-bottom: 0;"><strong style="color: var(--color-text);">SSH clone fails?</strong> Make sure your SSH key is added to your Codeberg account, or use HTTPS instead</li>
+                            <div class="troubleshooting-content">
+                                <ul>
+                                    <li><strong>Command not found?</strong> Make sure <code class="inline">~/.cargo/bin</code> is in your PATH. Add this to your shell config: <code class="inline">export PATH="$HOME/.cargo/bin:$PATH"</code></li>
+                                    <li><strong>Rust not installed?</strong> Install via <a href="https://rustup.rs" target="_blank">rustup.rs</a> — it's the recommended way</li>
+                                    <li><strong>SSH clone fails?</strong> Make sure your SSH key is added to your Codeberg account, or use HTTPS instead</li>
                                 </ul>
                             </div>
                         </details>
@@ -1167,7 +1167,7 @@ fallback = ["codex", "opencode"]
 model = "claude-sonnet-4"
 max_iterations = 10</code></pre>
                         </div>
-                        <p style="margin-top: 1rem; color: var(--color-text-dim); font-size: 0.875rem;">Create this file at <code class="inline">~/.ralph/config.toml</code></p>
+                        <p class="install-note">Create this file at <code class="inline">~/.ralph/config.toml</code></p>
                     </div>
                 </div>
             </div>
@@ -1285,7 +1285,7 @@ max_iterations = 10</code></pre>
                 </article>
 
                 <article class="audience-card">
-                    <span class="audience-badge" style="background: var(--color-primary); color: var(--color-bg);">Efficient</span>
+                    <span class="audience-badge audience-badge--primary">Efficient</span>
                     <h3>For Vibe Coders</h3>
                     <p>You let AI do the heavy lifting. Ralph removes the friction—no more copy-pasting between chat and editor.</p>
                     <ul>
@@ -1297,7 +1297,7 @@ max_iterations = 10</code></pre>
                 </article>
 
                 <article class="audience-card">
-                    <span class="audience-badge" style="background: var(--color-accent); color: var(--color-bg);">Learning</span>
+                    <span class="audience-badge audience-badge--accent">Learning</span>
                     <h3>New to CLI?</h3>
                     <p>Welcome! Ralph is a great tool to learn with. The terminal is where you run commands—Ralph handles the complexity.</p>
                     <ul>

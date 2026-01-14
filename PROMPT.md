@@ -32,13 +32,22 @@ Installation Instructions:
 * However once you are settled on a design you think has potential, start iterating on it
 
 ## Acceptance Checks
-* Working professional website that is at the quality of dribble showcase.
-* No design flaws. Bad usability in general.
+* The visual quality must meet professional, commercial-grade standards (Dribbble-level polish).
+* Design decisions must be evaluated from rendered output, not from code structure.
 * User should be able to navigate through the website and have a clear understanding on how to use Ralph Workflow. They should not come out with even more questions about what we do.
-* Remember index.html is a must for this, this will be used as the home page.
-* From the visual output, not from code as your reference point for visuals. They **MUST** meet all **frontend-design** skill criteria
+* The site must be:
+  - Clear to software developers
+  - Approachable for newcomers to the command line
+  - Intuitive for “vibe coders”
+* Accessibility basics are required:
+  - Readable contrast
+  - Keyboard navigability
+  - Clear focus states
+  - Responsive design across common viewport sizes
 
 ## Constraints
-* This is used on a static page on codeberg. You must look up all the restrictions codeberg pages has and respect them. If you are adding a feature, ensure it works with them.
-* You MUST use **frontend-design** skill from claude skill. If you cannot find it, you must look it up in ~/.claude/skills
-* You MUST use playwright to visually evaluate the visual output, not from code as your reference point for visuals. They **MUST** meet all **frontend-design** skill criteria
+* The website must be fully static and compatible with Codeberg Pages.
+* Only pre-built static assets may be committed (HTML, CSS, JS, images, fonts).
+* No server-side code, edge functions, or runtime build steps are allowed on Codeberg Pages.
+* Any build tools (e.g. Tailwind, bundlers, minifiers) may be used locally only; the repository must contain the final compiled output.
+* The site must function correctly when opened directly via index.html without a development server.
