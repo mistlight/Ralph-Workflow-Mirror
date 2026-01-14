@@ -90,7 +90,9 @@ mod tests {
             Some(10),
             None,
         );
-        assert!(result.contains("PROMPT.md"));
+        // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+        assert!(!result.contains("PROMPT.md"));
+        assert!(result.contains("PLAN.md"));
     }
 
     #[test]
