@@ -1,102 +1,102 @@
 /* ========================================
-   RALPH WORKFLOW - NOIR EDITORIAL
+   RALPH WORKFLOW - FOREST EDITORIAL
    ========================================
-   A dramatic dark-first design with electric
-   cyan accents and bold typographic presence.
+   A distinctive neo-brutalist-meets-editorial
+   design with deep forest green and warm amber.
 
    Design Philosophy:
-   - Dark backgrounds create focus and drama
-   - Electric cyan (#00D4FF) provides striking accent
-   - Clash Display typography commands attention
-   - Generous whitespace and dramatic scale contrast
-   - Subtle grain texture adds tactile depth
+   - Rich forest green (#1a3a2f) creates depth and sophistication
+   - Warm amber (#d4a574) provides striking contrast
+   - Instrument Serif typography adds editorial gravitas
+   - Bold asymmetric layouts break from generic AI aesthetics
+   - Layered backgrounds create atmospheric depth
    ======================================== */
 
 /* === CSS CUSTOM PROPERTIES === */
 :root {
-    /* === COLOR PALETTE: Noir & Electric === */
+    /* === COLOR PALETTE: Forest & Amber === */
 
-    /* Backgrounds - Deep Blacks with Blue Undertones */
-    --color-bg: #0A0A0B;           /* Near-black base */
-    --color-bg-alt: #0E0E10;       /* Slightly lighter */
-    --color-bg-elevated: #141416;  /* Elevated surfaces */
-    --color-bg-card: #18181B;      /* Card backgrounds */
-    --color-bg-subtle: #1C1C20;    /* Subtle distinction */
-    --color-bg-hover: #222226;     /* Hover states */
+    /* Backgrounds - Deep Forest with Warm Undertones */
+    --color-bg: #0d1f18;           /* Deep forest base */
+    --color-bg-alt: #122820;       /* Slightly lighter forest */
+    --color-bg-elevated: #173025;  /* Elevated surfaces */
+    --color-bg-card: #1a3a2f;      /* Card backgrounds - signature green */
+    --color-bg-subtle: #1e4435;    /* Subtle distinction */
+    --color-bg-hover: #234f3d;     /* Hover states */
 
-    /* Text Colors - High Contrast Neutrals */
-    --color-text: #FFFFFF;         /* Primary text - pure white */
-    --color-text-primary: #F4F4F5; /* Slightly softer white */
-    --color-text-muted: #A1A1AA;   /* Muted text */
-    --color-text-dim: #71717A;     /* Dim text */
-    --color-text-faint: #52525B;   /* Very dim */
-    --color-text-dark: #0A0A0B;    /* Text on light backgrounds */
+    /* Text Colors - Warm Neutrals */
+    --color-text: #f5f2ed;         /* Primary text - warm white */
+    --color-text-primary: #e8e4dd; /* Slightly warmer white */
+    --color-text-muted: #b8b2a6;   /* Muted text - warm gray */
+    --color-text-dim: #8a8478;     /* Dim text */
+    --color-text-faint: #6b665c;   /* Very dim */
+    --color-text-dark: #1a3a2f;    /* Text on light backgrounds */
 
-    /* Primary Accent - Electric Cyan */
-    --color-primary: #00D4FF;      /* Electric cyan - hero accent */
-    --color-primary-light: #5CE1FF; /* Lighter cyan */
-    --color-primary-dark: #00A3CC;  /* Darker cyan */
-    --color-primary-dim: rgba(0, 212, 255, 0.12);
-    --color-primary-glow: rgba(0, 212, 255, 0.25);
-    --color-primary-intense: rgba(0, 212, 255, 0.4);
+    /* Primary Accent - Warm Amber */
+    --color-primary: #d4a574;      /* Warm amber - signature accent */
+    --color-primary-light: #e3be94; /* Lighter amber */
+    --color-primary-dark: #c18b52;  /* Richer amber */
+    --color-primary-dim: rgba(212, 165, 116, 0.15);
+    --color-primary-glow: rgba(212, 165, 116, 0.3);
+    --color-primary-intense: rgba(212, 165, 116, 0.5);
 
-    /* Secondary Accent - Warm Violet */
-    --color-accent: #A78BFA;       /* Soft violet */
-    --color-accent-light: #C4B5FD; /* Lighter violet */
-    --color-accent-dark: #8B5CF6;  /* Darker violet */
-    --color-accent-dim: rgba(167, 139, 250, 0.12);
-    --color-accent-glow: rgba(167, 139, 250, 0.25);
+    /* Secondary Accent - Sage Green */
+    --color-accent: #7da58a;       /* Soft sage */
+    --color-accent-light: #9dbba7; /* Lighter sage */
+    --color-accent-dark: #5d8c6c;  /* Darker sage */
+    --color-accent-dim: rgba(125, 165, 138, 0.15);
+    --color-accent-glow: rgba(125, 165, 138, 0.3);
 
     /* Tertiary Colors - Supporting Palette */
-    --color-emerald: #34D399;      /* Success states */
-    --color-amber: #FBBF24;        /* Warning states */
-    --color-rose: #FB7185;         /* Error states */
-    --color-slate: #64748B;        /* Neutral accent */
+    --color-emerald: #5d9e73;      /* Success states - forest emerald */
+    --color-amber: #d4a574;        /* Warning states - amber */
+    --color-rose: #c97878;         /* Error states - dusty rose */
+    --color-slate: #788c82;        /* Neutral accent - sage slate */
 
     /* Semantic Colors */
-    --color-success: #34D399;
-    --color-warning: #FBBF24;
-    --color-error: #FB7185;
-    --color-info: #00D4FF;
+    --color-success: #5d9e73;
+    --color-warning: #d4a574;
+    --color-error: #c97878;
+    --color-info: #7da58a;
 
-    /* Neutral Scale - Cool Grays */
-    --neutral-50: #FAFAFA;
-    --neutral-100: #F4F4F5;
-    --neutral-200: #E4E4E7;
-    --neutral-300: #D4D4D8;
-    --neutral-400: #A1A1AA;
-    --neutral-500: #71717A;
-    --neutral-600: #52525B;
-    --neutral-700: #3F3F46;
-    --neutral-800: #27272A;
-    --neutral-900: #18181B;
-    --neutral-950: #0A0A0B;
+    /* Neutral Scale - Warm Forest Grays */
+    --neutral-50: #f5f2ed;
+    --neutral-100: #e8e4dd;
+    --neutral-200: #d4d0c7;
+    --neutral-300: #b8b2a6;
+    --neutral-400: #8a8478;
+    --neutral-500: #6b665c;
+    --neutral-600: #4d4943;
+    --neutral-700: #383530;
+    --neutral-800: #252320;
+    --neutral-900: #1a1917;
+    --neutral-950: #0d0d0c;
 
-    /* Code Styling - Inverted Terminal */
-    --code-bg: #18181B;
-    --code-text: #E4E4E7;
-    --code-keyword: #00D4FF;
-    --code-string: #34D399;
-    --code-comment: #71717A;
-    --code-function: #A78BFA;
-    --code-number: #FBBF24;
-    --code-border: #27272A;
+    /* Code Styling - Forest Terminal */
+    --code-bg: #0f1a15;
+    --code-text: #e8e4dd;
+    --code-keyword: #d4a574;
+    --code-string: #7da58a;
+    --code-comment: #6b665c;
+    --code-function: #9dbba7;
+    --code-number: #e3be94;
+    --code-border: #1e4435;
 
     /* Borders & Lines */
-    --border-subtle: rgba(255, 255, 255, 0.06);
-    --border-soft: rgba(255, 255, 255, 0.1);
-    --border-medium: rgba(255, 255, 255, 0.15);
-    --border-strong: rgba(255, 255, 255, 0.2);
-    --border-accent: rgba(0, 212, 255, 0.3);
-    --border-glow: rgba(0, 212, 255, 0.5);
+    --border-subtle: rgba(245, 242, 237, 0.06);
+    --border-soft: rgba(245, 242, 237, 0.1);
+    --border-medium: rgba(245, 242, 237, 0.15);
+    --border-strong: rgba(245, 242, 237, 0.2);
+    --border-accent: rgba(212, 165, 116, 0.3);
+    --border-glow: rgba(212, 165, 116, 0.5);
 
-    /* === TYPOGRAPHY: Geometric Editorial === */
+    /* === TYPOGRAPHY: Editorial Contrast === */
 
-    /* Font Families */
-    --font-display: 'Clash Display', 'Inter', system-ui, sans-serif;
-    --font-heading: 'Clash Display', 'Inter', system-ui, sans-serif;
-    --font-body: 'General Sans', 'Inter', -apple-system, system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+    /* Font Families - Distinctive Editorial Stack */
+    --font-display: 'Instrument Serif', 'Playfair Display', Georgia, serif;
+    --font-heading: 'Instrument Serif', 'Playfair Display', Georgia, serif;
+    --font-body: 'Space Grotesk', 'Inter', -apple-system, system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', monospace;
 
     /* Type Scale - Dramatic Hierarchy */
     --text-xs: 0.75rem;        /* 12px */
@@ -212,11 +212,11 @@
     --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
     --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.3);
 
-    /* Glow shadows for accents */
-    --shadow-glow-sm: 0 0 10px rgba(0, 212, 255, 0.3);
-    --shadow-glow-md: 0 0 20px rgba(0, 212, 255, 0.4);
-    --shadow-glow-lg: 0 0 40px rgba(0, 212, 255, 0.5);
-    --shadow-glow-xl: 0 0 60px rgba(0, 212, 255, 0.4), 0 0 100px rgba(0, 212, 255, 0.2);
+    /* Glow shadows for accents - Warm amber glow */
+    --shadow-glow-sm: 0 0 10px rgba(212, 165, 116, 0.25);
+    --shadow-glow-md: 0 0 20px rgba(212, 165, 116, 0.35);
+    --shadow-glow-lg: 0 0 40px rgba(212, 165, 116, 0.4);
+    --shadow-glow-xl: 0 0 60px rgba(212, 165, 116, 0.3), 0 0 100px rgba(212, 165, 116, 0.15);
 
     /* === TRANSITIONS === */
     --duration-75: 75ms;
@@ -254,38 +254,66 @@
 /* === LIGHT MODE SUPPORT === */
 [data-theme="light"],
 .light-mode {
-    --color-bg: #FAFAFA;
-    --color-bg-alt: #F4F4F5;
-    --color-bg-elevated: #FFFFFF;
-    --color-bg-card: #FFFFFF;
-    --color-bg-subtle: #F4F4F5;
-    --color-bg-hover: #E4E4E7;
+    /* Light mode - Warm cream with forest accents */
+    --color-bg: #f7f4ef;           /* Warm cream base */
+    --color-bg-alt: #f0ebe3;       /* Slightly darker cream */
+    --color-bg-elevated: #ffffff;  /* Pure white for cards */
+    --color-bg-card: #ffffff;
+    --color-bg-subtle: #ebe6dc;    /* Subtle warm distinction */
+    --color-bg-hover: #e3ddd1;     /* Hover states */
 
-    --color-text: #18181B;
-    --color-text-primary: #27272A;
-    --color-text-muted: #52525B;
-    --color-text-dim: #71717A;
-    --color-text-faint: #A1A1AA;
+    --color-text: #1a3a2f;         /* Forest green for text */
+    --color-text-primary: #234f3d;
+    --color-text-muted: #4d6356;
+    --color-text-dim: #6b7f74;
+    --color-text-faint: #98a39c;
 
-    --color-primary: #0891B2;
-    --color-primary-light: #06B6D4;
-    --color-primary-dark: #0E7490;
-    --color-primary-dim: rgba(8, 145, 178, 0.1);
-    --color-primary-glow: rgba(8, 145, 178, 0.2);
+    /* Primary stays amber but richer for light mode */
+    --color-primary: #b8875a;
+    --color-primary-light: #c99e72;
+    --color-primary-dark: #a07245;
+    --color-primary-dim: rgba(184, 135, 90, 0.12);
+    --color-primary-glow: rgba(184, 135, 90, 0.25);
 
-    --border-subtle: rgba(0, 0, 0, 0.04);
-    --border-soft: rgba(0, 0, 0, 0.08);
-    --border-medium: rgba(0, 0, 0, 0.12);
-    --border-strong: rgba(0, 0, 0, 0.18);
-    --border-accent: rgba(8, 145, 178, 0.3);
+    /* Secondary accent - darker sage */
+    --color-accent: #5d8c6c;
+    --color-accent-light: #7da58a;
+    --color-accent-dark: #456b52;
 
-    --code-bg: #18181B;
-    --code-text: #E4E4E7;
+    --border-subtle: rgba(26, 58, 47, 0.06);
+    --border-soft: rgba(26, 58, 47, 0.1);
+    --border-medium: rgba(26, 58, 47, 0.15);
+    --border-strong: rgba(26, 58, 47, 0.2);
+    --border-accent: rgba(184, 135, 90, 0.35);
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    /* Code blocks stay dark in light mode */
+    --code-bg: #1a3a2f;
+    --code-text: #e8e4dd;
+
+    --shadow-sm: 0 1px 3px rgba(26, 58, 47, 0.08);
+    --shadow-md: 0 4px 8px -1px rgba(26, 58, 47, 0.1);
+    --shadow-lg: 0 10px 20px -3px rgba(26, 58, 47, 0.12);
+    --shadow-xl: 0 20px 30px -5px rgba(26, 58, 47, 0.14);
+
+    /* Amber glow adjusted for light mode */
+    --shadow-glow-sm: 0 0 15px rgba(184, 135, 90, 0.2);
+    --shadow-glow-md: 0 0 25px rgba(184, 135, 90, 0.25);
+}
+
+/* Light mode specific overrides */
+[data-theme="light"] .nav,
+.light-mode .nav {
+    background-color: rgba(247, 244, 239, 0.9);
+}
+
+[data-theme="light"] .nav.scrolled,
+.light-mode .nav.scrolled {
+    background-color: rgba(247, 244, 239, 0.95);
+}
+
+[data-theme="light"] .hero-blob,
+.light-mode .hero-blob {
+    opacity: 0.06;
 }
 
 /* ========================================
@@ -499,7 +527,7 @@ pre code {
     left: 0;
     right: 0;
     z-index: var(--z-fixed);
-    background-color: rgba(10, 10, 11, 0.8);
+    background-color: rgba(13, 31, 24, 0.85);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border-bottom: 1px solid var(--border-subtle);
@@ -507,7 +535,7 @@ pre code {
 }
 
 .nav.scrolled {
-    background-color: rgba(10, 10, 11, 0.95);
+    background-color: rgba(13, 31, 24, 0.95);
     border-bottom-color: var(--border-soft);
 }
 
@@ -1136,8 +1164,56 @@ pre code {
     height: 400px;
     top: 30%;
     right: 20%;
-    background: radial-gradient(circle, rgba(52, 211, 153, 0.15) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(125, 165, 138, 0.2) 0%, transparent 70%);
     animation-delay: -16s;
+}
+
+/* Organic blob shape - adds distinctive visual interest */
+.hero-blob {
+    position: absolute;
+    opacity: 0.08;
+    z-index: 0;
+}
+
+.hero-blob-1 {
+    width: 800px;
+    height: 800px;
+    top: -20%;
+    right: -10%;
+    background: var(--color-primary);
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+    filter: blur(80px);
+    animation: morphBlob 20s ease-in-out infinite;
+}
+
+.hero-blob-2 {
+    width: 600px;
+    height: 600px;
+    bottom: -10%;
+    left: -5%;
+    background: var(--color-accent);
+    border-radius: 40% 60% 70% 30% / 40% 70% 30% 60%;
+    filter: blur(60px);
+    animation: morphBlob 25s ease-in-out infinite reverse;
+}
+
+@keyframes morphBlob {
+    0%, 100% {
+        border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+        transform: rotate(0deg) scale(1);
+    }
+    25% {
+        border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+        transform: rotate(5deg) scale(1.05);
+    }
+    50% {
+        border-radius: 50% 60% 30% 60% / 40% 30% 70% 50%;
+        transform: rotate(-5deg) scale(0.95);
+    }
+    75% {
+        border-radius: 60% 40% 60% 30% / 70% 50% 40% 60%;
+        transform: rotate(3deg) scale(1.02);
+    }
 }
 
 @keyframes float {
