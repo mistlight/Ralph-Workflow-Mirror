@@ -163,7 +163,6 @@ CRITICAL OUTPUT INSTRUCTIONS:
 - Ensure ALL sections (Summary, Implementation Steps, Critical Files, Risks & Mitigations, Verification Strategy) are included
 - Do NOT truncate or shorten your plan
 - Do NOT write to any files"#
-        .to_string()
     );
 
     prompt
