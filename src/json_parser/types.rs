@@ -595,9 +595,9 @@ pub(crate) fn format_unknown_json_event(
     // For partial/delta events, try to extract and show content
     let content_info = if classification.event_type == StreamEventType::Partial {
         // Try to extract content from various nested structures
-        let extracted_text = if let Some(content) = classification.content_field {
-            // Content field was found at top level
-            if let Some(val) = obj.get(&content) {
+        let extracted_text = if let Some(ref content) = classification.content_field {
+            // Content field was found at top level by classifier
+            if let Some(val) = obj.get(content) {
                 if let Some(text) = val.as_str() {
                     Some(text.to_string())
                 } else {
@@ -611,6 +611,18 @@ pub(crate) fn format_unknown_json_event(
             // No content field found - try to extract from delta field
             obj.get("delta")
                 .and_then(|delta_val| extract_nested_text(delta_val))
+                .or_else(|| {
+                    // Try nested delta structure: delta.text or delta.content
+                    obj.get("delta")
+                        .and_then(|d| d.as_object())
+                        .and_then(|delta_obj| {
+                            // First try delta.text, then delta.content
+                            delta_obj.get("text")
+                                .or_else(|| delta_obj.get("content"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                        })
+                })
                 .or_else(|| {
                     // Try other common nested structures
                     obj.get("data").and_then(|d| extract_nested_text(d))
@@ -632,27 +644,69 @@ pub(crate) fn format_unknown_json_event(
     // Build event type label based on classification
     let type_label = match classification.event_type {
         StreamEventType::Partial => {
-            // Only show partial events in non-verbose mode if they have explicit delta indicators
-            // in the type name (like "delta", "partial", "chunk"), not just because content is short
+            // Show partial events if they have explicit delta indicators in type name OR
+            // if they have an actual delta field (not just algorithmically detected)
             let type_name_lower = event_type.to_lowercase();
+            let has_delta_field = obj.contains_key("delta")
+                || obj.contains_key("partial")
+                || obj.contains_key("chunk");
             let is_explicit_delta = type_name_lower.contains("delta")
                 || type_name_lower.contains("partial")
-                || type_name_lower.contains("chunk");
+                || type_name_lower.contains("chunk")
+                || has_delta_field;
 
             if is_verbose {
                 format!("Partial event: {}", event_type)
             } else if is_explicit_delta {
-                // In non-verbose mode, only show explicit partial events (they're user content)
-                return content_info.map_or(String::new(), |content| {
-                    format!(
-                        "{}[{}]{} {}{}\n",
-                        colors.dim(),
-                        parser_name,
-                        colors.reset(),
-                        colors.white(),
-                        content.trim(),
-                    )
-                });
+                // In non-verbose mode, show explicit partial events (they're user content)
+                // Extract full content (not truncated) for delta events
+                let full_content: Option<String> = if let Some(ref content) = classification.content_field {
+                    // Use classifier's detected content field first
+                    obj.get(content)
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            // Content field wasn't a string, try extracting nested text
+                            obj.get(content).and_then(|v| extract_nested_text(v))
+                        })
+                } else {
+                    // Try delta field (common pattern)
+                    obj.get("delta")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            // Try nested delta.text or delta.content
+                            obj.get("delta")
+                                .and_then(|d| d.as_object())
+                                .and_then(|o| {
+                                    o.get("text")
+                                        .or_else(|| o.get("content"))
+                                        .and_then(|t| t.as_str())
+                                        .map(|s| s.to_string())
+                                })
+                        })
+                        .or_else(|| {
+                            // Try common text fields at top level
+                            for field in ["text", "content", "message"] {
+                                if let Some(val) = obj.get(field) {
+                                    if let Some(text) = val.as_str() {
+                                        return Some(text.to_string());
+                                    }
+                                }
+                            }
+                            None
+                        })
+                };
+
+                if let Some(content) = full_content {
+                    if !content.trim().is_empty() {
+                        return format!(
+                            "{}\n",
+                            content
+                        );
+                    }
+                }
+                return String::new();
             } else {
                 // Short content that looks like partial - don't show in non-verbose mode
                 return String::new();
