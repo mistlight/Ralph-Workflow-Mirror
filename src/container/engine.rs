@@ -3,6 +3,7 @@
 //! Provides a unified interface over Docker and Podman runtimes.
 
 use crate::container::error::{ContainerError, ContainerResult};
+use crate::container::port::PortMapping;
 use std::process::{Command, Output};
 
 /// Container engine type
@@ -138,6 +139,12 @@ impl ContainerEngine {
             cmd.arg(format!("{}={}", key, value));
         }
 
+        // Published ports
+        for port_mapping in &opts.published_ports {
+            cmd.arg("-p");
+            cmd.arg(port_mapping.to_publish_flag());
+        }
+
         // Working directory
         if let Some(workdir) = &opts.working_dir {
             cmd.args(["-w", workdir]);
@@ -188,6 +195,12 @@ impl ContainerEngine {
         for (key, value) in &opts.env_vars {
             cmd.arg("--env");
             cmd.arg(format!("{}={}", key, value));
+        }
+
+        // Published ports
+        for port_mapping in &opts.published_ports {
+            cmd.arg("-p");
+            cmd.arg(port_mapping.to_publish_flag());
         }
 
         // Working directory
@@ -247,6 +260,8 @@ pub struct RunOptions {
     pub working_dir: Option<String>,
     /// Whether network is enabled
     pub network_enabled: bool,
+    /// Published port mappings (container_port -> host_port)
+    pub published_ports: Vec<PortMapping>,
 }
 
 /// Volume mount configuration

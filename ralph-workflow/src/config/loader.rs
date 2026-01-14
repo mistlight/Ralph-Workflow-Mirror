@@ -132,6 +132,11 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         git_user_name: general.git_user_name.clone(),
         git_user_email: general.git_user_email.clone(),
         container_mode: general.container_mode,
+        security_mode: if general.security_mode.is_empty() {
+            None
+        } else {
+            Some(general.security_mode.clone())
+        },
         container_engine: if general.container_engine.is_empty() {
             None
         } else {
@@ -177,6 +182,7 @@ fn default_config() -> Config {
         git_user_name: None,
         git_user_email: None,
         container_mode: false,
+        security_mode: None,
         container_engine: None,
         container_image: None,
         container_network: true,
@@ -418,6 +424,12 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
     if let Ok(val) = env::var("RALPH_CONTAINER_MODE") {
         if let Some(b) = parse_env_bool(&val) {
             config.container_mode = b;
+        }
+    }
+    if let Ok(val) = env::var("RALPH_SECURITY_MODE") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            config.security_mode = Some(trimmed.to_string());
         }
     }
     if let Ok(val) = env::var("RALPH_CONTAINER_ENGINE") {

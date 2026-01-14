@@ -215,6 +215,8 @@ pub struct Config {
     pub(crate) git_user_email: Option<String>,
     /// Container mode enabled (run agents in Docker/Podman containers)
     pub(crate) container_mode: bool,
+    /// Security mode for agent isolation (auto, container, user-account, none)
+    pub(crate) security_mode: Option<String>,
     /// Container engine type (auto, docker, podman)
     pub(crate) container_engine: Option<String>,
     /// Container image to use for agents

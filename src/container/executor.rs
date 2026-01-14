@@ -5,8 +5,10 @@
 use crate::container::config::{ContainerConfig, ExecutionOptions};
 use crate::container::engine::{ContainerEngine, RunOptions};
 use crate::container::volume::VolumeManager;
+use crate::container::port::{detect_ports_from_command, PortMapping};
+use crate::container::tool::ToolManager;
 use crate::container::error::{ContainerError, ContainerResult};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Container command executor
 ///
@@ -16,6 +18,8 @@ pub struct ContainerExecutor {
     config: ContainerConfig,
     /// Volume manager for mount handling
     volume_manager: VolumeManager,
+    /// Tool manager for host tool discovery
+    tool_manager: ToolManager,
 }
 
 impl ContainerExecutor {
@@ -27,9 +31,12 @@ impl ContainerExecutor {
             config.config_dir.clone(),
         );
 
+        let tool_manager = ToolManager::new();
+
         Self {
             config,
             volume_manager,
+            tool_manager,
         }
     }
 
@@ -61,11 +68,17 @@ impl ContainerExecutor {
             ));
         }
 
-        // Build volume mounts
+        // Build volume mounts (avoiding duplicate targets)
         let mut mounts = self.volume_manager.get_mounts()?;
+        let mut seen_targets: HashSet<String> = mounts.iter().map(|m| m.target.clone()).collect();
 
-        // Add prompt file mount
-        // We'll pass the prompt as stdin instead of mounting it
+        // Discover and add tool mounts
+        let tool_mounts = self.tool_manager.discover_tool_mounts()?;
+        for tool_mount in tool_mounts {
+            if seen_targets.insert(tool_mount.target.clone()) {
+                mounts.push(tool_mount.to_mount());
+            }
+        }
 
         // Build environment variables
         let mut container_env = Vec::new();
@@ -80,12 +93,24 @@ impl ContainerExecutor {
             container_env.push((key.clone(), value.clone()));
         }
 
+        // Add environment variables from tool manager
+        for (key, value) in self.tool_manager.get_env_vars() {
+            container_env.push((key, value));
+        }
+
         // Set working directory
         let workdir = if let Some(ref wd) = options.working_dir {
             format!("/workspace/{}", wd)
         } else {
             "/workspace".to_string()
         };
+
+        // Detect and publish ports that the command might use
+        let detected_ports = detect_ports_from_command(&argv);
+        let published_ports: Vec<PortMapping> = detected_ports
+            .into_iter()
+            .map(|p| PortMapping::auto_allocate(p))
+            .collect();
 
         // Build container run options
         let run_opts = RunOptions {
@@ -99,6 +124,7 @@ impl ContainerExecutor {
             env_vars: container_env,
             working_dir: Some(workdir),
             network_enabled: self.config.network_enabled,
+            published_ports,
         };
 
         // Execute in container

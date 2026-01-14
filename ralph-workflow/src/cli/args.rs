@@ -439,6 +439,15 @@ pub struct Args {
     )]
     pub no_container_mode: bool,
 
+    /// Security mode for agent isolation
+    #[arg(
+        long,
+        env = "RALPH_SECURITY_MODE",
+        value_name = "MODE",
+        help = "Security mode: auto (default), container, user-account, none"
+    )]
+    pub security_mode: Option<String>,
+
     /// Container engine to use (auto, docker, podman)
     #[arg(
         long,

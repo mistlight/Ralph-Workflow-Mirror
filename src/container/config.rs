@@ -2,6 +2,78 @@
 
 use crate::container::EngineType;
 use std::path::PathBuf;
+use std::str::FromStr;
+
+/// Security mode for agent isolation
+///
+/// Defines how the agent is isolated from the host system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecurityMode {
+    /// Run agent in a container (Docker/Podman)
+    Container,
+    /// Run agent as a dedicated user account
+    UserAccount,
+    /// No isolation (run as current user)
+    None,
+    /// Auto-detect based on platform and availability
+    Auto,
+}
+
+impl SecurityMode {
+    /// Get the default security mode for the current platform
+    pub fn default_for_platform() -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            Self::Container
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Self::UserAccount
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            Self::None
+        }
+    }
+
+    /// Check if this mode requires a container runtime
+    pub fn requires_container(&self) -> bool {
+        matches!(self, Self::Container | Self::Auto)
+    }
+
+    /// Check if this mode requires user account setup
+    pub fn requires_user_account(&self) -> bool {
+        matches!(self, Self::UserAccount)
+    }
+}
+
+impl FromStr for SecurityMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "container" => Ok(Self::Container),
+            "user-account" | "useraccount" | "user" => Ok(Self::UserAccount),
+            "none" => Ok(Self::None),
+            _ => Err(format!(
+                "Invalid security mode: {}. Valid options: auto, container, user-account, none",
+                s
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for SecurityMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Auto => write!(f, "auto"),
+            Self::Container => write!(f, "container"),
+            Self::UserAccount => write!(f, "user-account"),
+            Self::None => write!(f, "none"),
+        }
+    }
+}
 
 /// Container mode configuration
 #[derive(Debug, Clone)]

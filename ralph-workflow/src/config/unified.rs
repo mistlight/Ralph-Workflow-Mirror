@@ -108,6 +108,9 @@ pub(crate) struct GeneralConfig {
     /// Container mode enabled (run agents in Docker/Podman containers).
     #[serde(default)]
     pub container_mode: bool,
+    /// Security mode for agent isolation (auto, container, user-account, none).
+    #[serde(default)]
+    pub security_mode: String,
     /// Container engine type (auto, docker, podman).
     #[serde(default)]
     pub container_engine: String,
@@ -138,6 +141,7 @@ impl Default for GeneralConfig {
             git_user_name: None,
             git_user_email: None,
             container_mode: false, // Disabled by default for compatibility
+            security_mode: "auto".to_string(),
             container_engine: "auto".to_string(),
             container_image: "ralph-agent:latest".to_string(),
             container_network: true,

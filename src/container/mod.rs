@@ -39,9 +39,14 @@ pub mod error;
 pub mod executor;
 pub mod image;
 pub mod network;
+pub mod port;
+pub mod tool;
+pub mod user_executor;
 pub mod volume;
 
 // Re-export main types for convenience
+pub use config::SecurityMode;
 pub use engine::{ContainerEngine, EngineType};
-pub use error::ContainerError;
 pub use executor::ContainerExecutor;
+pub use tool::ToolManager;
+pub use user_executor::UserAccountExecutor;
