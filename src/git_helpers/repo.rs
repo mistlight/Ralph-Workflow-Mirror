@@ -803,8 +803,8 @@ fn extract_and_validate_commit_message(raw_output: &str, agent_cmd: &str) -> Res
 
     // Log extraction metadata for debugging
     eprintln!(
-        "LLM output extraction: {} format, structured={}",
-        format!("{:?}", extraction.format),
+        "LLM output extraction: {:?} format, structured={}",
+        extraction.format,
         extraction.was_structured
     );
 
@@ -954,7 +954,7 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
                     Err(CommitGenerationError::AgentFailed(msg)) => {
                         eprintln!("Agent failed on attempt {}: {}", attempt + 1, msg);
                         if attempt == max_retries - 1 {
-                            return Err(io::Error::new(io::ErrorKind::Other, msg));
+                            return Err(io::Error::other(msg));
                         }
                     }
                 }
@@ -969,11 +969,11 @@ fn generate_commit_message_with_retries(diff: &str, agent_cmd: &str, chunk_idx: 
                 // Agent failed - might be a persistent issue
                 eprintln!("Agent error on attempt {}: {}", attempt + 1, msg);
                 if attempt == max_retries - 1 {
-                    return Err(io::Error::new(io::ErrorKind::Other, msg));
+                    return Err(io::Error::other(msg));
                 }
             }
             Err(e) => {
-                return Err(io::Error::new(io::ErrorKind::Other, e.to_string()));
+                return Err(io::Error::other(e.to_string()));
             }
         }
     }
@@ -1144,7 +1144,7 @@ fn combine_chunk_messages(messages: &[String]) -> String {
         .max_by_key(|(_, count)| *count)
         .filter(|&(ref _scope, count)| count * 2 >= chunks.len())
         .map(|(scope, _)| scope)
-        .unwrap_or_else(|| String::new());
+        .unwrap_or_else(String::new);
 
     // Combine subjects intelligently
     let combined_subject = combine_subjects(&chunks);

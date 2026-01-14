@@ -321,9 +321,8 @@ impl ClaudeParser {
                 index: Some(index),
                 content_block: Some(block),
             } => {
-                // Initialize a new content block at this index
+                // Initialize a new content block at this index with initial content
                 acc.clear_index(index);
-                // Pre-seed with any initial content from the block
                 match &block {
                     ContentBlock::Text { text: Some(t) } if !t.is_empty() => {
                         acc.add_text_delta(index, t);
@@ -342,12 +341,18 @@ impl ClaudeParser {
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart {
-                index: Some(index), ..
+                index: Some(index),
+                content_block: None,
             } => {
+                // Content block started but no initial content provided
+                // Just clear the index for future deltas
                 acc.clear_index(index);
                 String::new()
             }
-            StreamInnerEvent::ContentBlockStart { .. } => String::new(),
+            StreamInnerEvent::ContentBlockStart { .. } => {
+                // Content block without index - ignore
+                String::new()
+            }
             StreamInnerEvent::ContentBlockDelta {
                 index: Some(index),
                 delta: Some(delta),
@@ -516,13 +521,6 @@ impl ClaudeParser {
                 continue;
             }
 
-            if trimmed.starts_with('{')
-                && serde_json::from_str::<serde_json::Value>(trimmed).is_err()
-            {
-                monitor.record_parse_error();
-                continue;
-            }
-
             // In debug mode, also show the raw JSON
             if self.verbosity.is_debug() {
                 writeln!(
@@ -536,6 +534,7 @@ impl ClaudeParser {
                 )?;
             }
 
+            // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
                     monitor.record_parsed();
@@ -544,17 +543,18 @@ impl ClaudeParser {
                 None => {
                     // Check if this was a control event (state management with no user output)
                     // Control events are valid JSON that return empty output but aren't "ignored"
-                    if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
-                        if Self::is_control_event(&event) {
-                            monitor.record_control_event();
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
+                            if Self::is_control_event(&event) {
+                                monitor.record_control_event();
+                            } else {
+                                // Valid JSON but not a control event - track as unknown
+                                monitor.record_unknown_event();
+                            }
                         } else {
-                            // Valid JSON but not a control event - track as unknown
-                            monitor.record_unknown_event();
+                            // Failed to deserialize - track as parse error
+                            monitor.record_parse_error();
                         }
-                    } else if trimmed.starts_with('{') {
-                        // Failed to deserialize - this shouldn't happen since parse_event
-                        // succeeded in deserializing, but handle it as unknown
-                        monitor.record_unknown_event();
                     } else {
                         monitor.record_ignored();
                     }

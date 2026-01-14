@@ -655,7 +655,10 @@ pub(crate) fn format_unknown_json_event(
     let type_label = match classification.event_type {
         StreamEventType::Partial => {
             // Show partial events if they have explicit delta indicators in type name OR
-            // if they have an actual delta field (not just algorithmically detected)
+            // if they have an actual delta field (not just algorithmically detected).
+            // Note: The presence of a delta/partial/chunk field (regardless of whether it's
+            // a boolean flag or string content) indicates streaming protocol behavior,
+            // so we treat these as partial events to be shown to the user in real-time.
             let type_name_lower = event_type.to_lowercase();
             let has_delta_field = obj.contains_key("delta")
                 || obj.contains_key("partial")

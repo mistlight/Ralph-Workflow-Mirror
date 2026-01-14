@@ -336,8 +336,24 @@ impl GenericParser {
     }
 }
 
+/// Maximum recursion depth for content extraction to prevent stack overflow
+const MAX_EXTRACTION_DEPTH: usize = 32;
+
 /// Helper function to extract text content from a JSON value
+///
+/// This function recursively searches through JSON structures to find text content.
+/// Depth limiting prevents stack overflow on malicious or malformed input.
 fn extract_content_from_value(value: &serde_json::Value) -> Option<String> {
+    extract_content_from_value_with_depth(value, 0)
+}
+
+/// Recursive helper with depth limiting
+fn extract_content_from_value_with_depth(value: &serde_json::Value, depth: usize) -> Option<String> {
+    // Prevent stack overflow by limiting recursion depth
+    if depth >= MAX_EXTRACTION_DEPTH {
+        return None;
+    }
+
     // If it's a string, return it
     if let Some(text) = value.as_str() {
         return Some(text.to_string());
@@ -349,7 +365,7 @@ fn extract_content_from_value(value: &serde_json::Value) -> Option<String> {
         for field in ["text", "content", "message", "output", "result"] {
             if let Some(val) = obj.get(field) {
                 // Try to extract from the value (which might be nested)
-                if let Some(text) = extract_content_from_value(val) {
+                if let Some(text) = extract_content_from_value_with_depth(val, depth + 1) {
                     return Some(text);
                 }
             }
@@ -358,7 +374,7 @@ fn extract_content_from_value(value: &serde_json::Value) -> Option<String> {
         // If no content field found, try the first nested object that might contain text
         for (_key, val) in obj.iter() {
             if val.is_object() || val.is_array() {
-                if let Some(text) = extract_content_from_value(val) {
+                if let Some(text) = extract_content_from_value_with_depth(val, depth + 1) {
                     return Some(text);
                 }
             }
@@ -368,7 +384,7 @@ fn extract_content_from_value(value: &serde_json::Value) -> Option<String> {
     // If it's an array, search for content in items
     if let Some(arr) = value.as_array() {
         for item in arr {
-            if let Some(text) = extract_content_from_value(item) {
+            if let Some(text) = extract_content_from_value_with_depth(item, depth + 1) {
                 return Some(text);
             }
         }
