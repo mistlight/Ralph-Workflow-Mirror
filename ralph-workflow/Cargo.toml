@@ -1,6 +1,6 @@
 [package]
 name = "ralph-workflow"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2021"
 description = "PROMPT-driven multi-agent orchestrator for git repos"
 authors = ["Mistlight"]
