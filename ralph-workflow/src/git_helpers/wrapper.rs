@@ -118,11 +118,22 @@ exec '{git_path_escaped}' "$@"
 }
 
 /// Disable git wrapper.
+///
+/// # Thread Safety
+///
+/// This function modifies the process-wide `PATH` environment variable, which is
+/// inherently not thread-safe. If multiple threads were concurrently modifying PATH,
+/// there could be a TOCTOU (time-of-check-time-of-use) race condition. However,
+/// in Ralph's usage, this function is only called from the main thread during
+/// controlled shutdown sequences, so this is acceptable in practice.
 pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
     if let Some(wrapper_dir) = helpers.wrapper_dir.take() {
         let wrapper_dir_path = wrapper_dir.path().to_path_buf();
         let _ = fs::remove_dir_all(&wrapper_dir_path);
         // Remove from PATH.
+        // Note: This read-modify-write sequence on PATH has a theoretical TOCTOU race,
+        // but in practice it's safe because Ralph only calls this from the main thread
+        // during controlled shutdown.
         if let Ok(path) = env::var("PATH") {
             let wrapper_str = wrapper_dir_path.to_string_lossy();
             let new_path: String = path

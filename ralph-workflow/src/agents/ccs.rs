@@ -238,6 +238,11 @@ pub fn resolve_ccs_agent(
 /// CCS config mappings (`~/.ccs/config.json` / `~/.ccs/config.yaml`) and common settings file
 /// naming (`~/.ccs/{profile}.settings.json` / `~/.ccs/{profile}.setting.json`). This allows
 /// Log CCS environment variables loading status (debug mode only).
+///
+/// Only logs whitelisted "safe" environment variable keys to prevent accidental
+/// leakage of sensitive credential values. Keys containing patterns like "token",
+/// "key", "secret", "password", "auth" are always filtered out regardless of
+/// their actual value, to protect against custom credential formats.
 fn log_ccs_env_vars_loaded(
     debug_mode: bool,
     alias_name: &str,
@@ -250,14 +255,52 @@ fn log_ccs_env_vars_loaded(
     }
     let profile = profile_used_for_env.map_or(alias_name, |s| s.as_str());
     if env_vars_loaded {
+        // Whitelist of safe-to-log environment variable keys.
+        // These are configuration keys, not credentials, so it's safe to log them.
+        const SAFE_KEYS: &[&str] = &[
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        ];
+
+        // Filter env vars to only show whitelisted safe keys
+        let safe_keys: Vec<_> = env_vars
+            .keys()
+            .filter(|key| {
+                let key_upper = key.to_uppercase();
+                // Check if key is in our whitelist
+                if SAFE_KEYS.contains(&key_upper.as_str()) {
+                    return true;
+                }
+                // Otherwise, filter out any key that looks sensitive
+                let key_normalized = key_upper
+                    .chars()
+                    .filter(char::is_ascii_alphanumeric)
+                    .collect::<String>();
+                !key_normalized.contains("TOKEN")
+                    && !key_normalized.contains("SECRET")
+                    && !key_normalized.contains("PASSWORD")
+                    && !key_normalized.contains("AUTH")
+                    && !key_normalized.contains("KEY")
+                    && !key_normalized.contains("API")
+                    && key_normalized != "AUTHORIZATION"
+            })
+            .collect();
+
         eprintln!(
             "CCS DEBUG: Loaded {} environment variable(s) for profile '{}'",
             env_vars.len(),
             profile
         );
-        // Show env var keys only (redact values for security)
-        for key in env_vars.keys() {
+        // Only show whitelisted safe keys (redact all others for security)
+        for key in &safe_keys {
             eprintln!("CCS DEBUG:   - {key}");
+        }
+        let filtered_count = env_vars.len().saturating_sub(safe_keys.len());
+        if filtered_count > 0 {
+            eprintln!("CCS DEBUG:   - ({filtered_count} sensitive key(s) redacted)");
         }
     } else {
         eprintln!("CCS DEBUG: Failed to load environment variables for profile '{profile}'");
@@ -1181,5 +1224,49 @@ mod tests {
 
         let error = AgentErrorKind::classify_with_agent(1, "glm failed", Some("ccs"), Some("glm"));
         assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
+    }
+
+    // Tests for profile fuzzy matching (choose_best_profile_guess)
+
+    #[test]
+    fn test_choose_best_profile_guess_exact_match() {
+        let suggestions = vec!["work".to_string(), "personal".to_string()];
+        let result = choose_best_profile_guess("work", &suggestions);
+        assert_eq!(result, Some("work"));
+    }
+
+    #[test]
+    fn test_choose_best_profile_guess_case_insensitive() {
+        let suggestions = vec!["Work".to_string(), "Personal".to_string()];
+        let result = choose_best_profile_guess("work", &suggestions);
+        assert_eq!(result, Some("Work"));
+    }
+
+    #[test]
+    fn test_choose_best_profile_guess_single_suggestion() {
+        let suggestions = vec!["only-option".to_string()];
+        let result = choose_best_profile_guess("typo", &suggestions);
+        assert_eq!(result, Some("only-option"));
+    }
+
+    #[test]
+    fn test_choose_best_profile_guess_prefix_match() {
+        let suggestions = vec!["work-main".to_string(), "personal".to_string()];
+        let result = choose_best_profile_guess("work", &suggestions);
+        assert_eq!(result, Some("work-main"));
+    }
+
+    #[test]
+    fn test_choose_best_profile_guess_no_match_returns_first() {
+        let suggestions = vec!["first".to_string(), "second".to_string()];
+        let result = choose_best_profile_guess("nomatch", &suggestions);
+        assert_eq!(result, Some("first"));
+    }
+
+    #[test]
+    fn test_choose_best_profile_guess_empty_suggestions() {
+        let suggestions: Vec<String> = vec![];
+        let result = choose_best_profile_guess("work", &suggestions);
+        assert_eq!(result, None);
     }
 }
