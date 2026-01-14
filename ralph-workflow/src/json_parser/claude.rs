@@ -34,7 +34,9 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
+use super::delta_display::{
+    DeltaDisplayFormatter, DeltaRenderer, StreamingDisplay, TextDeltaRenderer,
+};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{
@@ -55,6 +57,8 @@ pub struct ClaudeParser {
     /// Unified streaming session tracker
     /// Provides single source of truth for streaming state across all content types
     streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Streaming display manager for in-place terminal updates
+    streaming_display: Rc<RefCell<StreamingDisplay>>,
 }
 
 impl ClaudeParser {
@@ -65,6 +69,7 @@ impl ClaudeParser {
             log_file: None,
             display_name: "Claude".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            streaming_display: Rc::new(RefCell::new(StreamingDisplay::new())),
         }
     }
 
@@ -161,13 +166,18 @@ impl ClaudeParser {
                 // already shown the streaming deltas, showing it again causes duplication.
                 let session = self.streaming_session.borrow();
 
-                // If ANY content was streamed for this message, skip the entire display
+                // Check for duplicate using message ID if available
+                let is_duplicate = session.get_current_message_id().map_or_else(
+                    || session.has_any_streamed_content(),
+                    |message_id| session.is_duplicate_final_message(message_id),
+                );
+
+                // If this is a duplicate message, skip the entire display
                 // This prevents duplicate text AND duplicate tool use events
-                if session.has_any_streamed_content() {
-                    drop(session);
+                drop(session);
+                if is_duplicate {
                     String::new()
                 } else {
-                    drop(session);
                     let mut out = String::new();
                     if let Some(msg) = message {
                         if let Some(content) = msg.content {
@@ -381,8 +391,12 @@ impl ClaudeParser {
         let mut session = self.streaming_session.borrow_mut();
 
         match event {
-            StreamInnerEvent::MessageStart { .. } => {
-                // Clear session state on new message
+            StreamInnerEvent::MessageStart {
+                message: _,
+                message_id,
+            } => {
+                // Set message ID for tracking and clear session state on new message
+                session.set_current_message_id(message_id);
                 session.on_message_start();
                 String::new()
             }
@@ -555,19 +569,36 @@ impl ClaudeParser {
                     .get_accumulated(ContentType::Text, default_index_str)
                     .unwrap_or("");
 
-                // Use TextDeltaRenderer for consistent rendering
+                // Use StreamingDisplay for in-place updates and TextDeltaRenderer for formatting
                 if show_prefix {
+                    // First delta - use the renderer with prefix
                     TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
                 } else {
-                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, *c)
+                    // Subsequent delta - use in_place_update to clear the line
+                    let mut display = self.streaming_display.borrow_mut();
+                    display.in_place_update(accumulated_text, *c)
                 }
             }
             StreamInnerEvent::MessageStop => {
                 // Message complete - add final newline if we were in a content block
                 let was_in_block = session.on_message_stop();
+                let mut display = self.streaming_display.borrow_mut();
                 if was_in_block {
-                    format!("{}{}", c.reset(), TextDeltaRenderer::render_completion())
+                    // Check if cursor is at line start to avoid extra newlines
+                    let already_at_start = display.is_at_line_start();
+                    display.reset_cursor();
+                    // Use both StreamingDisplay and DeltaRenderer for consistency
+                    let display_output = display.render_completion();
+                    let renderer_output = TextDeltaRenderer::render_completion();
+                    // If already at line start, renderer_output (which is "\n") adds the newline
+                    // If not at line start, display_output will be empty and renderer_output adds the newline
+                    if already_at_start {
+                        format!("{}{}", c.reset(), renderer_output)
+                    } else {
+                        format!("{}{}{}", c.reset(), display_output, renderer_output)
+                    }
                 } else {
+                    display.reset_cursor();
                     String::new()
                 }
             }

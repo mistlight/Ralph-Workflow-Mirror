@@ -11,8 +11,23 @@
 //! - First chunk shows prefix with accumulated content
 //! - Subsequent chunks update in-place (no prefix, carriage return)
 //! - Final newline on completion only
+//!
+//! # In-Place Updates
+//!
+//! The terminal escape sequence `\x1b[2K\r` is used for in-place updates:
+//! - `\x1b[2K` - Clears the entire line (not just to end like `\x1b[0K`)
+//! - `\r` - Returns cursor to the beginning of the line
+//!
+//! This ensures that previous content is completely erased before displaying
+//! the updated content, preventing visual artifacts.
 
 use crate::logger::Colors;
+
+/// ANSI escape sequence for clearing the entire line.
+///
+/// This is more complete than `\x1b[0K` which only clears to the end of line.
+/// Using `\x1b[2K` ensures the entire line is cleared during in-place updates.
+pub const CLEAR_LINE: &str = "\x1b[2K";
 
 /// Renderer for streaming delta content.
 ///
@@ -20,7 +35,7 @@ use crate::logger::Colors;
 /// across all parsers. Implementations must ensure:
 ///
 /// 1. **First chunk**: Shows prefix with accumulated content, no trailing newline
-/// 2. **Subsequent chunks**: Updates in-place with `\x1b[0K\r` (clear line + carriage return), no prefix
+/// 2. **Subsequent chunks**: Updates in-place with `\x1b[2K\r` (clear entire line + carriage return), no prefix
 /// 3. **Completion**: Final newline added when streaming completes
 ///
 /// # Rendering Rules
@@ -32,7 +47,7 @@ use crate::logger::Colors;
 ///
 /// - `render_subsequent_delta()`: Called for subsequent deltas
 ///   - Must NOT include prefix
-///   - Must use `\x1b[0K\r` to clear line and return to start
+///   - Must use `\x1b[2K\r` to clear entire line and return to start
 ///   - Shows the full accumulated content (not just the new delta)
 ///
 /// - `render_completion()`: Called when streaming completes
@@ -59,7 +74,7 @@ use crate::logger::Colors;
 ///     "Hello World",
 ///     colors
 /// );
-/// // Output: "\x1b[0K\rHello World" (no newline, in-place update)
+/// // Output: "\x1b[2K\rHello World" (no newline, in-place update with full line clear)
 ///
 /// // Complete
 /// let output = DeltaRenderer::render_completion();
@@ -84,14 +99,14 @@ pub trait DeltaRenderer {
     /// Render a subsequent delta (in-place update).
     ///
     /// This is called for all deltas after the first. The output should
-    /// clear the line and overwrite with the accumulated content.
+    /// clear the entire line and overwrite with the accumulated content.
     ///
     /// # Arguments
     /// * `accumulated` - The full accumulated content so far
     /// * `colors` - Terminal colors
     ///
     /// # Returns
-    /// A formatted string with `\x1b[0K\r` prefix and content, no trailing newline.
+    /// A formatted string with `\x1b[2K\r` prefix and content, no trailing newline.
     fn render_subsequent_delta(accumulated: &str, colors: Colors) -> String;
 
     /// Render the completion of streaming.
@@ -109,7 +124,7 @@ pub trait DeltaRenderer {
 ///
 /// This implementation follows the standard rendering rules:
 /// - Sanitizes newlines to spaces (to prevent artificial line breaks)
-/// - Uses ANSI escape codes for in-place updates
+/// - Uses ANSI escape codes for in-place updates with full line clear
 /// - Applies consistent color formatting
 pub struct TextDeltaRenderer;
 
@@ -133,8 +148,81 @@ impl DeltaRenderer for TextDeltaRenderer {
         // Sanitize embedded newlines to spaces
         let sanitized = accumulated.replace('\n', " ");
 
-        // Clear line, carriage return, show accumulated content without prefix
-        format!("{}\x1b[0K\r{}", colors.white(), sanitized)
+        // Clear entire line, carriage return, show accumulated content without prefix
+        // Using \x1b[2K (clear entire line) instead of \x1b[0K (clear to end)
+        format!("{CLEAR_LINE}\r{}{}", colors.white(), sanitized)
+    }
+}
+
+/// Streaming display manager for in-place terminal updates.
+///
+/// Tracks cursor position and manages the rendering of streaming content
+/// to ensure proper in-place updates without visual artifacts.
+///
+/// # Cursor Position Tracking
+///
+/// The `cursor_at_line_start` field tracks whether the cursor is at the
+/// beginning of a line, which determines whether we need to add a newline
+/// when rendering completion.
+#[derive(Debug, Default, Clone)]
+pub struct StreamingDisplay {
+    /// Whether the cursor is currently at the start of a line
+    cursor_at_line_start: bool,
+}
+
+impl StreamingDisplay {
+    /// Create a new streaming display manager.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            cursor_at_line_start: true,
+        }
+    }
+
+    /// Perform an in-place update of content on the terminal.
+    ///
+    /// This method clears the entire line and renders the new content,
+    /// leaving the cursor at the end of the line (not at line start).
+    ///
+    /// # Arguments
+    /// * `content` - The new content to display
+    /// * `colors` - Terminal colors
+    ///
+    /// # Returns
+    /// The ANSI escape sequence and content to write to the terminal.
+    pub fn in_place_update(&mut self, content: &str, colors: Colors) -> String {
+        let output = format!("{CLEAR_LINE}\r{}{}", colors.white(), content);
+        self.cursor_at_line_start = false;
+        output
+    }
+
+    /// Get the completion output (newline only if cursor is not at start).
+    ///
+    /// This prevents extra newlines when the cursor is already at the start
+    /// of a line (which can happen with certain event sequences).
+    ///
+    /// # Returns
+    /// A newline character if the cursor is not at line start, empty string otherwise.
+    pub fn render_completion(&self) -> String {
+        if self.cursor_at_line_start {
+            String::new()
+        } else {
+            "\n".to_string()
+        }
+    }
+
+    /// Reset the cursor state to line start.
+    ///
+    /// This should be called when starting a new message or after
+    /// operations that are known to leave the cursor at line start.
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn reset_cursor(&mut self) {
+        self.cursor_at_line_start = true;
+    }
+
+    /// Check if the cursor is at line start.
+    pub const fn is_at_line_start(&self) -> bool {
+        self.cursor_at_line_start
     }
 }
 
@@ -254,13 +342,23 @@ mod tests {
     #[test]
     fn test_text_delta_renderer_subsequent_delta() {
         let output = TextDeltaRenderer::render_subsequent_delta("Hello World", test_colors());
-        // Should contain carriage return and clear
-        assert!(output.contains("\x1b[0K\r"));
+        // Should contain carriage return and FULL line clear
+        assert!(output.contains(CLEAR_LINE));
+        assert!(output.contains('\r'));
         assert!(output.contains("Hello World"));
         // Subsequent delta should NOT have trailing newline
         assert!(!output.ends_with('\n'));
         // Should NOT contain prefix
         assert!(!output.contains("[ccs-glm]"));
+    }
+
+    #[test]
+    fn test_text_delta_renderer_uses_full_line_clear() {
+        let output = TextDeltaRenderer::render_subsequent_delta("Hello World", test_colors());
+        // Should use \x1b[2K (full line clear), not \x1b[0K (clear to end)
+        assert!(output.contains("\x1b[2K"));
+        // Should NOT contain \x1b[0K
+        assert!(!output.contains("\x1b[0K"));
     }
 
     #[test]
@@ -289,12 +387,81 @@ mod tests {
 
         // Second chunk (in-place update)
         let out2 = TextDeltaRenderer::render_subsequent_delta("Hello World", colors);
-        assert!(out2.contains("\x1b[0K\r"));
+        assert!(out2.contains("\x1b[2K\r"));
         assert!(!out2.contains("[ccs-glm]"));
         assert!(!out2.ends_with('\n'));
 
         // Completion
         let out3 = TextDeltaRenderer::render_completion();
         assert_eq!(out3, "\n");
+    }
+
+    // Tests for StreamingDisplay
+
+    #[test]
+    fn test_streaming_display_new_starts_at_line_start() {
+        let display = StreamingDisplay::new();
+        assert!(display.is_at_line_start());
+    }
+
+    #[test]
+    fn test_streaming_display_in_place_update() {
+        let mut display = StreamingDisplay::new();
+
+        let output = display.in_place_update("Hello World", test_colors());
+        assert!(output.contains("\x1b[2K\r"));
+        assert!(output.contains("Hello World"));
+        assert!(!display.is_at_line_start());
+    }
+
+    #[test]
+    fn test_streaming_display_render_completion_when_not_at_start() {
+        let mut display = StreamingDisplay::new();
+        display.in_place_update("Hello", test_colors());
+
+        let output = display.render_completion();
+        assert_eq!(output, "\n");
+    }
+
+    #[test]
+    fn test_streaming_display_render_completion_when_at_start() {
+        let mut display = StreamingDisplay::new();
+        display.reset_cursor();
+
+        let output = display.render_completion();
+        assert_eq!(output, "");
+    }
+
+    #[test]
+    fn test_streaming_display_reset_cursor() {
+        let mut display = StreamingDisplay::new();
+        display.in_place_update("Hello", test_colors());
+        assert!(!display.is_at_line_start());
+
+        display.reset_cursor();
+        assert!(display.is_at_line_start());
+    }
+
+    #[test]
+    fn test_streaming_display_full_sequence() {
+        let mut display = StreamingDisplay::new();
+
+        // Start with first content
+        let out1 = display.in_place_update("Hello", test_colors());
+        assert!(out1.contains("Hello"));
+        assert!(!display.is_at_line_start());
+
+        // Update in-place
+        let out2 = display.in_place_update("Hello World", test_colors());
+        assert!(out2.contains("\x1b[2K\r"));
+        assert!(!display.is_at_line_start());
+
+        // Complete
+        let out3 = display.render_completion();
+        assert_eq!(out3, "\n");
+
+        // Reset for next message
+        display.reset_cursor();
+        assert!(display.is_at_line_start());
     }
 }

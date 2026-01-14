@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::DeltaDisplayFormatter;
+use super::delta_display::{DeltaDisplayFormatter, StreamingDisplay};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{
@@ -44,6 +44,8 @@ pub struct CodexParser {
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Streaming display manager for in-place terminal updates
+    streaming_display: Rc<RefCell<StreamingDisplay>>,
     /// Delta accumulator for reasoning content (which uses special display)
     /// Note: We keep this for reasoning only, as it uses `DeltaDisplayFormatter`
     reasoning_accumulator: Rc<RefCell<DeltaAccumulator>>,
@@ -57,6 +59,7 @@ impl CodexParser {
             log_file: None,
             display_name: "Codex".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            streaming_display: Rc::new(RefCell::new(StreamingDisplay::new())),
             reasoning_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
@@ -94,6 +97,10 @@ impl CodexParser {
         let output = match event {
             CodexEvent::ThreadStarted { thread_id } => {
                 let tid = thread_id.unwrap_or_else(|| "unknown".to_string());
+                // Set the current message ID for duplicate detection
+                self.streaming_session
+                    .borrow_mut()
+                    .set_current_message_id(Some(tid.clone()));
                 format!(
                     "{}[{}]{} {}Thread started{} {}({:.8}...){}\n",
                     c.dim(),
@@ -109,6 +116,7 @@ impl CodexParser {
             CodexEvent::TurnStarted {} => {
                 // Reset streaming state on new turn
                 self.streaming_session.borrow_mut().on_message_start();
+                self.streaming_display.borrow_mut().reset_cursor();
                 self.reasoning_accumulator.borrow_mut().clear();
                 format!(
                     "{}[{}]{} {}Turn started{}\n",
@@ -172,21 +180,22 @@ impl CodexParser {
                         Some("agent_message") => {
                             // For streaming support, accumulate partial content
                             if let Some(ref text) = item.text {
-                                let mut session = self.streaming_session.borrow_mut();
-                                let show_prefix = session.on_text_delta_key("agent_msg", text);
-                                // Get accumulated text for streaming display
-                                let accumulated_text = session
-                                    .get_accumulated(ContentType::Text, "agent_msg")
-                                    .unwrap_or("");
+                                let (show_prefix, accumulated_text) = {
+                                    let mut session = self.streaming_session.borrow_mut();
+                                    let show_prefix = session.on_text_delta_key("agent_msg", text);
+                                    // Get accumulated text for streaming display
+                                    let accumulated_text = session
+                                        .get_accumulated(ContentType::Text, "agent_msg")
+                                        .unwrap_or("")
+                                        .to_string();
+                                    (show_prefix, accumulated_text)
+                                };
 
                                 // Show prefix only on the first chunk
                                 if !show_prefix {
-                                    // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                                    return Some(format!(
-                                        "{}\x1b[0K\r{}",
-                                        c.white(),
-                                        accumulated_text
-                                    ));
+                                    // Subsequent chunks: use StreamingDisplay for in-place update
+                                    let mut display = self.streaming_display.borrow_mut();
+                                    return Some(display.in_place_update(&accumulated_text, *c));
                                 }
                                 // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                                 return Some(format!(
@@ -341,18 +350,24 @@ impl CodexParser {
                 if let Some(item) = item {
                     match item.item_type.as_deref() {
                         Some("agent_message") => {
-                            // Check if we were streaming an agent message
+                            // Check for duplicate final message using message ID or fallback to streaming content check
                             let session = self.streaming_session.borrow();
+                            let is_duplicate = session
+                                .get_current_message_id()
+                                .map_or_else(|| session.has_any_streamed_content(), |message_id| {
+                                    session.is_duplicate_final_message(message_id)
+                                });
                             let was_streaming = session.has_any_streamed_content();
                             drop(session);
 
-                            // Finalize the message
+                            // Finalize the message (this marks it as displayed)
                             let _was_in_block =
                                 self.streaming_session.borrow_mut().on_message_stop();
 
-                            // If content was streamed, just add a final newline and skip re-display
-                            if was_streaming {
-                                return Some(format!("{}\n", c.reset()));
+                            // If this is a duplicate or content was streamed, use StreamingDisplay for completion
+                            if is_duplicate || was_streaming {
+                                let display = self.streaming_display.borrow();
+                                return Some(display.render_completion());
                             }
 
                             // Fallback: show item text if no streaming occurred

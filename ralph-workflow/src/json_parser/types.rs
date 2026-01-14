@@ -90,7 +90,11 @@ pub enum ClaudeEvent {
 #[serde(rename_all = "snake_case")]
 pub enum StreamInnerEvent {
     /// Message start - initialization of a new message stream
-    MessageStart { message: Option<AssistantMessage> },
+    MessageStart {
+        message: Option<AssistantMessage>,
+        /// Unique identifier for this message (for deduplication)
+        message_id: Option<String>,
+    },
     /// Content block start - initialization of a new content block (text, tool use, etc.)
     ContentBlockStart {
         index: Option<u64>,

@@ -31,6 +31,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
+use super::delta_display::StreamingDisplay;
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType};
@@ -123,6 +124,8 @@ pub struct OpenCodeParser {
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Streaming display manager for in-place terminal updates
+    streaming_display: Rc<RefCell<StreamingDisplay>>,
 }
 
 impl OpenCodeParser {
@@ -133,6 +136,7 @@ impl OpenCodeParser {
             log_file: None,
             display_name: "OpenCode".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            streaming_display: Rc::new(RefCell::new(StreamingDisplay::new())),
         }
     }
 
@@ -170,7 +174,12 @@ impl OpenCodeParser {
             "step_start" => {
                 // Reset streaming state on new step
                 self.streaming_session.borrow_mut().on_message_start();
-                let _sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
+                self.streaming_display.borrow_mut().reset_cursor();
+                let sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
+                // Set the current message ID for duplicate detection
+                self.streaming_session
+                    .borrow_mut()
+                    .set_current_message_id(Some(sid));
                 let snapshot = event
                     .part
                     .as_ref()
@@ -190,12 +199,17 @@ impl OpenCodeParser {
                 )
             }
             "step_finish" => {
-                // Check if we were streaming text content
+                // Check for duplicate final message using message ID or fallback to streaming content check
                 let session = self.streaming_session.borrow();
+                let is_duplicate = session
+                    .get_current_message_id()
+                    .map_or_else(|| session.has_any_streamed_content(), |message_id| {
+                        session.is_duplicate_final_message(message_id)
+                    });
                 let was_streaming = session.has_any_streamed_content();
                 drop(session);
 
-                // Finalize the message
+                // Finalize the message (this marks it as displayed)
                 let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
 
                 event.part.as_ref().map_or_else(String::new, |part| {
@@ -221,8 +235,9 @@ impl OpenCodeParser {
                     let color = if is_success { c.green() } else { c.yellow() };
 
                     // Add final newline if we were streaming text
-                    let newline_prefix = if was_streaming {
-                        format!("{}\n", c.reset())
+                    let newline_prefix = if is_duplicate || was_streaming {
+                        let display = self.streaming_display.borrow();
+                        display.render_completion()
                     } else {
                         String::new()
                     };
@@ -360,21 +375,26 @@ impl OpenCodeParser {
                 if let Some(ref part) = event.part {
                     if let Some(ref text) = part.text {
                         // Accumulate streaming text using StreamingSession
-                        let mut session = self.streaming_session.borrow_mut();
-                        let show_prefix = session.on_text_delta_key("main", text);
-                        // Get accumulated text for streaming display
-                        let accumulated_text = session
-                            .get_accumulated(ContentType::Text, "main")
-                            .unwrap_or("");
+                        let (show_prefix, accumulated_text) = {
+                            let mut session = self.streaming_session.borrow_mut();
+                            let show_prefix = session.on_text_delta_key("main", text);
+                            // Get accumulated text for streaming display
+                            let accumulated_text = session
+                                .get_accumulated(ContentType::Text, "main")
+                                .unwrap_or("")
+                                .to_string();
+                            (show_prefix, accumulated_text)
+                        };
 
                         // Show delta in real-time (both verbose and normal mode)
                         let limit = self.verbosity.truncate_limit("text");
-                        let preview = truncate_text(accumulated_text, limit);
+                        let preview = truncate_text(&accumulated_text, limit);
 
                         // Show prefix only on the first text chunk
                         if !show_prefix {
-                            // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                            return Some(format!("{}\x1b[0K\r{}", c.white(), preview));
+                            // Subsequent chunks: use StreamingDisplay for in-place update
+                            let mut display = self.streaming_display.borrow_mut();
+                            return Some(display.in_place_update(&preview, *c));
                         }
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
                         return Some(format!(
