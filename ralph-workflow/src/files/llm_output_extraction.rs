@@ -416,6 +416,12 @@ fn extract_opencode_result(content: &str) -> Option<String> {
 ///
 /// This is a helper function that filters out common AI thought process
 /// prefixes that may appear in extracted result field content.
+///
+/// The function handles multiple AI output formats:
+/// - Analysis followed by double newline (standard format)
+/// - Analysis followed by single newline (aggressive filtering)
+/// - Numbered/bullet lists without proper separation
+/// - Multi-line analysis that ends with conventional commit format
 fn remove_thought_process_patterns(content: &str) -> String {
     let result = content;
 
@@ -444,7 +450,11 @@ fn remove_thought_process_patterns(content: &str) -> String {
                 return rest[blank_line_pos + 2..].to_string();
             } else if let Some(single_newline) = rest.find('\n') {
                 // If no double newline, try to skip to after the first single newline
-                return rest[single_newline + 1..].to_string();
+                let after_newline = &rest[single_newline + 1..];
+                // Check if what follows looks like a commit message (starts with conventional commit type)
+                if looks_like_commit_message_start(after_newline.trim()) {
+                    return after_newline.to_string();
+                }
             }
             break;
         }
@@ -463,7 +473,11 @@ fn remove_thought_process_patterns(content: &str) -> String {
     ];
     for pattern in &numbered_start_patterns {
         if result_lower.starts_with(pattern) || result.starts_with(pattern) {
-            // Look for a blank line after the analysis
+            // Try to find the commit message by looking for conventional commit format
+            if let Some(commit_start) = find_conventional_commit_start(result) {
+                return result[commit_start..].to_string();
+            }
+            // Fallback: look for a blank line after the analysis
             if let Some(blank_pos) = result.find("\n\n") {
                 let after_analysis = &result[blank_pos + 2..];
                 // Check if the content after looks like a real commit message
@@ -475,7 +489,131 @@ fn remove_thought_process_patterns(content: &str) -> String {
         }
     }
 
+    // Additional aggressive filtering: detect if the content starts with
+    // multi-line analysis and ends with a conventional commit format
+    if let Some(commit_start) = find_conventional_commit_start(result) {
+        // Verify that the content before the commit looks like analysis
+        let before_commit = &result[..commit_start];
+        if before_commit.contains('\n') && looks_like_analysis_text(before_commit) {
+            return result[commit_start..].to_string();
+        }
+    }
+
     result.to_string()
+}
+
+/// Check if text starts with a conventional commit type pattern.
+///
+/// Returns true if the text starts with patterns like:
+/// - "feat:", "fix:", "chore:", "docs:", "test:", "refactor:", "perf:", "style:"
+/// - With optional scope in parentheses: "feat(parser):", "fix(api):"
+fn looks_like_commit_message_start(text: &str) -> bool {
+    let trimmed = text.trim();
+    let conventional_types = [
+        "feat", "fix", "chore", "docs", "test", "refactor", "perf", "style", "build", "ci",
+        "revert",
+    ];
+
+    for commit_type in &conventional_types {
+        // Check for "type:" or "type(scope):" pattern
+        if trimmed.starts_with(commit_type) {
+            let rest = &trimmed[commit_type.len()..];
+            if rest.starts_with(':')
+                || (rest.starts_with('(') && rest[1..].contains("):"))
+                || (rest.starts_with('(') && rest[1..].contains("): "))
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Find the position of a conventional commit message in the text.
+///
+/// Returns Some(position) if found, None otherwise.
+fn find_conventional_commit_start(text: &str) -> Option<usize> {
+    let conventional_types = [
+        "feat", "fix", "chore", "docs", "test", "refactor", "perf", "style", "build", "ci",
+        "revert",
+    ];
+
+    // Look for each commit type pattern
+    for commit_type in &conventional_types {
+        let mut search_pos = 0;
+        while search_pos < text.len() {
+            if let Some(pos) = text[search_pos..].find(commit_type) {
+                let actual_pos = search_pos + pos;
+                let rest = &text[actual_pos + commit_type.len()..];
+
+                // Check if this is a valid conventional commit pattern
+                if rest.starts_with(':')
+                    || (rest.starts_with('(') && rest[1..].find("):").is_some())
+                {
+                    // Make sure it's at the start of a line or preceded by newline
+                    if actual_pos == 0 || text.as_bytes()[actual_pos - 1] == b'\n' {
+                        return Some(actual_pos);
+                    }
+                }
+                search_pos = actual_pos + commit_type.len();
+            } else {
+                break;
+            }
+        }
+    }
+
+    None
+}
+
+/// Check if text looks like AI analysis (not a commit message).
+///
+/// Returns true if the text contains patterns typical of AI analysis
+/// such as numbered lists, bullet points, or analysis phrases.
+fn looks_like_analysis_text(text: &str) -> bool {
+    let text_lower = text.to_lowercase();
+
+    // Check for analysis indicator phrases
+    let analysis_indicators = [
+        "looking at",
+        "analyzing",
+        "the changes",
+        "the diff",
+        "i can see",
+        "main changes",
+        "categories",
+        "first change",
+        "second change",
+        "third change",
+    ];
+
+    for indicator in &analysis_indicators {
+        if text_lower.contains(indicator) {
+            return true;
+        }
+    }
+
+    // Check for numbered/bullet list patterns
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() >= 2 {
+        let mut numbered_count = 0;
+        for line in &lines {
+            let trimmed = line.trim();
+            if trimmed.starts_with("1. ")
+                || trimmed.starts_with("2. ")
+                || trimmed.starts_with("3. ")
+                || trimmed.starts_with("- ")
+                || trimmed.starts_with("* ")
+            {
+                numbered_count += 1;
+            }
+        }
+        if numbered_count >= 2 {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Clean plain text output by removing common artifacts.
@@ -604,6 +742,42 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         if content_lower.starts_with(marker) {
             return Err(format!("Commit message starts with error marker: {marker}"));
         }
+    }
+
+    // Check for AI thought process leakage at the start of the message
+    // This validation catches cases where the filtering in remove_thought_process_patterns
+    // failed to remove the AI analysis before the actual commit message
+    let thought_process_prefixes = [
+        "looking at this diff",
+        "i can see",
+        "the main changes are",
+        "several distinct categories",
+        "key categories",
+        "based on the diff",
+        "analyzing the changes",
+        "this diff shows",
+        "looking at the changes",
+        "i've analyzed",
+        "after reviewing",
+    ];
+    for prefix in &thought_process_prefixes {
+        if content_lower.starts_with(prefix) {
+            return Err(format!(
+                "Commit message starts with AI thought process ({}). This indicates a bug in the thought process filtering.",
+                prefix
+            ));
+        }
+    }
+
+    // Check for numbered analysis at the start (1., 2., 3., etc.)
+    if content.trim_start().starts_with("1. ")
+        || content.trim_start().starts_with("1)\n")
+        || content_lower.starts_with("- first")
+        || content_lower.starts_with("* first")
+    {
+        return Err(
+            "Commit message starts with numbered analysis. This indicates AI thought process leakage.".to_string()
+        );
     }
 
     // Check for placeholder content
@@ -1386,5 +1560,327 @@ Done."#;
         assert!(result.was_structured);
         assert_eq!(result.content, "feat: add feature");
         assert!(!result.content.contains("Looking at this diff"));
+    }
+
+    // =========================================================================
+    // Additional Regression Tests for Thought Process Leakage (Bug Fix)
+    // =========================================================================
+
+    #[test]
+    fn test_regression_multiline_analysis_single_newline_before_commit() {
+        // Test multi-line analysis followed by commit message with single newline separator
+        let content = r#"{"result":"Looking at this diff, I can see several changes:\n- Updated parser logic\n- Fixed test cases\nfix: resolve parsing issue"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "fix: resolve parsing issue");
+        assert!(!result.content.contains("Looking at this diff"));
+        assert!(!result.content.contains("Updated parser"));
+    }
+
+    #[test]
+    fn test_regression_numbered_list_no_double_newline() {
+        // Test numbered list analysis (1., 2., 3.) without double newline before commit message
+        let content = r#"{"result":"1. Added new function\n2. Fixed bug in parser\n3. Updated tests\nfeat: add new feature"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "feat: add new feature");
+        assert!(!result.content.contains("1. Added"));
+        assert!(!result.content.contains("2. Fixed"));
+    }
+
+    #[test]
+    fn test_regression_bullet_points_before_commit() {
+        // Test analysis with bullet points followed by commit message
+        let content = r#"{"result":"- First change to the parser\n- Second change to tests\n- Third change to docs\nchore: update dependencies"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "chore: update dependencies");
+        assert!(!result.content.contains("- First"));
+    }
+
+    #[test]
+    fn test_regression_exact_real_world_bug_format() {
+        // Test the exact real-world commit message format from the bug report
+        // Multi-line analysis followed by commit message without proper separation
+        let content = r#"{"result":"Looking at this diff, I can see several distinct types of changes:\n1. Changes to the parser module\n2. Updates to test cases\n3. Documentation updates\nfeat(parser): add support for new syntax"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "feat(parser): add support for new syntax");
+        assert!(!result.content.contains("Looking at this diff"));
+        assert!(!result.content.contains("1. Changes"));
+    }
+
+    #[test]
+    fn test_regression_commit_immediately_after_analysis_no_separator() {
+        // Test edge case where commit message follows immediately after analysis with no separator
+        let content =
+            r#"{"result":"The main changes are to the parser\nfix: resolve edge case in parsing"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        // Should extract the commit message by finding the conventional commit format
+        assert!(result.was_structured);
+        assert!(result.content.contains("fix: resolve edge case"));
+        assert!(!result.content.contains("The main changes"));
+    }
+
+    #[test]
+    fn test_regression_analysis_with_multiple_newlines_before_commit() {
+        // Test analysis followed by multiple newlines before commit
+        let content = r#"{"result":"Several categories of changes:\n\n\nfix: bug fix"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "fix: bug fix");
+        assert!(!result.content.contains("Several categories"));
+    }
+
+    #[test]
+    fn test_regression_analysis_with_scope_in_commit() {
+        // Test that scope in conventional commits is preserved
+        let content = r#"{"result":"Looking at the changes I can see:\nfeat(core): add new module\ndocs(core): update API documentation"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(result.content.contains("feat(core):"));
+        assert!(!result.content.contains("Looking at the changes"));
+    }
+
+    #[test]
+    fn test_regression_long_multiline_analysis() {
+        // Test longer multi-line analysis with various phrases
+        let content = r#"{"result":"After reviewing this diff, I can see the following:\nThe codebase has been updated with new features\nKey areas modified include:\n- Parser improvements\n- Test coverage enhancements\n- Documentation updates\nrefactor(api): improve error handling"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "refactor(api): improve error handling");
+        assert!(!result.content.contains("After reviewing"));
+        assert!(!result.content.contains("Key areas"));
+    }
+
+    // =========================================================================
+    // Validation Tests for Thought Process Leakage
+    // =========================================================================
+
+    #[test]
+    fn test_validate_rejects_thought_process_looking_at_diff() {
+        let err = validate_commit_message("Looking at this diff, I can see...").unwrap_err();
+        assert!(err.contains("thought process"));
+        assert!(err.contains("looking at this diff"));
+    }
+
+    #[test]
+    fn test_validate_rejects_thought_process_i_can_see() {
+        let err = validate_commit_message("I can see several changes...").unwrap_err();
+        assert!(err.contains("thought process"));
+    }
+
+    #[test]
+    fn test_validate_rejects_thought_process_numbered_analysis() {
+        let err = validate_commit_message("1. First change\n2. Second change").unwrap_err();
+        assert!(err.contains("numbered analysis"));
+    }
+
+    #[test]
+    fn test_validate_rejects_thought_process_dash_first() {
+        let err = validate_commit_message("- first change to parser").unwrap_err();
+        assert!(err.contains("numbered analysis"));
+    }
+
+    #[test]
+    fn test_validate_accepts_commit_after_analysis_removal() {
+        // After filtering, the clean commit message should be accepted
+        assert!(validate_commit_message("feat: add new feature").is_ok());
+        assert!(validate_commit_message("fix(parser): resolve edge case").is_ok());
+    }
+
+    // =========================================================================
+    // Integration Tests: End-to-End Commit Message Generation
+    // =========================================================================
+
+    #[test]
+    fn test_integration_claude_result_field_with_thought_process_leakage() {
+        // Integration test: Real-world scenario where AI agent outputs thought process
+        // followed by the actual commit message in the result field
+        let agent_output = r#"{"type":"system","subtype":"init"}
+{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Looking at this diff, I can see several changes"}}}
+{"type":"result","result":"Looking at this diff, I can see several distinct types of changes:\n1. Updates to parser module\n2. New test cases\n3. Documentation improvements\nfeat(parser): add support for new syntax"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        // Should extract structured content
+        assert!(result.was_structured);
+
+        // The extracted content should NOT contain the thought process
+        assert!(!result.content.contains("Looking at this diff"));
+        assert!(!result.content.contains("1. Updates"));
+
+        // The extracted content should be the clean commit message
+        assert_eq!(result.content, "feat(parser): add support for new syntax");
+
+        // Should pass validation
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_integration_numbered_list_without_proper_separation() {
+        // Test the bug scenario: numbered list analysis without double newline
+        let agent_output = r#"{"result":"1. Added new function to parser\n2. Fixed bug in token handling\n3. Updated tests for edge cases\nfix: resolve tokenization edge cases"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert_eq!(result.content, "fix: resolve tokenization edge cases");
+        assert!(!result.content.contains("1. Added"));
+        assert!(!result.content.contains("2. Fixed"));
+
+        // Validate the clean message passes
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_integration_bullet_point_analysis_before_commit() {
+        // Test bullet point analysis pattern
+        let agent_output = r#"{"result":"- Updated error handling\n- Improved performance\n- Fixed memory leak\nperf(core): optimize memory usage"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("perf(core):"));
+        assert!(!result.content.contains("- Updated"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_integration_validation_catches_thought_process_leakage() {
+        // If filtering fails, validation should catch the problem
+        let leaked_message = "Looking at this diff, I can see several changes...";
+
+        let validation_result = validate_commit_message(leaked_message);
+        assert!(validation_result.is_err());
+        let err = validation_result.unwrap_err();
+        assert!(err.contains("thought process"));
+    }
+
+    #[test]
+    fn test_integration_validation_catches_numbered_analysis_leakage() {
+        // Validation should also catch numbered list leakage
+        let leaked_message = "1. First change\n2. Second change\n3. Third change";
+
+        let validation_result = validate_commit_message(leaked_message);
+        assert!(validation_result.is_err());
+        let err = validation_result.unwrap_err();
+        assert!(err.contains("numbered analysis"));
+    }
+
+    #[test]
+    fn test_integration_clean_commit_message_passes_validation() {
+        // Verify that clean commit messages pass validation
+        let clean_commits = [
+            "feat: add new authentication system",
+            "fix(parser): resolve edge case in parsing",
+            "docs: update README with new examples",
+            "chore: update dependencies",
+            "refactor(api): extract validation logic",
+            "perf(core): optimize memory usage",
+        ];
+
+        for commit in clean_commits {
+            assert!(
+                validate_commit_message(commit).is_ok(),
+                "Clean commit should pass validation: {}",
+                commit
+            );
+        }
+    }
+
+    #[test]
+    fn test_integration_conventional_commit_with_scope_preserved() {
+        // Test that scopes in conventional commits are preserved through extraction
+        let agent_output = r#"{"result":"Looking at this diff, I can see changes to multiple modules:\nfeat(core): add new module\nfeat(api): add new endpoint\ndocs(api): update API documentation"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        // Should preserve the first conventional commit
+        assert!(result.content.contains("feat(core):"));
+        assert!(!result.content.contains("Looking at this diff"));
+    }
+
+    #[test]
+    fn test_integration_multiline_commit_body_preserved() {
+        // Test that commit message body is preserved after filtering
+        let agent_output = r#"{"result":"Looking at this diff I can see:\n\nfeat: add new authentication system\n\nThis adds OAuth2 support with the following features:\n- Authorization code flow\n- Refresh token handling\n- Secure token storage"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result
+            .content
+            .contains("feat: add new authentication system"));
+        assert!(result.content.contains("OAuth2"));
+        assert!(!result.content.contains("Looking at this diff"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_integration_empty_result_field_falls_back_gracefully() {
+        // Test that empty result field is handled
+        let agent_output = r#"{"type":"system"}
+{"result":""}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        // Should return empty content, not crash
+        assert!(result.content.is_empty() || !result.was_structured);
+    }
+
+    #[test]
+    fn test_integration_codex_format_with_thought_process() {
+        // Test Codex format also applies thought process filtering
+        let agent_output = r#"{"type":"thread.started"}
+{"type":"item.completed","item":{"type":"agent_message","text":"Looking at this diff:\n1. First change\n2. Second change\nfix: actual commit message"}}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Codex));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("fix: actual commit message"));
+        assert!(!result.content.contains("Looking at this diff"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_integration_gemini_format_with_thought_process() {
+        // Test Gemini format also applies thought process filtering
+        let agent_output = r#"{"type":"init"}
+{"type":"message","role":"assistant","content":"After reviewing the changes, I can see:\n- Updated parser\n- Fixed tests\nrefactor: improve error handling"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Gemini));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("refactor: improve error handling"));
+        assert!(!result.content.contains("After reviewing"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_integration_auto_detection_with_thought_process() {
+        // Test auto-detection (no format specified) with thought process
+        let agent_output = r#"{"type":"result","result":"I can see the changes are:\n1. Bug fixes\n2. New features\nfeat: add feature"}"#;
+
+        let result = extract_llm_output(agent_output, None);
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("feat: add feature"));
+        assert!(!result.content.contains("I can see"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
     }
 }
