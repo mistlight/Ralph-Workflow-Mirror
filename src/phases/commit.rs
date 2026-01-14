@@ -30,8 +30,8 @@ pub struct CommitMessageResult {
     pub message: String,
     /// Whether the generation was successful
     pub success: bool,
-    /// Path to the agent log file for debugging
-    pub log_path: String,
+    /// Path to the agent log file for debugging (currently unused but kept for API compatibility)
+    pub _log_path: String,
 }
 
 /// Generate a commit message using the standard agent pipeline with fallback.
@@ -90,7 +90,7 @@ pub fn generate_commit_message(
             Ok(Some(message)) => CommitMessageResult {
                 message,
                 success: true,
-                log_path: log_file,
+                _log_path: log_file,
             },
             Ok(None) => {
                 // Agent succeeded but no commit message found
@@ -100,7 +100,7 @@ pub fn generate_commit_message(
                 CommitMessageResult {
                     message: String::new(),
                     success: false,
-                    log_path: log_file,
+                    _log_path: log_file,
                 }
             }
             Err(e) => {
@@ -110,7 +110,7 @@ pub fn generate_commit_message(
                 CommitMessageResult {
                     message: String::new(),
                     success: false,
-                    log_path: log_file,
+                    _log_path: log_file,
                 }
             }
         }
@@ -127,13 +127,13 @@ pub fn generate_commit_message(
                 CommitMessageResult {
                     message,
                     success: false,
-                    log_path: log_file,
+                    _log_path: log_file,
                 }
             }
             _ => CommitMessageResult {
                 message: String::new(),
                 success: false,
-                log_path: log_file,
+                _log_path: log_file,
             },
         }
     };
@@ -235,7 +235,7 @@ pub fn commit_with_generated_message(
 /// * `Err(e)` - An error occurred during extraction
 fn extract_commit_message_from_logs(
     log_dir: &str,
-    diff: &str,
+    _diff: &str,
     agent_cmd: &str,
     logger: &Logger,
 ) -> anyhow::Result<Option<String>> {

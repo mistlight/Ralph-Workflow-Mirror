@@ -234,6 +234,7 @@ impl DeltaAccumulator {
     }
 
     /// Check if there is any accumulated content (used in tests)
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.buffers.is_empty()
     }

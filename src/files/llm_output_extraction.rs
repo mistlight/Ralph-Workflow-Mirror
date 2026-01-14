@@ -490,8 +490,8 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         r#"{"content":"#,
         r#""session_id":"#,
         r#""timestamp":"#,
-        r#"stream_event"#,
-        r#"content_block"#,
+        "stream_event",
+        "content_block",
     ];
     for indicator in json_indicators {
         if content.contains(indicator) {

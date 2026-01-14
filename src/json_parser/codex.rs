@@ -197,7 +197,7 @@ impl CodexParser {
                                 String::new()
                             }
                         }
-                        Some("file_read") | Some("file_write") => {
+                        Some("file_read" | "file_write") => {
                             let path = item.path.clone().unwrap_or_default();
                             let action = item.item_type.as_deref().unwrap_or("file");
                             format!(
