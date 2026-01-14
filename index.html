@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Ralph Workflow - Automate your AI coding workflow hands-free. Multi-agent orchestration for developers who want to ship faster with Claude Code, Codex, and OpenCode.">
+    <meta name="keywords" content="Ralph, AI coding, CLI tool, Claude Code, workflow automation, multi-agent, Rust">
+    <meta name="author" content="Ralph Workflow Contributors">
+    <meta name="license" content="AGPL-3.0">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Ralph Workflow - Automate Your AI Coding">
+    <meta property="og:description" content="Hands-free AI coding workflow automation. Multi-agent orchestration for developers.">
+    <meta property="og:type" content="website">
+
+    <title>Ralph Workflow | Automate Your AI Coding Workflow</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%2300ff00' width='100' height='100'/%3E%3Ctext x='50' y='75' font-family='monospace' font-size='70' font-weight='bold' text-anchor='middle' fill='%23000000'%3ER%3C/text%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%2300ff00' width='100' height='100'/%3E%3Ctext x='50' y='75' font-family='monospace' font-size='70' font-weight='bold' text-anchor='middle' fill='%23000000'%3ER%3C/text%3E%3C/svg%3E">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Prism.js for syntax highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body data-theme="dark">
+    <!-- Atmospheric Overlays -->
+    <div class="noise-overlay" aria-hidden="true"></div>
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">
+                <svg class="logo-svg" viewBox="0 0 100 100" aria-hidden="true">
+                    <rect fill="#00ff00" width="100" height="100"/>
+                    <text x="50" y="75" font-family="monospace" font-size="70" font-weight="bold" text-anchor="middle" fill="#000000">R</text>
+                </svg>
+                <span class="logo-text">ralph</span>
+            </a>
+
+            <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+
+            <ul class="nav-menu">
+                <li><a href="#what" class="nav-link">What It Does</a></li>
+                <li><a href="#install" class="nav-link">Install</a></li>
+                <li><a href="#features" class="nav-link">Features</a></li>
+                <li><a href="#audience" class="nav-link">For You</a></li>
+                <li><a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener" class="nav-link nav-link--external">Codeberg</a></li>
+                <li><button class="theme-toggle" aria-label="Toggle theme">
+                    <span class="theme-icon" data-theme="dark"></span>
+                </button></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-bg">
+            <div class="grid-pattern" aria-hidden="true"></div>
+            <div class="glow-spot glow-spot--1" aria-hidden="true"></div>
+            <div class="glow-spot glow-spot--2" aria-hidden="true"></div>
+            <div class="glow-spot glow-spot--3" aria-hidden="true"></div>
+        </div>
+
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span class="badge-pulse"></span>
+                    AGPL-3.0 &bull; Built with Rust
+                </div>
+
+                <h1 class="hero-title">
+                    <span class="hero-title--line hero-title--line-1">Automate Your</span>
+                    <span class="hero-title--line hero-title--line-2">AI Coding Workflow</span>
+                    <span class="hero-title--line hero-title--line-3">Hands-Free</span>
+                </h1>
+
+                <p class="hero-subtitle">
+                    From <code class="inline-code">PROMPT.md</code> to committed code automatically.
+                    Ralph orchestrates multiple AI agents to implement, review, and ship your changes—while you focus on what matters.
+                </p>
+
+                <div class="hero-ctas">
+                    <a href="#install" class="btn btn--primary">
+                        <span>Get Started in 3 Steps</span>
+                        <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                    <a href="#what" class="btn btn--secondary">See How It Works</a>
+                </div>
+
+                <!-- Terminal Demo -->
+                <div class="terminal" aria-label="Terminal demo showing Ralph in action">
+                    <div class="terminal-header">
+                        <span class="terminal-dot terminal-dot--red"></span>
+                        <span class="terminal-dot terminal-dot--yellow"></span>
+                        <span class="terminal-dot terminal-dot--green"></span>
+                        <span class="terminal-title">ralph-session</span>
+                    </div>
+                    <div class="terminal-body">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-command" id="typed-command"></span>
+                            <span class="terminal-cursor"></span>
+                        </div>
+                        <div class="terminal-output" id="terminal-output"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- What Ralph Does Section -->
+    <section id="what" class="section section--what">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-number">01</span>
+                <h2 class="section-title">What Ralph Does</h2>
+                <p class="section-subtitle">Multi-agent orchestration that actually ships code</p>
+            </div>
+
+            <!-- Flow Diagram -->
+            <div class="flow-diagram">
+                <div class="flow-step flow-step--input" data-step="1">
+                    <div class="flow-icon">
+                        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M8 8h32v32H8z"/>
+                            <path d="M16 16h16M16 24h16M16 32h8"/>
+                        </svg>
+                    </div>
+                    <span class="flow-label">PROMPT.md</span>
+                </div>
+
+                <div class="flow-arrow" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </div>
+
+                <div class="flow-step flow-step--ralph" data-step="2">
+                    <div class="flow-icon">
+                        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="8" y="8" width="32" height="32" rx="4"/>
+                            <text x="24" y="32" text-anchor="middle" font-size="20" font-weight="bold">R</text>
+                        </svg>
+                    </div>
+                    <span class="flow-label">Ralph</span>
+                    <div class="flow-agents">
+                        <span class="flow-agent-badge">Developer</span>
+                        <span class="flow-agent-badge">Reviewer</span>
+                    </div>
+                </div>
+
+                <div class="flow-arrow" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </div>
+
+                <div class="flow-step flow-step--code" data-step="3">
+                    <div class="flow-icon">
+                        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M16 8l-10 16 10 16M32 8l10 16-10 16"/>
+                        </svg>
+                    </div>
+                    <span class="flow-label">Code</span>
+                </div>
+
+                <div class="flow-arrow" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </div>
+
+                <div class="flow-step flow-step--commit" data-step="4">
+                    <div class="flow-icon">
+                        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="24" cy="24" r="8"/>
+                            <path d="M24 8v8M24 32v8M8 24h8M32 24h8"/>
+                        </svg>
+                    </div>
+                    <span class="flow-label">Commit</span>
+                </div>
+            </div>
+
+            <!-- Value Props -->
+            <div class="value-props">
+                <div class="value-card" data-value="1">
+                    <div class="value-icon">
+                        <span class="value-number">01</span>
+                    </div>
+                    <h3 class="value-title">Multi-Agent Coordination</h3>
+                    <p class="value-desc">One agent writes the code. Another reviews it. They iterate until it passes muster. Like having a senior dev pair programming with you.</p>
+                </div>
+
+                <div class="value-card" data-value="2">
+                    <div class="value-icon">
+                        <span class="value-number">02</span>
+                    </div>
+                    <h3 class="value-title">Hands-Free Operation</h3>
+                    <p class="value-desc">Write your requirements in <code class="inline-code">PROMPT.md</code>, run Ralph, and watch it work. No copy-pasting between chat windows and editors.</p>
+                </div>
+
+                <div class="value-card" data-value="3">
+                    <div class="value-icon">
+                        <span class="value-number">03</span>
+                    </div>
+                    <h3 class="value-title">Quality Assurance</h3>
+                    <p class="value-desc">Automated review catches issues before they reach your codebase. The reviewer agent finds problems the developer agent missed.</p>
+                </div>
+            </div>
+
+            <!-- Comparison Table -->
+            <div class="comparison">
+                <h3 class="comparison-title">Ralph vs. Manual AI Coding</h3>
+                <div class="comparison-table">
+                    <div class="comparison-row comparison-row--header">
+                        <span></span>
+                        <span>Manual Workflow</span>
+                        <span>With Ralph</span>
+                    </div>
+                    <div class="comparison-row">
+                        <span>Write prompt</span>
+                        <span class="comparison-check">&times;</span>
+                        <span class="comparison-check comparison-check--yes">&check;</span>
+                    </div>
+                    <div class="comparison-row">
+                        <span>Copy to AI tool</span>
+                        <span class="comparison-check">&times;</span>
+                        <span class="comparison-check comparison-check--auto">&mdash;</span>
+                    </div>
+                    <div class="comparison-row">
+                        <span>Copy code back</span>
+                        <span class="comparison-check">&times;</span>
+                        <span class="comparison-check comparison-check--auto">&mdash;</span>
+                    </div>
+                    <div class="comparison-row">
+                        <span>Apply changes</span>
+                        <span class="comparison-check">&times;</span>
+                        <span class="comparison-check comparison-check--auto">&mdash;</span>
+                    </div>
+                    <div class="comparison-row">
+                        <span>Request review</span>
+                        <span class="comparison-check">&times;</span>
+                        <span class="comparison-check comparison-check--yes">&check;</span>
+                    </div>
+                    <div class="comparison-row">
+                        <span>Iterate on feedback</span>
+                        <span class="comparison-check">&times;</span>
+                        <span class="comparison-check comparison-check--yes">&check;</span>
+                    </div>
+                    <div class="comparison-row">
+                        <span>Commit to git</span>
+                        <span class="comparison-check">&times;</span>
+                        <span class="comparison-check comparison-check--yes">&check;</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Preset Modes Section -->
+    <section class="section section--presets">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-number">02</span>
+                <h2 class="section-title">Choose Your Workflow</h2>
+                <p class="section-subtitle">Preset modes for every development style</p>
+            </div>
+
+            <div class="presets-grid">
+                <div class="preset-card preset-card--quick" data-preset="quick">
+                    <div class="preset-badge">-Q</div>
+                    <h3 class="preset-title">Quick</h3>
+                    <p class="preset-desc">Fast iterations for straightforward changes. 3 reviewer passes.</p>
+                    <div class="preset-use">Best for: Simple bug fixes, typo corrections</div>
+                </div>
+
+                <div class="preset-card preset-card--rapid" data-preset="rapid">
+                    <div class="preset-badge">-U</div>
+                    <h3 class="preset-title">Rapid</h3>
+                    <p class="preset-desc">Balanced speed and quality. 5 reviewer passes.</p>
+                    <div class="preset-use">Best for: Feature additions, refactors</div>
+                </div>
+
+                <div class="preset-card preset-card--standard" data-preset="standard">
+                    <div class="preset-badge">-S</div>
+                    <h3 class="preset-title">Standard</h3>
+                    <p class="preset-desc">Default mode for most work. 10 reviewer passes.</p>
+                    <div class="preset-use">Best for: New features, complex changes</div>
+                </div>
+
+                <div class="preset-card preset-card--thorough" data-preset="thorough">
+                    <div class="preset-badge">-T</div>
+                    <h3 class="preset-title">Thorough</h3>
+                    <p class="preset-desc">Deep review for critical code. 15 reviewer passes.</p>
+                    <div class="preset-use">Best for: Security fixes, core architecture</div>
+                </div>
+
+                <div class="preset-card preset-card--long" data-preset="long">
+                    <div class="preset-badge">-L</div>
+                    <h3 class="preset-title">Long</h3>
+                    <p class="preset-desc">Maximum iterations for complex projects. 30 reviewer passes.</p>
+                    <div class="preset-use">Best for: Large-scale refactors, new modules</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section id="install" class="section section--install">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-number">03</span>
+                <h2 class="section-title">Installation</h2>
+                <p class="section-subtitle">Get up and running in minutes</p>
+            </div>
+
+            <!-- Installation Tabs -->
+            <div class="install-tabs">
+                <div class="install-tabs-nav" role="tablist">
+                    <button class="install-tab install-tab--active" data-tab="quick" role="tab" aria-selected="true">
+                        Quick Install
+                    </button>
+                    <button class="install-tab" data-tab="source" role="tab" aria-selected="false">
+                        Build from Source
+                    </button>
+                    <button class="install-tab" data-tab="agent" role="tab" aria-selected="false">
+                        Agent Setup
+                    </button>
+                </div>
+
+                <div class="install-panels">
+                    <!-- Quick Install -->
+                    <div class="install-panel install-panel--active" data-panel="quick" role="tabpanel">
+                        <h3>Install with Cargo</h3>
+                        <p>The fastest way to get Ralph on your system.</p>
+                        <div class="code-block-wrapper">
+                            <button class="copy-btn" aria-label="Copy to clipboard">
+                                <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                </svg>
+                            </button>
+                            <pre class="code-block"><code class="language-bash">cargo install ralph-cli</code></pre>
+                        </div>
+                        <div class="install-note">
+                            <strong>Requirements:</strong> Rust toolchain installed
+                        </div>
+                    </div>
+
+                    <!-- Build from Source -->
+                    <div class="install-panel" data-panel="source" role="tabpanel">
+                        <h3>Build from Source</h3>
+                        <p>Clone the repository and build locally.</p>
+                        <div class="code-block-wrapper">
+                            <button class="copy-btn" aria-label="Copy to clipboard">
+                                <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                </svg>
+                            </button>
+                            <pre class="code-block"><code class="language-bash">git clone https://codeberg.org/mistlight/ralph.git
+cd ralph
+cargo install --path .</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Agent Setup -->
+                    <div class="install-panel" data-panel="agent" role="tabpanel">
+                        <h3>Configure Your AI Agent</h3>
+                        <p>Ralph works with Claude Code, Codex, or OpenCode. Set your preferred agent in <code class="inline-code">~/.ralph/config.toml</code>:</p>
+                        <div class="code-block-wrapper">
+                            <button class="copy-btn" aria-label="Copy to clipboard">
+                                <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                </svg>
+                            </button>
+                            <pre class="code-block"><code class="language-toml"># Ralph Configuration File
+
+# Primary agent to use
+agent = "claude-code"
+
+# Available agents: claude-code, codex, opencode
+# Fallback chain if primary fails
+fallback = ["codex", "opencode"]</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- First Workflow -->
+            <div class="first-workflow">
+                <h3 class="first-workflow-title">Your First Ralph Workflow</h3>
+
+                <div class="workflow-steps">
+                    <div class="workflow-step">
+                        <div class="workflow-number">1</div>
+                        <div class="workflow-content">
+                            <h4>Create PROMPT.md</h4>
+                            <p>Describe what you want Ralph to build or fix.</p>
+                            <div class="code-block-wrapper">
+                                <pre class="code-block"><code class="language-markdown"># Add user authentication
+
+Implement OAuth2 login with GitHub.
+Use the 'auth' crate and store sessions in Redis.</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="workflow-step">
+                        <div class="workflow-number">2</div>
+                        <div class="workflow-content">
+                            <h4>Run Ralph</h4>
+                            <p>Execute Ralph with your desired preset mode.</p>
+                            <div class="code-block-wrapper">
+                                <pre class="code-block"><code class="language-bash">ralph -S</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="workflow-step">
+                        <div class="workflow-number">3</div>
+                        <div class="workflow-content">
+                            <h4>Review & Ship</h4>
+                            <p>Ralph implements, reviews, and commits. You review the final result.</p>
+                            <div class="code-block-wrapper">
+                                <pre class="code-block"><code class="language-bash">git log -1
+
+commit a1b2c3d4...
+Author: ralph &lt;ralph@cli&gt;
+Date:   Mon Jan 13 10:30:00 2025
+
+    Add user authentication
+
+    - Implemented OAuth2 with GitHub
+    - Added session management with Redis
+    - Added login/logout endpoints</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="section section--features">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-number">04</span>
+                <h2 class="section-title">Features</h2>
+                <p class="section-subtitle">Everything you need to automate your workflow</p>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card" data-feature="1">
+                    <div class="feature-header">
+                        <h3 class="feature-title">Preset Modes</h3>
+                        <span class="feature-flag">-Q -U -S -T -L</span>
+                    </div>
+                    <p class="feature-desc">Choose from Quick, Rapid, Standard, Thorough, or Long modes. Each preset controls how many reviewer passes Ralph performs before finalizing changes.</p>
+                    <div class="feature-example">
+                        <span class="example-prompt">$</span>
+                        <code>ralph -S</code>
+                    </div>
+                </div>
+
+                <div class="feature-card" data-feature="2">
+                    <div class="feature-header">
+                        <h3 class="feature-title">Custom Iterations</h3>
+                        <span class="feature-flag">-D -R</span>
+                    </div>
+                    <p class="feature-desc">Fine-tune the process with custom developer and reviewer pass counts. Override presets when you need exact control.</p>
+                    <div class="feature-example">
+                        <span class="example-prompt">$</span>
+                        <code>ralph -D 5 -R 20</code>
+                    </div>
+                </div>
+
+                <div class="feature-card" data-feature="3">
+                    <div class="feature-header">
+                        <h3 class="feature-title">Agent Selection</h3>
+                    </div>
+                    <p class="feature-desc">Use Claude Code, Codex, or OpenCode as your primary agent. Configure fallback chains so Ralph never gets stuck.</p>
+                    <div class="feature-example">
+                        <span class="example-prompt">$</span>
+                        <code>ralph --agent codex</code>
+                    </div>
+                </div>
+
+                <div class="feature-card" data-feature="4">
+                    <div class="feature-header">
+                        <h3 class="feature-title">Verbosity Control</h3>
+                        <span class="feature-flag">-q -f --diagnose</span>
+                    </div>
+                    <p class="feature-desc">Control output verbosity. Quiet mode for CI/CD, full mode for debugging, diagnose mode for deep inspection.</p>
+                    <div class="feature-example">
+                        <span class="example-prompt">$</span>
+                        <code>ralph -q --diagnose</code>
+                    </div>
+                </div>
+
+                <div class="feature-card" data-feature="5">
+                    <div class="feature-header">
+                        <h3 class="feature-title">CCS Integration</h3>
+                    </div>
+                    <p class="feature-desc">Claude Code Switch integration for seamless agent switching. Switch between Claude versions on the fly.</p>
+                    <div class="feature-example">
+                        <span class="example-prompt">$</span>
+                        <code>ralph --ccs opus</code>
+                    </div>
+                </div>
+
+                <div class="feature-card" data-feature="6">
+                    <div class="feature-header">
+                        <h3 class="feature-title">Git Integration</h3>
+                    </div>
+                    <p class="feature-desc">Automatic commit generation with descriptive messages. Ralph tracks what changed and creates meaningful commit messages.</p>
+                    <div class="feature-example">
+                        <span class="example-prompt">$</span>
+                        <code>ralph --no-commit</code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Use Cases -->
+            <div class="use-cases">
+                <h3 class="use-cases-title">Real-World Use Cases</h3>
+                <div class="use-cases-grid">
+                    <div class="use-case">
+                        <span class="use-case-icon">🐛</span>
+                        <h4>Bug Fixes</h4>
+                        <p>Describe the bug, let Ralph find the root cause and implement a fix with proper testing.</p>
+                    </div>
+                    <div class="use-case">
+                        <span class="use-case-icon">✨</span>
+                        <h4>Feature Implementation</h4>
+                        <p>Write requirements in natural language, get working code with proper architecture.</p>
+                    </div>
+                    <div class="use-case">
+                        <span class="use-case-icon">🔧</span>
+                        <h4>Refactoring</h4>
+                        <p>Modernize legacy code, improve performance, or restructure with Ralph's oversight.</p>
+                    </div>
+                    <div class="use-case">
+                        <span class="use-case-icon">📚</span>
+                        <h4>Documentation</h4>
+                        <p>Generate comprehensive docs from your code. Ralph explains what it built.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- For Different Audiences Section -->
+    <section id="audience" class="section section--audience">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-number">05</span>
+                <h2 class="section-title">Built For You</h2>
+                <p class="section-subtitle">However you code, Ralph adapts to your workflow</p>
+            </div>
+
+            <div class="audience-grid">
+                <!-- For Developers -->
+                <article class="audience-card audience-card--dev">
+                    <div class="audience-header">
+                        <span class="audience-emoji">👨‍💻</span>
+                        <h3 class="audience-title">For Developers</h3>
+                    </div>
+                    <p class="audience-desc">You know your way around a terminal. Ralph gives you the power to automate repetitive AI-assisted coding tasks without leaving your workflow.</p>
+                    <ul class="audience-list">
+                        <li>Full CLI control with flags and options</li>
+                        <li>Configurable via TOML configuration files</li>
+                        <li>Agent fallback chains for reliability</li>
+                        <li>Git integration that respects your workflow</li>
+                        <li>Extensible architecture for custom agents</li>
+                    </ul>
+                    <a href="https://codeberg.org/mistlight/ralph/src/branch/main/README.md" target="_blank" rel="noopener" class="audience-link">
+                        Full Documentation
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                </article>
+
+                <!-- For Vibe Coders -->
+                <article class="audience-card audience-card--vibe">
+                    <div class="audience-header">
+                        <span class="audience-emoji">🎮</span>
+                        <h3 class="audience-title">For Vibe Coders</h3>
+                    </div>
+                    <p class="audience-desc">You let AI do the heavy lifting. Ralph removes the friction—no more copy-pasting between chat windows and your editor.</p>
+                    <ul class="audience-list">
+                        <li>"Set it and forget it" workflow</li>
+                        <li>Preset modes tuned for different tasks</li>
+                        <li>Hands-free from prompt to commit</li>
+                        <li>Automatic quality checking via reviewer agent</li>
+                        <li>Just write what you want, Ralph handles the rest</li>
+                    </ul>
+                    <a href="#install" class="audience-link">
+                        Get Started Now
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                </article>
+
+                <!-- For CLI Newcomers -->
+                <article class="audience-card audience-card--newcomer">
+                    <div class="audience-header">
+                        <span class="audience-emoji">🌱</span>
+                        <h3 class="audience-title">New to CLI?</h3>
+                    </div>
+                    <p class="audience-desc">Welcome to the command line! Ralph is a great tool to learn with. Here's what you need to know.</p>
+                    <ul class="audience-list">
+                        <li><strong>Terminal:</strong> The text-based interface where you run commands</li>
+                        <li><strong>Flag:</strong> Options that modify how a command runs (like <code class="inline-code">-S</code>)</li>
+                        <li><strong>Commit:</strong> Saving changes to your project's history</li>
+                        <li><strong>Agent:</strong> The AI model that does the actual coding work</li>
+                        <li><strong>Workflow:</strong> The sequence of steps from idea to completed code</li>
+                    </ul>
+                    <details class="audience-details">
+                        <summary>Troubleshooting Common Issues</summary>
+                        <div class="audience-details-content">
+                            <p><strong>"Command not found":</strong> Make sure Ralph is installed and in your PATH. Try <code class="inline-code">cargo install ralph-cli</code> again.</p>
+                            <p><strong>"Permission denied":</strong> You may need to run with appropriate permissions. Check your Rust installation.</p>
+                            <p><strong>Agent errors:</strong> Verify your API keys are configured in <code class="inline-code">~/.ralph/config.toml</code>.</p>
+                        </div>
+                    </details>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-main">
+                <div class="footer-brand">
+                    <svg class="footer-logo" viewBox="0 0 100 100" aria-hidden="true">
+                        <rect fill="#00ff00" width="100" height="100"/>
+                        <text x="50" y="75" font-family="monospace" font-size="70" font-weight="bold" text-anchor="middle" fill="#000000">R</text>
+                    </svg>
+                    <h3>Ralph Workflow</h3>
+                    <p>Automate your AI coding workflow.</p>
+                </div>
+
+                <div class="footer-links">
+                    <div class="footer-links-column">
+                        <h4>Project</h4>
+                        <ul>
+                            <li><a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener">Repository</a></li>
+                            <li><a href="https://codeberg.org/mistlight/ralph/issues" target="_blank" rel="noopener">Issues</a></li>
+                            <li><a href="https://codeberg.org/mistlight/ralph/src/branch/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-links-column">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="https://codeberg.org/mistlight/ralph/src/branch/main/README.md" target="_blank" rel="noopener">Documentation</a></li>
+                            <li><a href="https://codeberg.org/mistlight/ralph/src/branch/main/README.md#configuration" target="_blank" rel="noopener">Configuration</a></li>
+                            <li><a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Original Concept</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <div class="footer-cta">
+                    <p>Star us on Codeberg</p>
+                    <a href="https://codeberg.org/mistlight/ralph" target="_blank" rel="noopener" class="btn btn--outline">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                        </svg>
+                        Star on Codeberg
+                    </a>
+                </div>
+
+                <p class="footer-copy">
+                    &copy; 2025 Ralph Workflow Contributors. Licensed under
+                    <a href="https://codeberg.org/mistlight/ralph/src/branch/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>.
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-toml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
