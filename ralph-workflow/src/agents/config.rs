@@ -845,12 +845,11 @@ mod ccs_env_tests {
         )
         .unwrap();
 
+        // Use relative path from CCS directory (intended usage pattern)
+        // This avoids absolute path rejection by is_path_safe_for_resolution
         fs::write(
             ccs_dir.join("config.json"),
-            format!(
-                r#"{{"profiles":{{"glm":"{}"}}}}"#,
-                settings_path.to_string_lossy()
-            ),
+            r#"{"profiles":{"glm":"glm.settings.json"}}"#,
         )
         .unwrap();
 
@@ -879,17 +878,15 @@ mod ccs_env_tests {
         )
         .unwrap();
 
+        // Use relative path from CCS directory (intended usage pattern)
         fs::write(
             ccs_dir.join("config.yaml"),
-            format!(
-                r#"version: 7
+            r#"version: 7
 profiles:
   custom:
     type: api
-    settings: "{}"
+    settings: "custom.settings.json"
 "#,
-                settings_path.to_string_lossy()
-            ),
         )
         .unwrap();
 
@@ -918,18 +915,16 @@ profiles:
         )
         .unwrap();
 
+        // Use relative path from CCS directory (intended usage pattern)
         // Same structure as CCS config.yaml, but with 4-space indentation.
         fs::write(
             ccs_dir.join("config.yaml"),
-            format!(
-                r#"version: 7
+            r#"version: 7
 profiles:
     indent:
         type: api
-        settings: "{}"
+        settings: "indent.settings.json"
 "#,
-                settings_path.to_string_lossy()
-            ),
         )
         .unwrap();
 
