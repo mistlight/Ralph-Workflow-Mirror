@@ -7,26 +7,16 @@
 /// Port mapping configuration
 ///
 /// Defines how a container port is mapped to a host port.
+/// Uses auto-allocation by default (host_port=0) to avoid conflicts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PortMapping {
     /// Port inside the container
     pub container_port: u16,
-    /// Port on the host (can be 0 for auto-allocation)
+    /// Port on the host (0 for auto-allocation)
     pub host_port: u16,
-    /// Protocol (tcp or udp)
-    pub protocol: PortProtocol,
 }
 
 impl PortMapping {
-    /// Create a new port mapping with explicit host port
-    pub const fn new(container_port: u16, host_port: u16) -> Self {
-        Self {
-            container_port,
-            host_port,
-            protocol: PortProtocol::Tcp,
-        }
-    }
-
     /// Create a port mapping with auto-allocated host port
     ///
     /// The container runtime will assign an available port.
@@ -34,7 +24,6 @@ impl PortMapping {
         Self {
             container_port,
             host_port: 0, // 0 means auto-allocate
-            protocol: PortProtocol::Tcp,
         }
     }
 
@@ -50,13 +39,6 @@ impl PortMapping {
     }
 }
 
-/// Port protocol type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PortProtocol {
-    /// TCP protocol
-    Tcp,
-}
-
 /// Detect ports that a command might use
 ///
 /// Analyzes a command string to detect common development servers
@@ -65,14 +47,48 @@ pub fn detect_ports_from_command(command: &[String]) -> Vec<u16> {
     let cmd_str = command.join(" ").to_lowercase();
     let mut ports = Vec::new();
 
+    // First, check for explicit port arguments
+    // Common port argument patterns: -p, --port, -b, --bind, etc.
+    for (i, arg) in command.iter().enumerate() {
+        let arg_lower = arg.to_lowercase();
+        // Handle --port 3000 or -p 3000
+        if arg_lower == "-p"
+            || arg_lower == "--port"
+            || arg_lower == "-b"
+            || arg_lower == "--bind-port"
+        {
+            if i + 1 < command.len() {
+                if let Ok(port) = command[i + 1].parse::<u16>() {
+                    ports.push(port);
+                }
+            }
+        }
+        // Handle --port=3000 or -p3000 style
+        else if arg_lower.starts_with("--port=") || arg_lower.starts_with("-p") {
+            let port_str = arg
+                .strip_prefix("--port=")
+                .or_else(|| arg.strip_prefix("-p"))
+                .or_else(|| arg.strip_prefix("--bind-port="))
+                .unwrap_or("");
+            if let Ok(port) = port_str.parse::<u16>() {
+                ports.push(port);
+            }
+        }
+    }
+
     // Rails server
     if cmd_str.contains("rails server") || cmd_str.contains("rails s") {
         ports.push(3000);
     }
 
     // Next.js / Vite
-    if cmd_str.contains("next dev") || cmd_str.contains("vite") {
+    if cmd_str.contains("next dev") || cmd_str.contains("next dev") {
         ports.push(3000);
+    }
+    // Vite specifically (defaults to 5173)
+    if cmd_str.contains("vite") || cmd_str.contains("npm run dev") || cmd_str.contains("yarn dev") {
+        ports.push(5173);
+        ports.push(3000); // Also common for Vite
     }
 
     // Django
@@ -85,7 +101,7 @@ pub fn detect_ports_from_command(command: &[String]) -> Vec<u16> {
         ports.push(5000);
     }
 
-    // Phoenix
+    // Phoenix (Elixir)
     if cmd_str.contains("phx.server") || cmd_str.contains("mix phx.server") {
         ports.push(4000);
     }
@@ -95,9 +111,34 @@ pub fn detect_ports_from_command(command: &[String]) -> Vec<u16> {
         ports.push(8080);
     }
 
-    // Go live reload
-    if cmd_str.contains("air") || cmd_str.contains("realize") {
+    // Gradle bootRun
+    if cmd_str.contains("gradle bootrun") || cmd_str.contains("gradlew bootrun") {
+        ports.push(8080);
+    }
+
+    // Go live reload (air, realize, reflex)
+    if cmd_str.contains("air") || cmd_str.contains("realize") || cmd_str.contains("reflex") {
         ports.push(3000);
+    }
+
+    // Parcel (JavaScript bundler)
+    if cmd_str.contains("parcel") {
+        ports.push(1234);
+    }
+
+    // Webpack dev server
+    if cmd_str.contains("webpack dev server") || cmd_str.contains("webpack serve") {
+        ports.push(8080);
+    }
+
+    // Angular CLI
+    if cmd_str.contains("ng serve") {
+        ports.push(4200);
+    }
+
+    // React Native
+    if cmd_str.contains("react-native start") || cmd_str.contains("rnpm start") {
+        ports.push(8081);
     }
 
     // General HTTP server patterns
@@ -127,6 +168,13 @@ pub fn detect_ports_from_command(command: &[String]) -> Vec<u16> {
         }
     }
 
+    // Rust act-web, warp, etc.
+    if cmd_str.contains("cargo run") {
+        // Common default ports for Rust web frameworks
+        ports.push(8080);
+        ports.push(3000);
+    }
+
     ports.sort_unstable();
     ports.dedup();
     ports
@@ -137,14 +185,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_port_mapping_new() {
-        let mapping = PortMapping::new(3000, 3000);
-        assert_eq!(mapping.container_port, 3000);
-        assert_eq!(mapping.host_port, 3000);
-        assert_eq!(mapping.protocol, PortProtocol::Tcp);
-    }
-
-    #[test]
     fn test_port_mapping_auto_allocate() {
         let mapping = PortMapping::auto_allocate(3000);
         assert_eq!(mapping.container_port, 3000);
@@ -153,11 +193,15 @@ mod tests {
 
     #[test]
     fn test_port_mapping_to_publish_flag() {
-        let explicit = PortMapping::new(3000, 8080);
-        assert_eq!(explicit.to_publish_flag(), "8080:3000");
-
         let auto = PortMapping::auto_allocate(3000);
         assert_eq!(auto.to_publish_flag(), "3000");
+
+        // Test explicit port mapping with host_port != 0
+        let explicit = PortMapping {
+            container_port: 3000,
+            host_port: 8080,
+        };
+        assert_eq!(explicit.to_publish_flag(), "8080:3000");
     }
 
     #[test]

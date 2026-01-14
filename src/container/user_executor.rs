@@ -41,8 +41,14 @@ const LANGUAGE_MANAGER_SHIMS: &[&str] = &[
     // Node.js
     ".nodenv/shims",
     ".local/share/nodenv/shims",
+    ".nvm/versions/node", // For direct node version access
     // Go
     ".local/share/goenv/shims",
+    // Java
+    ".jenv/shims",
+    ".sdkman/candidates/java", // For direct Java version access
+    // Elixir
+    ".mix/escripts",
 ];
 
 /// Default user name for the agent account
@@ -299,6 +305,50 @@ impl UserAccountExecutor {
                     enhanced.entry(env_var.to_string()).or_insert(value);
                 }
             }
+
+            // Preserve language-specific environment variables
+            for (key, value) in env::vars() {
+                let key_upper = key.to_uppercase();
+                if key_upper.contains("NODE")
+                    || key_upper.contains("NPM")
+                    || key_upper.contains("PYTHON")
+                    || key_upper.contains("RUBY")
+                    || key_upper.contains("GEM")
+                    || key_upper.contains("RBENV")
+                    || key_upper.contains("RVM")
+                    || key_upper.contains("JAVA")
+                    || key_upper.contains("GO")
+                    || key_upper.contains("GOPATH")
+                    || key_upper.contains("GOROOT")
+                    || key_upper.contains("CARGO")
+                    || key_upper.contains("RUST")
+                    || key_upper.contains("RUSTUP")
+                    || key_upper.contains("PHP")
+                    || key_upper.contains("COMPOSER")
+                    || key_upper.contains("MIX")
+                    || key_upper.contains("ELIXIR")
+                    || key_upper.contains("ERL")
+                    || key_upper.contains("GRADLE")
+                    || key_upper.contains("MAVEN")
+                    || key_upper.contains("M2")
+                    || key_upper.contains("PIP")
+                    || key_upper.contains("PYENV")
+                    || key_upper.contains("VIRTUAL_ENV")
+                    || key_upper.contains("CONDA")
+                    || key_upper.contains("PERL")
+                    || key_upper.contains("PERL5LIB")
+                    || key_upper.contains("SCALA")
+                    || key_upper.contains("SBT")
+                    || key_upper.contains("NVM")
+                    || key_upper.contains("NODE_VERSION")
+                    || key_upper.contains("JENV")
+                    || key_upper.contains("SDKMAN")
+                    || key_upper.contains("SWIFT")
+                    || key_upper.contains("SWIFTENV")
+                {
+                    enhanced.entry(key).or_insert(value);
+                }
+            }
         }
 
         // On Linux, also add language manager shims
@@ -312,6 +362,50 @@ impl UserAccountExecutor {
                 let full_path = format!("{}/{}", current_home, shim_path);
                 if Path::new(&full_path).exists() && !path.contains(shim_path) {
                     *path = format!("{}:{}", full_path, path.as_str());
+                }
+            }
+
+            // Preserve language-specific environment variables (same as macOS)
+            for (key, value) in env::vars() {
+                let key_upper = key.to_uppercase();
+                if key_upper.contains("NODE")
+                    || key_upper.contains("NPM")
+                    || key_upper.contains("PYTHON")
+                    || key_upper.contains("RUBY")
+                    || key_upper.contains("GEM")
+                    || key_upper.contains("RBENV")
+                    || key_upper.contains("RVM")
+                    || key_upper.contains("JAVA")
+                    || key_upper.contains("GO")
+                    || key_upper.contains("GOPATH")
+                    || key_upper.contains("GOROOT")
+                    || key_upper.contains("CARGO")
+                    || key_upper.contains("RUST")
+                    || key_upper.contains("RUSTUP")
+                    || key_upper.contains("PHP")
+                    || key_upper.contains("COMPOSER")
+                    || key_upper.contains("MIX")
+                    || key_upper.contains("ELIXIR")
+                    || key_upper.contains("ERL")
+                    || key_upper.contains("GRADLE")
+                    || key_upper.contains("MAVEN")
+                    || key_upper.contains("M2")
+                    || key_upper.contains("PIP")
+                    || key_upper.contains("PYENV")
+                    || key_upper.contains("VIRTUAL_ENV")
+                    || key_upper.contains("CONDA")
+                    || key_upper.contains("PERL")
+                    || key_upper.contains("PERL5LIB")
+                    || key_upper.contains("SCALA")
+                    || key_upper.contains("SBT")
+                    || key_upper.contains("NVM")
+                    || key_upper.contains("NODE_VERSION")
+                    || key_upper.contains("JENV")
+                    || key_upper.contains("SDKMAN")
+                    || key_upper.contains("SWIFT")
+                    || key_upper.contains("SWIFTENV")
+                {
+                    enhanced.entry(key).or_insert(value);
                 }
             }
         }

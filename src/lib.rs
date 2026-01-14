@@ -31,12 +31,12 @@ mod timer;
 mod utils;
 
 // Public exports for integration tests
+pub use container::tool::ToolManager;
+pub use container::volume::VolumeManager;
 pub use container::{
     ContainerEngine, ContainerExecutor, EngineType, SecurityMode, UserAccountExecutor,
     UserAccountExecutor as UserAccountExecutorAlias,
 };
-pub use container::tool::ToolManager;
-pub use container::volume::VolumeManager;
 
 // Re-export specific container types for testing
 pub use container::config::ContainerConfig;

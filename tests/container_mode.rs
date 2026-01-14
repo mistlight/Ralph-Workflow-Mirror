@@ -156,8 +156,11 @@ mod tests {
         assert_eq!(mapping.container_port, 3000);
         assert_eq!(mapping.host_port, 0); // 0 means auto-allocate
 
-        // Test explicit port mapping
-        let explicit = PortMapping::new(3000, 8080);
+        // Test explicit port mapping (using struct literal)
+        let explicit = PortMapping {
+            container_port: 3000,
+            host_port: 8080,
+        };
         assert_eq!(explicit.container_port, 3000);
         assert_eq!(explicit.host_port, 8080);
     }

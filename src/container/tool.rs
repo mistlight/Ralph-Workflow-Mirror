@@ -50,6 +50,10 @@ const VERSION_MANAGER_DIRS: &[&str] = &[
     ".goenv",    // Go version manager
     ".swiftenv", // Swift version manager
     ".jabba",    // Java version manager
+    ".mix",      // Elixir/Phoenix (stores mix install archives)
+    ".gradle",   // Java/Gradle cache and wrapper
+    ".m2",       // Maven local repository
+    ".go",       // Go workspace
 ];
 
 /// Tool mount configuration
@@ -288,12 +292,32 @@ impl ToolManager {
                 || key_upper.contains("NPM")
                 || key_upper.contains("PYTHON")
                 || key_upper.contains("RUBY")
+                || key_upper.contains("GEM")
+                || key_upper.contains("RBENV")
+                || key_upper.contains("RVM")
                 || key_upper.contains("JAVA")
                 || key_upper.contains("GO")
+                || key_upper.contains("GOPATH")
+                || key_upper.contains("GOROOT")
                 || key_upper.contains("CARGO")
                 || key_upper.contains("RUST")
+                || key_upper.contains("RUSTUP")
                 || key_upper.contains("PHP")
-                || key_upper.contains("Composer")
+                || key_upper.contains("COMPOSER")
+                || key_upper.contains("MIX")
+                || key_upper.contains("ELIXIR")
+                || key_upper.contains("ERL")
+                || key_upper.contains("GRADLE")
+                || key_upper.contains("MAVEN")
+                || key_upper.contains("M2")
+                || key_upper.contains("PIP")
+                || key_upper.contains("PYENV")
+                || key_upper.contains("VIRTUAL_ENV")
+                || key_upper.contains("CONDA")
+                || key_upper.contains("PERL")
+                || key_upper.contains("PERL5LIB")
+                || key_upper.contains("SCALA")
+                || key_upper.contains("SBT")
             {
                 let value = env::var(&key).unwrap_or_default();
                 env_vars.push((key, value));
