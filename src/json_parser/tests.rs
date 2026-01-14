@@ -560,11 +560,12 @@ fn test_format_unknown_json_event_control_event() {
 fn test_format_unknown_json_event_partial_event() {
     let colors = Colors { enabled: false };
     // Partial events with content should show in non-verbose mode
+    // The delta content should be extracted and shown directly
     let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
     let output = super::types::format_unknown_json_event(json, "Claude", &colors, false);
     // Should show content for partial events
+    // Note: The delta text field is nested, so it will be extracted
     assert!(!output.is_empty());
-    assert!(output.contains("content="));
 }
 
 #[test]
@@ -616,4 +617,300 @@ fn test_format_unknown_json_event_error_control() {
     let output = super::types::format_unknown_json_event(json, "Claude", &colors, true);
     // Error events are control events - should return empty
     assert!(output.is_empty());
+}
+
+#[test]
+fn test_format_unknown_json_event_delta_shows_content_in_normal_mode() {
+    let colors = Colors { enabled: false };
+    // Delta events should show their content even in non-verbose mode
+    let json = r#"{"type":"content_block_delta","delta":{"text":"Hello World"}}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should show the delta content in normal mode
+    assert!(!output.is_empty());
+    assert!(output.contains("Hello World"));
+}
+
+#[test]
+fn test_format_unknown_json_event_partial_with_delta_field() {
+    let colors = Colors { enabled: false };
+    // Events with delta field should show content even without explicit type name
+    let json = r#"{"type":"chunk","delta":"some partial content"}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should show content because delta field is present
+    assert!(!output.is_empty());
+    assert!(output.contains("some partial content"));
+}
+
+#[test]
+fn test_format_unknown_json_event_partial_with_text_field() {
+    let colors = Colors { enabled: false };
+    // Partial events with text field should show content
+    let json = r#"{"type":"partial","text":"streaming text here"}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should show content
+    assert!(!output.is_empty());
+    assert!(output.contains("streaming text here"));
+}
+
+#[test]
+fn test_format_unknown_json_event_nested_delta_text() {
+    let colors = Colors { enabled: false };
+    // Nested delta.text should be extracted
+    let json = r#"{"type":"update","delta":{"text":"nested content"}}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should show the nested delta text content
+    assert!(!output.is_empty());
+    assert!(output.contains("nested content"));
+}
+
+// Edge case tests for format_unknown_json_event
+
+#[test]
+fn test_format_unknown_json_event_deeply_nested_content() {
+    let colors = Colors { enabled: false };
+    // Test deeply nested content extraction
+    // The current implementation extracts from delta.text or content fields
+    // but not from arbitrary nested paths
+    let json = r#"{"type":"delta","delta":{"text":"deep nested text"}}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should extract content from nested delta.text
+    assert!(!output.is_empty());
+    assert!(output.contains("deep nested text"));
+}
+
+#[test]
+fn test_format_unknown_json_event_array_content() {
+    let colors = Colors { enabled: false };
+    // Test content extraction from arrays
+    let json = r#"{"type":"message","content":["item1","item2","item3"]}"#;
+    let _output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Arrays should be handled gracefully (content field exists but isn't a string)
+    // The function should not crash
+}
+
+#[test]
+fn test_format_unknown_json_event_empty_delta() {
+    let colors = Colors { enabled: false };
+    // Test delta with empty string content
+    let json = r#"{"type":"content_block_delta","delta":{"text":""}}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Empty content should not show output
+    assert!(output.is_empty() || output.trim().is_empty());
+}
+
+#[test]
+fn test_format_unknown_json_event_whitespace_only_delta() {
+    let colors = Colors { enabled: false };
+    // Test delta with whitespace-only content
+    let json = r#"{"type":"content_block_delta","delta":{"text":"   "}}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Whitespace-only content should not show output
+    assert!(output.is_empty() || output.trim().is_empty());
+}
+
+#[test]
+fn test_format_unknown_json_event_unicode_delta_content() {
+    let colors = Colors { enabled: false };
+    // Test Unicode content in delta
+    let json = r#"{"type":"delta","text":"Hello 世界 🌍"}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should show Unicode content properly
+    assert!(!output.is_empty());
+    assert!(output.contains("Hello 世界"));
+}
+
+#[test]
+fn test_format_unknown_json_event_text_field_priority() {
+    let colors = Colors { enabled: false };
+    // Test that content field has priority over text field in classifier
+    // The classifier's find_content_field returns "content" first (priority order)
+    let json = r#"{"type":"content_delta","text":"first","content":"second"}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should extract content since type contains "delta" (explicit partial)
+    assert!(!output.is_empty());
+    // The content field is prioritized by the classifier (not text)
+    assert!(output.contains("second"));
+}
+
+#[test]
+fn test_format_unknown_json_event_null_content_field() {
+    let colors = Colors { enabled: false };
+    // Test event with null content field
+    let json = r#"{"type":"message","content":null}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Null content should be handled gracefully
+    assert!(output.is_empty());
+}
+
+#[test]
+fn test_format_unknown_json_event_numeric_content_field() {
+    let colors = Colors { enabled: false };
+    // Test event with numeric content (not a string)
+    let json = r#"{"type":"metric","content":12345}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, true);
+    // Numeric content should be shown in verbose mode
+    assert!(!output.is_empty());
+}
+
+#[test]
+fn test_format_unknown_json_event_boolean_delta_flag() {
+    let colors = Colors { enabled: false };
+    // Test explicit boolean delta flag
+    let json = r#"{"type":"chunk","delta":true,"content":"test"}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should detect delta: true and show content
+    assert!(!output.is_empty());
+    assert!(output.contains("test"));
+}
+
+#[test]
+fn test_format_unknown_json_event_special_characters_in_content() {
+    let colors = Colors { enabled: false };
+    // Test special characters that might cause issues
+    let json = r#"{"type":"delta","text":"Line1\nLine2\tTabbed\"Quoted"}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, false);
+    // Should handle special characters properly
+    assert!(!output.is_empty());
+}
+
+#[test]
+fn test_format_unknown_json_event_very_long_content() {
+    let colors = Colors { enabled: false };
+    // Test very long content doesn't cause issues
+    let long_text = "a".repeat(10000);
+    let json = format!(r#"{{"type":"delta","text":"{}"}}"#, long_text);
+    let output = super::types::format_unknown_json_event(&json, "Test", &colors, false);
+    // Should handle long content without crashing
+    assert!(!output.is_empty());
+    // Content should be shown in full for deltas (not truncated)
+}
+
+// Edge case tests for generic parser
+
+#[test]
+fn test_generic_parser_unknown_protocol_with_deltas() {
+    use super::generic::GenericParser;
+    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Normal);
+    // Simulate unknown protocol with streaming deltas
+    let json1 = r#"{"type":"text_chunk","data":"Hello "}"#;
+    let json2 = r#"{"type":"text_chunk","data":"World "}"#;
+    let json3 = r#"{"type":"text_chunk","data":"!"}"#;
+
+    let output1 = parser.parse_event(json1);
+    let output2 = parser.parse_event(json2);
+    let output3 = parser.parse_event(json3);
+
+    // All should show their deltas
+    assert!(output1.is_some() && output1.unwrap().contains("Hello"));
+    assert!(output2.is_some() && output2.unwrap().contains("World"));
+    assert!(output3.is_some() && output3.unwrap().contains("!"));
+}
+
+#[test]
+fn test_generic_parser_mixed_event_types() {
+    use super::generic::GenericParser;
+    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Normal);
+    // Mix of control, partial, and complete events
+    let control = r#"{"type":"session_start"}"#;
+    let partial = r#"{"type":"content","text":"streaming"}"#;
+    let complete = r#"{"type":"final_message","content":"done"}"#;
+
+    let control_out = parser.parse_event(control);
+    let partial_out = parser.parse_event(partial);
+    let complete_out = parser.parse_event(complete);
+
+    // Control event should not show in normal mode
+    assert!(control_out.is_none());
+    // Partial event should show
+    assert!(partial_out.is_some() && partial_out.unwrap().contains("streaming"));
+    // Complete event should show
+    assert!(complete_out.is_some() && complete_out.unwrap().contains("done"));
+}
+
+#[test]
+fn test_generic_parser_very_long_nested_content() {
+    use super::generic::GenericParser;
+    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Normal);
+    // Test very long nested content doesn't cause issues
+    // Using a structure that the generic parser can actually extract from
+    let long_text = "x".repeat(5000);
+    let json = format!(r#"{{"type":"message","text":"{}"}}"#, long_text);
+    let output = parser.parse_event(&json);
+    // Should handle long content without crashing
+    assert!(output.is_some());
+}
+
+#[test]
+fn test_generic_parser_empty_object() {
+    use super::generic::GenericParser;
+    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let json = r#"{}"#;
+    let output = parser.parse_event(json);
+    // Empty object should be handled gracefully
+    assert!(output.is_none() || output.unwrap().is_empty());
+}
+
+#[test]
+fn test_generic_parser_array_at_top_level() {
+    use super::generic::GenericParser;
+    let parser = GenericParser::new(Colors { enabled: false }, Verbosity::Verbose);
+    let json = r#"[{"text":"first"},{"text":"second"}]"#;
+    let output = parser.parse_event(json);
+    // Array at top level should show in verbose mode
+    assert!(output.is_some());
+}
+
+// Tests for stream classifier edge cases
+
+#[test]
+fn test_stream_classifies_short_content_as_partial() {
+    use super::stream_classifier::{StreamEventClassifier, StreamEventType};
+    let classifier = StreamEventClassifier::new();
+    let event = serde_json::json!({
+        "type": "chunk",
+        "content": "Hi"
+    });
+
+    let result = classifier.classify(&event);
+    assert_eq!(result.event_type, StreamEventType::Partial);
+}
+
+#[test]
+fn test_stream_classifies_long_content_as_complete() {
+    use super::stream_classifier::{StreamEventClassifier, StreamEventType};
+    let classifier = StreamEventClassifier::new();
+    let long_text = "This is a substantial message that exceeds the default threshold and should be considered complete.";
+    let event = serde_json::json!({
+        "type": "message",
+        "content": long_text
+    });
+
+    let result = classifier.classify(&event);
+    assert_eq!(result.event_type, StreamEventType::Complete);
+}
+
+#[test]
+fn test_stream_classifies_status_without_content_as_control() {
+    use super::stream_classifier::{StreamEventClassifier, StreamEventType};
+    let classifier = StreamEventClassifier::new();
+    let event = serde_json::json!({
+        "type": "status",
+        "status": "processing"
+    });
+
+    let result = classifier.classify(&event);
+    assert_eq!(result.event_type, StreamEventType::Control);
+}
+
+#[test]
+fn test_stream_classifies_error_as_control() {
+    use super::stream_classifier::{StreamEventClassifier, StreamEventType};
+    let classifier = StreamEventClassifier::new();
+    let event = serde_json::json!({
+        "type": "error",
+        "message": "Something went wrong"
+    });
+
+    let result = classifier.classify(&event);
+    assert_eq!(result.event_type, StreamEventType::Control);
 }
