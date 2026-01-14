@@ -560,7 +560,8 @@ fn find_conventional_commit_start(text: &str) -> Option<usize> {
                 // Check if this is a valid conventional commit pattern
                 if rest.starts_with(':') || (rest.starts_with('(') && rest[1..].contains("):")) {
                     // Make sure it's at the start of a line or preceded by newline
-                    if actual_pos == 0 || text.as_bytes()[actual_pos - 1] == b'\n' {
+                    let prefix = &text[..actual_pos];
+                    if prefix.is_empty() || prefix.ends_with('\n') {
                         return Some(actual_pos);
                     }
                 }

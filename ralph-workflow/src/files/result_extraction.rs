@@ -737,7 +737,7 @@ fn validate_plan_content(content: &str) -> (bool, Option<String>) {
 /// Validate issues content.
 ///
 /// Checks if the content looks like valid issues:
-/// - Contains checkboxes (- [ ] or - [x])
+/// - Contains checkboxes (- \[ ] or - \[x])
 /// - Contains severity markers (Critical:, High:, etc.)
 /// - Or contains "no issues" declaration
 fn validate_issues_content(content: &str) -> (bool, Option<String>) {
@@ -970,7 +970,7 @@ mod tests {
         let result2 =
             r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
         let result3 = r#"{"type": "result", "result": "Last paragraph"}"#;
-        let json_log = format!("{}\n{}\n{}", result1, result2, result3);
+        let json_log = format!("{result1}\n{result2}\n{result3}");
         create_log_file(&log_dir, "output.log", &json_log);
 
         let result = extract_plan(&log_dir).unwrap();

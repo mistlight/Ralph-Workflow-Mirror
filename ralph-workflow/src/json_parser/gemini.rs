@@ -290,7 +290,7 @@ impl GeminiParser {
                 let icon = if is_success { CHECK } else { CROSS };
                 let color = if is_success { c.green() } else { c.red() };
 
-                let stats_display = if let Some(s) = stats {
+                let stats_display = stats.map_or_else(String::new, |s| {
                     let duration_s = s.duration_ms.unwrap_or(0) / 1000;
                     let duration_m = duration_s / 60;
                     let duration_s_rem = duration_s % 60;
@@ -300,9 +300,7 @@ impl GeminiParser {
                     format!(
                         "({duration_m}m {duration_s_rem}s, in:{input} out:{output}, {tools} tools)"
                     )
-                } else {
-                    String::new()
-                };
+                });
 
                 format!(
                     "{}[{}]{} {}{} {}{} {}{}{}\n",
@@ -385,7 +383,7 @@ impl GeminiParser {
             match self.parse_event(&line) {
                 Some(output) => {
                     monitor.record_parsed();
-                    write!(writer, "{}", output)?;
+                    write!(writer, "{output}")?;
                     writer.flush()?;
                 }
                 None => {
