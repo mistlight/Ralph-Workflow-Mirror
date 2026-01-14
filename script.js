@@ -115,6 +115,133 @@
         setTimeout(animateTerminal, 500);
     }
 
+    // === Terminal Control Buttons ===
+    const terminalPlayPause = document.getElementById('terminal-play-pause');
+    const terminalRestart = document.getElementById('terminal-restart');
+    const speedButtons = document.querySelectorAll('.terminal-speed-btn');
+    const speedLabel = document.getElementById('speed-label');
+    const progressBar = document.getElementById('progress-bar');
+
+    let isPlaying = true;
+    let animationSpeed = 1;
+    let animationTimeouts = [];
+
+    // Store original timeouts for speed control
+    const originalTiming = [600, 1200, 1500, 1800, 2200, 2800, 3500];
+
+    function clearTerminalAnimations() {
+        animationTimeouts.forEach(timeout => clearTimeout(timeout));
+        animationTimeouts = [];
+    }
+
+    function getAdjustedTiming() {
+        return originalTiming.map(t => t / animationSpeed);
+    }
+
+    // Play/Pause functionality
+    if (terminalPlayPause) {
+        terminalPlayPause.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+
+            const iconPause = terminalPlayPause.querySelector('.icon-pause');
+            const iconPlay = terminalPlayPause.querySelector('.icon-play');
+
+            if (isPlaying) {
+                iconPause.style.display = 'block';
+                iconPlay.style.display = 'none';
+                terminalPlayPause.setAttribute('aria-label', 'Pause animation');
+                animateTerminal();
+            } else {
+                iconPause.style.display = 'none';
+                iconPlay.style.display = 'block';
+                terminalPlayPause.setAttribute('aria-label', 'Play animation');
+                clearTerminalAnimations();
+            }
+        });
+    }
+
+    // Restart functionality
+    if (terminalRestart) {
+        terminalRestart.addEventListener('click', () => {
+            clearTerminalAnimations();
+            terminalLines.forEach(line => {
+                line.classList.remove('typed');
+            });
+
+            // Reset progress bar
+            if (progressBar) {
+                progressBar.style.transition = 'none';
+                progressBar.style.width = '0%';
+                setTimeout(() => {
+                    progressBar.style.transition = 'width 4s ease-out';
+                }, 50);
+            }
+
+            animateTerminal();
+        });
+    }
+
+    // Speed control functionality
+    speedButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const speed = parseFloat(btn.dataset.speed);
+            animationSpeed = speed;
+
+            // Update active state
+            speedButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Update label
+            if (speedLabel) {
+                speedLabel.textContent = `${speed}x`;
+            }
+
+            // If currently paused, restart with new speed
+            if (!isPlaying) {
+                clearTerminalAnimations();
+                terminalLines.forEach(line => {
+                    line.classList.remove('typed');
+                });
+                animateTerminal();
+            }
+        });
+    });
+
+    // Progress bar animation
+    function animateProgressBar() {
+        if (progressBar) {
+            progressBar.style.transition = `width ${4 / animationSpeed}s ease-out`;
+            progressBar.style.width = '100%';
+        }
+    }
+
+    // Trigger progress bar with terminal animation
+    const originalAnimateTerminal = animateTerminal;
+    animateTerminal = function() {
+        if (!terminal) return;
+
+        // Reset all lines
+        terminalLines.forEach(line => {
+            line.classList.remove('typed');
+        });
+
+        // Animate progress bar
+        animateProgressBar();
+
+        // Get adjusted timing based on current speed
+        const timing = getAdjustedTiming();
+
+        // Animate lines sequentially
+        terminalLines.forEach((line, index) => {
+            const timeout = setTimeout(() => {
+                line.classList.add('typed');
+            }, timing[index] || index * (600 / animationSpeed));
+
+            animationTimeouts.push(timeout);
+        });
+    };
+
+
     // === Mobile Navigation ===
     const navToggle = document.querySelector('.nav-toggle');
     const navMenu = document.querySelector('.nav-menu');
@@ -193,6 +320,87 @@
             });
         });
     });
+
+    // === Install Mode Toggle (Simple/Advanced) ===
+    const installModeSwitch = document.getElementById('install-mode-switch');
+    const installSection = document.getElementById('install');
+    const simpleTabs = document.querySelectorAll('.install-tab-simple');
+    const advancedTabs = document.querySelectorAll('.install-tab-advanced');
+    const advancedRequirements = document.querySelector('.install-requirements');
+
+    // Check localStorage for saved preference
+    const savedMode = localStorage.getItem('ralph-install-mode');
+    if (savedMode === 'advanced') {
+        installSection?.setAttribute('data-mode', 'advanced');
+        installModeSwitch?.setAttribute('aria-checked', 'true');
+        // Show advanced tabs
+        advancedTabs.forEach(tab => tab.style.display = '');
+        // Hide simple tabs (or keep first one)
+        simpleTabs.forEach((tab, index) => {
+            if (index > 0) tab.style.display = 'none';
+        });
+    } else {
+        installSection?.setAttribute('data-mode', 'simple');
+        installModeSwitch?.setAttribute('aria-checked', 'false');
+        // Hide advanced tabs
+        advancedTabs.forEach(tab => tab.style.display = 'none');
+        // Show simple tabs
+        simpleTabs.forEach(tab => tab.style.display = '');
+    }
+
+    if (installModeSwitch) {
+        installModeSwitch.addEventListener('click', () => {
+            const isAdvanced = installModeSwitch.getAttribute('aria-checked') === 'true';
+            const newMode = isAdvanced ? 'simple' : 'advanced';
+
+            // Update state
+            installModeSwitch.setAttribute('aria-checked', !isAdvanced);
+            installSection?.setAttribute('data-mode', newMode);
+
+            // Save preference
+            localStorage.setItem('ralph-install-mode', newMode);
+
+            // Toggle tabs visibility
+            if (newMode === 'advanced') {
+                advancedTabs.forEach(tab => {
+                    tab.style.display = '';
+                    tab.style.opacity = '0';
+                    setTimeout(() => tab.style.opacity = '1', 50);
+                });
+                simpleTabs.forEach((tab, index) => {
+                    if (index > 0) tab.style.display = 'none';
+                });
+
+                // Show full requirements in advanced mode
+                if (advancedRequirements) {
+                    const allRequirements = advancedRequirements.querySelectorAll('.requirement');
+                    allRequirements.forEach(req => req.style.display = '');
+                }
+            } else {
+                advancedTabs.forEach(tab => tab.style.display = 'none');
+                simpleTabs.forEach(tab => {
+                    tab.style.display = '';
+                    tab.style.opacity = '0';
+                    setTimeout(() => tab.style.opacity = '1', 50);
+                });
+
+                // In simple mode, only show basic requirement
+                if (advancedRequirements) {
+                    const allRequirements = advancedRequirements.querySelectorAll('.requirement');
+                    allRequirements.forEach((req, index) => {
+                        if (index > 0) req.style.display = 'none';
+                    });
+                }
+
+                // Switch back to simple tab if currently on advanced tab
+                const activeTab = document.querySelector('.install-tab-active');
+                if (activeTab && activeTab.classList.contains('install-tab-advanced')) {
+                    const simpleTab = document.querySelector('.install-tab-simple');
+                    if (simpleTab) simpleTab.click();
+                }
+            }
+        });
+    }
 
     // === Copy to Clipboard ===
     const copyButtons = document.querySelectorAll('.copy-btn');

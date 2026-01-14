@@ -3,7 +3,11 @@
 Create a website for Ralph Workflow. This is an open source project licensed with AGPL.
 
 ## Goal
-You must use the claude skill frontend-design to design this website. Ensure this site has commercial level quality despite being an open source project.
+You must use the claude skill frontend-design to design this website for Ralph Workflow. Ensure this site has commercial level quality despite being an open source project.
+The overarching idea behind Ralph Workflow is Ralph which is an idea from Geoffrey Huntley's article here: https://ghuntley.com/ralph/
+
+This is essentially a more organized way of looping the AI agent. The whole point of this is to let the AI cook things overnight or walk away from the computer for 8 hours and come back. 
+However the user must provide a very detailed product specification for the AI to work with in order to do well.
 
 ## Questions to Consider
 Before implementing, think through:
@@ -17,6 +21,10 @@ Before implementing, think through:
 
 Installation Instructions:
 * If we have installation instructions, ensure they only have git clone from our git repository at ssh://git@codeberg.org/mistlight/Ralph-Workflow.git our cargo name is ralph-workflow
+
+## Resources
+* Original Article: https://ghuntley.com/ralph/
+* Codeberg repository: https://codeberg.org/mistlight/Ralph-Workflow
 
 ## Feel Free
 * Make RADICAL changes if needed

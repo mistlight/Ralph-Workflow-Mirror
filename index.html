@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Ralph Workflow - Automate your AI coding workflow. Multi-agent orchestration that ships code from PROMPT.md to committed changes.">
+    <meta name="description" content="Ralph Workflow - Multi-agent AI orchestration tool that runs Developer and Reviewer agents in a self-correcting loop. Transform PROMPT.md into committed code with automatic quality checks and semantic commits.">
     <meta name="keywords" content="Ralph, AI coding, CLI tool, Claude Code, workflow automation, multi-agent, Rust, AGPL">
     <meta name="author" content="Ralph Workflow Contributors">
 
     <!-- Open Graph -->
-    <meta property="og:title" content="Ralph Workflow - Automate Your AI Coding Workflow">
-    <meta property="og:description" content="From PROMPT.md to committed code. Ralph orchestrates multiple AI agents to implement, review, and ship your changes automatically.">
+    <meta property="og:title" content="Ralph Workflow - Multi-Agent AI Orchestration for Developers">
+    <meta property="og:description" content="From PROMPT.md to committed code in minutes. Ralph orchestrates Developer and Reviewer agents in a self-correcting loop until your code is production-ready.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://mistlight.codeberg.page/ralph/">
     <meta property="og:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
@@ -18,20 +18,21 @@
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Ralph Workflow - Automate Your AI Coding Workflow">
-    <meta name="twitter:description" content="From PROMPT.md to committed code. Multi-agent orchestration that ships code automatically.">
+    <meta name="twitter:title" content="Ralph Workflow - Multi-Agent AI Orchestration for Developers">
+    <meta name="twitter:description" content="From PROMPT.md to committed code in minutes. Ralph orchestrates Developer and Reviewer agents in a self-correcting loop until your code is production-ready.">
     <meta name="twitter:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
 
     <link rel="canonical" href="https://mistlight.codeberg.page/ralph/">
     <meta name="theme-color" content="#09090B">
 
-    <title>Ralph Workflow - Your Ideas, Shipped by AI</title>
+    <title>Ralph Workflow - Multi-Agent AI Orchestration for Developers</title>
 
-    <!-- Fonts: Bebas Neue (display), Syne (headings), Space Grotesk (body), IBM Plex Mono (code) -->
-    <!-- Space Grotesk provides distinctive geometric character with excellent readability -->
+    <!-- Fonts: Bebas Neue (display), Syne (headings), Archivo Black (body), IBM Plex Mono (code) -->
+    <!-- Archivo Black: Powerful, distinctive display font with exceptional character -->
+    <!-- Syne: Artistic, geometric font for unique headings -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 
     <!-- Favicon - Enhanced with distinctive R logo -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg-grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23111'/%3E%3Cstop offset='100%25' style='stop-color:%23000'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg-grad)' rx='14'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%23CCFF00' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23CCFF00'/%3E%3C/svg%3E">
@@ -118,22 +119,22 @@
 
                     <h1 class="hero-title">
                         <span class="hero-title-line">
-                            <span class="hero-word" style="--word-index: 0;">Your</span>
-                            <span class="hero-word" style="--word-index: 1;">ideas.</span>
+                            <span class="hero-word" style="--word-index: 0;">From</span>
+                            <span class="hero-word" style="--word-index: 1;">PROMPT.md</span>
                         </span>
                         <span class="hero-title-line">
-                            <span class="hero-word" style="--word-index: 2;">Shipped</span>
-                            <span class="hero-word hero-title-accent" style="--word-index: 3;">by AI.</span>
+                            <span class="hero-word" style="--word-index: 2;">To</span>
+                            <span class="hero-word hero-title-accent" style="--word-index: 3;">Committed Code</span>
                         </span>
                         <span class="hero-title-line">
-                            <span class="hero-word" style="--word-index: 4;">No</span>
-                            <span class="hero-word" style="--word-index: 5;">copy-paste.</span>
+                            <span class="hero-word" style="--word-index: 4;">In</span>
+                            <span class="hero-word" style="--word-index: 5;">Minutes.</span>
                         </span>
                     </h1>
 
                     <p class="hero-description">
-                        Ralph orchestrates AI Developer and Reviewer agents that collaborate to transform your
-                        <code class="inline">PROMPT.md</code> into committed code—iterating automatically until quality is achieved.
+                        A <strong>multi-agent AI orchestration tool</strong> that runs Developer and Reviewer agents in a self-correcting loop.
+                        Write your requirements in <code class="inline">PROMPT.md</code>, run <code class="inline">ralph -S</code>, and wake up to shipping-quality code with semantic commits.
                     </p>
 
                     <div class="hero-actions">
@@ -149,7 +150,7 @@
 
                 <!-- Terminal Visualization -->
                 <div class="hero-visual">
-                    <div class="terminal-window" aria-label="Terminal showing Ralph in action">
+                    <div class="terminal-window" aria-label="Terminal showing Ralph in action" id="terminal-demo">
                         <div class="terminal-header">
                             <span class="terminal-dot terminal-dot-red"></span>
                             <span class="terminal-dot terminal-dot-yellow"></span>
@@ -157,7 +158,7 @@
                             <span class="terminal-title">ralph — bash — 80x24</span>
                         </div>
                         <div class="terminal-progress" aria-hidden="true">
-                            <div class="terminal-progress-bar"></div>
+                            <div class="terminal-progress-bar" id="progress-bar"></div>
                         </div>
                         <div class="terminal-body">
                             <div class="terminal-line">
@@ -197,6 +198,34 @@
                                 <span class="terminal-output-dim">Changes shipped in </span>
                                 <span class="terminal-time">3m 42s</span>
                                 <span class="terminal-cursor" aria-hidden="true"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Terminal Controls -->
+                    <div class="terminal-controls" aria-label="Terminal playback controls">
+                        <div class="terminal-controls-left">
+                            <button class="terminal-control-btn" id="terminal-restart" aria-label="Restart animation" title="Restart">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="1 4 1 10 7 10"></polyline>
+                                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                                </svg>
+                            </button>
+                            <button class="terminal-control-btn" id="terminal-play-pause" aria-label="Pause animation" title="Pause/Play">
+                                <svg class="icon-pause" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="6" y="4" width="4" height="16"></rect>
+                                    <rect x="14" y="4" width="4" height="16"></rect>
+                                </svg>
+                                <svg class="icon-play" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="terminal-controls-right">
+                            <span class="terminal-speed-label" id="speed-label">1x</span>
+                            <div class="terminal-speed-controls">
+                                <button class="terminal-speed-btn" data-speed="0.5" aria-label="0.5x speed">0.5x</button>
+                                <button class="terminal-speed-btn active" data-speed="1" aria-label="1x speed">1x</button>
+                                <button class="terminal-speed-btn" data-speed="2" aria-label="2x speed">2x</button>
                             </div>
                         </div>
                     </div>
@@ -490,6 +519,15 @@
                 <p class="section-subtitle">Install Ralph and run your first automated workflow</p>
             </div>
 
+            <!-- Simple/Advanced Toggle -->
+            <div class="install-mode-toggle">
+                <span class="mode-label">Simple</span>
+                <button class="mode-switch" id="install-mode-switch" aria-label="Toggle installation mode" role="switch" aria-checked="false">
+                    <span class="mode-switch-slider"></span>
+                </button>
+                <span class="mode-label">Advanced</span>
+            </div>
+
             <div class="install-grid">
                 <div class="install-info">
                     <div class="install-requirements">
@@ -524,9 +562,9 @@
 
                 <div class="install-code">
                     <div class="install-tabs" role="tablist">
-                        <button class="install-tab install-tab-active" data-tab="cargo">Cargo Install</button>
-                        <button class="install-tab" data-tab="source">From Source</button>
-                        <button class="install-tab" data-tab="config">Config</button>
+                        <button class="install-tab install-tab-simple install-tab-active" data-tab="cargo">Cargo Install</button>
+                        <button class="install-tab install-tab-advanced" data-tab="source" style="display: none;">From Source</button>
+                        <button class="install-tab install-tab-advanced" data-tab="config" style="display: none;">Config</button>
                     </div>
 
                     <div class="install-content" data-content="cargo">
