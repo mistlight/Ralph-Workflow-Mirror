@@ -147,7 +147,7 @@ impl ParserHealth {
                 colors.reset(),
                 parser_name,
                 self.parse_errors,
-                self.parse_error_percentage() as u32,
+                self.parse_error_percentage().round() as u32,
                 self.total_events,
                 self.unknown_events,
                 self.control_events,
@@ -161,7 +161,7 @@ impl ParserHealth {
                 colors.reset(),
                 parser_name,
                 self.parse_errors,
-                self.parse_error_percentage() as u32,
+                self.parse_error_percentage().round() as u32,
                 self.total_events
             )
         };
