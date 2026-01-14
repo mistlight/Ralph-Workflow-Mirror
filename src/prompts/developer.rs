@@ -162,7 +162,8 @@ CRITICAL OUTPUT INSTRUCTIONS:
 - Output your COMPLETE plan above as a single response
 - Ensure ALL sections (Summary, Implementation Steps, Critical Files, Risks & Mitigations, Verification Strategy) are included
 - Do NOT truncate or shorten your plan
-- Do NOT write to any files"#,
+- Do NOT write to any files"#
+        .to_string()
     );
 
     prompt
