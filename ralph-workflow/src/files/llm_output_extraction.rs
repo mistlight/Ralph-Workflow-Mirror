@@ -423,7 +423,7 @@ fn extract_opencode_result(content: &str) -> Option<String> {
 /// - Numbered/bullet lists without proper separation
 /// - Multi-line analysis that ends with conventional commit format
 fn remove_thought_process_patterns(content: &str) -> String {
-    let result = content;
+    let mut result = content;
 
     // Remove AI thought process prefixes
     // These are patterns that AI agents commonly use when starting their response
@@ -433,6 +433,8 @@ fn remove_thought_process_patterns(content: &str) -> String {
         "Looking at this diff",
         "I can see",
         "The main changes are",
+        "The main changes I see are:",
+        "The main changes I see are",
         "Several distinct categories of changes",
         "Key categories of changes",
         "Based on the diff",
@@ -441,6 +443,31 @@ fn remove_thought_process_patterns(content: &str) -> String {
         "Looking at the changes",
         "I've analyzed",
         "After reviewing",
+        // Additional patterns to catch more variations
+        "Based on the git diff",
+        "Based on the git diff, here are the changes",
+        "Based on the git diff, here's what changed",
+        "Based on the git diff, the following changes",
+        "Here are the changes",
+        "Here's what changed",
+        "Here is what changed",
+        "The following changes",
+        "The changes include",
+        "Changes include",
+        "After reviewing the diff",
+        "After reviewing the changes",
+        "After analyzing the diff",
+        "After analyzing the changes",
+        "I've analyzed the changes",
+        "I've analyzed the diff",
+        "Looking at the changes, I can see",
+        "Key changes include",
+        "Several changes include",
+        "This diff shows the following",
+        // Additional patterns for GLM agent output
+        "The most substantive change is",
+        "The most substantive changes are",
+        "The most substantive user-facing change is",
     ];
 
     for pattern in &thought_patterns {
@@ -457,7 +484,9 @@ fn remove_thought_process_patterns(content: &str) -> String {
                     if looks_like_commit_message_start(remaining) {
                         return remaining.to_string();
                     }
-                    // Otherwise, continue to aggressive filtering below
+                    // Otherwise, update result to continue with aggressive filtering below
+                    result = remaining;
+                    break; // Continue to numbered/bold analysis pattern checks
                 }
             } else if let Some(single_newline) = rest.find('\n') {
                 // If no double newline, try to skip to after the first single newline
@@ -466,8 +495,27 @@ fn remove_thought_process_patterns(content: &str) -> String {
                 if looks_like_commit_message_start(after_newline.trim()) {
                     return after_newline.to_string();
                 }
+                // If not, check if the rest starts with numbered analysis
+                if after_newline.trim().starts_with("1. ")
+                    || after_newline.trim().starts_with("1. **")
+                    || after_newline.trim().starts_with("- ")
+                {
+                    // Skip to after numbered analysis - continue processing
+                    // but don't return yet, let the numbered pattern handler deal with it
+                    result = after_newline.trim();
+                    break;
+                }
             }
-            break;
+            // If we found and stripped a pattern but couldn't find a clean commit message
+            // or numbered analysis to continue from, check if rest looks like pure analysis
+            // If the remaining content after the pattern is all analysis (no valid commit),
+            // return empty
+            let rest_trimmed = rest.trim();
+            if looks_like_analysis_text(rest_trimmed)
+                && find_conventional_commit_start(rest_trimmed).is_none()
+            {
+                return String::new();
+            }
         }
     }
 
@@ -500,17 +548,134 @@ fn remove_thought_process_patterns(content: &str) -> String {
         }
     }
 
+    // Remove markdown bold analysis patterns (e.g., "1. **Test assertion style** (file.rs): Description")
+    // These patterns use markdown bold formatting for category headers in numbered lists
+    if starts_with_markdown_bold_analysis(result) {
+        if let Some(commit_start) = find_conventional_commit_start(result) {
+            return result[commit_start..].to_string();
+        }
+        // Fallback: look for double newline after the analysis
+        if let Some(blank_pos) = result.find("\n\n") {
+            let after_analysis = &result[blank_pos + 2..];
+            if after_analysis.trim().starts_with(char::is_alphanumeric) {
+                return after_analysis.to_string();
+            }
+        }
+    }
+
     // Additional aggressive filtering: detect if the content starts with
     // multi-line analysis and ends with a conventional commit format
     if let Some(commit_start) = find_conventional_commit_start(result) {
         // Verify that the content before the commit looks like analysis
         let before_commit = &result[..commit_start];
-        if before_commit.contains('\n') && looks_like_analysis_text(before_commit) {
+        // Check multiple conditions to identify analysis:
+        // 1. Contains multiple lines (analysis is typically multi-line)
+        // 2. Either looks like analysis text OR contains common analysis patterns
+        let is_analysis = before_commit.contains('\n')
+            && (looks_like_analysis_text(before_commit)
+                || before_commit.to_lowercase().contains("changes")
+                || before_commit.to_lowercase().contains("diff")
+                || before_commit.contains("1.")
+                || before_commit.contains("- "));
+
+        if is_analysis {
             return result[commit_start..].to_string();
         }
     }
 
+    // Final check: if the entire content looks like analysis without a valid commit,
+    // return empty string. This catches cases like "The main changes I see are:\n1. **Analysis**"
+    // followed by more analysis paragraphs but no proper commit message.
+    if looks_like_analysis_text(result) {
+        // Check if there's markdown-bold type mention embedded in analysis text
+        // like "This is a **refactor**..." which indicates analysis, not a commit
+        let result_lower = result.to_lowercase();
+        if result_lower.contains("**feat**")
+            || result_lower.contains("**fix**")
+            || result_lower.contains("**refactor**")
+            || result_lower.contains("**chore**")
+            || result_lower.contains("**test**")
+            || result_lower.contains("**docs**")
+            || result_lower.contains("**perf**")
+            || result_lower.contains("**style**")
+        {
+            // Look for the pattern "**type**:" (with colon) which indicates
+            // it might be an actual commit message in markdown format
+            if result_lower.contains("**feat**:")
+                || result_lower.contains("**fix**:")
+                || result_lower.contains("**refactor**:")
+                || result_lower.contains("**chore**:")
+                || result_lower.contains("**test**:")
+                || result_lower.contains("**docs**:")
+                || result_lower.contains("**perf**:")
+                || result_lower.contains("**style**:")
+            {
+                // This might be a valid commit message in markdown, keep it
+                return result.to_string();
+            }
+            // Otherwise, it's analysis with embedded type mentions, filter it out
+            return String::new();
+        }
+        // If no conventional commit was found and it looks like analysis, return empty
+        if find_conventional_commit_start(result).is_none() {
+            return String::new();
+        }
+    }
+
     result.to_string()
+}
+
+/// Check if text starts with markdown bold analysis patterns.
+///
+/// Returns true if the text starts with patterns like:
+/// - "1. **Category** (file.rs): Description"
+/// - "**Category**:"
+/// - Multiple numbered lines with **bold** headers
+fn starts_with_markdown_bold_analysis(text: &str) -> bool {
+    let trimmed = text.trim();
+
+    // Check for patterns like "1. **Category**" or "**Category**:"
+    // These are markdown bold patterns used for analysis headers
+    let lines: Vec<&str> = trimmed.lines().collect();
+
+    if lines.is_empty() {
+        return false;
+    }
+
+    // Check the first line for markdown bold patterns
+    let first_line = lines[0].trim();
+
+    // Pattern 1: "1. **Bold Text**" or "1. **Bold Text** (file.rs): description"
+    if first_line.starts_with("1. **") || first_line.starts_with("1. **") {
+        return true;
+    }
+
+    // Pattern 2: Line starts with ** (markdown bold opening)
+    if first_line.starts_with("**") {
+        // Check if it looks like a header/analysis, not a valid commit message
+        // Valid commits don't start with **, but analysis headers do
+        return true;
+    }
+
+    // Pattern 3: Check if first few lines contain markdown bold patterns
+    // like "**Category**:" which indicates analysis breakdown
+    if lines.len() >= 2 {
+        let mut bold_header_count = 0;
+        for line in lines.iter().take(5) {
+            let trimmed = line.trim();
+            // Check for patterns like "**Category**:" or "**Category** (file):"
+            if (trimmed.contains("**") && trimmed.contains("**:"))
+                || (trimmed.contains("**") && trimmed.contains("** ("))
+            {
+                bold_header_count += 1;
+            }
+        }
+        if bold_header_count >= 1 {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Check if text starts with a conventional commit type pattern.
@@ -560,7 +725,8 @@ fn find_conventional_commit_start(text: &str) -> Option<usize> {
                 // Check if this is a valid conventional commit pattern
                 if rest.starts_with(':') || (rest.starts_with('(') && rest[1..].contains("):")) {
                     // Make sure it's at the start of a line or preceded by newline
-                    if actual_pos == 0 || text.as_bytes()[actual_pos - 1] == b'\n' {
+                    let prefix = &text[..actual_pos];
+                    if prefix.is_empty() || prefix.ends_with('\n') {
                         return Some(actual_pos);
                     }
                 }
@@ -586,13 +752,37 @@ fn looks_like_analysis_text(text: &str) -> bool {
         "looking at",
         "analyzing",
         "the changes",
+        "the change",
         "the diff",
         "i can see",
         "main changes",
+        "substantive change",
+        "substantive user-facing change",
         "categories",
         "first change",
         "second change",
         "third change",
+        // Additional patterns to catch more variations
+        "here are the changes",
+        "based on the git diff",
+        "based on the diff",
+        "the following changes",
+        "changes include",
+        "here's what changed",
+        "here is what changed",
+        "after reviewing the diff",
+        "after reviewing the changes",
+        "after analyzing",
+        "this diff shows",
+        "i've analyzed the changes",
+        "i've analyzed",
+        "looking at the changes",
+        "key changes",
+        "several changes",
+        "distinct changes",
+        "key categories of changes",
+        "several categories of changes",
+        "user-facing change",
     ];
 
     for indicator in &analysis_indicators {
@@ -624,15 +814,112 @@ fn looks_like_analysis_text(text: &str) -> bool {
     false
 }
 
+/// Remove formatted thinking output patterns from CLI display output.
+///
+/// This handles formatted thinking content that appears in log files from display
+/// formatting, such as `[Claude] Thinking: ...` or `[Agent] Thinking: ...`.
+/// These patterns may include ANSI color codes.
+///
+/// The function removes lines that contain formatted thinking markers and any
+/// subsequent content until a blank line or conventional commit pattern is found.
+fn remove_formatted_thinking_patterns(content: &str) -> String {
+    let mut result = String::new();
+    let mut skip_until_blank = false;
+
+    // Check for formatted thinking patterns
+    // Patterns like: "[Claude] Thinking:", "[Agent] Thinking:", "Thinking:" with ANSI codes
+    let thinking_patterns = [
+        "] Thinking:",
+        "] thinking:",
+        "[Claude] Thinking:",
+        "[claude] Thinking:",
+        "[Claude] thinking:",
+        "[claude] thinking:",
+        "[Agent] Thinking:",
+        "[agent] Thinking:",
+        "[Agent] thinking:",
+        "[agent] thinking:",
+        "[Assistant] Thinking:",
+        "[assistant] Thinking:",
+        "[Assistant] thinking:",
+        "[assistant] thinking:",
+    ];
+
+    // Strip ANSI escape codes for pattern matching
+    let strip_ansi = |text: &str| -> String {
+        // ANSI escape codes match pattern: \x1b[...m or \x1b[...K
+        let re = Regex::new(r"\x1b\[[0-9;]*[mK]").expect("ANSI regex should be valid");
+        re.replace_all(text, "").to_string()
+    };
+
+    for line in content.lines() {
+        let stripped_line = strip_ansi(line);
+
+        let is_thinking_marker = thinking_patterns
+            .iter()
+            .any(|pattern| stripped_line.contains(pattern));
+
+        if is_thinking_marker {
+            skip_until_blank = true;
+            continue;
+        }
+
+        // Skip lines while we're in a thinking block
+        if skip_until_blank {
+            // Check if this is a blank line
+            if line.trim().is_empty() {
+                skip_until_blank = false;
+            }
+            // Also check if we've hit a conventional commit pattern
+            else if looks_like_commit_message_start(line.trim()) {
+                skip_until_blank = false;
+                // Don't skip this line - it's the actual content
+                if !result.is_empty() {
+                    result.push('\n');
+                }
+                result.push_str(line);
+            }
+            // Otherwise, continue skipping
+            continue;
+        }
+
+        // Not in a thinking block, keep this line
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(line);
+    }
+
+    // If we ended up with empty content, return a cleaned version of the original
+    // This handles edge cases where the thinking detection was too aggressive
+    if result.trim().is_empty() && !content.trim().is_empty() {
+        // Return the original content minus obvious thinking-only lines
+        content
+            .lines()
+            .filter(|line| {
+                let stripped = strip_ansi(line);
+                !thinking_patterns.iter().any(|p| stripped.contains(p))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        result
+    }
+}
+
 /// Clean plain text output by removing common artifacts.
 ///
 /// This handles:
 /// - Markdown code fences
+/// - Formatted thinking output (e.g., "[Claude] Thinking: ...")
 /// - AI thought process patterns (e.g., "Looking at this diff...")
 /// - Common prefixes like "Commit message:", "Output:", etc.
 /// - Excessive whitespace
 fn clean_plain_text(content: &str) -> String {
     let mut result = content.to_string();
+
+    // Remove formatted thinking patterns from CLI display output
+    result = remove_formatted_thinking_patterns(&result);
 
     // Remove markdown code fences
     if result.starts_with("```") {
@@ -767,6 +1054,24 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         "looking at the changes",
         "i've analyzed",
         "after reviewing",
+        // Additional patterns to catch more variations
+        "based on the git diff",
+        "here are the changes",
+        "here's what changed",
+        "here is what changed",
+        "the following changes",
+        "changes include",
+        "after reviewing the diff",
+        "after reviewing the changes",
+        "after analyzing",
+        "i've analyzed the changes",
+        "i've analyzed the diff",
+        "key changes",
+        "several changes",
+        "distinct changes",
+        "key changes include",
+        "several changes include",
+        "this diff shows the following",
     ];
     for prefix in &thought_process_prefixes {
         if content_lower.starts_with(prefix) {
@@ -785,6 +1090,26 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         return Err(
             "Commit message starts with numbered analysis. This indicates AI thought process leakage.".to_string()
         );
+    }
+
+    // Check for formatted thinking output patterns (e.g., "[Claude] Thinking:")
+    // This catches formatted thinking output from CLI display that leaked into the log
+    let formatted_thinking_patterns = [
+        "[claude] thinking:",
+        "[claude] Thinking:",
+        "[agent] thinking:",
+        "[agent] Thinking:",
+        "[assistant] thinking:",
+        "[assistant] Thinking:",
+        "] thinking:",
+        "] Thinking:",
+    ];
+    for pattern in &formatted_thinking_patterns {
+        if content_lower.starts_with(pattern) || content.contains(pattern) {
+            return Err(format!(
+                "Commit message contains formatted thinking pattern ({pattern}). This indicates AI thinking output leaked into the commit message."
+            ));
+        }
     }
 
     // Check for placeholder content
@@ -1931,5 +2256,476 @@ Done."#;
 
         // The result should pass validation
         assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    // =========================================================================
+    // Additional Regression Tests for Markdown Bold Patterns
+    // =========================================================================
+
+    #[test]
+    fn test_regression_markdown_bold_pattern_with_numbered_list() {
+        // Test the exact bug scenario: markdown bold headers in numbered list
+        let agent_output = r#"{"result":"1. **Test assertion style** (agents/config.rs, pipeline/tests.rs): Replacing assertion macros with idiomatically Rust equivalents\n2. **Refactoring** (app/mod.rs): Extracting...\n\nrefactor: extract PipelineContext and improve error handling"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("refactor: extract PipelineContext"));
+        assert!(!result.content.contains("1. **Test assertion style**"));
+        assert!(!result.content.contains("2. **Refactoring**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_regression_markdown_bold_single_line() {
+        // Test single line starting with markdown bold
+        let agent_output = r#"{"result":"**Analysis**: This diff shows changes to the parser module\n\nfix: resolve parsing edge case"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("fix: resolve parsing edge case"));
+        assert!(!result.content.contains("**Analysis**"));
+        assert!(!result.content.contains("**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_regression_markdown_bold_multiple_lines() {
+        // Test multiple lines with markdown bold patterns
+        let agent_output = r#"{"result":"1. **Parser changes**: Updated token handling\n2. **Test updates**: Added edge case coverage\n3. **Documentation**: Updated API docs\n\nfeat(parser): add support for new syntax"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("feat(parser): add support"));
+        assert!(!result.content.contains("**Parser changes**"));
+        assert!(!result.content.contains("**Test updates**"));
+        assert!(!result.content.contains("**Documentation**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_regression_markdown_bold_with_colon_pattern() {
+        // Test pattern like "**Category**:" which is common in analysis
+        let agent_output = r#"{"result":"**Summary**:\nThe main change is improving error handling\n\n**Details**:\n- Updated parser\n- Fixed tests\n\nrefactor: improve error handling"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("refactor: improve error handling"));
+        assert!(!result.content.contains("**Summary**"));
+        assert!(!result.content.contains("**Details**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    #[test]
+    fn test_regression_markdown_bold_at_start_only() {
+        // Test content that starts with ** but is actually analysis
+        let agent_output = r#"{"result":"**Main Theme**: Code quality improvements across multiple files\n\nChanges include updated tests and refactored parsing logic\n\nstyle: improve code quality and test consistency"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+
+        assert!(result.was_structured);
+        assert!(result.content.contains("style: improve code quality"));
+        assert!(!result.content.contains("**Main Theme**"));
+
+        assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    // =========================================================================
+    // Regression Test: Validation Rejection
+    // =========================================================================
+
+    #[test]
+    fn test_validation_rejection_of_thought_process_leakage() {
+        // Regression test for the bug where invalid commit messages (with AI thought
+        // process leakage) were still being used despite validation failures.
+        //
+        // This test verifies that validation correctly rejects various types of
+        // invalid commit messages. When extract_commit_message_from_logs encounters
+        // these validation failures, it now returns Ok(None) instead of Ok(Some(invalid_message)).
+
+        // Case 1: Thought process leakage at the start (no actual commit message)
+        // This represents a case where filtering completely failed
+        let thought_process_only =
+            "Looking at this diff, I can see the changes are about refactoring error handling.";
+        let validation_result = validate_commit_message(thought_process_only);
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for thought process leakage: {thought_process_only}"
+        );
+        assert!(validation_result
+            .unwrap_err()
+            .contains("AI thought process"));
+
+        // Case 2: Thought process with analysis keywords
+        let analysis_style =
+            "The main changes are:\n- Updated error handling\n- Fixed parsing bugs\n- Added tests";
+        let validation_result = validate_commit_message(analysis_style);
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for analysis style: {analysis_style}"
+        );
+
+        // Case 3: Numbered analysis at the start (no commit message found)
+        let numbered_only = "1. First, let me analyze the diff\n2. Then create a commit message\n3. Finally validate";
+        let validation_result = validate_commit_message(numbered_only);
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for numbered analysis: {numbered_only}"
+        );
+        assert!(validation_result.unwrap_err().contains("numbered analysis"));
+
+        // Case 4: JSON artifacts (extraction failure)
+        let json_artifact_output =
+            "fix: some fix\n\nNote: This also contains {\"type\":\"result\" which should fail";
+        let validation_result = validate_commit_message(json_artifact_output);
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for JSON artifacts"
+        );
+        assert!(validation_result.unwrap_err().contains("JSON artifacts"));
+
+        // Case 5: Empty message
+        let validation_result = validate_commit_message("");
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for empty message"
+        );
+        assert!(validation_result.unwrap_err().contains("empty"));
+
+        // Case 6: Too short
+        let validation_result = validate_commit_message("fix");
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for too short message"
+        );
+        assert!(validation_result.unwrap_err().contains("too short"));
+
+        // Verify that valid commit messages still pass validation
+        let valid_message = "fix: handle edge case in parsing
+
+The previous implementation did not account for empty strings in the input
+parser, causing a panic when processing certain edge cases.
+
+Fixes #123";
+        let validation_result = validate_commit_message(valid_message);
+        assert!(
+            validation_result.is_ok(),
+            "Valid commit message should pass validation: {valid_message}"
+        );
+
+        // Verify that extraction + validation works for the full flow
+        // Using proper JSONL format (single line JSON)
+        let valid_output_jsonl = r#"{"result":"fix: handle edge case in parsing. The previous implementation did not account for empty strings, causing a panic. Fixes #123"}"#;
+        let result = extract_llm_output(valid_output_jsonl, Some(OutputFormat::Claude));
+        assert!(
+            validate_commit_message(&result.content).is_ok(),
+            "Valid extracted commit message should pass validation: {}",
+            result.content
+        );
+    }
+
+    // =========================================================================
+    // Regression Test: Formatted Thinking Output in Logs
+    // =========================================================================
+
+    #[test]
+    fn test_regression_formatted_thinking_output_in_logs() {
+        // Regression test for the bug where formatted thinking output like
+        // "[Claude] Thinking: ..." appears in log files from CLI display formatting
+        // and gets extracted as the commit message.
+
+        // Case 1: Simple formatted thinking followed by actual commit message
+        let log_with_thinking = r"[Claude] Thinking: Looking at this diff, I can see the changes...
+
+fix: handle edge case in parsing
+
+The previous implementation did not account for empty strings.";
+
+        let result = extract_llm_output(log_with_thinking, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("[Claude] Thinking:"),
+            "Formatted thinking marker should be removed from: {}",
+            result.content
+        );
+        assert!(
+            !result.content.contains("Looking at this diff"),
+            "Thinking content should be filtered out"
+        );
+        assert!(
+            result.content.contains("fix: handle edge case"),
+            "Actual commit message should be preserved"
+        );
+
+        // Case 2: Formatted thinking with ANSI color codes
+        let log_with_ansi_thinking = "\x1b[1m[claude] Thinking:\x1b[0m Analyzing the changes...\n\nfeat(parser): add support for new syntax";
+
+        let result = extract_llm_output(log_with_ansi_thinking, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("Thinking:"),
+            "Formatted thinking marker should be removed (with ANSI)"
+        );
+        assert!(
+            !result.content.contains("Analyzing"),
+            "Thinking content should be filtered out"
+        );
+        assert!(
+            result.content.contains("feat(parser):"),
+            "Actual commit message should be preserved"
+        );
+
+        // Case 3: Multiple thinking blocks
+        let log_with_multiple_thinking = r"[Agent] Thinking: Let me analyze this diff first...
+[Agent] Thinking: The changes involve error handling...
+
+fix(error): improve error messages
+
+Error messages are now more descriptive.";
+
+        let result = extract_llm_output(log_with_multiple_thinking, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("[Agent] Thinking:"),
+            "All formatted thinking markers should be removed"
+        );
+        assert!(
+            !result.content.contains("analyze") && !result.content.contains("Let me"),
+            "All thinking content should be filtered out"
+        );
+        assert!(
+            result.content.contains("fix(error):"),
+            "Actual commit message should be preserved"
+        );
+
+        // Case 4: Thinking content without blank line separator
+        let log_without_separator =
+            "[Assistant] thinking: Reviewing the code changes\nfix: update imports";
+
+        let result = extract_llm_output(log_without_separator, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("[Assistant] thinking:"),
+            "Formatted thinking marker should be removed"
+        );
+        assert!(
+            result.content.contains("fix:"),
+            "Commit message after thinking content should be found"
+        );
+
+        // Case 5: Only thinking content, no actual commit message
+        let log_only_thinking =
+            "[claude] Thinking: I need to analyze this more carefully to understand the changes";
+
+        let result = extract_llm_output(log_only_thinking, Some(OutputFormat::Generic));
+        // Should return empty or very minimal content since everything was filtered
+        assert!(
+            result.content.trim().len() < 50,
+            "Content should be mostly empty when only thinking is present: '{}'",
+            result.content
+        );
+
+        // Case 6: Verify validation rejects formatted thinking patterns at start
+        let formatted_thinking_at_start =
+            "[Agent] Thinking: Looking at the diff...\n\nfix: actual message";
+
+        let result = extract_llm_output(formatted_thinking_at_start, Some(OutputFormat::Generic));
+        assert!(
+            !result.content.contains("[Agent] Thinking:"),
+            "Formatted thinking should be removed during extraction"
+        );
+        // The result should now be clean (just the actual message)
+        assert!(
+            result.content.contains("fix: actual message") || result.content.contains("fix:"),
+            "Clean commit message should remain after filtering"
+        );
+    }
+
+    // =========================================================================
+    // Regression Tests: Additional Thought Process Patterns
+    // =========================================================================
+
+    #[test]
+    fn test_regression_based_on_git_diff_pattern() {
+        // Test filtering of "Based on the git diff" analysis pattern
+        let agent_output = r#"{"result":"Based on the git diff, here are the changes:\n- Updated parser\n- Fixed tests\n\nfeat: add new feature"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Based on the git diff"));
+        assert!(!result.content.contains("- Updated"));
+        assert_eq!(result.content, "feat: add new feature");
+    }
+
+    #[test]
+    fn test_regression_here_are_the_changes_pattern() {
+        // Test filtering of "Here are the changes" analysis pattern
+        let agent_output = r#"{"result":"Here are the changes I made:\n1. Fixed bug\n2. Added tests\n\nfix: resolve bug"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Here are the changes"));
+        assert!(!result.content.contains("1. Fixed"));
+        assert_eq!(result.content, "fix: resolve bug");
+    }
+
+    #[test]
+    fn test_regression_heres_what_changed_pattern() {
+        // Test filtering of "Here's what changed" analysis pattern
+        let agent_output = r#"{"result":"Here's what changed:\n- First change\n- Second change\n\nchore: update dependencies"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Here's what changed"));
+        assert!(!result.content.contains("- First"));
+        assert_eq!(result.content, "chore: update dependencies");
+    }
+
+    #[test]
+    fn test_regression_the_following_changes_pattern() {
+        // Test filtering of "The following changes" analysis pattern
+        let agent_output = r#"{"result":"The following changes were made:\n1. Updated code\n2. Fixed tests\n\nrefactor: improve code structure"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("The following changes"));
+        assert!(!result.content.contains("1. Updated"));
+        assert_eq!(result.content, "refactor: improve code structure");
+    }
+
+    #[test]
+    fn test_regression_changes_include_pattern() {
+        // Test filtering of "Changes include" analysis pattern
+        let agent_output = r#"{"result":"Changes include:\n- Bug fixes\n- New features\n\nfeat: implement feature"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Changes include"));
+        assert!(!result.content.contains("- Bug"));
+        assert_eq!(result.content, "feat: implement feature");
+    }
+
+    #[test]
+    fn test_regression_after_reviewing_pattern() {
+        // Test filtering of "After reviewing" analysis pattern
+        let agent_output = r#"{"result":"After reviewing the diff, I can see:\n- Multiple fixes\n\nfix: apply bug fixes"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("After reviewing"));
+        assert!(!result.content.contains("- Multiple"));
+        assert_eq!(result.content, "fix: apply bug fixes");
+    }
+
+    #[test]
+    fn test_regression_this_diff_shows_pattern() {
+        // Test filtering of "This diff shows" analysis pattern
+        let agent_output = r#"{"result":"This diff shows the following:\n1. Performance improvements\n\nperf: optimize performance"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("This diff shows"));
+        assert!(!result.content.contains("1. Performance"));
+        assert_eq!(result.content, "perf: optimize performance");
+    }
+
+    #[test]
+    fn test_regression_ive_analyzed_pattern() {
+        // Test filtering of "I've analyzed" analysis pattern
+        let agent_output = r#"{"result":"I've analyzed the changes:\n- Key improvements\n\nfeat: add improvements"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("I've analyzed"));
+        assert!(!result.content.contains("- Key"));
+        assert_eq!(result.content, "feat: add improvements");
+    }
+
+    #[test]
+    fn test_regression_key_changes_include_pattern() {
+        // Test filtering of "Key changes include" analysis pattern
+        let agent_output = r#"{"result":"Key changes include:\n1. Security fixes\n2. Performance boost\n\nfix: security vulnerability"}"#;
+
+        let result = extract_llm_output(agent_output, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert!(!result.content.contains("Key changes include"));
+        assert!(!result.content.contains("1. Security"));
+        assert_eq!(result.content, "fix: security vulnerability");
+    }
+
+    // =========================================================================
+    // Regression Tests for Specific Bug Patterns
+    // =========================================================================
+
+    #[test]
+    fn test_regression_glm_bug_pattern_606b907() {
+        // Regression test for commit 606b907 - GLM agent output with "The main changes I see are:"
+        // followed by numbered markdown-bold analysis without proper separation
+        // Test the filter function directly with the raw text
+        let raw_output = "The main changes I see are:
+1. **Rust code modernization** - Converting from older patterns to newer Rust idioms
+2. **Thought process filtering** - Adding comprehensive logic to detect and filter AI thought process patterns from commit messages
+3. **Test reorganization** - Splitting a large test file into 5 focused modules
+4. **String handling improvements** - Using `map_or_else`, `is_some_and`, `cloned()` where appropriate
+5. **Regex updates** - `once_cell::sync::Lazy` → `std::sync::LazyLock`
+6. **Const fn changes** - Methods taking `&self` now taking `self` by value
+7. **Various code quality improvements** - Error handling, visibility adjustments, etc.
+
+The most substantive user-facing change is the **thought process filtering** in `llm_output_extraction.rs` - this adds significant new functionality to prevent AI analysis text from leaking into generated commit messages. The rest is primarily refactoring/modernization.
+
+This is a **refactor** with significant improvements and bug fixes";
+
+        let result = remove_thought_process_patterns(raw_output);
+
+        // The filtered content should NOT contain the thought process analysis
+        assert!(!result.contains("The main changes I see are"));
+
+        // Should not contain numbered analysis items
+        assert!(!result.contains("1. **Rust code modernization**"));
+        assert!(!result.contains("2. **Thought process filtering**"));
+
+        // Should not contain the paragraph with "most substantive"
+        assert!(!result.contains("The most substantive user-facing change"));
+
+        // The result should be empty or very minimal since there's no proper commit message
+        // After filtering, we expect empty content or the last paragraph only
+        assert!(!result.contains("**Rust code modernization**"));
+        assert!(!result.contains("**Thought process filtering**"));
+    }
+
+    #[test]
+    fn test_regression_glm_bug_pattern_d6ca2a5() {
+        // Regression test for commit d6ca2a5 - "Looking at the diff" pattern
+        // with multi-paragraph analysis followed by "fix:" commit
+        let raw_output = "Looking at the diff, I can see these are related changes across the three JSON parser files (claude.rs, codex.rs, gemini.rs) that all deal with the same issue: tracking and resetting streaming state to prevent duplicate content display.
+
+The key change in claude.rs is:
+- Adding a `has_streamed_content` field to track if content has been streamed for the current message
+- Using this flag to skip displaying text in `format_message` if it was already streamed
+- Resetting this flag on `MessageStart`
+
+Similar state-resetting logic is added to codex.rs and gemini.rs.
+
+This is a fix for duplicate content display during streaming.
+
+fix(json_parser): prevent duplicate content display in streaming output
+
+Track streaming state per-message to avoid displaying text content twice:
+once during streaming and again in the final message summary.";
+
+        let result = remove_thought_process_patterns(raw_output);
+
+        // The filtered content should NOT contain the thought process analysis
+        assert!(!result.contains("Looking at the diff, I can see"));
+
+        // Should not contain the analysis paragraphs
+        assert!(!result.contains("The key change in claude.rs is"));
+        assert!(!result.contains("Similar state-resetting logic"));
+
+        // Should extract only the clean commit message
+        assert_eq!(result, "fix(json_parser): prevent duplicate content display in streaming output\n\nTrack streaming state per-message to avoid displaying text content twice:\nonce during streaming and again in the final message summary.");
     }
 }

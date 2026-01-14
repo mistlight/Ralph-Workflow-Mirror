@@ -530,7 +530,9 @@ impl ClaudeParser {
                     match session.get_delta_from_snapshot(&text, default_index_str) {
                         Ok(delta) => delta,
                         Err(e) => {
-                            eprintln!("Warning: Snapshot extraction failed: {e}. Using original delta.");
+                            eprintln!(
+                                "Warning: Snapshot extraction failed: {e}. Using original delta."
+                            );
                             &text
                         }
                     }

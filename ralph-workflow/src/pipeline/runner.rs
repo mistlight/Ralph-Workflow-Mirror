@@ -1,10 +1,16 @@
 //! Command execution helpers and fallback orchestration.
 
+// The `try_agent_with_retries` function has many parameters due to orchestrating
+// complex retry logic across multiple agent configurations. Refactoring to use
+// a config struct would be a larger change.
 #![expect(clippy::too_many_arguments)]
-#![expect(clippy::needless_pass_by_value)]
-#![expect(clippy::map_unwrap_or)]
-#![expect(clippy::needless_continue)]
+// Functions exceed 100 lines due to the nature of command execution and fallback
+// orchestration. Breaking them up further would harm readability.
 #![expect(clippy::too_many_lines)]
+// The explicit `continue` statement makes intent clearer even though it's
+// technically redundant at the end of a match arm in a loop.
+#![expect(clippy::needless_continue)]
+
 use crate::agents::{
     is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType,
 };
@@ -59,7 +65,7 @@ pub struct PromptCommand<'a> {
 ///
 /// This is an internal helper for `run_with_fallback`.
 pub fn run_with_prompt(
-    cmd: PromptCommand<'_>,
+    cmd: &PromptCommand<'_>,
     runtime: &mut PipelineRuntime<'_>,
 ) -> io::Result<CommandResult> {
     runtime.timer.start_phase();
@@ -329,7 +335,25 @@ pub fn run_with_prompt(
     }
 
     let stderr_output = match stderr_join_handle {
-        Some(handle) => handle.join().unwrap_or_else(|_| Ok(String::new()))?,
+        Some(handle) => match handle.join() {
+            Ok(result) => result?,
+            Err(panic_payload) => {
+                // Thread panicked - try to extract panic message for diagnostics
+                let panic_msg = panic_payload.downcast_ref::<String>().map_or_else(
+                    || {
+                        panic_payload.downcast_ref::<&str>().map_or_else(
+                            || "<unknown panic>".to_string(),
+                            std::string::ToString::to_string,
+                        )
+                    },
+                    std::clone::Clone::clone,
+                );
+                runtime.logger.warn(&format!(
+                    "Stderr collection thread panicked: {panic_msg}. This may indicate a bug."
+                ));
+                String::new()
+            }
+        },
         None => String::new(),
     };
 
@@ -383,15 +407,28 @@ fn get_platform_clipboard_command() -> Option<ClipboardCommand> {
             args: &[],
             paste_hint: "pbpaste to view",
         }),
-        Platform::DebianLinux | Platform::RhelLinux | Platform::ArchLinux | Platform::GenericLinux => {
+        Platform::DebianLinux
+        | Platform::RhelLinux
+        | Platform::ArchLinux
+        | Platform::GenericLinux => {
             // Try wl-copy (Wayland) first, then xclip (X11)
-            if Command::new("which").arg("wl-copy").output().map(|o| o.status.success()).unwrap_or(false) {
+            if Command::new("which")
+                .arg("wl-copy")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
                 Some(ClipboardCommand {
                     binary: "wl-copy",
                     args: &[],
                     paste_hint: "wl-paste to view",
                 })
-            } else if Command::new("which").arg("xclip").output().map(|o| o.status.success()).unwrap_or(false) {
+            } else if Command::new("which")
+                .arg("xclip")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
                 Some(ClipboardCommand {
                     binary: "xclip",
                     args: &["-selection", "clipboard"],
@@ -438,14 +475,14 @@ fn try_agent_with_retries(
     // GLM-specific diagnostic output (only on first try to avoid spam)
     if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
         let cmd_argv = split_command(cmd_str).ok();
-        let full_cmd_log = cmd_argv
-            .as_ref()
-            .map(|argv| {
+        let full_cmd_log = cmd_argv.as_ref().map_or_else(
+            || "<unparseable command>".to_string(),
+            |argv| {
                 let mut argv_for_log = argv.clone();
                 argv_for_log.push("<PROMPT>".to_string());
                 truncate_text(&format_argv_for_log(&argv_for_log), 160)
-            })
-            .unwrap_or_else(|| "<unparseable command>".to_string());
+            },
+        );
 
         if runtime.config.verbosity.is_debug() {
             runtime
@@ -467,7 +504,7 @@ fn try_agent_with_retries(
         }
 
         let result = run_with_prompt(
-            PromptCommand {
+            &PromptCommand {
                 label,
                 display_name,
                 cmd_str,

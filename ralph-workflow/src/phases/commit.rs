@@ -302,9 +302,12 @@ fn extract_commit_message_from_logs(
             Ok(Some(extracted))
         }
         Err(e) => {
-            logger.warn(&format!("Commit message validation failed: {e}"));
-            // Return the extracted content anyway - caller can decide whether to use it
-            Ok(Some(extracted))
+            logger.warn(&format!(
+                "Commit message validation failed: {e}. Rejecting invalid message."
+            ));
+            // Return None to signal that no valid commit message was found
+            // The caller will treat this as extraction failure rather than using an invalid message
+            Ok(None)
         }
     }
 }

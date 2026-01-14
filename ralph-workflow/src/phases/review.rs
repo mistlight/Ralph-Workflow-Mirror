@@ -16,6 +16,7 @@ use crate::git_helpers::{get_git_diff_from_start, git_snapshot, CommitResultFall
 use crate::guidelines::ReviewGuidelines;
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
+use crate::phases::get_primary_commit_agent;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines, prompt_for_agent,
@@ -907,31 +908,4 @@ fn build_review_prompt(
             }
         }
     }
-}
-
-/// Get the primary commit agent from the registry.
-///
-/// This function returns the name of the primary commit agent.
-/// If a commit-specific agent is configured, it uses that. Otherwise, it falls back
-/// to using the developer agent name (since commit messages should reflect development work).
-fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
-    use crate::agents::AgentRole;
-
-    let fallback_config = ctx.registry.fallback_config();
-
-    // First, try to get commit-specific agents
-    let commit_agents = fallback_config.get_fallbacks(AgentRole::Commit);
-    if !commit_agents.is_empty() {
-        // Return the first commit agent as the primary
-        return commit_agents.first().cloned();
-    }
-
-    // Fallback to using developer agents for commit generation
-    let developer_agents = fallback_config.get_fallbacks(AgentRole::Developer);
-    if !developer_agents.is_empty() {
-        return developer_agents.first().cloned();
-    }
-
-    // Last resort: use the current developer agent
-    Some(ctx.developer_agent.to_string())
 }
