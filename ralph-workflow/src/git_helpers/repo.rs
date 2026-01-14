@@ -11,8 +11,6 @@
 //! Operations use libgit2 directly to avoid CLI dependencies and work
 //! even when git is not installed.
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::cast_precision_loss)]
 use std::io;
 use std::path::PathBuf;
 

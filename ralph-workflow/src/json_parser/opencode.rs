@@ -244,12 +244,15 @@ impl OpenCodeParser {
                         reason
                     );
                     if !tokens_str.is_empty() {
-                        out.push_str(&format!(", {}", tokens_str));
+                        use std::fmt::Write;
+                        let _ = write!(out, ", {tokens_str}");
                     }
                     if cost > 0.0 {
-                        out.push_str(&format!(", ${cost:.4}"));
+                        use std::fmt::Write;
+                        let _ = write!(out, ", ${cost:.4}");
                     }
-                    out.push_str(&format!("){}\n", c.reset()));
+                    use std::fmt::Write;
+                    let _ = writeln!(out, "){}", c.reset());
                     out
                 } else {
                     String::new()
