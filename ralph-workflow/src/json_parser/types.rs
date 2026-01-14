@@ -567,8 +567,10 @@ pub(crate) fn format_unknown_json_event(
         };
 
         extracted_text.map(|text: String| {
-            let truncated = if text.len() > 30 {
-                format!("{}...", &text[..27.min(text.len())])
+            let truncated = if text.chars().count() > 30 {
+                // Use character-based slicing to avoid panic on multi-byte UTF-8 characters
+                let chars: Vec<char> = text.chars().take(27).collect();
+                format!("{}...", chars.iter().collect::<String>())
             } else {
                 text
             };

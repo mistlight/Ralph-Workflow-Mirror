@@ -290,7 +290,18 @@ pub(crate) fn run_with_prompt(
 
     // Wait for command completion and collect stderr.
     let status = child.wait()?;
+    // If status.code() returns None (process terminated by signal on Unix),
+    // we default to exit code 1 (failure). This treats signal termination
+    // as a failure, which is appropriate for agent execution.
     let exit_code = status.code().unwrap_or(1);
+
+    // Log if process was terminated by signal (no exit code available)
+    if status.code().is_none() && runtime.config.verbosity.is_debug() {
+        runtime
+            .logger
+            .warn("Process terminated by signal (no exit code), treating as failure");
+    }
+
     let stderr_output = match stderr_join_handle {
         Some(handle) => handle.join().unwrap_or_else(|_| Ok(String::new()))?,
         None => String::new(),

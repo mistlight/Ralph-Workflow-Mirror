@@ -399,7 +399,14 @@ fn expand_user_path(path: &str) -> PathBuf {
             return home.join(rest);
         }
     }
-    PathBuf::from(path)
+    // For relative paths, resolve them relative to the .ccs directory
+    let path_buf = PathBuf::from(path);
+    if path_buf.is_relative() {
+        if let Some(ccs_dir) = ccs_dir() {
+            return ccs_dir.join(path_buf);
+        }
+    }
+    path_buf
 }
 
 fn find_env_object(json: &JsonValue) -> Option<&serde_json::Map<String, JsonValue>> {
