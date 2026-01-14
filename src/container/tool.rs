@@ -181,7 +181,7 @@ impl ToolManager {
                 if let Ok(prefix) = env::var("HOMEBREW_PREFIX") {
                     let prefix_path = Path::new(&prefix);
                     if prefix_path.exists() && prefix_path.is_dir() {
-                        let target = prefix.to_string();
+                        let target = prefix.clone();
                         if seen_targets.insert(target.clone()) {
                             mounts.push(ToolMount::new(PathBuf::from(prefix), target));
                         }
@@ -547,7 +547,10 @@ mod tests {
         // Just verify the method doesn't panic and returns &mut Self
         let result = manager.add_tool_dir(custom_path);
         // Should return self for chaining
-        assert_eq!(result as *const _ as usize, &manager as *const _ as usize);
+        assert_eq!(
+            std::ptr::from_ref(result) as usize,
+            &raw const manager as usize
+        );
     }
 
     #[test]
@@ -556,7 +559,10 @@ mod tests {
         // Just verify the method doesn't panic and returns &mut Self
         let result = manager.with_system_bins(false);
         // Should return self for chaining
-        assert_eq!(result as *const _ as usize, &manager as *const _ as usize);
+        assert_eq!(
+            std::ptr::from_ref(result) as usize,
+            &raw const manager as usize
+        );
     }
 
     #[test]

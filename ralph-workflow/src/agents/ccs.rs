@@ -671,41 +671,37 @@ mod tests {
         // Resolve ccs/work
         let config = resolver.try_resolve("ccs/work");
         assert!(config.is_some());
-        let work_cmd = config.unwrap().cmd.clone();
+        let work_cmd = config.unwrap().cmd;
         assert!(
             work_cmd.ends_with("claude") || work_cmd == "ccs work",
-            "cmd should be 'ccs work' or a path ending with 'claude', got: {}",
-            work_cmd
+            "cmd should be 'ccs work' or a path ending with 'claude', got: {work_cmd}"
         );
 
         // Resolve ccs/personal
         let config = resolver.try_resolve("ccs/personal");
         assert!(config.is_some());
-        let personal_cmd = config.unwrap().cmd.clone();
+        let personal_cmd = config.unwrap().cmd;
         assert!(
             personal_cmd.ends_with("claude") || personal_cmd == "ccs personal",
-            "cmd should be 'ccs personal' or a path ending with 'claude', got: {}",
-            personal_cmd
+            "cmd should be 'ccs personal' or a path ending with 'claude', got: {personal_cmd}"
         );
 
         // Resolve plain "ccs" (default)
         let config = resolver.try_resolve("ccs");
         assert!(config.is_some());
-        let default_cmd = config.unwrap().cmd.clone();
+        let default_cmd = config.unwrap().cmd;
         assert!(
             default_cmd.ends_with("claude") || default_cmd == "ccs",
-            "cmd should be 'ccs' or a path ending with 'claude', got: {}",
-            default_cmd
+            "cmd should be 'ccs' or a path ending with 'claude', got: {default_cmd}"
         );
 
         // Unknown alias - now resolves with default config for direct CCS execution
         let config = resolver.try_resolve("ccs/unknown");
         assert!(config.is_some());
-        let unknown_cmd = config.unwrap().cmd.clone();
+        let unknown_cmd = config.unwrap().cmd;
         assert!(
             unknown_cmd.ends_with("claude") || unknown_cmd == "ccs unknown",
-            "cmd should be 'ccs unknown' or a path ending with 'claude', got: {}",
-            unknown_cmd
+            "cmd should be 'ccs unknown' or a path ending with 'claude', got: {unknown_cmd}"
         );
 
         // Not a CCS ref

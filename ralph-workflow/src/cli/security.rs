@@ -10,7 +10,7 @@ use crate::logger::{Colors, Logger};
 /// Handle the --setup-security command
 ///
 /// Sets up the user account for user-account security mode.
-pub fn handle_setup_security(colors: &Colors) -> anyhow::Result<()> {
+pub fn handle_setup_security(colors: Colors) -> anyhow::Result<()> {
     println!("{}", colors.bold());
     println!("╔══════════════════════════════════════════════════════════════════════════╗");
     println!("║                        Ralph Security Setup                              ║");
@@ -141,7 +141,7 @@ echo "✓ Setup complete!"
 ///
 /// Checks and reports the status of security mode configuration.
 pub fn handle_security_check(
-    colors: &Colors,
+    colors: Colors,
     config: &Config,
     _logger: &mut Logger,
 ) -> anyhow::Result<()> {
@@ -366,7 +366,7 @@ pub fn handle_security_check(
 ///
 /// Builds a container image for container mode.
 #[cfg(feature = "build-image")]
-pub fn handle_build_image(tag: Option<String>, colors: &Colors) -> anyhow::Result<()> {
+pub fn handle_build_image(tag: Option<String>, colors: Colors) -> anyhow::Result<()> {
     use crate::container::image::ContainerImage;
 
     println!("{}", colors.bold());

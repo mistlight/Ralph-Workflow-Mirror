@@ -18,10 +18,7 @@ mod reviewer;
 mod types;
 
 // Re-export all public items for backward compatibility
-pub use commit::{
-    prompt_emergency_commit, prompt_fix, prompt_generate_commit_message_with_diff,
-    prompt_strict_json_commit, prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
-};
+pub use commit::{prompt_fix, prompt_generate_commit_message_with_diff};
 pub use developer::{prompt_developer_iteration, prompt_plan};
 pub use reviewer::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines,
@@ -56,16 +53,26 @@ pub fn prompt_for_agent(
 ) -> String {
     match (role, action) {
         (_, Action::Plan) => prompt_plan(prompt_md_content),
-        (Role::Developer | Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
+        (Role::Developer, Action::Iterate) => prompt_developer_iteration(
             iteration.unwrap_or(1),
             total_iterations.unwrap_or(1),
             context,
         ),
-        (Role::Reviewer, Action::Review) => guidelines.map_or_else(
-            || prompt_reviewer_review(context),
-            |g| prompt_reviewer_review_with_guidelines(context, g),
-        ),
+        (Role::Reviewer, Action::Review) => {
+            // Use guidelines-enhanced prompt if guidelines are available
+            if let Some(g) = guidelines {
+                prompt_reviewer_review_with_guidelines(context, g)
+            } else {
+                prompt_reviewer_review(context)
+            }
+        }
         (_, Action::Fix) => prompt_fix(),
+        // Fallback for Reviewer + Iterate (shouldn't happen but be safe)
+        (Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
+            iteration.unwrap_or(1),
+            total_iterations.unwrap_or(1),
+            context,
+        ),
         // Fallback for Developer + Review (shouldn't happen but be safe)
         (Role::Developer, Action::Review) => prompt_reviewer_review(context),
     }

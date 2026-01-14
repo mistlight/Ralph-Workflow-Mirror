@@ -23,7 +23,7 @@ pub struct PhaseContext<'a> {
     /// Logger for output and diagnostics.
     pub logger: &'a Logger,
     /// Terminal color configuration.
-    pub colors: &'a Colors,
+    pub colors: Colors,
     /// Timer for tracking elapsed time.
     pub timer: &'a mut Timer,
     /// Statistics for tracking pipeline progress.

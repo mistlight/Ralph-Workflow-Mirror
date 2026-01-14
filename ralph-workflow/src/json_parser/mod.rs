@@ -37,27 +37,22 @@
 //! - **Debug (4)**: Maximum verbosity, includes raw JSON output
 
 mod claude;
-#[cfg(test)]
-mod claude_tests;
 mod codex;
-#[cfg(test)]
-mod codex_tests;
 mod delta_display;
 mod gemini;
-#[cfg(test)]
-mod gemini_tests;
 pub mod health;
 mod opencode;
-#[cfg(test)]
-mod opencode_tests;
 mod stream_classifier;
-pub mod streaming_state;
 mod types;
 
 pub use claude::ClaudeParser;
 pub use codex::CodexParser;
 pub use gemini::GeminiParser;
 pub use opencode::OpenCodeParser;
+
+// Re-export format_tool_input for tests
+#[cfg(test)]
+pub use types::format_tool_input;
 
 #[cfg(test)]
 mod tests;

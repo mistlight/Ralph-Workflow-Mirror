@@ -271,10 +271,10 @@ impl UserAccountExecutor {
 
         // Get current user's home directory for language manager paths
         let current_home = env::var("HOME").unwrap_or_else(|_| {
-            env::var("USER")
-                .ok()
-                .map(|user| format!("/home/{user}"))
-                .unwrap_or_else(|| "/home/default".to_string())
+            env::var("USER").ok().map_or_else(
+                || "/home/default".to_string(),
+                |user| format!("/home/{user}"),
+            )
         });
 
         // On macOS, inject Homebrew paths
@@ -293,7 +293,7 @@ impl UserAccountExecutor {
 
             // Add language manager shims to PATH
             for shim_path in LANGUAGE_MANAGER_SHIMS {
-                let full_path = format!("{}/{}", current_home, shim_path);
+                let full_path = format!("{current_home}/{shim_path}");
                 if Path::new(&full_path).exists() && !path.contains(shim_path) {
                     *path = format!("{}:{}", full_path, path.as_str());
                 }
@@ -359,7 +359,7 @@ impl UserAccountExecutor {
 
             // Add language manager shims to PATH
             for shim_path in LANGUAGE_MANAGER_SHIMS {
-                let full_path = format!("{}/{}", current_home, shim_path);
+                let full_path = format!("{current_home}/{shim_path}");
                 if Path::new(&full_path).exists() && !path.contains(shim_path) {
                     *path = format!("{}:{}", full_path, path.as_str());
                 }
@@ -563,8 +563,7 @@ mod tests {
 
         // Use current user which should exist
         let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
-        let executor =
-            UserAccountExecutor::new(workspace.clone(), temp.clone(), Some(current_user));
+        let executor = UserAccountExecutor::new(workspace.clone(), temp, Some(current_user));
 
         // Only assert if executor creation succeeded
         // (it might fail if sudo is not configured)
@@ -591,8 +590,7 @@ mod tests {
 
         // Use current user which should exist and have access
         let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
-        let executor =
-            UserAccountExecutor::new(workspace.clone(), temp.clone(), Some(current_user));
+        let executor = UserAccountExecutor::new(workspace.clone(), temp, Some(current_user));
 
         // Only test verify_workspace_access if executor creation succeeded
         if let Ok(exec) = executor {

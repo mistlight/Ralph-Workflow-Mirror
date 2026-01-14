@@ -1,6 +1,6 @@
 //! `OpenCode` event parser implementation
 //!
-//! This module handles parsing and displaying OpenCode NDJSON event streams.
+//! This module handles parsing and displaying `OpenCode` NDJSON event streams.
 //!
 //! # Streaming Output Behavior
 //!
@@ -393,7 +393,7 @@ impl OpenCodeParser {
             }
             _ => {
                 // Unknown event type - use the generic formatter in verbose mode
-                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+                format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
             }
         };
 
@@ -482,7 +482,7 @@ impl OpenCodeParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{}", output)?;
+                    write!(writer, "{output}")?;
                     writer.flush()?;
                 }
                 None => {
@@ -513,7 +513,7 @@ impl OpenCodeParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
+        if let Some(warning) = monitor.check_and_warn(*c) {
             writeln!(writer, "{warning}")?;
         }
         Ok(())

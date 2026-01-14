@@ -205,7 +205,7 @@ enum SecurityModeContext<'a> {
 pub struct PipelineRuntime<'a> {
     pub(crate) timer: &'a mut Timer,
     pub(crate) logger: &'a Logger,
-    pub(crate) colors: &'a Colors,
+    pub(crate) colors: Colors,
     pub(crate) config: &'a Config,
 }
 
@@ -368,7 +368,7 @@ pub fn run_with_prompt(
                             match cmd.parser_type {
                                 JsonParserType::Claude => {
                                     let p = crate::json_parser::ClaudeParser::new(
-                                        *runtime.colors,
+                                        runtime.colors,
                                         runtime.config.verbosity,
                                     )
                                     .with_display_name(cmd.display_name)
@@ -377,7 +377,7 @@ pub fn run_with_prompt(
                                 }
                                 JsonParserType::Codex => {
                                     let p = crate::json_parser::CodexParser::new(
-                                        *runtime.colors,
+                                        runtime.colors,
                                         runtime.config.verbosity,
                                     )
                                     .with_display_name(cmd.display_name)
@@ -386,7 +386,7 @@ pub fn run_with_prompt(
                                 }
                                 JsonParserType::Gemini => {
                                     let p = crate::json_parser::GeminiParser::new(
-                                        *runtime.colors,
+                                        runtime.colors,
                                         runtime.config.verbosity,
                                     )
                                     .with_display_name(cmd.display_name)
@@ -395,7 +395,7 @@ pub fn run_with_prompt(
                                 }
                                 JsonParserType::OpenCode => {
                                     let p = crate::json_parser::OpenCodeParser::new(
-                                        *runtime.colors,
+                                        runtime.colors,
                                         runtime.config.verbosity,
                                     )
                                     .with_display_name(cmd.display_name)
@@ -489,7 +489,7 @@ pub fn run_with_prompt(
                             match cmd.parser_type {
                                 JsonParserType::Claude => {
                                     let p = crate::json_parser::ClaudeParser::new(
-                                        *runtime.colors,
+                                        runtime.colors,
                                         runtime.config.verbosity,
                                     )
                                     .with_display_name(cmd.display_name)
@@ -498,7 +498,7 @@ pub fn run_with_prompt(
                                 }
                                 JsonParserType::Codex => {
                                     let p = crate::json_parser::CodexParser::new(
-                                        *runtime.colors,
+                                        runtime.colors,
                                         runtime.config.verbosity,
                                     )
                                     .with_display_name(cmd.display_name)
@@ -507,7 +507,7 @@ pub fn run_with_prompt(
                                 }
                                 JsonParserType::Gemini => {
                                     let p = crate::json_parser::GeminiParser::new(
-                                        *runtime.colors,
+                                        runtime.colors,
                                         runtime.config.verbosity,
                                     )
                                     .with_display_name(cmd.display_name)
@@ -516,7 +516,7 @@ pub fn run_with_prompt(
                                 }
                                 JsonParserType::OpenCode => {
                                     let p = crate::json_parser::OpenCodeParser::new(
-                                        *runtime.colors,
+                                        runtime.colors,
                                         runtime.config.verbosity,
                                     )
                                     .with_display_name(cmd.display_name)
@@ -728,33 +728,29 @@ fn execute_command_direct(
 
         match config.parser_type {
             JsonParserType::Claude => {
-                let p = crate::json_parser::ClaudeParser::new(
-                    *runtime.colors,
-                    runtime.config.verbosity,
-                )
-                .with_display_name(config.display_name)
-                .with_log_file(config.logfile);
+                let p =
+                    crate::json_parser::ClaudeParser::new(runtime.colors, runtime.config.verbosity)
+                        .with_display_name(config.display_name)
+                        .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Codex => {
                 let p =
-                    crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
+                    crate::json_parser::CodexParser::new(runtime.colors, runtime.config.verbosity)
                         .with_display_name(config.display_name)
                         .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Gemini => {
-                let p = crate::json_parser::GeminiParser::new(
-                    *runtime.colors,
-                    runtime.config.verbosity,
-                )
-                .with_display_name(config.display_name)
-                .with_log_file(config.logfile);
+                let p =
+                    crate::json_parser::GeminiParser::new(runtime.colors, runtime.config.verbosity)
+                        .with_display_name(config.display_name)
+                        .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::OpenCode => {
                 let p = crate::json_parser::OpenCodeParser::new(
-                    *runtime.colors,
+                    runtime.colors,
                     runtime.config.verbosity,
                 )
                 .with_display_name(config.display_name)

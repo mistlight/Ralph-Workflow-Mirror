@@ -21,7 +21,7 @@
 //! Hello World\n              (message_stop adds final newline)
 //! ```
 //!
-//! This pattern is consistent across all parsers (Claude, Codex, Gemini, OpenCode)
+//! This pattern is consistent across all parsers (Claude, Codex, Gemini, `OpenCode`)
 //! with variations in when the prefix is shown based on each format's event structure.
 
 use crate::colors::{Colors, CHECK, CROSS};
@@ -310,7 +310,7 @@ impl ClaudeParser {
                 // Use the generic unknown event formatter for consistent handling
                 // In verbose mode, this will show the event type and key fields
                 // In normal mode, this returns empty string
-                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+                format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
             }
         };
 
@@ -427,7 +427,7 @@ impl ClaudeParser {
                     // Accumulate thinking content
                     acc.add_thinking_delta(index, &text);
                     // Display thinking with visual distinction
-                    Self::formatter().format_thinking(text.as_str(), prefix, c)
+                    Self::formatter().format_thinking(text.as_str(), prefix, *c)
                 }
                 ContentBlockDelta::ToolUseDelta {
                     tool_use: Some(tool_delta),
@@ -452,7 +452,7 @@ impl ClaudeParser {
 
                         // Show partial tool input in real-time
                         let formatter = DeltaDisplayFormatter::new();
-                        formatter.format_tool_input(&input_str, prefix, c)
+                        formatter.format_tool_input(&input_str, prefix, *c)
                     }
                 }
                 _ => String::new(),
@@ -573,7 +573,7 @@ impl ClaudeParser {
     }
 
     /// Get a shared delta display formatter
-    fn formatter() -> DeltaDisplayFormatter {
+    const fn formatter() -> DeltaDisplayFormatter {
         DeltaDisplayFormatter::new()
     }
 
@@ -631,7 +631,7 @@ impl ClaudeParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{}", output)?;
+                    write!(writer, "{output}")?;
                     writer.flush()?;
                 }
                 None => {
@@ -664,7 +664,7 @@ impl ClaudeParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
+        if let Some(warning) = monitor.check_and_warn(*c) {
             writeln!(writer, "{warning}")?;
         }
         Ok(())

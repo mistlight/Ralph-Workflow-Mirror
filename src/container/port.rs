@@ -7,7 +7,7 @@
 /// Port mapping configuration
 ///
 /// Defines how a container port is mapped to a host port.
-/// Uses auto-allocation by default (host_port=0) to avoid conflicts.
+/// Uses auto-allocation by default (`host_port=0`) to avoid conflicts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PortMapping {
     /// Port inside the container

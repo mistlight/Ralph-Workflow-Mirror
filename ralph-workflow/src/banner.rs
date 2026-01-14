@@ -3,44 +3,12 @@
 //! This module contains presentation logic for the pipeline's visual output,
 //! including the welcome banner and the final summary display.
 
-use crate::logger::Colors;
+use crate::colors::Colors;
+use crate::config::Config;
 use crate::logger::Logger;
-
-/// Summary data for pipeline completion display.
-///
-/// Decouples the banner presentation logic from the actual pipeline types.
-pub struct PipelineSummary {
-    /// Total elapsed time formatted as "Xm YYs"
-    pub total_time: String,
-    /// Number of developer runs completed
-    pub dev_runs_completed: usize,
-    /// Total configured developer iterations
-    pub dev_runs_total: usize,
-    /// Number of reviewer runs completed
-    pub review_runs: usize,
-    /// Number of changes detected during pipeline
-    pub changes_detected: usize,
-    /// Whether isolation mode is enabled
-    pub isolation_mode: bool,
-    /// Whether to show verbose output
-    pub verbose: bool,
-    /// Optional review metrics summary
-    pub review_summary: Option<ReviewSummary>,
-}
-
-/// Review metrics summary for display.
-pub struct ReviewSummary {
-    /// One-line summary of review results
-    pub summary: String,
-    /// Number of unresolved issues
-    pub unresolved_count: usize,
-    /// Number of unresolved blocking issues
-    pub blocking_count: usize,
-    /// Optional detailed breakdown (for verbose mode)
-    pub detailed_breakdown: Option<String>,
-    /// Optional sample unresolved issues (for verbose mode)
-    pub samples: Vec<String>,
-}
+use crate::pipeline::Stats;
+use crate::review_metrics::ReviewMetrics;
+use crate::timer::Timer;
 
 /// Print the welcome banner for the Ralph pipeline.
 ///
@@ -103,10 +71,18 @@ pub fn print_welcome_banner(colors: Colors, developer_agent: &str, reviewer_agen
 /// # Arguments
 ///
 /// * `colors` - Color configuration for terminal output
-/// * `summary` - Pipeline summary data
+/// * `config` - Pipeline configuration
+/// * `timer` - Timer tracking the pipeline duration
+/// * `stats` - Statistics collected during the pipeline run
 /// * `logger` - Logger for final success message
-pub fn print_final_summary(colors: Colors, summary: &PipelineSummary, logger: &Logger) {
-    logger.header("Pipeline Complete", crate::logger::Colors::green);
+pub fn print_final_summary(
+    colors: Colors,
+    config: &Config,
+    timer: &Timer,
+    stats: &Stats,
+    logger: &Logger,
+) {
+    logger.header("Pipeline Complete", super::colors::Colors::green);
 
     println!();
     println!(
@@ -125,7 +101,7 @@ pub fn print_final_summary(colors: Colors, summary: &PipelineSummary, logger: &L
         colors.cyan(),
         colors.reset(),
         colors.bold(),
-        summary.total_time,
+        timer.elapsed_formatted(),
         colors.reset()
     );
     println!(
@@ -133,16 +109,16 @@ pub fn print_final_summary(colors: Colors, summary: &PipelineSummary, logger: &L
         colors.blue(),
         colors.reset(),
         colors.bold(),
-        summary.dev_runs_completed,
+        stats.developer_runs_completed,
         colors.reset(),
-        summary.dev_runs_total
+        config.developer_iters
     );
     println!(
         "  {}🔍{}  Review runs:     {}{}{}",
         colors.magenta(),
         colors.reset(),
         colors.bold(),
-        summary.review_runs,
+        stats.reviewer_runs_completed,
         colors.reset()
     );
     println!(
@@ -150,94 +126,93 @@ pub fn print_final_summary(colors: Colors, summary: &PipelineSummary, logger: &L
         colors.green(),
         colors.reset(),
         colors.bold(),
-        summary.changes_detected,
+        stats.changes_detected,
         colors.reset()
     );
 
-    // Review metrics
-    if let Some(ref review) = summary.review_summary {
-        print_review_summary(colors, summary.verbose, review);
+    // Review metrics from ISSUES.md
+    if let Ok(metrics) = ReviewMetrics::from_issues_file() {
+        print_review_metrics(colors, config, &metrics);
     }
     println!();
 
-    print_output_files(colors, summary.isolation_mode);
+    print_output_files(colors, config);
 
     logger.success("Ralph pipeline completed successfully!");
 }
 
 /// Print review metrics summary.
-fn print_review_summary(colors: Colors, verbose: bool, review: &ReviewSummary) {
-    // No issues case
-    if review.unresolved_count == 0 && review.blocking_count == 0 {
+fn print_review_metrics(colors: Colors, config: &Config, metrics: &ReviewMetrics) {
+    if !metrics.issues_file_found {
+        return;
+    }
+
+    if metrics.no_issues_declared && metrics.total_issues == 0 {
         println!(
             "  {}✓{}   Review result:   {}{}{}",
             colors.green(),
             colors.reset(),
             colors.bold(),
-            review.summary,
+            metrics.summary(),
             colors.reset()
         );
-        return;
-    }
-
-    // Issues present
-    println!(
-        "  {}🔎{}  Review summary:  {}{}{}",
-        colors.yellow(),
-        colors.reset(),
-        colors.bold(),
-        review.summary,
-        colors.reset()
-    );
-
-    // Show unresolved count
-    if review.unresolved_count > 0 {
+    } else if metrics.total_issues > 0 {
+        // Use summary() for a concise one-line display
         println!(
-            "  {}⚠{}   Unresolved:      {}{}{} issues remaining",
-            colors.red(),
+            "  {}🔎{}  Review summary:  {}{}{}",
+            colors.yellow(),
             colors.reset(),
             colors.bold(),
-            review.unresolved_count,
+            metrics.summary(),
             colors.reset()
         );
-    }
-
-    // Show detailed breakdown in verbose mode
-    if verbose {
-        if let Some(ref breakdown) = review.detailed_breakdown {
-            println!("  {}📊{}  Breakdown:", colors.dim(), colors.reset());
-            for line in breakdown.lines() {
-                println!("      {}{}{}", colors.dim(), line.trim(), colors.reset());
-            }
-        }
-        // Show sample unresolved issues
-        if !review.samples.is_empty() {
+        // Show unresolved count
+        let unresolved = metrics.unresolved_issues();
+        if unresolved > 0 {
             println!(
-                "  {}🧾{}  Unresolved samples:",
-                colors.dim(),
+                "  {}⚠{}   Unresolved:      {}{}{} issues remaining",
+                colors.red(),
+                colors.reset(),
+                colors.bold(),
+                unresolved,
                 colors.reset()
             );
-            for s in &review.samples {
-                println!("      {}- {}{}", colors.dim(), s, colors.reset());
+        }
+        // Show detailed breakdown in verbose mode
+        if config.verbosity.is_verbose() && metrics.total_issues > 1 {
+            println!("  {}📊{}  Breakdown:", colors.dim(), colors.reset());
+            for line in metrics.detailed_summary().lines() {
+                println!("      {}{}{}", colors.dim(), line.trim(), colors.reset());
+            }
+            // Also show a few unresolved issue summaries (useful when running in verbose mode).
+            let samples = metrics.unresolved_issue_summaries(3);
+            if !samples.is_empty() {
+                println!(
+                    "  {}🧾{}  Unresolved samples:",
+                    colors.dim(),
+                    colors.reset()
+                );
+                for s in samples {
+                    println!("      {}- {}{}", colors.dim(), s, colors.reset());
+                }
             }
         }
-    }
-
-    // Highlight blocking issues
-    if review.blocking_count > 0 {
-        println!(
-            "  {}🚨{}  BLOCKING:        {}{}{} critical/high issues unresolved",
-            colors.red(),
-            colors.reset(),
-            colors.bold(),
-            review.blocking_count,
-            colors.reset()
-        );
+        // Highlight blocking issues
+        if metrics.has_blocking_issues() {
+            println!(
+                "  {}🚨{}  BLOCKING:        {}{}{} critical/high issues unresolved",
+                colors.red(),
+                colors.reset(),
+                colors.bold(),
+                metrics.unresolved_blocking_issues(),
+                colors.reset()
+            );
+        }
     }
 }
 
 /// Print the output files list.
-fn print_output_files(colors: Colors, isolation_mode: bool) {
+fn print_output_files(colors: Colors, config: &Config) {
     println!(
         "{}{}📁 Output Files{}",
         colors.bold(),
@@ -260,7 +235,7 @@ fn print_output_files(colors: Colors, isolation_mode: bool) {
         colors.reset()
     );
     // Only show ISSUES.md and NOTES.md when NOT in isolation mode
-    if !isolation_mode {
+    if !config.isolation_mode {
         println!(
             "  → {}.agent/ISSUES.md{}    Review findings",
             colors.cyan(),

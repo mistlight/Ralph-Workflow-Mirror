@@ -313,7 +313,7 @@ impl GeminiParser {
             }
             GeminiEvent::Unknown => {
                 // Use the generic unknown event formatter for consistent handling
-                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+                format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
             }
         };
 
@@ -380,7 +380,7 @@ impl GeminiParser {
             match self.parse_event(&line) {
                 Some(output) => {
                     monitor.record_parsed();
-                    write!(writer, "{}", output)?;
+                    write!(writer, "{output}")?;
                     writer.flush()?;
                 }
                 None => {
@@ -412,7 +412,7 @@ impl GeminiParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
+        if let Some(warning) = monitor.check_and_warn(*c) {
             writeln!(writer, "{warning}")?;
         }
         Ok(())

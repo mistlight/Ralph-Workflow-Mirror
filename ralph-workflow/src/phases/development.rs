@@ -7,21 +7,51 @@
 //! 3. Deletes PLAN.md
 //! 4. Optionally runs fast checks
 
-#![expect(clippy::too_many_lines)]
 use crate::agents::AgentRole;
-use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
-use crate::files::{delete_plan_file, update_status};
-use crate::files::{extract_plan, extract_plan_from_logs_text};
+use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_needed};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
-use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
-use crate::phases::get_primary_commit_agent;
-use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
+use crate::utils::{
+    delete_plan_file, print_progress, save_checkpoint, update_status, PipelineCheckpoint,
+    PipelinePhase,
+};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+/// Periodically restore PROMPT.md if it was deleted by an agent.
+///
+/// This is a defense-in-depth measure to ensure PROMPT.md is always available
+/// even if an agent accidentally deletes it during pipeline execution.
+///
+/// The enhanced logging helps identify which phase/agent likely caused
+/// the deletion for debugging purposes.
+fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, iteration: u32) {
+    match restore_prompt_if_needed() {
+        Ok(true) => {
+            // File exists with content, no action needed
+        }
+        Ok(false) => {
+            logger.warn("[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup");
+            logger.warn(&format!(
+                "[PROMPT_INTEGRITY] Deletion detected during {phase} phase (iteration {iteration})"
+            ));
+            logger.warn("[PROMPT_INTEGRITY] Possible cause: Agent used 'rm' or file write tools on PROMPT.md");
+            logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
+        }
+        Err(e) => {
+            logger.error(&format!(
+                "[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {e}"
+            ));
+            logger.error(&format!(
+                "[PROMPT_INTEGRITY] Error occurred during {phase} phase (iteration {iteration})"
+            ));
+            logger.error("Pipeline may not function correctly without PROMPT.md");
+        }
+    }
+}
 
 use super::context::PhaseContext;
 
@@ -167,7 +197,17 @@ pub fn run_development_phase(
                 let git_name = ctx.config.git_user_name.as_deref();
                 let git_email = ctx.config.git_user_email.as_deref();
 
-                match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
+                match commit_with_generated_message(
+                    &diff,
+                    &agent,
+                    git_name,
+                    git_email,
+                    ctx.registry,
+                    ctx.logger,
+                    ctx.colors,
+                    ctx.config,
+                    ctx.timer,
+                ) {
                     CommitResultFallback::Success(oid) => {
                         ctx.logger
                             .success(&format!("Commit created successfully: {oid}"));
@@ -371,7 +411,7 @@ fn verify_plan_exists(
 
 /// Run fast check command.
 fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> anyhow::Result<()> {
-    let argv = crate::cli::split_command(fast_cmd)
+    let argv = crate::utils::split_command(fast_cmd)
         .map_err(|e| anyhow::anyhow!("FAST_CHECK_CMD parse error (iteration {iteration}): {e}"))?;
     if argv.is_empty() {
         ctx.logger
@@ -379,7 +419,7 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
         return Ok(());
     }
 
-    let display_cmd = crate::cli::format_argv_for_log(&argv);
+    let display_cmd = crate::utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running fast check: {}{}{}",
         ctx.colors.dim(),
@@ -401,4 +441,31 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
     }
 
     Ok(())
+}
+
+/// Get the primary commit agent from the registry.
+///
+/// This function returns the name of the primary commit agent.
+/// If a commit-specific agent is configured, it uses that. Otherwise, it falls back
+/// to using the developer agent name (since commit messages should reflect development work).
+fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
+    use crate::agents::AgentRole;
+
+    let fallback_config = ctx.registry.fallback_config();
+
+    // First, try to get commit-specific agents
+    let commit_agents = fallback_config.get_fallbacks(AgentRole::Commit);
+    if !commit_agents.is_empty() {
+        // Return the first commit agent as the primary
+        return commit_agents.first().cloned();
+    }
+
+    // Fallback to using developer agents for commit generation
+    let developer_agents = fallback_config.get_fallbacks(AgentRole::Developer);
+    if !developer_agents.is_empty() {
+        return developer_agents.first().cloned();
+    }
+
+    // Last resort: use the current developer agent
+    Some(ctx.developer_agent.to_string())
 }

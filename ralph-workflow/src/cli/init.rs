@@ -5,8 +5,8 @@
 //! and PROMPT.md from templates.
 
 use crate::agents::{AgentsConfigFile, ConfigInitResult};
+use crate::colors::Colors;
 use crate::config::{unified_config_path, UnifiedConfig, UnifiedConfigInitResult};
-use crate::logger::Colors;
 use crate::templates::{get_template, list_templates};
 use std::fs;
 use std::path::Path;
@@ -132,7 +132,9 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
     }
 
     // Validate the template exists
-    let Some(template) = get_template(template_name) else {
+    let template = if let Some(t) = get_template(template_name) {
+        t
+    } else {
         println!(
             "{}Unknown template: '{}'{}",
             colors.red(),
@@ -195,8 +197,8 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
 ///
 /// # Returns
 ///
-/// Returns `true` if the flag was handled (program should exit after).
-pub fn handle_list_templates(colors: Colors) -> bool {
+/// Returns `Ok(true)` if the flag was handled (program should exit after).
+pub fn handle_list_templates(colors: Colors) -> anyhow::Result<bool> {
     println!("Available PROMPT.md templates:");
     println!();
 
@@ -227,5 +229,5 @@ pub fn handle_list_templates(colors: Colors) -> bool {
     println!("  ralph --init-prompt bug-fix        # Create bug fix template");
     println!("  ralph --init-prompt quick          # Create quick change template");
 
-    true
+    Ok(true)
 }

@@ -61,7 +61,6 @@ GUIDELINES:
 /// is passed, it returns an error prompt that will fail validation in the caller
 /// and trigger fallback commit message generation. Callers should still check for
 /// meaningful changes before calling this function for efficiency.
-#[expect(clippy::too_many_lines)]
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
@@ -174,144 +173,20 @@ Fixes #42
 - Are they semantically different? → Use the most significant type with a comprehensive subject
 - What is the COMMON THREAD that connects these changes?
 
-**OUTPUT REQUIREMENT**: Return ONLY a JSON object with this exact schema:
-{{"subject": "<type>[scope]: <description>", "body": "<optional body or null>"}}
+**OUTPUT REQUIREMENT**: Respond with ONLY the commit message.
+- NO markdown fences (no ``` ``` )
+- NO explanations
+- NO "Here is the commit message:" prefix
+- JUST the commit message itself
 
-CRITICAL JSON RULES:
-- Return ONLY the JSON object, nothing else
-- No text before or after the JSON
-- No markdown fences around the JSON
-- `subject` is required, must be valid conventional commit format (max 72 chars)
-- `body` is optional (use null if no body needed)
-- **JSON STRING ESCAPING**: Use \\n for newlines, \\t for tabs within JSON strings
-  - ✅ CORRECT: {{"subject": "feat: add feature", "body": "First line\\nSecond line"}}
-  - ❌ WRONG: {{"subject": "feat: add feature", "body": "First line
-Second line"}}
-  - The body value must be a valid JSON string - use escape sequences, NOT literal newlines
-
-WRONG (with preamble):
-Here is the commit message:
-{{"subject": "feat: add feature", "body": null}}
-
-WRONG (with analysis):
-```
-Looking at this diff, I can see:
-1. Updated parser
-
-feat: add feature
-```
-
-WRONG (with prefix):
+Example of WRONG output:
 ```
 Here is the commit message:
 feat: add feature
 ```
 
-WRONG (literal newline in JSON - this is INVALID JSON):
-{{"subject": "feat: add feature", "body": "First line
-Second line"}}
-
-CORRECT:
-{{"subject": "feat: add feature", "body": null}}
-
-CORRECT (with body using \\n for newline):
-{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\\nAdd session management for OAuth tokens."}}"#
-    )
-}
-
-/// Generate strict JSON-only prompt for commit message retry.
-///
-/// This is used when the initial attempt fails to produce valid JSON,
-/// providing a simpler, more focused prompt to encourage proper JSON output.
-pub fn prompt_strict_json_commit(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r#"Your previous response was not valid JSON. Return ONLY a JSON object.
-
-REQUIRED FORMAT (nothing else):
-{{"subject": "<type>: <description>", "body": null}}
-
-DIFF:
-{diff_content}
-
-RULES:
-- Return ONLY the JSON object
-- No text before or after
-- subject must start with: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
-- Keep subject under 72 characters
-- **JSON ESCAPING**: Use \\n for newlines in body, NOT literal newlines
-
-Example:
-{{"subject": "fix: correct null pointer in user lookup", "body": null}}"#
-    )
-}
-
-/// Generate even stricter re-prompt with negative examples.
-///
-/// This is the second-level re-prompt used when the strict prompt also fails.
-/// It includes explicit examples of what NOT to output to prevent common mistakes.
-pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r#"Your response MUST be ONLY a JSON object. No other text.
-
-DIFF:
-{diff_content}
-
-REQUIRED OUTPUT:
-{{"subject": "feat: brief description", "body": null}}
-
-WHAT NOT TO OUTPUT (these are WRONG):
-❌ "Here is the commit message:"
-❌ "Looking at the diff, I can see..."
-❌ "Based on the changes above..."
-❌ ```json
-   {{"subject": "..."}}
-   ```
-❌ Any explanation or analysis before the JSON
-❌ Literal newlines in JSON strings (use \\n instead)
-
-CORRECT OUTPUT (copy this format):
-{{"subject": "fix: prevent null pointer", "body": null}}
-
-RULES:
-1. Start with {{"subject":
-2. End with }}
-3. Nothing before the opening {{
-4. Nothing after the closing }}
-5. subject must be: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
-6. Keep subject under 72 characters
-7. Keep all text on ONE LINE - no literal newlines in JSON strings"#
-    )
-}
-
-/// Generate ultra-minimal commit prompt.
-///
-/// This is the third-level re-prompt with bare minimum instructions.
-/// Removes all explanatory context to reduce chance of verbose responses.
-pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r#"DIFF:
-{diff_content}
-
-OUTPUT ONLY:
-{{"subject": "feat: description", "body": null}}
-
-Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"#
-    )
-}
-
-/// Generate emergency commit prompt with maximum constraints.
-///
-/// This is the final re-prompt attempt before falling back to the next agent.
-/// It provides the absolute minimum context to elicit a JSON response.
-pub fn prompt_emergency_commit(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r#"{diff_content}
-
-{{"subject": "fix: ", "body": null}}"#
+Example of CORRECT output:
+feat: add feature"#
     )
 }
 
@@ -347,55 +222,5 @@ mod tests {
                 "Fix prompt NOTES.md reference should be optional"
             );
         }
-    }
-
-    #[test]
-    fn test_strict_json_commit_v2_returns_valid_content() {
-        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
-        let result = prompt_strict_json_commit_v2(diff);
-        assert!(!result.is_empty());
-        assert!(result.contains("DIFF:"));
-        assert!(result.contains("WHAT NOT TO OUTPUT"));
-        assert!(result.contains("CORRECT OUTPUT"));
-    }
-
-    #[test]
-    fn test_ultra_minimal_commit_returns_valid_content() {
-        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
-        let result = prompt_ultra_minimal_commit(diff);
-        assert!(!result.is_empty());
-        assert!(result.contains("DIFF:"));
-        assert!(result.contains("OUTPUT ONLY:"));
-        // Ultra-minimal should be shorter than standard prompt
-        let standard = prompt_generate_commit_message_with_diff(diff);
-        assert!(result.len() < standard.len());
-    }
-
-    #[test]
-    fn test_emergency_commit_returns_valid_content() {
-        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
-        let result = prompt_emergency_commit(diff);
-        assert!(!result.is_empty());
-        // Emergency prompt is extremely minimal - just diff + template
-        assert!(result.len() < 200);
-        assert!(result.contains(r#"{"subject": "fix: ", "body": null}"#));
-    }
-
-    #[test]
-    fn test_strict_json_v2_has_negative_examples() {
-        let result = prompt_strict_json_commit_v2("dummy diff");
-        // V2 should explicitly mention what NOT to output
-        assert!(result.contains("WHAT NOT TO OUTPUT"));
-        assert!(result.contains("Looking at the diff"));
-        assert!(result.contains("Here is the commit message"));
-    }
-
-    #[test]
-    fn test_emergency_is_minimal() {
-        let diff = "dummy diff";
-        let emergency = prompt_emergency_commit(diff);
-        let ultra_minimal = prompt_ultra_minimal_commit(diff);
-        // Emergency should be the shortest
-        assert!(emergency.len() < ultra_minimal.len());
     }
 }

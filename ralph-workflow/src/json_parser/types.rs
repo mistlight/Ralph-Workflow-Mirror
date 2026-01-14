@@ -3,9 +3,7 @@
 //! This module contains event types and utility functions used by
 //! all the CLI parsers (Claude, Codex, Gemini).
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::redundant_pub_crate)]
-use crate::common::truncate_text;
+use crate::utils::truncate_text;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -90,11 +88,7 @@ pub enum ClaudeEvent {
 #[serde(rename_all = "snake_case")]
 pub enum StreamInnerEvent {
     /// Message start - initialization of a new message stream
-    MessageStart {
-        message: Option<AssistantMessage>,
-        /// Unique identifier for this message (for deduplication)
-        message_id: Option<String>,
-    },
+    MessageStart { message: Option<AssistantMessage> },
     /// Content block start - initialization of a new content block (text, tool use, etc.)
     ContentBlockStart {
         index: Option<u64>,
@@ -145,7 +139,7 @@ pub struct StreamError {
 ///
 /// Distinguishes between different types of content that may be streamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ContentType {
+pub enum ContentType {
     /// Regular text content
     Text,
     /// Thinking/reasoning content
@@ -153,9 +147,6 @@ pub(crate) enum ContentType {
     /// Tool input content
     ToolInput,
 }
-
-/// Maximum buffer size per key to prevent unbounded memory growth
-const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB per key
 
 /// Delta accumulator for streaming content
 ///
@@ -165,14 +156,8 @@ const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB per key
 ///
 /// Supports both index-based tracking (for parsers with numeric indices)
 /// and string-based key tracking (for parsers with string identifiers).
-///
-/// # Memory Safety
-///
-/// Each buffer has a maximum size of 10MB to prevent memory exhaustion
-/// in long-running sessions. When a buffer exceeds this limit, new deltas
-/// are ignored for that key.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct DeltaAccumulator {
+pub struct DeltaAccumulator {
     /// Accumulated content by (`content_type`, key) composite key
     /// Using a String key to support both numeric and string-based identifiers
     buffers: std::collections::HashMap<(ContentType, String), String>,
@@ -186,37 +171,26 @@ impl DeltaAccumulator {
         Self::default()
     }
 
+    /// Add a text delta for a specific index
+    pub(crate) fn add_text_delta(&mut self, index: u64, delta: &str) {
+        self.add_delta(ContentType::Text, &index.to_string(), delta);
+    }
+
+    /// Add a thinking delta for a specific index
+    pub(crate) fn add_thinking_delta(&mut self, index: u64, delta: &str) {
+        self.add_delta(ContentType::Thinking, &index.to_string(), delta);
+    }
+
     /// Add a delta for a specific content type and key
     ///
     /// This is the generic method that supports both index-based and
-    /// string-based key tracking. Enforces `MAX_BUFFER_SIZE` to prevent
-    /// unbounded memory growth.
+    /// string-based key tracking.
     pub(crate) fn add_delta(&mut self, content_type: ContentType, key: &str, delta: &str) {
         let composite_key = (content_type, key.to_string());
         self.buffers
             .entry(composite_key.clone())
-            .and_modify(|buf| {
-                // Only add delta if buffer hasn't exceeded maximum size
-                if buf.len() < MAX_BUFFER_SIZE {
-                    // Calculate how much we can add without exceeding the limit
-                    let remaining = MAX_BUFFER_SIZE.saturating_sub(buf.len());
-                    if delta.len() <= remaining {
-                        buf.push_str(delta);
-                    } else if remaining > 0 {
-                        // Add partial delta up to the limit
-                        buf.push_str(&delta[..remaining]);
-                    }
-                    // If remaining is 0, buffer is full - ignore new deltas
-                }
-            })
-            .or_insert_with(|| {
-                // For new buffers, truncate delta if it exceeds MAX_BUFFER_SIZE
-                if delta.len() <= MAX_BUFFER_SIZE {
-                    delta.to_string()
-                } else {
-                    delta[..MAX_BUFFER_SIZE].to_string()
-                }
-            });
+            .and_modify(|buf| buf.push_str(delta))
+            .or_insert_with(|| delta.to_string());
 
         // Track order for most_recent operations
         if !self.key_order.contains(&composite_key) {
@@ -235,6 +209,20 @@ impl DeltaAccumulator {
     pub(crate) fn clear(&mut self) {
         self.buffers.clear();
         self.key_order.clear();
+    }
+
+    /// Clear content for a specific index
+    pub(crate) fn clear_index(&mut self, index: u64) {
+        let index_str = index.to_string();
+        for content_type in [
+            ContentType::Text,
+            ContentType::Thinking,
+            ContentType::ToolInput,
+        ] {
+            let key = (content_type, index_str.clone());
+            self.buffers.remove(&key);
+            self.key_order.retain(|k| k != &key);
+        }
     }
 
     /// Clear content for a specific content type and key
@@ -330,7 +318,7 @@ pub struct CodexUsage {
 /// - `web_search`: Web search operations
 /// - `plan_update`: Changes to execution plan
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct CodexItem {
+pub struct CodexItem {
     /// Item type (`command_execution`, `agent_message`, reasoning, `file_read`, etc.)
     #[serde(rename = "type")]
     pub(crate) item_type: Option<String>,
@@ -485,15 +473,16 @@ fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
 /// # Returns
 /// A formatted string showing the event type and key fields, or an empty string
 /// if the JSON couldn't be parsed or verbosity should suppress it.
-#[expect(clippy::trivially_copy_pass_by_ref)]
 pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,
-    colors: &crate::logger::Colors,
+    colors: crate::colors::Colors,
     is_verbose: bool,
 ) -> String {
     // Try to parse as generic JSON to extract type and key fields
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+    let value = if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+        v
+    } else {
         // Only show parsing failure message in verbose mode
         if is_verbose {
             return format!(
@@ -507,7 +496,9 @@ pub fn format_unknown_json_event(
         return String::new();
     };
 
-    let Some(obj) = value.as_object() else {
+    let obj = if let Some(o) = value.as_object() {
+        o
+    } else {
         if is_verbose {
             return format!(
                 "{}[{}]{} {}Unknown event (non-object JSON)\n",
@@ -537,49 +528,44 @@ pub fn format_unknown_json_event(
     // For partial/delta events, try to extract and show content
     let content_info = if classification.event_type == StreamEventType::Partial {
         // Try to extract content from various nested structures
-        let extracted_text = classification
-            .content_field
-            .as_ref()
-            .and_then(|content| {
-                // Content field was found at top level by classifier
-                obj.get(content).and_then(|val| {
-                    val.as_str().map_or_else(
-                        || {
-                            // Content field exists but is not a string - try to extract nested text
-                            extract_nested_text(val)
-                        },
-                        |s| Some(s.to_string()),
-                    )
+        let extracted_text = if let Some(ref content) = classification.content_field {
+            // Content field was found at top level by classifier
+            if let Some(val) = obj.get(content) {
+                if let Some(text) = val.as_str() {
+                    Some(text.to_string())
+                } else {
+                    // Content field exists but is not a string - try to extract nested text
+                    extract_nested_text(val)
+                }
+            } else {
+                None
+            }
+        } else {
+            // No content field found - try to extract from delta field
+            obj.get("delta")
+                .and_then(extract_nested_text)
+                .or_else(|| {
+                    // Try nested delta structure: delta.text or delta.content
+                    obj.get("delta")
+                        .and_then(|d| d.as_object())
+                        .and_then(|delta_obj| {
+                            // First try delta.text, then delta.content
+                            delta_obj
+                                .get("text")
+                                .or_else(|| delta_obj.get("content"))
+                                .and_then(|v| v.as_str())
+                                .map(std::string::ToString::to_string)
+                        })
                 })
-            })
-            .or_else(|| {
-                // No content field found - try to extract from delta field
-                obj.get("delta")
-                    .and_then(extract_nested_text)
-                    .or_else(|| {
-                        // Try nested delta structure: delta.text or delta.content
-                        obj.get("delta")
-                            .and_then(|d| d.as_object())
-                            .and_then(|delta_obj| {
-                                // First try delta.text, then delta.content
-                                delta_obj
-                                    .get("text")
-                                    .or_else(|| delta_obj.get("content"))
-                                    .and_then(|v| v.as_str())
-                                    .map(std::string::ToString::to_string)
-                            })
-                    })
-                    .or_else(|| {
-                        // Try other common nested structures
-                        obj.get("data").and_then(extract_nested_text)
-                    })
-            });
+                .or_else(|| {
+                    // Try other common nested structures
+                    obj.get("data").and_then(extract_nested_text)
+                })
+        };
 
         extracted_text.map(|text: String| {
-            let truncated = if text.chars().count() > 30 {
-                // Use character-based slicing to avoid panic on multi-byte UTF-8 characters
-                let chars: Vec<char> = text.chars().take(27).collect();
-                format!("{}...", chars.iter().collect::<String>())
+            let truncated = if text.len() > 30 {
+                format!("{}...", &text[..27.min(text.len())])
             } else {
                 text
             };
@@ -611,10 +597,8 @@ pub fn format_unknown_json_event(
             } else if is_explicit_delta {
                 // In non-verbose mode, show explicit partial events (they're user content)
                 // Extract full content (not truncated) for delta events
-                let full_content: Option<String> = classification
-                    .content_field
-                    .as_ref()
-                    .and_then(|content| {
+                let full_content: Option<String> =
+                    if let Some(ref content) = classification.content_field {
                         // Use classifier's detected content field first
                         obj.get(content)
                             .and_then(|v| v.as_str())
@@ -623,8 +607,7 @@ pub fn format_unknown_json_event(
                                 // Content field wasn't a string, try extracting nested text
                                 obj.get(content).and_then(extract_nested_text)
                             })
-                    })
-                    .or_else(|| {
+                    } else {
                         // Try delta field (common pattern)
                         obj.get("delta")
                             .and_then(|v| v.as_str())
@@ -638,18 +621,18 @@ pub fn format_unknown_json_event(
                                         .map(std::string::ToString::to_string)
                                 })
                             })
-                    })
-                    .or_else(|| {
-                        // Try common text fields at top level
-                        for field in ["text", "content", "message"] {
-                            if let Some(val) = obj.get(field) {
-                                if let Some(text) = val.as_str() {
-                                    return Some(text.to_string());
+                            .or_else(|| {
+                                // Try common text fields at top level
+                                for field in ["text", "content", "message"] {
+                                    if let Some(val) = obj.get(field) {
+                                        if let Some(text) = val.as_str() {
+                                            return Some(text.to_string());
+                                        }
+                                    }
                                 }
-                            }
-                        }
-                        None
-                    });
+                                None
+                            })
+                    };
 
                 if let Some(content) = full_content {
                     if !content.trim().is_empty() {
@@ -692,10 +675,8 @@ pub fn format_unknown_json_event(
             let val_str = match val {
                 serde_json::Value::String(s) => {
                     // Truncate long strings for display
-                    if s.chars().count() > 20 {
-                        // Use character-based slicing to avoid UTF-8 boundary issues
-                        let truncated: String = s.chars().take(17).collect();
-                        format!("{truncated}...")
+                    if s.len() > 20 {
+                        format!("{}...", &s[..17.min(s.len())])
                     } else {
                         s.clone()
                     }
