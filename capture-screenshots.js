@@ -1,5 +1,14 @@
-// Playwright script to capture baseline screenshots
+// Unified Playwright script to capture screenshots
+// Usage: node capture-screenshots.js [baseline|final]
 import { chromium } from 'playwright';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Get output directory from command line argument (default: 'baseline')
+const outputDir = process.argv[2] || 'baseline';
 
 (async () => {
     const browser = await chromium.launch();
@@ -14,7 +23,8 @@ import { chromium } from 'playwright';
         { name: 'mobile-375x667', width: 375, height: 667 }
     ];
 
-    const baseUrl = 'file:///Users/mistlight/Projects/Ralph-Pages/index.html';
+    // Use relative path for portability
+    const baseUrl = 'file://' + join(__dirname, 'index.html');
 
     for (const viewport of viewports) {
         console.log(`Capturing ${viewport.name}...`);
@@ -31,7 +41,7 @@ import { chromium } from 'playwright';
 
         // Capture full page screenshot
         await page.screenshot({
-            path: `.screenshots/baseline/${viewport.name}-full.png`,
+            path: `.screenshots/${outputDir}/${viewport.name}-full.png`,
             fullPage: true
         });
 
@@ -40,12 +50,12 @@ import { chromium } from 'playwright';
         await page.waitForTimeout(500);
 
         await page.screenshot({
-            path: `.screenshots/baseline/${viewport.name}-hero.png`
+            path: `.screenshots/${outputDir}/${viewport.name}-hero.png`
         });
 
         console.log(`  ✓ Captured ${viewport.name}`);
     }
 
     await browser.close();
-    console.log('\nBaseline screenshots complete!');
+    console.log(`\n${outputDir.charAt(0).toUpperCase() + outputDir.slice(1)} screenshots complete!`);
 })();

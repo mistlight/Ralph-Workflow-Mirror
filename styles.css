@@ -287,7 +287,7 @@ body::before {
         100% 100%;
     background-attachment: fixed;
     animation: gradient-mesh-ambient 60s ease-in-out infinite;
-    will-change: background-position;
+    /* will-change removed from large fixed element to avoid memory issues */
     opacity: 0.65;
 }
 
@@ -3335,6 +3335,15 @@ body:not([data-audience]) .audience-newcomer-content {
     background: radial-gradient(circle at top right, rgba(0, 255, 240, 0.08), transparent 60%);
 }
 
+.feature-card:nth-child(5):hover {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 35px rgba(0, 255, 240, 0.25), 15px 15px 45px rgba(0, 0, 0, 0.4);
+}
+
+.feature-card:nth-child(5):hover .feature-icon {
+    background: var(--color-accent);
+}
+
 .feature-card:nth-child(6)::before {
     background: linear-gradient(135deg, var(--color-magenta) 0%, var(--color-primary) 100%);
 }
@@ -3830,11 +3839,6 @@ details > div:not(summary) {
     to { opacity: 1; transform: translateY(0); }
 }
 
-.stagger-1 { animation-delay: 0.1s; }
-.stagger-2 { animation-delay: 0.2s; }
-.stagger-3 { animation-delay: 0.3s; }
-.stagger-4 { animation-delay: 0.4s; }
-
 /* Mobile Menu */
 .nav-menu.mobile-open {
     display: flex;
@@ -4012,45 +4016,18 @@ details > div:not(summary) {
 }
 
 /* === FAQ ACCORDION ENHANCEMENTS === */
-/* Smooth expand/collapse animation for FAQ details elements */
-details {
-    transition: var(--transition-base);
-}
-
+/* Additional enhancements to base FAQ styling */
 details[summary] {
     cursor: pointer;
-}
-
-details summary {
-    list-style: none;
-}
-
-details summary::-webkit-details-marker {
-    display: none;
 }
 
 details summary span:last-child {
     transition: transform 0.3s ease;
 }
 
-details[open] summary span:last-child {
-    transform: rotate(45deg);
-}
-
-/* Smooth height animation for details content */
+/* Smooth height animation for details content - using same animation as base */
 details > *:not(summary) {
-    animation: details-reveal 0.3s ease-out;
-}
-
-@keyframes details-reveal {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    animation: faq-expand 0.3s ease-out;
 }
 
 /* Enhanced hover state for FAQ items */
@@ -4063,9 +4040,9 @@ details:hover {
     *,
     *::before,
     *::after {
-        animation-duration: 0.01ms !important;
+        animation-duration: 0s !important;
         animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
+        transition-duration: 0s !important;
     }
 
     /* Disable all ambient animations */

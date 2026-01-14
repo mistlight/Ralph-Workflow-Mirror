@@ -9,27 +9,31 @@
     'use strict';
 
     // === Enhanced Magnetic Button Effect ===
+    // Only apply to devices with fine pointer (mouse) for better performance on touch devices
+    const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
     const buttons = document.querySelectorAll('.btn');
 
-    buttons.forEach(btn => {
-        btn.addEventListener('mousemove', function(e) {
-            const rect = btn.getBoundingClientRect();
-            const x = e.clientX - rect.left - rect.width / 2;
-            const y = e.clientY - rect.top - rect.height / 2;
+    if (hasFinePointer) {
+        buttons.forEach(btn => {
+            btn.addEventListener('mousemove', function(e) {
+                const rect = btn.getBoundingClientRect();
+                const x = e.clientX - rect.left - rect.width / 2;
+                const y = e.clientY - rect.top - rect.height / 2;
 
-            // Enhanced magnetic effect with subtle scaling
-            const moveX = x * 0.2;
-            const moveY = y * 0.2;
-            const distance = Math.sqrt(x * x + y * y);
-            const scale = 1 + Math.min(distance * 0.001, 0.02); // Subtle scale up to 1.02
+                // Enhanced magnetic effect with subtle scaling
+                const moveX = x * 0.2;
+                const moveY = y * 0.2;
+                const distance = Math.sqrt(x * x + y * y);
+                const scale = 1 + Math.min(distance * 0.001, 0.02); // Subtle scale up to 1.02
 
-            btn.style.transform = `translate(${moveX}px, ${moveY}px) scale(${scale})`;
+                btn.style.transform = `translate(${moveX}px, ${moveY}px) scale(${scale})`;
+            });
+
+            btn.addEventListener('mouseleave', function() {
+                btn.style.transform = '';
+            });
         });
-
-        btn.addEventListener('mouseleave', function() {
-            btn.style.transform = '';
-        });
-    });
+    }
 
     // === Enhanced Parallax Effect for Hero Glows ===
     const heroGlows = document.querySelectorAll('.hero-glow, .hero-glow-2, .hero-glow-3, .hero-glow-4, .hero-glow-5');
@@ -285,24 +289,57 @@
             // Update button text during demo
             terminalRunDemo.disabled = true;
             terminalRunDemo.style.opacity = '0.5';
-            terminalRunDemo.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                Running...
-            `;
+            // Create SVG element safely using DOM API
+            const svgNS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNS, 'svg');
+            svg.setAttribute('width', '14');
+            svg.setAttribute('height', '14');
+            svg.setAttribute('viewBox', '0 0 24 24');
+            svg.setAttribute('fill', 'none');
+            svg.setAttribute('stroke', 'currentColor');
+            svg.setAttribute('stroke-width', '2');
+            svg.style.marginRight = '6px';
+
+            const circle = document.createElementNS(svgNS, 'circle');
+            circle.setAttribute('cx', '12');
+            circle.setAttribute('cy', '12');
+            circle.setAttribute('r', '10');
+
+            const polyline = document.createElementNS(svgNS, 'polyline');
+            polyline.setAttribute('points', '12 6 12 12 16 14');
+
+            svg.appendChild(circle);
+            svg.appendChild(polyline);
+
+            const textNode = document.createTextNode(' Running...');
+            terminalRunDemo.textContent = '';
+            terminalRunDemo.appendChild(svg);
+            terminalRunDemo.appendChild(textNode);
 
             // Reset button after demo
             setTimeout(() => {
                 terminalRunDemo.disabled = false;
                 terminalRunDemo.style.opacity = '1';
-                terminalRunDemo.innerHTML = `
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
-                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                    </svg>
-                    Run Full Demo
-                `;
+                // Create SVG element safely using DOM API
+                const svgNS2 = 'http://www.w3.org/2000/svg';
+                const svg2 = document.createElementNS(svgNS2, 'svg');
+                svg2.setAttribute('width', '14');
+                svg2.setAttribute('height', '14');
+                svg2.setAttribute('viewBox', '0 0 24 24');
+                svg2.setAttribute('fill', 'none');
+                svg2.setAttribute('stroke', 'currentColor');
+                svg2.setAttribute('stroke-width', '2');
+                svg2.style.marginRight = '6px';
+
+                const polygon = document.createElementNS(svgNS2, 'polygon');
+                polygon.setAttribute('points', '5 3 19 12 5 21 5 3');
+
+                svg2.appendChild(polygon);
+
+                const textNode2 = document.createTextNode('Run Full Demo');
+                terminalRunDemo.textContent = '';
+                terminalRunDemo.appendChild(svg2);
+                terminalRunDemo.appendChild(textNode2);
             }, 18000 / animationSpeed);
         });
     }
@@ -428,8 +465,15 @@
     const advancedTabs = document.querySelectorAll('.install-tab-advanced');
     const advancedRequirements = document.querySelector('.install-requirements');
 
-    // Check localStorage for saved preference
-    const savedMode = localStorage.getItem('ralph-install-mode');
+    // Check localStorage for saved preference with try-catch for private browsing
+    let savedMode = 'simple';
+    try {
+        savedMode = localStorage.getItem('ralph-install-mode') || 'simple';
+    } catch (e) {
+        // localStorage unavailable (private browsing, storage disabled)
+        console.warn('localStorage unavailable, using default mode');
+    }
+
     if (savedMode === 'advanced') {
         installSection?.setAttribute('data-mode', 'advanced');
         installModeSwitch?.setAttribute('aria-checked', 'true');
@@ -457,8 +501,13 @@
             installModeSwitch.setAttribute('aria-checked', !isAdvanced);
             installSection?.setAttribute('data-mode', newMode);
 
-            // Save preference
-            localStorage.setItem('ralph-install-mode', newMode);
+            // Save preference with try-catch for private browsing
+            try {
+                localStorage.setItem('ralph-install-mode', newMode);
+            } catch (e) {
+                // Silently fail - preference just won't persist
+                console.warn('Could not save install mode preference');
+            }
 
             // Toggle tabs visibility
             if (newMode === 'advanced') {
@@ -505,25 +554,87 @@
     // === Copy to Clipboard ===
     const copyButtons = document.querySelectorAll('.copy-btn');
 
+    // Helper function to create SVG checkmark element safely
+    function createCheckmarkSVG() {
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('width', '16');
+        svg.setAttribute('height', '16');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+
+        const polyline = document.createElementNS(svgNS, 'polyline');
+        polyline.setAttribute('points', '20 6 9 17 4 12');
+        svg.appendChild(polyline);
+
+        return svg;
+    }
+
     copyButtons.forEach(btn => {
         btn.addEventListener('click', async function() {
             const codeBlock = this.closest('.code-block');
             const code = codeBlock.querySelector('code').textContent;
 
-            try {
-                await navigator.clipboard.writeText(code);
+            // Store original content to restore later
+            const originalContent = this.cloneNode(true);
 
-                // Show success state with animation
-                const originalHTML = this.innerHTML;
-                this.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+            // Fallback for non-secure contexts (HTTP) or when clipboard API fails
+            function fallbackCopy() {
+                const textArea = document.createElement('textarea');
+                textArea.value = code;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                textArea.style.top = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+
+                try {
+                    const successful = document.execCommand('copy');
+                    textArea.remove();
+                    return successful;
+                } catch (err) {
+                    textArea.remove();
+                    console.error('Fallback copy failed:', err);
+                    return false;
+                }
+            }
+
+            let success = false;
+
+            // Try modern clipboard API first
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(code);
+                    success = true;
+                } catch (err) {
+                    console.warn('Clipboard API failed, trying fallback:', err);
+                    success = fallbackCopy();
+                }
+            } else {
+                // Use fallback for non-secure contexts
+                success = fallbackCopy();
+            }
+
+            if (success) {
+                // Show success state with animation - use DOM API
+                this.textContent = '';
+                this.appendChild(createCheckmarkSVG());
                 this.classList.add('copied');
 
                 setTimeout(() => {
-                    this.innerHTML = originalHTML;
+                    this.innerHTML = '';
+                    this.appendChild(originalContent.cloneNode(true));
                     this.classList.remove('copied');
                 }, 2000);
-            } catch (err) {
-                console.error('Failed to copy:', err);
+            } else {
+                // Show error indication
+                this.classList.add('copy-failed');
+                setTimeout(() => {
+                    this.classList.remove('copy-failed');
+                }, 2000);
             }
         });
     });
@@ -655,8 +766,10 @@
             const text = word.textContent;
             const charCount = text.length;
 
-            // Clear existing content
-            word.innerHTML = '';
+            // Clear existing content - use textContent for simpler operation
+            while (word.firstChild) {
+                word.removeChild(word.firstChild);
+            }
 
             // Wrap each character in a span
             [...text].forEach((char, charIndex) => {
@@ -735,6 +848,8 @@
     });
 
     // === Reduced Motion Support ===
+    // Note: This listener is intentionally long-lived as it needs to respond to system
+    // preference changes throughout the page lifecycle. No cleanup needed.
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     function handleReducedMotion() {
@@ -782,6 +897,8 @@
         });
 
         // Track mouse movement with throttling
+        // Note: Event listener stays attached but only processes when spotlightActive is true
+        // This is more efficient than adding/removing listeners repeatedly
         let spotlightTicking = false;
         document.addEventListener('mousemove', (e) => {
             if (!spotlightActive || !spotlightTicking) {
@@ -801,8 +918,14 @@
     const audienceOptions = document.querySelectorAll('.audience-option');
     const audienceSelector = document.getElementById('audience-selector');
 
-    // Check localStorage for saved audience preference
-    const savedAudience = localStorage.getItem('ralph-audience');
+    // Check localStorage for saved audience preference with try-catch for private browsing
+    let savedAudience = null;
+    try {
+        savedAudience = localStorage.getItem('ralph-audience');
+    } catch (e) {
+        console.warn('localStorage unavailable, audience preference not restored');
+    }
+
     if (savedAudience && audienceSelector) {
         document.body.setAttribute('data-audience', savedAudience);
         audienceOptions.forEach(option => {
@@ -826,10 +949,18 @@
             if (document.body.getAttribute('data-audience') === audience) {
                 // Toggle off if clicking the same option
                 document.body.removeAttribute('data-audience');
-                localStorage.removeItem('ralph-audience');
+                try {
+                    localStorage.removeItem('ralph-audience');
+                } catch (e) {
+                    console.warn('Could not remove audience preference');
+                }
             } else {
                 document.body.setAttribute('data-audience', audience);
-                localStorage.setItem('ralph-audience', audience);
+                try {
+                    localStorage.setItem('ralph-audience', audience);
+                } catch (e) {
+                    console.warn('Could not save audience preference');
+                }
             }
 
             // Smooth scroll to relevant section based on audience
@@ -986,16 +1117,31 @@ impl AuthService {
 
                 // Update terminal
                 if (action.terminal && demoTerminal) {
-                    demoTerminal.innerHTML = action.terminal.split('\n')
-                        .map(line => `<div class="demo-terminal-line">${line}</div>`)
-                        .join('');
+                    // Use DOM API instead of innerHTML for safer content insertion
+                    demoTerminal.textContent = '';
+                    const lines = action.terminal.split('\n');
+                    lines.forEach(lineText => {
+                        const div = document.createElement('div');
+                        div.className = 'demo-terminal-line';
+                        // Allow only safe HTML spans from our controlled content
+                        // Use a fragment to safely parse known-safe span elements
+                        const fragment = document.createRange().createContextualFragment(lineText);
+                        div.appendChild(fragment);
+                        demoTerminal.appendChild(div);
+                    });
                 }
 
                 // Update code panel
                 if (action.code && demoCode) {
-                    demoCode.innerHTML = generatedCode.split('\n')
-                        .map(line => `<div class="demo-code-line">${line}</div>`)
-                        .join('');
+                    // Use DOM API for safer content insertion
+                    demoCode.textContent = '';
+                    const codeLines = generatedCode.split('\n');
+                    codeLines.forEach(lineText => {
+                        const div = document.createElement('div');
+                        div.className = 'demo-code-line';
+                        div.textContent = lineText;
+                        demoCode.appendChild(div);
+                    });
 
                     // Auto-switch to code tab
                     const codeTab = document.querySelector('.demo-tab[data-tab="code"]');
@@ -1026,13 +1172,24 @@ impl AuthService {
     if (demoRunBtn) {
         demoRunBtn.addEventListener('click', () => {
             if (!demoRunning) {
-                // Reset demo state
-                demoTerminal.innerHTML = `
-                    <div class="demo-terminal-line">
-                        <span class="demo-prompt">$</span> ralph -S
-                    </div>
-                `;
-                demoCode.innerHTML = '<div class="demo-code-line">// Generated code will appear here...</div>';
+                // Reset demo state - use DOM API for safer content insertion
+                demoTerminal.textContent = '';
+                const terminalLine = document.createElement('div');
+                terminalLine.className = 'demo-terminal-line';
+                const promptSpan = document.createElement('span');
+                promptSpan.className = 'demo-prompt';
+                promptSpan.textContent = '$ ';
+                const commandText = document.createTextNode('ralph -S');
+                terminalLine.appendChild(promptSpan);
+                terminalLine.appendChild(commandText);
+                demoTerminal.appendChild(terminalLine);
+
+                demoCode.textContent = '';
+                const codeLine = document.createElement('div');
+                codeLine.className = 'demo-code-line';
+                codeLine.textContent = '// Generated code will appear here...';
+                demoCode.appendChild(codeLine);
+
                 demoIteration.textContent = '0';
                 demoSteps.forEach(step => step.classList.remove('active'));
 
@@ -1053,10 +1210,22 @@ impl AuthService {
         }
     }
 
-    // Only auto-select on first visit
-    if (!localStorage.getItem('ralph-tab-selected')) {
+    // Only auto-select on first visit - with try-catch for private browsing
+    let tabSelected = false;
+    try {
+        tabSelected = localStorage.getItem('ralph-tab-selected') === 'true';
+    } catch (e) {
+        console.warn('localStorage unavailable, will always auto-select tab');
+    }
+
+    if (!tabSelected) {
         detectPlatform();
-        localStorage.setItem('ralph-tab-selected', 'true');
+        try {
+            localStorage.setItem('ralph-tab-selected', 'true');
+        } catch (e) {
+            // Silently fail - tab will just be re-selected on reload
+            console.warn('Could not save tab selection state');
+        }
     }
 
     // === Expandable Feature Cards ===

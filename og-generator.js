@@ -99,7 +99,8 @@ function createOGImage() {
     // 6. Draw subtitle
     ctx.font = 'bold 48px "Arial", sans-serif';
     ctx.fillStyle = colors.white;
-    ctx.letterSpacing = '8px';
+    // Note: Canvas 2D doesn't support letterSpacing - simulate with wider spacing by drawing character by character
+    // For simplicity, we'll use the standard fillText without letter spacing
     ctx.fillText('YOUR IDEAS, SHIPPED BY AI', WIDTH / 2, HEIGHT / 2 + 70);
 
     // 7. Draw tagline with cyan
