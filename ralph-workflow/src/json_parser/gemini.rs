@@ -30,7 +30,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::StreamingDisplay;
+use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType, GeminiEvent};
@@ -43,8 +43,6 @@ pub struct GeminiParser {
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
-    /// Streaming display manager for in-place terminal updates
-    streaming_display: Rc<RefCell<StreamingDisplay>>,
 }
 
 impl GeminiParser {
@@ -55,7 +53,6 @@ impl GeminiParser {
             log_file: None,
             display_name: "Gemini".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
-            streaming_display: Rc::new(RefCell::new(StreamingDisplay::new())),
         }
     }
 
@@ -93,9 +90,8 @@ impl GeminiParser {
             GeminiEvent::Init {
                 session_id, model, ..
             } => {
-                // Clear accumulator and reset streaming state on new session
+                // Reset streaming state on new session
                 self.streaming_session.borrow_mut().on_message_start();
-                self.streaming_display.borrow_mut().reset_cursor();
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                 // Set the current message ID for duplicate detection
                 self.streaming_session
@@ -137,40 +133,36 @@ impl GeminiParser {
                             (show_prefix, accumulated_text)
                         };
 
-                        // Show prefix only on the first delta chunk
-                        if !show_prefix {
-                            // Subsequent chunks: use StreamingDisplay for in-place update
-                            let mut display = self.streaming_display.borrow_mut();
-                            return Some(display.in_place_update(&accumulated_text, *c));
+                        // Use TextDeltaRenderer for consistent rendering across all parsers
+                        if show_prefix {
+                            // First delta: use renderer with prefix
+                            return Some(TextDeltaRenderer::render_first_delta(
+                                &accumulated_text,
+                                prefix,
+                                *c,
+                            ));
                         }
-                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                        return Some(format!(
-                            "{}[{}]{} {}{}{}",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.white(),
-                            accumulated_text,
-                            c.reset()
+                        // Subsequent deltas: use renderer for in-place update
+                        return Some(TextDeltaRenderer::render_subsequent_delta(
+                            &accumulated_text,
+                            *c,
                         ));
                     } else if !is_delta && role_str == "assistant" {
                         // Non-delta message - check for duplicate using message ID or fallback to streaming content check
                         let session = self.streaming_session.borrow();
-                        let is_duplicate = session
-                            .get_current_message_id()
-                            .map_or_else(|| session.has_any_streamed_content(), |message_id| {
-                                session.is_duplicate_final_message(message_id)
-                            });
+                        let is_duplicate = session.get_current_message_id().map_or_else(
+                            || session.has_any_streamed_content(),
+                            |message_id| session.is_duplicate_final_message(message_id),
+                        );
                         let was_streaming = session.has_any_streamed_content();
                         drop(session);
 
                         // Finalize the message (this marks it as displayed)
                         let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
 
-                        // If this is a duplicate or content was streamed, use StreamingDisplay for completion
+                        // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
                         if is_duplicate || was_streaming {
-                            let display = self.streaming_display.borrow();
-                            return Some(display.render_completion());
+                            return Some(TextDeltaRenderer::render_completion());
                         }
 
                         // Otherwise, show the full content (non-streaming path)

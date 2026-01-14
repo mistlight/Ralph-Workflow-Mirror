@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::{DeltaDisplayFormatter, StreamingDisplay};
+use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{
@@ -44,8 +44,6 @@ pub struct CodexParser {
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
-    /// Streaming display manager for in-place terminal updates
-    streaming_display: Rc<RefCell<StreamingDisplay>>,
     /// Delta accumulator for reasoning content (which uses special display)
     /// Note: We keep this for reasoning only, as it uses `DeltaDisplayFormatter`
     reasoning_accumulator: Rc<RefCell<DeltaAccumulator>>,
@@ -59,7 +57,6 @@ impl CodexParser {
             log_file: None,
             display_name: "Codex".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
-            streaming_display: Rc::new(RefCell::new(StreamingDisplay::new())),
             reasoning_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
@@ -116,7 +113,6 @@ impl CodexParser {
             CodexEvent::TurnStarted {} => {
                 // Reset streaming state on new turn
                 self.streaming_session.borrow_mut().on_message_start();
-                self.streaming_display.borrow_mut().reset_cursor();
                 self.reasoning_accumulator.borrow_mut().clear();
                 format!(
                     "{}[{}]{} {}Turn started{}\n",
@@ -191,21 +187,19 @@ impl CodexParser {
                                     (show_prefix, accumulated_text)
                                 };
 
-                                // Show prefix only on the first chunk
-                                if !show_prefix {
-                                    // Subsequent chunks: use StreamingDisplay for in-place update
-                                    let mut display = self.streaming_display.borrow_mut();
-                                    return Some(display.in_place_update(&accumulated_text, *c));
+                                // Use TextDeltaRenderer for consistent rendering across all parsers
+                                if show_prefix {
+                                    // First delta: use renderer with prefix
+                                    return Some(TextDeltaRenderer::render_first_delta(
+                                        &accumulated_text,
+                                        name,
+                                        *c,
+                                    ));
                                 }
-                                // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                                return Some(format!(
-                                    "{}[{}]{} {}{}{}",
-                                    c.dim(),
-                                    name,
-                                    c.reset(),
-                                    c.white(),
-                                    accumulated_text,
-                                    c.reset()
+                                // Subsequent deltas: use renderer for in-place update
+                                return Some(TextDeltaRenderer::render_subsequent_delta(
+                                    &accumulated_text,
+                                    *c,
                                 ));
                             }
                             // No text yet, show placeholder in non-verbose mode
@@ -352,11 +346,10 @@ impl CodexParser {
                         Some("agent_message") => {
                             // Check for duplicate final message using message ID or fallback to streaming content check
                             let session = self.streaming_session.borrow();
-                            let is_duplicate = session
-                                .get_current_message_id()
-                                .map_or_else(|| session.has_any_streamed_content(), |message_id| {
-                                    session.is_duplicate_final_message(message_id)
-                                });
+                            let is_duplicate = session.get_current_message_id().map_or_else(
+                                || session.has_any_streamed_content(),
+                                |message_id| session.is_duplicate_final_message(message_id),
+                            );
                             let was_streaming = session.has_any_streamed_content();
                             drop(session);
 
@@ -364,10 +357,9 @@ impl CodexParser {
                             let _was_in_block =
                                 self.streaming_session.borrow_mut().on_message_stop();
 
-                            // If this is a duplicate or content was streamed, use StreamingDisplay for completion
+                            // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
                             if is_duplicate || was_streaming {
-                                let display = self.streaming_display.borrow();
-                                return Some(display.render_completion());
+                                return Some(TextDeltaRenderer::render_completion());
                             }
 
                             // Fallback: show item text if no streaming occurred
