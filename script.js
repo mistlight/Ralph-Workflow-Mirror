@@ -96,6 +96,32 @@
     // Initial call
     updateNav();
 
+    // === Scroll-Triggered Animations (Intersection Observer) ===
+    const observerOptions = {
+        root: null,
+        rootMargin: '0px 0px -100px 0px',
+        threshold: 0.1
+    };
+
+    const scrollObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('is-visible');
+                // Optional: unobserve after revealing for one-time animation
+                // scrollObserver.unobserve(entry.target);
+            }
+        });
+    }, observerOptions);
+
+    // Observe all scroll-reveal elements
+    const scrollRevealElements = document.querySelectorAll(
+        '.scroll-reveal, .scroll-reveal-from-left, .scroll-reveal-from-right, .scroll-reveal-scale, .scroll-reveal-group'
+    );
+
+    scrollRevealElements.forEach(el => {
+        scrollObserver.observe(el);
+    });
+
     // === Terminal Typing Effect ===
     const terminalLines = document.querySelectorAll('.terminal-line');
     const terminal = document.querySelector('.terminal-body');

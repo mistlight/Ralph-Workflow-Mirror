@@ -23,20 +23,20 @@
     <meta name="twitter:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
 
     <link rel="canonical" href="https://mistlight.codeberg.page/ralph/">
-    <meta name="theme-color" content="#FAF8F5">
+    <meta name="theme-color" content="#F7F5F0">
 
     <title>Ralph Workflow - Multi-Agent AI Orchestration for Developers</title>
 
-    <!-- Fonts: Cormorant Garamond (display), DM Sans (headings/body), JetBrains Mono (code) -->
-    <!-- Cormorant Garamond: Elegant, refined serif for editorial display typography -->
-    <!-- DM Sans: Geometric, clean sans-serif for headings and body text -->
-    <!-- JetBrains Mono: Professional monospace for code display -->
+    <!-- Fonts: Instrument Serif (display/headings), Space Grotesk (body), IBM Plex Mono (code) -->
+    <!-- Instrument Serif: Bold, distinctive serif with character for display typography -->
+    <!-- Space Grotesk: Geometric, neo-grotesk sans-serif for headings and body text -->
+    <!-- IBM Plex Mono: Professional monospace for code display -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-    <!-- Favicon - Refined editorial design with terracotta accent -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg-grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23FAF8F5'/%3E%3Cstop offset='100%25' style='stop-color:%23F5F2ED'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg-grad)' rx='16'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%23C4784A' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23C4784A'/%3E%3C/svg%3E">
+    <!-- Favicon - Neo-brutalist editorial design with forest green accent -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg-grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23F7F5F0'/%3E%3Cstop offset='100%25' style='stop-color:%23EDEAE3'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg-grad)' rx='16'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%231A3A2F' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23D4A574'/%3E%3C/svg%3E">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -112,13 +112,31 @@
 
         <!-- Hero Section -->
         <section class="hero">
+            <!-- Background layers for atmosphere -->
+            <div class="hero-bg">
+                <!-- Noise texture overlay -->
+                <svg class="hero-noise" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <filter id="noise">
+                        <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch"/>
+                    </filter>
+                    <rect width="100%" height="100%" filter="url(#noise)" opacity="0.4"/>
+                </svg>
+
+                <!-- Gradient orbs -->
+                <div class="hero-orb hero-orb-1" aria-hidden="true"></div>
+                <div class="hero-orb hero-orb-2" aria-hidden="true"></div>
+                <div class="hero-orb hero-orb-3" aria-hidden="true"></div>
+
+                <!-- Grid pattern -->
+                <div class="hero-grid-pattern" aria-hidden="true"></div>
+            </div>
 
             <div class="hero-grid">
                 <div class="hero-content">
                     <div class="hero-badges">
-                        <span class="badge badge-lime"><span class="badge-dot"></span> Open Source</span>
-                        <span class="badge badge-magenta"><span class="badge-dot"></span> AGPL-3.0</span>
-                        <span class="badge badge-cyan"><span class="badge-dot"></span> Built with Rust</span>
+                        <span class="badge badge-forest"><span class="badge-dot"></span> Open Source</span>
+                        <span class="badge badge-amber"><span class="badge-dot"></span> AGPL-3.0</span>
+                        <span class="badge badge-moss"><span class="badge-dot"></span> Built with Rust</span>
                     </div>
 
                     <h1 class="hero-title">
