@@ -593,6 +593,7 @@ pub fn run_review_phase(
             None,
             None,
             None,
+            None,
         );
 
         let _ = {
@@ -835,6 +836,7 @@ fn build_review_prompt(
                         None,
                         None,
                         Some(g),
+                        None,
                     ),
                 )
             } else {

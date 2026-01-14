@@ -36,7 +36,7 @@ use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use crate::pipeline::{AgentPhaseGuard, Stats};
 use crate::timer::Timer;
 use crate::utils::{
-    clear_checkpoint, create_prompt_backup, ensure_files, load_checkpoint,
+    clear_checkpoint, create_prompt_backup, ensure_files, load_checkpoint, make_prompt_read_only,
     reset_context_for_isolation, save_checkpoint, update_status, validate_prompt_md, Logger,
     PipelineCheckpoint, PipelinePhase,
 };
@@ -311,6 +311,13 @@ fn run_pipeline(
     // create_prompt_backup() returns Ok(()) and does nothing.
     if let Err(e) = create_prompt_backup() {
         logger.warn(&format!("Failed to create PROMPT.md backup: {}. Continuing anyway.", e));
+    }
+
+    // Make PROMPT.md read-only to protect against accidental deletion.
+    // This is a best-effort protection - it may not work on all filesystems.
+    // If PROMPT.md doesn't exist, make_prompt_read_only() returns Ok(()) and does nothing.
+    if let Err(e) = make_prompt_read_only() {
+        logger.warn(&format!("Failed to make PROMPT.md read-only: {}. Continuing anyway.", e));
     }
 
     // Detect project stack and generate review guidelines
