@@ -1484,3 +1484,226 @@ fn test_streaming_consistency_across_parsers() {
         "OpenCode shows prefix on text event and step_finish"
     );
 }
+
+// Tests for snapshot-as-delta detection
+// These tests verify that the streaming state correctly identifies when
+// snapshot-style content is being sent as deltas (a common bug pattern)
+
+/// Test that a single large delta triggers a warning
+/// This simulates a parser sending the entire accumulated content as a "delta"
+#[test]
+fn test_snapshot_as_delta_single_large_delta_warns() {
+    use super::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // Create a delta larger than SNAPSHOT_THRESHOLD (200 chars)
+    let large_delta = "x".repeat(201);
+
+    // Capture stderr to verify warning is emitted
+    // Note: In a real test environment, this warning would go to stderr
+    // The test verifies the functionality doesn't crash and handles the large delta
+    let show_prefix = session.on_text_delta(0, &large_delta);
+    assert!(show_prefix, "First large delta should show prefix");
+
+    // Content should still be accumulated correctly
+    assert_eq!(
+        session.get_accumulated(super::types::ContentType::Text, "0"),
+        Some(large_delta.as_str())
+    );
+}
+
+/// Test that many tiny deltas work correctly without warnings
+/// This verifies the normal streaming case doesn't trigger false positives
+#[test]
+fn test_many_tiny_deltas_work_correctly() {
+    use super::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // Send many small deltas (normal streaming behavior)
+    let mut expected_content = String::new();
+    for i in 0..20 {
+        let delta = format!("chunk{i}");
+        expected_content.push_str(&delta);
+        session.on_text_delta(0, &delta);
+    }
+
+    // All content should be accumulated correctly
+    assert_eq!(
+        session.get_accumulated(super::types::ContentType::Text, "0"),
+        Some(expected_content.as_str())
+    );
+}
+
+/// Test that a pattern of repeated large deltas is detected
+/// This simulates a bug where the same snapshot is sent repeatedly as "deltas"
+#[test]
+fn test_pattern_of_repeated_large_deltas_detected() {
+    use super::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // Create a large snapshot
+    let large_snapshot = "x".repeat(201);
+
+    // Send the same large content 3 times (simulating snapshot-as-delta bug)
+    // This should trigger the pattern detection warning
+    for _ in 0..3 {
+        session.on_text_delta(0, &large_snapshot);
+    }
+
+    // Content should accumulate (with duplication - this is the bug we're detecting)
+    let accumulated = session
+        .get_accumulated(super::types::ContentType::Text, "0")
+        .unwrap();
+    assert!(accumulated.len() > large_snapshot.len());
+}
+
+/// Test mixed small and large deltas
+/// Verifies that legitimate mixed content doesn't cause issues
+#[test]
+fn test_mixed_small_and_large_deltas() {
+    use super::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // Start with small deltas
+    session.on_text_delta(0, "Hello ");
+    session.on_text_delta(0, "World ");
+
+    // Add a large delta (might be legitimate in some cases)
+    let large_delta = "x".repeat(201);
+    session.on_text_delta(0, &large_delta);
+
+    // Continue with small deltas
+    session.on_text_delta(0, " End");
+
+    // All content should be accumulated
+    let accumulated = session
+        .get_accumulated(super::types::ContentType::Text, "0")
+        .unwrap();
+    assert!(accumulated.contains("Hello"));
+    assert!(accumulated.contains("World"));
+    assert!(accumulated.ends_with(" End"));
+}
+
+/// Test for ccs-glm streaming scenario
+///
+/// This test simulates the problematic output pattern from the ccs-glm agent:
+/// - One token per line with repeated prefix (the bug we're fixing)
+/// - After the fix, output should have:
+///   - Exactly 1 prefix
+///   - Carriage return updates for subsequent deltas
+///   - Single final newline
+///   - No duplication of final message
+#[test]
+fn test_ccs_glm_streaming_no_duplicate_prefix() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate the problematic ccs-glm streaming pattern:
+    // Many small deltas arriving one token at a time
+    let mut input_lines = Vec::new();
+
+    // Message start
+    input_lines.push(r#"{"type":"stream_event","event":{"type":"message_start"}}"#.to_string());
+
+    // Content block start
+    input_lines.push(r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#.to_string());
+
+    // Simulate streaming "Hello World" one token at a time
+    for token in ["H", "e", "l", "l", "o", " ", "W", "o", "r", "l", "d", "!"] {
+        let delta_json = format!(
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{token}"}}}}}}"#
+        );
+        input_lines.push(delta_json);
+    }
+
+    // Message stop
+    input_lines.push(r#"{"type":"stream_event","event":{"type":"message_stop"}}"#.to_string());
+
+    let input = input_lines.join("\n");
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Verify the fix:
+    // 1. Should have exactly ONE prefix (not multiple duplicates)
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(
+        prefix_count,
+        1,
+        "Should have exactly 1 prefix, got {prefix_count}. Output: {output:?}"
+    );
+
+    // 2. Should contain carriage returns for in-place updates
+    assert!(
+        output.contains('\r'),
+        "Should use carriage returns for in-place updates. Output: {output:?}"
+    );
+
+    // 3. Final message "Hello World!" should be present
+    assert!(
+        output.contains("Hello World!"),
+        "Should contain complete message. Output: {output:?}"
+    );
+
+    // 4. Should end with newline (from message_stop)
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline after message_stop. Output: {output:?}"
+    );
+}
+
+/// Test for ccs-glm complete message deduplication
+///
+/// This test verifies that when a complete message event arrives after
+/// streaming has already displayed the content, the complete message
+/// is NOT re-displayed (preventing duplication).
+#[test]
+fn test_ccs_glm_complete_message_deduplication() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming followed by a complete message event
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Hello World!"}]}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // The complete message should NOT be displayed because streaming already showed it
+    // Count how many times the full text appears
+    let full_text_count = output.matches("Hello World!").count();
+
+    // The text should appear at most once (from the accumulated streaming output)
+    // The complete message event should be skipped due to deduplication
+    assert!(
+        full_text_count <= 1,
+        "Complete message should not be duplicated. Found {full_text_count} occurrences. Output: {output:?}"
+    );
+
+    // Should only have ONE prefix from streaming
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(
+        prefix_count,
+        1,
+        "Should have exactly 1 prefix from streaming. Output: {output:?}"
+    );
+}

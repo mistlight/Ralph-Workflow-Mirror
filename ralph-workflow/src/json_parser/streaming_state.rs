@@ -66,7 +66,13 @@ use std::collections::HashMap;
 /// Deltas are expected to be small chunks (typically < 100 chars). If a single
 /// "delta" exceeds `SNAPSHOT_THRESHOLD` characters, it may indicate a snapshot
 /// being treated as a delta.
-const SNAPSHOT_THRESHOLD: usize = 500;
+///
+/// # Pattern Detection
+///
+/// In addition to size threshold, we track patterns of repeated large content
+/// which may indicate a snapshot-as-delta bug where the same content is being
+/// sent repeatedly as if it were incremental.
+const SNAPSHOT_THRESHOLD: usize = 200;
 
 /// Streaming state for the current message lifecycle.
 ///
@@ -91,6 +97,7 @@ pub enum StreamingState {
 /// - Which content types have been streamed
 /// - Accumulated content by content type and index
 /// - Whether prefix should be shown on next delta
+/// - Delta size patterns for detecting snapshot-as-delta violations
 ///
 /// # Lifecycle
 ///
@@ -112,12 +119,20 @@ pub struct StreamingSession {
     accumulated: HashMap<(ContentType, String), String>,
     /// Track the order of keys for `most_recent` operations
     key_order: Vec<(ContentType, String)>,
+    /// Track recent delta sizes for pattern detection
+    /// Maps `(content_type, key)` → vec of recent delta sizes
+    delta_sizes: HashMap<(ContentType, String), Vec<usize>>,
+    /// Maximum number of delta sizes to track per key
+    max_delta_history: usize,
 }
 
 impl StreamingSession {
     /// Create a new streaming session.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            max_delta_history: 10,
+            ..Default::default()
+        }
     }
 
     /// Reset the session on new message start.
@@ -133,6 +148,7 @@ impl StreamingSession {
         self.in_content_block = false;
         self.accumulated.clear();
         self.key_order.clear();
+        self.delta_sizes.clear();
     }
 
     /// Mark the start of a content block.
@@ -157,6 +173,23 @@ impl StreamingSession {
             self.accumulated.remove(&key);
             self.key_order.retain(|k| k != &key);
         }
+    }
+
+    /// Assert that the session is in a valid lifecycle state.
+    ///
+    /// In debug builds, this will panic if the current state doesn't match
+    /// any of the expected states. In release builds, this does nothing.
+    ///
+    /// # Arguments
+    /// * `expected` - Slice of acceptable states
+    fn assert_lifecycle_state(&self, expected: &[StreamingState]) {
+        #[cfg(debug_assertions)]
+        assert!(
+            expected.contains(&self.state),
+            "Invalid lifecycle state: expected {:?}, got {:?}. \
+            This indicates a bug in the parser's event handling.",
+            expected, self.state
+        );
     }
 
     /// Process a text delta and return whether prefix should be shown.
@@ -184,6 +217,9 @@ impl StreamingSession {
     /// that exceed `SNAPSHOT_THRESHOLD` trigger a warning as they may indicate a
     /// contract violation.
     ///
+    /// Additionally, we track patterns of delta sizes to detect repeated large
+    /// content being sent as if it were incremental (a common snapshot-as-delta bug).
+    ///
     /// # Arguments
     /// * `key` - The content key (e.g., `main`, `agent_msg`, `reasoning`)
     /// * `delta` - The text delta to accumulate
@@ -192,26 +228,55 @@ impl StreamingSession {
     /// * `true` - Show prefix with this delta (first chunk)
     /// * `false` - Don't show prefix (subsequent chunks)
     pub fn on_text_delta_key(&mut self, key: &str, delta: &str) -> bool {
+        // Lifecycle enforcement: deltas should only arrive during streaming
+        // or idle (first delta starts streaming), never after finalization
+        self.assert_lifecycle_state(&[StreamingState::Idle, StreamingState::Streaming]);
+
+        let delta_size = delta.len();
+
+        // Track delta size for pattern detection
+        let content_key = (ContentType::Text, key.to_string());
+        let sizes = self
+            .delta_sizes
+            .entry(content_key.clone())
+            .or_default();
+        sizes.push(delta_size);
+
+        // Keep only the most recent delta sizes
+        if sizes.len() > self.max_delta_history {
+            sizes.remove(0);
+        }
+
         // Validate delta size - warn if it looks like a snapshot
-        if delta.len() > SNAPSHOT_THRESHOLD {
+        if delta_size > SNAPSHOT_THRESHOLD {
             // This is a potential snapshot-as-delta bug
             // Log via eprintln since we don't have a logger here
             eprintln!(
-                "Warning: Large delta ({} chars) for key '{}'. \
+                "Warning: Large delta ({delta_size} chars) for key '{key}'. \
                 This may indicate a snapshot being treated as a delta, \
-                which can cause exponential duplication bugs.",
-                delta.len(),
-                key
+                which can cause exponential duplication bugs."
             );
+        }
+
+        // Pattern detection: Check if we're seeing repeated large deltas
+        // This indicates the same content is being sent repeatedly (snapshot-as-delta)
+        if sizes.len() >= 3 {
+            // Check if at least 3 of the last N deltas were large
+            let large_count = sizes.iter().filter(|&&s| s > SNAPSHOT_THRESHOLD).count();
+            if large_count >= 3 {
+                eprintln!(
+                    "Warning: Detected pattern of {large_count} large deltas for key '{key}'. \
+                    This strongly suggests a snapshot-as-delta bug where the same \
+                    large content is being sent repeatedly. File: streaming_state.rs, Line: {}",
+                    line!()
+                );
+            }
         }
 
         // Mark that we're streaming text content
         self.streamed_types.insert(ContentType::Text, true);
         self.state = StreamingState::Streaming;
         self.in_content_block = true;
-
-        // Get the key for this content
-        let content_key = (ContentType::Text, key.to_string());
 
         // Check if this is the first delta for this key
         let is_first = !self.accumulated.contains_key(&content_key);
