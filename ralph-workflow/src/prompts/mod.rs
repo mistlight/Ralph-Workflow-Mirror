@@ -18,9 +18,9 @@ mod reviewer;
 mod types;
 
 // Re-export all public items for backward compatibility
-pub(crate) use commit::{prompt_fix, prompt_generate_commit_message_with_diff};
-pub(crate) use developer::{prompt_developer_iteration, prompt_plan};
-pub(crate) use reviewer::{
+pub use commit::{prompt_fix, prompt_generate_commit_message_with_diff};
+pub use developer::{prompt_developer_iteration, prompt_plan};
+pub use reviewer::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines,
     prompt_incremental_review_with_diff, prompt_reviewer_review,
     prompt_reviewer_review_with_guidelines, prompt_security_focused_review,

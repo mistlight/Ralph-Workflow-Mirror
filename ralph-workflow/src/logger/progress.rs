@@ -2,6 +2,8 @@
 //!
 //! Provides visual progress feedback for long-running operations.
 
+#![expect(clippy::cast_possible_truncation)]
+
 use crate::colors::Colors;
 
 /// Print a progress bar with percentage and counts.
@@ -72,8 +74,7 @@ mod tests {
         let filled = (u64::from(current))
             .saturating_mul(bar_width as u64)
             .saturating_div(u64::from(total))
-            .min(bar_width as u64)
-            .expect("bar_width (20) fits in u64 on all platforms");
+            .min(bar_width as u64) as usize;
         let empty = bar_width - filled;
         let bar: String = "█".repeat(filled) + &"░".repeat(empty);
         (pct, bar)

@@ -28,7 +28,7 @@ GUIDELINES:
 - Make meaningful progress in each iteration
 - Write clean, idiomatic code following project patterns
 - Add tests where appropriate"
-                .to_string()
+            .to_string(),
     }
 }
 
@@ -73,16 +73,17 @@ PHASE 1: UNDERSTANDING
     // without naming the source file. This prevents agents from discovering
     // the file through exploration, reducing the risk of accidental deletion.
     if let Some(content) = prompt_content {
-        prompt.push_str(&format!(
+        use std::fmt::Write;
+        let _ = write!(
+            prompt,
             r"
 
 REQUIREMENTS FROM PROJECT TASK:
 ───────────────────────────────────────────────────────────────────────────────
-{}
+{content}
 ───────────────────────────────────────────────────────────────────────────────
-",
-            content
-        ));
+"
+        );
     } else {
         prompt.push_str(
             r"
