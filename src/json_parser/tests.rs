@@ -875,6 +875,93 @@ fn test_stream_classifies_short_content_as_partial() {
     assert_eq!(result.event_type, StreamEventType::Partial);
 }
 
+// Tests for partial event tracking in health monitoring
+
+#[test]
+fn test_claude_parser_tracks_partial_events_in_health_monitoring() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Create a stream with mixed events: control, partial (delta), and complete
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Complete message"}]}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    // Parse stream - should handle all events without health warnings
+    let result = parser.parse_stream(reader, &mut writer);
+    assert!(result.is_ok());
+
+    // Verify output contains delta content
+    let output = String::from_utf8(writer).unwrap();
+    assert!(output.contains("Hello") || output.contains("World") || output.contains("Complete"));
+}
+
+#[test]
+fn test_health_monitor_no_warning_with_high_partial_percentage() {
+    use super::health::HealthMonitor;
+    use crate::colors::Colors;
+
+    let monitor = HealthMonitor::new("test");
+    let colors = Colors { enabled: false };
+
+    // Simulate the bug report scenario: 97.5% partial events (2049 of 2102)
+    // These should NOT trigger a warning because partial events are valid streaming content
+    for _ in 0..2049 {
+        monitor.record_partial_event();
+    }
+    for _ in 0..53 {
+        monitor.record_parsed();
+    }
+
+    // Should NOT warn even with 97.5% "partial" events
+    let warning = monitor.check_and_warn(&colors);
+    assert!(warning.is_none(), "Should not warn with high percentage of partial events");
+}
+
+#[test]
+fn test_health_monitor_warning_only_for_parse_errors() {
+    use super::health::HealthMonitor;
+    use crate::colors::Colors;
+
+    let monitor = HealthMonitor::new("test");
+    let colors = Colors { enabled: false };
+
+    // Mix of partial, control, and parsed events should NOT trigger warning
+    for _ in 0..1000 {
+        monitor.record_partial_event();
+    }
+    for _ in 0..500 {
+        monitor.record_control_event();
+    }
+    for _ in 0..50 {
+        monitor.record_parsed();
+    }
+
+    let warning = monitor.check_and_warn(&colors);
+    assert!(warning.is_none(), "Should not warn with mix of partial, control, and parsed events");
+
+    // Reset and test with actual parse errors
+    monitor.reset();
+
+    // Add parse errors exceeding 50% threshold
+    for _ in 0..60 {
+        monitor.record_parse_error();
+    }
+    for _ in 0..40 {
+        monitor.record_parsed();
+    }
+
+    let warning = monitor.check_and_warn(&colors);
+    assert!(warning.is_some(), "Should warn with >50% parse errors");
+    assert!(warning.unwrap().contains("parse errors"));
+}
+
 #[test]
 fn test_stream_classifies_long_content_as_complete() {
     use super::stream_classifier::{StreamEventClassifier, StreamEventType};

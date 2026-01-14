@@ -527,6 +527,28 @@ impl CodexParser {
         }
     }
 
+    /// Check if a Codex event is a partial/delta event (streaming content displayed incrementally)
+    ///
+    /// Partial events represent streaming content deltas (agent messages, reasoning)
+    /// that are shown to the user in real-time. These should be tracked separately
+    /// to avoid inflating "ignored" percentages.
+    fn is_partial_event(event: &CodexEvent) -> bool {
+        match event {
+            // Item started events for agent_message and reasoning produce streaming content
+            CodexEvent::ItemStarted { item } => {
+                if let Some(item) = item {
+                    matches!(
+                        item.item_type.as_deref(),
+                        Some("agent_message") | Some("reasoning")
+                    )
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// Parse a stream of Codex NDJSON events
     pub(crate) fn parse_stream<R: BufRead, W: Write>(
         &self,
@@ -567,7 +589,20 @@ impl CodexParser {
             // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
-                    monitor.record_parsed();
+                    // Check if this is a partial/delta event (streaming content)
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<CodexEvent>(&line) {
+                            if Self::is_partial_event(&event) {
+                                monitor.record_partial_event();
+                            } else {
+                                monitor.record_parsed();
+                            }
+                        } else {
+                            monitor.record_parsed();
+                        }
+                    } else {
+                        monitor.record_parsed();
+                    }
                     write!(writer, "{}", output)?;
                 }
                 None => {
