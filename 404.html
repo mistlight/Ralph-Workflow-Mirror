@@ -10,11 +10,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <!-- Fonts: Righteous (display), DM Sans (headings/body), JetBrains Mono (code) -->
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Righteous&display=swap" rel="stylesheet">
+    <!-- Fonts: Bebas Neue (display), Syne (headings), Archivo Black (body), IBM Plex Mono (code) -->
+    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%2309090B' rx='12'/%3E%3Cpath d='M18 20h24M18 30h18M18 40h12' stroke='%23C8FF00' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+    <!-- Favicon - Enhanced with distinctive R logo matching main site -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg-grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23111'/%3E%3Cstop offset='100%25' style='stop-color:%23000'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg-grad)' rx='14'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%23CCFF00' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23CCFF00'/%3E%3C/svg%3E">
 
     <style>
         *, *::before, *::after {
@@ -35,10 +35,10 @@
             --color-error: #FF0080;
             --border-subtle: #27272A;
             --border-medium: #3F3F46;
-            --font-display: 'Righteous', 'Orbitron', 'Rajdhani', cursive;
-            --font-heading: 'DM Sans', 'Outfit', 'Plus Jakarta Sans', sans-serif;
-            --font-body: 'DM Sans', 'Outfit', -apple-system, sans-serif;
-            --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+            --font-display: 'Bebas Neue', 'Orbitron', 'Rajdhani', cursive;
+            --font-heading: 'Syne', 'Archivo Black', 'Outfit', 'Plus Jakarta Sans', sans-serif;
+            --font-body: 'Archivo Black', 'Outfit', -apple-system, sans-serif;
+            --font-mono: 'IBM Plex Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
         }
 
         html {
@@ -313,6 +313,29 @@
             color: var(--color-accent);
         }
 
+        /* Skip Link for Accessibility */
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 1rem 2rem;
+            background: var(--color-primary);
+            color: var(--color-bg);
+            text-decoration: none;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            z-index: 9999;
+            transition: top 0.15s ease;
+        }
+
+        .skip-link:focus {
+            top: 1.5rem;
+        }
+
         @media (max-width: 480px) {
             .actions {
                 flex-direction: column;
@@ -339,8 +362,11 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="error-code">404</div>
+    <a href="/" class="skip-link">Skip to home</a>
+
+    <main role="main">
+        <div class="container">
+            <div class="error-code">404</div>
         <div class="content">
             <div class="logo">
                 <div class="logo-mark">
@@ -394,6 +420,7 @@
             </div>
         </div>
     </div>
+    </main>
 
     <footer>
         <p>

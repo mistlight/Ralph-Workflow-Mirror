@@ -89,9 +89,18 @@
     <!-- Grid Overlay -->
     <div class="grid-overlay" aria-hidden="true"></div>
 
+    <!-- Cursor Spotlight Effect -->
+    <div class="cursor-spotlight" aria-hidden="true"></div>
+
     <main id="main" role="main">
         <!-- Hero Section -->
         <section class="hero">
+            <!-- Hero Corner Accents -->
+            <div class="hero-corner-accent top-left" aria-hidden="true"></div>
+            <div class="hero-corner-accent top-right" aria-hidden="true"></div>
+            <div class="hero-corner-accent bottom-left" aria-hidden="true"></div>
+            <div class="hero-corner-accent bottom-right" aria-hidden="true"></div>
+
             <!-- Floating Particles -->
             <div class="hero-particles" aria-hidden="true">
                 <span class="particle"></span>
@@ -286,7 +295,7 @@
                     </p>
 
                     <div class="workflow-steps">
-                        <div class="workflow-step">
+                        <div class="workflow-step fade-in-left stagger-1">
                             <span class="step-number">1</span>
                             <div class="step-content">
                                 <h3>You write PROMPT.md</h3>
@@ -294,7 +303,7 @@
                             </div>
                         </div>
 
-                        <div class="workflow-step">
+                        <div class="workflow-step fade-in-up stagger-2">
                             <span class="step-number">2</span>
                             <div class="step-content">
                                 <h3>Developer agent writes code</h3>
@@ -302,7 +311,7 @@
                             </div>
                         </div>
 
-                        <div class="workflow-step">
+                        <div class="workflow-step fade-in-up stagger-3">
                             <span class="step-number">3</span>
                             <div class="step-content">
                                 <h3>Reviewer agent validates</h3>
@@ -310,7 +319,7 @@
                             </div>
                         </div>
 
-                        <div class="workflow-step">
+                        <div class="workflow-step fade-in-right stagger-4">
                             <span class="step-number">4</span>
                             <div class="step-content">
                                 <h3>Commit is created</h3>
@@ -878,7 +887,7 @@ max_iterations = 10</code></pre>
             </div>
 
             <div class="features-grid">
-                <div class="feature-card">
+                <div class="feature-card feature-card--expandable">
                     <div class="feature-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"/>
@@ -887,6 +896,20 @@ max_iterations = 10</code></pre>
                     </div>
                     <h3>Multi-Agent Orchestration</h3>
                     <p>Developer and Reviewer agents collaborate in real-time. The Developer writes code while the Reviewer validates quality. They iterate automatically until approval.</p>
+                    <button class="feature-expand-btn" aria-expanded="false" data-expand="feature-1">
+                        <span>Learn more</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                    <div class="feature-expand-content" id="feature-1">
+                        <h4>How the agents work together:</h4>
+                        <ul>
+                            <li><strong>Developer Agent:</strong> Analyzes your PROMPT.md, breaks down requirements, and implements the code changes. It has full access to your repository and can modify files directly.</li>
+                            <li><strong>Reviewer Agent:</strong> Examines the code for quality issues, security vulnerabilities, and adherence to best practices. It provides specific feedback when issues are found.</li>
+                            <li><strong>Self-Correcting Loop:</strong> If the Reviewer finds problems, it sends feedback to the Developer, which fixes them automatically. This continues until both agents agree the code is ready.</li>
+                        </ul>
+                    </div>
                 </div>
 
                 <div class="feature-card">

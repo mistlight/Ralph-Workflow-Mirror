@@ -1,7 +1,8 @@
 /**
  * Ralph Workflow - Enhanced JavaScript
  * Handles: mobile nav, install tabs, copy-to-clipboard, smooth scroll, scroll animations,
- * terminal typing effect, nav scroll detection, parallax effects, magnetic buttons
+ * terminal typing effect, nav scroll detection, parallax effects, magnetic buttons,
+ * cursor spotlight effect
  */
 
 (function() {
@@ -618,6 +619,29 @@
         animationObserver.observe(el);
     });
 
+    // === Enhanced Scroll Animation Classes ===
+    // Observe elements with new animation classes
+    const enhancedAnimatedElements = document.querySelectorAll(
+        '.fade-in-up, .fade-in-left, .fade-in-right'
+    );
+
+    const enhancedObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('visible');
+                enhancedObserver.unobserve(entry.target);
+            }
+        });
+    }, {
+        root: null,
+        rootMargin: '0px 0px -50px 0px',
+        threshold: 0.15
+    });
+
+    enhancedAnimatedElements.forEach(el => {
+        enhancedObserver.observe(el);
+    });
+
     // === Character-Level Kinetic Typography ===
     // Wrap each character in hero words for individual animation
     const heroTitle = document.querySelector('.hero-title');
@@ -738,6 +762,40 @@
 
     handleReducedMotion();
     prefersReducedMotion.addEventListener('change', handleReducedMotion);
+
+    // === Cursor Spotlight Effect ===
+    const cursorSpotlight = document.querySelector('.cursor-spotlight');
+    const heroSection = document.querySelector('.hero');
+
+    if (cursorSpotlight && heroSection && !prefersReducedMotion.matches) {
+        let spotlightActive = false;
+
+        // Activate spotlight when mouse enters hero
+        heroSection.addEventListener('mouseenter', () => {
+            spotlightActive = true;
+            cursorSpotlight.classList.add('active');
+        });
+
+        heroSection.addEventListener('mouseleave', () => {
+            spotlightActive = false;
+            cursorSpotlight.classList.remove('active');
+        });
+
+        // Track mouse movement with throttling
+        let spotlightTicking = false;
+        document.addEventListener('mousemove', (e) => {
+            if (!spotlightActive || !spotlightTicking) {
+                requestAnimationFrame(() => {
+                    if (spotlightActive) {
+                        cursorSpotlight.style.left = e.clientX + 'px';
+                        cursorSpotlight.style.top = e.clientY + 'px';
+                    }
+                    spotlightTicking = false;
+                });
+                spotlightTicking = true;
+            }
+        });
+    }
 
     // === Audience Selector ===
     const audienceOptions = document.querySelectorAll('.audience-option');
@@ -1000,5 +1058,26 @@ impl AuthService {
         detectPlatform();
         localStorage.setItem('ralph-tab-selected', 'true');
     }
+
+    // === Expandable Feature Cards ===
+    const expandButtons = document.querySelectorAll('.feature-expand-btn');
+
+    expandButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.dataset.expand;
+            const targetContent = document.getElementById(targetId);
+            const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+
+            // Toggle expanded state
+            btn.setAttribute('aria-expanded', !isExpanded);
+            targetContent.setAttribute('aria-hidden', isExpanded);
+
+            // Update button text
+            const span = btn.querySelector('span');
+            if (span) {
+                span.textContent = isExpanded ? 'Learn more' : 'Show less';
+            }
+        });
+    });
 
 })();

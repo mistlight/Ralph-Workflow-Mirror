@@ -327,6 +327,31 @@ body::after {
     background-size: 100px 100px;
 }
 
+/* Cursor Spotlight Effect - Enhanced hero interactivity */
+.cursor-spotlight {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 600px;
+    height: 600px;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0;
+    background: radial-gradient(
+        circle at center,
+        rgba(204, 255, 0, 0.08) 0%,
+        rgba(204, 255, 0, 0.03) 25%,
+        transparent 50%
+    );
+    transform: translate(-50%, -50%);
+    transition: opacity 0.3s ease;
+    will-change: transform, opacity;
+}
+
+.cursor-spotlight.active {
+    opacity: 1;
+}
+
 body > * {
     position: relative;
     z-index: var(--z-base);
@@ -812,6 +837,105 @@ a:not(.btn):not(.nav-link):not(.badge):not(.audience-option):not(.install-tab):n
     0%, 100% { opacity: 0.7; transform: scale(1) translate(0, 0); }
     33% { opacity: 1; transform: scale(1.15) translate(25px, -25px); }
     66% { opacity: 0.85; transform: scale(1.08) translate(-20px, 20px); }
+}
+
+/* Hero Corner Accents - Decorative brutalist elements */
+.hero-corner-accent {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.4;
+}
+
+.hero-corner-accent::before,
+.hero-corner-accent::after {
+    content: '';
+    position: absolute;
+    background: var(--color-primary);
+}
+
+.hero-corner-accent.top-left {
+    top: var(--space-8);
+    left: var(--space-8);
+}
+
+.hero-corner-accent.top-left::before {
+    width: 40px;
+    height: 2px;
+    top: 0;
+    left: 0;
+}
+
+.hero-corner-accent.top-left::after {
+    width: 2px;
+    height: 40px;
+    top: 0;
+    left: 0;
+}
+
+.hero-corner-accent.top-right {
+    top: var(--space-8);
+    right: var(--space-8);
+}
+
+.hero-corner-accent.top-right::before {
+    width: 40px;
+    height: 2px;
+    top: 0;
+    right: 0;
+}
+
+.hero-corner-accent.top-right::after {
+    width: 2px;
+    height: 40px;
+    top: 0;
+    right: 0;
+}
+
+.hero-corner-accent.bottom-left {
+    bottom: var(--space-8);
+    left: var(--space-8);
+}
+
+.hero-corner-accent.bottom-left::before {
+    width: 40px;
+    height: 2px;
+    bottom: 0;
+    left: 0;
+}
+
+.hero-corner-accent.bottom-left::after {
+    width: 2px;
+    height: 40px;
+    bottom: 0;
+    left: 0;
+}
+
+.hero-corner-accent.bottom-right {
+    bottom: var(--space-8);
+    right: var(--space-8);
+}
+
+.hero-corner-accent.bottom-right::before {
+    width: 40px;
+    height: 2px;
+    bottom: 0;
+    right: 0;
+}
+
+.hero-corner-accent.bottom-right::after {
+    width: 2px;
+    height: 40px;
+    bottom: 0;
+    right: 0;
+}
+
+/* Animate corner accents on hover */
+.hero:hover .hero-corner-accent {
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
 }
 
 .hero-grid {
@@ -3227,6 +3351,132 @@ body:not([data-audience]) .audience-newcomer-content {
     background: var(--color-magenta);
 }
 
+/* Expandable Feature Card - Progressive Disclosure */
+.feature-card--expandable {
+    display: flex;
+    flex-direction: column;
+}
+
+.feature-expand-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+    padding: var(--space-2) var(--space-4);
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-base);
+    align-self: flex-start;
+}
+
+.feature-expand-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--color-primary-dim);
+}
+
+.feature-expand-btn svg {
+    transition: transform var(--transition-base);
+}
+
+.feature-expand-btn[aria-expanded="true"] svg {
+    transform: rotate(180deg);
+}
+
+.feature-expand-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    opacity: 0;
+    margin-top: 0;
+}
+
+.feature-expand-content[aria-hidden="false"] {
+    max-height: 500px;
+    opacity: 1;
+    margin-top: var(--space-6);
+}
+
+.feature-expand-content h4 {
+    font-family: var(--font-heading);
+    font-size: var(--text-base);
+    color: var(--color-primary);
+    margin-bottom: var(--space-4);
+}
+
+.feature-expand-content ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.feature-expand-content li {
+    position: relative;
+    padding-left: var(--space-6);
+    margin-bottom: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: 1.7;
+}
+
+.feature-expand-content li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--color-accent);
+    font-weight: 700;
+}
+
+/* Enhanced Scroll Animations with Staggered Delays */
+.fade-in-up {
+    opacity: 0;
+    transform: translateY(40px) scale(0.98);
+    transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-in-up.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.fade-in-left {
+    opacity: 0;
+    transform: translateX(-40px);
+    transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-in-left.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.fade-in-right {
+    opacity: 0;
+    transform: translateX(40px);
+    transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-in-right.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Stagger delays for sequential animations */
+.stagger-1 { transition-delay: 0.1s; }
+.stagger-2 { transition-delay: 0.2s; }
+.stagger-3 { transition-delay: 0.3s; }
+.stagger-4 { transition-delay: 0.4s; }
+.stagger-5 { transition-delay: 0.5s; }
+
 /* === AUDIENCE SECTION === */
 .audience-section {
     background: var(--color-bg-alt);
@@ -3638,6 +3888,16 @@ details[open] summary::before {
         padding-top: calc(var(--nav-height) + var(--space-16));
     }
 
+    /* Hide corner accents on mobile for cleaner appearance */
+    .hero-corner-accent {
+        display: none;
+    }
+
+    /* Reduce cursor spotlight on mobile */
+    .cursor-spotlight {
+        display: none;
+    }
+
     /* Reduce parallax intensity on mobile for performance */
     .hero-glow,
     .hero-glow-2,
@@ -3772,13 +4032,19 @@ details:hover {
         animation: none !important;
     }
 
+    /* Disable cursor spotlight for reduced motion */
+    .cursor-spotlight {
+        display: none !important;
+    }
+
     /* Remove will-change hints that cause compositing */
     body::before,
     .terminal-window,
     .btn-primary,
     .btn-secondary,
     .feature-card,
-    .hero-char {
+    .hero-char,
+    .cursor-spotlight {
         will-change: auto !important;
     }
 
