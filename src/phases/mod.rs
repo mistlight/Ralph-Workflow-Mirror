@@ -21,7 +21,6 @@ mod context;
 mod development;
 mod review;
 
-pub use commit::{commit_with_generated_message, generate_commit_message, CommitMessageResult};
 pub use context::PhaseContext;
 pub use development::run_development_phase;
 pub use review::run_review_phase;

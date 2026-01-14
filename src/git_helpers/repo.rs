@@ -819,7 +819,7 @@ fn call_llm_agent(
         message: format!("Failed to parse agent command: {}", e),
     })?;
 
-    let (program, args) = match argv.split_first() {
+    let (program, arguments) = match argv.split_first() {
         Some(pair) => pair,
         None => {
             return Err(CommitGenerationError::AgentFailed {
@@ -832,7 +832,7 @@ fn call_llm_agent(
     };
 
     let mut child = Command::new(program)
-        .args(args)
+        .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

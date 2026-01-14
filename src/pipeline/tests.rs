@@ -199,7 +199,7 @@ exit 0
 #[test]
 fn contract_qwen_stream_json_parses_with_claude_parser() {
     let registry = AgentRegistry::new().unwrap();
-    let qwen = registry.get("qwen").unwrap();
+    let qwen = registry.resolve_config("qwen").unwrap();
 
     let cmd = qwen.build_cmd(true, true, true);
     let argv = split_command(&cmd).unwrap();
@@ -227,7 +227,7 @@ fn contract_qwen_stream_json_parses_with_claude_parser() {
 #[test]
 fn contract_vibe_runs_in_plain_text_mode() {
     let registry = AgentRegistry::new().unwrap();
-    let vibe = registry.get("vibe").unwrap();
+    let vibe = registry.resolve_config("vibe").unwrap();
 
     let cmd = vibe.build_cmd(true, true, true);
     let argv = split_command(&cmd).unwrap();
@@ -241,7 +241,7 @@ fn contract_vibe_runs_in_plain_text_mode() {
 #[test]
 fn contract_llama_cli_runs_in_plain_text_mode_with_local_model_flag() {
     let registry = AgentRegistry::new().unwrap();
-    let llama = registry.get("llama-cli").unwrap();
+    let llama = registry.resolve_config("llama-cli").unwrap();
 
     let cmd = llama.build_cmd(true, true, true);
     assert!(
@@ -292,7 +292,7 @@ fn test_glm_reviewer_command_includes_print_flag() {
 
     // Get the GLM agent config
     let glm_config = registry
-        .get("ccs/glm")
+        .resolve_config("ccs/glm")
         .expect("GLM agent should be available");
 
     // Build the command as it would be built for reviewer role
