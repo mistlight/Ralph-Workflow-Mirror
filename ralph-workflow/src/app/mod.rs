@@ -49,6 +49,23 @@ use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
 
+/// Context for running the pipeline.
+///
+/// Groups together the various parameters needed to run the development/review/commit
+/// pipeline, reducing function parameter count and improving maintainability.
+struct PipelineContext {
+    args: Args,
+    config: Config,
+    registry: AgentRegistry,
+    developer_agent: String,
+    reviewer_agent: String,
+    developer_display: String,
+    reviewer_display: String,
+    repo_root: std::path::PathBuf,
+    logger: Logger,
+    colors: Colors,
+}
+
 /// Main application entry point.
 ///
 /// Orchestrates the entire Ralph pipeline:
@@ -216,7 +233,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Run the full pipeline
-    run_pipeline(
+    run_pipeline(PipelineContext {
         args,
         config,
         registry,
@@ -227,7 +244,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         repo_root,
         logger,
         colors,
-    )
+    })
 }
 
 /// Handles listing commands that don't require the full pipeline.
@@ -250,56 +267,56 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: &Color
 }
 
 /// Runs the full development/review/commit pipeline.
-#[allow(clippy::too_many_arguments)]
-fn run_pipeline(
-    args: Args,
-    config: Config,
-    registry: AgentRegistry,
-    developer_agent: String,
-    reviewer_agent: String,
-    developer_display: String,
-    reviewer_display: String,
-    repo_root: std::path::PathBuf,
-    logger: Logger,
-    colors: Colors,
-) -> anyhow::Result<()> {
+fn run_pipeline(pipeline_ctx: PipelineContext) -> anyhow::Result<()> {
     // Handle --resume
-    let resume_checkpoint = handle_resume(&args, &logger, &developer_display, &reviewer_display);
+    let resume_checkpoint = handle_resume(
+        &pipeline_ctx.args,
+        &pipeline_ctx.logger,
+        &pipeline_ctx.developer_display,
+        &pipeline_ctx.reviewer_display,
+    );
 
     // Set up git helpers
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
-    cleanup_orphaned_marker(&logger)?;
+    cleanup_orphaned_marker(&pipeline_ctx.logger)?;
     start_agent_phase(&mut git_helpers)?;
-    let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &logger);
+    let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &pipeline_ctx.logger);
 
     let mut timer = Timer::new();
     let mut stats = Stats::new();
 
     // Welcome banner
-    print_welcome_banner(&colors, &developer_display, &reviewer_display);
-    logger.info(&format!(
+    print_welcome_banner(
+        &pipeline_ctx.colors,
+        &pipeline_ctx.developer_display,
+        &pipeline_ctx.reviewer_display,
+    );
+    pipeline_ctx.logger.info(&format!(
         "Working directory: {}{}{}",
-        colors.cyan(),
-        repo_root.display(),
-        colors.reset()
+        pipeline_ctx.colors.cyan(),
+        pipeline_ctx.repo_root.display(),
+        pipeline_ctx.colors.reset()
     ));
-    logger.info(&format!(
+    pipeline_ctx.logger.info(&format!(
         "Commit message: {}{}{}",
-        colors.cyan(),
-        config.commit_msg,
-        colors.reset()
+        pipeline_ctx.colors.cyan(),
+        pipeline_ctx.config.commit_msg,
+        pipeline_ctx.colors.reset()
     ));
 
     // Validate PROMPT.md early so we don't run a "review" against an ill-formed prompt.
     // In non-strict mode this is warning-only for missing sections, but still surfaced
     // loudly because it impacts the review workflow.
     // Note: Interactive mode PROMPT.md creation is handled in run() before ensure_files()
-    let prompt_validation = validate_prompt_md(config.strict_validation, args.interactive);
+    let prompt_validation = validate_prompt_md(
+        pipeline_ctx.config.strict_validation,
+        pipeline_ctx.args.interactive,
+    );
     for err in &prompt_validation.errors {
-        logger.error(err);
+        pipeline_ctx.logger.error(err);
     }
     for warn in &prompt_validation.warnings {
-        logger.warn(warn);
+        pipeline_ctx.logger.warn(warn);
     }
     if !prompt_validation.is_valid() {
         anyhow::bail!("PROMPT.md validation errors");
@@ -314,13 +331,13 @@ fn run_pipeline(
             // Backup created successfully with read-only permissions
         }
         Ok(Some(warning)) => {
-            logger.warn(&format!(
+            pipeline_ctx.logger.warn(&format!(
                 "PROMPT.md backup created but: {}. Continuing anyway.",
                 warning
             ));
         }
         Err(e) => {
-            logger.warn(&format!(
+            pipeline_ctx.logger.warn(&format!(
                 "Failed to create PROMPT.md backup: {}. Continuing anyway.",
                 e
             ));
@@ -335,10 +352,12 @@ fn run_pipeline(
             // Read-only permissions set successfully
         }
         Ok(Some(warning)) => {
-            logger.warn(&format!("{}. Continuing anyway.", warning));
+            pipeline_ctx
+                .logger
+                .warn(&format!("{}. Continuing anyway.", warning));
         }
         Err(e) => {
-            logger.warn(&format!(
+            pipeline_ctx.logger.warn(&format!(
                 "Failed to make PROMPT.md read-only: {}. Continuing anyway.",
                 e
             ));
@@ -351,20 +370,22 @@ fn run_pipeline(
     let mut prompt_monitor = match PromptMonitor::new() {
         Ok(mut monitor) => {
             if let Err(e) = monitor.start() {
-                logger.warn(&format!(
+                pipeline_ctx.logger.warn(&format!(
                     "Failed to start PROMPT.md monitoring: {}. Continuing anyway.",
                     e
                 ));
                 None
             } else {
-                if config.verbosity.is_debug() {
-                    logger.info("Started real-time PROMPT.md monitoring");
+                if pipeline_ctx.config.verbosity.is_debug() {
+                    pipeline_ctx
+                        .logger
+                        .info("Started real-time PROMPT.md monitoring");
                 }
                 Some(monitor)
             }
         }
         Err(e) => {
-            logger.warn(&format!(
+            pipeline_ctx.logger.warn(&format!(
                 "Failed to create PROMPT.md monitor: {}. Continuing anyway.",
                 e
             ));
@@ -373,15 +394,19 @@ fn run_pipeline(
     };
 
     // Detect project stack and generate review guidelines
-    let (_project_stack, review_guidelines) =
-        detect_project_stack(&config, &repo_root, &logger, &colors);
+    let (_project_stack, review_guidelines) = detect_project_stack(
+        &pipeline_ctx.config,
+        &pipeline_ctx.repo_root,
+        &pipeline_ctx.logger,
+        &pipeline_ctx.colors,
+    );
 
     if let Some(ref guidelines) = review_guidelines {
-        logger.info(&format!(
+        pipeline_ctx.logger.info(&format!(
             "Review guidelines: {}{}{}",
-            colors.dim(),
+            pipeline_ctx.colors.dim(),
             guidelines.summary(),
-            colors.reset()
+            pipeline_ctx.colors.reset()
         ));
     }
 
@@ -389,14 +414,14 @@ fn run_pipeline(
 
     // Create phase context
     let mut ctx = PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
+        config: &pipeline_ctx.config,
+        registry: &pipeline_ctx.registry,
+        logger: &pipeline_ctx.logger,
+        colors: &pipeline_ctx.colors,
         timer: &mut timer,
         stats: &mut stats,
-        developer_agent: &developer_agent,
-        reviewer_agent: &reviewer_agent,
+        developer_agent: &pipeline_ctx.developer_agent,
+        reviewer_agent: &pipeline_ctx.reviewer_agent,
         review_guidelines: review_guidelines.as_ref(),
     };
 
@@ -407,51 +432,57 @@ fn run_pipeline(
     // This may reduce incremental review quality (diffs may be empty after auto-commits).
     match save_start_commit() {
         Ok(()) => {
-            if config.verbosity.is_debug() {
-                logger.info("Saved starting commit for incremental diff generation");
+            if pipeline_ctx.config.verbosity.is_debug() {
+                pipeline_ctx
+                    .logger
+                    .info("Saved starting commit for incremental diff generation");
             }
         }
         Err(e) => {
-            logger.warn(&format!(
+            pipeline_ctx.logger.warn(&format!(
                 "Failed to save starting commit: {}. \
                  Incremental diffs may be unavailable as a result.",
                 e
             ));
-            logger.info(
+            pipeline_ctx.logger.info(
                 "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
             );
         }
     }
 
     // Run phases
-    run_development(&mut ctx, &args, resume_checkpoint.as_ref())?;
+    run_development(&mut ctx, &pipeline_ctx.args, resume_checkpoint.as_ref())?;
 
     // Check for PROMPT.md restoration after development phase
     if let Some(ref mut monitor) = prompt_monitor {
         if monitor.check_and_restore() {
-            logger.warn("PROMPT.md was deleted and restored during development phase");
+            pipeline_ctx
+                .logger
+                .warn("PROMPT.md was deleted and restored during development phase");
         }
     }
-    update_status("In progress.", config.isolation_mode)?;
+    update_status("In progress.", pipeline_ctx.config.isolation_mode)?;
 
-    run_review_and_fix(&mut ctx, &args, resume_checkpoint.as_ref())?;
+    run_review_and_fix(&mut ctx, &pipeline_ctx.args, resume_checkpoint.as_ref())?;
 
     // Check for PROMPT.md restoration after review phase
     if let Some(ref mut monitor) = prompt_monitor {
         if monitor.check_and_restore() {
-            logger.warn("PROMPT.md was deleted and restored during review phase");
+            pipeline_ctx
+                .logger
+                .warn("PROMPT.md was deleted and restored during review phase");
         }
     }
-    update_status("In progress.", config.isolation_mode)?;
+    update_status("In progress.", pipeline_ctx.config.isolation_mode)?;
 
     run_final_validation(&ctx, resume_checkpoint.as_ref())?;
 
     // Commit phase
     finalize_pipeline(
         &mut agent_phase_guard,
-        &logger,
-        &colors,
-        &config,
+        &pipeline_ctx.logger,
+        &pipeline_ctx.colors,
+        &pipeline_ctx.config,
         &timer,
         &stats,
         prompt_monitor,

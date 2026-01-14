@@ -69,10 +69,13 @@ mod tests {
             .saturating_mul(100)
             .saturating_div(u64::from(total))
             .min(100) as u32;
-        let filled = (u64::from(current))
-            .saturating_mul(bar_width as u64)
-            .saturating_div(u64::from(total))
-            .min(bar_width as u64) as usize;
+        let filled = usize::try_from(
+            (u64::from(current))
+                .saturating_mul(bar_width as u64)
+                .saturating_div(u64::from(total))
+                .min(bar_width as u64),
+        )
+        .expect("bar_width (20) fits in usize on all platforms");
         let empty = bar_width - filled;
         let bar: String = "█".repeat(filled) + &"░".repeat(empty);
         (pct, bar)

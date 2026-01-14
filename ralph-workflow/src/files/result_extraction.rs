@@ -965,7 +965,7 @@ mod tests {
         let result1 = r##"{"type": "result", "result": "# Complete Plan\n\n## Implementation Steps\n\nStep 1: Create module with functionality.\nStep 2: Add comprehensive tests.\nStep 3: Write documentation.\nStep 4: Integrate and verify."}"##;
         let result2 =
             r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
-        let result3 = r##"{"type": "result", "result": "Last paragraph"}"##;
+        let result3 = r#"{"type": "result", "result": "Last paragraph"}"#;
         let json_log = format!("{}\n{}\n{}", result1, result2, result3);
         create_log_file(&log_dir, "output.log", &json_log);
 
@@ -1020,7 +1020,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Create multiple log files simulating fallback/retry scenario
-        let json_log1 = r##"{"type": "result", "result": "First attempt - no plan"}"##;
+        let json_log1 = r#"{"type": "result", "result": "First attempt - no plan"}"#;
         let json_log2 = r##"{"type": "result", "result": "# Plan\n\n## Summary\nSuccess with implementation steps!"}"##;
 
         fs::write(temp.path().join("planning_1_agent1_0.log"), json_log1).unwrap();
