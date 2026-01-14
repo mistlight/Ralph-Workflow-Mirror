@@ -22,23 +22,13 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 // Re-exports from checkpoint module
-pub use crate::checkpoint::{
-    checkpoint_exists, clear_checkpoint, load_checkpoint, save_checkpoint, PipelineCheckpoint,
-    PipelinePhase,
-};
+// Note: Most checkpoint items are now imported directly from crate::checkpoint
 
 // Re-exports from logger module
-pub use crate::logger::{print_progress, Logger};
 pub use crate::logger::{strip_ansi_codes, timestamp};
 
 // Re-exports from files module
-pub use crate::files::{
-    clean_context_for_reviewer, cleanup_generated_files, create_prompt_backup,
-    delete_commit_message_file, delete_issues_file_for_isolation, delete_plan_file, ensure_files,
-    file_contains_marker, make_prompt_read_only, read_commit_message_file,
-    reset_context_for_isolation, update_status, validate_prompt_md, write_commit_message_file,
-};
-pub use crate::files::{PromptValidationResult, GENERATED_FILES};
+pub use crate::files::{cleanup_generated_files, PromptValidationResult, GENERATED_FILES};
 
 // Keep backward-compatibility re-exports "used" without suppressing lints.
 const _: () = {

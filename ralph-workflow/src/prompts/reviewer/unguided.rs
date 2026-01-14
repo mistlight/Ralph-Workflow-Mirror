@@ -113,7 +113,7 @@ If no issues found, return "No issues found.""#
 pub fn prompt_incremental_review_with_diff(context: ContextLevel, diff: &str) -> String {
     match context {
         ContextLevel::Minimal => format!(
-            r#"You are in INCREMENTAL REVIEW MODE with fresh eyes.
+            "You are in INCREMENTAL REVIEW MODE with fresh eyes.
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
@@ -135,11 +135,11 @@ OUTPUT (prioritized checklist):
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found, return "No issues found in changed files.""#,
+If no issues found, return \"No issues found in changed files.\"",
             diff
         ),
         ContextLevel::Normal => format!(
-            r#"You are in INCREMENTAL REVIEW MODE.
+            "You are in INCREMENTAL REVIEW MODE.
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
@@ -153,7 +153,7 @@ OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"#,
+- [ ] Low: [file:line] Description",
             diff
         ),
     }

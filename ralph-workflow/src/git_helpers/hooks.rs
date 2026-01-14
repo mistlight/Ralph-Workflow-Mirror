@@ -15,7 +15,8 @@
 //! directory, avoiding CLI dependencies.
 
 use super::repo::get_hooks_dir;
-use crate::utils::{file_contains_marker, Logger};
+use crate::files::file_contains_marker;
+use crate::logger::Logger;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};

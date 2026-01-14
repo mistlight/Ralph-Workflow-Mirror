@@ -16,7 +16,7 @@ use super::types::ContextLevel;
 pub fn prompt_developer_iteration(_iteration: u32, _total: u32, context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal | ContextLevel::Normal => {
-            r#"You are in IMPLEMENTATION MODE. Execute the plan and make progress.
+            "You are in IMPLEMENTATION MODE. Execute the plan and make progress.
 
 INPUTS TO READ:
 1. .agent/PLAN.md - The implementation plan (execute these steps)
@@ -27,7 +27,7 @@ Execute the next steps from .agent/PLAN.md that haven't been completed yet.
 GUIDELINES:
 - Make meaningful progress in each iteration
 - Write clean, idiomatic code following project patterns
-- Add tests where appropriate"#
+- Add tests where appropriate"
                 .to_string()
         }
     }
@@ -55,7 +55,7 @@ GUIDELINES:
 ///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
 ///   which prevents accidental deletion.
 pub fn prompt_plan(prompt_content: Option<&str>) -> String {
-    let mut prompt = r#"You are in PLANNING MODE. Create a detailed implementation plan.
+    let mut prompt = "You are in PLANNING MODE. Create a detailed implementation plan.
 
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
 - Creating, modifying, or deleting any files
@@ -66,7 +66,7 @@ You MAY use read-only operations: reading files, searching code, listing directo
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 1: UNDERSTANDING
-═══════════════════════════════════════════════════════════════════════════════"#
+═══════════════════════════════════════════════════════════════════════════════"
         .to_string();
 
     // If prompt content is provided, include it directly in the prompt
@@ -74,26 +74,26 @@ PHASE 1: UNDERSTANDING
     // the file through exploration, reducing the risk of accidental deletion.
     if let Some(content) = prompt_content {
         prompt.push_str(&format!(
-            r#"
+            "
 
 REQUIREMENTS FROM PROJECT TASK:
 ───────────────────────────────────────────────────────────────────────────────
 {}
 ───────────────────────────────────────────────────────────────────────────────
-"#,
+",
             content
         ));
     } else {
         prompt.push_str(
-            r#"
+            "
 
 The orchestrator has provided requirements to you via the planning task.
-"#,
+",
         );
     }
 
     prompt.push_str(
-        r#"
+        "
 Understand:
 - The Goal: What is the desired end state?
 - Acceptance Checks: What specific conditions must be satisfied?
@@ -162,7 +162,7 @@ CRITICAL OUTPUT INSTRUCTIONS:
 - Output your COMPLETE plan above as a single response
 - Ensure ALL sections (Summary, Implementation Steps, Critical Files, Risks & Mitigations, Verification Strategy) are included
 - Do NOT truncate or shorten your plan
-- Do NOT write to any files"#
+- Do NOT write to any files"
     );
 
     prompt

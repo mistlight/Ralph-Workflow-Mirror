@@ -8,7 +8,7 @@ use crate::colors::Colors;
 use crate::config::Config;
 use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::language_detector;
-use crate::utils::load_checkpoint;
+use crate::checkpoint::load_checkpoint;
 use std::fs;
 use std::path::Path;
 use std::process::Command;

@@ -2,9 +2,11 @@
 //!
 //! This module provides validation of Ralph setup without running any agents.
 
+use crate::checkpoint::{checkpoint_exists, load_checkpoint};
 use crate::config::Config;
+use crate::files::validate_prompt_md;
 use crate::language_detector::detect_stack_summary;
-use crate::utils::{checkpoint_exists, load_checkpoint, validate_prompt_md, Logger};
+use crate::logger::Logger;
 use std::path::Path;
 
 /// Handle --dry-run command.

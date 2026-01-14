@@ -13,10 +13,9 @@ use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::phases::commit::commit_with_generated_message;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
-use crate::utils::{
-    delete_plan_file, print_progress, save_checkpoint, update_status, PipelineCheckpoint,
-    PipelinePhase,
-};
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::files::{delete_plan_file, update_status};
+use crate::logger::print_progress;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -444,12 +443,12 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
         ctx.colors.reset()
     ));
 
-    let Some((program, args)) = argv.split_first() else {
+    let Some((program, cmd_args)) = argv.split_first() else {
         ctx.logger
             .warn("FAST_CHECK_CMD is empty after parsing; skipping fast check");
         return Ok(());
     };
-    let status = Command::new(program).args(args).status()?;
+    let status = Command::new(program).args(cmd_args).status()?;
 
     if status.success() {
         ctx.logger.success("Fast check passed");
