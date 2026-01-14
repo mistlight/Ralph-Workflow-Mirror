@@ -62,6 +62,9 @@ CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
 - Running any commands that modify system state
 - Installing dependencies or packages
 
+IMPORTANT FILES TO NEVER MODIFY:
+- PROMPT.md: This file contains your task requirements. NEVER read, write, or delete this file. The requirements have already been provided to you directly in this prompt. Do NOT explore the file system to find this file.
+
 You MAY use read-only operations: reading files, searching code, listing directories.
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -193,8 +196,9 @@ mod tests {
     #[test]
     fn test_prompt_plan() {
         let result = prompt_plan(None);
-        // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
-        assert!(!result.contains("PROMPT.md"));
+        // Prompt now explicitly warns agents to NEVER touch PROMPT.md (defense-in-depth)
+        assert!(result.contains("PROMPT.md"));
+        assert!(result.contains("NEVER read, write, or delete this file"));
         // Plan is now returned as structured output, not written to file
         assert!(result.contains("PLANNING MODE"));
         assert!(result.contains("Implementation Steps"));

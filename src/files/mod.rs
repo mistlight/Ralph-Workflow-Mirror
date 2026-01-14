@@ -26,7 +26,7 @@ pub mod integrity;
 pub mod llm_output_extraction;
 pub mod recovery;
 pub mod result_extraction;
-mod validation;
+pub mod validation;
 
 pub use agent_files::{
     clean_context_for_reviewer, cleanup_generated_files, create_prompt_backup,
@@ -36,4 +36,4 @@ pub use agent_files::{
 };
 
 pub use result_extraction::{extract_issues, extract_plan, extract_plan_from_logs_text};
-pub use validation::{validate_prompt_md, PromptValidationResult};
+pub use validation::{restore_prompt_if_needed, validate_prompt_md, PromptValidationResult};
