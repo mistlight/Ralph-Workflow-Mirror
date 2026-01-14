@@ -160,7 +160,9 @@ impl GenericParser {
                             acc.add_delta(ContentType::Text, "main", &text);
                         }
                         // Show delta in real-time (both verbose and normal mode)
-                        return Some(format!("{}\n", text));
+                        // Replace embedded newlines with spaces to prevent artificial line breaks
+                        let sanitized_text = text.replace('\n', " ");
+                        return Some(format!("{}\n", sanitized_text));
                     }
                 }
 
@@ -198,7 +200,9 @@ impl GenericParser {
 
                 if let Some(text) = content {
                     if !text.trim().is_empty() {
-                        return Some(format!("{}\n", text));
+                        // Replace embedded newlines with spaces to prevent artificial line breaks
+                        let sanitized_text = text.replace('\n', " ");
+                        return Some(format!("{}\n", sanitized_text));
                     }
                 }
 
