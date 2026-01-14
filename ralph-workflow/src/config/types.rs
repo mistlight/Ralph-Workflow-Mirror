@@ -152,7 +152,7 @@ impl Verbosity {
 ///
 /// This struct holds all configuration options for Ralph, populated from
 /// environment variables and CLI arguments. Default values are applied
-/// via [`Config::from_env`].
+/// via [`Default::default()`].
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
     /// Developer (driver) agent (set via CLI, env, or agent_chain)

@@ -243,7 +243,9 @@ fn extract_claude_result(content: &str) -> Option<String> {
                         // Primary result event - highest priority
                         if let Some(result) = json.get("result").and_then(|v| v.as_str()) {
                             if !result.trim().is_empty() {
-                                last_result = Some(result.to_string());
+                                // Apply thought process filtering to result field content
+                                let filtered = remove_thought_process_patterns(result);
+                                last_result = Some(filtered);
                             }
                         }
                     }
@@ -280,7 +282,9 @@ fn extract_claude_result(content: &str) -> Option<String> {
             // Also check for simple {"result": "..."} format (legacy/other agents)
             else if let Some(result) = json.get("result").and_then(|v| v.as_str()) {
                 if !result.trim().is_empty() {
-                    last_result = Some(result.to_string());
+                    // Apply thought process filtering to result field content
+                    let filtered = remove_thought_process_patterns(result);
+                    last_result = Some(filtered);
                 }
             }
         }
@@ -310,7 +314,9 @@ fn extract_codex_result(content: &str) -> Option<String> {
                         if item.get("type").and_then(|v| v.as_str()) == Some("agent_message") {
                             if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
                                 if !text.trim().is_empty() {
-                                    last_message = Some(text.to_string());
+                                    // Apply thought process filtering
+                                    let filtered = remove_thought_process_patterns(text);
+                                    last_message = Some(filtered);
                                 }
                             }
                         }
@@ -362,7 +368,8 @@ fn extract_gemini_result(content: &str) -> Option<String> {
         }
     }
 
-    last_assistant_content
+    // Apply thought process filtering to the final accumulated content
+    last_assistant_content.map(|content| remove_thought_process_patterns(&content))
 }
 
 /// Extract result from OpenCode CLI NDJSON output.
@@ -399,14 +406,82 @@ fn extract_opencode_result(content: &str) -> Option<String> {
     if accumulated_text.is_empty() {
         None
     } else {
-        Some(accumulated_text)
+        // Apply thought process filtering to the accumulated text
+        Some(remove_thought_process_patterns(&accumulated_text))
     }
+}
+
+/// Remove AI thought process patterns from extracted content.
+///
+/// This is a helper function that filters out common AI thought process
+/// prefixes that may appear in extracted result field content.
+fn remove_thought_process_patterns(content: &str) -> String {
+    let result = content;
+
+    // Remove AI thought process prefixes
+    // These are patterns that AI agents commonly use when starting their response
+    // We remove everything from the start up to and including the first blank line
+    let thought_patterns = [
+        "Looking at this diff, I can see",
+        "Looking at this diff",
+        "I can see",
+        "The main changes are",
+        "Several distinct categories of changes",
+        "Key categories of changes",
+        "Based on the diff",
+        "Analyzing the changes",
+        "This diff shows",
+        "Looking at the changes",
+        "I've analyzed",
+        "After reviewing",
+    ];
+
+    for pattern in &thought_patterns {
+        if let Some(rest) = result.strip_prefix(pattern) {
+            // Find the first blank line after the pattern
+            if let Some(blank_line_pos) = rest.find("\n\n") {
+                return rest[blank_line_pos + 2..].to_string();
+            } else if let Some(single_newline) = rest.find('\n') {
+                // If no double newline, try to skip to after the first single newline
+                return rest[single_newline + 1..].to_string();
+            }
+            break;
+        }
+    }
+
+    // Remove numbered analysis patterns (e.g., "1. First change\n2. Second change\n\nfix: actual")
+    // These are common when AI agents provide numbered analysis before the actual commit message
+    let result_lower = result.to_lowercase();
+    let numbered_start_patterns = [
+        "1. ",
+        "1)\n",
+        "- first",
+        "- the first",
+        "* first",
+        "* the first",
+    ];
+    for pattern in &numbered_start_patterns {
+        if result_lower.starts_with(pattern) || result.starts_with(pattern) {
+            // Look for a blank line after the analysis
+            if let Some(blank_pos) = result.find("\n\n") {
+                let after_analysis = &result[blank_pos + 2..];
+                // Check if the content after looks like a real commit message
+                if after_analysis.trim().starts_with(char::is_alphanumeric) {
+                    return after_analysis.to_string();
+                }
+            }
+            break;
+        }
+    }
+
+    result.to_string()
 }
 
 /// Clean plain text output by removing common artifacts.
 ///
 /// This handles:
 /// - Markdown code fences
+/// - AI thought process patterns (e.g., "Looking at this diff...")
 /// - Common prefixes like "Commit message:", "Output:", etc.
 /// - Excessive whitespace
 fn clean_plain_text(content: &str) -> String {
@@ -423,6 +498,9 @@ fn clean_plain_text(content: &str) -> String {
         }
     }
 
+    // Remove AI thought process prefixes using the helper function
+    result = remove_thought_process_patterns(&result);
+
     // Remove common prefixes (case-insensitive)
     let prefixes = [
         "commit message:",
@@ -436,7 +514,7 @@ fn clean_plain_text(content: &str) -> String {
     ];
 
     let result_lower = result.to_lowercase();
-    for prefix in prefixes {
+    for prefix in &prefixes {
         if result_lower.starts_with(prefix) {
             result = result[prefix.len()..].to_string();
             break;
@@ -1021,7 +1099,7 @@ Done."#;
 
     #[test]
     fn test_validate_rejects_stream_events() {
-        let stream_message = r#"stream_event content_block more stuff"#;
+        let stream_message = r"stream_event content_block more stuff";
         let err = validate_commit_message(stream_message).unwrap_err();
         assert!(err.contains("JSON artifacts"));
     }
@@ -1179,5 +1257,139 @@ Done."#;
         let result = extract_llm_output(content, Some(OutputFormat::Claude));
         assert!(result.was_structured);
         assert_eq!(result.content, "feat: simple feature");
+    }
+
+    // =========================================================================
+    // Thought Process Filtering Tests (Bug Fix Regression)
+    // =========================================================================
+
+    #[test]
+    fn test_clean_plain_text_removes_looking_at_diff_pattern() {
+        let content =
+            "Looking at this diff, I can see the main changes are:\n\nfix: actual commit message";
+        let result = clean_plain_text(content);
+        assert_eq!(result, "fix: actual commit message");
+        assert!(!result.contains("Looking at this diff"));
+    }
+
+    #[test]
+    fn test_clean_plain_text_removes_looking_at_this_diff_short() {
+        let content = "Looking at this diff\n\nfeat: add feature";
+        let result = clean_plain_text(content);
+        assert_eq!(result, "feat: add feature");
+        assert!(!result.contains("Looking at this diff"));
+    }
+
+    #[test]
+    fn test_clean_plain_text_removes_several_categories_pattern() {
+        let content =
+            "Several distinct categories of changes in this diff:\n\nchore: update dependencies";
+        let result = clean_plain_text(content);
+        assert_eq!(result, "chore: update dependencies");
+        assert!(!result.contains("Several distinct categories"));
+    }
+
+    #[test]
+    fn test_clean_plain_text_removes_key_categories_pattern() {
+        let content = "Key categories of changes include:\n\nrefactor: improve error handling";
+        let result = clean_plain_text(content);
+        assert_eq!(result, "refactor: improve error handling");
+        assert!(!result.contains("Key categories"));
+    }
+
+    #[test]
+    fn test_clean_plain_text_removes_numbered_analysis() {
+        let content = "1. Added new function\n2. Fixed bug\n\nfix: resolve parsing issue";
+        let result = clean_plain_text(content);
+        assert_eq!(result, "fix: resolve parsing issue");
+        assert!(!result.contains("1. Added"));
+    }
+
+    #[test]
+    fn test_clean_plain_text_preserves_valid_commit_message() {
+        let content = "feat: add new authentication system";
+        let result = clean_plain_text(content);
+        assert_eq!(result, "feat: add new authentication system");
+    }
+
+    #[test]
+    fn test_clean_plain_text_preserves_commit_message_with_body() {
+        let content = "feat: add new authentication system\n\nThis adds OAuth2 support.";
+        let result = clean_plain_text(content);
+        assert!(result.contains("feat: add new authentication system"));
+        assert!(result.contains("OAuth2"));
+    }
+
+    #[test]
+    fn test_claude_result_field_with_looking_at_diff() {
+        // Test the bug: result field contains "Looking at this diff..." prefix
+        let content = r#"{"type":"result","result":"Looking at this diff, I can see the main changes are:\n\nfix: resolve parsing issue"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "fix: resolve parsing issue");
+        assert!(!result.content.contains("Looking at this diff"));
+    }
+
+    #[test]
+    fn test_claude_result_field_with_numbered_list() {
+        let content = r#"{"type":"result","result":"1. First change\n2. Second change\n3. Third change\n\nfeat: add new feature"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "feat: add new feature");
+        assert!(!result.content.contains("1. First"));
+    }
+
+    #[test]
+    fn test_claude_result_field_with_analysis_then_commit() {
+        let content = r#"{"type":"result","result":"The main changes are:\n- Updated parser\n- Fixed tests\n\nchore: update tests"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "chore: update tests");
+        assert!(!result.content.contains("The main changes"));
+    }
+
+    #[test]
+    fn test_claude_result_field_valid_commit_passes_through() {
+        // Valid commit message should pass through unchanged
+        let content = r#"{"type":"result","result":"docs: update README with new examples"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "docs: update README with new examples");
+    }
+
+    #[test]
+    fn test_plain_text_with_thought_process_fallback() {
+        // Test plain text fallback with thought process
+        let content = "Looking at this diff\n\nfix: bug fix";
+
+        let result = extract_llm_output(content, Some(OutputFormat::Generic));
+        assert!(!result.was_structured);
+        assert_eq!(result.content, "fix: bug fix");
+    }
+
+    #[test]
+    fn test_thought_pattern_with_single_newline_fallback() {
+        // Edge case: only single newline after pattern (no double newline)
+        let content = "Looking at this diff, I can see:\nfix: actual message";
+
+        let result = extract_llm_output(content, Some(OutputFormat::Generic));
+        assert!(!result.was_structured);
+        // Should still extract after the first newline
+        assert!(result.content.contains("fix: actual message") || result.content.contains("fix:"));
+    }
+
+    #[test]
+    fn test_simple_result_json_with_thought_process() {
+        // Legacy simple format with thought process
+        let content = r#"{"result": "Looking at this diff\n\nfeat: add feature"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "feat: add feature");
+        assert!(!result.content.contains("Looking at this diff"));
     }
 }

@@ -125,23 +125,22 @@ impl GeminiParser {
                             preview,
                             c.reset()
                         ));
-                    } else {
-                        // User or other role messages
-                        let limit = self.verbosity.truncate_limit("text");
-                        let preview = truncate_text(&text, limit);
-                        return Some(format!(
-                            "{}[{}]{} {}{}:{} {}{}{}\n",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.blue(),
-                            role_str,
-                            c.reset(),
-                            c.dim(),
-                            preview,
-                            c.reset()
-                        ));
                     }
+                    // User or other role messages
+                    let limit = self.verbosity.truncate_limit("text");
+                    let preview = truncate_text(&text, limit);
+                    return Some(format!(
+                        "{}[{}]{} {}{}:{} {}{}{}\n",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.blue(),
+                        role_str,
+                        c.reset(),
+                        c.dim(),
+                        preview,
+                        c.reset()
+                    ));
                 }
                 String::new()
             }
@@ -238,7 +237,7 @@ impl GeminiParser {
                 let icon = if is_success { CHECK } else { CROSS };
                 let color = if is_success { c.green() } else { c.red() };
 
-                let stats_str = if let Some(s) = stats {
+                let stats_display = if let Some(s) = stats {
                     let duration_s = s.duration_ms.unwrap_or(0) / 1000;
                     let duration_m = duration_s / 60;
                     let duration_s_rem = duration_s % 60;
@@ -263,7 +262,7 @@ impl GeminiParser {
                     status_str,
                     c.reset(),
                     c.dim(),
-                    stats_str,
+                    stats_display,
                     c.reset()
                 )
             }

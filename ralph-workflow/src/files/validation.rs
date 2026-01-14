@@ -400,14 +400,14 @@ mod tests {
         with_temp_cwd(|_dir| {
             fs::write(
                 "PROMPT.md",
-                r#"# PROMPT
+                "# PROMPT
 
 ## Goal
 Build a feature
 
 ## Acceptance
 - Tests pass
-"#,
+",
             )
             .unwrap();
             let result = validate_prompt_md(false, false);
@@ -457,12 +457,12 @@ Build a feature
             // Test "Acceptance Criteria" variant
             fs::write(
                 "PROMPT.md",
-                r#"## Goal
+                "## Goal
 Test
 
 ## Acceptance Criteria
 - Pass
-"#,
+",
             )
             .unwrap();
             let result = validate_prompt_md(false, false);
@@ -471,11 +471,11 @@ Test
             // Test lowercase "acceptance" variant
             fs::write(
                 "PROMPT.md",
-                r#"## Goal
+                "## Goal
 Test
 
 The acceptance tests should pass.
-"#,
+",
             )
             .unwrap();
             let result = validate_prompt_md(false, false);

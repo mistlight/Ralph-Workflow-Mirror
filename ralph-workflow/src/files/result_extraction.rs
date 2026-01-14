@@ -848,8 +848,11 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let log_dir = temp.path().join("planning_1");
 
-        let json_log = r##"{"type": "system", "message": "starting"}
-{"type": "result", "result": "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests"}"##;
+        let json_log = concat!(
+            r##"{"type": "system", "message": "starting"}"##,
+            "\n",
+            r##"{"type": "result", "result": "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests"}"##
+        );
         create_log_file(&log_dir, "output.log", json_log);
 
         let result = extract_plan(&log_dir).unwrap();
@@ -965,7 +968,7 @@ mod tests {
         let result1 = r##"{"type": "result", "result": "# Complete Plan\n\n## Implementation Steps\n\nStep 1: Create module with functionality.\nStep 2: Add comprehensive tests.\nStep 3: Write documentation.\nStep 4: Integrate and verify."}"##;
         let result2 =
             r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
-        let result3 = r##"{"type": "result", "result": "Last paragraph"}"##;
+        let result3 = r#"{"type": "result", "result": "Last paragraph"}"#;
         let json_log = format!("{}\n{}\n{}", result1, result2, result3);
         create_log_file(&log_dir, "output.log", &json_log);
 
@@ -1020,7 +1023,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Create multiple log files simulating fallback/retry scenario
-        let json_log1 = r##"{"type": "result", "result": "First attempt - no plan"}"##;
+        let json_log1 = r#"{"type": "result", "result": "First attempt - no plan"}"#;
         let json_log2 = r##"{"type": "result", "result": "# Plan\n\n## Summary\nSuccess with implementation steps!"}"##;
 
         fs::write(temp.path().join("planning_1_agent1_0.log"), json_log1).unwrap();
@@ -1203,7 +1206,7 @@ This is a text-based plan without proper JSON wrapping but with enough content.
     fn test_extract_issues_no_issues_from_prefix() {
         let temp = TempDir::new().unwrap();
 
-        let json_log = r##"{"type": "result", "result": "No issues found. The code looks good."}"##;
+        let json_log = r#"{"type": "result", "result": "No issues found. The code looks good."}"#;
         fs::write(temp.path().join("reviewer_1_opus_0.log"), json_log).unwrap();
 
         let prefix = temp.path().join("reviewer_1");

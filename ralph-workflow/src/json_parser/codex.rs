@@ -211,7 +211,7 @@ impl CodexParser {
                                 path
                             )
                         }
-                        Some("mcp_tool_call") | Some("mcp") => {
+                        Some("mcp_tool_call" | "mcp") => {
                             let tool_name =
                                 item.tool.clone().unwrap_or_else(|| "unknown".to_string());
                             let mut out = format!(
@@ -382,7 +382,7 @@ impl CodexParser {
                                 c.reset()
                             )
                         }
-                        Some("file_change") | Some("file_write") => {
+                        Some("file_change" | "file_write") => {
                             let path = item.path.clone().unwrap_or_else(|| "unknown".to_string());
                             format!(
                                 "{}[{}]{} {}File{}: {}\n",
@@ -413,7 +413,7 @@ impl CodexParser {
                                 String::new()
                             }
                         }
-                        Some("mcp_tool_call") | Some("mcp") => {
+                        Some("mcp_tool_call" | "mcp") => {
                             let tool_name = item.tool.clone().unwrap_or_else(|| "tool".to_string());
                             format!(
                                 "{}[{}]{} {}{} MCP:{} {} done\n",
@@ -535,7 +535,7 @@ impl CodexParser {
                 if let Some(item) = item {
                     matches!(
                         item.item_type.as_deref(),
-                        Some("agent_message") | Some("reasoning")
+                        Some("agent_message" | "reasoning")
                     )
                 } else {
                     false
