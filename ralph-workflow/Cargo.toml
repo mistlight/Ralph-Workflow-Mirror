@@ -8,6 +8,8 @@ license = "AGPL-3.0-only"
 readme = "README.md"
 repository = "https://codeberg.org/mistlight/RalphWithReviewer"
 homepage = "https://codeberg.org/mistlight/RalphWithReviewer"
+keywords = ["git", "workflow", "agent", "ai", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "ralph"

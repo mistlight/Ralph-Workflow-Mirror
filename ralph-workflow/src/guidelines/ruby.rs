@@ -6,7 +6,7 @@ use super::base::ReviewGuidelines;
 use crate::language_detector::ProjectStack;
 
 /// Add Ruby-specific guidelines to the review
-pub(crate) fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+pub fn add_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
     // Core Ruby guidelines
     guidelines.quality_checks.extend([
         "Follow Ruby style guide (rubocop)".to_string(),

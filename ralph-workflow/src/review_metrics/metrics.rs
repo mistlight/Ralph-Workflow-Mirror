@@ -13,7 +13,7 @@ use super::severity::IssueSeverity;
 
 /// Review metrics collected from a pipeline run
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ReviewMetrics {
+pub struct ReviewMetrics {
     /// Total number of issues found
     pub(crate) total_issues: u32,
     /// Issues by severity
@@ -130,12 +130,12 @@ impl ReviewMetrics {
         if self.total_issues == 0 {
             100.0
         } else {
-            (self.resolved_issues as f64 / self.total_issues as f64) * 100.0
+            (f64::from(self.resolved_issues) / f64::from(self.total_issues)) * 100.0
         }
     }
 
     /// Get unresolved issues count
-    pub(crate) fn unresolved_issues(&self) -> u32 {
+    pub(crate) const fn unresolved_issues(&self) -> u32 {
         self.total_issues.saturating_sub(self.resolved_issues)
     }
 

@@ -189,7 +189,7 @@ pub struct CcsAliasConfig {
     pub streaming_flag: Option<String>,
     /// Optional JSON parser override (e.g., "claude", "generic").
     pub json_parser: Option<String>,
-    /// Optional can_commit override for this alias.
+    /// Optional `can_commit` override for this alias.
     pub can_commit: Option<bool>,
     /// Optional model flag appended to the command.
     pub model_flag: Option<String>,
@@ -206,11 +206,11 @@ pub enum CcsAliasToml {
 impl CcsAliasToml {
     pub fn as_config(&self) -> CcsAliasConfig {
         match self {
-            CcsAliasToml::Command(cmd) => CcsAliasConfig {
+            Self::Command(cmd) => CcsAliasConfig {
                 cmd: cmd.clone(),
                 ..CcsAliasConfig::default()
             },
-            CcsAliasToml::Config(cfg) => cfg.clone(),
+            Self::Config(cfg) => cfg.clone(),
         }
     }
 }
@@ -302,7 +302,7 @@ impl UnifiedConfig {
     /// Load unified configuration from a specific path.
     pub fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigLoadError> {
         let contents = std::fs::read_to_string(path)?;
-        let config: UnifiedConfig = toml::from_str(&contents)?;
+        let config: Self = toml::from_str(&contents)?;
         Ok(config)
     }
 

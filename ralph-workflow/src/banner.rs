@@ -82,7 +82,7 @@ pub fn print_final_summary(
     stats: &Stats,
     logger: &Logger,
 ) {
-    logger.header("Pipeline Complete", |c| c.green());
+    logger.header("Pipeline Complete", super::colors::Colors::green);
 
     println!();
     println!(

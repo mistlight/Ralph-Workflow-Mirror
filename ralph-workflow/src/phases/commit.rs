@@ -60,7 +60,7 @@ pub fn generate_commit_message(
     commit_agent: &str,
 ) -> anyhow::Result<CommitMessageResult> {
     let log_dir = ".agent/logs/commit_generation";
-    let log_file = format!("{}/final.log", log_dir);
+    let log_file = format!("{log_dir}/final.log");
 
     // Ensure log directory exists
     fs::create_dir_all(log_dir)?;
@@ -106,7 +106,7 @@ pub fn generate_commit_message(
             Err(e) => {
                 runtime
                     .logger
-                    .error(&format!("Failed to extract commit message: {}", e));
+                    .error(&format!("Failed to extract commit message: {e}"));
                 CommitMessageResult {
                     message: String::new(),
                     success: false,
@@ -143,7 +143,7 @@ pub fn generate_commit_message(
 
 /// Create a commit with an automatically generated message using the standard pipeline.
 ///
-/// This is a replacement for `commit_with_auto_message_fallback_result` in git_helpers
+/// This is a replacement for `commit_with_auto_message_fallback_result` in `git_helpers`
 /// that uses the standard agent pipeline with proper logging and fallback support.
 ///
 /// # Arguments
@@ -176,7 +176,7 @@ pub fn commit_with_generated_message(
     let staged = match git_add_all() {
         Ok(s) => s,
         Err(e) => {
-            return CommitResultFallback::Failed(format!("Failed to stage changes: {}", e));
+            return CommitResultFallback::Failed(format!("Failed to stage changes: {e}"));
         }
     };
 
@@ -196,10 +196,7 @@ pub fn commit_with_generated_message(
     let result = match generate_commit_message(diff, registry, &mut runtime, commit_agent) {
         Ok(r) => r,
         Err(e) => {
-            return CommitResultFallback::Failed(format!(
-                "Failed to generate commit message: {}",
-                e
-            ));
+            return CommitResultFallback::Failed(format!("Failed to generate commit message: {e}"));
         }
     };
 
@@ -212,7 +209,7 @@ pub fn commit_with_generated_message(
     match git_commit(&result.message, git_user_name, git_user_email) {
         Ok(Some(oid)) => CommitResultFallback::Success(oid),
         Ok(None) => CommitResultFallback::NoChanges,
-        Err(e) => CommitResultFallback::Failed(format!("Failed to create commit: {}", e)),
+        Err(e) => CommitResultFallback::Failed(format!("Failed to create commit: {e}")),
     }
 }
 
@@ -242,12 +239,11 @@ fn extract_commit_message_from_logs(
     // Find the most recent log file
     let log_path = find_most_recent_log(log_dir)?;
 
-    let log_file = match log_path {
-        Some(path) => path,
-        None => {
-            logger.warn("No log files found in commit generation directory");
-            return Ok(None);
-        }
+    let log_file = if let Some(path) = log_path {
+        path
+    } else {
+        logger.warn("No log files found in commit generation directory");
+        return Ok(None);
     };
 
     logger.info(&format!(
@@ -294,7 +290,7 @@ fn extract_commit_message_from_logs(
     ));
 
     if let Some(warning) = &extraction.warning {
-        logger.warn(&format!("LLM output extraction warning: {}", warning));
+        logger.warn(&format!("LLM output extraction warning: {warning}"));
     }
 
     let extracted = extraction.content;
@@ -306,7 +302,7 @@ fn extract_commit_message_from_logs(
             Ok(Some(extracted))
         }
         Err(e) => {
-            logger.warn(&format!("Commit message validation failed: {}", e));
+            logger.warn(&format!("Commit message validation failed: {e}"));
             // Return the extracted content anyway - caller can decide whether to use it
             Ok(Some(extracted))
         }
@@ -317,7 +313,7 @@ fn extract_commit_message_from_logs(
 ///
 /// # Arguments
 ///
-/// * `log_prefix` - The prefix of log files to search for (e.g., ".agent/logs/commit_generation")
+/// * `log_prefix` - The prefix of log files to search for (e.g., ".`agent/logs/commit_generation`")
 ///
 /// # Returns
 ///

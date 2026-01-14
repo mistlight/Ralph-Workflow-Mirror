@@ -17,7 +17,7 @@ pub struct Stats {
 
 impl Stats {
     /// Create a new Stats instance with all counters at zero.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             changes_detected: 0,
             developer_runs_completed: 0,
@@ -34,7 +34,7 @@ impl Default for Stats {
 }
 
 /// Result of running a command, including stderr for error classification.
-pub(crate) struct CommandResult {
+pub struct CommandResult {
     /// Exit code from the command (0 = success)
     pub(crate) exit_code: i32,
     /// Standard error output captured from the command
@@ -55,7 +55,7 @@ pub struct AgentPhaseGuard<'a> {
 
 impl<'a> AgentPhaseGuard<'a> {
     /// Create a new guard that will clean up on drop unless disarmed.
-    pub fn new(git_helpers: &'a mut GitHelpers, logger: &'a Logger) -> Self {
+    pub const fn new(git_helpers: &'a mut GitHelpers, logger: &'a Logger) -> Self {
         Self {
             git_helpers,
             logger,
@@ -66,7 +66,7 @@ impl<'a> AgentPhaseGuard<'a> {
     /// Disarm the guard, preventing cleanup on drop.
     ///
     /// Call this when the pipeline completes successfully.
-    pub fn disarm(&mut self) {
+    pub const fn disarm(&mut self) {
         self.active = false;
     }
 }

@@ -6,7 +6,7 @@ use super::types::OpenCodeProviderType;
 
 /// Strip a leading model-flag prefix and return the raw `provider/model` string.
 ///
-/// Supports common OpenCode CLI forms:
+/// Supports common `OpenCode` CLI forms:
 /// - `-m provider/model`
 /// - `--model provider/model`
 /// - `-m=provider/model`
@@ -53,72 +53,70 @@ impl OpenCodeProviderType {
 
         match prefix.as_str() {
             // OpenCode Gateway
-            "opencode" => OpenCodeProviderType::OpenCodeZen,
+            "opencode" => Self::OpenCodeZen,
 
             // Chinese AI Providers
-            "zai" | "zhipuai" => OpenCodeProviderType::ZaiDirect,
-            "zai-coding" | "zai-plan" => OpenCodeProviderType::ZaiCodingPlan,
-            "moonshot" | "kimi" => OpenCodeProviderType::Moonshot,
-            "minimax" => OpenCodeProviderType::MiniMax,
+            "zai" | "zhipuai" => Self::ZaiDirect,
+            "zai-coding" | "zai-plan" => Self::ZaiCodingPlan,
+            "moonshot" | "kimi" => Self::Moonshot,
+            "minimax" => Self::MiniMax,
 
             // Major Cloud Providers
-            "anthropic" => OpenCodeProviderType::Anthropic,
-            "openai" => OpenCodeProviderType::OpenAI,
-            "google" => OpenCodeProviderType::Google,
-            "google-vertex" | "vertex" => OpenCodeProviderType::GoogleVertex,
-            "amazon-bedrock" | "bedrock" => OpenCodeProviderType::AmazonBedrock,
-            "azure-openai" | "azure" => OpenCodeProviderType::AzureOpenAI,
-            "copilot" | "github-copilot" => OpenCodeProviderType::GithubCopilot,
+            "anthropic" => Self::Anthropic,
+            "openai" => Self::OpenAI,
+            "google" => Self::Google,
+            "google-vertex" | "vertex" => Self::GoogleVertex,
+            "amazon-bedrock" | "bedrock" => Self::AmazonBedrock,
+            "azure-openai" | "azure" => Self::AzureOpenAI,
+            "copilot" | "github-copilot" => Self::GithubCopilot,
 
             // Fast Inference Providers
-            "groq" => OpenCodeProviderType::Groq,
-            "together" => OpenCodeProviderType::Together,
-            "fireworks" => OpenCodeProviderType::Fireworks,
-            "cerebras" => OpenCodeProviderType::Cerebras,
-            "sambanova" => OpenCodeProviderType::SambaNova,
-            "deep-infra" | "deepinfra" => OpenCodeProviderType::DeepInfra,
+            "groq" => Self::Groq,
+            "together" => Self::Together,
+            "fireworks" => Self::Fireworks,
+            "cerebras" => Self::Cerebras,
+            "sambanova" => Self::SambaNova,
+            "deep-infra" | "deepinfra" => Self::DeepInfra,
 
             // Gateway / Aggregator Providers
-            "openrouter" => OpenCodeProviderType::OpenRouter,
-            "cloudflare" | "cf" => OpenCodeProviderType::Cloudflare,
-            "vercel" => OpenCodeProviderType::Vercel,
-            "helicone" => OpenCodeProviderType::Helicone,
-            "zenmux" => OpenCodeProviderType::ZenMux,
+            "openrouter" => Self::OpenRouter,
+            "cloudflare" | "cf" => Self::Cloudflare,
+            "vercel" => Self::Vercel,
+            "helicone" => Self::Helicone,
+            "zenmux" => Self::ZenMux,
 
             // Specialized Providers
-            "deepseek" => OpenCodeProviderType::DeepSeek,
-            "xai" | "grok" => OpenCodeProviderType::Xai,
-            "mistral" => OpenCodeProviderType::Mistral,
-            "cohere" => OpenCodeProviderType::Cohere,
-            "perplexity" => OpenCodeProviderType::Perplexity,
-            "ai21" => OpenCodeProviderType::AI21,
-            "venice-ai" | "venice" => OpenCodeProviderType::VeniceAI,
+            "deepseek" => Self::DeepSeek,
+            "xai" | "grok" => Self::Xai,
+            "mistral" => Self::Mistral,
+            "cohere" => Self::Cohere,
+            "perplexity" => Self::Perplexity,
+            "ai21" => Self::AI21,
+            "venice-ai" | "venice" => Self::VeniceAI,
 
             // Open-Source Model Providers
-            "huggingface" | "hf" => OpenCodeProviderType::HuggingFace,
-            "replicate" => OpenCodeProviderType::Replicate,
+            "huggingface" | "hf" => Self::HuggingFace,
+            "replicate" => Self::Replicate,
 
             // Cloud Platform Providers
-            "baseten" => OpenCodeProviderType::Baseten,
-            "cortecs" => OpenCodeProviderType::Cortecs,
-            "scaleway" => OpenCodeProviderType::Scaleway,
-            "ovhcloud" | "ovh" => OpenCodeProviderType::OVHcloud,
-            "io-net" | "ionet" => OpenCodeProviderType::IONet,
-            "nebius" => OpenCodeProviderType::Nebius,
+            "baseten" => Self::Baseten,
+            "cortecs" => Self::Cortecs,
+            "scaleway" => Self::Scaleway,
+            "ovhcloud" | "ovh" => Self::OVHcloud,
+            "io-net" | "ionet" => Self::IONet,
+            "nebius" => Self::Nebius,
 
             // Enterprise / Industry Providers
-            "sap-ai-core" | "sap" => OpenCodeProviderType::SapAICore,
-            "azure-cognitive-services" | "azure-cognitive" => {
-                OpenCodeProviderType::AzureCognitiveServices
-            }
+            "sap-ai-core" | "sap" => Self::SapAICore,
+            "azure-cognitive-services" | "azure-cognitive" => Self::AzureCognitiveServices,
 
             // Local / Self-Hosted Providers
-            "ollama" => OpenCodeProviderType::Ollama,
-            "lmstudio" => OpenCodeProviderType::LMStudio,
-            "ollama-cloud" => OpenCodeProviderType::OllamaCloud,
-            "llama.cpp" | "llamacpp" | "llama-cpp" => OpenCodeProviderType::LlamaCpp,
+            "ollama" => Self::Ollama,
+            "lmstudio" => Self::LMStudio,
+            "ollama-cloud" => Self::OllamaCloud,
+            "llama.cpp" | "llamacpp" | "llama-cpp" => Self::LlamaCpp,
 
-            _ => OpenCodeProviderType::Custom,
+            _ => Self::Custom,
         }
     }
 }

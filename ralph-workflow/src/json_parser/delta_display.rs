@@ -16,7 +16,7 @@ pub struct DeltaDisplayFormatter {
 
 impl DeltaDisplayFormatter {
     /// Create a new formatter with default settings
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { mark_partial: true }
     }
 

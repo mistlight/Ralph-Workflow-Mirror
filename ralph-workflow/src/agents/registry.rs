@@ -70,7 +70,7 @@ impl AgentRegistry {
         self.ccs_resolver = CcsAliasResolver::new(aliases.clone(), defaults);
         // Eagerly register CCS aliases as agents
         for alias_name in aliases.keys() {
-            let agent_name = format!("ccs/{}", alias_name);
+            let agent_name = format!("ccs/{alias_name}");
             if let Some(config) = self.ccs_resolver.try_resolve(&agent_name) {
                 self.agents.insert(agent_name, config);
             }
@@ -166,7 +166,7 @@ impl AgentRegistry {
             n if n.starts_with("ccs-") => {
                 alternatives.push(name.replace("ccs-", "ccs/"));
             }
-            n if n.contains("_") => {
+            n if n.contains('_') => {
                 alternatives.push(name.replace('_', "-"));
                 alternatives.push(name.replace('_', "/"));
             }
@@ -337,8 +337,7 @@ impl AgentRegistry {
                         .as_deref()
                         .map(str::trim)
                         .filter(|s| !s.is_empty())
-                        .map(JsonParserType::parse)
-                        .unwrap_or(existing.json_parser),
+                        .map_or(existing.json_parser, JsonParserType::parse),
                     model_flag: if overrides.model_flag.is_some() {
                         overrides.model_flag.clone()
                     } else {
@@ -372,7 +371,7 @@ impl AgentRegistry {
     }
 
     /// Get the fallback configuration.
-    pub fn fallback_config(&self) -> &FallbackConfig {
+    pub const fn fallback_config(&self) -> &FallbackConfig {
         &self.fallback
     }
 
@@ -393,7 +392,7 @@ impl AgentRegistry {
                 self.resolve_config(name.as_str())
                     .is_some_and(|cfg| cfg.can_commit)
             })
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect()
     }
 
@@ -431,10 +430,9 @@ impl AgentRegistry {
                 .any(|name| self.resolve_config(name).is_some_and(|cfg| cfg.can_commit));
             if !has_capable {
                 return Err(format!(
-                    "No workflow-capable agents found for {}.\n\
-                    All agents in the {} chain have can_commit=false.\n\
-                    Fix: set can_commit=true for at least one agent or update [agent_chain].",
-                    role, role
+                    "No workflow-capable agents found for {role}.\n\
+                    All agents in the {role} chain have can_commit=false.\n\
+                    Fix: set can_commit=true for at least one agent or update [agent_chain]."
                 ));
             }
         }
@@ -464,7 +462,7 @@ impl AgentRegistry {
         self.agents
             .keys()
             .filter(|name| self.is_agent_available(name))
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect()
     }
 }

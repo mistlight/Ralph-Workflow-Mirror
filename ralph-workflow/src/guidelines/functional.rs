@@ -5,7 +5,7 @@
 use super::base::ReviewGuidelines;
 
 /// Add Elixir-specific guidelines to the review
-pub(crate) fn add_elixir_guidelines(guidelines: &mut ReviewGuidelines) {
+pub fn add_elixir_guidelines(guidelines: &mut ReviewGuidelines) {
     guidelines.quality_checks.extend([
         "Use pattern matching effectively".to_string(),
         "Follow pipe operator conventions".to_string(),
@@ -24,7 +24,7 @@ pub(crate) fn add_elixir_guidelines(guidelines: &mut ReviewGuidelines) {
 }
 
 /// Add Scala-specific guidelines to the review
-pub(crate) fn add_scala_guidelines(guidelines: &mut ReviewGuidelines) {
+pub fn add_scala_guidelines(guidelines: &mut ReviewGuidelines) {
     guidelines.quality_checks.extend([
         "Use immutable collections".to_string(),
         "Prefer Option over null".to_string(),
@@ -40,7 +40,7 @@ pub(crate) fn add_scala_guidelines(guidelines: &mut ReviewGuidelines) {
 }
 
 /// Add Swift-specific guidelines to the review
-pub(crate) fn add_swift_guidelines(guidelines: &mut ReviewGuidelines) {
+pub fn add_swift_guidelines(guidelines: &mut ReviewGuidelines) {
     guidelines.quality_checks.extend([
         "Use optionals correctly".to_string(),
         "Follow Swift API design guidelines".to_string(),
@@ -108,6 +108,6 @@ mod tests {
         assert!(guidelines
             .anti_patterns
             .iter()
-            .any(|c| c.contains("force unwrapping") || c.contains("!")));
+            .any(|c| c.contains("force unwrapping") || c.contains('!')));
     }
 }

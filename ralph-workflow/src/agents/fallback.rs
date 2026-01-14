@@ -25,9 +25,9 @@ pub enum AgentRole {
 impl std::fmt::Display for AgentRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AgentRole::Developer => write!(f, "developer"),
-            AgentRole::Reviewer => write!(f, "reviewer"),
-            AgentRole::Commit => write!(f, "commit"),
+            Self::Developer => write!(f, "developer"),
+            Self::Reviewer => write!(f, "reviewer"),
+            Self::Commit => write!(f, "commit"),
         }
     }
 }
@@ -94,23 +94,23 @@ pub struct FallbackConfig {
     pub max_cycles: u32,
 }
 
-fn default_max_retries() -> u32 {
+const fn default_max_retries() -> u32 {
     3
 }
 
-fn default_retry_delay_ms() -> u64 {
+const fn default_retry_delay_ms() -> u64 {
     1000
 }
 
-fn default_backoff_multiplier() -> f64 {
+const fn default_backoff_multiplier() -> f64 {
     2.0
 }
 
-fn default_max_backoff_ms() -> u64 {
+const fn default_max_backoff_ms() -> u64 {
     60000 // 1 minute
 }
 
-fn default_max_cycles() -> u32 {
+const fn default_max_cycles() -> u32 {
     3
 }
 
@@ -133,7 +133,7 @@ impl Default for FallbackConfig {
 impl FallbackConfig {
     /// Calculate exponential backoff delay for a given cycle.
     ///
-    /// Uses the formula: min(base * multiplier^cycle, max_backoff)
+    /// Uses the formula: min(base * multiplier^cycle, `max_backoff`)
     pub fn calculate_backoff(&self, cycle: u32) -> u64 {
         let delay = self.retry_delay_ms as f64 * self.backoff_multiplier.powi(cycle as i32);
         (delay as u64).min(self.max_backoff_ms)
@@ -160,8 +160,7 @@ impl FallbackConfig {
     pub fn get_provider_fallbacks(&self, agent_name: &str) -> &[String] {
         self.provider_fallback
             .get(agent_name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[], std::vec::Vec::as_slice)
     }
 
     /// Check if provider-level fallback is configured for an agent.

@@ -149,7 +149,7 @@ pub fn create_prompt_from_template(template_name: &str, colors: &Colors) -> anyh
     let template = match get_template(template_name) {
         Some(t) => t,
         None => {
-            return Err(anyhow::anyhow!("Template '{}' not found", template_name));
+            return Err(anyhow::anyhow!("Template '{template_name}' not found"));
         }
     };
 
@@ -205,13 +205,11 @@ mod tests {
                 let content = template.content();
                 assert!(
                     content.contains("## Goal"),
-                    "Template {} missing Goal section",
-                    name
+                    "Template {name} missing Goal section"
                 );
                 assert!(
                     content.contains("Acceptance") || content.contains("## Acceptance Checks"),
-                    "Template {} missing Acceptance section",
-                    name
+                    "Template {name} missing Acceptance section"
                 );
             }
         }

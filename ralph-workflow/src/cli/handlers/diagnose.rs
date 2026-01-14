@@ -72,7 +72,7 @@ fn print_system_info(colors: &Colors) {
         println!("  Working directory: {}", cwd.display());
     }
     if let Ok(shell) = std::env::var("SHELL") {
-        println!("  Shell: {}", shell);
+        println!("  Shell: {shell}");
     }
     println!();
 }
@@ -104,7 +104,7 @@ fn print_git_info(colors: &Colors) {
         if let Ok(output) = Command::new("git").args(["status", "--porcelain"]).output() {
             if let Ok(status) = std::str::from_utf8(&output.stdout) {
                 let changes = status.lines().count();
-                println!("  Uncommitted changes: {}", changes);
+                println!("  Uncommitted changes: {changes}");
             }
         }
     }
@@ -149,8 +149,8 @@ fn print_agent_chain_info(colors: &Colors, registry: &AgentRegistry) {
     let fallback = registry.fallback_config();
     let dev_chain = fallback.get_fallbacks(AgentRole::Developer);
     let rev_chain = fallback.get_fallbacks(AgentRole::Reviewer);
-    println!("  Developer chain: {:?}", dev_chain);
-    println!("  Reviewer chain: {:?}", rev_chain);
+    println!("  Developer chain: {dev_chain:?}");
+    println!("  Reviewer chain: {rev_chain:?}");
     println!("  Max retries: {}", fallback.max_retries);
     println!("  Retry delay: {}ms", fallback.retry_delay_ms);
     println!();
@@ -246,10 +246,10 @@ fn print_project_stack(colors: &Colors) {
                     println!("  Frameworks: {:?}", stack.frameworks);
                 }
                 if let Some(pm) = &stack.package_manager {
-                    println!("  Package manager: {}", pm);
+                    println!("  Package manager: {pm}");
                 }
                 if let Some(tf) = &stack.test_framework {
-                    println!("  Test framework: {}", tf);
+                    println!("  Test framework: {tf}");
                 }
 
                 // Show language type indicators
@@ -289,14 +289,11 @@ fn print_project_stack(colors: &Colors) {
                     .filter(|c| matches!(c.severity, CheckSeverity::High))
                     .count();
                 if critical_count > 0 || high_count > 0 {
-                    println!(
-                        "  Check severities: {} critical, {} high",
-                        critical_count, high_count
-                    );
+                    println!("  Check severities: {critical_count} critical, {high_count} high");
                 }
             }
             Err(e) => {
-                println!("  Detection failed: {}", e);
+                println!("  Detection failed: {e}");
             }
         }
     }
@@ -316,7 +313,7 @@ fn print_recent_logs(colors: &Colors) {
             let lines: Vec<&str> = content.lines().collect();
             let start = lines.len().saturating_sub(10);
             for line in &lines[start..] {
-                println!("  {}", line);
+                println!("  {line}");
             }
         }
     }

@@ -1,6 +1,6 @@
 //! Provider listing and information display.
 //!
-//! Contains functions for displaying OpenCode provider information.
+//! Contains functions for displaying `OpenCode` provider information.
 
 use crate::agents::OpenCodeProviderType;
 use crate::colors::Colors;
@@ -17,12 +17,12 @@ pub fn print_provider_info(colors: &Colors, provider: OpenCodeProviderType, agen
     println!("{}{}{}", colors.bold(), provider.name(), colors.reset());
     println!("  Prefix: {}{}", provider.prefix(), example_str);
     println!("  Auth: {}", provider.auth_command());
-    println!("  Agent: {}", agent_alias);
+    println!("  Agent: {agent_alias}");
 }
 
 /// Handle --list-providers command.
 ///
-/// Displays a categorized list of all OpenCode provider types with their
+/// Displays a categorized list of all `OpenCode` provider types with their
 /// model prefixes, authentication commands, and example agent aliases.
 pub fn handle_list_providers(colors: &Colors) {
     println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());

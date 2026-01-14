@@ -28,19 +28,19 @@ const MAX_DIFF_SIZE_HARD: usize = 1024 * 1024;
 const DIFF_TRUNCATED_MARKER: &str =
     "\n\n[Diff truncated due to size. Showing first portion above.]";
 
-/// Convert git2 error to io::Error.
+/// Convert git2 error to `io::Error`.
 fn git2_to_io_error(err: git2::Error) -> io::Error {
     io::Error::other(err.to_string())
 }
 
 /// Check if we're in a git repository.
-pub(crate) fn require_git_repo() -> io::Result<()> {
+pub fn require_git_repo() -> io::Result<()> {
     git2::Repository::discover(".").map_err(git2_to_io_error)?;
     Ok(())
 }
 
 /// Get the git repository root.
-pub(crate) fn get_repo_root() -> io::Result<PathBuf> {
+pub fn get_repo_root() -> io::Result<PathBuf> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
     repo.workdir()
         .map(PathBuf::from)
@@ -51,7 +51,7 @@ pub(crate) fn get_repo_root() -> io::Result<PathBuf> {
 ///
 /// Returns the path to the hooks directory inside .git (or the equivalent
 /// for worktrees and other configurations).
-pub(crate) fn get_hooks_dir() -> io::Result<PathBuf> {
+pub fn get_hooks_dir() -> io::Result<PathBuf> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
     Ok(repo.path().join("hooks"))
 }
@@ -59,7 +59,7 @@ pub(crate) fn get_hooks_dir() -> io::Result<PathBuf> {
 /// Get a snapshot of the current git status.
 ///
 /// Returns status in porcelain format (similar to `git status --porcelain=v1`).
-pub(crate) fn git_snapshot() -> io::Result<String> {
+pub fn git_snapshot() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     let mut opts = git2::StatusOptions::new();
@@ -127,7 +127,7 @@ pub(crate) fn git_snapshot() -> io::Result<String> {
 ///
 /// Handles the case of an empty repository (no commits yet) by
 /// diffing against an empty tree using a read-only approach.
-pub(crate) fn git_diff() -> io::Result<String> {
+pub fn git_diff() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     // Try to get HEAD tree
@@ -194,14 +194,13 @@ pub(crate) fn git_diff() -> io::Result<String> {
 /// Returns a tuple containing:
 /// - The validated (and possibly truncated) diff
 /// - A boolean indicating whether the diff was truncated
-pub(crate) fn validate_and_truncate_diff(diff: String) -> (String, bool) {
+pub fn validate_and_truncate_diff(diff: String) -> (String, bool) {
     let diff_size = diff.len();
 
     // Warn about large diffs
     if diff_size > MAX_DIFF_SIZE_WARNING {
         eprintln!(
-            "Warning: Large diff detected ({} bytes). This may affect commit message quality.",
-            diff_size
+            "Warning: Large diff detected ({diff_size} bytes). This may affect commit message quality."
         );
     }
 
@@ -211,7 +210,7 @@ pub(crate) fn validate_and_truncate_diff(diff: String) -> (String, bool) {
         let truncated = if let Some(idx) = diff.char_indices().nth(truncate_size).map(|(i, _)| i) {
             format!("{}{}", &diff[..idx], DIFF_TRUNCATED_MARKER)
         } else {
-            format!("{}{}", diff, DIFF_TRUNCATED_MARKER)
+            format!("{diff}{DIFF_TRUNCATED_MARKER}")
         };
 
         eprintln!(
@@ -257,7 +256,7 @@ fn is_internal_agent_artifact(path: &std::path::Path) -> bool {
 ///
 /// Returns `Ok(true)` if files were successfully staged, `Ok(false)` if there
 /// were no files to stage, or an error if staging failed.
-pub(crate) fn git_add_all() -> io::Result<bool> {
+pub fn git_add_all() -> io::Result<bool> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     let mut index = repo.index().map_err(git2_to_io_error)?;
@@ -286,11 +285,7 @@ pub(crate) fn git_add_all() -> io::Result<bool> {
     // Note: add_all() is required here, not update_all(), to include untracked files
     let mut filter_cb = |path: &std::path::Path, _matched: &[u8]| -> i32 {
         // Never stage Ralph internal artifacts, even if the user's repo doesn't ignore them.
-        if is_internal_agent_artifact(path) {
-            1
-        } else {
-            0
-        }
+        i32::from(is_internal_agent_artifact(path))
     };
     index
         .add_all(
@@ -312,7 +307,7 @@ pub(crate) fn git_add_all() -> io::Result<bool> {
 /// 1. Provided name/email parameters (from Ralph config)
 /// 2. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
 /// 3. Ralph config file values (passed through)
-/// 4. Git config (via libgit2's repo.signature())
+/// 4. Git config (via libgit2's `repo.signature()`)
 /// 5. System username + derived email
 /// 6. Default values ("Ralph Workflow", "ralph@localhost")
 ///
@@ -337,60 +332,54 @@ fn resolve_commit_identity(
 
     // First try the identity resolution system for CLI/env/config sources
     // This handles priorities 1-3 (CLI args, env vars, Ralph config)
-    match resolve_git_identity(provided_name, provided_email, None, None) {
-        Ok((identity, _source)) => {
-            // Identity resolved from CLI, env, or config - validate and return
-            if let Err(e) = identity.validate() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("Invalid git identity from config: {}", e),
-                ));
-            }
-            return Ok(identity);
+    if let Ok((identity, _source)) = resolve_git_identity(provided_name, provided_email, None, None)
+    {
+        // Identity resolved from CLI, env, or config - validate and return
+        if let Err(e) = identity.validate() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Invalid git identity from config: {e}"),
+            ));
         }
-        Err(_) => {
-            // Identity resolution fell through - continue to git config fallback
-        }
+        return Ok(identity);
     }
+    // Identity resolution fell through - continue to git config fallback
 
     // Priority 4: Git config (via libgit2)
     // This handles the case where neither CLI/env nor Ralph config provided
     // both name and email. We now try git config, and support partial overrides.
-    match repo.signature() {
-        Ok(sig) => {
-            // Git config provided a signature
-            let git_name = sig.name().unwrap_or("").to_string();
-            let git_email = sig.email().unwrap_or("").to_string();
+    if let Ok(sig) = repo.signature() {
+        // Git config provided a signature
+        let git_name = sig.name().unwrap_or("").to_string();
+        let git_email = sig.email().unwrap_or("").to_string();
 
-            // If git config has both name and email, use them
-            if !git_name.is_empty() && !git_email.is_empty() {
-                // Check if we have a partial override (name provided but not email, or vice versa)
-                let name = provided_name
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(&git_name)
-                    .to_string();
-                let email = provided_email
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(&git_email)
-                    .to_string();
+        // If git config has both name and email, use them
+        if !git_name.is_empty() && !git_email.is_empty() {
+            // Check if we have a partial override (name provided but not email, or vice versa)
+            let name = provided_name
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&git_name)
+                .to_string();
+            let email = provided_email
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&git_email)
+                .to_string();
 
-                let identity = GitIdentity::new(name, email);
-                if identity.validate().is_err() {
-                    // Git config identity is invalid - fall through to system fallback
-                } else {
-                    return Ok(identity);
-                }
+            let identity = GitIdentity::new(name, email);
+            if identity.validate().is_err() {
+                // Git config identity is invalid - fall through to system fallback
+            } else {
+                return Ok(identity);
             }
         }
-        Err(_) => {
-            // Git config failed - fall through to system fallback
-        }
+    } else {
+        // Git config failed - fall through to system fallback
     }
 
     // Priority 5: System username + derived email
     let username = fallback_username();
     let email = fallback_email(&username);
-    let identity = GitIdentity::new(username.clone(), email);
+    let identity = GitIdentity::new(username, email);
 
     if identity.validate().is_err() {
         // Shouldn't happen with our fallbacks, but handle it by falling through to defaults
@@ -431,7 +420,7 @@ fn resolve_commit_identity(
 ///
 /// Returns `Ok(Some(oid))` with the commit OID if successful, `Ok(None)` if the
 /// OID is zero (no commit created), or an error if the operation failed.
-pub(crate) fn git_commit(
+pub fn git_commit(
     message: &str,
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
@@ -492,14 +481,14 @@ pub(crate) fn git_commit(
 /// - The repository cannot be opened
 /// - The starting commit cannot be found
 /// - The diff cannot be generated
-pub(crate) fn git_diff_from(start_oid: &str) -> io::Result<String> {
+pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
 
     // Parse the starting OID
     let oid = git2::Oid::from_str(start_oid).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("Invalid commit OID: {}", start_oid),
+            format!("Invalid commit OID: {start_oid}"),
         )
     })?;
 
@@ -558,7 +547,7 @@ fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
 /// Returns a formatted diff string, or an error if:
 /// - The diff cannot be generated
 /// - The starting commit file exists but is invalid
-pub(crate) fn get_git_diff_from_start() -> io::Result<String> {
+pub fn get_git_diff_from_start() -> io::Result<String> {
     use crate::git_helpers::start_commit::{load_start_point, save_start_commit, StartPoint};
 
     // Ensure a valid starting point exists. This is expected to persist across runs,

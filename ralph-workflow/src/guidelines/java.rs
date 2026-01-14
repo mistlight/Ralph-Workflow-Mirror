@@ -6,7 +6,7 @@ use super::base::ReviewGuidelines;
 use crate::language_detector::ProjectStack;
 
 /// Add Java-specific guidelines to the review
-pub(crate) fn add_java_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+pub fn add_java_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
     guidelines.quality_checks.extend([
         "Follow Java naming conventions".to_string(),
         "Use Optional instead of null returns".to_string(),
@@ -33,7 +33,7 @@ pub(crate) fn add_java_guidelines(guidelines: &mut ReviewGuidelines, stack: &Pro
 }
 
 /// Add Kotlin-specific guidelines to the review
-pub(crate) fn add_kotlin_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
+pub fn add_kotlin_guidelines(guidelines: &mut ReviewGuidelines, stack: &ProjectStack) {
     guidelines.quality_checks.extend([
         "Use null safety features".to_string(),
         "Prefer data classes for DTOs".to_string(),

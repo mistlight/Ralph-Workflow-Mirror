@@ -14,8 +14,8 @@
 //! # Platform Support
 //!
 //! - **Unix/Linux**: inotify via `notify` crate
-//! - **macOS**: FSEvents via `notify` crate
-//! - **Windows**: ReadDirectoryChangesW via `notify` crate
+//! - **macOS**: `FSEvents` via `notify` crate
+//! - **Windows**: `ReadDirectoryChangesW` via `notify` crate
 
 use std::fs;
 use std::path::Path;
@@ -118,7 +118,7 @@ impl PromptMonitor {
         let mut watcher = match notify::recommended_watcher(tx) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("Warning: Failed to create file system watcher: {}", e);
+                eprintln!("Warning: Failed to create file system watcher: {e}");
                 eprintln!("Falling back to periodic polling for PROMPT.md protection");
                 // Fallback to polling if watcher creation fails
                 Self::polling_monitor(restoration_detected, stop_signal);
@@ -128,7 +128,7 @@ impl PromptMonitor {
 
         // Watch the current directory for events
         if let Err(e) = watcher.watch(Path::new("."), notify::RecursiveMode::NonRecursive) {
-            eprintln!("Warning: Failed to watch current directory: {}", e);
+            eprintln!("Warning: Failed to watch current directory: {e}");
             eprintln!("Falling back to periodic polling for PROMPT.md protection");
             Self::polling_monitor(restoration_detected, stop_signal);
             return;

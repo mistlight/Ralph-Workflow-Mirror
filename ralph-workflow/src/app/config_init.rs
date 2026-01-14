@@ -98,9 +98,10 @@ pub fn initialize_config(
     // Handle --init-legacy flag: legacy per-repo agents.toml creation and exit
     if args.init_legacy {
         let repo_root = get_repo_root().ok();
-        let legacy_path = repo_root
-            .map(|root| root.join(".agent/agents.toml"))
-            .unwrap_or_else(|| PathBuf::from(".agent/agents.toml"));
+        let legacy_path = repo_root.map_or_else(
+            || PathBuf::from(".agent/agents.toml"),
+            |root| root.join(".agent/agents.toml"),
+        );
         if handle_init_legacy(colors, &legacy_path)? {
             return Ok(None);
         }
@@ -125,10 +126,7 @@ fn load_agent_registry(
     config_path: &std::path::Path,
 ) -> anyhow::Result<(AgentRegistry, Vec<ConfigSource>)> {
     let mut registry = AgentRegistry::new().map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to load built-in default agents config (examples/agents.toml): {}",
-            e
-        )
+        anyhow::anyhow!("Failed to load built-in default agents config (examples/agents.toml): {e}")
     })?;
 
     let mut sources = Vec::new();
@@ -153,9 +151,10 @@ fn load_agent_registry(
         }
 
         let repo_root = get_repo_root().ok();
-        let project_path = repo_root
-            .map(|root| root.join(".agent/agents.toml"))
-            .unwrap_or_else(|| PathBuf::from(".agent/agents.toml"));
+        let project_path = repo_root.map_or_else(
+            || PathBuf::from(".agent/agents.toml"),
+            |root| root.join(".agent/agents.toml"),
+        );
         if project_path.exists() {
             let loaded = registry.load_from_file(&project_path).map_err(|e| {
                 anyhow::anyhow!(
@@ -187,7 +186,7 @@ fn load_agent_registry(
 /// Applies default agent selection from fallback chains.
 ///
 /// If no agent was explicitly selected via CLI/env/preset, uses the first entry
-/// from the agent_chain configuration.
+/// from the `agent_chain` configuration.
 fn apply_default_agents(config: &mut Config, registry: &AgentRegistry) {
     if config.developer_agent.is_none() {
         config.developer_agent = registry
