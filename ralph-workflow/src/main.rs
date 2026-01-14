@@ -35,8 +35,6 @@ mod platform;
 mod prompts;
 mod review_metrics;
 mod templates;
-#[cfg(test)]
-mod test_utils;
 
 use crate::cli::Args;
 use crate::git_helpers::cleanup_agent_phase_silent;

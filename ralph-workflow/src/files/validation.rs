@@ -284,7 +284,7 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::testing::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     #[test]
     fn test_restore_prompt_if_needed_ok() {

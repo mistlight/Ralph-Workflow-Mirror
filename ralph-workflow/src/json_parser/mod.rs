@@ -37,11 +37,19 @@
 //! - **Debug (4)**: Maximum verbosity, includes raw JSON output
 
 mod claude;
+#[cfg(test)]
+mod claude_tests;
 mod codex;
+#[cfg(test)]
+mod codex_tests;
 mod delta_display;
 mod gemini;
+#[cfg(test)]
+mod gemini_tests;
 pub mod health;
 mod opencode;
+#[cfg(test)]
+mod opencode_tests;
 mod stream_classifier;
 mod streaming_state;
 mod types;

@@ -255,7 +255,7 @@ pub fn checkpoint_exists() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::testing::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     #[test]
     fn test_timestamp_format() {
