@@ -191,7 +191,7 @@ pub fn generate_commit_message(
                 // Both attempts failed
                 runtime
                     .logger
-                    .warn("Re-prompt also failed to produce valid commit message");
+                    .warn("Agent succeeded but no commit message was extracted");
                 CommitMessageResult {
                     message: String::new(),
                     success: false,

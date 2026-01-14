@@ -20,6 +20,7 @@ use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::logger::{argv_requests_json, format_generic_json_for_display};
 use crate::pipeline::Timer;
+use crate::platform::Platform;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;

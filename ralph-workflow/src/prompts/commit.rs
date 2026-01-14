@@ -173,36 +173,33 @@ Fixes #42
 - Are they semantically different? → Use the most significant type with a comprehensive subject
 - What is the COMMON THREAD that connects these changes?
 
-**OUTPUT REQUIREMENT**: Return ONLY a JSON object with this exact schema:
-{{"subject": "<type>[scope]: <description>", "body": "<optional body or null>"}}
-
-CRITICAL RULES:
-- Return ONLY the JSON object, nothing else
-- No text before or after the JSON
-- No markdown fences around the JSON
-- `subject` is required, must be valid conventional commit format (max 72 chars)
-- `body` is optional (use null if no body needed)
-
-WRONG (with preamble):
-Here is the commit message:
-{{"subject": "feat: add feature", "body": null}}
+**OUTPUT REQUIREMENT**: Respond with ONLY the commit message.
+- NO markdown fences, explanations, "Here is" prefixes, analysis, numbered/bullet lists, or phrases like "Looking at this diff" or "I can see"
+- JUST the commit message itself
 
 WRONG (with analysis):
-Looking at this diff, I can see changes.
-{{"subject": "feat: add feature", "body": null}}
+```
+Looking at this diff, I can see:
+1. Updated parser
+
+feat: add feature
+```
+
+WRONG (with prefix):
+```
+Here is the commit message:
+feat: add feature
+```
 
 CORRECT:
-{{"subject": "feat: add feature", "body": null}}
-
-CORRECT (with body):
-{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\nAdd session management for OAuth tokens."}}"#
+feat: add feature"#
     )
 }
 
-/// Generate strict re-prompt when initial JSON extraction fails.
+/// Generate strict JSON-only prompt for commit message retry.
 ///
-/// This is a simplified prompt used when the agent's first response was not valid JSON.
-/// It provides a shorter, more direct instruction to maximize compliance.
+/// This is used when the initial attempt fails to produce valid JSON,
+/// providing a simpler, more focused prompt to encourage proper JSON output.
 pub fn prompt_strict_json_commit(diff: &str) -> String {
     let diff_content = diff.trim();
     format!(

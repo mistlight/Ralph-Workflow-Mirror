@@ -11,14 +11,12 @@
 //!
 //! # Module Structure
 //!
-//! - [`common`] - Shared utilities for phase modules
 //! - [`context`] - Shared phase context for passing state between phases
 //! - [`development`] - Iterative development cycle execution
 //! - [`review`] - Code review and fix cycle execution
 //! - [`commit`] - Automated commit message generation with fallback
 
 pub mod commit;
-pub mod common;
 mod context;
 mod development;
 mod review;
