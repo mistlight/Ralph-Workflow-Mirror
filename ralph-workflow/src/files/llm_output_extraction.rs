@@ -951,7 +951,7 @@ Done."#;
 
     #[test]
     fn test_validate_rejects_stream_events() {
-        let stream_message = r#"stream_event content_block more stuff"#;
+        let stream_message = r"stream_event content_block more stuff";
         let err = validate_commit_message(stream_message).unwrap_err();
         assert!(err.contains("JSON artifacts"));
     }

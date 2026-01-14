@@ -216,7 +216,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Run the full pipeline
-    run_pipeline(
+    PipelineContext {
         args,
         config,
         registry,
@@ -227,7 +227,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         repo_root,
         logger,
         colors,
-    )
+    }
+    .run()
 }
 
 /// Handles listing commands that don't require the full pipeline.
@@ -249,9 +250,8 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: &Color
     false
 }
 
-/// Runs the full development/review/commit pipeline.
-#[allow(clippy::too_many_arguments)]
-fn run_pipeline(
+/// Context for running the development/review/commit pipeline.
+struct PipelineContext {
     args: Args,
     config: Config,
     registry: AgentRegistry,
@@ -262,200 +262,219 @@ fn run_pipeline(
     repo_root: std::path::PathBuf,
     logger: Logger,
     colors: Colors,
-) -> anyhow::Result<()> {
-    // Handle --resume
-    let resume_checkpoint = handle_resume(&args, &logger, &developer_display, &reviewer_display);
+}
 
-    // Set up git helpers
-    let mut git_helpers = crate::git_helpers::GitHelpers::new();
-    cleanup_orphaned_marker(&logger)?;
-    start_agent_phase(&mut git_helpers)?;
-    let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &logger);
+impl PipelineContext {
+    /// Runs the full development/review/commit pipeline.
+    fn run(self) -> anyhow::Result<()> {
+        // Handle --resume
+        let resume_checkpoint = handle_resume(
+            &self.args,
+            &self.logger,
+            &self.developer_display,
+            &self.reviewer_display,
+        );
 
-    let mut timer = Timer::new();
-    let mut stats = Stats::new();
+        // Set up git helpers
+        let mut git_helpers = crate::git_helpers::GitHelpers::new();
+        cleanup_orphaned_marker(&self.logger)?;
+        start_agent_phase(&mut git_helpers)?;
+        let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &self.logger);
 
-    // Welcome banner
-    print_welcome_banner(&colors, &developer_display, &reviewer_display);
-    logger.info(&format!(
-        "Working directory: {}{}{}",
-        colors.cyan(),
-        repo_root.display(),
-        colors.reset()
-    ));
-    logger.info(&format!(
-        "Commit message: {}{}{}",
-        colors.cyan(),
-        config.commit_msg,
-        colors.reset()
-    ));
+        let mut timer = Timer::new();
+        let mut stats = Stats::new();
 
-    // Validate PROMPT.md early so we don't run a "review" against an ill-formed prompt.
-    // In non-strict mode this is warning-only for missing sections, but still surfaced
-    // loudly because it impacts the review workflow.
-    // Note: Interactive mode PROMPT.md creation is handled in run() before ensure_files()
-    let prompt_validation = validate_prompt_md(config.strict_validation, args.interactive);
-    for err in &prompt_validation.errors {
-        logger.error(err);
-    }
-    for warn in &prompt_validation.warnings {
-        logger.warn(warn);
-    }
-    if !prompt_validation.is_valid() {
-        anyhow::bail!("PROMPT.md validation errors");
-    }
+        // Welcome banner
+        print_welcome_banner(
+            &self.colors,
+            &self.developer_display,
+            &self.reviewer_display,
+        );
+        self.logger.info(&format!(
+            "Working directory: {}{}{}",
+            self.colors.cyan(),
+            self.repo_root.display(),
+            self.colors.reset()
+        ));
+        self.logger.info(&format!(
+            "Commit message: {}{}{}",
+            self.colors.cyan(),
+            self.config.commit_msg,
+            self.colors.reset()
+        ));
 
-    // Create a backup of PROMPT.md to protect against accidental deletion.
-    // This must happen after validation and before any agent phases begin.
-    // If PROMPT.md doesn't exist (e.g., non-interactive mode with missing file),
-    // create_prompt_backup() returns Ok(None) and does nothing.
-    match create_prompt_backup() {
-        Ok(None) => {
-            // Backup created successfully with read-only permissions
+        // Validate PROMPT.md early so we don't run a "review" against an ill-formed prompt.
+        // In non-strict mode this is warning-only for missing sections, but still surfaced
+        // loudly because it impacts the review workflow.
+        // Note: Interactive mode PROMPT.md creation is handled in run() before ensure_files()
+        let prompt_validation =
+            validate_prompt_md(self.config.strict_validation, self.args.interactive);
+        for err in &prompt_validation.errors {
+            self.logger.error(err);
         }
-        Ok(Some(warning)) => {
-            logger.warn(&format!(
-                "PROMPT.md backup created but: {}. Continuing anyway.",
-                warning
-            ));
+        for warn in &prompt_validation.warnings {
+            self.logger.warn(warn);
         }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to create PROMPT.md backup: {}. Continuing anyway.",
-                e
-            ));
+        if !prompt_validation.is_valid() {
+            anyhow::bail!("PROMPT.md validation errors");
         }
-    }
 
-    // Make PROMPT.md read-only to protect against accidental deletion.
-    // This is a best-effort protection - it may not work on all filesystems.
-    // If PROMPT.md doesn't exist, make_prompt_read_only() returns Ok(None).
-    match make_prompt_read_only() {
-        Ok(None) => {
-            // Read-only permissions set successfully
+        // Create a backup of PROMPT.md to protect against accidental deletion.
+        // This must happen after validation and before any agent phases begin.
+        // If PROMPT.md doesn't exist (e.g., non-interactive mode with missing file),
+        // create_prompt_backup() returns Ok(None) and does nothing.
+        match create_prompt_backup() {
+            Ok(None) => {
+                // Backup created successfully with read-only permissions
+            }
+            Ok(Some(warning)) => {
+                self.logger.warn(&format!(
+                    "PROMPT.md backup created but: {}. Continuing anyway.",
+                    warning
+                ));
+            }
+            Err(e) => {
+                self.logger.warn(&format!(
+                    "Failed to create PROMPT.md backup: {}. Continuing anyway.",
+                    e
+                ));
+            }
         }
-        Ok(Some(warning)) => {
-            logger.warn(&format!("{}. Continuing anyway.", warning));
-        }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to make PROMPT.md read-only: {}. Continuing anyway.",
-                e
-            ));
-        }
-    }
 
-    // Start real-time monitoring of PROMPT.md for immediate deletion detection.
-    // The monitor runs in a background thread and automatically restores PROMPT.md
-    // if deletion is detected. We check for restoration events after each phase.
-    let mut prompt_monitor = match PromptMonitor::new() {
-        Ok(mut monitor) => {
-            if let Err(e) = monitor.start() {
-                logger.warn(&format!(
-                    "Failed to start PROMPT.md monitoring: {}. Continuing anyway.",
+        // Make PROMPT.md read-only to protect against accidental deletion.
+        // This is a best-effort protection - it may not work on all filesystems.
+        // If PROMPT.md doesn't exist, make_prompt_read_only() returns Ok(None).
+        match make_prompt_read_only() {
+            Ok(None) => {
+                // Read-only permissions set successfully
+            }
+            Ok(Some(warning)) => {
+                self.logger
+                    .warn(&format!("{}. Continuing anyway.", warning));
+            }
+            Err(e) => {
+                self.logger.warn(&format!(
+                    "Failed to make PROMPT.md read-only: {}. Continuing anyway.",
+                    e
+                ));
+            }
+        }
+
+        // Start real-time monitoring of PROMPT.md for immediate deletion detection.
+        // The monitor runs in a background thread and automatically restores PROMPT.md
+        // if deletion is detected. We check for restoration events after each phase.
+        let mut prompt_monitor = match PromptMonitor::new() {
+            Ok(mut monitor) => {
+                if let Err(e) = monitor.start() {
+                    self.logger.warn(&format!(
+                        "Failed to start PROMPT.md monitoring: {}. Continuing anyway.",
+                        e
+                    ));
+                    None
+                } else {
+                    if self.config.verbosity.is_debug() {
+                        self.logger.info("Started real-time PROMPT.md monitoring");
+                    }
+                    Some(monitor)
+                }
+            }
+            Err(e) => {
+                self.logger.warn(&format!(
+                    "Failed to create PROMPT.md monitor: {}. Continuing anyway.",
                     e
                 ));
                 None
-            } else {
-                if config.verbosity.is_debug() {
-                    logger.info("Started real-time PROMPT.md monitoring");
+            }
+        };
+
+        // Detect project stack and generate review guidelines
+        let (_project_stack, review_guidelines) =
+            detect_project_stack(&self.config, &self.repo_root, &self.logger, &self.colors);
+
+        if let Some(ref guidelines) = review_guidelines {
+            self.logger.info(&format!(
+                "Review guidelines: {}{}{}",
+                self.colors.dim(),
+                guidelines.summary(),
+                self.colors.reset()
+            ));
+        }
+
+        println!();
+
+        // Create phase context
+        let mut ctx = PhaseContext {
+            config: &self.config,
+            registry: &self.registry,
+            logger: &self.logger,
+            colors: &self.colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: &self.developer_agent,
+            reviewer_agent: &self.reviewer_agent,
+            review_guidelines: review_guidelines.as_ref(),
+        };
+
+        // Save the starting commit reference for incremental diff generation
+        // This enables reviewers to see changes since pipeline start without git context
+        //
+        // If saving fails (e.g., due to filesystem issues), we log a warning but continue.
+        // This may reduce incremental review quality (diffs may be empty after auto-commits).
+        match save_start_commit() {
+            Ok(()) => {
+                if self.config.verbosity.is_debug() {
+                    self.logger
+                        .info("Saved starting commit for incremental diff generation");
                 }
-                Some(monitor)
             }
-        }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to create PROMPT.md monitor: {}. Continuing anyway.",
-                e
-            ));
-            None
-        }
-    };
-
-    // Detect project stack and generate review guidelines
-    let (_project_stack, review_guidelines) =
-        detect_project_stack(&config, &repo_root, &logger, &colors);
-
-    if let Some(ref guidelines) = review_guidelines {
-        logger.info(&format!(
-            "Review guidelines: {}{}{}",
-            colors.dim(),
-            guidelines.summary(),
-            colors.reset()
-        ));
-    }
-
-    println!();
-
-    // Create phase context
-    let mut ctx = PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        stats: &mut stats,
-        developer_agent: &developer_agent,
-        reviewer_agent: &reviewer_agent,
-        review_guidelines: review_guidelines.as_ref(),
-    };
-
-    // Save the starting commit reference for incremental diff generation
-    // This enables reviewers to see changes since pipeline start without git context
-    //
-    // If saving fails (e.g., due to filesystem issues), we log a warning but continue.
-    // This may reduce incremental review quality (diffs may be empty after auto-commits).
-    match save_start_commit() {
-        Ok(()) => {
-            if config.verbosity.is_debug() {
-                logger.info("Saved starting commit for incremental diff generation");
-            }
-        }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to save starting commit: {}. \
+            Err(e) => {
+                self.logger.warn(&format!(
+                    "Failed to save starting commit: {}. \
                  Incremental diffs may be unavailable as a result.",
-                e
-            ));
-            logger.info(
+                    e
+                ));
+                self.logger.info(
                 "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
             );
+            }
         }
-    }
 
-    // Run phases
-    run_development(&mut ctx, &args, resume_checkpoint.as_ref())?;
+        // Run phases
+        run_development(&mut ctx, &self.args, resume_checkpoint.as_ref())?;
 
-    // Check for PROMPT.md restoration after development phase
-    if let Some(ref mut monitor) = prompt_monitor {
-        if monitor.check_and_restore() {
-            logger.warn("PROMPT.md was deleted and restored during development phase");
+        // Check for PROMPT.md restoration after development phase
+        if let Some(ref mut monitor) = prompt_monitor {
+            if monitor.check_and_restore() {
+                self.logger
+                    .warn("PROMPT.md was deleted and restored during development phase");
+            }
         }
-    }
-    update_status("In progress.", config.isolation_mode)?;
+        update_status("In progress.", self.config.isolation_mode)?;
 
-    run_review_and_fix(&mut ctx, &args, resume_checkpoint.as_ref())?;
+        run_review_and_fix(&mut ctx, &self.args, resume_checkpoint.as_ref())?;
 
-    // Check for PROMPT.md restoration after review phase
-    if let Some(ref mut monitor) = prompt_monitor {
-        if monitor.check_and_restore() {
-            logger.warn("PROMPT.md was deleted and restored during review phase");
+        // Check for PROMPT.md restoration after review phase
+        if let Some(ref mut monitor) = prompt_monitor {
+            if monitor.check_and_restore() {
+                self.logger
+                    .warn("PROMPT.md was deleted and restored during review phase");
+            }
         }
+        update_status("In progress.", self.config.isolation_mode)?;
+
+        run_final_validation(&ctx, resume_checkpoint.as_ref())?;
+
+        // Commit phase
+        finalize_pipeline(
+            &mut agent_phase_guard,
+            &self.logger,
+            &self.colors,
+            &self.config,
+            &timer,
+            &stats,
+            prompt_monitor,
+        )
     }
-    update_status("In progress.", config.isolation_mode)?;
-
-    run_final_validation(&ctx, resume_checkpoint.as_ref())?;
-
-    // Commit phase
-    finalize_pipeline(
-        &mut agent_phase_guard,
-        &logger,
-        &colors,
-        &config,
-        &timer,
-        &stats,
-        prompt_monitor,
-    )
 }
 
 /// Handles the --resume flag and loads checkpoint if applicable.

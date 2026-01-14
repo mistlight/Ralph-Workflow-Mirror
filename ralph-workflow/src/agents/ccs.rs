@@ -520,7 +520,7 @@ impl CcsAliasResolver {
     /// Check if a given agent name would resolve to a CCS alias.
     /// Now returns true for any CCS reference since we support direct execution.
     #[cfg(test)]
-    pub fn can_resolve(&self, agent_name: &str) -> bool {
+    pub fn can_resolve(agent_name: &str) -> bool {
         parse_ccs_ref(agent_name).is_some()
     }
 
@@ -747,21 +747,11 @@ mod tests {
 
     #[test]
     fn test_ccs_alias_resolver_can_resolve() {
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "work".to_string(),
-            CcsAliasConfig {
-                cmd: "ccs work".to_string(),
-                ..CcsAliasConfig::default()
-            },
-        );
-        let resolver = CcsAliasResolver::new(aliases, default_ccs());
-
         // All CCS references now resolve (including unregistered ones)
-        assert!(resolver.can_resolve("ccs"));
-        assert!(resolver.can_resolve("ccs/work"));
-        assert!(resolver.can_resolve("ccs/unknown")); // Now true - direct CCS execution
-        assert!(!resolver.can_resolve("claude"));
+        assert!(CcsAliasResolver::can_resolve("ccs"));
+        assert!(CcsAliasResolver::can_resolve("ccs/work"));
+        assert!(CcsAliasResolver::can_resolve("ccs/unknown")); // Now true - direct CCS execution
+        assert!(!CcsAliasResolver::can_resolve("claude"));
     }
 
     #[test]
@@ -796,7 +786,7 @@ mod tests {
 
         resolver.add_alias("work".to_string(), "ccs work".to_string());
         assert!(resolver.has_aliases());
-        assert!(resolver.can_resolve("ccs/work"));
+        assert!(CcsAliasResolver::can_resolve("ccs/work"));
     }
 
     // Additional tests for various CCS command patterns per Step 2 of plan
@@ -985,9 +975,9 @@ mod tests {
         let chain = ["ccs/work", "claude", "codex"];
 
         // First in chain should resolve
-        assert!(resolver.can_resolve(chain[0]));
-        assert!(!resolver.can_resolve(chain[1])); // claude is not a CCS ref
-        assert!(!resolver.can_resolve(chain[2])); // codex is not a CCS ref
+        assert!(CcsAliasResolver::can_resolve(chain[0]));
+        assert!(!CcsAliasResolver::can_resolve(chain[1])); // claude is not a CCS ref
+        assert!(!CcsAliasResolver::can_resolve(chain[2])); // codex is not a CCS ref
 
         // The resolved config should be usable
         let config = resolver.try_resolve(chain[0]).unwrap();
