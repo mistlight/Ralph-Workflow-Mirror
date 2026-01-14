@@ -1,10 +1,16 @@
 //! Command execution helpers and fallback orchestration.
 
+// The `try_agent_with_retries` function has many parameters due to orchestrating
+// complex retry logic across multiple agent configurations. Refactoring to use
+// a config struct would be a larger change.
 #![expect(clippy::too_many_arguments)]
-#![expect(clippy::needless_pass_by_value)]
-#![expect(clippy::map_unwrap_or)]
-#![expect(clippy::needless_continue)]
+// Functions exceed 100 lines due to the nature of command execution and fallback
+// orchestration. Breaking them up further would harm readability.
 #![expect(clippy::too_many_lines)]
+// The explicit `continue` statement makes intent clearer even though it's
+// technically redundant at the end of a match arm in a loop.
+#![expect(clippy::needless_continue)]
+
 use crate::agents::{
     is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType,
 };
@@ -12,6 +18,7 @@ use crate::colors::Colors;
 use crate::config::Config;
 use crate::logger::Logger;
 use crate::output::{argv_requests_json, format_generic_json_for_display};
+use crate::platform::Platform;
 use crate::timer::Timer;
 use crate::utils::{format_argv_for_log, split_command, truncate_text};
 use std::fs::{self, File, OpenOptions};
@@ -58,13 +65,14 @@ pub struct PromptCommand<'a> {
 ///
 /// This is an internal helper for `run_with_fallback`.
 pub fn run_with_prompt(
-    cmd: PromptCommand<'_>,
+    cmd: &PromptCommand<'_>,
     runtime: &mut PipelineRuntime<'_>,
 ) -> io::Result<CommandResult> {
     // Anthropic environment variables to sanitize before spawning agent subprocesses.
     // This prevents GLM/CCS env vars from the parent shell from leaking into agents
     // that rely on default credentials (like ANTHROPIC_API_KEY for the standard Claude agent).
     const ANTHROPIC_ENV_VARS_TO_SANITIZE: &[&str] = &[
+        "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_MODEL",
@@ -93,18 +101,25 @@ pub fn run_with_prompt(
         runtime.colors.reset()
     ));
 
-    // Copy to clipboard if interactive and pbcopy available
+    // Copy to clipboard if interactive
     if runtime.config.interactive {
-        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(cmd.prompt.as_bytes());
+        if let Some(clipboard_cmd) = get_platform_clipboard_command() {
+            if let Ok(mut child) = Command::new(clipboard_cmd.binary)
+                .args(clipboard_cmd.args)
+                .stdin(Stdio::piped())
+                .spawn()
+            {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(cmd.prompt.as_bytes());
+                }
+                let _ = child.wait();
+                runtime.logger.info(&format!(
+                    "Prompt copied to clipboard {}({}){}",
+                    runtime.colors.dim(),
+                    clipboard_cmd.paste_hint,
+                    runtime.colors.reset()
+                ));
             }
-            let _ = child.wait();
-            runtime.logger.info(&format!(
-                "Prompt copied to clipboard {}(pbpaste to view){}",
-                runtime.colors.dim(),
-                runtime.colors.reset()
-            ));
         }
     }
 
@@ -340,7 +355,25 @@ pub fn run_with_prompt(
     }
 
     let stderr_output = match stderr_join_handle {
-        Some(handle) => handle.join().unwrap_or_else(|_| Ok(String::new()))?,
+        Some(handle) => match handle.join() {
+            Ok(result) => result?,
+            Err(panic_payload) => {
+                // Thread panicked - try to extract panic message for diagnostics
+                let panic_msg = panic_payload.downcast_ref::<String>().map_or_else(
+                    || {
+                        panic_payload.downcast_ref::<&str>().map_or_else(
+                            || "<unknown panic>".to_string(),
+                            std::string::ToString::to_string,
+                        )
+                    },
+                    std::clone::Clone::clone,
+                );
+                runtime.logger.warn(&format!(
+                    "Stderr collection thread panicked: {panic_msg}. This may indicate a bug."
+                ));
+                String::new()
+            }
+        },
         None => String::new(),
     };
 
@@ -375,6 +408,65 @@ pub fn run_with_prompt(
     })
 }
 
+/// Platform-specific clipboard command configuration.
+struct ClipboardCommand {
+    binary: &'static str,
+    args: &'static [&'static str],
+    paste_hint: &'static str,
+}
+
+/// Get the platform-specific clipboard command.
+///
+/// Returns None if no clipboard command is available for the current platform.
+fn get_platform_clipboard_command() -> Option<ClipboardCommand> {
+    let platform = Platform::detect();
+
+    match platform {
+        Platform::MacWithBrew | Platform::MacWithoutBrew => Some(ClipboardCommand {
+            binary: "pbcopy",
+            args: &[],
+            paste_hint: "pbpaste to view",
+        }),
+        Platform::DebianLinux
+        | Platform::RhelLinux
+        | Platform::ArchLinux
+        | Platform::GenericLinux => {
+            // Try wl-copy (Wayland) first, then xclip (X11)
+            if Command::new("which")
+                .arg("wl-copy")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                Some(ClipboardCommand {
+                    binary: "wl-copy",
+                    args: &[],
+                    paste_hint: "wl-paste to view",
+                })
+            } else if Command::new("which")
+                .arg("xclip")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                Some(ClipboardCommand {
+                    binary: "xclip",
+                    args: &["-selection", "clipboard"],
+                    paste_hint: "xclip -o -selection clipboard to view",
+                })
+            } else {
+                None
+            }
+        }
+        Platform::Windows => Some(ClipboardCommand {
+            binary: "clip",
+            args: &[],
+            paste_hint: "paste to view",
+        }),
+        Platform::Unknown => None,
+    }
+}
+
 /// Try a single agent/model configuration with retries.
 ///
 /// Returns the result of the attempt: success, unrecoverable error, or should-fallback.
@@ -403,14 +495,14 @@ fn try_agent_with_retries(
     // GLM-specific diagnostic output (only on first try to avoid spam)
     if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
         let cmd_argv = split_command(cmd_str).ok();
-        let full_cmd_log = cmd_argv
-            .as_ref()
-            .map(|argv| {
+        let full_cmd_log = cmd_argv.as_ref().map_or_else(
+            || "<unparseable command>".to_string(),
+            |argv| {
                 let mut argv_for_log = argv.clone();
                 argv_for_log.push("<PROMPT>".to_string());
                 truncate_text(&format_argv_for_log(&argv_for_log), 160)
-            })
-            .unwrap_or_else(|| "<unparseable command>".to_string());
+            },
+        );
 
         if runtime.config.verbosity.is_debug() {
             runtime
@@ -432,7 +524,7 @@ fn try_agent_with_retries(
         }
 
         let result = run_with_prompt(
-            PromptCommand {
+            &PromptCommand {
                 label,
                 display_name,
                 cmd_str,
@@ -846,6 +938,7 @@ mod tests {
     fn test_runner_sanitizes_anthropic_env_vars() {
         // Anthropic environment variables to sanitize
         const ANTHROPIC_ENV_VARS_TO_SANITIZE: &[&str] = &[
+            "ANTHROPIC_API_KEY",
             "ANTHROPIC_BASE_URL",
             "ANTHROPIC_AUTH_TOKEN",
             "ANTHROPIC_MODEL",
@@ -856,6 +949,7 @@ mod tests {
 
         // Set GLM-like env vars in test process (simulating parent shell with GLM configured)
         let _guards = EnvGuard::set_multiple(&[
+            ("ANTHROPIC_API_KEY", "sk-ant-invalid-key-123"),
             ("ANTHROPIC_BASE_URL", "https://api.z.ai/api/anthropic"),
             ("ANTHROPIC_AUTH_TOKEN", "test-token-glm"),
             ("ANTHROPIC_MODEL", "glm-4.7"),
@@ -906,6 +1000,7 @@ mod tests {
     fn test_runner_preserves_explicitly_set_anthropic_env_vars() {
         // Anthropic environment variables to sanitize
         const ANTHROPIC_ENV_VARS_TO_SANITIZE: &[&str] = &[
+            "ANTHROPIC_API_KEY",
             "ANTHROPIC_BASE_URL",
             "ANTHROPIC_AUTH_TOKEN",
             "ANTHROPIC_MODEL",
@@ -916,6 +1011,7 @@ mod tests {
 
         // Set GLM-like env vars in test process
         let _guards = EnvGuard::set_multiple(&[
+            ("ANTHROPIC_API_KEY", "sk-ant-invalid-key-123"),
             ("ANTHROPIC_BASE_URL", "https://api.z.ai/api/anthropic"),
             ("ANTHROPIC_AUTH_TOKEN", "test-token-glm"),
             ("ANTHROPIC_MODEL", "glm-4.7"),

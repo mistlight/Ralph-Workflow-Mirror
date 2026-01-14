@@ -20,11 +20,15 @@
 //! This dual-mode support handles both legacy directory-based logs and the current
 //! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
 
-#![expect(clippy::cast_possible_truncation)]
 use serde_json::Value as JsonValue;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
+
+/// Safely convert usize to u32, capping at `u32::MAX` to avoid truncation.
+fn saturate_u32(value: usize) -> u32 {
+    value.try_into().unwrap_or(u32::MAX)
+}
 
 /// Result of extracting content from an agent's JSON log.
 #[derive(Debug, Clone)]
@@ -131,7 +135,7 @@ fn score_result(content: &str) -> u32 {
 
     // Length bonus (slight preference for longer content with same structure)
     // Cap the bonus to avoid length overriding structure
-    let length_bonus = (content.len() as u32).min(500);
+    let length_bonus = saturate_u32(content.len()).min(500);
     score += length_bonus;
 
     score
@@ -458,7 +462,7 @@ fn score_text_plan(content: &str) -> u32 {
 
     // Length bonus (slight preference for longer content with same structure)
     // Cap the bonus to avoid length overriding structure
-    let length_bonus = (content.len() as u32).min(500);
+    let length_bonus = saturate_u32(content.len()).min(500);
     score += length_bonus;
 
     score
@@ -737,7 +741,7 @@ fn validate_plan_content(content: &str) -> (bool, Option<String>) {
 /// Validate issues content.
 ///
 /// Checks if the content looks like valid issues:
-/// - Contains checkboxes (- [ ] or - [x])
+/// - Contains checkboxes (- \[ ] or - \[x])
 /// - Contains severity markers (Critical:, High:, etc.)
 /// - Or contains "no issues" declaration
 fn validate_issues_content(content: &str) -> (bool, Option<String>) {

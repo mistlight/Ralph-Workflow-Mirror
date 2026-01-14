@@ -312,3 +312,13 @@ exit 0
 // - Transient errors like rate limits are classified for retry
 // - Auth failures are classified for fallback
 // The commit message generation code uses this same classification logic.
+
+// Note: The formatted thinking filtering is comprehensively tested in
+// ralph-workflow/src/files/llm_output_extraction.rs via
+// test_regression_formatted_thinking_output_in_logs() which covers:
+// - Simple formatted thinking followed by actual commit message
+// - Formatted thinking with ANSI color codes
+// - Multiple thinking blocks
+// - Thinking content without blank line separator
+// - Only thinking content, no actual commit message
+// - Validation rejects formatted thinking patterns at start
