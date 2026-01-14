@@ -20,6 +20,7 @@
 
 #![expect(clippy::too_many_lines)]
 use regex::Regex;
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 /// Parser types supported by the extraction system.
@@ -971,6 +972,86 @@ fn clean_plain_text(content: &str) -> String {
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Structured commit message from JSON output.
+///
+/// This struct matches the schema we request from the LLM:
+/// `{"subject": "feat: ...", "body": "..."}`
+#[derive(Debug, Deserialize)]
+struct StructuredCommitMessage {
+    subject: String,
+    body: Option<String>,
+}
+
+/// Try to extract commit message from JSON schema output.
+///
+/// This function attempts to parse the LLM output as a structured JSON object
+/// following the schema `{"subject": "...", "body": "..."}`.
+///
+/// # Returns
+///
+/// * `Some(message)` if valid JSON with a valid conventional commit subject was found
+/// * `None` if parsing fails or subject is invalid
+pub fn try_extract_structured_commit(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+
+    // Try direct parse
+    if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(trimmed) {
+        return format_structured_commit(&msg);
+    }
+
+    // Try to find JSON object within content (in case of minor preamble)
+    if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
+            if start < end {
+                let json_str = &trimmed[start..=end];
+                if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(json_str) {
+                    return format_structured_commit(&msg);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Format a structured commit message into the final string format.
+fn format_structured_commit(msg: &StructuredCommitMessage) -> Option<String> {
+    let subject = msg.subject.trim();
+
+    // Validate conventional commit format
+    if !is_conventional_commit_subject(subject) {
+        return None;
+    }
+
+    // Format the commit message
+    match &msg.body {
+        Some(body) if !body.trim().is_empty() => Some(format!("{}\n\n{}", subject, body.trim())),
+        _ => Some(subject.to_string()),
+    }
+}
+
+/// Check if a string is a valid conventional commit subject line.
+fn is_conventional_commit_subject(subject: &str) -> bool {
+    let valid_types = [
+        "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore",
+    ];
+
+    // Find the colon
+    let Some(colon_pos) = subject.find(':') else {
+        return false;
+    };
+
+    let prefix = &subject[..colon_pos];
+
+    // Extract type (before optional scope and !)
+    let type_end = prefix
+        .find('(')
+        .unwrap_or_else(|| prefix.find('!').unwrap_or(prefix.len()));
+    let commit_type = &prefix[..type_end];
+
+    valid_types.contains(&commit_type)
 }
 
 /// Validate extracted content for use as a commit message.
@@ -3195,5 +3276,122 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         let scope = derive_scope_from_path("lib.rs");
         // lib.rs has no meaningful directory scope
         assert!(scope.is_none());
+    }
+
+    // =========================================================================
+    // Structured Commit Message Extraction Tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_valid_json_commit() {
+        let content = r#"{"subject": "feat: add feature", "body": null}"#;
+        let result = try_extract_structured_commit(content);
+        assert_eq!(result, Some("feat: add feature".to_string()));
+    }
+
+    #[test]
+    fn test_extract_json_with_body() {
+        let content = r#"{"subject": "feat: add OAuth", "body": "Implement Google provider."}"#;
+        let result = try_extract_structured_commit(content);
+        assert_eq!(
+            result,
+            Some("feat: add OAuth\n\nImplement Google provider.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_json_with_multiline_body() {
+        let content =
+            r#"{"subject": "feat: add auth", "body": "Line 1.\nLine 2.\n\nParagraph 2."}"#;
+        let result = try_extract_structured_commit(content);
+        assert_eq!(
+            result,
+            Some("feat: add auth\n\nLine 1.\nLine 2.\n\nParagraph 2.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_json_with_whitespace() {
+        let content = "  \n{\"subject\": \"fix: bug\", \"body\": null}\n  ";
+        let result = try_extract_structured_commit(content);
+        assert_eq!(result, Some("fix: bug".to_string()));
+    }
+
+    #[test]
+    fn test_extract_json_with_preamble() {
+        // Should still work - we extract JSON from within content
+        let content = "Here is the commit:\n{\"subject\": \"fix: bug\", \"body\": null}";
+        let result = try_extract_structured_commit(content);
+        assert_eq!(result, Some("fix: bug".to_string()));
+    }
+
+    #[test]
+    fn test_reject_invalid_commit_type() {
+        let content = r#"{"subject": "invalid: not a type", "body": null}"#;
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_reject_missing_colon() {
+        let content = r#"{"subject": "feat add feature", "body": null}"#;
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_analysis_text_not_json() {
+        let content = "Looking at this diff, I see changes.\n\nfeat: add feature";
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_none()); // Not JSON, should fail
+    }
+
+    #[test]
+    fn test_commit_with_scope() {
+        let content = r#"{"subject": "feat(auth): add OAuth2 login", "body": null}"#;
+        let result = try_extract_structured_commit(content);
+        assert_eq!(result, Some("feat(auth): add OAuth2 login".to_string()));
+    }
+
+    #[test]
+    fn test_commit_with_breaking_change_marker() {
+        let content = r#"{"subject": "feat!: drop Python 3.7 support", "body": null}"#;
+        let result = try_extract_structured_commit(content);
+        assert_eq!(result, Some("feat!: drop Python 3.7 support".to_string()));
+    }
+
+    #[test]
+    fn test_commit_with_scope_and_breaking() {
+        let content = r#"{"subject": "feat(api)!: redesign endpoint", "body": null}"#;
+        let result = try_extract_structured_commit(content);
+        assert_eq!(result, Some("feat(api)!: redesign endpoint".to_string()));
+    }
+
+    #[test]
+    fn test_all_valid_commit_types() {
+        let types = [
+            "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore",
+        ];
+        for commit_type in types {
+            let content = format!(r#"{{"subject": "{commit_type}: description", "body": null}}"#);
+            let result = try_extract_structured_commit(&content);
+            assert!(result.is_some(), "Type '{commit_type}' should be valid");
+        }
+    }
+
+    #[test]
+    fn test_empty_body_treated_as_none() {
+        let content = r#"{"subject": "fix: bug", "body": ""}"#;
+        let result = try_extract_structured_commit(content);
+        // Empty body should result in just the subject
+        assert_eq!(result, Some("fix: bug".to_string()));
+    }
+
+    #[test]
+    fn test_whitespace_body_treated_as_none() {
+        let content = r#"{"subject": "fix: bug", "body": "   "}"#;
+        let result = try_extract_structured_commit(content);
+        // Whitespace-only body should result in just the subject
+        assert_eq!(result, Some("fix: bug".to_string()));
     }
 }
