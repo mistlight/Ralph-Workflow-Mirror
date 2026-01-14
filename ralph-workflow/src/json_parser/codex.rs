@@ -1,6 +1,6 @@
 //! Codex CLI JSON parser.
 //!
-//! Parses NDJSON output from OpenAI Codex CLI and formats it for display.
+//! Parses NDJSON output from `OpenAI` Codex CLI and formats it for display.
 //!
 //! # Streaming Output Behavior
 //!
@@ -586,16 +586,10 @@ impl CodexParser {
     fn is_partial_event(event: &CodexEvent) -> bool {
         match event {
             // Item started events for agent_message and reasoning produce streaming content
-            CodexEvent::ItemStarted { item } => {
-                if let Some(item) = item {
-                    matches!(
-                        item.item_type.as_deref(),
-                        Some("agent_message" | "reasoning")
-                    )
-                } else {
-                    false
-                }
-            }
+            CodexEvent::ItemStarted { item: Some(item) } => matches!(
+                item.item_type.as_deref(),
+                Some("agent_message" | "reasoning")
+            ),
             _ => false,
         }
     }
@@ -654,7 +648,7 @@ impl CodexParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{}", output)?;
+                    write!(writer, "{output}")?;
                     writer.flush()?;
                 }
                 None => {

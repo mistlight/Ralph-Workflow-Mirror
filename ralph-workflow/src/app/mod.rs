@@ -237,7 +237,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Run the full pipeline
-    run_pipeline(PipelineContext {
+    run_pipeline(&PipelineContext {
         args,
         config,
         registry,
@@ -271,7 +271,7 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
 }
 
 /// Runs the full development/review/commit pipeline.
-fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
+fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     // Handle --resume
     let resume_checkpoint = handle_resume(
         &ctx.args,
@@ -326,14 +326,12 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Ok(Some(warning)) => {
             ctx.logger.warn(&format!(
-                "PROMPT.md backup created but: {}. Continuing anyway.",
-                warning
+                "PROMPT.md backup created but: {warning}. Continuing anyway.",
             ));
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to create PROMPT.md backup: {}. Continuing anyway.",
-                e
+                "Failed to create PROMPT.md backup: {e}. Continuing anyway.",
             ));
         }
     }
@@ -346,7 +344,7 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
             // Read-only permissions set successfully
         }
         Some(warning) => {
-            ctx.logger.warn(&format!("{}. Continuing anyway.", warning));
+            ctx.logger.warn(&format!("{warning}. Continuing anyway."));
         }
     }
 
@@ -357,8 +355,7 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         Ok(mut monitor) => {
             if let Err(e) = monitor.start() {
                 ctx.logger.warn(&format!(
-                    "Failed to start PROMPT.md monitoring: {}. Continuing anyway.",
-                    e
+                    "Failed to start PROMPT.md monitoring: {e}. Continuing anyway.",
                 ));
                 None
             } else {
@@ -370,8 +367,7 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to create PROMPT.md monitor: {}. Continuing anyway.",
-                e
+                "Failed to create PROMPT.md monitor: {e}. Continuing anyway.",
             ));
             None
         }
@@ -421,9 +417,8 @@ fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to save starting commit: {}. \
+                "Failed to save starting commit: {e}. \
                  Incremental diffs may be unavailable as a result.",
-                e
             ));
             ctx.logger.info(
                 "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",

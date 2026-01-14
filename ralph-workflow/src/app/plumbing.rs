@@ -153,7 +153,7 @@ pub fn handle_generate_commit_msg(
     // - Structured logging to .agent/logs/
     // - Meaningful error diagnostics
     let result = generate_commit_message(&diff, registry, &mut runtime, developer_agent)
-        .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
 
     if !result.success || result.message.trim().is_empty() {
         anyhow::bail!("Commit message generation failed");

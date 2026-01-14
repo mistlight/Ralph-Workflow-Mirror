@@ -837,7 +837,9 @@ mod ccs_env_tests {
 
     #[test]
     fn load_ccs_env_vars_uses_config_json_mapping_and_env_key() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -870,7 +872,9 @@ mod ccs_env_tests {
 
     #[test]
     fn load_ccs_env_vars_from_yaml_config() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -906,7 +910,9 @@ profiles:
 
     #[test]
     fn load_ccs_env_vars_from_yaml_config_with_nonstandard_indent() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -971,7 +977,9 @@ profiles:
 
     #[test]
     fn load_ccs_env_vars_profile_not_found() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -987,13 +995,15 @@ profiles:
             CcsEnvVarsError::ProfileNotFound { profile, .. } => {
                 assert_eq!(profile, "nonexistent");
             }
-            _ => assert!(false, "Expected ProfileNotFound error"),
+            _ => panic!("Expected ProfileNotFound error"),
         }
     }
 
     #[test]
     fn load_ccs_env_vars_alternate_spelling_setting_json() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -1014,7 +1024,9 @@ profiles:
 
     #[test]
     fn load_ccs_env_vars_missing_env_object() {
-        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -1034,7 +1046,7 @@ profiles:
 
         match result.unwrap_err() {
             CcsEnvVarsError::MissingEnv { .. } => {}
-            _ => assert!(false, "Expected MissingEnv error"),
+            _ => panic!("Expected MissingEnv error"),
         }
     }
 
@@ -1048,7 +1060,7 @@ profiles:
             CcsEnvVarsError::InvalidProfile { profile } => {
                 assert_eq!(profile, "");
             }
-            _ => assert!(false, "Expected InvalidProfile error"),
+            _ => panic!("Expected InvalidProfile error"),
         }
     }
 

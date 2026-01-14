@@ -1,6 +1,6 @@
 //! `OpenCode` event parser implementation
 //!
-//! This module handles parsing and displaying OpenCode NDJSON event streams.
+//! This module handles parsing and displaying `OpenCode` NDJSON event streams.
 //!
 //! # Streaming Output Behavior
 //!
@@ -200,11 +200,11 @@ impl OpenCodeParser {
                 drop(in_text);
                 self.in_text_content.borrow_mut().set(false);
 
-                if let Some(ref part) = event.part {
+                event.part.as_ref().map_or_else(String::new, |part| {
                     let reason = part.reason.as_deref().unwrap_or("unknown");
                     let cost = part.cost.unwrap_or(0.0);
 
-                    let tokens_str = if let Some(ref tokens) = part.tokens {
+                    let tokens_str = part.tokens.as_ref().map_or_else(String::new, |tokens| {
                         let input = tokens.input.unwrap_or(0);
                         let output = tokens.output.unwrap_or(0);
                         let reasoning = tokens.reasoning.unwrap_or(0);
@@ -216,9 +216,7 @@ impl OpenCodeParser {
                         } else {
                             String::new()
                         }
-                    } else {
-                        String::new()
-                    };
+                    });
 
                     let is_success = reason == "tool-calls" || reason == "end_turn";
                     let icon = if is_success { CHECK } else { CROSS };
@@ -254,9 +252,7 @@ impl OpenCodeParser {
                     use std::fmt::Write;
                     let _ = writeln!(out, "){}", c.reset());
                     out
-                } else {
-                    String::new()
-                }
+                })
             }
             "tool_use" => {
                 event.part.as_ref().map_or_else(String::new, |part| {
@@ -492,7 +488,7 @@ impl OpenCodeParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{}", output)?;
+                    write!(writer, "{output}")?;
                     writer.flush()?;
                 }
                 None => {

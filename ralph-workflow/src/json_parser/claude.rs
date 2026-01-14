@@ -21,7 +21,7 @@
 //! Hello World\n              (message_stop adds final newline)
 //! ```
 //!
-//! This pattern is consistent across all parsers (Claude, Codex, Gemini, OpenCode)
+//! This pattern is consistent across all parsers (Claude, Codex, Gemini, `OpenCode`)
 //! with variations in when the prefix is shown based on each format's event structure.
 
 #![expect(clippy::too_many_lines)]
@@ -419,13 +419,13 @@ impl ClaudeParser {
                     drop(in_block);
 
                     // Only show prefix on the first chunk of a content block
+                    // Set this before the branches since both do it
+                    self.in_content_block.borrow_mut().set(true);
                     if was_in_block {
                         // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
-                        self.in_content_block.borrow_mut().set(true);
                         format!("{}\r{}", c.white(), sanitized_text)
                     } else {
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                        self.in_content_block.borrow_mut().set(true);
                         format!(
                             "{}[{}]{} {}{}{}",
                             c.dim(),
@@ -485,13 +485,13 @@ impl ClaudeParser {
                 let was_in_block = in_block.get();
                 drop(in_block);
 
+                // Set this before the branches since both do it
+                self.in_content_block.borrow_mut().set(true);
                 if was_in_block {
                     // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
-                    self.in_content_block.borrow_mut().set(true);
                     format!("{}\r{}", c.white(), sanitized_text)
                 } else {
                     // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                    self.in_content_block.borrow_mut().set(true);
                     format!(
                         "{}[{}]{} {}{}{}",
                         c.dim(),
@@ -644,7 +644,7 @@ impl ClaudeParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{}", output)?;
+                    write!(writer, "{output}")?;
                     writer.flush()?;
                 }
                 None => {

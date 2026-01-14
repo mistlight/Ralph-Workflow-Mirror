@@ -974,7 +974,7 @@ fn test_delta_with_embedded_newline_displays_inline() {
 // Verifies that flush() is called after each streaming write to ensure
 // output is displayed immediately rather than being buffered
 
-/// A mock writer that tracks whether flush() is called after each write()
+/// A mock writer that tracks whether `flush()` is called after each `write()`
 struct FlushTrackingWriter {
     write_count: RefCell<usize>,
     flush_count: RefCell<usize>,
@@ -1232,10 +1232,9 @@ fn test_streaming_very_long_text() {
     let long_chunk2 = "b".repeat(200);
 
     let input = format!(
-        r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
-{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
-{{"type":"stream_event","event":{{"type":"message_stop"}}}}"#,
-        long_chunk, long_chunk2
+        r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{long_chunk}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{long_chunk2}"}}}}}}
+{{"type":"stream_event","event":{{"type":"message_stop"}}}}"#
     );
 
     let reader = Cursor::new(input);
@@ -1298,8 +1297,7 @@ fn test_streaming_rapid_chunks() {
     let mut input_lines = Vec::new();
     for i in 0..10 {
         input_lines.push(format!(
-            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"chunk{}"}}}}}}"#,
-            i
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"chunk{i}"}}}}}}"#
         ));
     }
     input_lines.push(r#"{"type":"stream_event","event":{"type":"message_stop"}}"#.to_string());
@@ -1383,7 +1381,7 @@ fn test_streaming_content_block_reset() {
 }
 
 /// Test streaming behavior across multiple parsers for consistency
-/// Verifies that all parsers (Claude, Codex, Gemini, OpenCode) handle streaming consistently
+/// Verifies that all parsers (`Claude`, `Codex`, `Gemini`, `OpenCode`) handle streaming consistently
 #[test]
 fn test_streaming_consistency_across_parsers() {
     use std::io::Cursor;
