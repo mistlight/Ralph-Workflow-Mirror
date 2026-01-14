@@ -1,26 +1,233 @@
-# Bug Fix Plan: Commit Message Thought-Process Leakage
+# Bug Fix Plan: JSON Commit Message in Markdown Code Fence
 
 ## Summary
 
-This bug fix addresses thought-process leakage in AI-generated commit messages, where AI analysis text (e.g., "Looking at this diff...", numbered breakdowns, meta-commentary) was being included alongside the intended commit message. Based on thorough codebase exploration, **the core implementation for this bug fix has already been completed** with a comprehensive 7-layer defense system. The remaining work is:
+The commit message extraction fails when the AI agent outputs a JSON commit message wrapped in a markdown code fence. The current implementation has two issues:
 
-1. Run the verification commands required by CLAUDE.md
-2. Fix a minor formatting issue (`cargo fmt`)
-3. Verify all acceptance criteria are met
+1. **`try_extract_structured_commit`**: When processing raw NDJSON log content, the naive `{...}` search finds the NDJSON stream wrapper objects instead of the actual commit JSON (which is inside a string value of the `result` field, with escaped quotes).
 
-The implementation already includes:
-- **Fix 1 (Structured Output)**: JSON schema extraction with re-prompting on failure
-- **Fix 2 (Leak Gate)**: 12-point validation with 26+ thought-process pattern detection
-- **Fix 3 (Safe Fallback)**: `try_salvage_commit_message()` extracts conventional commits from mixed content
-- **Fix 4 (Prompt Hygiene)**: Explicit JSON-only output instructions
+2. **`remove_thought_process_patterns`**: Even after the Claude extractor correctly extracts the `result` field content, the thought process filtering cannot locate the commit message because `find_conventional_commit_start` requires the commit type (e.g., "fix:") to be at the START of a line. When the commit is in JSON format (`{"subject": "fix(streaming):...}`), the type appears mid-line after `"subject": "`.
+
+**Result**: Both JSON extraction and pattern-based extraction return empty, leading to "Commit message is empty" error.
+
+## Root Cause
+
+Given the log content from a CCS/Claude agent:
+```
+{"type":"result","result":"Looking at the diff...\n\n1. **colors.rs**...\n\n```json\n{\"subject\": \"fix(streaming): ...\", \"body\": \"...\"}\n```"}
+```
+
+**Flow:**
+1. `try_extract_structured_commit` is called on raw NDJSON - finds first `{` (stream wrapper), fails
+2. `extract_claude_result` correctly extracts the `result` string value
+3. `remove_thought_process_patterns` runs on:
+   ```
+   Looking at the diff...
+
+   1. **colors.rs**...
+
+   ```json
+   {"subject": "fix(streaming): ...", "body": "..."}
+   ```
+   ```
+4. It strips "Looking at the diff" prefix, continues with numbered analysis
+5. `find_conventional_commit_start` searches for "fix:" at line start
+6. The JSON `{"subject": "fix(streaming)...` has "fix" mid-line → not found
+7. Content looks like analysis with no valid commit → returns empty string
 
 ## Implementation Steps
 
-### Step 1: Run Required Verification Commands (CLAUDE.md)
+### Step 1: Add code fence JSON extraction to `remove_thought_process_patterns`
 
-Per CLAUDE.md requirements, run the verification commands to confirm no `#[allow(dead_code)]` attributes exist:
+**File**: `ralph-workflow/src/files/llm_output_extraction.rs`
+
+In `remove_thought_process_patterns` (around line 426), before the existing numbered analysis check, add detection and extraction of JSON from markdown code fences:
+
+```rust
+// NEW: Check for JSON commit in markdown code fence
+if let Some(json_commit) = extract_commit_from_code_fence(result) {
+    return json_commit;
+}
+```
+
+Add helper function:
+
+```rust
+/// Extract a commit message from JSON inside a markdown code fence.
+///
+/// Handles patterns like:
+/// ```json
+/// {"subject": "feat: add feature", "body": "description"}
+/// ```
+fn extract_commit_from_code_fence(content: &str) -> Option<String> {
+    let fence_patterns = ["```json\n", "```JSON\n", "```\n"];
+
+    for pattern in fence_patterns {
+        if let Some(start_pos) = content.find(pattern) {
+            let after_fence = &content[start_pos + pattern.len()..];
+            if let Some(end_pos) = after_fence.find("```") {
+                let json_content = after_fence[..end_pos].trim();
+                // Try to parse as structured commit
+                if json_content.starts_with('{') && json_content.ends_with('}') {
+                    if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(json_content) {
+                        return format_structured_commit(&msg);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+```
+
+Note: This requires moving `StructuredCommitMessage` struct and `format_structured_commit` function to be accessible from `remove_thought_process_patterns`, or inlining the logic.
+
+### Step 2: Add code fence handling to `try_extract_structured_commit`
+
+**File**: `ralph-workflow/src/files/llm_output_extraction.rs`
+
+Modify `try_extract_structured_commit` (line 996) to:
+1. First try extracting from NDJSON `result` field if detected
+2. Then try extracting JSON from markdown code fence
+3. Fall back to existing logic
+
+```rust
+pub fn try_extract_structured_commit(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+
+    // NEW: If content looks like NDJSON stream, extract from result field first
+    if looks_like_ndjson(trimmed) {
+        for line in trimmed.lines() {
+            let line = line.trim();
+            if !line.starts_with('{') {
+                continue;
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                if json.get("type").and_then(|v| v.as_str()) == Some("result") {
+                    if let Some(result_str) = json.get("result").and_then(|v| v.as_str()) {
+                        // Try to extract commit from the result content
+                        if let Some(msg) = try_extract_from_text(result_str) {
+                            return Some(msg);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Existing logic (refactored into helper)
+    try_extract_from_text(trimmed)
+}
+
+fn looks_like_ndjson(content: &str) -> bool {
+    content.lines().next().map_or(false, |first_line| {
+        let trimmed = first_line.trim();
+        trimmed.starts_with('{') && trimmed.contains(r#""type""#)
+    })
+}
+
+fn try_extract_from_text(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+
+    // NEW: Try extracting from markdown code fence
+    if let Some(json_content) = extract_json_from_code_fence(trimmed) {
+        if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&json_content) {
+            return format_structured_commit(&msg);
+        }
+    }
+
+    // Existing: Try direct parse
+    if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(trimmed) {
+        return format_structured_commit(&msg);
+    }
+
+    // Existing: Try to find JSON object within content
+    if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
+            if start < end {
+                let json_str = &trimmed[start..=end];
+                if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(json_str) {
+                    return format_structured_commit(&msg);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn extract_json_from_code_fence(content: &str) -> Option<String> {
+    let fence_patterns = ["```json\n", "```JSON\n", "```\n"];
+
+    for pattern in fence_patterns {
+        if let Some(start_pos) = content.find(pattern) {
+            let after_fence = &content[start_pos + pattern.len()..];
+            if let Some(end_pos) = after_fence.find("```") {
+                let json_content = after_fence[..end_pos].trim();
+                if json_content.starts_with('{') && json_content.ends_with('}') {
+                    return Some(json_content.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+```
+
+### Step 3: Add regression tests
+
+**File**: `ralph-workflow/src/files/llm_output_extraction.rs` (test section)
+
+```rust
+#[test]
+fn test_regression_json_in_markdown_code_fence() {
+    // The exact bug scenario: analysis followed by JSON in code fence
+    let content = r#"Looking at the diff, I need to analyze...
+
+1. **colors.rs** - Adds a constant
+2. **claude.rs** - Changes handling
+
+```json
+{"subject": "fix(streaming): improve message lifecycle tracking", "body": "Add turn_counter for ID generation."}
+```
+"#;
+
+    // Test via remove_thought_process_patterns
+    let filtered = remove_thought_process_patterns(content);
+    assert!(filtered.contains("fix(streaming):"), "Should extract commit from code fence");
+    assert!(!filtered.contains("Looking at"), "Should remove analysis");
+}
+
+#[test]
+fn test_structured_commit_from_code_fence() {
+    let content = r#"Here's the commit:
+
+```json
+{"subject": "feat: add feature", "body": "Description here."}
+```
+"#;
+
+    let result = try_extract_structured_commit(content);
+    assert!(result.is_some());
+    assert_eq!(result.unwrap(), "feat: add feature\n\nDescription here.");
+}
+
+#[test]
+fn test_structured_commit_from_ndjson_with_code_fence() {
+    // NDJSON stream with JSON commit in code fence inside result field
+    let ndjson = r#"{"type":"system","session_id":"abc"}
+{"type":"result","result":"Analysis...\n\n```json\n{\"subject\": \"fix: bug\", \"body\": null}\n```"}"#;
+
+    let result = try_extract_structured_commit(ndjson);
+    assert!(result.is_some());
+    assert_eq!(result.unwrap(), "fix: bug");
+}
+```
+
+### Step 4: Run verification commands (per CLAUDE.md)
 
 ```bash
+# Check for forbidden attributes (must produce no output)
 rg -n --pcre2 '(?x)
   \#\s*!?\[\s*
   (allow|expect)
@@ -30,149 +237,46 @@ rg -n --pcre2 '(?x)
   \)
   \s*\]
 ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
-```
 
-**Current State**: Command shows existing `#[expect(...)]` attributes for clippy lints (which are allowed). No `#[allow(dead_code)]` exists.
-
-### Step 2: Fix Formatting Issue
-
-A minor formatting issue exists in `llm_output_extraction.rs:3501`:
-
-```rust
-// Before (single line that's too long):
-let content = "fix(parser): resolve edge case in parsing\n\nfeat: add new feature to the parser";
-
-// After (properly wrapped):
-let content =
-    "fix(parser): resolve edge case in parsing\n\nfeat: add new feature to the parser";
-```
-
-Run: `cargo fmt --all`
-
-### Step 3: Run Clippy
-
-```bash
+# Format, lint, test
+cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
-```
-
-**Current State**: Passes cleanly.
-
-### Step 4: Run All Tests
-
-```bash
 cargo test --all-features
 ```
 
-**Current State**: 704 tests pass, 0 failures.
-
-### Step 5: Verify Regression Tests Cover All Required Scenarios
-
-The PROMPT.md specifies 4 required regression tests. Current coverage:
-
-| Required Test | Implementation |
-|---------------|----------------|
-| 1. Leak + valid commit at bottom | `test_regression_exact_bug_report_output()` at line 3403 |
-| 2. Analysis-only output (no valid subject) | `test_regression_analysis_only_rejected()` at line 3457 |
-| 3. Structured payload with leading noise | `test_regression_json_with_leading_analysis()` at line 3488 |
-| 4. Two candidate commit messages | `test_regression_two_commit_messages_deterministic()` at line 3502 |
-
-All required tests are implemented.
-
-### Step 6: Verify 7-Layer Defense System
-
-The implementation provides a comprehensive defense-in-depth approach:
-
-| Layer | Function | Purpose |
-|-------|----------|---------|
-| 1 | `try_extract_structured_commit()` | Primary JSON schema extraction |
-| 2 | `extract_llm_output()` | Format-specific extraction (Claude, Codex, Gemini, OpenCode) |
-| 3 | `remove_thought_process_patterns()` | Strips 26+ AI analysis prefixes |
-| 4 | `remove_formatted_thinking_patterns()` | Strips CLI display artifacts |
-| 5 | `validate_commit_message()` | 12-point validation gate |
-| 6 | `try_salvage_commit_message()` | Recovery from mixed content |
-| 7 | `generate_fallback_commit_message()` | Deterministic fallback from diff |
-
-### Step 7: Final Verification
-
-After running all commands, verify acceptance criteria:
-
-- [ ] Bug is fixed and no longer occurs (via regression tests)
-- [ ] Reproduction test case added (`test_regression_exact_bug_report_output`)
-- [ ] All existing tests pass (704 tests)
-- [ ] No regressions in related functionality
-- [ ] Error handling is robust with clear messages
-
 ## Critical Files for Implementation
 
-1. **`ralph-workflow/src/files/llm_output_extraction.rs`** - Core implementation with extraction, validation, and recovery logic. Contains the 7-layer defense system and all regression tests. **Only needs formatting fix on line 3501.**
-
-2. **`ralph-workflow/src/phases/commit.rs`** - Commit message generation phase that orchestrates extraction with re-prompting on validation failure.
-
-3. **`ralph-workflow/src/prompts/commit.rs`** - Commit message prompts with explicit JSON-only output requirements.
-
-4. **`tests/commit_message_generation.rs`** - Integration tests verifying end-to-end commit generation.
+1. **`ralph-workflow/src/files/llm_output_extraction.rs`**
+   - Add `extract_json_from_code_fence` helper function
+   - Add `extract_commit_from_code_fence` helper for thought process filtering
+   - Modify `try_extract_structured_commit` to handle NDJSON and code fences
+   - Modify `remove_thought_process_patterns` to check for JSON in code fences
+   - Add regression tests
 
 ## Risks & Mitigations
 
 | Risk | Mitigation |
 |------|------------|
-| **False positives in validation** | The validation patterns are conservative. If too aggressive, the salvage and fallback layers recover gracefully. |
-| **New AI output patterns not covered** | The 26+ pattern list covers common variations. New patterns can be added to `thought_patterns` array in `remove_thought_process_patterns()`. |
-| **Performance overhead from regex** | Validation only runs on extracted content (small strings). Regex patterns are compiled once and reused. |
-| **Agent non-compliance with JSON schema** | Re-prompting with `prompt_strict_json_commit()` provides a second chance. Fallback generation ensures commits always succeed. |
+| **Breaking existing extraction** | New code paths are checked BEFORE existing logic and only activate for specific patterns. Existing tests verify no regression. |
+| **False positive on code fence detection** | Only extract if content inside fence starts with `{` and ends with `}`, and parses as valid JSON with correct schema. |
+| **Performance** | String search for ` ``` ` is O(n), runs only once. NDJSON detection is O(1) - just checks first line. |
+| **Multiple code fences** | Take first valid JSON code fence. If parsing fails, fall through to existing logic. |
 
 ## Verification Strategy
 
-### Required Commands (per CLAUDE.md)
+1. **Unit Tests**: All existing tests pass, new regression tests pass
+2. **Integration**: The exact bug scenario from logs produces correct commit message
+3. **CLAUDE.md Compliance**:
+   - No `#[allow(...)]` or `#[expect(...)]` attributes added
+   - `cargo fmt --all` produces no changes
+   - `cargo clippy --all-targets --all-features -- -D warnings` passes
+   - `cargo test --all-features` passes
 
-```bash
-# 1. Check for prohibited attributes (must produce NO OUTPUT)
-rg -n --pcre2 '(?x)
-  \#\s*!?\[\s*
-  (allow|expect)
-  \s*\(
-    [^()\]]*
-    (?:\([^()\]]*\)[^()\]]*)*
-  \)
-  \s*\]
-' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+## Acceptance Criteria
 
-# 2. Format code
-cargo fmt --all
-
-# 3. Run clippy
-cargo clippy --all-targets --all-features -- -D warnings
-
-# 4. Run tests
-cargo test --all-features
-```
-
-### Manual Verification
-
-1. **Regression test passes**: The exact bug report output is correctly filtered
-2. **Analysis-only content rejected**: Pure analysis without commit message fails validation
-3. **JSON with preamble works**: Structured output extracts even with leading text
-4. **Deterministic extraction**: Two commit messages always resolve the same way
-
-### Success Criteria
-
-- [ ] `cargo fmt --all` produces no changes
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` passes
-- [ ] `cargo test --all-features` shows 704+ tests passing
-- [ ] No `#[allow(dead_code)]` attributes in codebase
-- [ ] All 4 required regression tests are present and passing
-- [ ] 7-layer defense system is complete and documented
-
-## Current Status: Implementation Complete
-
-The bug fix has been fully implemented with:
-
-1. ✅ Structured JSON output enforcement in prompts
-2. ✅ 26+ thought-process pattern filtering
-3. ✅ 12-point validation gate
-4. ✅ Salvage recovery for mixed content
-5. ✅ Deterministic fallback generation
-6. ✅ Re-prompting on validation failure
-7. ✅ Comprehensive regression tests
-
-**Remaining work**: Run verification commands and fix the single formatting issue.
+- [ ] JSON commit in NDJSON result field with code fence is correctly extracted
+- [ ] JSON commit in plain text with code fence is correctly extracted
+- [ ] `remove_thought_process_patterns` handles code fence JSON
+- [ ] All existing tests pass (no regressions)
+- [ ] New regression tests for exact bug scenario pass
+- [ ] CLAUDE.md verification commands succeed
