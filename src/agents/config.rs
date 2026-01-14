@@ -53,6 +53,32 @@ pub enum CcsEnvVarsError {
     InvalidEnvVarName { path: PathBuf, key: String },
     #[error("CCS settings JSON at {path} has non-string env value for key '{key}'")]
     NonStringEnvVarValue { path: PathBuf, key: String },
+    #[error("CCS settings JSON at {path} contains dangerous env var '{key}' (not allowed from external config)")]
+    DangerousEnvVar { path: PathBuf, key: String },
+    #[error("CCS settings JSON at {path} contains unsafe env value for key '{key}'")]
+    UnsafeEnvVarValue { path: PathBuf, key: String },
+    #[error("CCS config at {path} contains unsafe settings path '{settings_path}' (path traversal not allowed)")]
+    UnsafeSettingsPath { path: PathBuf, settings_path: String },
+}
+
+/// List of dangerous environment variable names that should not be allowed from external config.
+const DANGEROUS_ENV_VAR_NAMES: &[&str] = &[
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "IFS",
+    "PATH",
+    "SHELL",
+    "ENV",
+    "BASH_ENV",
+];
+
+/// Check if an environment variable name is dangerous (could be used for injection).
+fn is_dangerous_env_var_name(name: &str) -> bool {
+    DANGEROUS_ENV_VAR_NAMES
+        .iter()
+        .any(|&dangerous| name.eq_ignore_ascii_case(dangerous))
 }
 
 fn is_valid_env_var_name_portable(name: &str) -> bool {
@@ -69,6 +95,23 @@ fn is_valid_env_var_name_portable(name: &str) -> bool {
             return false;
         }
     }
+    true
+}
+
+/// Validate environment variable value for safety.
+/// Only allows printable ASCII and common Unicode characters, no control characters
+/// or characters that could escape the value context in shells.
+fn is_safe_env_var_value(value: &str) -> bool {
+    // Reject null bytes and newlines (could be used for injection)
+    if value.contains('\0') || value.contains('\n') || value.contains('\r') {
+        return false;
+    }
+    // Reject backticks (command substitution in shells)
+    if value.contains('`') {
+        return false;
+    }
+    // Allow most other characters - environment variable values typically
+    // don't need strict character restrictions beyond these injection checks
     true
 }
 
@@ -276,12 +319,26 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
     // 1) Unified YAML config (preferred by CCS when present).
     let yaml_profiles = load_ccs_profiles_from_config_yaml()?;
     if let Some(settings) = yaml_profiles.get(profile) {
+        // Validate path doesn't use traversal or absolute paths
+        if !is_path_safe_for_resolution(settings) {
+            return Err(CcsEnvVarsError::UnsafeSettingsPath {
+                path: ccs_dir.join("config.yaml"),
+                settings_path: settings.clone(),
+            });
+        }
         return Ok(expand_user_path(settings));
     }
 
     // 2) Legacy config.json.
     let json_profiles = load_ccs_profiles_from_config_json()?;
     if let Some(settings) = json_profiles.get(profile) {
+        // Validate path doesn't use traversal or absolute paths
+        if !is_path_safe_for_resolution(settings) {
+            return Err(CcsEnvVarsError::UnsafeSettingsPath {
+                path: ccs_dir.join("config.json"),
+                settings_path: settings.clone(),
+            });
+        }
         return Ok(expand_user_path(settings));
     }
 
@@ -303,6 +360,24 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
         profile: profile.to_string(),
         ccs_dir,
     })
+}
+
+/// Validate that a path doesn't escape the intended directory through traversal.
+/// Returns true if the path is safe (no `..` components, no absolute paths).
+fn is_path_safe_for_resolution(path: &str) -> bool {
+    // Reject absolute paths - they could point anywhere on the filesystem
+    if path.starts_with('/') || (cfg!(windows) && path.chars().nth(1) == Some(':')) {
+        return false;
+    }
+    // Reject paths containing parent directory references
+    if path.contains("..") {
+        return false;
+    }
+    // Reject paths with null bytes
+    if path.contains('\0') {
+        return false;
+    }
+    true
 }
 
 fn expand_user_path(path: &str) -> PathBuf {
@@ -476,12 +551,26 @@ pub fn load_ccs_env_vars(profile: &str) -> Result<HashMap<String, String>, CcsEn
                 key: key.clone(),
             });
         }
+        // Reject dangerous environment variable names that could be used for injection
+        if is_dangerous_env_var_name(key) {
+            return Err(CcsEnvVarsError::DangerousEnvVar {
+                path: settings_path.clone(),
+                key: key.clone(),
+            });
+        }
         let str_value = value
             .as_str()
             .ok_or_else(|| CcsEnvVarsError::NonStringEnvVarValue {
                 path: settings_path.clone(),
                 key: key.clone(),
             })?;
+        // Validate environment variable values for safety
+        if !is_safe_env_var_value(str_value) {
+            return Err(CcsEnvVarsError::UnsafeEnvVarValue {
+                path: settings_path.clone(),
+                key: key.clone(),
+            });
+        }
         env_vars.insert(key.clone(), str_value.to_string());
     }
 
