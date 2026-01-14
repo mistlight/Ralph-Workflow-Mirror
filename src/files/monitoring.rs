@@ -197,10 +197,8 @@ impl PromptMonitor {
             let prompt_exists_now = Path::new("PROMPT.md").exists();
 
             // Detect deletion (transition from exists to not exists)
-            if prompt_existed && !prompt_exists_now {
-                if Self::restore_from_backup() {
-                    restoration_detected.store(true, Ordering::Release);
-                }
+            if prompt_existed && !prompt_exists_now && Self::restore_from_backup() {
+                restoration_detected.store(true, Ordering::Release);
             }
 
             prompt_existed = prompt_exists_now;

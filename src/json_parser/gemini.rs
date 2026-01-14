@@ -5,10 +5,12 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
+use std::rc::Rc;
 
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, GeminiEvent};
+use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, GeminiEvent};
 
 /// Gemini event parser
 pub(crate) struct GeminiParser {
@@ -16,6 +18,8 @@ pub(crate) struct GeminiParser {
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
 }
 
 impl GeminiParser {
@@ -25,6 +29,7 @@ impl GeminiParser {
             verbosity,
             log_file: None,
             display_name: "Gemini".to_string(),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
 
@@ -63,6 +68,8 @@ impl GeminiParser {
             GeminiEvent::Init {
                 session_id, model, ..
             } => {
+                // Clear accumulator on new session
+                self.delta_accumulator.borrow_mut().clear();
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                 let model_str = model.unwrap_or_else(|| "unknown".to_string());
                 format!(
@@ -82,27 +89,59 @@ impl GeminiParser {
                 role,
                 content,
                 delta,
-                ..
             } => {
                 let role_str = role.unwrap_or_else(|| "unknown".to_string());
+                let is_delta = delta.unwrap_or(false);
+
                 if let Some(text) = content {
-                    let limit = self.verbosity.truncate_limit("text");
-                    let preview = truncate_text(&text, limit);
-                    // Show delta indicator if streaming
-                    let delta_marker = if delta.unwrap_or(false) { "..." } else { "" };
-                    if role_str == "assistant" {
-                        format!(
-                            "{}[{}]{} {}{}{}{}\n",
+                    if is_delta && role_str == "assistant" {
+                        // Accumulate delta content
+                        let mut acc = self.delta_accumulator.borrow_mut();
+                        acc.add_delta(ContentType::Text, "main", &text);
+
+                        // In verbose mode, show full accumulated text
+                        if self.verbosity.is_verbose() {
+                            if let Some(full_text) = acc.get(ContentType::Text, "main") {
+                                return Some(format!(
+                                    "{}[{}]{} {}{}{}\n",
+                                    c.dim(),
+                                    prefix,
+                                    c.reset(),
+                                    c.white(),
+                                    full_text,
+                                    c.reset()
+                                ));
+                            }
+                        }
+                        // Normal mode: show delta in real-time
+                        return Some(format!(
+                            "{}[{}]{} {}{}{}\n",
+                            c.dim(),
+                            prefix,
+                            c.reset(),
+                            c.white(),
+                            text,
+                            c.reset()
+                        ));
+                    } else if !is_delta && role_str == "assistant" {
+                        // Non-delta message - clear accumulator and show full content
+                        self.delta_accumulator.borrow_mut().clear();
+                        let limit = self.verbosity.truncate_limit("text");
+                        let preview = truncate_text(&text, limit);
+                        return Some(format!(
+                            "{}[{}]{} {}{}{}\n",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.white(),
                             preview,
-                            delta_marker,
                             c.reset()
-                        )
+                        ));
                     } else {
-                        format!(
+                        // User or other role messages
+                        let limit = self.verbosity.truncate_limit("text");
+                        let preview = truncate_text(&text, limit);
+                        return Some(format!(
                             "{}[{}]{} {}{}:{} {}{}{}\n",
                             c.dim(),
                             prefix,
@@ -113,11 +152,10 @@ impl GeminiParser {
                             c.dim(),
                             preview,
                             c.reset()
-                        )
+                        ));
                     }
-                } else {
-                    String::new()
                 }
+                String::new()
             }
             GeminiEvent::ToolUse {
                 tool_name,
@@ -241,13 +279,31 @@ impl GeminiParser {
                     c.reset()
                 )
             }
-            GeminiEvent::Unknown => String::new(),
+            GeminiEvent::Unknown => {
+                // Use the generic unknown event formatter for consistent handling
+                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+            }
         };
 
         if output.is_empty() {
             None
         } else {
             Some(output)
+        }
+    }
+
+    /// Check if a Gemini event is a control event (state management with no user output)
+    ///
+    /// Control events are valid JSON that represent state transitions rather than
+    /// user-facing content. They should be tracked separately from "ignored" events
+    /// to avoid false health warnings.
+    fn is_control_event(event: &GeminiEvent) -> bool {
+        match event {
+            // Init event is a control event
+            GeminiEvent::Init { .. } => true,
+            // Result event is a control event (aggregated stats, no direct user output)
+            GeminiEvent::Result { .. } => true,
+            _ => false,
         }
     }
 
@@ -275,13 +331,6 @@ impl GeminiParser {
                 continue;
             }
 
-            if trimmed.starts_with('{')
-                && serde_json::from_str::<serde_json::Value>(trimmed).is_err()
-            {
-                monitor.record_parse_error();
-                continue;
-            }
-
             // In debug mode, also show the raw JSON
             if self.verbosity.is_debug() {
                 writeln!(
@@ -295,13 +344,29 @@ impl GeminiParser {
                 )?;
             }
 
+            // Parse the event once - parse_event handles malformed JSON by returning None
             match self.parse_event(&line) {
                 Some(output) => {
                     monitor.record_parsed();
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    monitor.record_ignored();
+                    // Check if this was a control event (state management with no user output)
+                    if trimmed.starts_with('{') {
+                        if let Ok(event) = serde_json::from_str::<GeminiEvent>(&line) {
+                            if Self::is_control_event(&event) {
+                                monitor.record_control_event();
+                            } else {
+                                // Valid JSON but not a control event - track as unknown
+                                monitor.record_unknown_event();
+                            }
+                        } else {
+                            // Failed to deserialize - track as parse error
+                            monitor.record_parse_error();
+                        }
+                    } else {
+                        monitor.record_ignored();
+                    }
                 }
             }
 

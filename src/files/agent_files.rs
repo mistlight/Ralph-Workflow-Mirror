@@ -294,10 +294,10 @@ pub fn write_commit_message_file(message: &str) -> io::Result<()> {
 ///
 /// # Returns
 ///
-/// Returns `Ok(Option<String>)` where:
+/// Returns `io::Result<Option<String>>` where:
 /// - `Ok(None)` - backup created and read-only set successfully
 /// - `Ok(Some(warning))` - backup created but read-only couldn't be set
-/// Returns an error if the backup cannot be created.
+/// - `Err(e)` - if the backup cannot be created
 pub fn create_prompt_backup() -> io::Result<Option<String>> {
     let prompt_path = Path::new("PROMPT.md");
 
