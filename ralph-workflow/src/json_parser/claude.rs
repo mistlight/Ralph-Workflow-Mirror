@@ -461,13 +461,13 @@ impl ClaudeParser {
                 } => {
                     // Handle tool input streaming
                     // Extract the tool input from the delta
-                    let input_str = tool_delta.get("input").map_or_else(
-                        String::new,
-                        |input| match input {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => format_tool_input(other),
-                        },
-                    );
+                    let input_str =
+                        tool_delta
+                            .get("input")
+                            .map_or_else(String::new, |input| match input {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => format_tool_input(other),
+                            });
 
                     if input_str.is_empty() {
                         String::new()

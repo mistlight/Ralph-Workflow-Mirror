@@ -1410,8 +1410,8 @@ fn test_streaming_consistency_across_parsers() {
     );
 
     // Test Codex parser
-    // Note: Codex shows prefix on first item.started AND on item.completed (2 prefixes total)
-    // This is different from Claude which shows prefix only at the start
+    // Note: With StreamingSession, Codex shows prefix only on first item.started (1 prefix)
+    // The completion just adds a newline without re-displaying content
     let codex_parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
     let codex_input = r#"{"type":"item.started","item":{"type":"agent_message","id":"msg1","text":"Hello"}}
 {"type":"item.started","item":{"type":"agent_message","id":"msg1","text":" World"}}
@@ -1427,15 +1427,16 @@ fn test_streaming_consistency_across_parsers() {
         codex_output.contains('\r'),
         "Codex should use carriage returns"
     );
-    // Codex shows prefix on first item.started and on item.completed (2 prefixes)
+    // With StreamingSession, Codex shows prefix only once (no duplicate content)
     assert_eq!(
         codex_output.matches("[Codex]").count(),
-        2,
-        "Codex shows prefix on start and completion"
+        1,
+        "Codex shows prefix only once with StreamingSession"
     );
 
     // Test Gemini parser
-    // Note: Gemini shows prefix on first delta AND on final non-delta message (2 prefixes total)
+    // Note: With StreamingSession, Gemini shows prefix only on first delta (1 prefix)
+    // The final non-delta message just adds a newline without re-displaying content
     let gemini_parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
     let gemini_input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true}
 {"type":"message","role":"assistant","content":" World","delta":true}
@@ -1451,15 +1452,16 @@ fn test_streaming_consistency_across_parsers() {
         gemini_output.contains('\r'),
         "Gemini should use carriage returns"
     );
-    // Gemini shows prefix on first delta and on final non-delta message (2 prefixes)
+    // With StreamingSession, Gemini shows prefix only once (no duplicate content)
     assert_eq!(
         gemini_output.matches("[Gemini]").count(),
-        2,
-        "Gemini shows prefix on first delta and final message"
+        1,
+        "Gemini shows prefix only once with StreamingSession"
     );
 
     // Test OpenCode parser
     // Note: OpenCode shows prefix on first text event AND on step_finish (2 prefixes total)
+    // The step_finish event shows different content (Step finished message) not the text content
     let opencode_parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
     let opencode_input = r#"{"type":"text","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":"Hello"}}
 {"type":"text","timestamp":1768191347232,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":" World"}}
@@ -1475,10 +1477,10 @@ fn test_streaming_consistency_across_parsers() {
         opencode_output.contains('\r'),
         "OpenCode should use carriage returns"
     );
-    // OpenCode shows prefix on first text event and on step_finish (2 prefixes)
+    // OpenCode shows prefix on first text event and step_finish (different content, not duplicate)
     assert_eq!(
         opencode_output.matches("[OpenCode]").count(),
         2,
-        "OpenCode shows prefix on first text and step_finish"
+        "OpenCode shows prefix on text event and step_finish"
     );
 }

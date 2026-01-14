@@ -25,12 +25,13 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
 use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
+use super::streaming_state::StreamingSession;
 use super::types::{
     format_tool_input, format_unknown_json_event, CodexEvent, ContentType, DeltaAccumulator,
 };
@@ -41,10 +42,11 @@ pub struct CodexParser {
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
-    /// Delta accumulator for streaming content
-    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
-    /// Track if we're currently streaming an agent message
-    in_agent_message: Rc<RefCell<Cell<bool>>>,
+    /// Unified streaming session for state tracking
+    streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Delta accumulator for reasoning content (which uses special display)
+    /// Note: We keep this for reasoning only, as it uses `DeltaDisplayFormatter`
+    reasoning_accumulator: Rc<RefCell<DeltaAccumulator>>,
 }
 
 impl CodexParser {
@@ -54,8 +56,8 @@ impl CodexParser {
             verbosity,
             log_file: None,
             display_name: "Codex".to_string(),
-            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
-            in_agent_message: Rc::new(RefCell::new(Cell::new(false))),
+            streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            reasoning_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
 
@@ -106,7 +108,8 @@ impl CodexParser {
             }
             CodexEvent::TurnStarted {} => {
                 // Reset streaming state on new turn
-                self.in_agent_message.borrow_mut().set(false);
+                self.streaming_session.borrow_mut().on_message_start();
+                self.reasoning_accumulator.borrow_mut().clear();
                 format!(
                     "{}[{}]{} {}Turn started{}\n",
                     c.dim(),
@@ -169,21 +172,16 @@ impl CodexParser {
                         Some("agent_message") => {
                             // For streaming support, accumulate partial content
                             if let Some(ref text) = item.text {
-                                let mut acc = self.delta_accumulator.borrow_mut();
-                                acc.add_delta(ContentType::Text, "agent_msg", text);
+                                let mut session = self.streaming_session.borrow_mut();
+                                let show_prefix = session.on_text_delta_key("agent_msg", text);
                                 // Get accumulated text for streaming display
-                                let accumulated_text =
-                                    acc.get(ContentType::Text, "agent_msg").unwrap_or("");
+                                let accumulated_text = session
+                                    .get_accumulated(ContentType::Text, "agent_msg")
+                                    .unwrap_or("");
 
-                                // Check if we're already streaming an agent message
-                                let in_msg = self.in_agent_message.borrow();
-                                let was_in_msg = in_msg.get();
-                                drop(in_msg);
-
-                                // Only show prefix on the first chunk
-                                if was_in_msg {
+                                // Show prefix only on the first chunk
+                                if !show_prefix {
                                     // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                                    self.in_agent_message.borrow_mut().set(true);
                                     return Some(format!(
                                         "{}\x1b[0K\r{}",
                                         c.white(),
@@ -191,7 +189,6 @@ impl CodexParser {
                                     ));
                                 }
                                 // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                                self.in_agent_message.borrow_mut().set(true);
                                 return Some(format!(
                                     "{}[{}]{} {}{}{}",
                                     c.dim(),
@@ -219,7 +216,7 @@ impl CodexParser {
                         Some("reasoning") => {
                             // For streaming support, accumulate reasoning content
                             if let Some(ref text) = item.text {
-                                let mut acc = self.delta_accumulator.borrow_mut();
+                                let mut acc = self.reasoning_accumulator.borrow_mut();
                                 acc.add_delta(ContentType::Thinking, "reasoning", text);
 
                                 // Show reasoning in real-time using delta display formatter
@@ -345,54 +342,30 @@ impl CodexParser {
                     match item.item_type.as_deref() {
                         Some("agent_message") => {
                             // Check if we were streaming an agent message
-                            let in_msg = self.in_agent_message.borrow();
-                            let was_in_msg = in_msg.get();
-                            drop(in_msg);
-                            self.in_agent_message.borrow_mut().set(false);
+                            let session = self.streaming_session.borrow();
+                            let was_streaming = session.has_any_streamed_content();
+                            drop(session);
 
-                            // Show final accumulated message and clear accumulator
-                            let full_text = self
-                                .delta_accumulator
-                                .borrow()
-                                .get(ContentType::Text, "agent_msg")
-                                .map(std::string::ToString::to_string);
-                            self.delta_accumulator
-                                .borrow_mut()
-                                .clear_key(ContentType::Text, "agent_msg");
+                            // Finalize the message
+                            let _was_in_block =
+                                self.streaming_session.borrow_mut().on_message_stop();
 
-                            // Add final newline if we were streaming
-                            let newline_suffix = if was_in_msg {
-                                format!("{}\n", c.reset())
-                            } else {
-                                String::new()
-                            };
-
-                            if let Some(text) = full_text {
-                                let limit = self.verbosity.truncate_limit("agent_msg");
-                                let preview = truncate_text(&text, limit);
-                                return Some(format!(
-                                    "{}[{}]{} {}{}{}{}",
-                                    c.dim(),
-                                    name,
-                                    c.reset(),
-                                    c.white(),
-                                    preview,
-                                    newline_suffix,
-                                    c.reset()
-                                ));
+                            // If content was streamed, just add a final newline and skip re-display
+                            if was_streaming {
+                                return Some(format!("{}\n", c.reset()));
                             }
-                            // Fallback to item text if no accumulated content
+
+                            // Fallback: show item text if no streaming occurred
                             if let Some(ref text) = item.text {
                                 let limit = self.verbosity.truncate_limit("agent_msg");
                                 let preview = truncate_text(text, limit);
                                 return Some(format!(
-                                    "{}[{}]{} {}{}{}{}\n",
+                                    "{}[{}]{} {}{}{}\n",
                                     c.dim(),
                                     name,
                                     c.reset(),
                                     c.white(),
                                     preview,
-                                    newline_suffix,
                                     c.reset()
                                 ));
                             }
@@ -401,11 +374,11 @@ impl CodexParser {
                         Some("reasoning") => {
                             // Clear reasoning accumulator on completion
                             let full_reasoning = self
-                                .delta_accumulator
+                                .reasoning_accumulator
                                 .borrow()
                                 .get(ContentType::Thinking, "reasoning")
                                 .map(std::string::ToString::to_string);
-                            self.delta_accumulator
+                            self.reasoning_accumulator
                                 .borrow_mut()
                                 .clear_key(ContentType::Thinking, "reasoning");
 
