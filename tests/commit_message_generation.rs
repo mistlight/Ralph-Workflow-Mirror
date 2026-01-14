@@ -10,7 +10,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-mod test_support;
+use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -25,9 +25,9 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 }
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
-    let repo = test_support::init_git_repo(dir);
-    test_support::write_file(dir.path().join("initial.txt"), "initial content");
-    test_support::commit_all(&repo, "initial commit");
+    let repo = init_git_repo(dir);
+    write_file(dir.path().join("initial.txt"), "initial content");
+    commit_all(&repo, "initial commit");
     repo
 }
 
@@ -45,7 +45,7 @@ fn test_commit_message_generation_with_simple_diff() {
     let repo = init_repo_with_initial_commit(&dir);
 
     // Make a simple change
-    test_support::write_file(dir.path().join("test.txt"), "new content");
+    write_file(dir.path().join("test.txt"), "new content");
 
     // Create a simple developer script that just creates a plan
     let script_path = dir.path().join("dev_script.sh");
@@ -89,9 +89,9 @@ fn test_commit_message_generation_with_multiple_files() {
     let repo = init_repo_with_initial_commit(&dir);
 
     // Make changes to multiple files
-    test_support::write_file(dir.path().join("file1.txt"), "content 1");
-    test_support::write_file(dir.path().join("file2.txt"), "content 2");
-    test_support::write_file(dir.path().join("file3.rs"), "fn main() {}");
+    write_file(dir.path().join("file1.txt"), "content 1");
+    write_file(dir.path().join("file2.txt"), "content 2");
+    write_file(dir.path().join("file3.rs"), "fn main() {}");
 
     let script_path = dir.path().join("dev_script.sh");
     fs::write(
@@ -130,10 +130,10 @@ fn test_commit_message_uses_full_diff_content() {
     for i in 0..200 {
         content.push_str(&format!("line {}\n", i));
     }
-    test_support::write_file(dir.path().join("large_file.txt"), &content);
+    write_file(dir.path().join("large_file.txt"), &content);
 
     // Commit the initial large file
-    test_support::commit_all(&repo, "add large file");
+    commit_all(&repo, "add large file");
 
     // Modify a line deep in the file (line 150)
     content.clear();
@@ -144,7 +144,7 @@ fn test_commit_message_uses_full_diff_content() {
             content.push_str(&format!("line {}\n", i));
         }
     }
-    test_support::write_file(dir.path().join("large_file.txt"), &content);
+    write_file(dir.path().join("large_file.txt"), &content);
 
     let script_path = dir.path().join("dev_script.sh");
     fs::write(
@@ -179,7 +179,7 @@ fn test_fallback_commit_message_only_on_llm_failure() {
     let _repo = init_repo_with_initial_commit(&dir);
 
     // Make a change
-    test_support::write_file(dir.path().join("test.txt"), "new content");
+    write_file(dir.path().join("test.txt"), "new content");
 
     // Set RALPH_COMMIT_MUST_USE_LLM to make LLM failures hard errors
     // This test uses a non-existent LLM command to force a failure
@@ -225,7 +225,7 @@ fn test_commit_message_with_large_diff_triggers_chunking() {
     // We'll create multiple files with substantial content
     for i in 0..20 {
         let content = "x".repeat(5000); // 5KB per file
-        test_support::write_file(dir.path().join(format!("file_{}.txt", i)), &content);
+        write_file(dir.path().join(format!("file_{}.txt", i)), &content);
     }
 
     let script_path = dir.path().join("dev_script.sh");
@@ -261,7 +261,7 @@ fn test_failed_llm_output_is_saved_for_debugging() {
     let _repo = init_repo_with_initial_commit(&dir);
 
     // Make a change
-    test_support::write_file(dir.path().join("test.txt"), "new content");
+    write_file(dir.path().join("test.txt"), "new content");
 
     let script_path = dir.path().join("dev_script.sh");
     fs::write(

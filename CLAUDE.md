@@ -52,7 +52,7 @@ You **must** run the following commands and ensure they succeed.
 ```bash
 # THIS MUST PRODUCE NO OUTPUT
 grep -RIn --include='*.rs' --exclude-dir target --exclude-dir .git \
-  'allow\s*(\s*dead_code\s*)' .
+  '^[[:space:]]*#\[[[:space:]]*allow[[:space:]]*(\([^)]*\))[[:space:]]*\]' .
 
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings

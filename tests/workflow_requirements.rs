@@ -3,8 +3,7 @@ use std::fs;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
-mod test_support;
-use test_support::{commit_all, init_git_repo};
+use test_helpers::{commit_all, init_git_repo, write_file};
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
@@ -467,7 +466,7 @@ fn ralph_apply_commit_creates_commit() {
     let repo = init_git_repo(&dir);
 
     // Create an initial commit so the repo has a HEAD.
-    test_support::write_file(dir.path().join("initial.txt"), "initial");
+    write_file(dir.path().join("initial.txt"), "initial");
     commit_all(&repo, "initial");
 
     // Create a new file to commit
@@ -518,11 +517,11 @@ fn ralph_generate_commit_msg_creates_message_file() {
     let repo = init_git_repo(&dir);
 
     // Create an initial commit so the repo is not empty
-    test_support::write_file(dir.path().join("initial.txt"), "initial content");
+    write_file(dir.path().join("initial.txt"), "initial content");
     commit_all(&repo, "initial commit");
 
     // Now create a change to test with
-    test_support::write_file(dir.path().join("initial.txt"), "updated content");
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     // Create a script that generates a commit message
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
@@ -552,11 +551,11 @@ fn ralph_generate_commit_msg_fails_if_agent_doesnt_create_file() {
     let repo = init_git_repo(&dir);
 
     // Create an initial commit so there is a HEAD to diff against.
-    test_support::write_file(dir.path().join("initial.txt"), "initial content");
+    write_file(dir.path().join("initial.txt"), "initial content");
     commit_all(&repo, "initial commit");
 
     // Create a change in the repository to have something to diff.
-    test_support::write_file(dir.path().join("initial.txt"), "updated content");
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)

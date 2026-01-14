@@ -15,7 +15,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// Default agents.toml template embedded at compile time.
-pub const DEFAULT_AGENTS_TOML: &str = include_str!("../../examples/agents.toml");
+pub const DEFAULT_AGENTS_TOML: &str = include_str!("../../../examples/agents.toml");
 
 /// Subset of CCS' legacy `~/.ccs/config.json` format.
 ///

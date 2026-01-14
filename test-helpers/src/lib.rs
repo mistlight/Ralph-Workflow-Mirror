@@ -28,11 +28,8 @@ pub fn init_git_repo(dir: &TempDir) -> Repository {
     repo
 }
 
-// Test support utilities - used by integration tests but flagged as dead code
-// because each test file is compiled as a separate binary. These functions
-// are genuinely used across multiple test files (see git_workflow.rs,
-// workflow_requirements.rs, commit_message_generation.rs).
-#[allow(dead_code)]
+// Test support utilities for integration tests.
+// These functions are used across multiple test files.
 pub fn write_file<P: AsRef<Path>>(path: P, contents: &str) {
     if let Some(parent) = path.as_ref().parent() {
         if !parent.as_os_str().is_empty() {
@@ -42,7 +39,6 @@ pub fn write_file<P: AsRef<Path>>(path: P, contents: &str) {
     fs::write(path, contents).expect("write file");
 }
 
-#[allow(dead_code)]
 pub fn commit_all(repo: &Repository, message: &str) -> Oid {
     stage_all(repo);
 
@@ -65,7 +61,6 @@ pub fn commit_all(repo: &Repository, message: &str) -> Oid {
     }
 }
 
-#[allow(dead_code)]
 pub fn head_oid(repo: &Repository) -> String {
     repo.head()
         .ok()
@@ -74,7 +69,6 @@ pub fn head_oid(repo: &Repository) -> String {
         .unwrap_or_default()
 }
 
-#[allow(dead_code)]
 pub fn stage_all(repo: &Repository) {
     let mut index = repo.index().expect("open index");
 

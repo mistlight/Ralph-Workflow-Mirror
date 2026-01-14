@@ -56,22 +56,22 @@ impl PromptTemplate {
     pub fn content(self) -> &'static str {
         match self {
             Self::FeatureSpec => {
-                include_str!("../../templates/prompts/feature-spec.md")
+                include_str!("../../../templates/prompts/feature-spec.md")
             }
             Self::BugFix => {
-                include_str!("../../templates/prompts/bug-fix.md")
+                include_str!("../../../templates/prompts/bug-fix.md")
             }
             Self::Refactor => {
-                include_str!("../../templates/prompts/refactor.md")
+                include_str!("../../../templates/prompts/refactor.md")
             }
             Self::Test => {
-                include_str!("../../templates/prompts/test.md")
+                include_str!("../../../templates/prompts/test.md")
             }
             Self::Docs => {
-                include_str!("../../templates/prompts/docs.md")
+                include_str!("../../../templates/prompts/docs.md")
             }
             Self::Quick => {
-                include_str!("../../templates/prompts/quick.md")
+                include_str!("../../../templates/prompts/quick.md")
             }
         }
     }
