@@ -254,7 +254,14 @@ fn extract_claude_result(content: &str) -> Option<String> {
                                 message.get("content").and_then(|v| v.as_array())
                             {
                                 for block in content_arr {
-                                    if block.get("type").and_then(|v| v.as_str()) == Some("text") {
+                                    let block_type = block.get("type").and_then(|v| v.as_str());
+                                    // Skip thinking/reasoning blocks - only extract text content
+                                    if block_type == Some("thinking")
+                                        || block_type == Some("reasoning")
+                                    {
+                                        continue;
+                                    }
+                                    if block_type == Some("text") {
                                         if let Some(text) =
                                             block.get("text").and_then(|v| v.as_str())
                                         {
@@ -719,6 +726,69 @@ mod tests {
         let result = extract_llm_output(content, Some(OutputFormat::Claude));
         // Empty result should fall back
         assert!(!result.was_structured || result.content.is_empty());
+    }
+
+    // =========================================================================
+    // Thinking Content Filtering Tests (Regression)
+    // =========================================================================
+
+    #[test]
+    fn test_claude_filters_thinking_blocks_from_assistant_message() {
+        // Test that thinking content blocks are filtered out from assistant messages
+        let content = r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Looking at this diff, I can see..."},{"type":"text","text":"feat: add new feature"}]}}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "feat: add new feature");
+        assert!(!result.content.contains("Looking at this diff"));
+    }
+
+    #[test]
+    fn test_claude_filters_reasoning_blocks_from_assistant_message() {
+        // Test that reasoning content blocks are also filtered out
+        let content = r#"{"type":"assistant","message":{"content":[{"type":"reasoning","reasoning":"Let me analyze this..."},{"type":"text","text":"fix: resolve parsing issue"}]}}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        assert_eq!(result.content, "fix: resolve parsing issue");
+        assert!(!result.content.contains("analyze"));
+    }
+
+    #[test]
+    fn test_claude_filters_multiple_thinking_and_text_blocks() {
+        // Test mixed content blocks with multiple thinking blocks
+        // Note: The extraction only keeps the LAST text block, not concatenation
+        let content = r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"First thought..."},{"type":"text","text":"docs: update"},{"type":"thinking","thinking":"Second thought..."},{"type":"text","text":" documentation"}]}}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        // Should only extract the last text block (not concatenated)
+        assert_eq!(result.content, " documentation");
+        assert!(!result.content.contains("First thought"));
+        assert!(!result.content.contains("Second thought"));
+    }
+
+    #[test]
+    fn test_claude_result_field_with_thinking_blocks_present() {
+        // Test when thinking blocks are present but result field has the commit message
+        let content = r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Analyzing the changes..."}]}}
+{"type":"result","result":"chore: improve performance"}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        assert!(result.was_structured);
+        // Should prefer the result field over assistant message
+        assert_eq!(result.content, "chore: improve performance");
+        assert!(!result.content.contains("Analyzing"));
+    }
+
+    #[test]
+    fn test_claude_only_thinking_blocks_falls_back_to_empty() {
+        // Test when only thinking blocks exist (no text blocks)
+        let content = r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"This is only thinking content"}]}}"#;
+
+        let result = extract_llm_output(content, Some(OutputFormat::Claude));
+        // Should return empty since no text content exists
+        assert!(result.content.is_empty() || !result.was_structured);
     }
 
     // =========================================================================
