@@ -4,7 +4,7 @@
 
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::Args;
-use crate::colors::Colors;
+use crate::logger::Colors;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use std::process::Command;
 
@@ -117,7 +117,7 @@ pub fn run_final_validation(
         return Ok(());
     }
 
-    let argv = crate::utils::split_command(full_cmd)
+    let argv = crate::cli::split_command(full_cmd)
         .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {e}"))?;
     if argv.is_empty() {
         ctx.logger
@@ -139,7 +139,7 @@ pub fn run_final_validation(
 
     ctx.logger
         .header("PHASE 3: Final Validation", Colors::yellow);
-    let display_cmd = crate::utils::format_argv_for_log(&argv);
+    let display_cmd = crate::cli::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running full check: {}{}{}",
         ctx.colors.dim(),

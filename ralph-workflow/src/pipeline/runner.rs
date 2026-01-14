@@ -14,13 +14,12 @@
 use crate::agents::{
     is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType,
 };
-use crate::colors::Colors;
+use crate::cli::{format_argv_for_log, split_command, truncate_text};
 use crate::config::Config;
+use crate::logger::Colors;
 use crate::logger::Logger;
-use crate::output::{argv_requests_json, format_generic_json_for_display};
-use crate::platform::Platform;
-use crate::timer::Timer;
-use crate::utils::{format_argv_for_log, split_command, truncate_text};
+use crate::logger::{argv_requests_json, format_generic_json_for_display};
+use crate::pipeline::Timer;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;

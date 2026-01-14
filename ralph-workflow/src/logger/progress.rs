@@ -4,7 +4,7 @@
 
 #![expect(clippy::cast_possible_truncation)]
 
-use crate::colors::Colors;
+use super::Colors;
 
 /// Print a progress bar with percentage and counts.
 ///

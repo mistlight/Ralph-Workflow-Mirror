@@ -1,8 +1,8 @@
 //! Tests for JSON parsers.
 
 use super::*;
-use crate::colors::Colors;
 use crate::config::Verbosity;
+use crate::logger::Colors;
 use std::cell::RefCell;
 use std::io::{self, Cursor, Write};
 
@@ -761,7 +761,7 @@ fn test_claude_parser_tracks_partial_events_in_health_monitoring() {
 #[test]
 fn test_health_monitor_no_warning_with_high_partial_percentage() {
     use super::health::HealthMonitor;
-    use crate::colors::Colors;
+    use crate::logger::Colors;
 
     let monitor = HealthMonitor::new("test");
     let colors = Colors { enabled: false };
@@ -786,7 +786,7 @@ fn test_health_monitor_no_warning_with_high_partial_percentage() {
 #[test]
 fn test_health_monitor_warning_only_for_parse_errors() {
     use super::health::HealthMonitor;
-    use crate::colors::Colors;
+    use crate::logger::Colors;
 
     let monitor = HealthMonitor::new("test");
     let colors = Colors { enabled: false };

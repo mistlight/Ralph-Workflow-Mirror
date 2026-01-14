@@ -7,8 +7,8 @@
 //! - Validating agent chain configuration
 
 use crate::agents::AgentRegistry;
-use crate::colors::Colors;
 use crate::config::Config;
+use crate::logger::Colors;
 use std::path::Path;
 
 /// Result of agent validation containing the resolved agent names.

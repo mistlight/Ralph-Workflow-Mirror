@@ -5,12 +5,12 @@
 
 use crate::banner::print_final_summary;
 use crate::checkpoint::clear_checkpoint;
-use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::monitoring::PromptMonitor;
+use crate::logger::Colors;
 use crate::logger::Logger;
+use crate::pipeline::Timer;
 use crate::pipeline::{AgentPhaseGuard, Stats};
-use crate::timer::Timer;
 
 /// Finalizes the pipeline: cleans up and prints summary.
 ///

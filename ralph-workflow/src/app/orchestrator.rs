@@ -13,8 +13,8 @@ use crate::files::{
 };
 use crate::git_helpers::{cleanup_orphaned_marker, save_start_commit, start_agent_phase};
 use crate::phases::PhaseContext;
+use crate::pipeline::Timer;
 use crate::pipeline::{AgentPhaseGuard, Stats};
-use crate::timer::Timer;
 
 use super::context::PipelineContext;
 use super::detection::detect_project_stack;

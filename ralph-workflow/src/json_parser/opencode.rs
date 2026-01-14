@@ -23,9 +23,9 @@
 #![expect(clippy::too_many_lines)]
 #![expect(clippy::items_after_statements)]
 
-use crate::colors::{Colors, CHECK, CROSS};
+use crate::cli::truncate_text;
 use crate::config::Verbosity;
-use crate::utils::truncate_text;
+use crate::logger::{Colors, CHECK, CROSS};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::io::{self, BufRead, Write};

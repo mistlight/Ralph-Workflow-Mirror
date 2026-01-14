@@ -14,17 +14,17 @@
 #![expect(clippy::too_many_arguments)]
 #![expect(clippy::too_many_lines)]
 use crate::agents::{AgentRegistry, AgentRole};
-use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::llm_output_extraction::{
     extract_llm_output, generate_fallback_commit_message, try_extract_structured_commit,
     try_salvage_commit_message, validate_commit_message, CommitExtractionResult, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
+use crate::logger::Colors;
 use crate::logger::Logger;
+use crate::pipeline::Timer;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
-use crate::prompts::{prompt_generate_commit_message_with_diff, prompt_strict_json_commit};
-use crate::timer::Timer;
+use crate::prompts::prompt_generate_commit_message_with_diff;
 use std::fs::{self, File};
 use std::io::Read;
 

@@ -5,13 +5,13 @@
 
 use super::*;
 use crate::agents::{AgentRegistry, JsonParserType};
-use crate::colors::Colors;
+use crate::cli::split_command;
 use crate::config::Config;
 use crate::config::Verbosity;
+use crate::logger::argv_requests_json;
+use crate::logger::Colors;
 use crate::logger::Logger;
-use crate::output::argv_requests_json;
-use crate::timer::Timer;
-use crate::utils::split_command;
+use crate::pipeline::Timer;
 use std::collections::HashMap;
 
 #[cfg(unix)]

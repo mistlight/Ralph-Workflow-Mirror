@@ -253,7 +253,7 @@ pub fn cleanup_agent_phase_silent() {
     end_agent_phase();
     cleanup_git_wrapper_dir_silent();
     uninstall_hooks_silent();
-    crate::utils::cleanup_generated_files();
+    crate::files::cleanup_generated_files();
 }
 
 /// Clean up orphaned .`no_agent_commit` marker.

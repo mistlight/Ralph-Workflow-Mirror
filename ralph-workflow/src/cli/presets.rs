@@ -3,8 +3,8 @@
 //! Presets allow users to quickly configure Ralph for common use cases
 //! without specifying individual agent options.
 
-use crate::colors::Colors;
 use crate::config::{Config, ReviewDepth};
+use crate::logger::Colors;
 use clap::ValueEnum;
 
 /// Preset configurations for common agent combinations.

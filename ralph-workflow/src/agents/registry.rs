@@ -448,7 +448,7 @@ impl AgentRegistry {
     /// Check if an agent is available (command exists and is executable).
     pub fn is_agent_available(&self, name: &str) -> bool {
         if let Some(config) = self.resolve_config(name) {
-            let Ok(parts) = crate::utils::split_command(&config.cmd) else {
+            let Ok(parts) = crate::cli::split_command(&config.cmd) else {
                 return false;
             };
             let Some(base_cmd) = parts.first() else {
