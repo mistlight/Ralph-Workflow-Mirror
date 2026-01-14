@@ -16,17 +16,8 @@ pub enum Preset {
     Opencode,
 }
 
-/// Apply CLI arguments to the configuration.
-///
-/// This function merges CLI arguments into the existing config, handling:
-/// - Verbosity flags (--quiet, --full, --debug, -v LEVEL)
-/// - Preset configurations (--preset)
-/// - Quick mode (--quick)
-/// - Agent and model overrides
-/// - Isolation mode
-#[allow(clippy::too_many_lines)]
-pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Colors) {
-    // Handle verbosity shorthand flags (--quiet, --full, --debug take precedence)
+/// Apply verbosity configuration from CLI arguments.
+fn apply_verbosity_config(args: &super::Args, config: &mut Config) {
     let base_verbosity = config.verbosity;
     config.verbosity = if args.quiet {
         crate::config::Verbosity::Quiet
@@ -39,21 +30,27 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
     } else {
         base_verbosity
     };
+}
 
-    // Apply preset (CLI/env preset overrides env-selected agents, but can be overridden by
-    // explicit --developer-agent/--reviewer-agent flags below).
-    if let Some(preset) = args.preset.clone() {
-        match preset {
-            Preset::Default => {
-                // No override; use agent_chain defaults from the unified config / built-ins
-            }
-            Preset::Opencode => {
-                config.developer_agent = Some("opencode".to_string());
-                config.reviewer_agent = Some("opencode".to_string());
-            }
+/// Apply preset configuration from CLI arguments.
+fn apply_preset_config(args: &super::Args, config: &mut Config) {
+    let Some(ref preset) = args.preset else {
+        return;
+    };
+
+    match preset {
+        Preset::Default => {
+            // No override; use agent_chain defaults from the unified config / built-ins
+        }
+        Preset::Opencode => {
+            config.developer_agent = Some("opencode".to_string());
+            config.reviewer_agent = Some("opencode".to_string());
         }
     }
+}
 
+/// Apply quick/rapid mode configuration from CLI arguments.
+const fn apply_quick_rapid_mode(args: &super::Args, config: &mut Config) {
     // Quick mode: 1 developer iteration, 1 review pass (explicit flags override)
     if args.quick {
         if args.developer_iters.is_none() {
@@ -80,6 +77,10 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
     if let Some(reviews) = args.reviewer_reviews {
         config.reviewer_reviews = reviews;
     }
+}
+
+/// Apply agent and model configuration from CLI arguments.
+fn apply_agent_model_config(args: &super::Args, config: &mut Config) {
     if let Some(agent) = args.developer_agent.clone() {
         config.developer_agent = Some(agent);
     }
@@ -101,21 +102,30 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
     if let Some(parser) = args.reviewer_json_parser.clone() {
         config.reviewer_json_parser = Some(parser);
     }
-    if let Some(depth) = args.review_depth.clone() {
-        if let Some(parsed) = ReviewDepth::from_str(&depth) {
-            config.review_depth = parsed;
-        } else {
-            eprintln!(
-                "{}{}Warning:{} Unknown review depth '{}'. Using default (standard).",
-                colors.bold(),
-                colors.yellow(),
-                colors.reset(),
-                depth
-            );
-            eprintln!("Valid options: standard, comprehensive, security, incremental");
-        }
-    }
+}
 
+/// Apply review depth configuration from CLI arguments.
+fn apply_review_depth_config(args: &super::Args, config: &mut Config, colors: Colors) {
+    let Some(ref depth) = args.review_depth else {
+        return;
+    };
+
+    if let Some(parsed) = ReviewDepth::from_str(depth) {
+        config.review_depth = parsed;
+    } else {
+        eprintln!(
+            "{}{}Warning:{} Unknown review depth '{}'. Using default (standard).",
+            colors.bold(),
+            colors.yellow(),
+            colors.reset(),
+            depth
+        );
+        eprintln!("Valid options: standard, comprehensive, security, incremental");
+    }
+}
+
+/// Apply isolation mode configuration from CLI arguments.
+const fn apply_isolation_config(args: &super::Args, config: &mut Config) {
     // Handle --no-isolation flag (CLI overrides env var)
     if args.no_isolation {
         config.isolation_mode = false;
@@ -129,6 +139,10 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
     if args.no_container_mode {
         config.container_mode = false;
     }
+}
+
+/// Apply container configuration from CLI arguments.
+fn apply_container_config(args: &super::Args, config: &mut Config) {
     // Container engine override
     if let Some(engine) = args.container_engine.clone() {
         let engine = engine.trim();
@@ -147,8 +161,10 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
     if args.no_network {
         config.container_network = false;
     }
+}
 
-    // Git user identity (CLI args have highest priority)
+/// Apply git identity configuration from CLI arguments.
+fn apply_git_identity_config(args: &super::Args, config: &mut Config) {
     if let Some(name) = args.git_user_name.clone() {
         let name = name.trim();
         if !name.is_empty() {
@@ -161,4 +177,23 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
             config.git_user_email = Some(email.to_string());
         }
     }
+}
+
+/// Apply CLI arguments to the configuration.
+///
+/// This function merges CLI arguments into the existing config, handling:
+/// - Verbosity flags (--quiet, --full, --debug, -v LEVEL)
+/// - Preset configurations (--preset)
+/// - Quick mode (--quick)
+/// - Agent and model overrides
+/// - Isolation mode
+pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Colors) {
+    apply_verbosity_config(args, config);
+    apply_preset_config(args, config);
+    apply_quick_rapid_mode(args, config);
+    apply_agent_model_config(args, config);
+    apply_review_depth_config(args, config, colors);
+    apply_isolation_config(args, config);
+    apply_container_config(args, config);
+    apply_git_identity_config(args, config);
 }

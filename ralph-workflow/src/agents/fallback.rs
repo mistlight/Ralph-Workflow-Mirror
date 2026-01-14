@@ -83,9 +83,9 @@ pub struct FallbackConfig {
     /// Base delay between retries in milliseconds.
     #[serde(default = "default_retry_delay_ms")]
     pub retry_delay_ms: u64,
-    /// Multiplier for exponential backoff (default: 2.0).
+    /// Multiplier for exponential backoff (default: 2).
     #[serde(default = "default_backoff_multiplier")]
-    pub backoff_multiplier: f64,
+    pub backoff_multiplier: u64,
     /// Maximum backoff delay in milliseconds (default: 60000 = 1 minute).
     #[serde(default = "default_max_backoff_ms")]
     pub max_backoff_ms: u64,
@@ -102,8 +102,8 @@ const fn default_retry_delay_ms() -> u64 {
     1000
 }
 
-const fn default_backoff_multiplier() -> f64 {
-    2.0
+const fn default_backoff_multiplier() -> u64 {
+    2
 }
 
 const fn default_max_backoff_ms() -> u64 {
@@ -134,18 +134,20 @@ impl FallbackConfig {
     /// Calculate exponential backoff delay for a given cycle.
     ///
     /// Uses the formula: min(base * multiplier^cycle, `max_backoff`)
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
+    ///
+    /// Uses saturating integer arithmetic for safety.
     pub fn calculate_backoff(&self, cycle: u32) -> u64 {
-        // Use f64 for the calculation with powf to avoid casting issues
-        // Note: The values involved (milliseconds, typically 1000-60000) are well within
-        // f64's 52-bit mantissa precision, and truncation is safe due to .min() capping.
-        let delay = self.retry_delay_ms as f64 * self.backoff_multiplier.powf(f64::from(cycle));
-        // Cast back to u64, clamping to max_backoff_ms
-        (delay.min(self.max_backoff_ms as f64)) as u64
+        // Calculate base * multiplier^cycle using saturating arithmetic
+        let mut delay = self.retry_delay_ms;
+        for _ in 0..cycle {
+            delay = delay.saturating_mul(self.backoff_multiplier);
+            // Early exit to avoid unnecessary computation
+            if delay >= self.max_backoff_ms {
+                return self.max_backoff_ms;
+            }
+        }
+
+        delay.min(self.max_backoff_ms)
     }
 
     /// Get fallback agents for a role.
@@ -199,7 +201,7 @@ mod tests {
         assert!(config.commit.is_empty());
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.retry_delay_ms, 1000);
-        assert!((config.backoff_multiplier - 2.0).abs() < f64::EPSILON);
+        assert_eq!(config.backoff_multiplier, 2);
         assert_eq!(config.max_backoff_ms, 60000);
         assert_eq!(config.max_cycles, 3);
     }
@@ -208,7 +210,7 @@ mod tests {
     fn test_fallback_config_calculate_backoff() {
         let config = FallbackConfig {
             retry_delay_ms: 1000,
-            backoff_multiplier: 2.0,
+            backoff_multiplier: 2,
             max_backoff_ms: 60000,
             ..Default::default()
         };

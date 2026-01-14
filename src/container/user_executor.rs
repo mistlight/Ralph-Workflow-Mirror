@@ -130,6 +130,130 @@ fn is_safe_env_var_value(value: &str) -> bool {
     true
 }
 
+/// Validate and insert an environment variable into the enhanced environment.
+///
+/// Returns an error if the environment variable is invalid, otherwise inserts it.
+fn validate_and_insert_env_var(
+    enhanced: &mut HashMap<String, String>,
+    key: &str,
+    value: &str,
+    source: &str,
+) -> ContainerResult<()> {
+    // Skip dangerous environment variables
+    if is_dangerous_env_var_name(key) {
+        return Ok(());
+    }
+
+    // Validate value safety
+    if !is_safe_env_var_value(value) {
+        return Err(ContainerError::Other(format!(
+            "{source} environment variable value for '{key}' contains dangerous characters"
+        )));
+    }
+
+    // Validate basic format
+    if key.contains('\0') || value.contains('\0') {
+        return Err(ContainerError::Other(format!(
+            "{source} environment variable contains null byte which is invalid"
+        )));
+    }
+    if key.contains('\n') || value.contains('\n') || key.contains('\r') || value.contains('\r') {
+        return Err(ContainerError::Other(format!(
+            "{source} environment variable contains newline which is invalid for sudo --env"
+        )));
+    }
+    if key.contains('=') {
+        return Err(ContainerError::Other(format!(
+            "{source} environment variable name contains '=' which is invalid"
+        )));
+    }
+
+    enhanced.insert(key.to_string(), value.to_string());
+    Ok(())
+}
+
+/// Check if an environment variable key is for a language tool.
+///
+/// This determines if we should preserve the environment variable for
+/// language version managers and tools.
+fn is_language_env_var(key_upper: &str) -> bool {
+    key_upper.contains("NODE")
+        || key_upper.contains("NPM")
+        || key_upper.contains("PYTHON")
+        || key_upper.contains("RUBY")
+        || key_upper.contains("GEM")
+        || key_upper.contains("RBENV")
+        || key_upper.contains("RVM")
+        || key_upper.contains("JAVA")
+        || key_upper.contains("GO")
+        || key_upper.contains("GOPATH")
+        || key_upper.contains("GOROOT")
+        || key_upper.contains("CARGO")
+        || key_upper.contains("RUST")
+        || key_upper.contains("RUSTUP")
+        || key_upper.contains("PHP")
+        || key_upper.contains("COMPOSER")
+        || key_upper.contains("MIX")
+        || key_upper.contains("ELIXIR")
+        || key_upper.contains("ERL")
+        || key_upper.contains("GRADLE")
+        || key_upper.contains("MAVEN")
+        || key_upper.contains("M2")
+        || key_upper.contains("PIP")
+        || key_upper.contains("PYENV")
+        || key_upper.contains("VIRTUAL_ENV")
+        || key_upper.contains("CONDA")
+        || key_upper.contains("PERL")
+        || key_upper.contains("PERL5LIB")
+        || key_upper.contains("SCALA")
+        || key_upper.contains("SBT")
+        || key_upper.contains("NVM")
+        || key_upper.contains("NODE_VERSION")
+        || key_upper.contains("JENV")
+        || key_upper.contains("SDKMAN")
+        || key_upper.contains("SWIFT")
+        || key_upper.contains("SWIFTENV")
+}
+
+/// Add language-specific environment variables to the enhanced environment.
+///
+/// This preserves environment variables for language version managers
+/// and tools (rbenv, nvm, pyenv, etc.).
+fn add_language_env_vars(enhanced: &mut HashMap<String, String>) {
+    for (key, value) in env::vars() {
+        // Skip dangerous environment variables
+        if is_dangerous_env_var_name(&key) {
+            continue;
+        }
+
+        // Validate value safety
+        if !is_safe_env_var_value(&value) {
+            continue;
+        }
+
+        let key_upper = key.to_uppercase();
+        if is_language_env_var(&key_upper) {
+            enhanced.entry(key).or_insert(value);
+        }
+    }
+}
+
+/// Add language manager shims to PATH.
+///
+/// This ensures version manager shims (rbenv, nvm, pyenv, etc.) are available.
+fn add_language_shims(enhanced: &mut HashMap<String, String>, current_home: &str) {
+    let path = enhanced
+        .entry("PATH".to_string())
+        .or_insert_with(|| env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".to_string()));
+
+    for shim_path in LANGUAGE_MANAGER_SHIMS {
+        let full_path = format!("{current_home}/{shim_path}");
+        if Path::new(&full_path).exists() && !path.contains(shim_path) {
+            *path = format!("{}:{}", full_path, path.as_str());
+        }
+    }
+}
+
 /// User account executor
 ///
 /// Runs commands as a dedicated user for filesystem isolation.
@@ -284,7 +408,6 @@ impl UserAccountExecutor {
     }
 
     /// Build enhanced environment with platform-specific paths
-    #[allow(clippy::too_many_lines)]
     fn build_enhanced_environment(
         &self,
         env_vars: &HashMap<String, String>,
@@ -292,80 +415,14 @@ impl UserAccountExecutor {
     ) -> ContainerResult<HashMap<String, String>> {
         let mut enhanced = HashMap::new();
 
-        // First, add all provided environment variables
+        // Add all provided environment variables
         for (key, value) in env_vars {
-            // Skip dangerous environment variables
-            if is_dangerous_env_var_name(key) {
-                continue;
-            }
-
-            // Validate value safety
-            if !is_safe_env_var_value(value) {
-                return Err(ContainerError::Other(format!(
-                    "Environment variable value for '{key}' contains dangerous characters"
-                )));
-            }
-
-            // Validate basic format
-            if key.contains('\0') || value.contains('\0') {
-                return Err(ContainerError::Other(
-                    "Environment variable contains null byte which is invalid".to_string(),
-                ));
-            }
-            if key.contains('\n')
-                || value.contains('\n')
-                || key.contains('\r')
-                || value.contains('\r')
-            {
-                return Err(ContainerError::Other(
-                    "Environment variable contains newline which is invalid for sudo --env"
-                        .to_string(),
-                ));
-            }
-            if key.contains('=') {
-                return Err(ContainerError::Other(
-                    "Environment variable name contains '=' which is invalid".to_string(),
-                ));
-            }
-            enhanced.insert(key.clone(), value.clone());
+            validate_and_insert_env_var(&mut enhanced, key, value, "Environment variable")?;
         }
 
         // Add execution option environment variables
         for (key, value) in &options.env_vars {
-            // Skip dangerous environment variables
-            if is_dangerous_env_var_name(key) {
-                continue;
-            }
-
-            // Validate value safety
-            if !is_safe_env_var_value(value) {
-                return Err(ContainerError::Other(
-                    format!("Execution option environment variable value for '{key}' contains dangerous characters"),
-                ));
-            }
-
-            if key.contains('\0') || value.contains('\0') {
-                return Err(ContainerError::Other(
-                    "Execution option environment variable contains null byte which is invalid"
-                        .to_string(),
-                ));
-            }
-            if key.contains('\n')
-                || value.contains('\n')
-                || key.contains('\r')
-                || value.contains('\r')
-            {
-                return Err(ContainerError::Other(
-                    "Execution option environment variable contains newline which is invalid for sudo --env".to_string(),
-                ));
-            }
-            if key.contains('=') {
-                return Err(ContainerError::Other(
-                    "Execution option environment variable name contains '=' which is invalid"
-                        .to_string(),
-                ));
-            }
-            enhanced.insert(key.clone(), value.clone());
+            validate_and_insert_env_var(&mut enhanced, key, value, "Execution option")?;
         }
 
         // Get current user's home directory for language manager paths
@@ -378,7 +435,6 @@ impl UserAccountExecutor {
 
         // On macOS, inject Homebrew paths
         if cfg!(target_os = "macos") {
-            // Add Homebrew to PATH if not already present
             let path = enhanced.entry("PATH".to_string()).or_insert_with(|| {
                 env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".to_string())
             });
@@ -390,13 +446,8 @@ impl UserAccountExecutor {
                 }
             }
 
-            // Add language manager shims to PATH
-            for shim_path in LANGUAGE_MANAGER_SHIMS {
-                let full_path = format!("{current_home}/{shim_path}");
-                if Path::new(&full_path).exists() && !path.contains(shim_path) {
-                    *path = format!("{}:{}", full_path, path.as_str());
-                }
-            }
+            // Add language manager shims
+            add_language_shims(&mut enhanced, &current_home);
 
             // Preserve Homebrew environment variables
             for env_var in HOMEBREW_ENV_VARS {
@@ -406,127 +457,13 @@ impl UserAccountExecutor {
             }
 
             // Preserve language-specific environment variables
-            for (key, value) in env::vars() {
-                // Skip dangerous environment variables
-                if is_dangerous_env_var_name(&key) {
-                    continue;
-                }
-
-                // Validate value safety
-                if !is_safe_env_var_value(&value) {
-                    continue;
-                }
-
-                let key_upper = key.to_uppercase();
-                if key_upper.contains("NODE")
-                    || key_upper.contains("NPM")
-                    || key_upper.contains("PYTHON")
-                    || key_upper.contains("RUBY")
-                    || key_upper.contains("GEM")
-                    || key_upper.contains("RBENV")
-                    || key_upper.contains("RVM")
-                    || key_upper.contains("JAVA")
-                    || key_upper.contains("GO")
-                    || key_upper.contains("GOPATH")
-                    || key_upper.contains("GOROOT")
-                    || key_upper.contains("CARGO")
-                    || key_upper.contains("RUST")
-                    || key_upper.contains("RUSTUP")
-                    || key_upper.contains("PHP")
-                    || key_upper.contains("COMPOSER")
-                    || key_upper.contains("MIX")
-                    || key_upper.contains("ELIXIR")
-                    || key_upper.contains("ERL")
-                    || key_upper.contains("GRADLE")
-                    || key_upper.contains("MAVEN")
-                    || key_upper.contains("M2")
-                    || key_upper.contains("PIP")
-                    || key_upper.contains("PYENV")
-                    || key_upper.contains("VIRTUAL_ENV")
-                    || key_upper.contains("CONDA")
-                    || key_upper.contains("PERL")
-                    || key_upper.contains("PERL5LIB")
-                    || key_upper.contains("SCALA")
-                    || key_upper.contains("SBT")
-                    || key_upper.contains("NVM")
-                    || key_upper.contains("NODE_VERSION")
-                    || key_upper.contains("JENV")
-                    || key_upper.contains("SDKMAN")
-                    || key_upper.contains("SWIFT")
-                    || key_upper.contains("SWIFTENV")
-                {
-                    enhanced.entry(key).or_insert(value);
-                }
-            }
+            add_language_env_vars(&mut enhanced);
         }
 
-        // On Linux, also add language manager shims
+        // On Linux, add language manager shims
         if cfg!(target_os = "linux") {
-            let path = enhanced.entry("PATH".to_string()).or_insert_with(|| {
-                env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".to_string())
-            });
-
-            // Add language manager shims to PATH
-            for shim_path in LANGUAGE_MANAGER_SHIMS {
-                let full_path = format!("{current_home}/{shim_path}");
-                if Path::new(&full_path).exists() && !path.contains(shim_path) {
-                    *path = format!("{}:{}", full_path, path.as_str());
-                }
-            }
-
-            // Preserve language-specific environment variables (same as macOS)
-            for (key, value) in env::vars() {
-                // Skip dangerous environment variables
-                if is_dangerous_env_var_name(&key) {
-                    continue;
-                }
-
-                // Validate value safety
-                if !is_safe_env_var_value(&value) {
-                    continue;
-                }
-
-                let key_upper = key.to_uppercase();
-                if key_upper.contains("NODE")
-                    || key_upper.contains("NPM")
-                    || key_upper.contains("PYTHON")
-                    || key_upper.contains("RUBY")
-                    || key_upper.contains("GEM")
-                    || key_upper.contains("RBENV")
-                    || key_upper.contains("RVM")
-                    || key_upper.contains("JAVA")
-                    || key_upper.contains("GO")
-                    || key_upper.contains("GOPATH")
-                    || key_upper.contains("GOROOT")
-                    || key_upper.contains("CARGO")
-                    || key_upper.contains("RUST")
-                    || key_upper.contains("RUSTUP")
-                    || key_upper.contains("PHP")
-                    || key_upper.contains("COMPOSER")
-                    || key_upper.contains("MIX")
-                    || key_upper.contains("ELIXIR")
-                    || key_upper.contains("ERL")
-                    || key_upper.contains("GRADLE")
-                    || key_upper.contains("MAVEN")
-                    || key_upper.contains("M2")
-                    || key_upper.contains("PIP")
-                    || key_upper.contains("PYENV")
-                    || key_upper.contains("VIRTUAL_ENV")
-                    || key_upper.contains("CONDA")
-                    || key_upper.contains("PERL")
-                    || key_upper.contains("PERL5LIB")
-                    || key_upper.contains("SCALA")
-                    || key_upper.contains("SBT")
-                    || key_upper.contains("NVM")
-                    || key_upper.contains("NODE_VERSION")
-                    || key_upper.contains("JENV")
-                    || key_upper.contains("SDKMAN")
-                    || key_upper.contains("SWIFT")
-                    || key_upper.contains("SWIFTENV")
-                {
-                    enhanced.entry(key).or_insert(value);
-                }
-            }
+            add_language_shims(&mut enhanced, &current_home);
+            add_language_env_vars(&mut enhanced);
         }
 
         Ok(enhanced)
@@ -556,10 +493,10 @@ impl UserAccountExecutor {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         // Parse "uid=1001(ralph-agent) gid=1001(ralph-agent) groups=1001(ralph-agent)"
-        let _info = stdout.trim();
+        let info = stdout.trim();
         Ok(Some(UserInfo {
             name: user_name.to_string(),
-            _info: _info.to_string(),
+            _info: info.to_string(),
         }))
     }
 

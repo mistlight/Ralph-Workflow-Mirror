@@ -243,6 +243,139 @@ impl AgentRegistry {
         }
     }
 
+    /// Apply CCS aliases from unified config.
+    ///
+    /// Returns the number of CCS aliases loaded.
+    fn apply_ccs_aliases_config(&mut self, unified: &crate::config::UnifiedConfig) -> usize {
+        if unified.ccs_aliases.is_empty() {
+            return 0;
+        }
+
+        let aliases: HashMap<_, _> = unified
+            .ccs_aliases
+            .iter()
+            .map(|(name, v)| (name.clone(), v.as_config()))
+            .collect();
+        self.set_ccs_aliases(&aliases, unified.ccs.clone());
+        unified.ccs_aliases.len()
+    }
+
+    /// Apply agent overrides from unified config.
+    ///
+    /// Handles both new agent definitions and merging with existing agents.
+    /// Returns the number of agents loaded.
+    fn apply_agents_config(&mut self, unified: &crate::config::UnifiedConfig) -> usize {
+        let mut loaded = 0usize;
+
+        for (name, overrides) in &unified.agents {
+            let Some(existing) = self.agents.get(name).cloned() else {
+                // New agent definition: require a non-empty command.
+                let Some(cmd) = overrides
+                    .cmd
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                else {
+                    continue;
+                };
+
+                let json_parser = overrides
+                    .json_parser
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("generic");
+
+                self.register(
+                    name,
+                    AgentConfig {
+                        cmd: cmd.to_string(),
+                        output_flag: overrides.output_flag.clone().unwrap_or_default(),
+                        yolo_flag: overrides.yolo_flag.clone().unwrap_or_default(),
+                        verbose_flag: overrides.verbose_flag.clone().unwrap_or_default(),
+                        can_commit: overrides.can_commit.unwrap_or(true),
+                        json_parser: JsonParserType::parse(json_parser),
+                        model_flag: overrides.model_flag.clone(),
+                        print_flag: overrides.print_flag.clone().unwrap_or_default(),
+                        streaming_flag: overrides.streaming_flag.clone().unwrap_or_else(|| {
+                            // Default to "--include-partial-messages" for Claude/CCS agents
+                            if cmd.starts_with("claude") || cmd.starts_with("ccs") {
+                                "--include-partial-messages".to_string()
+                            } else {
+                                String::new()
+                            }
+                        }),
+                        env_vars: std::collections::HashMap::new(),
+                        display_name: overrides
+                            .display_name
+                            .as_ref()
+                            .filter(|s| !s.is_empty())
+                            .cloned(),
+                    },
+                );
+                loaded += 1;
+                continue;
+            };
+
+            // Merge with existing agent
+            let merged = AgentConfig {
+                cmd: overrides
+                    .cmd
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or(existing.cmd),
+                output_flag: overrides
+                    .output_flag
+                    .clone()
+                    .unwrap_or(existing.output_flag),
+                yolo_flag: overrides.yolo_flag.clone().unwrap_or(existing.yolo_flag),
+                verbose_flag: overrides
+                    .verbose_flag
+                    .clone()
+                    .unwrap_or(existing.verbose_flag),
+                can_commit: overrides.can_commit.unwrap_or(existing.can_commit),
+                json_parser: overrides
+                    .json_parser
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map_or(existing.json_parser, JsonParserType::parse),
+                model_flag: if overrides.model_flag.is_some() {
+                    overrides.model_flag.clone()
+                } else {
+                    existing.model_flag
+                },
+                print_flag: overrides.print_flag.clone().unwrap_or(existing.print_flag),
+                streaming_flag: overrides
+                    .streaming_flag
+                    .clone()
+                    .unwrap_or(existing.streaming_flag),
+                env_vars: existing.env_vars.clone(),
+                // Preserve existing display name unless explicitly overridden
+                // Empty string explicitly clears the display name
+                display_name: match &overrides.display_name {
+                    Some(s) if s.is_empty() => None,
+                    Some(s) => Some(s.clone()),
+                    None => existing.display_name,
+                },
+            };
+
+            self.register(name, merged);
+            loaded += 1;
+        }
+
+        loaded
+    }
+
+    /// Apply agent chain fallback from unified config.
+    fn apply_agent_chain_config(&mut self, unified: &crate::config::UnifiedConfig) {
+        if let Some(chain) = &unified.agent_chain {
+            self.fallback = chain.clone();
+        }
+    }
+
     /// Apply settings from the unified config (`~/.config/ralph-workflow.toml`).
     ///
     /// This merges (in increasing priority):
@@ -250,124 +383,10 @@ impl AgentRegistry {
     /// 2. Unified config: `[agents]`, `[ccs_aliases]`, and `[agent_chain]` (if present)
     ///
     /// Returns the number of agents loaded from unified config, including CCS aliases.
-    #[allow(clippy::too_many_lines)]
     pub fn apply_unified_config(&mut self, unified: &crate::config::UnifiedConfig) -> usize {
-        let mut loaded = 0usize;
-
-        if !unified.ccs_aliases.is_empty() {
-            loaded += unified.ccs_aliases.len();
-            let aliases: HashMap<_, _> = unified
-                .ccs_aliases
-                .iter()
-                .map(|(name, v)| (name.clone(), v.as_config()))
-                .collect();
-            self.set_ccs_aliases(&aliases, unified.ccs.clone());
-        }
-
-        if !unified.agents.is_empty() {
-            for (name, overrides) in &unified.agents {
-                let Some(existing) = self.agents.get(name).cloned() else {
-                    // New agent definition: require a non-empty command.
-                    let Some(cmd) = overrides
-                        .cmd
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                    else {
-                        continue;
-                    };
-
-                    let json_parser = overrides
-                        .json_parser
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or("generic");
-
-                    self.register(
-                        name,
-                        AgentConfig {
-                            cmd: cmd.to_string(),
-                            output_flag: overrides.output_flag.clone().unwrap_or_default(),
-                            yolo_flag: overrides.yolo_flag.clone().unwrap_or_default(),
-                            verbose_flag: overrides.verbose_flag.clone().unwrap_or_default(),
-                            can_commit: overrides.can_commit.unwrap_or(true),
-                            json_parser: JsonParserType::parse(json_parser),
-                            model_flag: overrides.model_flag.clone(),
-                            print_flag: overrides.print_flag.clone().unwrap_or_default(),
-                            streaming_flag: overrides.streaming_flag.clone().unwrap_or_else(|| {
-                                // Default to "--include-partial-messages" for Claude/CCS agents
-                                if cmd.starts_with("claude") || cmd.starts_with("ccs") {
-                                    "--include-partial-messages".to_string()
-                                } else {
-                                    String::new()
-                                }
-                            }),
-                            env_vars: std::collections::HashMap::new(),
-                            display_name: overrides
-                                .display_name
-                                .as_ref()
-                                .filter(|s| !s.is_empty())
-                                .cloned(),
-                        },
-                    );
-                    loaded += 1;
-                    continue;
-                };
-
-                let merged = AgentConfig {
-                    cmd: overrides
-                        .cmd
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_string)
-                        .unwrap_or(existing.cmd),
-                    output_flag: overrides
-                        .output_flag
-                        .clone()
-                        .unwrap_or(existing.output_flag),
-                    yolo_flag: overrides.yolo_flag.clone().unwrap_or(existing.yolo_flag),
-                    verbose_flag: overrides
-                        .verbose_flag
-                        .clone()
-                        .unwrap_or(existing.verbose_flag),
-                    can_commit: overrides.can_commit.unwrap_or(existing.can_commit),
-                    json_parser: overrides
-                        .json_parser
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map_or(existing.json_parser, JsonParserType::parse),
-                    model_flag: if overrides.model_flag.is_some() {
-                        overrides.model_flag.clone()
-                    } else {
-                        existing.model_flag
-                    },
-                    print_flag: overrides.print_flag.clone().unwrap_or(existing.print_flag),
-                    streaming_flag: overrides
-                        .streaming_flag
-                        .clone()
-                        .unwrap_or(existing.streaming_flag),
-                    env_vars: existing.env_vars.clone(),
-                    // Preserve existing display name unless explicitly overridden
-                    // Empty string explicitly clears the display name
-                    display_name: match &overrides.display_name {
-                        Some(s) if s.is_empty() => None,
-                        Some(s) => Some(s.clone()),
-                        None => existing.display_name,
-                    },
-                };
-
-                self.register(name, merged);
-                loaded += 1;
-            }
-        }
-
-        if let Some(chain) = &unified.agent_chain {
-            self.fallback = chain.clone();
-        }
-
+        let mut loaded = self.apply_ccs_aliases_config(unified);
+        loaded += self.apply_agents_config(unified);
+        self.apply_agent_chain_config(unified);
         loaded
     }
 

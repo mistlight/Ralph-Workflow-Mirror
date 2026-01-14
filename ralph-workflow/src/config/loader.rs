@@ -53,27 +53,7 @@ pub fn load_config_from_path(
     let mut warnings = Vec::new();
 
     // Try to load unified config from specified path or default
-    #[allow(clippy::option_if_let_else)]
-    let unified = if let Some(path) = config_path {
-        if path.exists() {
-            match UnifiedConfig::load_from_path(path) {
-                Ok(cfg) => Some(cfg),
-                Err(e) => {
-                    warnings.push(format!(
-                        "Failed to load config from {}: {}",
-                        path.display(),
-                        e
-                    ));
-                    None
-                }
-            }
-        } else {
-            warnings.push(format!("Config file not found: {}", path.display()));
-            None
-        }
-    } else {
-        UnifiedConfig::load_default()
-    };
+    let unified = load_unified_config(config_path, &mut warnings);
 
     // Start with defaults, then apply unified config if found
     let config = if let Some(ref unified_cfg) = unified {
@@ -90,20 +70,45 @@ pub fn load_config_from_path(
     (config, unified, warnings)
 }
 
+/// Load unified config from the specified path or default location.
+fn load_unified_config(
+    config_path: Option<&std::path::Path>,
+    warnings: &mut Vec<String>,
+) -> Option<UnifiedConfig> {
+    config_path.map_or_else(
+        || UnifiedConfig::load_default(),
+        |path| load_config_from_specified_path(path, warnings),
+    )
+}
+
+/// Load unified config from a specified path.
+fn load_config_from_specified_path(
+    path: &std::path::Path,
+    warnings: &mut Vec<String>,
+) -> Option<UnifiedConfig> {
+    if path.exists() {
+        match UnifiedConfig::load_from_path(path) {
+            Ok(cfg) => Some(cfg),
+            Err(e) => {
+                warnings.push(format!(
+                    "Failed to load config from {}: {}",
+                    path.display(),
+                    e
+                ));
+                None
+            }
+        }
+    } else {
+        warnings.push(format!("Config file not found: {}", path.display()));
+        None
+    }
+}
+
 /// Create a Config from `UnifiedConfig`.
 fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> Config {
     let general = &unified.general;
 
-    #[allow(clippy::option_if_let_else)]
-    let review_depth = if let Some(d) = ReviewDepth::from_str(&general.review_depth) {
-        d
-    } else {
-        warnings.push(format!(
-            "Invalid review_depth '{}' in config; falling back to 'standard'.",
-            general.review_depth
-        ));
-        ReviewDepth::default()
-    };
+    let review_depth = parse_review_depth(&general.review_depth, warnings);
 
     // Warn if container_mode is explicitly disabled
     if !general.container_mode {
@@ -207,60 +212,39 @@ fn default_config() -> Config {
     }
 }
 
+/// Parse review depth from string, adding a warning if invalid.
+fn parse_review_depth(depth_str: &str, warnings: &mut Vec<String>) -> ReviewDepth {
+    match ReviewDepth::from_str(depth_str) {
+        Some(d) => d,
+        None => {
+            warnings.push(format!(
+                "Invalid review_depth '{}' in config; falling back to 'standard'.",
+                depth_str
+            ));
+            ReviewDepth::default()
+        }
+    }
+}
+
 /// Apply environment variable overrides to config.
-#[allow(clippy::too_many_lines)]
 fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config {
-    const MAX_ITERS: u32 = 50;
-    const MAX_REVIEWS: u32 = 10;
-    const MAX_CONTEXT: u8 = 2;
+    apply_agent_env_overrides(&mut config, warnings);
+    apply_command_env_overrides(&mut config, warnings);
+    apply_model_provider_env_overrides(&mut config);
+    apply_boolean_env_overrides(&mut config, warnings);
+    apply_verbosity_env_override(&mut config, warnings);
+    apply_review_depth_env_override(&mut config, warnings);
+    apply_path_env_overrides(&mut config);
+    apply_context_env_overrides(&mut config, warnings);
+    apply_git_identity_env_overrides(&mut config, warnings);
+    apply_container_env_overrides(&mut config, warnings);
 
-    fn parse_u32_env(name: &str, warnings: &mut Vec<String>, max: u32) -> Option<u32> {
-        let raw = std::env::var(name).ok()?;
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        match trimmed.parse::<u32>() {
-            Ok(n) if n <= max => Some(n),
-            Ok(n) => {
-                warnings.push(format!(
-                    "Env var {name}={n} is too large; clamping to {max}."
-                ));
-                Some(max)
-            }
-            Err(_) => {
-                warnings.push(format!(
-                    "Env var {name}='{trimmed}' is not a valid number; ignoring."
-                ));
-                None
-            }
-        }
-    }
+    config
+}
 
-    fn parse_u8_env(name: &str, warnings: &mut Vec<String>, max: u8) -> Option<u8> {
-        let raw = std::env::var(name).ok()?;
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        match trimmed.parse::<u8>() {
-            Ok(n) if n <= max => Some(n),
-            Ok(n) => {
-                warnings.push(format!(
-                    "Env var {name}={n} is out of range; clamping to {max}."
-                ));
-                Some(max)
-            }
-            Err(_) => {
-                warnings.push(format!(
-                    "Env var {name}='{trimmed}' is not a valid number; ignoring."
-                ));
-                None
-            }
-        }
-    }
-
-    // Agent selection
+/// Apply agent selection environment variables.
+fn apply_agent_env_overrides(config: &mut Config, warnings: &mut Vec<String>) {
+    // RALPH_DEVELOPER_AGENT
     if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT") {
         let trimmed = val.trim();
         if trimmed.is_empty() {
@@ -268,14 +252,19 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
         } else {
             config.developer_agent = Some(trimmed.to_string());
         }
-    } else if let Ok(val) = env::var("RALPH_DRIVER_AGENT") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_DRIVER_AGENT is empty; ignoring.".to_string());
-        } else {
-            config.developer_agent = Some(trimmed.to_string());
+    }
+    // Legacy alias RALPH_DRIVER_AGENT
+    if config.developer_agent.is_none() {
+        if let Ok(val) = env::var("RALPH_DRIVER_AGENT") {
+            let trimmed = val.trim();
+            if trimmed.is_empty() {
+                warnings.push("Env var RALPH_DRIVER_AGENT is empty; ignoring.".to_string());
+            } else {
+                config.developer_agent = Some(trimmed.to_string());
+            }
         }
     }
+    // RALPH_REVIEWER_AGENT
     if let Ok(val) = env::var("RALPH_REVIEWER_AGENT") {
         let trimmed = val.trim();
         if trimmed.is_empty() {
@@ -284,8 +273,11 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
             config.reviewer_agent = Some(trimmed.to_string());
         }
     }
+}
 
-    // Command overrides
+/// Apply command override environment variables.
+fn apply_command_env_overrides(config: &mut Config, warnings: &mut Vec<String>) {
+    // RALPH_DEVELOPER_CMD
     if let Ok(val) = env::var("RALPH_DEVELOPER_CMD") {
         let trimmed = val.trim();
         if trimmed.is_empty() {
@@ -294,6 +286,7 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
             config.developer_cmd = Some(trimmed.to_string());
         }
     }
+    // RALPH_REVIEWER_CMD
     if let Ok(val) = env::var("RALPH_REVIEWER_CMD") {
         let trimmed = val.trim();
         if trimmed.is_empty() {
@@ -302,59 +295,53 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
             config.reviewer_cmd = Some(trimmed.to_string());
         }
     }
+    // FAST_CHECK_CMD
+    if let Ok(val) = env::var("FAST_CHECK_CMD") {
+        if !val.is_empty() {
+            config.fast_check_cmd = Some(val);
+        }
+    }
+    // FULL_CHECK_CMD
+    if let Ok(val) = env::var("FULL_CHECK_CMD") {
+        if !val.is_empty() {
+            config.full_check_cmd = Some(val);
+        }
+    }
+}
 
-    // Model overrides
+/// Apply model and provider environment variables.
+fn apply_model_provider_env_overrides(config: &mut Config) {
     if let Ok(val) = env::var("RALPH_DEVELOPER_MODEL") {
         config.developer_model = Some(val);
     }
     if let Ok(val) = env::var("RALPH_REVIEWER_MODEL") {
         config.reviewer_model = Some(val);
     }
-
-    // Provider overrides
     if let Ok(val) = env::var("RALPH_DEVELOPER_PROVIDER") {
         config.developer_provider = Some(val);
     }
     if let Ok(val) = env::var("RALPH_REVIEWER_PROVIDER") {
         config.reviewer_provider = Some(val);
     }
-
-    // JSON parser override for reviewer (useful for testing different parsers)
     if let Ok(val) = env::var("RALPH_REVIEWER_JSON_PARSER") {
         let trimmed = val.trim();
         if !trimmed.is_empty() {
             config.reviewer_json_parser = Some(trimmed.to_string());
         }
     }
+}
 
-    // Force universal review prompt (useful for problematic agents)
+/// Apply boolean flag environment variables.
+fn apply_boolean_env_overrides(config: &mut Config, warnings: &mut Vec<String>) {
+    const MAX_ITERS: u32 = 50;
+    const MAX_REVIEWS: u32 = 10;
+
+    // Boolean flags
     if let Ok(val) = env::var("RALPH_REVIEWER_UNIVERSAL_PROMPT") {
         if let Some(b) = parse_env_bool(&val) {
             config.force_universal_prompt = b;
         }
     }
-
-    // Iteration counts
-    if let Some(n) = parse_u32_env("RALPH_DEVELOPER_ITERS", warnings, MAX_ITERS) {
-        config.developer_iters = n;
-    }
-    if let Some(n) = parse_u32_env("RALPH_REVIEWER_REVIEWS", warnings, MAX_REVIEWS) {
-        config.reviewer_reviews = n;
-    }
-
-    // Check commands
-    if let Ok(val) = env::var("FAST_CHECK_CMD") {
-        if !val.is_empty() {
-            config.fast_check_cmd = Some(val);
-        }
-    }
-    if let Ok(val) = env::var("FULL_CHECK_CMD") {
-        if !val.is_empty() {
-            config.full_check_cmd = Some(val);
-        }
-    }
-
-    // Boolean flags
     if let Ok(val) = env::var("RALPH_INTERACTIVE") {
         if let Some(b) = parse_env_bool(&val) {
             config.interactive = b;
@@ -381,26 +368,65 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
         }
     }
 
-    // Verbosity
+    // Iteration counts
+    let mut parse_u32 = |name: &str, max: u32| -> Option<u32> {
+        let raw = env::var(name).ok()?;
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        match trimmed.parse::<u32>() {
+            Ok(n) if n <= max => Some(n),
+            Ok(n) => {
+                warnings.push(format!(
+                    "Env var {name}={n} is too large; clamping to {max}."
+                ));
+                Some(max)
+            }
+            Err(_) => {
+                warnings.push(format!(
+                    "Env var {name}='{trimmed}' is not a valid number; ignoring."
+                ));
+                None
+            }
+        }
+    };
+
+    if let Some(n) = parse_u32("RALPH_DEVELOPER_ITERS", MAX_ITERS) {
+        config.developer_iters = n;
+    }
+    if let Some(n) = parse_u32("RALPH_REVIEWER_REVIEWS", MAX_REVIEWS) {
+        config.reviewer_reviews = n;
+    }
+}
+
+/// Apply verbosity environment variable.
+fn apply_verbosity_env_override(config: &mut Config, warnings: &mut Vec<String>) {
     if let Ok(val) = env::var("RALPH_VERBOSITY") {
         let trimmed = val.trim();
         if trimmed.is_empty() {
-            // ignore
-        } else if let Ok(n) = trimmed.parse::<u8>() {
-            if n > 4 {
+            return;
+        }
+        match trimmed.parse::<u8>() {
+            Ok(n) => {
+                if n > 4 {
+                    warnings.push(format!(
+                        "Env var RALPH_VERBOSITY={n} is out of range; clamping to 4 (debug)."
+                    ));
+                }
+                config.verbosity = Verbosity::from(n.min(4));
+            }
+            Err(_) => {
                 warnings.push(format!(
-                    "Env var RALPH_VERBOSITY={n} is out of range; clamping to 4 (debug)."
+                    "Env var RALPH_VERBOSITY='{trimmed}' is not a valid number; ignoring."
                 ));
             }
-            config.verbosity = Verbosity::from(n.min(4));
-        } else {
-            warnings.push(format!(
-                "Env var RALPH_VERBOSITY='{trimmed}' is not a valid number; ignoring."
-            ));
         }
     }
+}
 
-    // Review depth
+/// Apply review depth environment variable.
+fn apply_review_depth_env_override(config: &mut Config, warnings: &mut Vec<String>) {
     if let Ok(val) = env::var("RALPH_REVIEW_DEPTH") {
         if let Some(depth) = ReviewDepth::from_str(&val) {
             config.review_depth = depth;
@@ -411,21 +437,64 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
             ));
         }
     }
+}
 
-    // Paths
+/// Apply path environment variables.
+fn apply_path_env_overrides(config: &mut Config) {
     if let Ok(val) = env::var("RALPH_PROMPT_PATH") {
         config.prompt_path = PathBuf::from(val);
     }
+}
 
-    // Context levels
-    if let Some(n) = parse_u8_env("RALPH_DEVELOPER_CONTEXT", warnings, MAX_CONTEXT) {
-        config.developer_context = n;
-    }
-    if let Some(n) = parse_u8_env("RALPH_REVIEWER_CONTEXT", warnings, MAX_CONTEXT) {
-        config.reviewer_context = n;
+/// Apply context level environment variables.
+fn apply_context_env_overrides(config: &mut Config, warnings: &mut Vec<String>) {
+    const MAX_CONTEXT: u8 = 2;
+
+    // RALPH_DEVELOPER_CONTEXT
+    if let Ok(val) = env::var("RALPH_DEVELOPER_CONTEXT") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            match trimmed.parse::<u8>() {
+                Ok(n) if n <= MAX_CONTEXT => config.developer_context = n,
+                Ok(n) => {
+                    warnings.push(format!(
+                        "Env var RALPH_DEVELOPER_CONTEXT={n} is out of range; clamping to {MAX_CONTEXT}."
+                    ));
+                    config.developer_context = MAX_CONTEXT;
+                }
+                Err(_) => {
+                    warnings.push(format!(
+                        "Env var RALPH_DEVELOPER_CONTEXT='{trimmed}' is not a valid number; ignoring."
+                    ));
+                }
+            }
+        }
     }
 
-    // Git user identity
+    // RALPH_REVIEWER_CONTEXT
+    if let Ok(val) = env::var("RALPH_REVIEWER_CONTEXT") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            match trimmed.parse::<u8>() {
+                Ok(n) if n <= MAX_CONTEXT => config.reviewer_context = n,
+                Ok(n) => {
+                    warnings.push(format!(
+                        "Env var RALPH_REVIEWER_CONTEXT={n} is out of range; clamping to {MAX_CONTEXT}."
+                    ));
+                    config.reviewer_context = MAX_CONTEXT;
+                }
+                Err(_) => {
+                    warnings.push(format!(
+                        "Env var RALPH_REVIEWER_CONTEXT='{trimmed}' is not a valid number; ignoring."
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Apply git identity environment variables.
+fn apply_git_identity_env_overrides(config: &mut Config, _warnings: &mut Vec<String>) {
     if let Ok(val) = env::var("RALPH_GIT_USER_NAME") {
         let trimmed = val.trim();
         if !trimmed.is_empty() {
@@ -438,43 +507,37 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
             config.git_user_email = Some(trimmed.to_string());
         }
     }
+}
 
-    // Container mode
-    if let Ok(val) = env::var("RALPH_CONTAINER_MODE") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.container_mode = b;
+/// Apply container environment variables.
+fn apply_container_env_overrides(config: &mut Config, _warnings: &mut Vec<String>) {
+    let apply_bool = |env_name: &str, field: &mut bool| {
+        if let Ok(val) = env::var(env_name) {
+            if let Some(b) = parse_env_bool(&val) {
+                *field = b;
+            }
         }
-    }
-    if let Ok(val) = env::var("RALPH_SECURITY_MODE") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.security_mode = Some(trimmed.to_string());
+    };
+
+    let apply_string = |env_name: &str, field: &mut Option<String>| {
+        if let Ok(val) = env::var(env_name) {
+            let trimmed = val.trim();
+            if !trimmed.is_empty() {
+                *field = Some(trimmed.to_string());
+            }
         }
-    }
-    if let Ok(val) = env::var("RALPH_CONTAINER_ENGINE") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.container_engine = Some(trimmed.to_string());
-        }
-    }
-    if let Ok(val) = env::var("RALPH_CONTAINER_IMAGE") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.container_image = Some(trimmed.to_string());
-        }
-    }
-    if let Ok(val) = env::var("RALPH_CONTAINER_NETWORK") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.container_network = b;
-        }
-    }
+    };
+
+    apply_bool("RALPH_CONTAINER_MODE", &mut config.container_mode);
+    apply_string("RALPH_SECURITY_MODE", &mut config.security_mode);
+    apply_string("RALPH_CONTAINER_ENGINE", &mut config.container_engine);
+    apply_string("RALPH_CONTAINER_IMAGE", &mut config.container_image);
+    apply_bool("RALPH_CONTAINER_NETWORK", &mut config.container_network);
     if let Ok(val) = env::var("RALPH_CONTAINER_AUTO_PULL") {
         if let Some(b) = parse_env_bool(&val) {
             config.container_auto_pull = Some(b);
         }
     }
-
-    config
 }
 
 /// Check for legacy config files and add deprecation warnings.
