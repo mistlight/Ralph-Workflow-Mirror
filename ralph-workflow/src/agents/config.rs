@@ -339,7 +339,7 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
                 settings_path: settings.clone(),
             });
         }
-        return Ok(expand_user_path(settings));
+        return Ok(resolve_relative_settings_path(settings, &ccs_dir));
     }
 
     // 2) Legacy config.json.
@@ -352,7 +352,7 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
                 settings_path: settings.clone(),
             });
         }
-        return Ok(expand_user_path(settings));
+        return Ok(resolve_relative_settings_path(settings, &ccs_dir));
     }
 
     // 3) Fallback: direct profile settings file in ~/.ccs/ (common default path).
@@ -375,6 +375,22 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
     })
 }
 
+/// Resolve a settings path relative to the CCS directory.
+/// Paths starting with ~/ are expanded to the home directory.
+/// Relative paths are resolved relative to the CCS directory.
+fn resolve_relative_settings_path(path: &str, ccs_dir: &Path) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = ccs_home_dir() {
+            return home.join(rest);
+        }
+    }
+    // For relative paths, join with ccs_dir
+    if !path.starts_with('/') {
+        return ccs_dir.join(path);
+    }
+    PathBuf::from(path)
+}
+
 /// Validate that a path doesn't escape the intended directory through traversal.
 /// Returns true if the path is safe (no `..` components, no absolute paths).
 fn is_path_safe_for_resolution(path: &str) -> bool {
@@ -391,15 +407,6 @@ fn is_path_safe_for_resolution(path: &str) -> bool {
         return false;
     }
     true
-}
-
-fn expand_user_path(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = ccs_home_dir() {
-            return home.join(rest);
-        }
-    }
-    PathBuf::from(path)
 }
 
 fn find_env_object(json: &JsonValue) -> Option<&serde_json::Map<String, JsonValue>> {
