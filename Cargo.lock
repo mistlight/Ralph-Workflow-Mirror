@@ -923,7 +923,6 @@ dependencies = [
  "dirs",
  "git2",
  "notify",
- "once_cell",
  "predicates",
  "regex",
  "serde",

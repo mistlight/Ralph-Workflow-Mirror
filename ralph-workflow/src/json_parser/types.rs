@@ -4,6 +4,7 @@
 //! all the CLI parsers (Claude, Codex, Gemini).
 
 #![expect(clippy::too_many_lines)]
+#![expect(clippy::redundant_pub_crate)]
 use crate::utils::truncate_text;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -51,7 +52,7 @@ fn looks_like_secret_value(value: &str) -> bool {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum ClaudeEvent {
+pub(crate) enum ClaudeEvent {
     System {
         subtype: Option<String>,
         session_id: Option<String>,
@@ -87,7 +88,7 @@ pub enum ClaudeEvent {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum StreamInnerEvent {
+pub(crate) enum StreamInnerEvent {
     /// Message start - initialization of a new message stream
     MessageStart { message: Option<AssistantMessage> },
     /// Content block start - initialization of a new content block (text, tool use, etc.)
@@ -118,7 +119,7 @@ pub enum StreamInnerEvent {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum ContentBlockDelta {
+pub(crate) enum ContentBlockDelta {
     /// Delta for text content blocks
     TextDelta { text: Option<String> },
     /// Delta for tool use content blocks (input streaming)
@@ -131,7 +132,7 @@ pub enum ContentBlockDelta {
 
 /// Error information for streaming errors
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct StreamError {
+pub(crate) struct StreamError {
     pub(crate) message: Option<String>,
     pub(crate) code: Option<String>,
 }
@@ -140,7 +141,7 @@ pub struct StreamError {
 ///
 /// Distinguishes between different types of content that may be streamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ContentType {
+pub(crate) enum ContentType {
     /// Regular text content
     Text,
     /// Thinking/reasoning content
@@ -158,7 +159,7 @@ pub enum ContentType {
 /// Supports both index-based tracking (for parsers with numeric indices)
 /// and string-based key tracking (for parsers with string identifiers).
 #[derive(Debug, Default, Clone)]
-pub struct DeltaAccumulator {
+pub(crate) struct DeltaAccumulator {
     /// Accumulated content by (`content_type`, key) composite key
     /// Using a String key to support both numeric and string-based identifiers
     buffers: std::collections::HashMap<(ContentType, String), String>,
@@ -241,19 +242,19 @@ impl DeltaAccumulator {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct AssistantMessage {
+pub(crate) struct AssistantMessage {
     pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UserMessage {
+pub(crate) struct UserMessage {
     pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum ContentBlock {
+pub(crate) enum ContentBlock {
     Text {
         text: Option<String>,
     },
@@ -281,7 +282,7 @@ pub enum ContentBlock {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum CodexEvent {
+pub(crate) enum CodexEvent {
     #[serde(rename = "thread.started")]
     ThreadStarted { thread_id: Option<String> },
     #[serde(rename = "turn.started")]
@@ -303,7 +304,7 @@ pub enum CodexEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CodexUsage {
+pub(crate) struct CodexUsage {
     pub(crate) input_tokens: Option<u64>,
     pub(crate) output_tokens: Option<u64>,
 }
@@ -319,7 +320,7 @@ pub struct CodexUsage {
 /// - `web_search`: Web search operations
 /// - `plan_update`: Changes to execution plan
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CodexItem {
+pub(crate) struct CodexItem {
     /// Item type (`command_execution`, `agent_message`, reasoning, `file_read`, etc.)
     #[serde(rename = "type")]
     pub(crate) item_type: Option<String>,
@@ -351,7 +352,7 @@ pub struct CodexItem {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum GeminiEvent {
+pub(crate) enum GeminiEvent {
     Init {
         session_id: Option<String>,
         model: Option<String>,
@@ -382,7 +383,7 @@ pub enum GeminiEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GeminiStats {
+pub(crate) struct GeminiStats {
     pub(crate) input_tokens: Option<u64>,
     pub(crate) output_tokens: Option<u64>,
     pub(crate) duration_ms: Option<u64>,
