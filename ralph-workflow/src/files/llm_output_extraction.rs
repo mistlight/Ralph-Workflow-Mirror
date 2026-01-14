@@ -423,7 +423,7 @@ fn extract_opencode_result(content: &str) -> Option<String> {
 /// - Numbered/bullet lists without proper separation
 /// - Multi-line analysis that ends with conventional commit format
 fn remove_thought_process_patterns(content: &str) -> String {
-    let result = content;
+    let mut result = content;
 
     // Remove AI thought process prefixes
     // These are patterns that AI agents commonly use when starting their response
@@ -433,6 +433,8 @@ fn remove_thought_process_patterns(content: &str) -> String {
         "Looking at this diff",
         "I can see",
         "The main changes are",
+        "The main changes I see are:",
+        "The main changes I see are",
         "Several distinct categories of changes",
         "Key categories of changes",
         "Based on the diff",
@@ -462,6 +464,10 @@ fn remove_thought_process_patterns(content: &str) -> String {
         "Key changes include",
         "Several changes include",
         "This diff shows the following",
+        // Additional patterns for GLM agent output
+        "The most substantive change is",
+        "The most substantive changes are",
+        "The most substantive user-facing change is",
     ];
 
     for pattern in &thought_patterns {
@@ -478,7 +484,9 @@ fn remove_thought_process_patterns(content: &str) -> String {
                     if looks_like_commit_message_start(remaining) {
                         return remaining.to_string();
                     }
-                    // Otherwise, continue to aggressive filtering below
+                    // Otherwise, update result to continue with aggressive filtering below
+                    result = remaining;
+                    break; // Continue to numbered/bold analysis pattern checks
                 }
             } else if let Some(single_newline) = rest.find('\n') {
                 // If no double newline, try to skip to after the first single newline
@@ -487,8 +495,27 @@ fn remove_thought_process_patterns(content: &str) -> String {
                 if looks_like_commit_message_start(after_newline.trim()) {
                     return after_newline.to_string();
                 }
+                // If not, check if the rest starts with numbered analysis
+                if after_newline.trim().starts_with("1. ")
+                    || after_newline.trim().starts_with("1. **")
+                    || after_newline.trim().starts_with("- ")
+                {
+                    // Skip to after numbered analysis - continue processing
+                    // but don't return yet, let the numbered pattern handler deal with it
+                    result = after_newline.trim();
+                    break;
+                }
             }
-            break;
+            // If we found and stripped a pattern but couldn't find a clean commit message
+            // or numbered analysis to continue from, check if rest looks like pure analysis
+            // If the remaining content after the pattern is all analysis (no valid commit),
+            // return empty
+            let rest_trimmed = rest.trim();
+            if looks_like_analysis_text(rest_trimmed)
+                && find_conventional_commit_start(rest_trimmed).is_none()
+            {
+                return String::new();
+            }
         }
     }
 
@@ -546,15 +573,52 @@ fn remove_thought_process_patterns(content: &str) -> String {
         // 2. Either looks like analysis text OR contains common analysis patterns
         let is_analysis = before_commit.contains('\n')
             && (looks_like_analysis_text(before_commit)
-                || before_commit
-                    .to_lowercase()
-                    .contains("changes")
-                    || before_commit.to_lowercase().contains("diff")
+                || before_commit.to_lowercase().contains("changes")
+                || before_commit.to_lowercase().contains("diff")
                 || before_commit.contains("1.")
                 || before_commit.contains("- "));
 
         if is_analysis {
             return result[commit_start..].to_string();
+        }
+    }
+
+    // Final check: if the entire content looks like analysis without a valid commit,
+    // return empty string. This catches cases like "The main changes I see are:\n1. **Analysis**"
+    // followed by more analysis paragraphs but no proper commit message.
+    if looks_like_analysis_text(result) {
+        // Check if there's markdown-bold type mention embedded in analysis text
+        // like "This is a **refactor**..." which indicates analysis, not a commit
+        let result_lower = result.to_lowercase();
+        if result_lower.contains("**feat**")
+            || result_lower.contains("**fix**")
+            || result_lower.contains("**refactor**")
+            || result_lower.contains("**chore**")
+            || result_lower.contains("**test**")
+            || result_lower.contains("**docs**")
+            || result_lower.contains("**perf**")
+            || result_lower.contains("**style**")
+        {
+            // Look for the pattern "**type**:" (with colon) which indicates
+            // it might be an actual commit message in markdown format
+            if result_lower.contains("**feat**:")
+                || result_lower.contains("**fix**:")
+                || result_lower.contains("**refactor**:")
+                || result_lower.contains("**chore**:")
+                || result_lower.contains("**test**:")
+                || result_lower.contains("**docs**:")
+                || result_lower.contains("**perf**:")
+                || result_lower.contains("**style**:")
+            {
+                // This might be a valid commit message in markdown, keep it
+                return result.to_string();
+            }
+            // Otherwise, it's analysis with embedded type mentions, filter it out
+            return String::new();
+        }
+        // If no conventional commit was found and it looks like analysis, return empty
+        if find_conventional_commit_start(result).is_none() {
+            return String::new();
         }
     }
 
@@ -688,9 +752,12 @@ fn looks_like_analysis_text(text: &str) -> bool {
         "looking at",
         "analyzing",
         "the changes",
+        "the change",
         "the diff",
         "i can see",
         "main changes",
+        "substantive change",
+        "substantive user-facing change",
         "categories",
         "first change",
         "second change",
@@ -715,6 +782,7 @@ fn looks_like_analysis_text(text: &str) -> bool {
         "distinct changes",
         "key categories of changes",
         "several categories of changes",
+        "user-facing change",
     ];
 
     for indicator in &analysis_indicators {
@@ -2586,5 +2654,78 @@ Error messages are now more descriptive.";
         assert!(!result.content.contains("Key changes include"));
         assert!(!result.content.contains("1. Security"));
         assert_eq!(result.content, "fix: security vulnerability");
+    }
+
+    // =========================================================================
+    // Regression Tests for Specific Bug Patterns
+    // =========================================================================
+
+    #[test]
+    fn test_regression_glm_bug_pattern_606b907() {
+        // Regression test for commit 606b907 - GLM agent output with "The main changes I see are:"
+        // followed by numbered markdown-bold analysis without proper separation
+        // Test the filter function directly with the raw text
+        let raw_output = "The main changes I see are:
+1. **Rust code modernization** - Converting from older patterns to newer Rust idioms
+2. **Thought process filtering** - Adding comprehensive logic to detect and filter AI thought process patterns from commit messages
+3. **Test reorganization** - Splitting a large test file into 5 focused modules
+4. **String handling improvements** - Using `map_or_else`, `is_some_and`, `cloned()` where appropriate
+5. **Regex updates** - `once_cell::sync::Lazy` → `std::sync::LazyLock`
+6. **Const fn changes** - Methods taking `&self` now taking `self` by value
+7. **Various code quality improvements** - Error handling, visibility adjustments, etc.
+
+The most substantive user-facing change is the **thought process filtering** in `llm_output_extraction.rs` - this adds significant new functionality to prevent AI analysis text from leaking into generated commit messages. The rest is primarily refactoring/modernization.
+
+This is a **refactor** with significant improvements and bug fixes";
+
+        let result = remove_thought_process_patterns(raw_output);
+
+        // The filtered content should NOT contain the thought process analysis
+        assert!(!result.contains("The main changes I see are"));
+
+        // Should not contain numbered analysis items
+        assert!(!result.contains("1. **Rust code modernization**"));
+        assert!(!result.contains("2. **Thought process filtering**"));
+
+        // Should not contain the paragraph with "most substantive"
+        assert!(!result.contains("The most substantive user-facing change"));
+
+        // The result should be empty or very minimal since there's no proper commit message
+        // After filtering, we expect empty content or the last paragraph only
+        assert!(!result.contains("**Rust code modernization**"));
+        assert!(!result.contains("**Thought process filtering**"));
+    }
+
+    #[test]
+    fn test_regression_glm_bug_pattern_d6ca2a5() {
+        // Regression test for commit d6ca2a5 - "Looking at the diff" pattern
+        // with multi-paragraph analysis followed by "fix:" commit
+        let raw_output = "Looking at the diff, I can see these are related changes across the three JSON parser files (claude.rs, codex.rs, gemini.rs) that all deal with the same issue: tracking and resetting streaming state to prevent duplicate content display.
+
+The key change in claude.rs is:
+- Adding a `has_streamed_content` field to track if content has been streamed for the current message
+- Using this flag to skip displaying text in `format_message` if it was already streamed
+- Resetting this flag on `MessageStart`
+
+Similar state-resetting logic is added to codex.rs and gemini.rs.
+
+This is a fix for duplicate content display during streaming.
+
+fix(json_parser): prevent duplicate content display in streaming output
+
+Track streaming state per-message to avoid displaying text content twice:
+once during streaming and again in the final message summary.";
+
+        let result = remove_thought_process_patterns(raw_output);
+
+        // The filtered content should NOT contain the thought process analysis
+        assert!(!result.contains("Looking at the diff, I can see"));
+
+        // Should not contain the analysis paragraphs
+        assert!(!result.contains("The key change in claude.rs is"));
+        assert!(!result.contains("Similar state-resetting logic"));
+
+        // Should extract only the clean commit message
+        assert_eq!(result, "fix(json_parser): prevent duplicate content display in streaming output\n\nTrack streaming state per-message to avoid displaying text content twice:\nonce during streaming and again in the final message summary.");
     }
 }
