@@ -456,14 +456,15 @@ impl ClaudeParser {
                         match session.get_delta_from_snapshot(&text, &index_str) {
                             Ok(delta) => delta,
                             Err(e) => {
-                                // Snapshot extraction failed - use empty string to prevent
-                                // exponential duplication bug that would occur if we used
-                                // the full snapshot text
+                                // Snapshot extraction failed - fall back to original text.
+                                // This preserves content on false positives, though it may cause
+                                // some duplication. Better to duplicate than to lose data.
                                 eprintln!(
                                     "Warning: Snapshot extraction failed: {e}. \
-                                     Using empty delta to prevent duplication bug."
+                                     Falling back to original text to prevent data loss. \
+                                     May cause some duplication.",
                                 );
-                                ""
+                                &text
                             }
                         }
                     } else {
@@ -536,14 +537,15 @@ impl ClaudeParser {
                     match session.get_delta_from_snapshot(&text, default_index_str) {
                         Ok(delta) => delta,
                         Err(e) => {
-                            // Snapshot extraction failed - use empty string to prevent
-                            // exponential duplication bug that would occur if we used
-                            // the full snapshot text
+                            // Snapshot extraction failed - fall back to original text.
+                            // This preserves content on false positives, though it may cause
+                            // some duplication. Better to duplicate than to lose data.
                             eprintln!(
                                 "Warning: Snapshot extraction failed: {e}. \
-                                 Using empty delta to prevent duplication bug."
+                                 Falling back to original text to prevent data loss. \
+                                 May cause some duplication.",
                             );
-                            ""
+                            &text
                         }
                     }
                 } else {

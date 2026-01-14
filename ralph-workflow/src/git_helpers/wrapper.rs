@@ -102,6 +102,45 @@ pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
         ));
     }
 
+    // Additional validation: ensure the git binary exists and is executable.
+    // This prevents following symlinks to non-executable files or directories.
+    if !real_git.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("git binary does not exist at path: '{git_path_str}'"),
+        ));
+    }
+
+    // On Unix systems, verify it's a regular file (not a directory or special file).
+    #[cfg(unix)]
+    {
+        match fs::metadata(real_git) {
+            Ok(metadata) => {
+                let file_type = metadata.file_type();
+                if file_type.is_dir() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("git binary path is a directory, not a file: '{git_path_str}'"),
+                    ));
+                }
+                if file_type.is_symlink() {
+                    // Don't follow symlinks - require the actual path to be the binary.
+                    // This prevents symlink-based attacks.
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("git binary path is a symlink; use the actual binary path: '{git_path_str}'"),
+                    ));
+                }
+            }
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("cannot access git binary metadata at path: '{git_path_str}'"),
+                ));
+            }
+        }
+    }
+
     let wrapper_dir = tempfile::tempdir()?;
     let wrapper_path = wrapper_dir.path().join("git");
 
