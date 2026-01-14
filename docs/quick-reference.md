@@ -2,6 +2,49 @@
 
 A cheat sheet for common Ralph Workflow commands and flags.
 
+## Beginner's Guide
+
+New to Ralph or command-line tools? Start here.
+
+**What is Ralph?**
+Ralph is an AI-powered coding assistant that helps you implement features, fix bugs, and refactor code. It reads a file called `PROMPT.md` to understand what you want to do, then uses AI agents to write and review the code.
+
+**Basic workflow:**
+1. Create a `PROMPT.md` file describing what you want
+2. Run `ralph` in your project directory
+3. Ralph handles the rest and creates a git commit
+
+**Your first Ralph command:**
+```bash
+# Create a prompt template for a new feature
+ralph --init-prompt feature-spec
+
+# Edit PROMPT.md with your requirements
+# Then run ralph to implement it
+ralph
+```
+
+**Choosing a preset mode:**
+- Use `-Q` (quick) for small changes like typos or simple fixes
+- Use `-U` (rapid) for minor bugs or small features
+- Use `-S` (standard) for most features (this is the default)
+- Use `-T` (thorough) for complex or important changes
+- Use `-L` (long) only for critical features needing maximum review
+
+**Common scenarios:**
+```bash
+# Fix a small bug quickly
+ralph -Q "fix: typo in header"
+
+# Add a new feature
+ralph --init-prompt feature-spec
+# Edit PROMPT.md, then:
+ralph
+
+# Just want more control over iterations
+ralph -D 3 -R 2 "feat: add user settings"
+```
+
 ## Short Flags Reference
 
 | Short Flag | Long Form | Description |
@@ -16,16 +59,26 @@ A cheat sheet for common Ralph Workflow commands and flags.
 | `-Q` | `--quick` | Quick preset mode (1 dev + 1 review) |
 | `-S` | `--standard` | Standard preset mode (5 dev + 2 reviews) |
 | `-T` | `--thorough` | Thorough preset mode (10 dev + 5 reviews) |
+| `-U` | `--rapid` | Rapid preset mode (2 dev + 1 review) |
 | `-q` | `--quiet` | Quiet mode (minimal output) |
 | `-v N` | `--verbosity N` | Verbosity level (0-4) |
 | `-c PATH` | `--config PATH` | Path to config file |
 | `-i` | `--interactive` | Prompt for PROMPT.md template if missing |
+
+## Help Commands
+
+```bash
+ralph --help           # Show basic help (quick start, common flags)
+ralph --help-advanced  # Show comprehensive help (all options, templates, docs)
+ralph --list-templates # Show available PROMPT.md templates
+```
 
 ## Preset Modes
 
 | Mode | Flag | Dev Iters | Reviews | Use Case |
 |------|------|-----------|---------|----------|
 | Quick | `-Q` | 1 | 1 | Rapid prototyping |
+| Rapid | `-U` | 2 | 1 | Fast iteration |
 | Standard | `-S` | 5 | 2 | Default workflow |
 | Thorough | `-T` | 10 | 5 | Balanced but thorough |
 | Long | `-L` | 15 | 10 | Most thorough |
@@ -44,6 +97,7 @@ ralph "feat: add user authentication"
 ### Preset Modes
 ```bash
 ralph -Q "fix: small bug"              # Quick (1+1)
+ralph -U "fix: minor bug"              # Rapid (2+1)
 ralph -S "feat: normal change"         # Standard (5+2)
 ralph -T "refactor: optimize"          # Thorough (10+5)
 ralph -L "feat: complex feature"       # Long (15+10)

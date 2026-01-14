@@ -760,6 +760,127 @@ exit 0
 }
 
 #[test]
+fn ralph_rapid_mode_sets_two_iterations() {
+    // Rapid mode should set developer_iters=2 and reviewer_reviews=1
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let counter_path = dir.path().join(".agent/plan_counter");
+    let script_path = dir.path().join("dev_script.sh");
+    fs::write(
+        &script_path,
+        format!(
+            r#"#!/bin/sh
+mkdir -p .agent
+if [ ! -f .agent/PLAN.md ]; then
+    if [ -f "{counter}" ]; then
+        count=$(cat "{counter}")
+        count=$((count + 1))
+    else
+        count=1
+    fi
+    echo $count > "{counter}"
+    echo "Plan for iteration" > .agent/PLAN.md
+fi
+exit 0
+"#,
+            counter = counter_path.display()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    cmd.current_dir(dir.path())
+        .arg("--rapid") // Use rapid mode
+        .env("RALPH_INTERACTIVE", "0")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: rapid test\" > .agent/commit-message.txt'",
+        )
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com");
+
+    cmd.assert().success();
+
+    // Should have 2 planning calls (rapid mode = 2 iterations)
+    let count: u32 = fs::read_to_string(&counter_path)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        count, 2,
+        "Rapid mode should result in exactly 2 developer iterations"
+    );
+}
+
+#[test]
+fn ralph_rapid_mode_short_flag_works() {
+    // -U should work the same as --rapid
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    let counter_path = dir.path().join(".agent/plan_counter");
+    let script_path = dir.path().join("dev_script.sh");
+    fs::write(
+        &script_path,
+        format!(
+            r#"#!/bin/sh
+mkdir -p .agent
+if [ ! -f .agent/PLAN.md ]; then
+    if [ -f "{counter}" ]; then
+        count=$(cat "{counter}")
+        count=$((count + 1))
+    else
+        count=1
+    fi
+    echo $count > "{counter}"
+    echo "Plan" > .agent/PLAN.md
+fi
+exit 0
+"#,
+            counter = counter_path.display()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    cmd.current_dir(dir.path())
+        .arg("-U") // Short flag
+        .env("RALPH_INTERACTIVE", "0")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            format!("sh {}", script_path.display()),
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"feat: rapid short flag\" > .agent/commit-message.txt'",
+        )
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com");
+
+    cmd.assert().success();
+
+    let count: u32 = fs::read_to_string(&counter_path)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        count, 2,
+        "-U should result in exactly 2 developer iterations"
+    );
+}
+
+#[test]
 fn ralph_resume_continues_from_checkpoint_phase() {
     let dir = TempDir::new().unwrap();
     init_git_repo(&dir);
