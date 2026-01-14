@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
+use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, CodexEvent};
 
@@ -190,18 +191,9 @@ impl CodexParser {
                                 let mut acc = self.delta_accumulator.borrow_mut();
                                 acc.add_delta(ContentType::Thinking, "reasoning", text);
 
-                                // Show reasoning in real-time
-                                return Some(format!(
-                                    "{}[{}]{} {}Reasoning:{} {}{}{}\n",
-                                    c.dim(),
-                                    name,
-                                    c.reset(),
-                                    c.cyan(),
-                                    c.reset(),
-                                    c.dim(),
-                                    text,
-                                    c.reset()
-                                ));
+                                // Show reasoning in real-time using delta display formatter
+                                let formatter = DeltaDisplayFormatter::new();
+                                return Some(formatter.format_thinking(text, name, c));
                             }
                             // No reasoning yet
                             if self.verbosity.is_verbose() {

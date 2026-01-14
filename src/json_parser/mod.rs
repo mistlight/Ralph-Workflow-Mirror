@@ -38,6 +38,7 @@
 
 mod claude;
 mod codex;
+mod delta_display;
 mod gemini;
 pub mod health;
 mod opencode;

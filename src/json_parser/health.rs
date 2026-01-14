@@ -3,6 +3,25 @@
 //! This module provides utilities for monitoring parser health,
 //! tracking parsed vs ignored events, and providing warnings when
 //! parsers are not working correctly with specific agents.
+//!
+//! # Event Classification
+//!
+//! Events are classified into the following categories:
+//!
+//! - **Parsed events**: Successfully processed and displayed, including:
+//!   - Complete content events
+//!   - Streaming delta events (text deltas, thinking deltas, tool input deltas)
+//!   - Successfully handled event types
+//!
+//! - **Unknown events**: Valid JSON that the parser deserializes successfully
+//!   but doesn't have specific handling for. These are NOT considered errors
+//!   and won't trigger health warnings. They represent future/new event types.
+//!
+//! - **Parse errors**: Malformed JSON that cannot be deserialized. These DO
+//!   trigger health warnings when they exceed 50% of events.
+//!
+//! - **Ignored events**: General category for events not displayed (includes
+//!   both unknown events and parse errors)
 
 use crate::colors::Colors;
 use std::cell::Cell;
