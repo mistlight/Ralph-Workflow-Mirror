@@ -1,6 +1,28 @@
 //! Claude CLI JSON parser.
 //!
 //! Parses NDJSON output from Claude CLI and formats it for display.
+//!
+//! # Streaming Output Behavior
+//!
+//! This parser implements real-time streaming output for text deltas. When content
+//! arrives in multiple chunks (via `content_block_delta` events), the parser:
+//!
+//! 1. **Accumulates** text deltas from each chunk into a buffer
+//! 2. **Displays** the accumulated text after each chunk
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix only once** at the start of streaming, avoiding duplicate
+//!    prefixes on each line
+//!
+//! Example output sequence for streaming "Hello World" in two chunks:
+//! ```text
+//! [Claude] Hello\r          (first chunk with prefix, no newline)
+//! Hello World\r              (second chunk overwrites with accumulated text)
+//! Hello World\n              (message_stop adds final newline)
+//! ```
+//!
+//! This pattern is consistent across all parsers (Claude, Codex, Gemini, OpenCode)
+//! with variations in when the prefix is shown based on each format's event structure.
 
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
@@ -373,14 +395,17 @@ impl ClaudeParser {
                 ContentBlockDelta::TextDelta { text: Some(text) } => {
                     // Accumulate the text delta for completion events
                     acc.add_text_delta(index, &text);
+                    // Get accumulated text for streaming display
+                    let accumulated_text =
+                        acc.get(ContentType::Text, &index.to_string()).unwrap_or("");
                     // Replace embedded newlines with spaces to prevent artificial line breaks
-                    let sanitized_text = text.replace('\n', " ");
+                    let sanitized_text = accumulated_text.replace('\n', " ");
                     let was_in_block = in_block.get();
                     drop(in_block);
 
                     // Only show prefix on the first chunk of a content block
                     if was_in_block {
-                        // Subsequent chunks: overwrite with carriage return, show text without prefix
+                        // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
                         self.in_content_block.borrow_mut().set(true);
                         format!("{}\r{}", c.white(), sanitized_text)
                     } else {
@@ -436,13 +461,18 @@ impl ClaudeParser {
             StreamInnerEvent::ContentBlockDelta { .. } => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Standalone text delta (not part of content block)
-                // Use the same streaming logic
-                let sanitized_text = text.replace('\n', " ");
+                // Use default index "0" for standalone text
+                let default_index = 0u64;
+                acc.add_text_delta(default_index, &text);
+                let accumulated_text = acc
+                    .get(ContentType::Text, &default_index.to_string())
+                    .unwrap_or("");
+                let sanitized_text = accumulated_text.replace('\n', " ");
                 let was_in_block = in_block.get();
                 drop(in_block);
 
                 if was_in_block {
-                    // Subsequent chunks: overwrite with carriage return, show text without prefix
+                    // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
                     self.in_content_block.borrow_mut().set(true);
                     format!("{}\r{}", c.white(), sanitized_text)
                 } else {

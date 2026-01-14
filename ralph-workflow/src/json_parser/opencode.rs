@@ -1,6 +1,24 @@
 //! OpenCode event parser implementation
 //!
 //! This module handles parsing and displaying OpenCode NDJSON event streams.
+//!
+//! # Streaming Output Behavior
+//!
+//! This parser implements real-time streaming output for text deltas. When content
+//! arrives in multiple chunks (via `text` events), the parser:
+//!
+//! 1. **Accumulates** text deltas from each chunk into a buffer
+//! 2. **Displays** the accumulated text after each chunk
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix** on the first `text` event and again on `step_finish`
+//!
+//! Example output sequence for streaming "Hello World" in two chunks:
+//! ```text
+//! [OpenCode] Hello\r       (first text event with prefix, no newline)
+//! Hello World\r             (second text event overwrites with accumulated text)
+//! [OpenCode] ✓ Step finished... (step_finish shows prefix with newline)
+//! ```
 
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
@@ -344,6 +362,8 @@ impl OpenCodeParser {
                         // Accumulate streaming text
                         let mut acc = self.delta_accumulator.borrow_mut();
                         acc.add_delta(ContentType::Text, "main", text);
+                        // Get accumulated text for streaming display
+                        let accumulated_text = acc.get(ContentType::Text, "main").unwrap_or("");
 
                         // Check if we're already streaming text content
                         let in_text = self.in_text_content.borrow();
@@ -352,11 +372,11 @@ impl OpenCodeParser {
 
                         // Show delta in real-time (both verbose and normal mode)
                         let limit = self.verbosity.truncate_limit("text");
-                        let preview = truncate_text(text, limit);
+                        let preview = truncate_text(accumulated_text, limit);
 
                         // Only show prefix on the first text chunk
                         if was_in_text {
-                            // Subsequent chunks: overwrite with carriage return, show text without prefix
+                            // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
                             self.in_text_content.borrow_mut().set(true);
                             return Some(format!("{}\r{}", c.white(), preview));
                         }
