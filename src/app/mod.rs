@@ -40,6 +40,7 @@ use crate::utils::{
     reset_context_for_isolation, save_checkpoint, update_status, validate_prompt_md, Logger,
     PipelineCheckpoint, PipelinePhase,
 };
+use crate::files::monitoring::PromptMonitor;
 use std::env;
 use std::process::Command;
 
@@ -336,6 +337,27 @@ fn run_pipeline(
         }
     }
 
+    // Start real-time monitoring of PROMPT.md for immediate deletion detection.
+    // The monitor runs in a background thread and automatically restores PROMPT.md
+    // if deletion is detected. We check for restoration events after each phase.
+    let mut prompt_monitor = match PromptMonitor::new() {
+        Ok(mut monitor) => {
+            if let Err(e) = monitor.start() {
+                logger.warn(&format!("Failed to start PROMPT.md monitoring: {}. Continuing anyway.", e));
+                None
+            } else {
+                if config.verbosity.is_debug() {
+                    logger.info("Started real-time PROMPT.md monitoring");
+                }
+                Some(monitor)
+            }
+        }
+        Err(e) => {
+            logger.warn(&format!("Failed to create PROMPT.md monitor: {}. Continuing anyway.", e));
+            None
+        }
+    };
+
     // Detect project stack and generate review guidelines
     let (_project_stack, review_guidelines) =
         detect_project_stack(&config, &repo_root, &logger, &colors);
@@ -389,9 +411,23 @@ fn run_pipeline(
 
     // Run phases
     run_development(&mut ctx, &args, resume_checkpoint.as_ref())?;
+
+    // Check for PROMPT.md restoration after development phase
+    if let Some(ref mut monitor) = prompt_monitor {
+        if monitor.check_and_restore() {
+            logger.warn("PROMPT.md was deleted and restored during development phase");
+        }
+    }
     update_status("In progress.", config.isolation_mode)?;
 
     run_review_and_fix(&mut ctx, &args, resume_checkpoint.as_ref())?;
+
+    // Check for PROMPT.md restoration after review phase
+    if let Some(ref mut monitor) = prompt_monitor {
+        if monitor.check_and_restore() {
+            logger.warn("PROMPT.md was deleted and restored during review phase");
+        }
+    }
     update_status("In progress.", config.isolation_mode)?;
 
     run_final_validation(&ctx, resume_checkpoint.as_ref())?;
@@ -404,6 +440,7 @@ fn run_pipeline(
         &config,
         &timer,
         &stats,
+        prompt_monitor,
     )
 }
 
@@ -672,7 +709,13 @@ fn finalize_pipeline(
     config: &Config,
     timer: &Timer,
     stats: &Stats,
+    prompt_monitor: Option<PromptMonitor>,
 ) -> anyhow::Result<()> {
+    // Stop the PROMPT.md monitor if it was started
+    if let Some(monitor) = prompt_monitor {
+        monitor.stop();
+    }
+
     // End agent phase and clean up
     crate::git_helpers::end_agent_phase()?;
     crate::git_helpers::disable_git_wrapper(agent_phase_guard.git_helpers);
