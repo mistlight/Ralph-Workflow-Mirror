@@ -1639,8 +1639,7 @@ fn test_ccs_glm_streaming_no_duplicate_prefix() {
     // 1. Should have exactly ONE prefix (not multiple duplicates)
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count,
-        1,
+        prefix_count, 1,
         "Should have exactly 1 prefix, got {prefix_count}. Output: {output:?}"
     );
 
@@ -1702,8 +1701,7 @@ fn test_ccs_glm_complete_message_deduplication() {
     // Should only have ONE prefix from streaming
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count,
-        1,
+        prefix_count, 1,
         "Should have exactly 1 prefix from streaming. Output: {output:?}"
     );
 }
