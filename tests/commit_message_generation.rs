@@ -274,3 +274,11 @@ exit 0
         // Note: has_log might be false if fallback was used without error
     }
 }
+
+// Note: A full integration test for GLM agent failure triggering immediate fallback
+// requires complex test setup. The core logic is tested through the existing
+// AgentErrorKind::classify_with_agent() tests in src/agents/error.rs which verify:
+// - GLM agents with exit code 1 are classified as AgentSpecificQuirk (should fallback)
+// - Transient errors like rate limits are classified for retry
+// - Auth failures are classified for fallback
+// The commit message generation code uses this same classification logic.

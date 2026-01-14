@@ -190,6 +190,98 @@ feat: add feature"#,
     )
 }
 
+/// Generate a follow-up prompt for re-trying commit message generation with validation feedback.
+///
+/// When the LLM generates a commit message that fails validation (e.g., contains bad patterns
+/// like "N file(s) changed"), this function creates a follow-up prompt that explicitly tells
+/// the LLM what was wrong and asks it to try again with better guidance.
+///
+/// # Arguments
+///
+/// * `diff` - The original git diff
+/// * `bad_message` - The commit message that failed validation
+/// * `validation_error` - The specific validation error that occurred
+///
+/// # Returns
+///
+/// A follow-up prompt that includes the original diff, the bad message, the validation error,
+/// and specific guidance on how to fix it.
+pub fn prompt_retry_commit_message_with_feedback(
+    diff: &str,
+    bad_message: &str,
+    validation_error: &str,
+) -> String {
+    format!(
+        r#"Your previous commit message was rejected for being too vague. Try again with a better message.
+
+PREVIOUS (REJECTED) MESSAGE:
+{}
+
+VALIDATION ERROR:
+{}
+
+---
+
+THE ORIGINAL DIFF:
+{}
+
+---
+
+## WHAT WAS WRONG WITH YOUR PREVIOUS MESSAGE
+
+The validation system rejected your message because it doesn't meet quality standards.
+
+Common reasons for rejection:
+- **"N file(s) changed" pattern**: Never use this. Describe WHAT changed, not HOW MANY files.
+- **"apply changes" / "update code"**: These are meaningless. Be specific about what changed.
+- **Just listing filenames**: "update src/a.rs, src/b.rs" is bad. Describe the semantic relationship.
+- **"fix bug" / "add feature"**: Too generic. What bug? What feature? In which module?
+
+## HOW TO WRITE A GOOD COMMIT MESSAGE
+
+1. **Look at the actual code changes** - what was actually added/removed/modified?
+2. **Find the semantic relationship** between files - are they all related to one feature?
+3. **Describe the PURPOSE**, not just the action
+   - ❌ "update src/auth.rs, src/auth_test.rs"
+   - ✅ "feat(auth): add OAuth2 login flow with tests"
+4. **Use the commit TYPE that best matches the change**:
+   - feat: new user-visible feature
+   - fix: bug fix
+   - refactor: code restructuring without behavior change
+   - test: adding/updating tests
+   - docs: documentation changes
+   - chore: other changes (build, deps, etc.)
+
+## EXAMPLES OF GOOD MESSAGES
+
+For adding login functionality:
+feat(auth): add OAuth2 login flow
+
+For fixing a crash:
+fix: prevent null pointer dereference in user lookup
+
+For refactoring:
+refactor(api): extract validation logic into dedicated module
+
+For updating tests:
+test: add edge case coverage for payment validation
+
+For documentation:
+docs: clarify API rate limiting behavior
+
+## YOUR TASK
+
+Analyze the diff above and write a commit message that:
+1. Uses a proper TYPE (feat/fix/refactor/docs/test/chore/etc.)
+2. Includes a SCOPE if applicable (e.g., "feat(auth):")
+3. Has a DESCRIPTIVE SUBJECT that says WHAT changed and WHY
+4. Does NOT use any of the rejected patterns
+
+OUTPUT REQUIREMENT: Respond with ONLY the commit message (no markdown, no explanation)."#,
+        bad_message, validation_error, diff.trim()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

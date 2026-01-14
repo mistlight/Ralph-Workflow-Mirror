@@ -19,7 +19,7 @@ mod types;
 
 // Re-export all public items for backward compatibility
 pub(crate) use commit::{
-    prompt_fix, prompt_generate_commit_message_with_diff,
+    prompt_fix, prompt_generate_commit_message_with_diff, prompt_retry_commit_message_with_feedback,
 };
 pub(crate) use developer::{prompt_developer_iteration, prompt_plan};
 pub(crate) use reviewer::{

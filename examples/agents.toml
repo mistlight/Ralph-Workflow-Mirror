@@ -375,6 +375,21 @@ reviewer = [
   "amazon-q",
   "gemini",
 ]
+commit = [
+  "claude",
+  "codex",
+  "cursor",
+  "qwen",
+  "vibe",
+  "plandex",
+  "opencode",
+  "aider",
+  "goose",
+  "cline",
+  "continue",
+  "amazon-q",
+  "gemini",
+]
 max_retries = 3
 retry_delay_ms = 1000
 

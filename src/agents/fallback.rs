@@ -9,7 +9,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-/// Agent role (developer or reviewer).
+/// Agent role (developer, reviewer, or commit).
 ///
 /// Each role can have its own chain of fallback agents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +18,8 @@ pub enum AgentRole {
     Developer,
     /// Reviewer agent: reviews code and fixes issues.
     Reviewer,
+    /// Commit agent: generates commit messages from diffs.
+    Commit,
 }
 
 impl std::fmt::Display for AgentRole {
@@ -25,6 +27,7 @@ impl std::fmt::Display for AgentRole {
         match self {
             AgentRole::Developer => write!(f, "developer"),
             AgentRole::Reviewer => write!(f, "reviewer"),
+            AgentRole::Commit => write!(f, "commit"),
         }
     }
 }
@@ -67,6 +70,9 @@ pub struct FallbackConfig {
     /// Ordered list of agents for reviewer role (first = preferred, rest = fallbacks).
     #[serde(default)]
     pub reviewer: Vec<String>,
+    /// Ordered list of agents for commit role (first = preferred, rest = fallbacks).
+    #[serde(default)]
+    pub commit: Vec<String>,
     /// Provider-level fallback: maps agent name to list of model flags to try.
     /// Example: `opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]`
     #[serde(default)]
@@ -113,6 +119,7 @@ impl Default for FallbackConfig {
         Self {
             developer: Vec::new(),
             reviewer: Vec::new(),
+            commit: Vec::new(),
             provider_fallback: HashMap::new(),
             max_retries: default_max_retries(),
             retry_delay_ms: default_retry_delay_ms(),
@@ -137,6 +144,7 @@ impl FallbackConfig {
         match role {
             AgentRole::Developer => &self.developer,
             AgentRole::Reviewer => &self.reviewer,
+            AgentRole::Commit => &self.commit,
         }
     }
 
@@ -158,9 +166,10 @@ impl FallbackConfig {
 
     /// Check if provider-level fallback is configured for an agent.
     pub fn has_provider_fallbacks(&self, agent_name: &str) -> bool {
-        self.provider_fallback
-            .get(agent_name)
-            .is_some_and(|v| !v.is_empty())
+        match self.provider_fallback.get(agent_name) {
+            Some(v) => !v.is_empty(),
+            None => false,
+        }
     }
 }
 
@@ -172,6 +181,7 @@ mod tests {
     fn test_agent_role_display() {
         assert_eq!(format!("{}", AgentRole::Developer), "developer");
         assert_eq!(format!("{}", AgentRole::Reviewer), "reviewer");
+        assert_eq!(format!("{}", AgentRole::Commit), "commit");
     }
 
     #[test]
@@ -179,6 +189,7 @@ mod tests {
         let config = FallbackConfig::default();
         assert!(config.developer.is_empty());
         assert!(config.reviewer.is_empty());
+        assert!(config.commit.is_empty());
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.retry_delay_ms, 1000);
         assert_eq!(config.backoff_multiplier, 2.0);

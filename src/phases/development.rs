@@ -9,8 +9,9 @@
 
 use crate::agents::AgentRole;
 use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_needed};
-use crate::git_helpers::{commit_with_auto_message_result, git_snapshot};
+use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
+use crate::phases::commit::commit_with_generated_message;
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use crate::utils::{
     delete_plan_file, print_progress, save_checkpoint, update_status, PipelineCheckpoint,
@@ -176,35 +177,48 @@ pub fn run_development_phase(
 
             // Create a commit with auto-generated message
             // This is done by the orchestrator, not the agent
-            // Note: commit_with_auto_message has fallback behavior if LLM fails
-            // We use the developer agent for commit message generation (not reviewer)
-            // because the commit should reflect the development work that was done
-            let agent_cmd = ctx
-                .config
-                .developer_cmd
-                .clone()
-                .or_else(|| ctx.registry.developer_cmd(ctx.developer_agent));
-            if let Some(agent_cmd) = agent_cmd {
+            // Note: We use fallback-aware commit generation which tries multiple agents
+            // Get the primary commit agent from the registry
+            let commit_agent = get_primary_commit_agent(ctx);
+
+            if let Some(agent) = commit_agent {
                 ctx.logger
-                    .info("Creating commit with auto-generated message...");
+                    .info(&format!("Creating commit with auto-generated message (agent: {})...", agent));
+
+                // Get the diff for commit message generation
+                let diff = match crate::git_helpers::git_diff() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        ctx.logger.error(&format!("Failed to get diff for commit: {}", e));
+                        return Err(anyhow::anyhow!(e));
+                    }
+                };
 
                 // Get git identity from config
                 let git_name = ctx.config.git_user_name.as_deref();
                 let git_email = ctx.config.git_user_email.as_deref();
 
-                match commit_with_auto_message_result(&agent_cmd, git_name, git_email) {
-                    crate::git_helpers::CommitResult::Success(oid) => {
+                match commit_with_generated_message(
+                    &diff,
+                    &agent,
+                    git_name,
+                    git_email,
+                    ctx.registry,
+                    ctx.logger,
+                    ctx.colors,
+                    ctx.config,
+                    ctx.timer,
+                ) {
+                    CommitResultFallback::Success(oid) => {
                         ctx.logger.success(&format!("Commit created successfully: {}", oid));
                         ctx.stats.commits_created += 1;
                     }
-                    crate::git_helpers::CommitResult::NoChanges => {
+                    CommitResultFallback::NoChanges => {
                         // No meaningful changes to commit (already handled by has_meaningful_changes)
                         ctx.logger.info("No commit created (no meaningful changes)");
                     }
-                    crate::git_helpers::CommitResult::Failed(err) => {
+                    CommitResultFallback::Failed(err) => {
                         // Actual git operation failed - this is critical
-                        // The commit_with_auto_message function handles LLM failures internally
-                        // So this error indicates a real git problem
                         ctx.logger
                             .error(&format!("Failed to create commit (git operation failed): {}", err));
                         // Don't continue - this is a real error that needs attention
@@ -213,7 +227,7 @@ pub fn run_development_phase(
                 }
             } else {
                 ctx.logger
-                    .warn("Unable to get developer agent command for commit");
+                    .warn("Unable to get primary commit agent for commit");
             }
         }
         prev_snap = snap;
@@ -434,4 +448,87 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
     }
 
     Ok(())
+}
+
+/// Get the primary commit agent from the registry.
+///
+/// This function returns the name of the primary commit agent.
+/// If a commit-specific agent is configured, it uses that. Otherwise, it falls back
+/// to using the developer agent name (since commit messages should reflect development work).
+fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
+    use crate::agents::AgentRole;
+
+    let fallback_config = ctx.registry.fallback_config();
+
+    // First, try to get commit-specific agents
+    let commit_agents = fallback_config.get_fallbacks(AgentRole::Commit);
+    if !commit_agents.is_empty() {
+        // Return the first commit agent as the primary
+        return commit_agents.first().map(|s| s.to_string());
+    }
+
+    // Fallback to using developer agents for commit generation
+    let developer_agents = fallback_config.get_fallbacks(AgentRole::Developer);
+    if !developer_agents.is_empty() {
+        return developer_agents.first().map(|s| s.to_string());
+    }
+
+    // Last resort: use the current developer agent
+    Some(ctx.developer_agent.to_string())
+}
+
+/// Get the commit agent chain from the registry.
+///
+/// This function builds a fallback chain of agents for commit message generation.
+/// If a commit-specific chain is configured, it uses that. Otherwise, it falls back
+/// to using the developer agent chain (since commit messages should reflect development work).
+fn get_commit_agent_chain(ctx: &PhaseContext<'_>) -> Vec<String> {
+    use crate::agents::AgentRole;
+
+    let fallback_config = ctx.registry.fallback_config();
+
+    // First, try to get commit-specific agents
+    let commit_agents = fallback_config.get_fallbacks(AgentRole::Commit);
+    if !commit_agents.is_empty() {
+        // Resolve agent names to commands
+        let mut agent_cmds = Vec::new();
+        for agent_name in commit_agents {
+            if let Some(cmd) = resolve_agent_command(ctx, agent_name) {
+                agent_cmds.push(cmd);
+            }
+        }
+        if !agent_cmds.is_empty() {
+            return agent_cmds;
+        }
+    }
+
+    // Fallback to using developer agents for commit generation
+    let developer_agents = fallback_config.get_fallbacks(AgentRole::Developer);
+    if !developer_agents.is_empty() {
+        let mut agent_cmds = Vec::new();
+        for agent_name in developer_agents {
+            if let Some(cmd) = resolve_agent_command(ctx, agent_name) {
+                agent_cmds.push(cmd);
+            }
+        }
+        if !agent_cmds.is_empty() {
+            return agent_cmds;
+        }
+    }
+
+    // Last resort: use the current developer agent
+    if let Some(cmd) = ctx.registry.developer_cmd(ctx.developer_agent) {
+        vec![cmd]
+    } else {
+        vec![]
+    }
+}
+
+/// Resolve an agent name to its command string.
+fn resolve_agent_command(ctx: &PhaseContext<'_>, agent_name: &str) -> Option<String> {
+    // Get the command from the registry
+    // For commit messages, we use the developer-style command (with yolo=true)
+    ctx.registry
+        .resolve_config(agent_name)
+        .map(|c| c.build_cmd(true, true, true))
 }
