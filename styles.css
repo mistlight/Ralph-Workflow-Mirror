@@ -2311,7 +2311,10 @@ pre code {
 
 body.audience-developer .audience-developer-content,
 body.audience-vibe-coder .audience-vibe-coder-content,
-body.audience-newcomer .audience-newcomer-content {
+body.audience-newcomer .audience-newcomer-content,
+body[data-audience="developer"] .audience-developer-content,
+body[data-audience="vibe-coder"] .audience-vibe-coder-content,
+body[data-audience="newcomer"] .audience-newcomer-content {
     display: block;
 }
 

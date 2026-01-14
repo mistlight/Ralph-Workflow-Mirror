@@ -1023,8 +1023,8 @@
 
     // Function to set theme
     function setTheme(theme) {
-        if (theme === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
+        if (theme === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
         } else {
             document.documentElement.removeAttribute('data-theme');
         }
@@ -1033,15 +1033,17 @@
     // Initialize theme
     if (savedTheme) {
         setTheme(savedTheme);
-    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        setTheme('dark');
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        setTheme('light');
     }
+    // Default is dark (no attribute needed)
 
     // Dark mode toggle functionality
     if (darkModeToggle) {
         darkModeToggle.addEventListener('click', () => {
             const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            // null or absent means dark (default), 'light' means light mode
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
 
             setTheme(newTheme);
 

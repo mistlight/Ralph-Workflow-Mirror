@@ -2,288 +2,361 @@
 
 ## Summary
 
-The current Ralph Workflow website already has a solid foundation with a well-structured single-page design featuring neo-brutalist editorial aesthetics, comprehensive documentation, and thoughtful audience segmentation (developers, vibe coders, newcomers). However, the implementation needs refinement to achieve **Dribbble-showcase quality** as specified in the acceptance criteria. The plan focuses on **visual polish, design cohesion, and UX refinement** rather than structural overhaul—the core architecture and content strategy are sound. Key improvements include: typography refinement, interaction polish, visual hierarchy enhancement, removal of visual inconsistencies, and ensuring the frontend-design skill criteria are fully met through Playwright visual verification.
+The Ralph Workflow website already has an extensive foundation with a "Noir Editorial" design system, comprehensive content covering all audiences (developers, vibe coders, CLI newcomers), and proper static site architecture for Codeberg Pages hosting. However, to achieve **Dribbble-showcase quality** and meet all **frontend-design skill criteria**, the implementation needs significant visual polish and design refinement. The current site has several issues: inconsistent styling (heavy inline CSS), some visual elements that don't match the "Noir Editorial" theme (SVG workflow diagram uses different colors like #CCFF00, #FF00AA instead of the cyan/violet palette), and needs motion/interaction enhancement for premium feel. This plan focuses on achieving commercial-grade visual quality through systematic design polish, Playwright-verified visual output, and adherence to frontend-design skill's bold aesthetic requirements.
 
 ---
 
 ## Implementation Steps
 
-### Phase 1: Visual Design Audit & Foundation Refinement
+### Phase 1: Design System Consolidation & Visual Audit
 
-**Step 1.1: Typography Enhancement**
-- Replace Space Grotesk as body font with a more distinctive pairing
-- The frontend-design skill explicitly warns against generic fonts; current font stack needs differentiation
-- Consider: Sora/Cabinet Grotesk for headings + proper body font distinction
-- Refine type scale for better hierarchy—current display sizes feel safe, not bold
-- Adjust line-heights and letter-spacing for improved readability
-- Files: `styles.css` (typography tokens section, lines ~90-148)
-
-**Step 1.2: Color Palette Refinement**
-- Current forest green + amber palette is good but application needs polish
-- Increase contrast in some text areas (muted text can be hard to read)
-- Add more dynamic accent usage—currently feels flat
-- Review semantic color usage (success/error states)
-- Files: `styles.css` (color tokens, lines ~16-89)
-
-**Step 1.3: Remove Inline Styles**
-- Significant inline styles throughout `index.html` (lines ~468-603, ~746-743, ~1372-1550)
-- Move all inline styles to `styles.css` as proper component classes
-- This improves maintainability and design consistency
+**Step 1.1: Extract All Inline Styles to CSS**
+- Current `index.html` has ~300+ lines of inline styles (particularly in comparison section ~468-603, glossary ~607-745, FAQ ~1372-1550)
+- Create proper CSS component classes for all sections
+- This enables consistent styling and theme adherence
 - Files: `index.html`, `styles.css`
 
-### Phase 2: Component & Interaction Polish
+**Step 1.2: Unify Color Palette Usage**
+- Fix workflow diagram SVG (lines ~379-444) - uses #CCFF00, #FF00AA, #9D4EDD, #00FFF0 instead of design system colors (--color-primary #00D4FF, --color-accent #A78BFA)
+- Audit all hardcoded colors and replace with CSS variables
+- Ensure dark/light mode consistency throughout
+- Files: `index.html` (SVG section), `styles.css`
 
-**Step 2.1: Hero Section Enhancement**
-- Current hero has good structure but needs more visual impact
-- Enhance the terminal visualization—make it feel more alive/premium
-- Add smoother entrance animations with proper stagger timing
-- Improve badge styling for more visual distinction
-- Files: `index.html` (lines ~151-329), `styles.css`, `script.js`
+**Step 1.3: Typography Refinement**
+- Per frontend-design skill: fonts must be "beautiful, unique, and interesting" - not generic
+- Current setup uses Clash Display + General Sans + JetBrains Mono (from Fontshare) - this is acceptable
+- Verify all text uses proper CSS variable references
+- Ensure type hierarchy creates clear visual impact
+- Files: `styles.css` (typography tokens ~93-150)
 
-**Step 2.2: Card & Surface System**
-- Standardize card elevations and hover states across all cards
-- Current before/after comparison cards, feature cards, FAQ cards have inconsistent styling
-- Create unified `.card` component variants
-- Add proper hover/focus/active states per frontend-design skill requirements
-- Files: `styles.css`
+### Phase 2: Hero Section Enhancement
 
-**Step 2.3: Button States Complete Audit**
-- Verify all interactive elements have: default, hover, active/pressed, focus-visible, disabled, loading states
-- Current buttons may be missing some states
-- Files: `styles.css`
+**Step 2.1: Enhance Terminal Demo Visual Impact**
+- Terminal demo is the hero focal point but could be more visually striking
+- Add subtle scan-line effect or enhanced glow treatment
+- Ensure animation timing creates "wow factor" on page load
+- Refine progress bar and status indicators
+- Files: `index.html` (lines ~232-320), `styles.css`, `script.js`
 
-**Step 2.4: Animation & Motion Refinement**
-- Review all transitions for timing consistency (120-180ms hover, 180-260ms surface)
-- Ensure easing curves are consistent throughout
-- Remove any jank or abrupt transitions
-- Add subtle micro-interactions where they enhance UX
+**Step 2.2: Hero Background & Atmosphere**
+- Per frontend-design skill: "Create atmosphere and depth rather than defaulting to solid colors"
+- Current has orbs/grid pattern - ensure they create premium atmosphere
+- Verify noise texture is adding tactile depth
+- Ensure gradient orbs are positioned for visual interest
+- Files: `styles.css` (hero section)
+
+**Step 2.3: Hero CTAs & Badges**
+- Ensure buttons have complete states: default, hover, active, focus-visible
+- Badge styling should feel premium (current forest/amber/moss badges)
+- Magnetic button effect should be smooth and delightful
 - Files: `styles.css`, `script.js`
 
-### Phase 3: Section-by-Section Polish
+### Phase 3: Section-by-Section Visual Polish
 
-**Step 3.1: Navigation Refinement**
-- Polish mobile navigation experience
-- Ensure dark mode toggle has smooth, delightful interaction
-- Add scroll-based nav background opacity enhancement
-- Files: `styles.css`, `script.js`
-
-**Step 3.2: "What is Ralph" Section**
-- Refine workflow diagram SVG—current version needs visual polish
-- Improve workflow steps visual treatment
-- Better sidebar key points presentation
+**Step 3.1: "What is Ralph" Section**
+- Refine workflow steps visual treatment
+- Fix workflow diagram SVG colors to match design system
+- Enhance sidebar key points presentation with proper cards
 - Files: `index.html` (lines ~332-465), `styles.css`
 
-**Step 3.3: Comparison Section Enhancement**
-- Current before/after comparison uses heavy inline styles
-- Convert to proper CSS classes
-- Add subtle animation on scroll-reveal
-- Files: `index.html` (lines ~468-603), `styles.css`
+**Step 3.2: Before/After Comparison Section**
+- Currently uses heavy inline styles (~470-603)
+- Convert to proper CSS component classes
+- Ensure visual distinction between "Before" (negative) and "After" (positive) is clear
+- Add scroll-reveal animation for impact
+- Files: `index.html`, `styles.css`
 
-**Step 3.4: Interactive Demo Section**
-- Polish demo interface tabs and code editor appearance
-- Ensure demo runs smoothly with proper loading states
+**Step 3.3: Glossary Section**
+- Extract inline styles to CSS
+- Ensure collapsible details element has smooth animation
+- Style term cards consistently
+- Files: `index.html` (lines ~607-745), `styles.css`
+
+**Step 3.4: How It Works Section**
+- Refine step cards for visual hierarchy
+- Ensure quick benefits cards have consistent styling
+- Files: `index.html` (lines ~747-825), `styles.css`
+
+**Step 3.5: PROMPT.md Section**
+- Ensure code example looks premium
+- Style prompt card and explanation side by side
+- Files: `index.html` (lines ~827-894), `styles.css`
+
+**Step 3.6: Comparison Table**
+- Table should be readable and visually structured
+- Verify proper responsive behavior
+- Files: `index.html` (lines ~897-948), `styles.css`
+
+**Step 3.7: Interactive Demo Section**
+- Polish demo interface tabs styling
+- Ensure demo panel transitions are smooth
+- Terminal output should match hero terminal styling
 - Files: `index.html` (lines ~949-1067), `styles.css`, `script.js`
 
-**Step 3.5: Install Section Polish**
-- Clean up mode toggle interaction
-- Improve code block styling and copy button feedback
-- Ensure troubleshooting section has proper expand/collapse behavior
-- Files: `index.html` (lines ~1069-1225), `styles.css`
+**Step 3.8: Install Section**
+- Mode toggle (Simple/Advanced) needs polish
+- Code blocks should look premium with proper syntax highlighting feel
+- Troubleshooting details should animate smoothly
+- Files: `index.html` (lines ~1071-1225), `styles.css`
 
-**Step 3.6: Features Grid Enhancement**
-- Standardize feature card sizing and content flow
-- Add hover micro-animations
-- Ensure expand/collapse works smoothly
-- Files: `index.html` (lines ~1228-1315), `styles.css`
+**Step 3.9: Features Grid**
+- Feature cards need consistent sizing and hover states
+- Expandable feature details should animate smoothly
+- Files: `index.html` (lines ~1229-1316), `styles.css`
 
-**Step 3.7: FAQ Section Refinement**
-- Convert inline styles to CSS classes
-- Add smooth accordion animation
-- Improve visual hierarchy between categories
-- Files: `index.html` (lines ~1365-1551), `styles.css`
+**Step 3.10: Audience Section**
+- Three audience cards should have premium feel
+- Badge styling should be consistent with hero badges
+- Files: `index.html` (lines ~1319-1363), `styles.css`
 
-**Step 3.8: Footer Enhancement**
-- Refine footer layout and spacing
-- Add subtle hover effects on links
-- Files: `index.html` (lines ~1555-1600), `styles.css`
+**Step 3.11: FAQ Section**
+- Convert all inline styles to CSS classes
+- Accordion animation should be smooth
+- Category headers need consistent styling
+- Audience-specific FAQs need proper conditional display
+- Files: `index.html` (lines ~1366-1552), `styles.css`
 
-### Phase 4: Responsive & Accessibility Polish
+**Step 3.12: Footer**
+- Ensure footer styling is clean and professional
+- Link hover states should be consistent
+- Files: `index.html` (lines ~1556-1600), `styles.css`
 
-**Step 4.1: Responsive Breakpoint Review**
-- Audit all breakpoints for intentional design (not just "fits")
-- Ensure tablet experience is polished
-- Mobile-first verification pass
+### Phase 4: Interaction & Motion Polish
+
+**Step 4.1: Complete Button States**
+- Audit all buttons for: default, hover, active/pressed, focus-visible, disabled
+- Ensure loading states exist where needed (demo buttons, copy buttons)
 - Files: `styles.css`
 
-**Step 4.2: Touch Target Verification**
-- Ensure minimum 44px height for all touch targets
-- Verify mobile navigation usability
+**Step 4.2: Card Hover States**
+- All cards should have subtle, consistent hover treatment
+- Magnetic effect should feel premium, not distracting
+- Files: `styles.css`, `script.js`
+
+**Step 4.3: Scroll Animations**
+- Ensure scroll-reveal animations are smooth and staggered appropriately
+- Timing should be 180-260ms for surface transitions
+- Files: `styles.css`, `script.js`
+
+**Step 4.4: Accordion & Details Animations**
+- FAQ accordions should animate smoothly
+- Glossary details should expand/collapse gracefully
+- Feature expand should feel natural
+- Files: `styles.css`, `script.js`
+
+**Step 4.5: Terminal Demo Animation**
+- Ensure terminal typing effect is smooth
+- Play/pause/restart controls should work reliably
+- Speed controls should be responsive
+- Files: `script.js`
+
+### Phase 5: Responsive & Accessibility
+
+**Step 5.1: Mobile Navigation Polish**
+- Hamburger menu should animate smoothly
+- Menu items should be easily tappable (44px+ touch targets)
+- Dark mode toggle should be accessible on mobile
+- Files: `styles.css`, `script.js`
+
+**Step 5.2: Responsive Breakpoint Audit**
+- Verify all sections look intentional at:
+  - Desktop: 1920px, 1440px, 1280px
+  - Tablet: 768px
+  - Mobile: 375px
 - Files: `styles.css`
 
-**Step 4.3: Accessibility Complete Audit**
-- Verify focus-visible states are beautiful, not just functional
-- Ensure all ARIA labels are correct
-- Test keyboard navigation flow
+**Step 5.3: Accessibility Audit**
+- Verify all focus-visible states are beautiful
+- Ensure skip links work
+- Verify ARIA labels are correct
+- Test keyboard navigation
 - Verify color contrast meets WCAG AA
 - Files: `index.html`, `styles.css`
 
-### Phase 5: Dark Mode Refinement
+### Phase 6: Asset Management
 
-**Step 5.1: Dark Mode Polish**
-- Current dark mode exists but may need refinement
-- Ensure all surfaces, text, and accents look intentional in dark mode
-- Verify code blocks maintain readability
-- Check shadows and elevations work in dark context
-- Files: `styles.css` (dark mode section, lines ~223-254)
+**Step 6.1: Logo & Favicon**
+- Current inline SVG favicon works but could be extracted to asset file
+- Ensure Open Graph image exists or is created
+- Verify apple-touch-icon works
+- Files: Create `assets/` directory, `index.html` (meta tags)
 
-### Phase 6: Logo & Branding Assets
+### Phase 7: Visual Verification with Playwright
 
-**Step 6.1: Favicon & Logo Strategy**
-- Current favicon is inline SVG data URI—convert to proper asset file
-- Create consistent logo mark that works at all sizes
-- Ensure Open Graph image (`og-image.png`) referenced in meta tags exists or create it
-- Files: `index.html` (lines ~39-41), create `assets/` folder with logo files
+**Step 7.1: Desktop Light Mode Verification**
+- Navigate to local server
+- Take full-page screenshot at 1920px width
+- Verify against frontend-design criteria:
+  - Typography distinctive, not generic
+  - Color palette cohesive with bold accents
+  - Motion tasteful and functional
+  - Spatial composition interesting
+  - Backgrounds create atmosphere
 
-### Phase 7: Final Visual Verification
+**Step 7.2: Desktop Dark Mode Verification**
+- Toggle dark mode
+- Take full-page screenshot
+- Verify dark mode is intentional and polished
 
-**Step 7.1: Playwright Visual Testing**
-- Use Playwright MCP tools to capture screenshots at key breakpoints
-- Verify: desktop (1920px), tablet (768px), mobile (375px)
-- Check both light and dark modes
-- Verify all sections render correctly
-- Validate against frontend-design skill criteria:
-  - Typography hierarchy clear
-  - Spacing consistent
-  - States complete
-  - Contrast sufficient
-  - Responsive intentional
-  - Edge cases handled
+**Step 7.3: Mobile Verification**
+- Resize to 375px width
+- Take full-page screenshot
+- Verify mobile experience is intentional, not just "fits"
 
-**Step 7.2: Premium UI Checklist Pass**
-- Run through CLAUDE.md Premium UI Checklist
-- Hierarchy scan: Can I tell what matters in 3 seconds?
-- Spacing scan: Consistent across sections?
-- State scan: All states implemented?
-- Contrast scan: No hard-to-read text?
-- Responsive scan: Intentional at all sizes?
-- Edge cases: Long text, empty states, errors handled?
-- Polish pass: Alignments, radii, shadows, icons all consistent?
+**Step 7.4: Tablet Verification**
+- Resize to 768px width
+- Take full-page screenshot
+- Verify tablet breakpoint looks designed
+
+**Step 7.5: Interaction Testing**
+- Test mobile navigation toggle
+- Test dark mode toggle
+- Test terminal demo controls
+- Test copy-to-clipboard
+- Test FAQ accordions
+- Test feature card expansion
+
+**Step 7.6: Premium UI Checklist (per CLAUDE.md)**
+- [ ] Hierarchy scan: Can I tell what matters in 3 seconds?
+- [ ] Spacing scan: Consistent across sections?
+- [ ] State scan: All interactive states implemented?
+- [ ] Contrast scan: No hard-to-read text?
+- [ ] Responsive scan: Intentional at all sizes?
+- [ ] Edge cases: Long text, empty states handled?
+- [ ] Polish pass: Alignments, radii, shadows consistent?
 
 ---
 
 ## Critical Files for Implementation
 
-1. **`styles.css`** - Primary CSS with design tokens, component styles, dark mode. This file contains the entire visual system and needs comprehensive refinement.
+1. **`styles.css`** (~2,715 lines) - Contains entire design system including tokens, component styles, and dark mode. Primary file for visual refinement and inline style extraction.
 
-2. **`index.html`** - Main page structure. Needs inline style extraction and HTML refinement for proper component organization.
+2. **`index.html`** (~1,600 lines) - Main page structure with extensive inline styles that need extraction. Contains all sections, SVG workflow diagram, and content.
 
-3. **`script.js`** - JavaScript for interactions, terminal demo, navigation. Needs polish for smooth animations and state management.
+3. **`script.js`** (~1,454 lines) - JavaScript for all interactions including terminal demo, navigation, dark mode, scroll animations, magnetic effects, and accordion behavior.
 
-4. **`assets/` folder** (to create) - Will contain logo assets, og-image.png, and any other static assets needed.
+4. **`404.html`** (~554 lines) - Error page that's already well-styled with Noir Editorial theme. Good reference for design consistency.
 
-5. **`CLAUDE.md`** - Reference for design system rules and quality bar. Implementation must meet all criteria specified here.
+5. **Create `assets/` directory** - For proper logo/favicon assets and Open Graph image.
 
 ---
 
 ## Risks & Mitigations
 
-### Risk 1: Codeberg Pages Static Hosting Constraints
-**Concern:** Codeberg Pages only serves static content. No server-side processing.
-**Mitigation:** Current implementation is already fully static (HTML/CSS/JS). Ensure no build tools are required. All fonts loaded from Google Fonts CDN. No SSR or dynamic content.
+### Risk 1: Codeberg Pages Static Constraints
+**Concern:** Codeberg Pages only serves static content.
+**Mitigation:** Current implementation is fully static (HTML/CSS/JS). No build step required. All fonts from CDN (Fontshare, Google Fonts). This is already compliant.
 
-### Risk 2: Font Loading Performance
-**Concern:** Multiple Google Fonts families could impact load time.
-**Mitigation:** Use `rel="preconnect"` (already implemented), optimize font weights loaded, consider `font-display: swap` for perceived performance.
+### Risk 2: Inline Style Extraction Breaking Layout
+**Concern:** Moving inline styles to CSS could break layouts if selectors don't match.
+**Mitigation:** Extract styles incrementally, verify each section with Playwright screenshots. Use specific BEM-like class names to avoid conflicts.
 
-### Risk 3: JavaScript Animation Performance
-**Concern:** Animations may cause jank on lower-powered devices.
-**Mitigation:** Use CSS transforms and opacity only for animations (GPU-friendly). Avoid layout-triggering properties. Use `will-change` sparingly.
+### Risk 3: Design System Color Inconsistencies
+**Concern:** SVG workflow diagram and some sections use hardcoded colors outside the design system.
+**Mitigation:** Create a comprehensive color audit first, then systematically replace all hardcoded values with CSS variables. Test in both light and dark modes.
 
-### Risk 4: Dark Mode Inconsistency
-**Concern:** CSS custom properties may not update consistently across all components.
-**Mitigation:** Comprehensive testing with Playwright in both modes. Ensure all color references use CSS variables, not hardcoded values.
+### Risk 4: Animation Performance
+**Concern:** Too many animations could cause jank on lower-powered devices.
+**Mitigation:** Use only transform and opacity for animations (GPU-accelerated). Throttle scroll handlers (already implemented). Test on mobile devices via Playwright.
 
-### Risk 5: Over-Engineering vs. Polish Balance
-**Concern:** Per CLAUDE.md, avoid over-engineering. But also need Dribbble-quality.
-**Mitigation:** Focus on refining existing structure rather than adding complexity. Polish what exists rather than building new features. Every change must directly serve visual quality.
+### Risk 5: Frontend-Design Skill "Bold Aesthetic" Requirement
+**Concern:** Skill explicitly warns against "generic AI aesthetics" - current design must be distinctive.
+**Mitigation:** The "Noir Editorial" direction is already distinctive (dark-first, electric cyan accent, editorial typography). Focus on executing this vision consistently rather than changing direction.
 
 ---
 
 ## Verification Strategy
 
 ### Acceptance Check 1: Working Professional Website
-**Verification:**
-- Serve locally and test all navigation links work
-- Verify all interactive elements function (dark mode toggle, mobile nav, demo, code copy, FAQ accordions)
-- Confirm no JavaScript errors in console
+**How to verify:**
+- Serve site locally (`npx serve .` or Python's `http.server`)
+- Test all navigation links work
+- Verify dark mode toggle functions
+- Test mobile navigation
+- Verify demo runs
+- Test copy buttons work
+- Test FAQ accordions expand/collapse
 
-### Acceptance Check 2: Dribbble Showcase Quality
-**Verification:**
-- Use Playwright `mcp__playwright__browser_navigate` to load page
-- Take screenshots with `mcp__playwright__browser_take_screenshot` at:
-  - Desktop 1920px width (light mode)
-  - Desktop 1920px width (dark mode)
-  - Tablet 768px width
-  - Mobile 375px width
-- Visual inspection against frontend-design skill criteria:
-  - Typography is distinctive, not generic
-  - Color palette is cohesive and bold
-  - Motion is tasteful and functional
-  - Spatial composition is unexpected/interesting
-  - Backgrounds create atmosphere and depth
+### Acceptance Check 2: Dribbble-Showcase Quality
+**How to verify:**
+- Use Playwright to take full-page screenshots at multiple breakpoints
+- Visual inspection for:
+  - Premium, intentional aesthetic
+  - Consistent visual language
+  - No "template" or "generic" feeling
+  - Distinctive typography and color usage
+  - Atmospheric backgrounds creating depth
+  - Smooth, meaningful animations
 
 ### Acceptance Check 3: No Design Flaws
-**Verification:**
+**How to verify:**
 - Run CLAUDE.md Premium UI Checklist
-- Visual scan for alignment issues, spacing inconsistencies, contrast problems
-- Verify all component states are implemented
+- Check for:
+  - Alignment issues
+  - Spacing inconsistencies
+  - Missing interaction states
+  - Contrast problems
+  - Layout shifts
+  - Orphaned elements
 
-### Acceptance Check 4: Clear Understanding of Ralph Workflow
-**Verification:**
-- Read through site content as if new user
-- Verify workflow explanation is clear
-- Confirm installation instructions are correct (git clone from ssh://git@codeberg.org/mistlight/Ralph-Workflow.git)
-- Check FAQ answers all likely user questions
+### Acceptance Check 4: Clear User Understanding
+**How to verify:**
+- Read through site as each audience type
+- Can a developer quickly understand how to use Ralph?
+- Can a vibe coder see the value proposition?
+- Can a CLI newcomer follow the installation?
+- Are there unanswered questions after reading?
+- Is installation instruction correct? (git clone ssh://git@codeberg.org/mistlight/Ralph-Workflow.git)
 
 ### Acceptance Check 5: Frontend-Design Skill Criteria
-**Verification (from skill document):**
-- [ ] Typography: Distinctive fonts, not generic (no Inter, Roboto, Arial)
-- [ ] Color: Cohesive aesthetic with CSS variables, dominant colors with sharp accents
-- [ ] Motion: High-impact entrance animations, scroll-triggering, hover states that surprise
-- [ ] Spatial: Unexpected layouts, asymmetry, grid-breaking elements
-- [ ] Backgrounds: Atmosphere and depth, not plain solid colors
-- [ ] Production-grade: Functional, visually striking, cohesive, meticulously refined
+**How to verify (from skill document):**
+- [ ] Typography: Distinctive fonts, not generic ✓ (Clash Display + General Sans)
+- [ ] Color: Cohesive with dominant colors and sharp accents ✓ (Noir + Electric Cyan)
+- [ ] Motion: High-impact animations, scroll-triggering, surprising hover states
+- [ ] Spatial: Unexpected layouts, asymmetry, interesting composition
+- [ ] Backgrounds: Atmosphere and depth ✓ (noise texture, gradient orbs)
+- [ ] Production-grade: Functional, striking, cohesive, meticulously refined
 
-### Manual Verification Steps
-1. Open site in browser at multiple viewport sizes
-2. Test keyboard navigation through entire page
-3. Verify all interactive elements respond correctly
-4. Check dark mode toggle and persistence
-5. Test mobile navigation
-6. Run Lighthouse accessibility audit
-7. Verify installation instructions work (commands are correct)
+### Playwright Verification Steps
+1. `mcp__playwright__browser_navigate` to local site
+2. `mcp__playwright__browser_snapshot` for accessibility tree check
+3. `mcp__playwright__browser_take_screenshot` at:
+   - Desktop 1920px (light mode)
+   - Desktop 1920px (dark mode)
+   - Tablet 768px
+   - Mobile 375px
+4. `mcp__playwright__browser_click` to test interactions
+5. Visual inspection of all screenshots against criteria
 
 ---
 
-## Design Notes for Implementation
+## Design Notes
 
-### Aesthetic Direction
-Current: Neo-brutalist editorial elegance with forest green + amber
-Keep this direction but push it further:
-- More dramatic type scale contrasts
-- Bolder use of amber accent color
-- More atmospheric background treatments
-- Sharper, more intentional motion design
+### Current Aesthetic Direction: Noir Editorial
+- **Background:** Near-black (#0A0A0B) with subtle blue undertones
+- **Primary Accent:** Electric Cyan (#00D4FF) - hero accent, links, CTAs
+- **Secondary Accent:** Warm Violet (#A78BFA) - supporting color
+- **Typography:** Clash Display (bold geometric display) + General Sans (humanist body) + JetBrains Mono (code)
+- **Texture:** Subtle noise overlay for tactile depth
+- **Atmosphere:** Gradient orbs, grid patterns, glow effects
 
-### Key Differentiators to Emphasize
-- The R logo mark and "ralph" wordmark
-- Terminal visualization as hero focal point
-- Before/After comparison visual impact
-- Developer-friendly but approachable tone
+### Key Visual Differentiators
+- Terminal visualization as hero centerpiece
+- Before/After comparison showing dramatic improvement
+- Audience-adaptive content (developer/vibe coder/newcomer)
+- Noir aesthetic with electric accents (not typical "dev tool gray")
 
-### What to Avoid
-- Generic template feel
-- Over-complicated animations
-- Cluttered information density
-- Inconsistent spacing/alignment
-- Missing interaction states
+### What Must NOT Change
+- Core content and information architecture (comprehensive and well-structured)
+- Static-only implementation (Codeberg Pages compatible)
+- Installation instructions (git clone from Codeberg)
+- AGPL-3.0 license notice
+- Audience segmentation approach
+
+### What Should Be Enhanced
+- Visual consistency (extract inline styles)
+- Color palette adherence (fix SVG diagram colors)
+- Animation smoothness and timing
+- Interactive state completeness
+- Mobile experience polish
+- Premium "portfolio-grade" feel
