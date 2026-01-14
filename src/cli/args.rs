@@ -16,103 +16,39 @@ use clap::Parser;
 #[command(version)]
 #[command(after_help = "╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
-QUICK START:\n\
-    1. Create PROMPT.md with your requirements\n\
-    2. Run: ralph \"feat: implement my feature\"\n\
-    3. Ralph runs developer agent → reviewer agent → auto-commits result\n\
-\n\
-    Get started: ralph --init-global    (create config)\n\
-                  ralph --init-prompt feature-spec\n\
+NEW TO RALPH?\n\
+    Just want to get started? Run:\n\
+        ralph --init-prompt feature-spec    # Create a prompt template\n\
+        ralph \"fix: my bug\"                # Run with AI agents\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
-PRESET MODES:\n\
-    -Q, --quick      1 dev + 1 review      (rapid prototyping)\n\
-    -S, --standard   5 dev + 2 reviews     (default workflow)\n\
-    -T, --thorough  10 dev + 5 reviews     (balanced but thorough)\n\
-    -L, --long      15 dev + 10 reviews    (most thorough)\n\
-\n\
-    Note: -D N and -R N flags always override preset values.\n\
-\n\
-╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
-\n\
-COMMON FLAGS:\n\
-    -D N        Developer iterations\n\
-    -R N        Review cycles (0=skip, 1=one cycle, default: 2)\n\
-    -a AGENT    Developer agent (claude, codex, opencode, etc.)\n\
-    -r AGENT    Reviewer agent\n\
-    -v N        Verbosity (0=quiet, 1=normal, 2=verbose, 3=full, 4=debug)\n\
-    -d, --diagnose    Show diagnostic info\n\
-\n\
-OTHER FLAGS:\n\
-    -q, --quiet       Quiet mode (same as -v0)\n\
-    -f, --full        Full output (same as -v3)\n\
-    --preset NAME     Use preset agent combo (default, opencode)\n\
-    --review-depth    Review depth: standard, comprehensive, security, incremental\n\
-    --no-isolation    Keep NOTES.md and ISSUES.md between runs\n\
-    --resume          Resume from last checkpoint\n\
-    --dry-run         Validate without running agents\n\
+PRESET MODES (pick how thorough AI should be):\n\
+    -Q  Quick:      1 dev + 1 review     (typos, small fixes)\n\
+    -U  Rapid:      2 dev + 1 review     (minor changes)\n\
+    -S  Standard:   5 dev + 2 reviews    (default for most tasks)\n\
+    -T  Thorough:  10 dev + 5 reviews    (complex features)\n\
+    -L  Long:      15 dev + 10 reviews   (most thorough)\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
-EXAMPLES:\n\
-    Basic:\n\
-        ralph \"feat: add login button\"\n\
-\n\
-    Preset modes:\n\
-        ralph -Q \"fix: small bug\"           Quick (1+1)\n\
-        ralph -S \"feat: normal change\"      Standard (5+2)\n\
-        ralph -T \"refactor: optimize\"       Thorough (10+5)\n\
-        ralph -L \"feat: complex feature\"    Long (15+10)\n\
-\n\
-    Custom iterations:\n\
-        ralph -D 3 -R 2 \"fix: bug\"\n\
-\n\
-    Specific agents:\n\
-        ralph -a claude -r codex \"feat: change\"\n\
-        ralph --preset opencode \"feat: change\"\n\
-\n\
-    Verbosity:\n\
-        ralph -q \"fix: typo\"                Quiet mode\n\
-        ralph -f \"feat: complex change\"     Full output\n\
+COMMON SHORTHANDS:\n\
+    -D N, -R N       Set dev iterations and review cycles\n\
+    -a AGENT         Pick developer agent (claude, opencode, etc.)\n\
+    -r AGENT         Pick reviewer agent\n\
+    -v N / -q / -f   Set verbosity (quiet/normal/full)\n\
+    -d               Diagnose/show system info\n\
+    -i               Interactive mode (prompt if PROMPT.md missing)\n\
+    -c PATH          Use specific config file\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
-ADVANCED:\n\
-\n\
-Plumbing Commands (for scripting):\n\
-    ralph --generate-commit-msg    Generate message only\n\
-    ralph --show-commit-msg        Display generated message\n\
-    ralph --apply-commit           Commit using generated message\n\
-\n\
-Templates:\n\
-    ralph --list-templates         Show available PROMPT.md templates\n\
-    ralph --init-prompt <template> Create PROMPT.md from template\n\
-    ralph --interactive            Prompt when PROMPT.md is missing\n\
-\n\
-Configuration:\n\
-    Primary config: ~/.config/ralph-workflow.toml\n\
-    Run 'ralph --init-global' to create the unified config file.\n\
-    Run 'ralph --list-agents' to see all configured agents.\n\
-    Environment variables (RALPH_*) override config file settings.\n\
-\n\
-Verbosity Levels:\n\
-    0 = quiet    Minimal output, hide tool inputs (--quiet or -q)\n\
-    1 = normal   Balanced output, show tool inputs\n\
-    2 = verbose  Default - generous limits for full context\n\
-    3 = full     No truncation (--full or -f)\n\
-    4 = debug    Max verbosity with raw JSON (--debug)\n\
-\n\
-Environment Variables:\n\
-    RALPH_DEVELOPER_AGENT         Developer agent (from agent_chain)\n\
-    RALPH_REVIEWER_AGENT          Reviewer agent (from agent_chain)\n\
-    RALPH_DEVELOPER_ITERS         Developer iterations (default: 5)\n\
-    RALPH_REVIEWER_REVIEWS        Re-review passes (default: 2)\n\
-    RALPH_REVIEWER_JSON_PARSER    JSON parser for reviewer agent\n\
-    RALPH_VERBOSITY               Verbosity level 0-4 (default: 2)\n\
-    RALPH_ISOLATION_MODE          Isolation mode on/off (default: 1=on)\n\
-\n\
-For full documentation, see: https://codeberg.org/mistlight/RalphWithReviewer\n\
+QUICK EXAMPLES:\n\
+    ralph \"fix: typo\"                Run with default settings\n\
+    ralph -Q \"fix: small bug\"        Quick mode for tiny fixes\n\
+    ralph -U \"feat: add button\"      Rapid mode for minor features\n\
+    ralph -a claude \"fix: bug\"       Use specific agent\n\
+    ralph --list-templates            See all prompt templates\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")]
 pub struct Args {
     /// Commit message for the final commit
@@ -149,7 +85,8 @@ pub struct Args {
         long,
         env = "RALPH_PRESET",
         value_name = "NAME",
-        help = "Use a preset agent combination (default, opencode)"
+        help = "Use a preset agent combination (default, opencode)",
+        hide = true
     )]
     pub preset: Option<super::presets::Preset>,
 
@@ -180,7 +117,8 @@ pub struct Args {
         long,
         env = "RALPH_DEVELOPER_MODEL",
         value_name = "MODEL_FLAG",
-        help = "Model flag for developer agent (e.g., '-m opencode/glm-4.7-free')"
+        help = "Model flag for developer agent (e.g., '-m opencode/glm-4.7-free')",
+        hide = true
     )]
     pub developer_model: Option<String>,
 
@@ -189,7 +127,8 @@ pub struct Args {
         long,
         env = "RALPH_REVIEWER_MODEL",
         value_name = "MODEL_FLAG",
-        help = "Model flag for reviewer agent (e.g., '-m opencode/claude-sonnet-4')"
+        help = "Model flag for reviewer agent (e.g., '-m opencode/claude-sonnet-4')",
+        hide = true
     )]
     pub reviewer_model: Option<String>,
 
@@ -201,7 +140,8 @@ pub struct Args {
         long,
         env = "RALPH_DEVELOPER_PROVIDER",
         value_name = "PROVIDER",
-        help = "Provider for developer agent: 'opencode' (Zen), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)"
+        help = "Provider for developer agent: 'opencode' (Zen), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)",
+        hide = true
     )]
     pub developer_provider: Option<String>,
 
@@ -213,7 +153,8 @@ pub struct Args {
         long,
         env = "RALPH_REVIEWER_PROVIDER",
         value_name = "PROVIDER",
-        help = "Provider for reviewer agent: 'opencode' (Zen), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)"
+        help = "Provider for reviewer agent: 'opencode' (Zen), 'zai'/'zhipuai' (Z.AI direct), 'anthropic'/'openai' (direct API)",
+        hide = true
     )]
     pub reviewer_provider: Option<String>,
 
@@ -223,7 +164,8 @@ pub struct Args {
         long,
         env = "RALPH_REVIEWER_JSON_PARSER",
         value_name = "PARSER",
-        help = "JSON parser for reviewer (claude, codex, gemini, opencode, generic); overrides agent config"
+        help = "JSON parser for reviewer (claude, codex, gemini, opencode, generic); overrides agent config",
+        hide = true
     )]
     pub reviewer_json_parser: Option<String>,
 
@@ -256,7 +198,7 @@ pub struct Args {
     pub full: bool,
 
     /// Shorthand for --verbosity=4 (maximum verbosity with raw JSON)
-    #[arg(long, conflicts_with = "verbosity", help = "Debug mode (same as -v4)")]
+    #[arg(long, conflicts_with = "verbosity", help = "Debug mode (same as -v4)", hide = true)]
     pub debug: bool,
 
     /// Quick mode: 1 developer iteration, 1 review pass (fast turnaround)
@@ -266,6 +208,14 @@ pub struct Args {
         help = "Quick mode: 1 dev iteration + 1 review (for rapid prototyping)"
     )]
     pub quick: bool,
+
+    /// Rapid mode: 2 developer iterations, 1 review pass (between quick and standard)
+    #[arg(
+        long,
+        short = 'U',
+        help = "Rapid mode: 2 dev iterations + 1 review (fast but more thorough than quick)"
+    )]
+    pub rapid: bool,
 
     /// Long mode: 15 developer iterations, 10 review passes (for thorough development)
     #[arg(
@@ -294,22 +244,24 @@ pub struct Args {
     /// Disable isolation mode (allow NOTES.md and ISSUES.md to persist)
     #[arg(
         long,
-        help = "Disable isolation mode: keep NOTES.md and ISSUES.md between runs"
+        help = "Disable isolation mode: keep NOTES.md and ISSUES.md between runs",
+        hide = true
     )]
     pub no_isolation: bool,
 
     /// List all configured agents and exit
-    #[arg(long, help = "Show all agents from registry and config file")]
+    #[arg(long, help = "Show all agents from registry and config file", hide = true)]
     pub list_agents: bool,
 
     /// List only agents found in PATH and exit
-    #[arg(long, help = "Show only agents that are installed and available")]
+    #[arg(long, help = "Show only agents that are installed and available", hide = true)]
     pub list_available_agents: bool,
 
     /// List OpenCode provider types and their configuration
     #[arg(
         long,
-        help = "Show OpenCode provider types with model prefixes and auth commands"
+        help = "Show OpenCode provider types with model prefixes and auth commands",
+        hide = true
     )]
     pub list_providers: bool,
 
@@ -317,7 +269,8 @@ pub struct Args {
     #[arg(
         long,
         conflicts_with_all = ["init_global", "init_legacy", "init_prompt"],
-        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)"
+        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
+        hide = true
     )]
     pub init: bool,
 
@@ -325,7 +278,8 @@ pub struct Args {
     #[arg(
         long,
         conflicts_with_all = ["init", "init_legacy", "init_prompt"],
-        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)"
+        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
+        hide = true
     )]
     pub init_global: bool,
 
@@ -333,31 +287,34 @@ pub struct Args {
     #[arg(
         long,
         conflicts_with_all = ["init", "init_global", "init_prompt"],
-        help = "(Legacy) Create .agent/agents.toml with default settings (not recommended)"
+        help = "(Legacy) Create .agent/agents.toml with default settings (not recommended)",
+        hide = true
     )]
     pub init_legacy: bool,
 
     // === Plumbing Commands ===
     // These are low-level operations for scripting and automation
     /// Generate commit message only (writes to .agent/commit-message.txt)
-    #[arg(long, help = "Run only the commit message generation phase, then exit")]
+    #[arg(long, help = "Run only the commit message generation phase, then exit", hide = true)]
     pub generate_commit_msg: bool,
 
     /// Apply commit using existing .agent/commit-message.txt
     #[arg(
         long,
-        help = "Stage all changes and commit using .agent/commit-message.txt"
+        help = "Stage all changes and commit using .agent/commit-message.txt",
+        hide = true
     )]
     pub apply_commit: bool,
 
     /// Show the generated commit message and exit
-    #[arg(long, help = "Read and display .agent/commit-message.txt")]
+    #[arg(long, help = "Read and display .agent/commit-message.txt", hide = true)]
     pub show_commit_msg: bool,
 
     /// Reset the starting commit reference to current HEAD
     #[arg(
         long,
-        help = "Reset .agent/start_commit to current HEAD (for incremental diff generation)"
+        help = "Reset .agent/start_commit to current HEAD (for incremental diff generation)",
+        hide = true
     )]
     pub reset_start_commit: bool,
 
@@ -365,14 +322,16 @@ pub struct Args {
     /// Resume from last checkpoint after an interruption
     #[arg(
         long,
-        help = "Resume from last checkpoint (if one exists from a previous interrupted run)"
+        help = "Resume from last checkpoint (if one exists from a previous interrupted run)",
+        hide = true
     )]
     pub resume: bool,
 
     /// Validate setup without running agents (dry run)
     #[arg(
         long,
-        help = "Validate configuration and PROMPT.md without running agents"
+        help = "Validate configuration and PROMPT.md without running agents",
+        hide = true
     )]
     pub dry_run: bool,
 
@@ -388,7 +347,8 @@ pub struct Args {
     #[arg(
         long,
         value_name = "LEVEL",
-        help = "Review depth: standard (balanced), comprehensive (thorough), security (OWASP-focused), incremental (changed files only)"
+        help = "Review depth: standard (balanced), comprehensive (thorough), security (OWASP-focused), incremental (changed files only)",
+        hide = true
     )]
     pub review_depth: Option<String>,
 
@@ -397,7 +357,8 @@ pub struct Args {
         long,
         short = 'c',
         value_name = "PATH",
-        help = "Path to configuration file (default: ~/.config/ralph-workflow.toml)"
+        help = "Path to configuration file (default: ~/.config/ralph-workflow.toml)",
+        hide = true
     )]
     pub config: Option<std::path::PathBuf>,
 

@@ -20,8 +20,9 @@ pub mod validation;
 use crate::agents::AgentRegistry;
 use crate::banner::{print_final_summary, print_welcome_banner};
 use crate::cli::{
-    create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
-    handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
+    create_prompt_from_template, handle_diagnose, handle_dry_run,
+    handle_list_agents, handle_list_available_agents, handle_list_providers, prompt_template_selection,
+    Args,
 };
 use crate::colors::Colors;
 use crate::config::Config;
