@@ -367,6 +367,7 @@ pub(crate) fn run_with_fallback(
             runtime.config.reviewer_model.as_deref(),
             runtime.config.reviewer_provider.as_deref(),
         ),
+        AgentRole::Commit => (None, None), // Commit role doesn't have CLI overrides
     };
 
     // Cycle through all agents with exponential backoff
@@ -474,6 +475,10 @@ pub(crate) fn run_with_fallback(
                             runtime.config.reviewer_cmd.clone().unwrap_or_else(|| {
                                 agent_config.build_cmd_with_model(true, true, false, model_ref)
                             })
+                        }
+                        AgentRole::Commit => {
+                            // Commit role doesn't have cmd override, use default
+                            agent_config.build_cmd_with_model(true, true, false, model_ref)
                         }
                     }
                 } else {
