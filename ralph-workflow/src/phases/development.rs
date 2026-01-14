@@ -167,17 +167,7 @@ pub fn run_development_phase(
                 let git_name = ctx.config.git_user_name.as_deref();
                 let git_email = ctx.config.git_user_email.as_deref();
 
-                match commit_with_generated_message(
-                    &diff,
-                    &agent,
-                    git_name,
-                    git_email,
-                    ctx.registry,
-                    ctx.logger,
-                    ctx.colors,
-                    ctx.config,
-                    ctx.timer,
-                ) {
+                match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
                     CommitResultFallback::Success(oid) => {
                         ctx.logger
                             .success(&format!("Commit created successfully: {oid}"));

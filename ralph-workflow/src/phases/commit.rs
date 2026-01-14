@@ -14,19 +14,18 @@
 #![expect(clippy::too_many_arguments)]
 #![expect(clippy::too_many_lines)]
 use crate::agents::{AgentRegistry, AgentRole};
-use crate::config::Config;
 use crate::files::llm_output_extraction::{
     extract_llm_output, generate_fallback_commit_message, try_extract_structured_commit,
     try_salvage_commit_message, validate_commit_message, CommitExtractionResult, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
-use crate::logger::Colors;
 use crate::logger::Logger;
-use crate::pipeline::Timer;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::prompt_generate_commit_message_with_diff;
 use std::fs::{self, File};
 use std::io::Read;
+
+use super::context::PhaseContext;
 
 /// Result of commit message generation.
 pub struct CommitMessageResult {
@@ -247,11 +246,7 @@ pub fn generate_commit_message(
 /// * `commit_agent` - The primary agent to use for commit generation
 /// * `git_user_name` - Optional git user name
 /// * `git_user_email` - Optional git user email
-/// * `registry` - The agent registry for resolving fallbacks
-/// * `logger` - Logger for output
-/// * `colors` - Color formatting
-/// * `config` - Configuration
-/// * `timer` - Timer for tracking execution time
+/// * `ctx` - The phase context containing registry, logger, colors, config, and timer
 ///
 /// # Returns
 ///
@@ -261,11 +256,7 @@ pub fn commit_with_generated_message(
     commit_agent: &str,
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
-    registry: &AgentRegistry,
-    logger: &Logger,
-    colors: &Colors,
-    config: &Config,
-    timer: &mut Timer,
+    ctx: &mut PhaseContext<'_>,
 ) -> CommitResultFallback {
     // Stage all changes first
     let staged = match git_add_all() {
@@ -281,14 +272,14 @@ pub fn commit_with_generated_message(
 
     // Set up the runtime
     let mut runtime = PipelineRuntime {
-        timer,
-        logger,
-        colors,
-        config,
+        timer: ctx.timer,
+        logger: ctx.logger,
+        colors: ctx.colors,
+        config: ctx.config,
     };
 
     // Generate commit message using the standard pipeline
-    let result = match generate_commit_message(diff, registry, &mut runtime, commit_agent) {
+    let result = match generate_commit_message(diff, ctx.registry, &mut runtime, commit_agent) {
         Ok(r) => r,
         Err(e) => {
             return CommitResultFallback::Failed(format!("Failed to generate commit message: {e}"));
