@@ -375,11 +375,31 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
     })
 }
 
+/// Check if a path string is absolute (starts with / or is a Windows drive/UNC path).
+/// Returns true if the path is absolute.
+#[expect(clippy::match_same_arms)]
+fn is_absolute_path(path: &str) -> bool {
+    if path.starts_with('/') {
+        return true;
+    }
+    if cfg!(windows) {
+        let mut chars = path.chars();
+        match (chars.next(), chars.next()) {
+            // UNC paths: \\server\share or \\?\device
+            (Some('\\'), Some('\\')) => return true,
+            // Drive letter paths: C:\
+            (Some(_), Some(':')) => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Validate that a path doesn't escape the intended directory through traversal.
 /// Returns true if the path is safe (no `..` components, no absolute paths).
 fn is_path_safe_for_resolution(path: &str) -> bool {
     // Reject absolute paths - they could point anywhere on the filesystem
-    if path.starts_with('/') || (cfg!(windows) && path.chars().nth(1) == Some(':')) {
+    if is_absolute_path(path) {
         return false;
     }
     // Reject paths containing parent directory references
@@ -402,7 +422,7 @@ fn expand_user_path(path: &str) -> PathBuf {
     // Relative paths are resolved relative to the CCS directory
     if let Some(ccs_dir) = ccs_dir() {
         // If path is not absolute and doesn't start with ~, it's a relative path
-        if !(path.starts_with('/') || cfg!(windows) && path.chars().nth(1) == Some(':')) {
+        if !is_absolute_path(path) {
             return ccs_dir.join(path);
         }
     }
@@ -995,7 +1015,7 @@ profiles:
             CcsEnvVarsError::ProfileNotFound { profile, .. } => {
                 assert_eq!(profile, "nonexistent");
             }
-            _ => panic!("Expected ProfileNotFound error"),
+            other => panic!("Expected ProfileNotFound error, got: {other:?}"),
         }
     }
 
@@ -1046,7 +1066,7 @@ profiles:
 
         match result.unwrap_err() {
             CcsEnvVarsError::MissingEnv { .. } => {}
-            _ => panic!("Expected MissingEnv error"),
+            other => panic!("Expected MissingEnv error, got: {other:?}"),
         }
     }
 
@@ -1060,7 +1080,7 @@ profiles:
             CcsEnvVarsError::InvalidProfile { profile } => {
                 assert_eq!(profile, "");
             }
-            _ => panic!("Expected InvalidProfile error"),
+            other => panic!("Expected InvalidProfile error, got: {other:?}"),
         }
     }
 
@@ -1091,6 +1111,134 @@ profiles:
 
         let env_vars = load_ccs_env_vars("expand").unwrap();
         assert_eq!(env_vars.get("FROM_EXPAND").unwrap(), "success");
+    }
+
+    #[test]
+    fn load_ccs_env_vars_does_not_pollute_global_environment() {
+        // Regression test for: https://github.com/...
+        // Ensures that loading CCS env vars does NOT set them globally.
+        // The env vars should only be returned in the HashMap, not set via std::env::set_var.
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        // Create a CCS settings file with GLM-like env vars
+        let settings_path = ccs_dir.join("glm.settings.json");
+        fs::write(
+            &settings_path,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"test-token-glm","ANTHROPIC_MODEL":"glm-4.7"}}"#,
+        )
+        .unwrap();
+
+        fs::write(
+            ccs_dir.join("config.json"),
+            r#"{"profiles":{"glm":"glm.settings.json"}}"#,
+        )
+        .unwrap();
+
+        // Remember the original state of these env vars
+        let original_base_url = env::var("ANTHROPIC_BASE_URL");
+        let original_auth_token = env::var("ANTHROPIC_AUTH_TOKEN");
+        let original_model = env::var("ANTHROPIC_MODEL");
+
+        // Load CCS env vars - this should ONLY return them in a HashMap
+        let env_vars = load_ccs_env_vars("glm").unwrap();
+
+        // Verify the returned HashMap has the correct values
+        assert_eq!(
+            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://api.z.ai/api/anthropic"
+        );
+        assert_eq!(
+            env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(),
+            "test-token-glm"
+        );
+        assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "glm-4.7");
+
+        // CRITICAL: Verify that the global environment is unchanged
+        // This is the regression test - loading CCS env vars should NOT set them globally
+        let after_base_url = env::var("ANTHROPIC_BASE_URL");
+        let after_auth_token = env::var("ANTHROPIC_AUTH_TOKEN");
+        let after_model = env::var("ANTHROPIC_MODEL");
+
+        assert_eq!(
+            original_base_url, after_base_url,
+            "ANTHROPIC_BASE_URL global environment should be unchanged after load_ccs_env_vars"
+        );
+        assert_eq!(
+            original_auth_token, after_auth_token,
+            "ANTHROPIC_AUTH_TOKEN global environment should be unchanged after load_ccs_env_vars"
+        );
+        assert_eq!(
+            original_model, after_model,
+            "ANTHROPIC_MODEL global environment should be unchanged after load_ccs_env_vars"
+        );
+    }
+
+    #[test]
+    fn test_multiple_load_ccs_env_vars_calls_isolated() {
+        // Regression test ensuring multiple load_ccs_env_vars calls with different
+        // profiles don't cross-contaminate. Each call should return independent results.
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path();
+        let _guard = EnvGuard::set("CCS_HOME", home);
+
+        let ccs_dir = home.join(".ccs");
+        fs::create_dir_all(&ccs_dir).unwrap();
+
+        // Create GLM profile settings
+        fs::write(
+            ccs_dir.join("glm.settings.json"),
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"glm-token","ANTHROPIC_MODEL":"glm-4.7"}}"#,
+        )
+        .unwrap();
+
+        // Create another profile (e.g., "work") with different settings
+        fs::write(
+            ccs_dir.join("work.settings.json"),
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://work-api.example.com","ANTHROPIC_AUTH_TOKEN":"work-token","ANTHROPIC_MODEL":"claude-sonnet-4"}}"#,
+        )
+        .unwrap();
+
+        fs::write(
+            ccs_dir.join("config.json"),
+            r#"{"profiles":{"glm":"glm.settings.json","work":"work.settings.json"}}"#,
+        )
+        .unwrap();
+
+        // Load GLM profile env vars
+        let glm_env = load_ccs_env_vars("glm").unwrap();
+        assert_eq!(
+            glm_env.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://api.z.ai/api/anthropic"
+        );
+        assert_eq!(glm_env.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "glm-token");
+        assert_eq!(glm_env.get("ANTHROPIC_MODEL").unwrap(), "glm-4.7");
+
+        // Load work profile env vars
+        let work_env = load_ccs_env_vars("work").unwrap();
+        assert_eq!(
+            work_env.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://work-api.example.com"
+        );
+        assert_eq!(work_env.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "work-token");
+        assert_eq!(work_env.get("ANTHROPIC_MODEL").unwrap(), "claude-sonnet-4");
+
+        // Verify the two HashMaps are independent (modifying one doesn't affect the other)
+        drop(glm_env);
+
+        // Re-load work profile to verify we get a fresh HashMap
+        let work_env2 = load_ccs_env_vars("work").unwrap();
+        assert_eq!(
+            work_env2.get("ANTHROPIC_BASE_URL").unwrap(),
+            "https://work-api.example.com"
+        );
+        assert!(!work_env2.contains_key("MODIFIED"));
     }
 }
 

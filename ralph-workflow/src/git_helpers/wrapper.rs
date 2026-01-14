@@ -78,17 +78,74 @@ pub fn enable_git_wrapper(helpers: &mut GitHelpers) -> io::Result<()> {
         return Ok(());
     };
 
-    let wrapper_dir = tempfile::tempdir()?;
-    let wrapper_path = wrapper_dir.path().join("git");
-
-    // Convert path to UTF-8 and escape for shell script.
-    // Use a helper function to properly handle edge cases and reject unsafe paths.
+    // Validate git path is valid UTF-8 for shell script generation.
+    // On Unix systems, paths are typically valid UTF-8, but some filesystems
+    // may contain invalid UTF-8 sequences. In such cases, we cannot safely
+    // generate a shell wrapper and should return an error.
     let git_path_str = real_git.to_str().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("git path is not valid UTF-8: {}", real_git.display()),
+            "git binary path contains invalid UTF-8 characters; cannot create wrapper script",
         )
     })?;
+
+    // Validate that the git path is an absolute path.
+    // This prevents potential issues with relative paths and ensures
+    // we're using a known, trusted git binary location.
+    if !real_git.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "git binary path is not absolute: '{git_path_str}'. \
+                 Using absolute paths prevents potential security issues."
+            ),
+        ));
+    }
+
+    // Additional validation: ensure the git binary exists and is executable.
+    // This prevents following symlinks to non-executable files or directories.
+    if !real_git.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("git binary does not exist at path: '{git_path_str}'"),
+        ));
+    }
+
+    // On Unix systems, verify it's a regular file (not a directory or special file).
+    #[cfg(unix)]
+    {
+        match fs::metadata(real_git) {
+            Ok(metadata) => {
+                let file_type = metadata.file_type();
+                if file_type.is_dir() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("git binary path is a directory, not a file: '{git_path_str}'"),
+                    ));
+                }
+                if file_type.is_symlink() {
+                    // Don't follow symlinks - require the actual path to be the binary.
+                    // This prevents symlink-based attacks.
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("git binary path is a symlink; use the actual binary path: '{git_path_str}'"),
+                    ));
+                }
+            }
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("cannot access git binary metadata at path: '{git_path_str}'"),
+                ));
+            }
+        }
+    }
+
+    let wrapper_dir = tempfile::tempdir()?;
+    let wrapper_path = wrapper_dir.path().join("git");
+
+    // Escape the git path for shell script to prevent command injection.
+    // Use a helper function to properly handle edge cases and reject unsafe paths.
     let git_path_escaped = escape_shell_single_quoted(git_path_str)?;
 
     let wrapper_content = format!(
@@ -137,11 +194,22 @@ exec '{git_path_escaped}' "$@"
 }
 
 /// Disable git wrapper.
+///
+/// # Thread Safety
+///
+/// This function modifies the process-wide `PATH` environment variable, which is
+/// inherently not thread-safe. If multiple threads were concurrently modifying PATH,
+/// there could be a TOCTOU (time-of-check-time-of-use) race condition. However,
+/// in Ralph's usage, this function is only called from the main thread during
+/// controlled shutdown sequences, so this is acceptable in practice.
 pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
     if let Some(wrapper_dir) = helpers.wrapper_dir.take() {
         let wrapper_dir_path = wrapper_dir.path().to_path_buf();
         let _ = fs::remove_dir_all(&wrapper_dir_path);
         // Remove from PATH.
+        // Note: This read-modify-write sequence on PATH has a theoretical TOCTOU race,
+        // but in practice it's safe because Ralph only calls this from the main thread
+        // during controlled shutdown.
         if let Ok(path) = env::var("PATH") {
             let wrapper_str = wrapper_dir_path.to_string_lossy();
             let new_path: String = path

@@ -26,14 +26,13 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
 use super::health::HealthMonitor;
-use super::types::{
-    format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, GeminiEvent,
-};
+use super::streaming_state::StreamingSession;
+use super::types::{format_tool_input, format_unknown_json_event, ContentType, GeminiEvent};
 
 /// Gemini event parser
 pub struct GeminiParser {
@@ -41,10 +40,8 @@ pub struct GeminiParser {
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
-    /// Delta accumulator for streaming content
-    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
-    /// Track if we're currently streaming delta content
-    in_delta_content: Rc<RefCell<Cell<bool>>>,
+    /// Unified streaming session for state tracking
+    streaming_session: Rc<RefCell<StreamingSession>>,
 }
 
 impl GeminiParser {
@@ -54,8 +51,7 @@ impl GeminiParser {
             verbosity,
             log_file: None,
             display_name: "Gemini".to_string(),
-            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
-            in_delta_content: Rc::new(RefCell::new(Cell::new(false))),
+            streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
         }
     }
 
@@ -94,8 +90,7 @@ impl GeminiParser {
                 session_id, model, ..
             } => {
                 // Clear accumulator and reset streaming state on new session
-                self.delta_accumulator.borrow_mut().clear();
-                self.in_delta_content.borrow_mut().set(false);
+                self.streaming_session.borrow_mut().on_message_start();
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                 let model_str = model.unwrap_or_else(|| "unknown".to_string());
                 format!(
@@ -121,25 +116,20 @@ impl GeminiParser {
 
                 if let Some(text) = content {
                     if is_delta && role_str == "assistant" {
-                        // Accumulate delta content
-                        let mut acc = self.delta_accumulator.borrow_mut();
-                        acc.add_delta(ContentType::Text, "main", &text);
+                        // Accumulate delta content using StreamingSession
+                        let mut session = self.streaming_session.borrow_mut();
+                        let show_prefix = session.on_text_delta_key("main", &text);
                         // Get accumulated text for streaming display
-                        let accumulated_text = acc.get(ContentType::Text, "main").unwrap_or("");
+                        let accumulated_text = session
+                            .get_accumulated(ContentType::Text, "main")
+                            .unwrap_or("");
 
-                        // Check if we're already streaming delta content
-                        let in_delta_state = self.in_delta_content.borrow();
-                        let was_in_delta = in_delta_state.get();
-                        drop(in_delta_state);
-
-                        // Only show prefix on the first delta chunk
-                        if was_in_delta {
+                        // Show prefix only on the first delta chunk
+                        if !show_prefix {
                             // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                            self.in_delta_content.borrow_mut().set(true);
                             return Some(format!("{}\x1b[0K\r{}", c.white(), accumulated_text));
                         }
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                        self.in_delta_content.borrow_mut().set(true);
                         return Some(format!(
                             "{}[{}]{} {}{}{}",
                             c.dim(),
@@ -150,31 +140,30 @@ impl GeminiParser {
                             c.reset()
                         ));
                     } else if !is_delta && role_str == "assistant" {
-                        // Non-delta message - reset streaming state, clear accumulator and show full content
-                        let in_delta_state = self.in_delta_content.borrow();
-                        let was_in_delta = in_delta_state.get();
-                        drop(in_delta_state);
-                        self.in_delta_content.borrow_mut().set(false);
+                        // Non-delta message - check if we were streaming, then finalize
+                        let session = self.streaming_session.borrow();
+                        let was_streaming = session.has_any_streamed_content();
+                        drop(session);
 
-                        self.delta_accumulator.borrow_mut().clear();
+                        // Finalize the message
+                        let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
+
+                        // If content was streamed, just add a final newline and skip re-display
+                        if was_streaming {
+                            return Some(format!("{}\n", c.reset()));
+                        }
+
+                        // Otherwise, show the full content (non-streaming path)
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(&text, limit);
 
-                        // Add final newline if we were streaming
-                        let newline_suffix = if was_in_delta {
-                            format!("{}\n", c.reset())
-                        } else {
-                            String::new()
-                        };
-
                         return Some(format!(
-                            "{}[{}]{} {}{}{}{}",
+                            "{}[{}]{} {}{}{}\n",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.white(),
                             preview,
-                            newline_suffix,
                             c.reset()
                         ));
                     }
