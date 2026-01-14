@@ -626,7 +626,7 @@ code.inline {
     gap: var(--space-2);
     padding: var(--space-2) var(--space-5);
     background: var(--color-bg-card);
-    border: 1px solid var(--border-medium);
+    border: 1px solid var(--color-primary);
     color: var(--color-primary);
     font-size: var(--text-xs);
     font-weight: 700;
@@ -634,6 +634,7 @@ code.inline {
     text-transform: uppercase;
     letter-spacing: 0.1em;
     transition: var(--transition-base);
+    box-shadow: 0 0 15px rgba(204, 255, 0, 0.2);
 }
 
 .badge:hover {
@@ -659,9 +660,9 @@ code.inline {
 .hero-title {
     font-size: var(--text-7xl);
     font-weight: 900;
-    line-height: 0.92;
-    letter-spacing: -0.05em;
-    margin-bottom: var(--space-10);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+    margin-bottom: var(--space-8);
     text-transform: uppercase;
 }
 
@@ -709,10 +710,10 @@ code.inline {
 }
 
 .hero-description {
-    font-size: var(--text-xl);
-    line-height: 1.6;
+    font-size: var(--text-2xl);
+    line-height: 1.7;
     color: var(--color-text-muted);
-    max-width: 55ch;
+    max-width: 58ch;
     margin-bottom: var(--space-12);
     opacity: 0;
     animation: hero-reveal-dramatic 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.6s forwards;
@@ -881,10 +882,11 @@ code.inline {
 }
 
 .terminal-body {
-    padding: var(--space-8);
+    padding: var(--space-10) var(--space-8);
     font-family: var(--font-mono);
-    font-size: var(--text-sm);
+    font-size: var(--text-base);
     color: var(--color-text);
+    line-height: 1.8;
 }
 
 .terminal-line {
@@ -931,6 +933,8 @@ code.inline {
 
 .terminal-success {
     color: var(--color-accent);
+    font-weight: 600;
+    text-shadow: 0 0 10px rgba(0, 255, 240, 0.5);
 }
 
 .terminal-cursor {
