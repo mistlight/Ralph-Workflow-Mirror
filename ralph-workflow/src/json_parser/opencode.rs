@@ -288,7 +288,7 @@ impl OpenCodeParser {
                     let title = part.state.as_ref().and_then(|s| s.title.as_deref());
 
                     let is_completed = status == "completed";
-                    let icon = if is_completed { CHECK } else { WAIT };
+                    let icon = if is_completed { CHECK } else { '…' };
                     let color = if is_completed { c.green() } else { c.yellow() };
 
                     let mut out = format!(
