@@ -67,30 +67,76 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     }
 
     format!(
-        r#"Generate a Conventional Commits message for the following git diff.
+        r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
 
 DIFF:
 {}
 
-FORMAT:
+---
+
+## CRITICAL: DO NOT PRODUCE THESE BAD COMMIT MESSAGES
+
+These are WRONG - they are vague, meaningless, and unhelpful:
+❌ chore: apply changes
+❌ chore: update code
+❌ chore: 6 file(s) changed
+❌ chore: update src/files/result_extraction.rs
+❌ chore: update src/git_helpers/repo.rs, src/prompts/commit.rs, tests/commit_message_generation.rs
+❌ fix: fixed bug
+❌ feat: Add New Feature.
+
+NEVER say "apply changes", "update code", "update [filename]", "N files changed", or just list filenames.
+ALWAYS describe WHAT changed and WHY.
+
+**When analyzing multi-file changes:**
+- Look for the SEMANTIC RELATIONSHIP between files
+- Are they all part of one feature? Use a single message with the feature's purpose
+- Are they unrelated changes? Use the highest-priority type with a descriptive subject
+- Examples:
+  - ❌ "chore: update src/auth.rs, src/auth_test.rs, docs/auth.md"
+  - ✅ "feat(auth): add OAuth2 login flow with tests and docs"
+  - ❌ "chore: 3 file(s) changed"
+  - ✅ "refactor: extract validation logic into shared module"
+
+---
+
+## COMMIT MESSAGE FORMAT
+
 <type>[optional scope][!]: <subject>
 
 [optional body]
 
 [optional footer]
 
-RULES:
-- type: feat|fix|docs|refactor|test|chore|perf|build|ci (required)
-- scope: area affected in parentheses, e.g., feat(parser): (optional)
-- !: add before colon for breaking changes, e.g., feat!: or feat(api)!:
-- subject: imperative mood ("add" not "added"), lowercase, no period, max 50 chars
-- body: wrap at 72 chars, explain what/why not how (optional, for complex changes)
-- footer: BREAKING CHANGE: description, or Fixes #123, Refs #456 (optional)
+## TYPE GUIDELINES
 
-GOOD EXAMPLES:
+- **feat**: A new feature (user-visible change)
+- **fix**: A bug fix (correcting incorrect behavior)
+- **docs**: Documentation changes only
+- **style**: Code style changes (formatting, semicolons, etc.) - no logic change
+- **refactor**: Code restructuring without changing behavior
+- **perf**: Performance improvement
+- **test**: Adding or updating tests
+- **build**: Build system or dependency changes
+- **ci**: CI/CD configuration changes
+- **chore**: Other changes that don't modify src/test files
+
+## SUBJECT LINE RULES (CRITICAL)
+
+- Use **imperative mood** ("add" not "added", "fix" not "fixed")
+- Use **lowercase** (except for proper nouns)
+- **No period** at the end
+- **Maximum 50 characters**
+- **Be specific**: describe WHAT changed, not THAT something changed
+- For multi-file changes: describe the OVERALL PURPOSE, not just "update files"
+
+## GOOD EXAMPLES
+
 feat(auth): add OAuth2 login flow
 fix: prevent null pointer in user lookup
 refactor(api): extract validation into middleware
+docs: clarify API authentication flow
+test: add coverage for user registration edge cases
 
 feat!: drop Python 3.7 support
 
@@ -103,13 +149,35 @@ Supports filtering by date range and custom column selection.
 
 Fixes #42
 
-BAD EXAMPLES (avoid these patterns):
-- "chore: apply changes" (too vague - what changes?)
-- "chore: update code" (meaningless)
-- "Updated the code" (no type, not imperative)
-- "feat: Add new feature." (capitalized, has period, vague)
+---
 
-Respond with ONLY the commit message (no markdown fences, no extra text)."#,
+## YOUR TASK
+
+1. **Analyze the actual code changes** in the diff above
+2. **Identify the semantic type** (feat/fix/refactor/docs/etc.) based on what changed
+3. **Determine the scope** (if applicable) based on which files/components are affected
+4. **Write a clear, descriptive subject line** that says WHAT was done
+5. **Add a body** only if the change needs context (why, what for)
+
+**MULTI-FILE ANALYSIS**: When you see changes to multiple files, determine:
+- Are they all part of one cohesive change? → Single message describing the purpose
+- Are they semantically different? → Use the most significant type with a comprehensive subject
+- What is the COMMON THREAD that connects these changes?
+
+**OUTPUT REQUIREMENT**: Respond with ONLY the commit message.
+- NO markdown fences (no ``` ``` )
+- NO explanations
+- NO "Here is the commit message:" prefix
+- JUST the commit message itself
+
+Example of WRONG output:
+```
+Here is the commit message:
+feat: add feature
+```
+
+Example of CORRECT output:
+feat: add feature"#,
         diff_content
     )
 }

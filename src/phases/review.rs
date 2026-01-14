@@ -807,7 +807,21 @@ fn build_review_prompt(
             // Get the diff from the starting commit to pass directly to the reviewer
             // This keeps agents isolated from git operations
             let diff = match get_git_diff_from_start() {
-                Ok(d) if !d.trim().is_empty() => d,
+                Ok(d) if !d.trim().is_empty() => {
+                    let original_size = d.len();
+                    // For reviewer, use truncation for very large diffs (not chunking)
+                    // The limit is 1MB which provides substantial context for review
+                    // Chunking is only for commit message generation where we need to combine results
+                    let (truncated_diff, was_truncated) = crate::git_helpers::validate_and_truncate_diff(d);
+                    if was_truncated {
+                        ctx.logger.warn(&format!(
+                            "Review diff truncated from {} to {} bytes for LLM processing",
+                            original_size,
+                            truncated_diff.len()
+                        ));
+                    }
+                    truncated_diff
+                }
                 Ok(_) => {
                     ctx.logger
                         .warn("No diff found from starting commit; review will be skipped for this cycle");
