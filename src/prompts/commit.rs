@@ -81,11 +81,22 @@ These are WRONG - they are vague, meaningless, and unhelpful:
 ❌ chore: update code
 ❌ chore: 6 file(s) changed
 ❌ chore: update src/files/result_extraction.rs
+❌ chore: update src/git_helpers/repo.rs, src/prompts/commit.rs, tests/commit_message_generation.rs
 ❌ fix: fixed bug
 ❌ feat: Add New Feature.
 
-NEVER say "apply changes", "update code", "update [filename]", or "N files changed".
+NEVER say "apply changes", "update code", "update [filename]", "N files changed", or just list filenames.
 ALWAYS describe WHAT changed and WHY.
+
+**When analyzing multi-file changes:**
+- Look for the SEMANTIC RELATIONSHIP between files
+- Are they all part of one feature? Use a single message with the feature's purpose
+- Are they unrelated changes? Use the highest-priority type with a descriptive subject
+- Examples:
+  - ❌ "chore: update src/auth.rs, src/auth_test.rs, docs/auth.md"
+  - ✅ "feat(auth): add OAuth2 login flow with tests and docs"
+  - ❌ "chore: 3 file(s) changed"
+  - ✅ "refactor: extract validation logic into shared module"
 
 ---
 
@@ -117,6 +128,7 @@ ALWAYS describe WHAT changed and WHY.
 - **No period** at the end
 - **Maximum 50 characters**
 - **Be specific**: describe WHAT changed, not THAT something changed
+- For multi-file changes: describe the OVERALL PURPOSE, not just "update files"
 
 ## GOOD EXAMPLES
 
@@ -146,6 +158,11 @@ Fixes #42
 3. **Determine the scope** (if applicable) based on which files/components are affected
 4. **Write a clear, descriptive subject line** that says WHAT was done
 5. **Add a body** only if the change needs context (why, what for)
+
+**MULTI-FILE ANALYSIS**: When you see changes to multiple files, determine:
+- Are they all part of one cohesive change? → Single message describing the purpose
+- Are they semantically different? → Use the most significant type with a comprehensive subject
+- What is the COMMON THREAD that connects these changes?
 
 **OUTPUT REQUIREMENT**: Respond with ONLY the commit message.
 - NO markdown fences (no ``` ``` )
