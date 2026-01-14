@@ -90,8 +90,9 @@ impl GeminiParser {
             GeminiEvent::Init {
                 session_id, model, ..
             } => {
-                // Clear accumulator on new session
+                // Clear accumulator and reset streaming state on new session
                 self.delta_accumulator.borrow_mut().clear();
+                self.in_delta_content.borrow_mut().set(false);
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                 let model_str = model.unwrap_or_else(|| "unknown".to_string());
                 format!(
