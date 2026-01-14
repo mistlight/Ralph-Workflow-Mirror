@@ -34,9 +34,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::{
-    DeltaDisplayFormatter, DeltaRenderer, StreamingDisplay, TextDeltaRenderer,
-};
+use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{
@@ -57,8 +55,6 @@ pub struct ClaudeParser {
     /// Unified streaming session tracker
     /// Provides single source of truth for streaming state across all content types
     streaming_session: Rc<RefCell<StreamingSession>>,
-    /// Streaming display manager for in-place terminal updates
-    streaming_display: Rc<RefCell<StreamingDisplay>>,
 }
 
 impl ClaudeParser {
@@ -69,7 +65,6 @@ impl ClaudeParser {
             log_file: None,
             display_name: "Claude".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
-            streaming_display: Rc::new(RefCell::new(StreamingDisplay::new())),
         }
     }
 
@@ -569,36 +564,22 @@ impl ClaudeParser {
                     .get_accumulated(ContentType::Text, default_index_str)
                     .unwrap_or("");
 
-                // Use StreamingDisplay for in-place updates and TextDeltaRenderer for formatting
+                // Use TextDeltaRenderer for consistent rendering across all parsers
                 if show_prefix {
                     // First delta - use the renderer with prefix
                     TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
                 } else {
-                    // Subsequent delta - use in_place_update to clear the line
-                    let mut display = self.streaming_display.borrow_mut();
-                    display.in_place_update(accumulated_text, *c)
+                    // Subsequent delta - use renderer for in-place update
+                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, *c)
                 }
             }
             StreamInnerEvent::MessageStop => {
                 // Message complete - add final newline if we were in a content block
                 let was_in_block = session.on_message_stop();
-                let mut display = self.streaming_display.borrow_mut();
                 if was_in_block {
-                    // Check if cursor is at line start to avoid extra newlines
-                    let already_at_start = display.is_at_line_start();
-                    display.reset_cursor();
-                    // Use both StreamingDisplay and DeltaRenderer for consistency
-                    let display_output = display.render_completion();
-                    let renderer_output = TextDeltaRenderer::render_completion();
-                    // If already at line start, renderer_output (which is "\n") adds the newline
-                    // If not at line start, display_output will be empty and renderer_output adds the newline
-                    if already_at_start {
-                        format!("{}{}", c.reset(), renderer_output)
-                    } else {
-                        format!("{}{}{}", c.reset(), display_output, renderer_output)
-                    }
+                    // Use TextDeltaRenderer for completion - adds final newline
+                    format!("{}{}", c.reset(), TextDeltaRenderer::render_completion())
                 } else {
-                    display.reset_cursor();
                     String::new()
                 }
             }

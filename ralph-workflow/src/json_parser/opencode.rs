@@ -31,7 +31,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::StreamingDisplay;
+use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType};
@@ -124,8 +124,6 @@ pub struct OpenCodeParser {
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
-    /// Streaming display manager for in-place terminal updates
-    streaming_display: Rc<RefCell<StreamingDisplay>>,
 }
 
 impl OpenCodeParser {
@@ -136,7 +134,6 @@ impl OpenCodeParser {
             log_file: None,
             display_name: "OpenCode".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
-            streaming_display: Rc::new(RefCell::new(StreamingDisplay::new())),
         }
     }
 
@@ -174,7 +171,6 @@ impl OpenCodeParser {
             "step_start" => {
                 // Reset streaming state on new step
                 self.streaming_session.borrow_mut().on_message_start();
-                self.streaming_display.borrow_mut().reset_cursor();
                 let sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
                 // Set the current message ID for duplicate detection
                 self.streaming_session
@@ -201,11 +197,10 @@ impl OpenCodeParser {
             "step_finish" => {
                 // Check for duplicate final message using message ID or fallback to streaming content check
                 let session = self.streaming_session.borrow();
-                let is_duplicate = session
-                    .get_current_message_id()
-                    .map_or_else(|| session.has_any_streamed_content(), |message_id| {
-                        session.is_duplicate_final_message(message_id)
-                    });
+                let is_duplicate = session.get_current_message_id().map_or_else(
+                    || session.has_any_streamed_content(),
+                    |message_id| session.is_duplicate_final_message(message_id),
+                );
                 let was_streaming = session.has_any_streamed_content();
                 drop(session);
 
@@ -236,8 +231,7 @@ impl OpenCodeParser {
 
                     // Add final newline if we were streaming text
                     let newline_prefix = if is_duplicate || was_streaming {
-                        let display = self.streaming_display.borrow();
-                        display.render_completion()
+                        TextDeltaRenderer::render_completion()
                     } else {
                         String::new()
                     };
@@ -390,22 +384,15 @@ impl OpenCodeParser {
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(&accumulated_text, limit);
 
-                        // Show prefix only on the first text chunk
-                        if !show_prefix {
-                            // Subsequent chunks: use StreamingDisplay for in-place update
-                            let mut display = self.streaming_display.borrow_mut();
-                            return Some(display.in_place_update(&preview, *c));
+                        // Use TextDeltaRenderer for consistent rendering across all parsers
+                        if show_prefix {
+                            // First delta: use renderer with prefix
+                            return Some(TextDeltaRenderer::render_first_delta(
+                                &preview, prefix, *c,
+                            ));
                         }
-                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                        return Some(format!(
-                            "{}[{}]{} {}{}{}",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.white(),
-                            preview,
-                            c.reset()
-                        ));
+                        // Subsequent deltas: use renderer for in-place update
+                        return Some(TextDeltaRenderer::render_subsequent_delta(&preview, *c));
                     }
                 }
                 String::new()
