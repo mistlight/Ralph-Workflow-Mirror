@@ -1,0 +1,12 @@
+{
+  "name": "ralph-workflow-website",
+  "version": "1.0.0",
+  "description": "Ralph Workflow - Multi-Agent AI Orchestration Website",
+  "type": "module",
+  "scripts": {
+    "screenshots": "node capture-screenshots.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0"
+  }
+}

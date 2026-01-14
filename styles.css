@@ -1686,6 +1686,90 @@ code.inline {
     color: var(--color-text-muted);
 }
 
+/* Workflow Diagram */
+.workflow-diagram {
+    margin-top: var(--space-12);
+    width: 100%;
+    overflow: hidden;
+}
+
+.workflow-svg {
+    width: 100%;
+    height: auto;
+    max-width: 600px;
+    display: block;
+    margin: 0 auto;
+}
+
+.workflow-node {
+    transition: transform var(--transition-base);
+}
+
+.workflow-node rect {
+    transition: stroke-width var(--transition-base), filter var(--transition-base);
+}
+
+.workflow-diagram:hover .workflow-node {
+    transform: translateY(-2px);
+}
+
+.workflow-diagram:hover .workflow-node rect {
+    stroke-width: 3;
+    filter: drop-shadow(0 0 8px currentColor);
+}
+
+/* Diagram animation on load */
+@keyframes node-reveal {
+    0% {
+        opacity: 0;
+        transform: translateY(20px) scale(0.9);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.workflow-node {
+    animation: node-reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    opacity: 0;
+}
+
+.workflow-node:nth-child(1) { animation-delay: 0.1s; }
+.workflow-node:nth-child(2) { animation-delay: 0.2s; }
+.workflow-node:nth-child(3) { animation-delay: 0.3s; }
+.workflow-node:nth-child(4) { animation-delay: 0.4s; }
+
+/* Connection line animation */
+@keyframes line-draw {
+    0% {
+        stroke-dashoffset: 100;
+        opacity: 0;
+    }
+    100% {
+        stroke-dashoffset: 0;
+        opacity: 0.5;
+    }
+}
+
+.workflow-diagram line {
+    stroke-dasharray: 100;
+    animation: line-draw 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: 0.5s;
+    opacity: 0;
+}
+
+/* Responsive diagram */
+@media (max-width: 768px) {
+    .workflow-diagram {
+        margin-top: var(--space-8);
+    }
+
+    .workflow-svg {
+        font-size: 10px;
+    }
+}
+
 .what-sidebar {
     position: sticky;
     top: calc(var(--nav-height) + var(--space-10));
