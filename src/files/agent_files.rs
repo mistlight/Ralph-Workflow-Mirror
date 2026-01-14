@@ -25,14 +25,6 @@ pub const GENERATED_FILES: &[&str] = &[
     ".agent/checkpoint.json.tmp",
 ];
 
-/// Backup files that should persist and NOT be cleaned up.
-///
-/// These files are created to protect against accidental deletion
-/// and should remain available across pipeline runs.
-pub const BACKUP_FILES: &[&str] = &[
-    ".agent/PROMPT.md.backup",
-];
-
 /// Overwrite a file with a single-line content.
 ///
 /// Enforces "1 sentence, 1 line" semantics by taking only the first line.
@@ -365,6 +357,57 @@ pub fn cleanup_generated_files() {
     }
 }
 
+/// Make PROMPT.md read-only to protect against accidental deletion.
+///
+/// This function sets read-only permissions on PROMPT.md to make accidental
+/// deletion harder. This is a best-effort protection - agents with shell
+/// access could potentially chmod the file.
+///
+/// # Behavior
+///
+/// - If PROMPT.md doesn't exist, returns `Ok(())` (nothing to protect)
+/// - Uses platform-specific permission setting
+/// - Returns `Ok(())` even if setting permissions fails (best-effort)
+///
+/// # Returns
+///
+/// Returns `Ok(())` if permissions were set or file doesn't exist.
+/// Returns an error only if metadata retrieval fails unexpectedly.
+///
+/// # Platform Behavior
+///
+/// - Unix: Sets mode to 0o444 (read-only for all)
+/// - Windows: Sets the readonly flag
+pub fn make_prompt_read_only() -> io::Result<()> {
+    let prompt_path = Path::new("PROMPT.md");
+
+    // If PROMPT.md doesn't exist, that's fine - nothing to protect
+    if !prompt_path.exists() {
+        return Ok(());
+    }
+
+    // Try to set read-only permissions (best-effort - don't fail if this fails)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(mut perms) = fs::metadata(prompt_path).map(|m| m.permissions()) {
+            perms.set_mode(0o444); // Read-only for all
+            let _ = fs::set_permissions(prompt_path, perms);
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, read-only is set via the readonly flag
+        if let Ok(mut perms) = fs::metadata(prompt_path).map(|m| m.permissions()) {
+            perms.set_readonly(true);
+            let _ = fs::set_permissions(prompt_path, perms);
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -574,6 +617,65 @@ mod tests {
             // Verify backup has new content
             let backup = fs::read_to_string(".agent/PROMPT.md.backup").unwrap();
             assert_eq!(backup, "# New Content\n\nThis is the new content.");
+        });
+    }
+
+    // Tests for make_prompt_read_only
+
+    #[test]
+    fn test_make_prompt_read_only_sets_permissions() {
+        with_temp_cwd(|_dir| {
+            // Create a PROMPT.md
+            fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
+
+            // Make it read-only
+            make_prompt_read_only().unwrap();
+
+            // On Unix, verify permissions are read-only
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let metadata = fs::metadata("PROMPT.md").unwrap();
+                let perms = metadata.permissions();
+                let mode = perms.mode();
+                // Check that owner write bit is not set (0o444 = read-only)
+                assert_eq!(mode & 0o777, 0o444);
+            }
+
+            // On Windows, verify readonly flag is set
+            #[cfg(windows)]
+            {
+                let metadata = fs::metadata("PROMPT.md").unwrap();
+                let perms = metadata.permissions();
+                assert!(perms.readonly());
+            }
+        });
+    }
+
+    #[test]
+    fn test_make_prompt_read_only_handles_missing_prompt() {
+        with_temp_cwd(|_dir| {
+            // No PROMPT.md exists
+            assert!(!Path::new("PROMPT.md").exists());
+
+            // Should succeed without error
+            make_prompt_read_only().unwrap();
+        });
+    }
+
+    #[test]
+    fn test_make_prompt_read_only_idempotent() {
+        with_temp_cwd(|_dir| {
+            // Create a PROMPT.md
+            fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
+
+            // Make it read-only twice
+            make_prompt_read_only().unwrap();
+            make_prompt_read_only().unwrap();
+
+            // File should still exist and be readable
+            let content = fs::read_to_string("PROMPT.md").unwrap();
+            assert_eq!(content, "# Test Prompt\n\nThis is a test prompt.");
         });
     }
 }

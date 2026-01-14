@@ -48,8 +48,14 @@ GUIDELINES:
 /// - Clear exit criteria
 ///
 /// Reference: <https://github.com/Piebald-AI/claude-code-system-prompts>
-pub fn prompt_plan() -> String {
-    r#"You are in PLANNING MODE. Create a detailed implementation plan.
+///
+/// # Arguments
+///
+/// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
+///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
+///   which prevents accidental deletion.
+pub fn prompt_plan(prompt_content: Option<&str>) -> String {
+    let mut prompt = r#"You are in PLANNING MODE. Create a detailed implementation plan.
 
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
 - Creating, modifying, or deleting any files
@@ -60,8 +66,34 @@ You MAY use read-only operations: reading files, searching code, listing directo
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 1: UNDERSTANDING
-═══════════════════════════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════════════════════════"#
+        .to_string();
+
+    // If PROMPT.md content is provided, include it directly in the prompt
+    // This prevents agents from discovering PROMPT.md through file exploration,
+    // which reduces the risk of accidental deletion.
+    if let Some(content) = prompt_content {
+        prompt.push_str(&format!(
+            r#"
+
+REQUIREMENTS FROM PROMPT.md:
+───────────────────────────────────────────────────────────────────────────────
+{}
+───────────────────────────────────────────────────────────────────────────────
+"#,
+            content
+        ));
+    } else {
+        prompt.push_str(
+            r#"
+
 The orchestrator has provided requirements to you via the planning task.
+"#,
+        );
+    }
+
+    prompt.push_str(
+        r#"
 Understand:
 - The Goal: What is the desired end state?
 - Acceptance Checks: What specific conditions must be satisfied?
@@ -126,8 +158,10 @@ How to verify acceptance checks are met:
 - Manual verification steps
 - Success criteria
 
-IMPORTANT: Output ONLY the plan content above. Do NOT write to any files."#
-        .to_string()
+IMPORTANT: Output ONLY the plan content above. Do NOT write to any files."#,
+    );
+
+    prompt
 }
 
 #[cfg(test)]
@@ -158,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_prompt_plan() {
-        let result = prompt_plan();
+        let result = prompt_plan(None);
         // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
         assert!(!result.contains("PROMPT.md"));
         // Plan is now returned as structured output, not written to file
@@ -180,12 +214,24 @@ mod tests {
     }
 
     #[test]
+    fn test_prompt_plan_with_content() {
+        let prompt_md = "# Test Prompt\n\nThis is the content.";
+        let result = prompt_plan(Some(prompt_md));
+        // Should include the PROMPT.md content directly
+        assert!(result.contains("REQUIREMENTS FROM PROMPT.md:"));
+        assert!(result.contains("This is the content."));
+        // Should still have the planning structure
+        assert!(result.contains("PLANNING MODE"));
+        assert!(result.contains("PHASE 1: UNDERSTANDING"));
+    }
+
+    #[test]
     fn all_developer_prompts_isolate_agents_from_git() {
         // Verify developer prompts don't tell agents to run git commands
         let prompts = vec![
             prompt_developer_iteration(1, 3, ContextLevel::Minimal),
             prompt_developer_iteration(2, 3, ContextLevel::Normal),
-            prompt_plan(),
+            prompt_plan(None),
         ];
 
         for prompt in prompts {

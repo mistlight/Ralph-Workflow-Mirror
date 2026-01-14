@@ -101,6 +101,7 @@ pub fn run_development_phase(
             Some(i),
             Some(ctx.config.developer_iters),
             None, // No guidelines needed for development iteration
+            None, // No PROMPT.md content needed for iteration
         );
 
         let exit_code = {
@@ -221,6 +222,11 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
     ctx.logger.info("Creating plan from PROMPT.md...");
     update_status("Starting planning phase", ctx.config.isolation_mode)?;
 
+    // Read PROMPT.md content to include directly in the planning prompt
+    // This prevents agents from discovering PROMPT.md through file exploration,
+    // which reduces the risk of accidental deletion.
+    let prompt_md_content = std::fs::read_to_string("PROMPT.md").ok();
+
     let plan_prompt = prompt_for_agent(
         Role::Developer,
         Action::Plan,
@@ -228,6 +234,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         None,
         None,
         None, // No guidelines needed for planning
+        prompt_md_content.as_deref(),
     );
 
     let log_dir = format!(".agent/logs/planning_{}", iteration);
