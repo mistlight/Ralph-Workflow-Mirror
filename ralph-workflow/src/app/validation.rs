@@ -6,6 +6,8 @@
 //! - Enforcing workflow-capable agents (`can_commit=true`)
 //! - Validating agent chain configuration
 
+#![allow(dead_code)]
+
 use crate::agents::AgentRegistry;
 use crate::config::Config;
 use crate::logger::Colors;

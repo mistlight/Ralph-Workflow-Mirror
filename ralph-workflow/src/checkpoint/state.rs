@@ -3,6 +3,8 @@
 //! This module contains the checkpoint data structures and file operations
 //! for saving and loading pipeline state.
 
+#![allow(dead_code)]
+
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::fs;

@@ -6,6 +6,8 @@
 //! - Selecting default agents from fallback chains
 //! - Loading agent registry data from unified config
 
+#![allow(dead_code)]
+
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{
     apply_args_to_config, handle_init_global, handle_init_legacy, handle_init_prompt,

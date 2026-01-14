@@ -18,6 +18,8 @@
 
 #![expect(clippy::too_many_lines)]
 
+#![allow(dead_code)]
+
 pub mod config_init;
 pub mod context;
 pub mod detection;

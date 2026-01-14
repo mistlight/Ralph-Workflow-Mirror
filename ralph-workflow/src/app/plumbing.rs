@@ -6,6 +6,8 @@
 //! - `--apply-commit`: Stage and commit using the stored message
 //! - `--generate-commit-msg`: Generate a commit message for staged changes
 
+#![allow(dead_code)]
+
 use crate::agents::AgentRegistry;
 use crate::config::Config;
 use crate::files::{
