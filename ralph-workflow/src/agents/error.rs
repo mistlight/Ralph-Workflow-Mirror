@@ -26,6 +26,26 @@ pub fn is_glm_like_agent(s: &str) -> bool {
         || s_lower.contains("deepseek")
 }
 
+/// Check if an agent name indicates OpenAI Codex.
+///
+/// Codex is OpenAI's coding assistant that may have special compatibility
+/// considerations with container security modes.
+///
+/// # Arguments
+///
+/// * `s` - The agent name or command string to check
+///
+/// # Returns
+///
+/// `true` if the string indicates a Codex agent, `false` otherwise
+pub fn is_codex_agent(s: &str) -> bool {
+    let s_lower = s.to_lowercase();
+    s_lower.contains("codex")
+        || s_lower.contains("codeex")
+        || s_lower.contains("code-x")
+        || s_lower.contains("openai")
+}
+
 /// Error classification for agent failures.
 ///
 /// Used to determine appropriate recovery strategy when an agent fails:
@@ -588,5 +608,28 @@ mod tests {
         assert!(AgentErrorKind::TokenExhausted.suggests_smaller_context());
         assert!(AgentErrorKind::ProcessKilled.suggests_smaller_context());
         assert!(!AgentErrorKind::RateLimited.suggests_smaller_context());
+    }
+
+    #[test]
+    fn test_is_glm_like_agent() {
+        assert!(is_glm_like_agent("glm"));
+        assert!(is_glm_like_agent("zhipuai"));
+        assert!(is_glm_like_agent("ZAI"));
+        assert!(is_glm_like_agent("qwen"));
+        assert!(is_glm_like_agent("deepseek"));
+
+        assert!(!is_glm_like_agent("claude"));
+        assert!(!is_glm_like_agent("codex"));
+    }
+
+    #[test]
+    fn test_is_codex_agent() {
+        assert!(is_codex_agent("codex"));
+        assert!(is_codex_agent("codeex"));
+        assert!(is_codex_agent("CODE-X"));
+        assert!(is_codex_agent("openai"));
+
+        assert!(!is_codex_agent("claude"));
+        assert!(!is_codex_agent("glm"));
     }
 }

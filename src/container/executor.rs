@@ -31,7 +31,7 @@ impl ContainerExecutor {
             config.config_dir.clone(),
         );
 
-        let tool_manager = ToolManager::new();
+        let tool_manager = ToolManager::with_repo(config.repository_root.clone());
 
         Self {
             config,
@@ -112,14 +112,38 @@ impl ContainerExecutor {
             .map(PortMapping::auto_allocate)
             .collect();
 
+        // Build container command with shell initialization
+        let shell_init = self.tool_manager.get_shell_init_script();
+        let command = if shell_init.is_empty() {
+            // No shell init needed, use command directly
+            let mut cmd = argv;
+            cmd.push("<PROMPT>".to_string());
+            cmd
+        } else {
+            // Wrap command with bash and shell init script
+            let quoted_command = argv
+                .iter()
+                .map(|arg| shell_words::quote(arg).into_owned())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let full_script = format!(
+                "{shell_init}\ncd {workdir}\n{quoted_command} \"$@\"",
+                shell_init = shell_init,
+                workdir = workdir,
+                quoted_command = quoted_command
+            );
+            vec![
+                "bash".to_string(),
+                "-c".to_string(),
+                full_script,
+                "<PROMPT>".to_string(),
+            ]
+        };
+
         // Build container run options
         let run_opts = RunOptions {
             image: self.config.image.clone(),
-            command: {
-                let mut cmd = argv;
-                cmd.push("<PROMPT>".to_string()); // Placeholder
-                cmd
-            },
+            command,
             mounts,
             env_vars: container_env,
             working_dir: Some(workdir),

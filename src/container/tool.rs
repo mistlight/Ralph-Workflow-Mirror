@@ -54,6 +54,11 @@ const VERSION_MANAGER_DIRS: &[&str] = &[
     ".gradle",   // Java/Gradle cache and wrapper
     ".m2",       // Maven local repository
     ".go",       // Go workspace
+    ".asdf",     // Multi-language version manager
+    ".mise",     // Multi-language version manager (formerly rtx)
+    ".chruby",   // Ruby version manager
+    ".fnm",      // Fast Node Manager
+    ".volta",    // JavaScript tool manager
 ];
 
 /// Tool mount configuration
@@ -110,6 +115,8 @@ pub struct ToolManager {
     custom_tool_dirs: Vec<PathBuf>,
     /// Whether to mount system binary directories
     mount_system_bins: bool,
+    /// Repository root path (for project-local tool detection)
+    repo_root: Option<PathBuf>,
 }
 
 impl ToolManager {
@@ -119,6 +126,17 @@ impl ToolManager {
             home_dir: dirs::home_dir(),
             custom_tool_dirs: Vec::new(),
             mount_system_bins: true,
+            repo_root: None,
+        }
+    }
+
+    /// Create a tool manager with a repository root
+    pub fn with_repo(repo_root: PathBuf) -> Self {
+        Self {
+            home_dir: dirs::home_dir(),
+            custom_tool_dirs: Vec::new(),
+            mount_system_bins: true,
+            repo_root: Some(repo_root),
         }
     }
 
@@ -131,6 +149,7 @@ impl ToolManager {
             home_dir: dirs::home_dir(),
             custom_tool_dirs: Vec::new(),
             mount_system_bins: false,
+            repo_root: None,
         }
     }
 
@@ -231,6 +250,56 @@ impl ToolManager {
             }
         }
 
+        // Discover and mount project-local tool configurations
+        if let Some(ref repo_root) = self.repo_root {
+            // Python virtual environments
+            for venv_dir in &[".venv", "venv", "env", "virtualenv"] {
+                let venv_path = repo_root.join(venv_dir);
+                if venv_path.exists() && venv_path.is_dir() {
+                    let target = format!("/workspace/{venv_dir}");
+                    if seen_targets.insert(target.clone()) {
+                        // Mount read-write as pip may need to install packages
+                        mounts.push(ToolMount::read_write(venv_path, target));
+                    }
+                }
+            }
+
+            // Node.js version files (.nvmrc, .node-version)
+            for version_file in &[".nvmrc", ".node-version"] {
+                let version_path = repo_root.join(version_file);
+                if version_path.exists() && version_path.is_file() {
+                    // Just note this for environment setup - the actual version manager
+                    // is already mounted from home directory
+                }
+            }
+
+            // Ruby version files (.ruby-version, .tool-versions)
+            for version_file in &[".ruby-version", ".tool-versions"] {
+                let version_path = repo_root.join(version_file);
+                if version_path.exists() && version_path.is_file() {
+                    // Note for environment setup - version managers already mounted
+                }
+            }
+
+            // Python version files (.python-version)
+            let python_version = repo_root.join(".python-version");
+            if python_version.exists() && python_version.is_file() {
+                // Note for environment setup
+            }
+
+            // Go workspace directories
+            let go_bin = repo_root.join("bin");
+            if go_bin.exists() && go_bin.is_dir() {
+                let target = "/workspace/bin".to_string();
+                if seen_targets.insert(target.clone()) {
+                    mounts.push(ToolMount::new(go_bin, target));
+                }
+            }
+
+            // asdf tool versions (already mounted via home dir, but we may need
+            // to ensure ASDF_DATA_DIR is set correctly)
+        }
+
         // Add custom tool directories
         for tool_dir in &self.custom_tool_dirs {
             if tool_dir.exists() {
@@ -318,6 +387,23 @@ impl ToolManager {
                 || key_upper.contains("PERL5LIB")
                 || key_upper.contains("SCALA")
                 || key_upper.contains("SBT")
+                || key_upper.contains("ASDF")
+                || key_upper.contains("MISE")
+                || key_upper.contains("RTX")
+                || key_upper.contains("FNM")
+                || key_upper.contains("VOLTA")
+                || key_upper.contains("CHRUBY")
+                || key_upper.contains("JABBA")
+                || key_upper.contains("SWIFTENV")
+                || key_upper.contains("SDKMAN")
+                || key_upper.contains("GVM")
+                || key_upper.contains("GOENV")
+                || key_upper.contains("POETRY")
+                || key_upper.contains("PEX")
+                || key_upper.contains("PIPX")
+                || key_upper.contains("PNPM")
+                || key_upper.contains("YARN")
+                || key_upper.contains("BUN")
             {
                 let value = env::var(&key).unwrap_or_default();
                 env_vars.push((key, value));
@@ -325,6 +411,235 @@ impl ToolManager {
         }
 
         env_vars
+    }
+
+    /// Generate wrapper scripts for host binaries that need environment setup
+    ///
+    /// Returns a list of (script_path, script_content) tuples for wrapper scripts
+    /// that should be created in the container.
+    ///
+    /// Note: This is currently used for testing and future integration.
+    /// Wrapper scripts will be generated and mounted into the container to provide
+    /// transparent access to host tools that require special environment setup.
+    #[cfg(test)]
+    pub fn generate_wrapper_scripts(&self) -> Vec<(String, String)> {
+        let mut wrappers = Vec::new();
+        let Some(ref home) = self.home_dir else {
+            return wrappers;
+        };
+
+        // Detect available version managers and generate appropriate wrappers
+
+        // rbenv wrapper
+        if home.join(".rbenv").exists() {
+            wrappers.push((
+                "/usr/local/bin/rbenv".to_string(),
+                format!(
+                    r#"#!/bin/bash
+export RBENV_ROOT="/home/ralph/.rbenv"
+export PATH="$RBENV_ROOT/bin:$PATH"
+eval "$(rbenv init - bash)"
+exec rbenv "$@"
+"#
+                ),
+            ));
+        }
+
+        // RVM wrapper
+        if home.join(".rvm").exists() {
+            wrappers.push((
+                "/usr/local/bin/rvm".to_string(),
+                r#"#!/bin/bash
+export RVM_HOME="/home/ralph/.rvm"
+source "$RVM_HOME/scripts/rvm"
+exec rvm "$@"
+"#
+                .to_string(),
+            ));
+        }
+
+        // nvm wrapper
+        if home.join(".nvm").exists() {
+            wrappers.push((
+                "/usr/local/bin/nvm".to_string(),
+                r#"#!/bin/bash
+export NVM_DIR="/home/ralph/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+exec nvm "$@"
+"#
+                .to_string(),
+            ));
+        }
+
+        // pyenv wrapper
+        if home.join(".pyenv").exists() {
+            wrappers.push((
+                "/usr/local/bin/pyenv".to_string(),
+                r#"#!/bin/bash
+export PYENV_ROOT="/home/ralph/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init - bash)"
+exec pyenv "$@"
+"#
+                .to_string(),
+            ));
+        }
+
+        // asdf wrapper
+        if home.join(".asdf").exists() {
+            wrappers.push((
+                "/usr/local/bin/asdf".to_string(),
+                r#"#!/bin/bash
+export ASDF_DATA_DIR="/home/ralph/.asdf"
+export ASDF_DIR="/home/ralph/.asdf"
+. "$ASDF_DIR/asdf.sh"
+exec asdf "$@"
+"#
+                .to_string(),
+            ));
+        }
+
+        // mise wrapper
+        if home.join(".mise").exists() {
+            wrappers.push((
+                "/usr/local/bin/mise".to_string(),
+                r#"#!/bin/bash
+export MISE_DATA_DIR="/home/ralph/.mise"
+export MISE_SHELL=bash
+eval "$(mise activate bash)"
+exec mise "$@"
+"#
+                .to_string(),
+            ));
+        }
+
+        // fnm wrapper
+        if home.join(".fnm").exists() {
+            wrappers.push((
+                "/usr/local/bin/fnm".to_string(),
+                r#"#!/bin/bash
+export FNM_DIR="/home/ralph/.fnm"
+eval "$(fnm env --use-on-cd)"
+exec fnm "$@"
+"#
+                .to_string(),
+            ));
+        }
+
+        wrappers
+    }
+
+    /// Get shell initialization script content for container startup
+    ///
+    /// Returns a bash script fragment that initializes all detected version managers.
+    pub fn get_shell_init_script(&self) -> String {
+        let mut init_lines = Vec::new();
+        let Some(ref _home) = self.home_dir else {
+            return String::new();
+        };
+
+        // Add rbenv initialization
+        init_lines.push(
+            r#"
+# Initialize rbenv if available
+if [ -d "/home/ralph/.rbenv" ]; then
+    export RBENV_ROOT="/home/ralph/.rbenv"
+    export PATH="$RBENV_ROOT/bin:$PATH"
+    eval "$(rbenv init - bash 2>/dev/null || true)"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add RVM initialization
+        init_lines.push(
+            r#"
+# Initialize RVM if available
+if [ -f "/home/ralph/.rvm/scripts/rvm" ]; then
+    export RVM_HOME="/home/ralph/.rvm"
+    source "$RVM_HOME/scripts/rvm"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add nvm initialization
+        init_lines.push(
+            r#"
+# Initialize nvm if available
+if [ -f "/home/ralph/.nvm/nvm.sh" ]; then
+    export NVM_DIR="/home/ralph/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add pyenv initialization
+        init_lines.push(
+            r#"
+# Initialize pyenv if available
+if [ -d "/home/ralph/.pyenv" ]; then
+    export PYENV_ROOT="/home/ralph/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init - bash 2>/dev/null || true)"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add asdf initialization
+        init_lines.push(
+            r#"
+# Initialize asdf if available
+if [ -f "/home/ralph/.asdf/asdf.sh" ]; then
+    export ASDF_DATA_DIR="/home/ralph/.asdf"
+    export ASDF_DIR="/home/ralph/.asdf"
+    . "$ASDF_DIR/asdf.sh"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add mise initialization
+        init_lines.push(
+            r#"
+# Initialize mise if available
+if command -v mise &> /dev/null; then
+    export MISE_DATA_DIR="/home/ralph/.mise"
+    export MISE_SHELL=bash
+    eval "$(mise activate bash 2>/dev/null || true)"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add fnm initialization
+        init_lines.push(
+            r#"
+# Initialize fnm if available
+if command -v fnm &> /dev/null; then
+    export FNM_DIR="/home/ralph/.fnm"
+    eval "$(fnm env --use-on-cd 2>/dev/null || true)"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add virtual environment activation if detected
+        init_lines.push(
+            r#"
+# Activate Python virtual environment if available
+if [ -f "/workspace/.venv/bin/activate" ]; then
+    source "/workspace/.venv/bin/activate"
+elif [ -f "/workspace/venv/bin/activate" ]; then
+    source "/workspace/venv/bin/activate"
+fi
+"#
+            .to_string(),
+        );
+
+        init_lines.join("\n")
     }
 
     /// Detect which language tools are available on the host

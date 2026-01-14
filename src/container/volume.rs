@@ -17,14 +17,25 @@ pub struct VolumeManager {
     config_dir: Option<PathBuf>,
     /// Claude config directory for MCP/Skills (optional)
     claude_dir: Option<PathBuf>,
+    /// Additional Claude config directory in .config (optional)
+    claude_config_dir: Option<PathBuf>,
 }
 
 impl VolumeManager {
     /// Create a new volume manager
     pub fn new(repository_root: PathBuf, agent_dir: PathBuf, config_dir: Option<PathBuf>) -> Self {
-        // Detect Claude config directory
-        let claude_dir = dirs::home_dir()
-            .map(|home| home.join(".claude"))
+        let home = dirs::home_dir();
+
+        // Detect Claude config directory (~/.claude)
+        let claude_dir = home
+            .as_ref()
+            .map(|h| h.join(".claude"))
+            .filter(|path| path.exists());
+
+        // Detect Claude config in .config directory (~/.config/claude)
+        let claude_config_dir = home
+            .as_ref()
+            .map(|h| h.join(".config").join("claude"))
             .filter(|path| path.exists());
 
         Self {
@@ -32,6 +43,7 @@ impl VolumeManager {
             agent_dir,
             config_dir,
             claude_dir,
+            claude_config_dir,
         }
     }
 
@@ -77,6 +89,17 @@ impl VolumeManager {
                 mounts.push(Mount::read_only(
                     claude_path.to_string_lossy().to_string(),
                     "/home/ralph/.claude".to_string(),
+                ));
+            }
+        }
+
+        // Mount Claude config directory in .config (for MCP servers/skills)
+        if let Some(ref claude_config_dir) = self.claude_config_dir {
+            if let Ok(claude_config_path) = self.canonicalize(claude_config_dir) {
+                Self::validate_mount_source(&claude_config_path)?;
+                mounts.push(Mount::read_only(
+                    claude_config_path.to_string_lossy().to_string(),
+                    "/home/ralph/.config/claude".to_string(),
                 ));
             }
         }

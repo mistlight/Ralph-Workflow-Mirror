@@ -91,6 +91,28 @@ pub fn detect_ports_from_command(command: &[String]) -> Vec<u16> {
         ports.push(3000); // Also common for Vite
     }
 
+    // SvelteKit (defaults to 5173)
+    if cmd_str.contains("svelte-kit dev") || cmd_str.contains("vite dev --config svelte.config") {
+        ports.push(5173);
+        ports.push(3000);
+    }
+
+    // SolidJS (defaults to 3000)
+    if cmd_str.contains("solid-start dev") || cmd_str.contains("solid-start") {
+        ports.push(3000);
+    }
+
+    // Astro (defaults to 3000)
+    if cmd_str.contains("astro dev") || cmd_str.contains("astro") {
+        ports.push(3000);
+        ports.push(4321); // Astro's alternative default
+    }
+
+    // Remix (defaults to 3000)
+    if cmd_str.contains("remix dev") || cmd_str.contains("remix-serve") {
+        ports.push(3000);
+    }
+
     // Django
     if cmd_str.contains("django") || cmd_str.contains("manage.py runserver") {
         ports.push(8000);
@@ -244,5 +266,27 @@ mod tests {
         ];
         let ports = detect_ports_from_command(&cmd);
         assert_eq!(ports, vec![8080]);
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_sveltekit() {
+        let cmd = vec!["npm".to_string(), "run".to_string(), "dev".to_string()];
+        let ports = detect_ports_from_command(&cmd);
+        // The general "npm run dev" will return vite defaults
+        assert!(ports.contains(&5173) || ports.contains(&3000));
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_astro() {
+        let cmd = vec!["astro".to_string(), "dev".to_string()];
+        let ports = detect_ports_from_command(&cmd);
+        assert!(ports.contains(&3000) || ports.contains(&4321));
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_remix() {
+        let cmd = vec!["remix".to_string(), "dev".to_string()];
+        let ports = detect_ports_from_command(&cmd);
+        assert!(ports.contains(&3000));
     }
 }

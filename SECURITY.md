@@ -126,6 +126,10 @@ The following attack vectors are considered and mitigated:
 - ✓ Language version managers are isolated to container
 - ✓ System binaries are read-only
 - ✓ `~/.claude` is mounted read-only to `/home/ralph/.claude` for MCP/Skills access
+- ✓ `~/.config/claude` is mounted read-only to `/home/ralph/.config/claude` for additional MCP configuration
+- ✓ Extended version manager support: asdf, mise, chruby, fnm, volta
+- ✓ Python virtual environments (.venv, venv, env) are automatically mounted
+- ✓ Go workspace bin directories are automatically mounted
 
 **Known Limitations**:
 - Container with `--network=host` can access host network services
@@ -149,6 +153,8 @@ The following attack vectors are considered and mitigated:
 - ✓ Agent has access to all user-installed tools
 - ✓ No duplication or mounting required
 - ✓ Language version managers work seamlessly
+- ✓ Symbolic links to host version managers (rbenv, rvm, nvm, pyenv, asdf, mise, fnm, volta, cargo)
+- ✓ Automatic shell initialization for all detected version managers
 
 **Known Limitations**:
 - Agent can run `sudo` if configured (for package management)
@@ -248,6 +254,14 @@ If you discover a security vulnerability or isolation bypass:
 - Tool discovery for language version managers (.rbenv, .nvm, .pyenv, .jenv, etc.)
 - Port auto-detection and forwarding for dev servers (Rails, Django, Vite, etc.)
 - MCP/Skills directory mounting (`~/.claude`) in container mode
+
+### Version 0.5.0
+- **Extended Version Manager Support**: Added detection for asdf, mise, chruby, fnm, volta
+- **Project-Local Tool Detection**: Automatic mounting of Python virtualenvs (.venv, venv, env)
+- **Enhanced Shell Initialization**: Shell init scripts generated for all detected version managers
+- **Additional MCP Configuration**: Mount `~/.config/claude` for MCP servers and skills
+- **Improved Port Detection**: Added SvelteKit, SolidJS, Astro, Remix framework support
+- **Codex Agent Detection**: Added `is_codex_agent()` helper for future integration
 
 ### Version 0.3.6
 - Added CCS environment variable filtering

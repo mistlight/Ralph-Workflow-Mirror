@@ -106,8 +106,97 @@ fi
 if [ -f "$HOME/.nvm/nvm.sh" ]; then
     source "$HOME/.nvm/nvm.sh"
 fi
+
+# asdf version manager
+if [ -d "$HOME/.asdf" ]; then
+    export ASDF_DATA_DIR="$HOME/.asdf"
+    export ASDF_DIR="$HOME/.asdf"
+    . "$ASDF_DIR/asdf.sh"
+fi
+
+# mise version manager (formerly rtx)
+if command -v mise &> /dev/null; then
+    export MISE_DATA_DIR="$HOME/.mise"
+    export MISE_SHELL=bash
+    eval "$(mise activate bash 2>/dev/null)" || true
+fi
+
+# pyenv version manager
+if [ -d "$HOME/.pyenv" ]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init - bash 2>/dev/null)" || true
+fi
+
+# fnm (Fast Node Manager)
+if [ -d "$HOME/.fnm" ]; then
+    export FNM_DIR="$HOME/.fnm"
+    eval "$(fnm env --use-on-cd 2>/dev/null)" || true
+fi
+
+# RVM (Ruby Version Manager)
+if [ -f "$HOME/.rvm/scripts/rvm" ]; then
+    export RVM_HOME="$HOME/.rvm"
+    source "$RVM_HOME/scripts/rvm"
+fi
 EOF
 '
+echo "Created shell configuration"
+
+# Create symbolic links to version manager directories from the main user
+# This allows the ralph-agent user to access the same versions as the main user
+MAIN_USER_HOME=$(getent passwd "$(logname)" | cut -d: -f6)
+echo ""
+echo "Setting up version manager links..."
+
+# Link rbenv
+if [ -d "$MAIN_USER_HOME/.rbenv" ] && [ ! -d "/home/ralph-agent/.rbenv" ]; then
+    sudo ln -sf "$MAIN_USER_HOME/.rbenv" /home/ralph-agent/.rbenv
+    echo "  Linked .rbenv"
+fi
+
+# Link RVM
+if [ -d "$MAIN_USER_HOME/.rvm" ] && [ ! -d "/home/ralph-agent/.rvm" ]; then
+    sudo ln -sf "$MAIN_USER_HOME/.rvm" /home/ralph-agent/.rvm
+    echo "  Linked .rvm"
+fi
+
+# Link nvm
+if [ -d "$MAIN_USER_HOME/.nvm" ] && [ ! -d "/home/ralph-agent/.nvm" ]; then
+    sudo ln -sf "$MAIN_USER_HOME/.nvm" /home/ralph-agent/.nvm
+    echo "  Linked .nvm"
+fi
+
+# Link pyenv
+if [ -d "$MAIN_USER_HOME/.pyenv" ] && [ ! -d "/home/ralph-agent/.pyenv" ]; then
+    sudo ln -sf "$MAIN_USER_HOME/.pyenv" /home/ralph-agent/.pyenv
+    echo "  Linked .pyenv"
+fi
+
+# Link asdf
+if [ -d "$MAIN_USER_HOME/.asdf" ] && [ ! -d "/home/ralph-agent/.asdf" ]; then
+    sudo ln -sf "$MAIN_USER_HOME/.asdf" /home/ralph-agent/.asdf
+    echo "  Linked .asdf"
+fi
+
+# Link mise
+if [ -d "$MAIN_USER_HOME/.mise" ] && [ ! -d "/home/ralph-agent/.mise" ]; then
+    sudo ln -sf "$MAIN_USER_HOME/.mise" /home/ralph-agent/.mise
+    echo "  Linked .mise"
+fi
+
+# Link fnm
+if [ -d "$MAIN_USER_HOME/.fnm" ] && [ ! -d "/home/ralph-agent/.fnm" ]; then
+    sudo ln -sf "$MAIN_USER_HOME/.fnm" /home/ralph-agent/.fnm
+    echo "  Linked .fnm"
+fi
+
+# Link cargo (Rust)
+if [ -d "$MAIN_USER_HOME/.cargo" ] && [ ! -d "/home/ralph-agent/.cargo" ]; then
+    sudo ln -sf "$MAIN_USER_HOME/.cargo" /home/ralph-agent/.cargo
+    echo "  Linked .cargo"
+fi
+
 echo "Created shell configuration"
 
 echo ""
