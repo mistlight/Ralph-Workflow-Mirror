@@ -502,6 +502,31 @@ impl CodexParser {
         }
     }
 
+    /// Check if a Codex event is a control event (state management with no user output)
+    ///
+    /// Control events are valid JSON that represent state transitions rather than
+    /// user-facing content. They should be tracked separately from "ignored" events
+    /// to avoid false health warnings.
+    fn is_control_event(event: &CodexEvent) -> bool {
+        match event {
+            // Turn lifecycle events are control events
+            CodexEvent::ThreadStarted { .. }
+            | CodexEvent::TurnStarted { .. }
+            | CodexEvent::TurnCompleted { .. }
+            | CodexEvent::TurnFailed { .. } => true,
+            // Item started/completed events are control events for certain item types
+            CodexEvent::ItemStarted { item } => {
+                item.as_ref().and_then(|i| i.item_type.as_deref())
+                    == Some("plan_update")
+            }
+            CodexEvent::ItemCompleted { item } => {
+                item.as_ref().and_then(|i| i.item_type.as_deref())
+                    == Some("plan_update")
+            }
+            _ => false,
+        }
+    }
+
     /// Parse a stream of Codex NDJSON events
     pub(crate) fn parse_stream<R: BufRead, W: Write>(
         &self,
@@ -552,8 +577,15 @@ impl CodexParser {
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    // Check if this was valid JSON but an unknown event type
-                    if trimmed.starts_with('{') {
+                    // Check if this was a control event (state management with no user output)
+                    if let Ok(event) = serde_json::from_str::<CodexEvent>(&line) {
+                        if Self::is_control_event(&event) {
+                            monitor.record_control_event();
+                        } else {
+                            // Valid JSON but not a control event - track as unknown
+                            monitor.record_unknown_event();
+                        }
+                    } else if trimmed.starts_with('{') {
                         monitor.record_unknown_event();
                     } else {
                         monitor.record_ignored();

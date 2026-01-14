@@ -15,6 +15,8 @@ pub enum DeltaDisplayMode {
     Minimal,
     /// Normal display - show deltas in real-time, complete content when available
     Normal,
+    /// Show latest accumulated - show "Latest: [accumulated so far]" for streaming
+    ShowLatestAccumulated,
     /// Verbose display - always show accumulated content
     Verbose,
 }
@@ -136,6 +138,19 @@ impl DeltaDisplayFormatter {
                     Some(self.format_complete_content(&info.content, info.content_type, prefix, colors))
                 }
             }
+            DeltaDisplayMode::ShowLatestAccumulated => {
+                // Show "Latest: [accumulated so far]" for streaming content
+                if info.state == ContentState::Accumulating {
+                    if self.show_realtime {
+                        Some(self.format_latest_accumulated(&info.content, info.content_type, prefix, colors))
+                    } else {
+                        None
+                    }
+                } else {
+                    // Always show complete content
+                    Some(self.format_complete_content(&info.content, info.content_type, prefix, colors))
+                }
+            }
             DeltaDisplayMode::Verbose => {
                 // Always show accumulated content
                 Some(self.format_complete_content(&info.content, info.content_type, prefix, colors))
@@ -173,6 +188,36 @@ impl DeltaDisplayFormatter {
             prefix,
             colors.reset(),
             partial_marker,
+            prefix_indicator,
+            text_color,
+            content,
+            colors.reset()
+        )
+    }
+
+    /// Format latest accumulated content for display
+    ///
+    /// Shows "Latest: [accumulated so far]" to provide context during streaming.
+    fn format_latest_accumulated(
+        &self,
+        content: &str,
+        content_type: DisplayContentType,
+        prefix: &str,
+        colors: &Colors,
+    ) -> String {
+        let (text_color, prefix_indicator) = match content_type {
+            DisplayContentType::Text => (colors.white(), ""),
+            DisplayContentType::Thinking => (colors.cyan(), "Thinking: "),
+            DisplayContentType::ToolInput => (colors.dim(), "Tool input: "),
+            DisplayContentType::Error => (colors.red(), "Error: "),
+        };
+
+        format!(
+            "{}[{}]{} {}Latest: {}{}{}{}\n",
+            colors.dim(),
+            prefix,
+            colors.reset(),
+            colors.dim(),
             prefix_indicator,
             text_color,
             content,
@@ -410,5 +455,51 @@ mod tests {
             content_type: DisplayContentType::Text,
         };
         assert!(formatter.format_content(&info_complete, "Test", &test_colors()).is_some());
+    }
+
+    #[test]
+    fn test_show_latest_accumulated_mode() {
+        let formatter = DeltaDisplayFormatter::with_mode(DeltaDisplayMode::ShowLatestAccumulated);
+
+        // Accumulating content should be shown with "Latest:" prefix
+        let info_delta = ContentDisplayInfo {
+            content: "Partial content".to_string(),
+            state: ContentState::Accumulating,
+            content_type: DisplayContentType::Text,
+        };
+        let output = formatter.format_content(&info_delta, "Claude", &test_colors());
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Latest:"));
+        assert!(out.contains("Partial content"));
+
+        // Complete content should be shown without "Latest:" prefix
+        let info_complete = ContentDisplayInfo {
+            content: "Complete message".to_string(),
+            state: ContentState::Complete,
+            content_type: DisplayContentType::Text,
+        };
+        let output_complete = formatter.format_content(&info_complete, "Claude", &test_colors());
+        assert!(output_complete.is_some());
+        let out_complete = output_complete.unwrap();
+        assert!(out_complete.contains("Complete message"));
+        assert!(!out_complete.contains("Latest:"));
+    }
+
+    #[test]
+    fn test_show_latest_accumulated_with_thinking() {
+        let formatter = DeltaDisplayFormatter::with_mode(DeltaDisplayMode::ShowLatestAccumulated);
+
+        let info = ContentDisplayInfo {
+            content: "Thinking about the problem".to_string(),
+            state: ContentState::Accumulating,
+            content_type: DisplayContentType::Thinking,
+        };
+        let output = formatter.format_content(&info, "Claude", &test_colors());
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Latest:"));
+        assert!(out.contains("Thinking:"));
+        assert!(out.contains("Thinking about the problem"));
     }
 }

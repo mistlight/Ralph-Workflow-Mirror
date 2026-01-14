@@ -13,6 +13,11 @@
 //!   - Streaming delta events (text deltas, thinking deltas, tool input deltas)
 //!   - Successfully handled event types
 //!
+//! - **Control events**: State management events that don't produce user-facing
+//!   output. These are NOT errors and are tracked separately to avoid inflating
+//!   "ignored" percentages. Examples: `MessageStart`, `ContentBlockStart`, `Ping`,
+//!   `TurnStarted`, `StepStarted`.
+//!
 //! - **Unknown events**: Valid JSON that the parser deserializes successfully
 //!   but doesn't have specific handling for. These are NOT considered errors
 //!   and won't trigger health warnings. They represent future/new event types.
@@ -35,6 +40,8 @@ pub struct ParserHealth {
     pub parsed_events: u64,
     /// Number of events ignored (malformed JSON, unknown events, etc.)
     pub ignored_events: u64,
+    /// Number of control events (state management, no user output)
+    pub control_events: u64,
     /// Number of unknown event types (valid JSON but unhandled)
     pub unknown_events: u64,
     /// Number of JSON parse errors (malformed JSON)
@@ -77,7 +84,17 @@ impl ParserHealth {
         self.ignored_events += 1;
     }
 
-    /// Get the percentage of ignored events
+    /// Record a control event (state management with no user-facing output)
+    ///
+    /// Control events are valid JSON that represent state transitions
+    /// rather than user-facing content. They should not be counted as
+    /// "ignored" for health monitoring purposes.
+    pub fn record_control_event(&mut self) {
+        self.total_events += 1;
+        self.control_events += 1;
+    }
+
+    /// Get the percentage of ignored events (excluding control events)
     pub fn ignored_percentage(&self) -> f64 {
         if self.total_events == 0 {
             return 0.0;
@@ -108,10 +125,11 @@ impl ParserHealth {
             return None;
         }
 
-        let msg = if self.unknown_events > 0 {
+        let msg = if self.unknown_events > 0 || self.control_events > 0 {
             format!(
                 "{}[Parser Health Warning]{} {} parser has {} parse errors ({}% of {} events). \
-                 Also encountered {} unknown event types (valid JSON but unhandled). \
+                 Also encountered {} unknown event types (valid JSON but unhandled) \
+                 and {} control events (state management). \
                  This may indicate a parser mismatch. Consider using a different json_parser in your agent config.",
                 colors.yellow(),
                 colors.reset(),
@@ -119,7 +137,8 @@ impl ParserHealth {
                 self.parse_errors,
                 self.parse_error_percentage() as u32,
                 self.total_events,
-                self.unknown_events
+                self.unknown_events,
+                self.control_events
             )
         } else {
             format!(
@@ -183,6 +202,13 @@ impl HealthMonitor {
     pub fn record_parse_error(&self) {
         let mut h = self.health.get();
         h.record_parse_error();
+        self.health.set(h);
+    }
+
+    /// Record a control event (state management with no user-facing output)
+    pub fn record_control_event(&self) {
+        let mut h = self.health.get();
+        h.record_control_event();
         self.health.set(h);
     }
 
@@ -447,5 +473,119 @@ mod tests {
         }
         // 20 total, 5 parse errors = 25%
         assert_eq!(health3.parse_error_percentage(), 25.0);
+    }
+
+    #[test]
+    fn test_parser_health_control_events() {
+        let mut health = ParserHealth::new();
+        assert_eq!(health.control_events, 0);
+
+        health.record_control_event();
+        health.record_control_event();
+        health.record_control_event();
+        assert_eq!(health.control_events, 3);
+        assert_eq!(health.total_events, 3);
+        // Control events do NOT count as ignored
+        assert_eq!(health.ignored_events, 0);
+        assert_eq!(health.unknown_events, 0);
+
+        // Control events don't make it concerning
+        assert!(!health.is_concerning());
+    }
+
+    #[test]
+    fn test_parser_health_control_events_with_other_types() {
+        let mut health = ParserHealth::new();
+
+        // Mix of control, parsed, and unknown events
+        for _ in 0..100 {
+            health.record_control_event();
+        }
+        for _ in 0..50 {
+            health.record_parsed();
+        }
+        for _ in 0..30 {
+            health.record_unknown_event();
+        }
+
+        // 180 total events
+        assert_eq!(health.total_events, 180);
+        assert_eq!(health.control_events, 100);
+        assert_eq!(health.parsed_events, 50);
+        assert_eq!(health.unknown_events, 30);
+        assert_eq!(health.ignored_events, 30); // only unknown counts as ignored
+
+        // Not concerning - no parse errors
+        assert!(!health.is_concerning());
+        assert_eq!(health.parse_error_percentage(), 0.0);
+    }
+
+    #[test]
+    fn test_parser_health_control_events_not_in_ignored_percentage() {
+        let mut health = ParserHealth::new();
+
+        // Add many control events (simulating many state management events)
+        for _ in 0..2000 {
+            health.record_control_event();
+        }
+        // Add some parsed events
+        for _ in 0..50 {
+            health.record_parsed();
+        }
+
+        // Control events should NOT affect ignored percentage
+        // Only unknown and parse errors count as ignored
+        assert_eq!(health.ignored_events, 0);
+        assert_eq!(health.ignored_percentage(), 0.0);
+
+        // Not concerning
+        assert!(!health.is_concerning());
+    }
+
+    #[test]
+    fn test_health_monitor_control_events() {
+        let monitor = HealthMonitor::new("test");
+        let colors = Colors { enabled: false };
+
+        // Add many control events (like MessageStart, ContentBlockStart, etc.)
+        for _ in 0..2000 {
+            monitor.record_control_event();
+        }
+        // Add some parsed events
+        for _ in 0..50 {
+            monitor.record_parsed();
+        }
+
+        let health = monitor.health();
+        assert_eq!(health.control_events, 2000);
+        assert_eq!(health.parsed_events, 50);
+        assert_eq!(health.total_events, 2050);
+
+        // Should NOT warn even with 97.5% "non-displayed" events
+        // because they're control events, not ignored/parse errors
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_none());
+    }
+
+    #[test]
+    fn test_health_monitor_warning_includes_control_events() {
+        let monitor = HealthMonitor::new("test");
+        let colors = Colors { enabled: false };
+
+        // Add parse errors to trigger warning
+        for _ in 0..15 {
+            monitor.record_parse_error();
+        }
+        // Add some control events
+        for _ in 0..10 {
+            monitor.record_control_event();
+        }
+
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_some());
+
+        let warning_text = warning.unwrap();
+        // Warning should mention control events
+        assert!(warning_text.contains("10 control events"));
     }
 }
