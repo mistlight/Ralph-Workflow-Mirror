@@ -14,11 +14,15 @@
 
 #![deny(unsafe_code)]
 
+mod clipboard;
+mod fallback;
 mod model_flag;
+mod prompt;
 mod runner;
 mod types;
 
-pub use runner::{run_with_fallback, PipelineRuntime};
+pub use prompt::PipelineRuntime;
+pub use runner::run_with_fallback;
 pub use types::{AgentPhaseGuard, Stats};
 
 // ===== Timer Utilities =====
