@@ -10,8 +10,6 @@
 //! 3. Extracts the commit message from agent output
 //! 4. Returns the generated message for use by the caller
 
-#![expect(clippy::trivially_copy_pass_by_ref)]
-#![expect(clippy::too_many_arguments)]
 #![expect(clippy::too_many_lines)]
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::files::llm_output_extraction::{
@@ -21,7 +19,7 @@ use crate::files::llm_output_extraction::{
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
-use crate::prompts::prompt_generate_commit_message_with_diff;
+use crate::prompts::{prompt_generate_commit_message_with_diff, prompt_strict_json_commit};
 use std::fs::{self, File};
 use std::io::Read;
 
