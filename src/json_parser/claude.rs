@@ -304,6 +304,8 @@ impl ClaudeParser {
     /// - ContentBlockStart: Initialize new content blocks
     /// - ContentBlockDelta/TextDelta: Accumulate and display incrementally
     /// - Error: Display appropriately
+    ///
+    /// Returns String for display content, empty String for control events.
     fn parse_stream_event(&self, event: StreamInnerEvent) -> String {
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -466,6 +468,25 @@ impl ClaudeParser {
         }
     }
 
+    /// Check if a Claude event is a control event (state management with no user output)
+    ///
+    /// Control events are valid JSON that represent state transitions rather than
+    /// user-facing content. They should be tracked separately from "ignored" events
+    /// to avoid false health warnings.
+    fn is_control_event(event: &ClaudeEvent) -> bool {
+        match event {
+            // Stream events that are control events
+            ClaudeEvent::StreamEvent { event } => matches!(
+                event,
+                StreamInnerEvent::MessageStart { .. }
+                    | StreamInnerEvent::ContentBlockStart { .. }
+                    | StreamInnerEvent::MessageStop
+                    | StreamInnerEvent::Ping
+            ),
+            _ => false,
+        }
+    }
+
     /// Get a shared delta display formatter
     fn formatter() -> DeltaDisplayFormatter {
         DeltaDisplayFormatter::new()
@@ -521,11 +542,18 @@ impl ClaudeParser {
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    // Check if this was valid JSON but an unknown event type
-                    // Valid JSON that wasn't handled should be tracked as "unknown" not "ignored"
-                    if trimmed.starts_with('{') {
-                        // Line is valid JSON (since parse_event deserializes it)
-                        // but returned None, meaning it's an Unknown variant
+                    // Check if this was a control event (state management with no user output)
+                    // Control events are valid JSON that return empty output but aren't "ignored"
+                    if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
+                        if Self::is_control_event(&event) {
+                            monitor.record_control_event();
+                        } else {
+                            // Valid JSON but not a control event - track as unknown
+                            monitor.record_unknown_event();
+                        }
+                    } else if trimmed.starts_with('{') {
+                        // Failed to deserialize - this shouldn't happen since parse_event
+                        // succeeded in deserializing, but handle it as unknown
                         monitor.record_unknown_event();
                     } else {
                         monitor.record_ignored();
