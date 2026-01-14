@@ -316,7 +316,7 @@ impl UnifiedConfig {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "Cannot determine config directory (no home directory)",
-            ))
+            ));
         };
 
         Self::ensure_config_exists_at(&path)

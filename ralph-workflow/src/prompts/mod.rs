@@ -55,9 +55,11 @@ pub fn prompt_for_agent(
 ) -> String {
     match (role, action) {
         (_, Action::Plan) => prompt_plan(prompt_md_content),
-        (Role::Developer | Role::Reviewer, Action::Iterate) => {
-            prompt_developer_iteration(iteration.unwrap_or(1), total_iterations.unwrap_or(1), context)
-        }
+        (Role::Developer | Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
+            iteration.unwrap_or(1),
+            total_iterations.unwrap_or(1),
+            context,
+        ),
         (Role::Reviewer, Action::Review) => guidelines.map_or_else(
             || prompt_reviewer_review(context),
             |g| prompt_reviewer_review_with_guidelines(context, g),

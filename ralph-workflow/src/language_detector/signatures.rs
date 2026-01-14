@@ -25,7 +25,13 @@ fn combine_unique(items: &[String]) -> Option<String> {
     match items.len() {
         0 => None,
         1 => Some(items[0].clone()),
-        _ => Some(items.iter().map(std::string::String::as_str).collect::<Vec<_>>().join(" + ")),
+        _ => Some(
+            items
+                .iter()
+                .map(std::string::String::as_str)
+                .collect::<Vec<_>>()
+                .join(" + "),
+        ),
     }
 }
 
@@ -72,7 +78,9 @@ fn collect_signature_files(root: &Path) -> SignatureFiles {
         if scanned_entries >= MAX_FILES_TO_SCAN || collected >= MAX_SIGNATURE_FILES {
             break;
         }
-        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
 
         for entry in entries.flatten() {
             if scanned_entries >= MAX_FILES_TO_SCAN || collected >= MAX_SIGNATURE_FILES {

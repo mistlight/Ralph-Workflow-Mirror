@@ -128,7 +128,8 @@ impl ClaudeParser {
                                         let limit = self.verbosity.truncate_limit("text");
                                         let preview = truncate_text(&text, limit);
                                         use std::fmt::Write;
-                                        let _ = writeln!(out,
+                                        let _ = writeln!(
+                                            out,
                                             "{}[{}]{} {}{}{}",
                                             c.dim(),
                                             prefix,
@@ -142,7 +143,8 @@ impl ClaudeParser {
                                 ContentBlock::ToolUse { name: tool, input } => {
                                     let tool_name = tool.unwrap_or_else(|| "unknown".to_string());
                                     use std::fmt::Write;
-                                    let _ = writeln!(out,
+                                    let _ = writeln!(
+                                        out,
                                         "{}[{}]{} {}Tool{}: {}{}{}",
                                         c.dim(),
                                         prefix,
@@ -162,7 +164,8 @@ impl ClaudeParser {
                                             let preview = truncate_text(&input_str, limit);
                                             if !preview.is_empty() {
                                                 use std::fmt::Write;
-                                                let _ = writeln!(out,
+                                                let _ = writeln!(
+                                                    out,
                                                     "{}[{}]{} {}  └─ {}{}",
                                                     c.dim(),
                                                     prefix,
@@ -184,7 +187,8 @@ impl ClaudeParser {
                                         let limit = self.verbosity.truncate_limit("tool_result");
                                         let preview = truncate_text(&content_str, limit);
                                         use std::fmt::Write;
-                                        let _ = writeln!(out,
+                                        let _ = writeln!(
+                                            out,
                                             "{}[{}]{} {}Result:{} {}",
                                             c.dim(),
                                             prefix,
@@ -277,7 +281,8 @@ impl ClaudeParser {
                     let limit = self.verbosity.truncate_limit("result");
                     let preview = truncate_text(&result, limit);
                     use std::fmt::Write;
-                    let _ = writeln!(out,
+                    let _ = writeln!(
+                        out,
                         "\n{}Result summary:{}\n{}{}{}",
                         c.bold(),
                         c.reset(),
@@ -400,10 +405,13 @@ impl ClaudeParser {
                 } => {
                     // Handle tool input streaming
                     // Extract the tool input from the delta
-                    let input_str = tool_delta.get("input").map_or_else(String::new, |input| match input {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => format_tool_input(other),
-                        });
+                    let input_str =
+                        tool_delta
+                            .get("input")
+                            .map_or_else(String::new, |input| match input {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => format_tool_input(other),
+                            });
 
                     if input_str.is_empty() {
                         String::new()
@@ -419,8 +427,7 @@ impl ClaudeParser {
                 _ => String::new(),
             },
             #[expect(clippy::match_same_arms)]
-            StreamInnerEvent::ContentBlockDelta { .. }
-            | StreamInnerEvent::Ping => String::new(),
+            StreamInnerEvent::ContentBlockDelta { .. } | StreamInnerEvent::Ping => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Standalone text delta (not part of content block)
                 // Display incrementally for real-time feedback

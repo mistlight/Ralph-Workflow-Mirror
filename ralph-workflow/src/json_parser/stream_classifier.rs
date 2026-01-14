@@ -82,7 +82,7 @@ impl StreamEventClassifier {
                 event_type: StreamEventType::Complete,
                 type_name: None,
                 content_field: None,
-            }
+            };
         };
 
         // Extract the type field

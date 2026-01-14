@@ -233,7 +233,8 @@ impl CodexParser {
                                     let preview = truncate_text(&args_str, limit);
                                     if !preview.is_empty() {
                                         use std::fmt::Write;
-                                        let _ = writeln!(out,
+                                        let _ = writeln!(
+                                            out,
                                             "{}[{}]{} {}  └─ {}{}",
                                             c.dim(),
                                             name,
@@ -440,15 +441,17 @@ impl CodexParser {
                             if self.verbosity.is_verbose() {
                                 let limit = self.verbosity.truncate_limit("text");
                                 item.plan.as_ref().map_or_else(
-                                    || format!(
-                                        "{}[{}]{} {}{} Plan updated{}\n",
-                                        c.dim(),
-                                        name,
-                                        c.reset(),
-                                        c.green(),
-                                        CHECK,
-                                        c.reset()
-                                    ),
+                                    || {
+                                        format!(
+                                            "{}[{}]{} {}{} Plan updated{}\n",
+                                            c.dim(),
+                                            name,
+                                            c.reset(),
+                                            c.green(),
+                                            CHECK,
+                                            c.reset()
+                                        )
+                                    },
                                     |plan| {
                                         let preview = truncate_text(plan, limit);
                                         format!(
@@ -460,7 +463,7 @@ impl CodexParser {
                                             c.reset(),
                                             preview
                                         )
-                                    }
+                                    },
                                 )
                             } else {
                                 String::new()
@@ -531,15 +534,12 @@ impl CodexParser {
     fn is_partial_event(event: &CodexEvent) -> bool {
         match event {
             // Item started events for agent_message and reasoning produce streaming content
-            CodexEvent::ItemStarted { item } => {
-                item.as_ref()
-                    .is_some_and(|item| {
-                        matches!(
-                            item.item_type.as_deref(),
-                            Some("agent_message" | "reasoning")
-                        )
-                    })
-            }
+            CodexEvent::ItemStarted { item } => item.as_ref().is_some_and(|item| {
+                matches!(
+                    item.item_type.as_deref(),
+                    Some("agent_message" | "reasoning")
+                )
+            }),
             _ => false,
         }
     }
