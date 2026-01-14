@@ -61,6 +61,7 @@ GUIDELINES:
 /// is passed, it returns an error prompt that will fail validation in the caller
 /// and trigger fallback commit message generation. Callers should still check for
 /// meaningful changes before calling this function for efficiency.
+#[expect(clippy::too_many_lines)]
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
@@ -176,12 +177,17 @@ Fixes #42
 **OUTPUT REQUIREMENT**: Return ONLY a JSON object with this exact schema:
 {{"subject": "<type>[scope]: <description>", "body": "<optional body or null>"}}
 
-CRITICAL RULES:
+CRITICAL JSON RULES:
 - Return ONLY the JSON object, nothing else
 - No text before or after the JSON
 - No markdown fences around the JSON
 - `subject` is required, must be valid conventional commit format (max 72 chars)
 - `body` is optional (use null if no body needed)
+- **JSON STRING ESCAPING**: Use \\n for newlines, \\t for tabs within JSON strings
+  - ✅ CORRECT: {{"subject": "feat: add feature", "body": "First line\\nSecond line"}}
+  - ❌ WRONG: {{"subject": "feat: add feature", "body": "First line
+Second line"}}
+  - The body value must be a valid JSON string - use escape sequences, NOT literal newlines
 
 WRONG (with preamble):
 Here is the commit message:
@@ -191,11 +197,15 @@ WRONG (with analysis):
 Looking at this diff, I can see changes.
 {{"subject": "feat: add feature", "body": null}}
 
+WRONG (literal newline in JSON - this is INVALID JSON):
+{{"subject": "feat: add feature", "body": "First line
+Second line"}}
+
 CORRECT:
 {{"subject": "feat: add feature", "body": null}}
 
-CORRECT (with body):
-{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\nAdd session management for OAuth tokens."}}"#
+CORRECT (with body using \\n for newline):
+{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\\nAdd session management for OAuth tokens."}}"#
     )
 }
 
@@ -219,6 +229,7 @@ RULES:
 - No text before or after
 - subject must start with: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
 - Keep subject under 72 characters
+- **JSON ESCAPING**: Use \\n for newlines in body, NOT literal newlines
 
 Example:
 {{"subject": "fix: correct null pointer in user lookup", "body": null}}"#
@@ -248,6 +259,7 @@ WHAT NOT TO OUTPUT (these are WRONG):
    {{"subject": "..."}}
    ```
 ❌ Any explanation or analysis before the JSON
+❌ Literal newlines in JSON strings (use \\n instead)
 
 CORRECT OUTPUT (copy this format):
 {{"subject": "fix: prevent null pointer", "body": null}}
@@ -258,7 +270,8 @@ RULES:
 3. Nothing before the opening {{
 4. Nothing after the closing }}
 5. subject must be: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
-6. Keep subject under 72 characters"#
+6. Keep subject under 72 characters
+7. Keep all text on ONE LINE - no literal newlines in JSON strings"#
     )
 }
 
