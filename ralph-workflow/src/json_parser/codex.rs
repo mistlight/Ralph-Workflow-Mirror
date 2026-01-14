@@ -104,6 +104,8 @@ impl CodexParser {
                 )
             }
             CodexEvent::TurnStarted {} => {
+                // Reset streaming state on new turn
+                self.in_agent_message.borrow_mut().set(false);
                 format!(
                     "{}[{}]{} {}Turn started{}\n",
                     c.dim(),
