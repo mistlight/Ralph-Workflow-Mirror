@@ -527,8 +527,7 @@ fn looks_like_commit_message_start(text: &str) -> bool {
 
     for commit_type in &conventional_types {
         // Check for "type:" or "type(scope):" pattern
-        if trimmed.starts_with(commit_type) {
-            let rest = &trimmed[commit_type.len()..];
+        if let Some(rest) = trimmed.strip_prefix(commit_type) {
             if rest.starts_with(':')
                 || (rest.starts_with('(') && rest[1..].contains("):"))
                 || (rest.starts_with('(') && rest[1..].contains("): "))
@@ -560,7 +559,7 @@ fn find_conventional_commit_start(text: &str) -> Option<usize> {
 
                 // Check if this is a valid conventional commit pattern
                 if rest.starts_with(':')
-                    || (rest.starts_with('(') && rest[1..].find("):").is_some())
+                    || (rest.starts_with('(') && rest[1..].contains("):"))
                 {
                     // Make sure it's at the start of a line or preceded by newline
                     if actual_pos == 0 || text.as_bytes()[actual_pos - 1] == b'\n' {
@@ -774,8 +773,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
     for prefix in &thought_process_prefixes {
         if content_lower.starts_with(prefix) {
             return Err(format!(
-                "Commit message starts with AI thought process ({}). This indicates a bug in the thought process filtering.",
-                prefix
+                "Commit message starts with AI thought process ({prefix}). This indicates a bug in the thought process filtering."
             ));
         }
     }
@@ -1804,8 +1802,7 @@ Done."#;
         for commit in clean_commits {
             assert!(
                 validate_commit_message(commit).is_ok(),
-                "Clean commit should pass validation: {}",
-                commit
+                "Clean commit should pass validation: {commit}"
             );
         }
     }
@@ -1936,5 +1933,99 @@ Done."#;
 
         // The result should pass validation
         assert!(validate_commit_message(&result.content).is_ok());
+    }
+
+    // =========================================================================
+    // Regression Test: Validation Rejection
+    // =========================================================================
+
+    #[test]
+    fn test_validation_rejection_of_thought_process_leakage() {
+        // Regression test for the bug where invalid commit messages (with AI thought
+        // process leakage) were still being used despite validation failures.
+        //
+        // This test verifies that validation correctly rejects various types of
+        // invalid commit messages. When extract_commit_message_from_logs encounters
+        // these validation failures, it now returns Ok(None) instead of Ok(Some(invalid_message)).
+
+        // Case 1: Thought process leakage at the start (no actual commit message)
+        // This represents a case where filtering completely failed
+        let thought_process_only =
+            "Looking at this diff, I can see the changes are about refactoring error handling.";
+        let validation_result = validate_commit_message(thought_process_only);
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for thought process leakage: {thought_process_only}"
+        );
+        assert!(validation_result
+            .unwrap_err()
+            .contains("AI thought process"));
+
+        // Case 2: Thought process with analysis keywords
+        let analysis_style =
+            "The main changes are:\n- Updated error handling\n- Fixed parsing bugs\n- Added tests";
+        let validation_result = validate_commit_message(analysis_style);
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for analysis style: {analysis_style}"
+        );
+
+        // Case 3: Numbered analysis at the start (no commit message found)
+        let numbered_only = "1. First, let me analyze the diff\n2. Then create a commit message\n3. Finally validate";
+        let validation_result = validate_commit_message(numbered_only);
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for numbered analysis: {numbered_only}"
+        );
+        assert!(validation_result.unwrap_err().contains("numbered analysis"));
+
+        // Case 4: JSON artifacts (extraction failure)
+        let json_artifact_output =
+            "fix: some fix\n\nNote: This also contains {\"type\":\"result\" which should fail";
+        let validation_result = validate_commit_message(json_artifact_output);
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for JSON artifacts"
+        );
+        assert!(validation_result.unwrap_err().contains("JSON artifacts"));
+
+        // Case 5: Empty message
+        let validation_result = validate_commit_message("");
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for empty message"
+        );
+        assert!(validation_result.unwrap_err().contains("empty"));
+
+        // Case 6: Too short
+        let validation_result = validate_commit_message("fix");
+        assert!(
+            validation_result.is_err(),
+            "Validation should fail for too short message"
+        );
+        assert!(validation_result.unwrap_err().contains("too short"));
+
+        // Verify that valid commit messages still pass validation
+        let valid_message = "fix: handle edge case in parsing
+
+The previous implementation did not account for empty strings in the input
+parser, causing a panic when processing certain edge cases.
+
+Fixes #123";
+        let validation_result = validate_commit_message(valid_message);
+        assert!(
+            validation_result.is_ok(),
+            "Valid commit message should pass validation: {valid_message}"
+        );
+
+        // Verify that extraction + validation works for the full flow
+        // Using proper JSONL format (single line JSON)
+        let valid_output_jsonl = r#"{"result":"fix: handle edge case in parsing. The previous implementation did not account for empty strings, causing a panic. Fixes #123"}"#;
+        let result = extract_llm_output(valid_output_jsonl, Some(OutputFormat::Claude));
+        assert!(
+            validate_commit_message(&result.content).is_ok(),
+            "Valid extracted commit message should pass validation: {}",
+            result.content
+        );
     }
 }
