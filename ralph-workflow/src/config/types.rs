@@ -213,6 +213,14 @@ pub struct Config {
     pub(crate) git_user_name: Option<String>,
     /// Git user email for commits (optional, falls back to git config)
     pub(crate) git_user_email: Option<String>,
+    /// Container mode enabled (run agents in Docker/Podman containers)
+    pub(crate) container_mode: bool,
+    /// Container engine type (auto, docker, podman)
+    pub(crate) container_engine: Option<String>,
+    /// Container image to use for agents
+    pub(crate) container_image: Option<String>,
+    /// Container network enabled (needed for API calls)
+    pub(crate) container_network: bool,
 }
 
 impl Config {

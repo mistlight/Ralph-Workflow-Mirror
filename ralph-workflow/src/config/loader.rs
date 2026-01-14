@@ -131,6 +131,18 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         isolation_mode: general.isolation_mode,
         git_user_name: general.git_user_name.clone(),
         git_user_email: general.git_user_email.clone(),
+        container_mode: general.container_mode,
+        container_engine: if general.container_engine.is_empty() {
+            None
+        } else {
+            Some(general.container_engine.clone())
+        },
+        container_image: if general.container_image.is_empty() {
+            None
+        } else {
+            Some(general.container_image.clone())
+        },
+        container_network: general.container_network,
     }
 }
 
@@ -164,6 +176,10 @@ fn default_config() -> Config {
         isolation_mode: true,
         git_user_name: None,
         git_user_email: None,
+        container_mode: false,
+        container_engine: None,
+        container_image: None,
+        container_network: true,
     }
 }
 
@@ -395,6 +411,30 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
         let trimmed = val.trim();
         if !trimmed.is_empty() {
             config.git_user_email = Some(trimmed.to_string());
+        }
+    }
+
+    // Container mode
+    if let Ok(val) = env::var("RALPH_CONTAINER_MODE") {
+        if let Some(b) = parse_env_bool(&val) {
+            config.container_mode = b;
+        }
+    }
+    if let Ok(val) = env::var("RALPH_CONTAINER_ENGINE") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            config.container_engine = Some(trimmed.to_string());
+        }
+    }
+    if let Ok(val) = env::var("RALPH_CONTAINER_IMAGE") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            config.container_image = Some(trimmed.to_string());
+        }
+    }
+    if let Ok(val) = env::var("RALPH_CONTAINER_NETWORK") {
+        if let Some(b) = parse_env_bool(&val) {
+            config.container_network = b;
         }
     }
 

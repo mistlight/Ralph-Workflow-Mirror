@@ -22,6 +22,7 @@ mod checkpoint;
 mod cli;
 mod common;
 mod config;
+mod container;
 mod diagnostics;
 mod files;
 mod git_helpers;

@@ -120,6 +120,33 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
         config.isolation_mode = false;
     }
 
+    // Container mode flags (--container-mode and --no-container-mode)
+    // --container-mode explicitly enables, --no-container-mode explicitly disables
+    if args.container_mode {
+        config.container_mode = true;
+    }
+    if args.no_container_mode {
+        config.container_mode = false;
+    }
+    // Container engine override
+    if let Some(engine) = args.container_engine.clone() {
+        let engine = engine.trim();
+        if !engine.is_empty() {
+            config.container_engine = Some(engine.to_string());
+        }
+    }
+    // Container image override
+    if let Some(image) = args.container_image.clone() {
+        let image = image.trim();
+        if !image.is_empty() {
+            config.container_image = Some(image.to_string());
+        }
+    }
+    // Container network flag (--no-network disables network in containers)
+    if args.no_network {
+        config.container_network = false;
+    }
+
     // Git user identity (CLI args have highest priority)
     if let Some(name) = args.git_user_name.clone() {
         let name = name.trim();

@@ -422,4 +422,45 @@ pub struct Args {
         help = "Git user email for commits (overrides config, env, and git config)"
     )]
     pub git_user_email: Option<String>,
+
+    /// Enable container mode for security (run agents in Docker/Podman containers)
+    #[arg(
+        long,
+        env = "RALPH_CONTAINER_MODE",
+        help = "Enable container mode: run agents in isolated Docker/Podman containers"
+    )]
+    pub container_mode: bool,
+
+    /// Disable container mode (run agents directly on host)
+    #[arg(
+        long,
+        conflicts_with = "container_mode",
+        help = "Disable container mode: run agents directly on host (overrides config)"
+    )]
+    pub no_container_mode: bool,
+
+    /// Container engine to use (auto, docker, podman)
+    #[arg(
+        long,
+        env = "RALPH_CONTAINER_ENGINE",
+        value_name = "ENGINE",
+        help = "Container engine: auto, docker, or podman (default: auto)"
+    )]
+    pub container_engine: Option<String>,
+
+    /// Container image to use for agents
+    #[arg(
+        long,
+        env = "RALPH_CONTAINER_IMAGE",
+        value_name = "IMAGE",
+        help = "Container image to use (default: ralph-agent:latest)"
+    )]
+    pub container_image: Option<String>,
+
+    /// Disable network access in containers
+    #[arg(
+        long,
+        help = "Disable network access in containers (air-gapped mode)"
+    )]
+    pub no_network: bool,
 }

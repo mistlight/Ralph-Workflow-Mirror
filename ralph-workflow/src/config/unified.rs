@@ -105,6 +105,18 @@ pub(crate) struct GeneralConfig {
     /// Git user email for commits (optional, falls back to git config).
     #[serde(default)]
     pub git_user_email: Option<String>,
+    /// Container mode enabled (run agents in Docker/Podman containers).
+    #[serde(default)]
+    pub container_mode: bool,
+    /// Container engine type (auto, docker, podman).
+    #[serde(default)]
+    pub container_engine: String,
+    /// Container image to use for agents.
+    #[serde(default)]
+    pub container_image: String,
+    /// Container network enabled (needed for API calls).
+    #[serde(default)]
+    pub container_network: bool,
 }
 
 impl Default for GeneralConfig {
@@ -125,6 +137,10 @@ impl Default for GeneralConfig {
             prompt_path: None,
             git_user_name: None,
             git_user_email: None,
+            container_mode: false, // Disabled by default for compatibility
+            container_engine: "auto".to_string(),
+            container_image: "ralph-agent:latest".to_string(),
+            container_network: true,
         }
     }
 }
