@@ -166,7 +166,7 @@ impl PromptMonitor {
     fn handle_fs_event(
         event: &notify::Event,
         restoration_detected: &Arc<AtomicBool>,
-        prompt_existed_last_check: &mut bool,
+        _prompt_existed_last_check: &mut bool,
     ) {
         for path in &event.paths {
             if path.as_os_str() == "PROMPT.md" {
@@ -312,9 +312,6 @@ impl Drop for PromptMonitor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::fs;
-
     // Note: Tests that change directories are problematic in test suites.
     // The monitoring functionality will be tested through integration tests
     // when the monitor is integrated into the pipeline.
