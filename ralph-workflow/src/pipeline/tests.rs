@@ -250,7 +250,10 @@ fn test_glm_reviewer_command_includes_print_flag() {
             "-p flag must come after command name. Command was: {cmd}"
         );
     } else {
-        panic!("GLM command must contain -p flag. Command was: {cmd}");
+        assert!(
+            false,
+            "GLM command must contain -p flag. Command was: {cmd}"
+        );
     }
 }
 

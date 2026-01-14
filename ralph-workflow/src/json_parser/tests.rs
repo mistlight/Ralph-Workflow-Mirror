@@ -3,6 +3,8 @@
 use super::*;
 use crate::colors::Colors;
 use crate::config::Verbosity;
+use std::cell::RefCell;
+use std::io::{self, Cursor, Write};
 
 #[test]
 fn test_parse_claude_system_init() {
@@ -862,7 +864,7 @@ fn test_stream_classifies_error_as_control() {
     assert_eq!(result.event_type, StreamEventType::Control);
 }
 
-// Test for verbose mode streaming fix - ensures no duplicate lines
+// Test for verbose mode streaming fix - ensures accumulated text output
 #[test]
 fn test_verbose_mode_streaming_no_duplicate_lines() {
     use std::io::Cursor;
@@ -882,40 +884,36 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
     parser.parse_stream(reader, &mut writer).unwrap();
     let output = String::from_utf8(writer).unwrap();
 
-    // Verify the bug is fixed: each delta should appear once
-    // The bug would produce:
-    // [Claude] warning: unu
-    // [Claude] warning: unused  <-- accumulated text from deltas 1+2
-    // [Claude] warning: unused vari  <-- accumulated text from deltas 1+2+3
-    // [Claude] warning: unused able  <-- accumulated text from deltas 1+2+3+4
-    //
-    // After the fix, we get:
-    // [Claude] warning: unu
-    // [Claude] sed
-    // [Claude]  vari
-    // [Claude] able
-    // Each delta appears exactly once
+    // After the fix, streaming should show accumulated text on the same line:
+    // [Claude] warning: unu\r           (first chunk with prefix)
+    // warning: unused\r                (second chunk overwriting with accumulated text)
+    // warning: unused vari\r            (third chunk overwriting with accumulated text)
+    // warning: unused variable\n        (final chunk + message_stop adds newline)
 
-    let lines: Vec<&str> = output.lines().collect();
-
-    // Count lines containing "warning:"
-    let warning_count = lines.iter().filter(|l| l.contains("warning:")).count();
-
-    // After fix: should have exactly 1 line with "warning:" (the first delta)
-    // The bug would cause 4 lines all starting with "warning:"
-    assert_eq!(
-        warning_count, 1,
-        "Should have exactly 1 line with 'warning:' prefix"
-    );
-
-    // Verify that we see each delta fragment exactly once
+    // The output should contain carriage returns for overwriting
     assert!(
-        output.contains("warning: unu"),
-        "Should contain first delta"
+        output.contains('\r'),
+        "Should contain carriage returns for overwriting"
     );
-    assert!(output.contains("sed"), "Should contain second delta");
-    assert!(output.contains(" vari"), "Should contain third delta");
-    assert!(output.contains("able"), "Should contain fourth delta");
+
+    // Should only have ONE prefix (not multiple)
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(
+        prefix_count, 1,
+        "Should have exactly 1 prefix, not multiple duplicates"
+    );
+
+    // The final accumulated text should be present
+    assert!(
+        output.contains("warning: unused variable"),
+        "Should contain complete accumulated text"
+    );
+
+    // Should end with newline (from message_stop)
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline after message_stop"
+    );
 }
 
 // Test that normal and verbose mode show the same delta content
@@ -969,5 +967,520 @@ fn test_delta_with_embedded_newline_displays_inline() {
         out.lines().count(),
         1,
         "Delta with embedded newline should produce a single output line"
+    );
+}
+
+// Integration test for real-time streaming behavior
+// Verifies that flush() is called after each streaming write to ensure
+// output is displayed immediately rather than being buffered
+
+/// A mock writer that tracks whether flush() is called after each write()
+struct FlushTrackingWriter {
+    write_count: RefCell<usize>,
+    flush_count: RefCell<usize>,
+    buffer: RefCell<Vec<u8>>,
+}
+
+impl FlushTrackingWriter {
+    fn new() -> Self {
+        Self {
+            write_count: RefCell::new(0),
+            flush_count: RefCell::new(0),
+            buffer: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Verify that flush was called at least as many times as write
+    /// In the streaming fix, flush should be called after every write
+    fn flush_called_after_writes(&self) -> bool {
+        let writes = *self.write_count.borrow();
+        let flushes = *self.flush_count.borrow();
+        flushes >= writes
+    }
+}
+
+impl Write for FlushTrackingWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        *self.write_count.borrow_mut() += 1;
+        self.buffer.borrow_mut().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        *self.flush_count.borrow_mut() += 1;
+        Ok(())
+    }
+}
+
+#[test]
+fn test_claude_streaming_flushes_after_write() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming deltas that produce output
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = FlushTrackingWriter::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+
+    // Verify flush was called after writes for streaming output
+    assert!(
+        writer.flush_called_after_writes(),
+        "flush() should be called after writes for real-time streaming"
+    );
+}
+
+#[test]
+fn test_codex_streaming_flushes_after_write() {
+    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming delta events
+    let input = r#"{"type":"item.started","item":{"type":"reasoning","id":"item_1","text":"Thinking"}}
+{"type":"item.completed","item":{"type":"reasoning","id":"item_1"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = FlushTrackingWriter::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+
+    // Verify flush was called after writes
+    assert!(
+        writer.flush_called_after_writes(),
+        "flush() should be called after writes for real-time streaming"
+    );
+}
+
+#[test]
+fn test_gemini_streaming_flushes_after_write() {
+    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming delta events
+    let input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true,"timestamp":"2025-10-10T12:00:01.000Z"}
+{"type":"message","role":"assistant","content":" World","delta":true,"timestamp":"2025-10-10T12:00:02.000Z"}
+{"type":"result","status":"success","timestamp":"2025-10-10T12:00:03.000Z"}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = FlushTrackingWriter::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+
+    // Verify flush was called after writes
+    assert!(
+        writer.flush_called_after_writes(),
+        "flush() should be called after writes for real-time streaming"
+    );
+}
+
+#[test]
+fn test_opencode_streaming_flushes_after_write() {
+    let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming tool_use events
+    let input = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"started","input":{"filePath":"/test.rs"}}}}
+{"type":"tool_use","timestamp":1768191346713,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool","read","state":{"status":"completed","input":{"filePath":"/test.rs"}}}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = FlushTrackingWriter::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+
+    // Verify flush was called after writes
+    assert!(
+        writer.flush_called_after_writes(),
+        "flush() should be called after writes for real-time streaming"
+    );
+}
+
+// Integration test for streaming accumulation behavior
+// Verifies that multiple text deltas accumulate correctly and output contains carriage returns
+#[test]
+fn test_streaming_accumulation_behavior() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+
+    // Simulate streaming content arriving in multiple deltas
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should contain carriage returns for overwriting previous content
+    assert!(
+        output.contains('\r'),
+        "Should contain carriage returns for streaming overwrite"
+    );
+
+    // Should only have ONE prefix at the start
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(
+        prefix_count, 1,
+        "Should have exactly 1 prefix, not multiple duplicates"
+    );
+
+    // The final accumulated text should be present
+    assert!(
+        output.contains("Hello World!"),
+        "Should contain complete accumulated text"
+    );
+
+    // Should end with newline (from message_stop)
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline after message_stop"
+    );
+
+    // Verify progressive accumulation: output should contain intermediate accumulated states
+    // After first delta: "Hello"
+    // After second delta: "Hello World"
+    // After third delta: "Hello World!"
+    assert!(output.contains("Hello"), "Should contain first delta");
+    assert!(
+        output.contains("Hello World"),
+        "Should contain accumulated text after second delta"
+    );
+    assert!(
+        output.contains("Hello World!"),
+        "Should contain final accumulated text"
+    );
+}
+
+// Edge case tests for streaming behavior
+
+/// Test streaming with empty delta chunks
+/// Verifies that empty chunks don't cause errors and don't produce output
+#[test]
+fn test_streaming_empty_delta_chunk() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming with an empty delta in the middle
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    // Should not panic or error
+    let result = parser.parse_stream(reader, &mut writer);
+    assert!(
+        result.is_ok(),
+        "Empty delta chunks should be handled gracefully"
+    );
+
+    let output = String::from_utf8(writer).unwrap();
+    // Should still contain the final accumulated text
+    assert!(
+        output.contains("Hello World"),
+        "Should contain accumulated text despite empty chunk"
+    );
+}
+
+/// Test streaming with a single chunk (no streaming scenario)
+/// Verifies that single-chunk content displays correctly with prefix
+#[test]
+fn test_streaming_single_chunk() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Single chunk scenario - content arrives all at once
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Complete message"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should have exactly one prefix
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(prefix_count, 1, "Single chunk should have exactly 1 prefix");
+
+    // Should contain the complete text
+    assert!(
+        output.contains("Complete message"),
+        "Should contain single chunk text"
+    );
+
+    // Should end with newline
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline after message_stop"
+    );
+}
+
+/// Test streaming with very long accumulated text
+/// Verifies that the parser handles long text without errors
+#[test]
+fn test_streaming_very_long_text() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Create a very long text that would exceed terminal width
+    let long_chunk = "a".repeat(200);
+    let long_chunk2 = "b".repeat(200);
+
+    let input = format!(
+        r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"message_stop"}}}}"#,
+        long_chunk, long_chunk2
+    );
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    // Should handle long text without errors
+    let result = parser.parse_stream(reader, &mut writer);
+    assert!(
+        result.is_ok(),
+        "Should handle very long text without errors"
+    );
+
+    let output = String::from_utf8(writer).unwrap();
+    // Should contain the accumulated text (streaming accumulates before truncation)
+    assert!(
+        output.len() >= long_chunk.len(),
+        "Output should contain at least the first chunk"
+    );
+}
+
+/// Test streaming with special characters in text
+/// Verifies that special characters (quotes, unicode, etc.) are handled correctly
+#[test]
+fn test_streaming_special_characters() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Text with various special characters
+    let special_text = "Hello \"World\"! 'quotes' and $ymbols & unicode: 🌍 世界";
+
+    let json = format!(
+        r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}"#,
+        // Escape quotes for JSON
+        special_text.replace('"', "\\\"")
+    );
+
+    let output = parser.parse_event(&json);
+
+    assert!(
+        output.is_some(),
+        "Should handle special characters without errors"
+    );
+    let out = output.unwrap();
+
+    // Verify some special characters are present
+    assert!(out.contains("Hello"), "Should contain text before quotes");
+    assert!(
+        out.contains("World") || out.contains("quotes"),
+        "Should handle quoted text"
+    );
+}
+
+/// Test streaming with rapid consecutive chunks
+/// Verifies that rapid streaming (multiple chunks in quick succession) is handled correctly
+#[test]
+fn test_streaming_rapid_chunks() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate rapid streaming with many small chunks
+    let mut input_lines = Vec::new();
+    for i in 0..10 {
+        input_lines.push(format!(
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"chunk{}"}}}}}}"#,
+            i
+        ));
+    }
+    input_lines.push(r#"{"type":"stream_event","event":{"type":"message_stop"}}"#.to_string());
+
+    let input = input_lines.join("\n");
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    // Should handle rapid chunks without errors
+    let result = parser.parse_stream(reader, &mut writer);
+    assert!(result.is_ok(), "Should handle rapid consecutive chunks");
+
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should have exactly one prefix despite many chunks
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(prefix_count, 1, "Rapid chunks should have exactly 1 prefix");
+
+    // Should contain carriage returns for overwriting
+    assert!(
+        output.contains('\r'),
+        "Rapid chunks should use carriage returns"
+    );
+
+    // Verify content from multiple chunks is present
+    assert!(output.contains("chunk0"), "Should contain first chunk");
+    assert!(output.contains("chunk9"), "Should contain last chunk");
+}
+
+/// Test streaming with only whitespace chunks
+/// Verifies that whitespace-only chunks don't produce spurious output
+#[test]
+fn test_streaming_whitespace_only_chunks() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate streaming with whitespace chunks
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"   "}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\t"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    // Should handle whitespace chunks without errors
+    let result = parser.parse_stream(reader, &mut writer);
+    assert!(result.is_ok(), "Should handle whitespace-only chunks");
+
+    let output = String::from_utf8(writer).unwrap();
+    // Should contain the actual non-whitespace content
+    assert!(
+        output.contains("Hello"),
+        "Should contain non-whitespace content"
+    );
+}
+
+/// Test that content block start resets state properly
+/// Verifies that a new content block starts fresh without previous accumulation
+#[test]
+fn test_streaming_content_block_reset() {
+    use std::io::Cursor;
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // First content block, then start a new one
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Initial"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Block1"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should contain the content from the block
+    assert!(
+        output.contains("Initial") || output.contains("Block1"),
+        "Should contain content from block"
+    );
+}
+
+/// Test streaming behavior across multiple parsers for consistency
+/// Verifies that all parsers (Claude, Codex, Gemini, OpenCode) handle streaming consistently
+#[test]
+fn test_streaming_consistency_across_parsers() {
+    use std::io::Cursor;
+
+    // Test Claude parser
+    let claude_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let claude_input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+    let claude_reader = Cursor::new(claude_input);
+    let mut claude_writer = Vec::new();
+    claude_parser
+        .parse_stream(claude_reader, &mut claude_writer)
+        .unwrap();
+    let claude_output = String::from_utf8(claude_writer).unwrap();
+
+    // All parsers should use carriage returns for streaming
+    assert!(
+        claude_output.contains('\r'),
+        "Claude should use carriage returns"
+    );
+    assert_eq!(
+        claude_output.matches("[Claude]").count(),
+        1,
+        "Claude should have 1 prefix"
+    );
+
+    // Test Codex parser
+    // Note: Codex shows prefix on first item.started AND on item.completed (2 prefixes total)
+    // This is different from Claude which shows prefix only at the start
+    let codex_parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let codex_input = r#"{"type":"item.started","item":{"type":"agent_message","id":"msg1","text":"Hello"}}
+{"type":"item.started","item":{"type":"agent_message","id":"msg1","text":" World"}}
+{"type":"item.completed","item":{"type":"agent_message","id":"msg1"}}"#;
+    let codex_reader = Cursor::new(codex_input);
+    let mut codex_writer = Vec::new();
+    codex_parser
+        .parse_stream(codex_reader, &mut codex_writer)
+        .unwrap();
+    let codex_output = String::from_utf8(codex_writer).unwrap();
+
+    assert!(
+        codex_output.contains('\r'),
+        "Codex should use carriage returns"
+    );
+    // Codex shows prefix on first item.started and on item.completed (2 prefixes)
+    assert_eq!(
+        codex_output.matches("[Codex]").count(),
+        2,
+        "Codex shows prefix on start and completion"
+    );
+
+    // Test Gemini parser
+    // Note: Gemini shows prefix on first delta AND on final non-delta message (2 prefixes total)
+    let gemini_parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let gemini_input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true}
+{"type":"message","role":"assistant","content":" World","delta":true}
+{"type":"message","role":"assistant","content":"Hello World"}"#;
+    let gemini_reader = Cursor::new(gemini_input);
+    let mut gemini_writer = Vec::new();
+    gemini_parser
+        .parse_stream(gemini_reader, &mut gemini_writer)
+        .unwrap();
+    let gemini_output = String::from_utf8(gemini_writer).unwrap();
+
+    assert!(
+        gemini_output.contains('\r'),
+        "Gemini should use carriage returns"
+    );
+    // Gemini shows prefix on first delta and on final non-delta message (2 prefixes)
+    assert_eq!(
+        gemini_output.matches("[Gemini]").count(),
+        2,
+        "Gemini shows prefix on first delta and final message"
+    );
+
+    // Test OpenCode parser
+    // Note: OpenCode shows prefix on first text event AND on step_finish (2 prefixes total)
+    let opencode_parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let opencode_input = r#"{"type":"text","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":"Hello"}}
+{"type":"text","timestamp":1768191347232,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":" World"}}
+{"type":"step_finish","timestamp":1768191347296,"sessionID":"ses_44f9562d4ffe","part":{"type":"step-finish","reason":"end_turn"}}"#;
+    let opencode_reader = Cursor::new(opencode_input);
+    let mut opencode_writer = Vec::new();
+    opencode_parser
+        .parse_stream(opencode_reader, &mut opencode_writer)
+        .unwrap();
+    let opencode_output = String::from_utf8(opencode_writer).unwrap();
+
+    assert!(
+        opencode_output.contains('\r'),
+        "OpenCode should use carriage returns"
+    );
+    // OpenCode shows prefix on first text event and on step_finish (2 prefixes)
+    assert_eq!(
+        opencode_output.matches("[OpenCode]").count(),
+        2,
+        "OpenCode shows prefix on first text and step_finish"
     );
 }

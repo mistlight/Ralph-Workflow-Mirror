@@ -849,8 +849,11 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let log_dir = temp.path().join("planning_1");
 
-        let json_log = r##"{"type": "system", "message": "starting"}
-{"type": "result", "result": "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests"}"##;
+        let json_log = concat!(
+            r##"{"type": "system", "message": "starting"}"##,
+            "\n",
+            r##"{"type": "result", "result": "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests"}"##
+        );
         create_log_file(&log_dir, "output.log", json_log);
 
         let result = extract_plan(&log_dir).unwrap();
@@ -967,7 +970,7 @@ mod tests {
         let result2 =
             r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
         let result3 = r#"{"type": "result", "result": "Last paragraph"}"#;
-        let json_log = format!("{result1}\n{result2}\n{result3}");
+        let json_log = format!("{}\n{}\n{}", result1, result2, result3);
         create_log_file(&log_dir, "output.log", &json_log);
 
         let result = extract_plan(&log_dir).unwrap();
@@ -1119,7 +1122,7 @@ mod tests {
 
     #[test]
     fn test_extract_plan_from_text_with_summary() {
-        let content = "Some random output
+        let content = r"Some random output
 ## Summary
 This is the plan summary with enough content to pass validation.
 
@@ -1134,7 +1137,7 @@ This is the plan summary with enough content to pass validation.
 
     #[test]
     fn test_extract_plan_from_text_with_implementation_steps() {
-        let content = "Agent thinking...
+        let content = r"Agent thinking...
 ## Implementation Steps
 Step 1: Create the component with all necessary features
 Step 2: Add tests and documentation

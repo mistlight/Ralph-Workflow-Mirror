@@ -147,7 +147,7 @@ impl Verbosity {
 ///
 /// This struct holds all configuration options for Ralph, populated from
 /// environment variables and CLI arguments. Default values are applied
-/// via [`Config::from_env`].
+/// via [`Default::default()`].
 #[derive(Debug, Clone)]
 #[expect(clippy::struct_excessive_bools)]
 pub struct Config {
