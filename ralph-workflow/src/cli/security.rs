@@ -10,6 +10,7 @@ use crate::logger::{Colors, Logger};
 /// Handle the --setup-security command
 ///
 /// Sets up the user account for user-account security mode.
+#[allow(clippy::too_many_lines)]
 pub fn handle_setup_security(colors: Colors) -> anyhow::Result<()> {
     println!("{}", colors.bold());
     println!("╔══════════════════════════════════════════════════════════════════════════╗");
@@ -229,6 +230,8 @@ echo "✓ Setup complete!"
 /// Handle the --security-check command
 ///
 /// Checks and reports the status of security mode configuration.
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::unnecessary_wraps)]
 pub fn handle_security_check(
     colors: Colors,
     config: &Config,
@@ -456,7 +459,7 @@ pub fn handle_security_check(
 /// Builds a container image for container mode.
 #[cfg(feature = "build-image")]
 pub fn handle_build_image(tag: Option<String>, colors: Colors) -> anyhow::Result<()> {
-    use crate::container::image::ContainerImage;
+    use crate::container::image::{detect_project_stack, ContainerImage};
 
     println!("{}", colors.bold());
     println!("╔══════════════════════════════════════════════════════════════════════════╗");
@@ -489,7 +492,6 @@ pub fn handle_build_image(tag: Option<String>, colors: Colors) -> anyhow::Result
              colors.reset());
 
     // Detect project stack
-    use crate::container::image::detect_project_stack;
     let stack = detect_project_stack(&repo_root);
 
     if let Some(ref s) = stack {

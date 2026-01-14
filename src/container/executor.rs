@@ -2,13 +2,89 @@
 //!
 //! Translates agent commands into container execution.
 
-use crate::container::config::{ContainerConfig, ExecutionOptions};
+use crate::container::config::{validate_working_dir, ContainerConfig, ExecutionOptions};
 use crate::container::engine::{ContainerEngine, RunOptions};
 use crate::container::error::{ContainerError, ContainerResult};
 use crate::container::port::{detect_ports_from_command, PortMapping};
 use crate::container::tool::ToolManager;
 use crate::container::volume::VolumeManager;
 use std::collections::{HashMap, HashSet};
+
+/// Check if an environment variable name is dangerous and should be filtered.
+///
+/// Dangerous environment variables are those that could be used to escape
+/// isolation or compromise security, such as:
+/// - PATH manipulation (to execute arbitrary binaries)
+/// - Dynamic linker configuration (`LD_*`, `DYLD_*`)
+/// - Shell configuration (`IFS`, `SHELLOPTS`, etc.)
+/// - Library search paths (`LIBRARY_PATH`, `LD_LIBRARY_PATH`)
+fn is_dangerous_env_var_name(name: &str) -> bool {
+    let name_upper = name.to_uppercase();
+
+    // Block the main PATH variable (but allow things like NODE_PATH, GOPATH)
+    if name_upper == "PATH" {
+        return true;
+    }
+
+    // Block dynamic linker variables (Linux)
+    if name_upper.starts_with("LD_")
+        || name_upper == "LD_PRELOAD"
+        || name_upper == "LD_LIBRARY_PATH"
+    {
+        return true;
+    }
+
+    // Block dynamic linker variables (macOS)
+    if name_upper.starts_with("DYLD_") {
+        return true;
+    }
+
+    // Block shell configuration variables
+    if name_upper == "IFS"
+        || name_upper == "SHELLOPTS"
+        || name_upper == "BASH_ENV"
+        || name_upper == "ENV"
+        || name_upper == "PS1"
+        || name_upper == "PS2"
+        || name_upper == "PROMPT_COMMAND"
+    {
+        return true;
+    }
+
+    // Block library search paths
+    if name_upper == "LIBRARY_PATH" || name_upper == "LIBPATH" {
+        return true;
+    }
+
+    // Block PYTHONPATH specifically (allows arbitrary module loading)
+    // but allow other PYTHON* variables like PYTHON_VERSION
+    if name_upper == "PYTHONPATH" || name_upper == "PYTHONHOME" {
+        return true;
+    }
+
+    false
+}
+
+/// Check if an environment variable value is safe to pass through.
+///
+/// This validates that a value doesn't contain characters that could
+/// be used for command injection or path traversal.
+fn is_safe_env_var_value(value: &str) -> bool {
+    // Check for shell metacharacters that could be used for injection
+    let dangerous_chars = ['$', '`', '\\', '\n', '\r', '\0'];
+    for c in dangerous_chars {
+        if value.contains(c) {
+            return false;
+        }
+    }
+
+    // Check for suspicious patterns
+    if value.contains("..") || value.contains('~') {
+        return false;
+    }
+
+    true
+}
 
 /// Container command executor
 ///
@@ -80,22 +156,54 @@ impl ContainerExecutor {
             }
         }
 
+        // Validate working directory
+        if let Some(ref wd) = options.working_dir {
+            validate_working_dir(wd)?;
+        }
+
         // Build environment variables
         let mut container_env = Vec::new();
 
         // Add environment variables from agent config
         for (key, value) in env_vars {
+            // Skip dangerous environment variables
+            if is_dangerous_env_var_name(key) {
+                continue;
+            }
+
+            // Validate value safety
+            if !is_safe_env_var_value(value) {
+                return Err(ContainerError::Other(format!(
+                    "Environment variable value for '{key}' contains dangerous characters"
+                )));
+            }
+
             container_env.push((key.clone(), value.clone()));
         }
 
         // Add environment variables from execution options
         for (key, value) in &options.env_vars {
+            // Skip dangerous environment variables
+            if is_dangerous_env_var_name(key) {
+                continue;
+            }
+
+            // Validate value safety
+            if !is_safe_env_var_value(value) {
+                return Err(ContainerError::Other(
+                    format!("Execution option environment variable value for '{key}' contains dangerous characters"),
+                ));
+            }
+
             container_env.push((key.clone(), value.clone()));
         }
 
         // Add environment variables from tool manager
         for (key, value) in self.tool_manager.get_env_vars() {
-            container_env.push((key, value));
+            // Tool manager variables are considered trusted, but still filter dangerous names
+            if !is_dangerous_env_var_name(&key) {
+                container_env.push((key, value));
+            }
         }
 
         // Set working directory

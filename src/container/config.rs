@@ -1,8 +1,53 @@
 //! Container configuration types
 
+use crate::container::error::{ContainerError, ContainerResult};
 use crate::container::EngineType;
 use std::path::PathBuf;
 use std::str::FromStr;
+
+/// Check if a relative path component is safe for use as a working directory.
+///
+/// This validates that a path string (intended to be relative to /workspace)
+/// doesn't contain dangerous patterns like path traversal.
+fn is_safe_working_dir(path: &str) -> bool {
+    // Reject absolute paths
+    if path.starts_with('/') {
+        return false;
+    }
+
+    // Reject path traversal
+    if path.contains("..") {
+        return false;
+    }
+
+    // Reject null bytes
+    if path.contains('\0') {
+        return false;
+    }
+
+    // Reject shell metacharacters that could be used for injection
+    let dangerous_chars = ['$', '`', '\\', '\n', '\r'];
+    for c in dangerous_chars {
+        if path.contains(c) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Validate a working directory path for use in container execution.
+///
+/// Returns an error if the path is not safe.
+pub fn validate_working_dir(path: &str) -> ContainerResult<()> {
+    if is_safe_working_dir(path) {
+        Ok(())
+    } else {
+        Err(ContainerError::InvalidConfig(format!(
+            "Invalid working directory '{path}': must be a relative path without .. or shell metacharacters"
+        )))
+    }
+}
 
 /// Security mode for agent isolation
 ///

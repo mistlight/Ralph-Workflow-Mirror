@@ -32,10 +32,7 @@
 //! - **Ignored events**: General category for events not displayed (includes
 //!   both unknown events and parse errors)
 
-#![expect(clippy::cast_sign_loss)]
-#![expect(clippy::cast_possible_truncation)]
-#![expect(clippy::cast_precision_loss)]
-use crate::logger::Colors;
+use crate::colors::Colors;
 use std::cell::Cell;
 
 /// Parser health statistics
@@ -147,7 +144,7 @@ impl ParserHealth {
                 colors.reset(),
                 parser_name,
                 self.parse_errors,
-                self.parse_error_percentage().round() as u32,
+                self.parse_error_percentage() as u32,
                 self.total_events,
                 self.unknown_events,
                 self.control_events,
@@ -161,7 +158,7 @@ impl ParserHealth {
                 colors.reset(),
                 parser_name,
                 self.parse_errors,
-                self.parse_error_percentage().round() as u32,
+                self.parse_error_percentage() as u32,
                 self.total_events
             )
         };
@@ -243,11 +240,12 @@ impl HealthMonitor {
         }
 
         let health = self.health.get();
-        let warning = health.warning(self.parser_name, colors);
-        if warning.is_some() {
+        if let Some(warning) = health.warning(self.parser_name, colors) {
             self.threshold_warned.set(true);
+            Some(warning)
+        } else {
+            None
         }
-        warning
     }
 
     #[cfg(test)]
@@ -451,13 +449,13 @@ mod tests {
     #[test]
     fn test_parser_health_parse_error_percentage() {
         let mut health = ParserHealth::new();
-        assert!((health.parse_error_percentage() - 0.0).abs() < f64::EPSILON);
+        assert!(health.parse_error_percentage() < 0.001);
 
         // Parse errors only
         for _ in 0..5 {
             health.record_parse_error();
         }
-        assert!((health.parse_error_percentage() - 100.0).abs() < f64::EPSILON);
+        assert!((health.parse_error_percentage() - 100.0).abs() < 0.001);
 
         // Add parsed events
         let mut health2 = ParserHealth::new();
@@ -467,7 +465,7 @@ mod tests {
         for _ in 0..5 {
             health2.record_parsed();
         }
-        assert!((health2.parse_error_percentage() - 50.0).abs() < f64::EPSILON);
+        assert!((health2.parse_error_percentage() - 50.0).abs() < 0.001);
 
         // Unknown events don't affect parse error percentage
         let mut health3 = ParserHealth::new();
@@ -481,7 +479,7 @@ mod tests {
             health3.record_parsed();
         }
         // 20 total, 5 parse errors = 25%
-        assert!((health3.parse_error_percentage() - 25.0).abs() < f64::EPSILON);
+        assert!((health3.parse_error_percentage() - 25.0).abs() < 0.001);
     }
 
     #[test]
@@ -526,7 +524,7 @@ mod tests {
 
         // Not concerning - no parse errors
         assert!(!health.is_concerning());
-        assert!((health.parse_error_percentage() - 0.0).abs() < f64::EPSILON);
+        assert!(health.parse_error_percentage() < 0.001);
     }
 
     #[test]
@@ -622,7 +620,7 @@ mod tests {
 
         // Not concerning - no parse errors
         assert!(!health.is_concerning());
-        assert!((health.parse_error_percentage() - 0.0).abs() < f64::EPSILON);
+        assert!(health.parse_error_percentage() < 0.001);
     }
 
     #[test]

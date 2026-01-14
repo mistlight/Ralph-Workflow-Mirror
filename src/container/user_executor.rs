@@ -54,6 +54,82 @@ const LANGUAGE_MANAGER_SHIMS: &[&str] = &[
 /// Default user name for the agent account
 pub const DEFAULT_AGENT_USER: &str = "ralph-agent";
 
+/// Check if an environment variable name is dangerous and should be filtered.
+///
+/// Dangerous environment variables are those that could be used to escape
+/// isolation or compromise security, such as:
+/// - PATH manipulation (to execute arbitrary binaries)
+/// - Dynamic linker configuration (`LD_*`, `DYLD_*`)
+/// - Shell configuration (`IFS`, `SHELLOPTS`, etc.)
+/// - Library search paths (`LIBRARY_PATH`, `LD_LIBRARY_PATH`)
+fn is_dangerous_env_var_name(name: &str) -> bool {
+    let name_upper = name.to_uppercase();
+
+    // Block the main PATH variable (but allow things like NODE_PATH, GOPATH)
+    if name_upper == "PATH" {
+        return true;
+    }
+
+    // Block dynamic linker variables (Linux)
+    if name_upper.starts_with("LD_")
+        || name_upper == "LD_PRELOAD"
+        || name_upper == "LD_LIBRARY_PATH"
+    {
+        return true;
+    }
+
+    // Block dynamic linker variables (macOS)
+    if name_upper.starts_with("DYLD_") {
+        return true;
+    }
+
+    // Block shell configuration variables
+    if name_upper == "IFS"
+        || name_upper == "SHELLOPTS"
+        || name_upper == "BASH_ENV"
+        || name_upper == "ENV"
+        || name_upper == "PS1"
+        || name_upper == "PS2"
+        || name_upper == "PROMPT_COMMAND"
+    {
+        return true;
+    }
+
+    // Block library search paths
+    if name_upper == "LIBRARY_PATH" || name_upper == "LIBPATH" {
+        return true;
+    }
+
+    // Block PYTHONPATH specifically (allows arbitrary module loading)
+    // but allow other PYTHON* variables like PYTHON_VERSION
+    if name_upper == "PYTHONPATH" || name_upper == "PYTHONHOME" {
+        return true;
+    }
+
+    false
+}
+
+/// Check if an environment variable value is safe to pass through.
+///
+/// This validates that a value doesn't contain characters that could
+/// be used for command injection or path traversal.
+fn is_safe_env_var_value(value: &str) -> bool {
+    // Check for shell metacharacters that could be used for injection
+    let dangerous_chars = ['$', '`', '\\', '\n', '\r', '\0'];
+    for c in dangerous_chars {
+        if value.contains(c) {
+            return false;
+        }
+    }
+
+    // Check for suspicious patterns
+    if value.contains("..") || value.contains('~') {
+        return false;
+    }
+
+    true
+}
+
 /// User account executor
 ///
 /// Runs commands as a dedicated user for filesystem isolation.
@@ -124,11 +200,10 @@ impl UserAccountExecutor {
                     workspace_path.display()
                 )));
             }
-            Err(_) => {
-                // Failed to check access - might be a sudo configuration issue
-                // We'll let execution fail with better error message later
+            Ok(_) | Err(_) => {
+                // Either access is OK, or we failed to check - let execution proceed
+                // and fail later with better error message if needed
             }
-            _ => {}
         }
 
         Ok(Self {
@@ -162,11 +237,10 @@ impl UserAccountExecutor {
         }
 
         // Set up working directory
-        let workdir = if let Some(ref wd) = options.working_dir {
-            self.workspace_path.join(wd)
-        } else {
-            self.workspace_path.clone()
-        };
+        let workdir = options.working_dir.as_ref().map_or_else(
+            || self.workspace_path.clone(),
+            |wd| self.workspace_path.join(wd),
+        );
 
         // Build the enhanced environment with platform-specific paths
         let enhanced_env = self.build_enhanced_environment(env_vars, options)?;
@@ -210,6 +284,7 @@ impl UserAccountExecutor {
     }
 
     /// Build enhanced environment with platform-specific paths
+    #[allow(clippy::too_many_lines)]
     fn build_enhanced_environment(
         &self,
         env_vars: &HashMap<String, String>,
@@ -219,7 +294,19 @@ impl UserAccountExecutor {
 
         // First, add all provided environment variables
         for (key, value) in env_vars {
-            // Validate
+            // Skip dangerous environment variables
+            if is_dangerous_env_var_name(key) {
+                continue;
+            }
+
+            // Validate value safety
+            if !is_safe_env_var_value(value) {
+                return Err(ContainerError::Other(format!(
+                    "Environment variable value for '{key}' contains dangerous characters"
+                )));
+            }
+
+            // Validate basic format
             if key.contains('\0') || value.contains('\0') {
                 return Err(ContainerError::Other(
                     "Environment variable contains null byte which is invalid".to_string(),
@@ -245,6 +332,18 @@ impl UserAccountExecutor {
 
         // Add execution option environment variables
         for (key, value) in &options.env_vars {
+            // Skip dangerous environment variables
+            if is_dangerous_env_var_name(key) {
+                continue;
+            }
+
+            // Validate value safety
+            if !is_safe_env_var_value(value) {
+                return Err(ContainerError::Other(
+                    format!("Execution option environment variable value for '{key}' contains dangerous characters"),
+                ));
+            }
+
             if key.contains('\0') || value.contains('\0') {
                 return Err(ContainerError::Other(
                     "Execution option environment variable contains null byte which is invalid"
@@ -308,6 +407,16 @@ impl UserAccountExecutor {
 
             // Preserve language-specific environment variables
             for (key, value) in env::vars() {
+                // Skip dangerous environment variables
+                if is_dangerous_env_var_name(&key) {
+                    continue;
+                }
+
+                // Validate value safety
+                if !is_safe_env_var_value(&value) {
+                    continue;
+                }
+
                 let key_upper = key.to_uppercase();
                 if key_upper.contains("NODE")
                     || key_upper.contains("NPM")
@@ -367,6 +476,16 @@ impl UserAccountExecutor {
 
             // Preserve language-specific environment variables (same as macOS)
             for (key, value) in env::vars() {
+                // Skip dangerous environment variables
+                if is_dangerous_env_var_name(&key) {
+                    continue;
+                }
+
+                // Validate value safety
+                if !is_safe_env_var_value(&value) {
+                    continue;
+                }
+
                 let key_upper = key.to_uppercase();
                 if key_upper.contains("NODE")
                     || key_upper.contains("NPM")
@@ -446,10 +565,10 @@ impl UserAccountExecutor {
 
     #[cfg(test)]
     /// Verify the user can access the workspace
-    pub fn verify_workspace_access(&self) -> ContainerResult<bool> {
+    pub fn verify_workspace_access(&self) -> bool {
         // Check if the workspace exists
         if !self.workspace_path.exists() {
-            return Ok(false);
+            return false;
         }
 
         // Try to see what access the user has
@@ -461,7 +580,7 @@ impl UserAccountExecutor {
             .arg(&self.workspace_path)
             .output();
 
-        Ok(output.map(|o| o.status.success()).unwrap_or(false))
+        output.map(|o| o.status.success()).unwrap_or(false)
     }
 
     /// Parse a command string into arguments

@@ -52,7 +52,7 @@ QUICK EXAMPLES:\n\
     ralph --list-templates            See all prompt templates\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
-#[expect(clippy::struct_excessive_bools)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Args {
     /// Commit message for the final commit
     #[arg(
@@ -467,10 +467,7 @@ pub struct Args {
     pub container_image: Option<String>,
 
     /// Disable network access in containers
-    #[arg(
-        long,
-        help = "Disable network access in containers (air-gapped mode)"
-    )]
+    #[arg(long, help = "Disable network access in containers (air-gapped mode)")]
     pub no_network: bool,
 
     /// Setup security mode (create user account for user-account mode)
@@ -481,10 +478,7 @@ pub struct Args {
     pub setup_security: bool,
 
     /// Check security mode configuration and report status
-    #[arg(
-        long,
-        help = "Check security mode configuration and report status"
-    )]
+    #[arg(long, help = "Check security mode configuration and report status")]
     pub security_check: bool,
 
     /// Build container image for container mode

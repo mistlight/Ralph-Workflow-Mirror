@@ -132,9 +132,7 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
     }
 
     // Validate the template exists
-    let template = if let Some(t) = get_template(template_name) {
-        t
-    } else {
+    let Some(template) = get_template(template_name) else {
         println!(
             "{}Unknown template: '{}'{}",
             colors.red(),
@@ -197,8 +195,8 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
 ///
 /// # Returns
 ///
-/// Returns `Ok(true)` if the flag was handled (program should exit after).
-pub fn handle_list_templates(colors: Colors) -> anyhow::Result<bool> {
+/// Returns `true` if the flag was handled (program should exit after).
+pub fn handle_list_templates(colors: Colors) -> bool {
     println!("Available PROMPT.md templates:");
     println!();
 
@@ -229,5 +227,5 @@ pub fn handle_list_templates(colors: Colors) -> anyhow::Result<bool> {
     println!("  ralph --init-prompt bug-fix        # Create bug fix template");
     println!("  ralph --init-prompt quick          # Create quick change template");
 
-    Ok(true)
+    true
 }

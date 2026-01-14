@@ -135,7 +135,7 @@ impl AgentRegistry {
 
         // Handle common typos/alternatives
         let normalized = name.to_lowercase();
-        let alternatives = self.get_fuzzy_alternatives(&normalized);
+        let alternatives = Self::get_fuzzy_alternatives(&normalized);
 
         for alt in alternatives {
             // If it's a ccs/ pattern, return it for direct CCS execution
@@ -154,7 +154,7 @@ impl AgentRegistry {
     /// Get fuzzy alternatives for a given agent name.
     ///
     /// Returns a list of potential canonical names to try, in order of preference.
-    pub(crate) fn get_fuzzy_alternatives(&self, name: &str) -> Vec<String> {
+    pub(crate) fn get_fuzzy_alternatives(name: &str) -> Vec<String> {
         let mut alternatives = Vec::new();
 
         // Add exact match first
@@ -250,6 +250,7 @@ impl AgentRegistry {
     /// 2. Unified config: `[agents]`, `[ccs_aliases]`, and `[agent_chain]` (if present)
     ///
     /// Returns the number of agents loaded from unified config, including CCS aliases.
+    #[allow(clippy::too_many_lines)]
     pub fn apply_unified_config(&mut self, unified: &crate::config::UnifiedConfig) -> usize {
         let mut loaded = 0usize;
 
@@ -886,10 +887,10 @@ mod tests {
 
     #[test]
     fn test_resolve_fuzzy_underscore_replacement() {
-        let registry = AgentRegistry::new().unwrap();
+        let _registry = AgentRegistry::new().unwrap();
         // Test underscore to dash/slash replacement
         // Note: These test the pattern, actual agents may not exist
-        let result = registry.get_fuzzy_alternatives("my_agent");
+        let result = AgentRegistry::get_fuzzy_alternatives("my_agent");
         assert!(result.contains(&"my_agent".to_string()));
         assert!(result.contains(&"my-agent".to_string()));
         assert!(result.contains(&"my/agent".to_string()));

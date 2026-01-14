@@ -7,7 +7,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
-use crate::logger::Colors;
+use crate::colors::Colors;
 use crate::templates::{get_template, list_templates};
 
 /// Result of interactive template selection.
@@ -50,7 +50,7 @@ pub fn prompt_template_selection(colors: Colors) -> TemplateSelectionResult {
 
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
-        Ok(0) | Err(_) => return None, // EOF or error
+        Ok(0) | Err(_) => return None, // EOF
         Ok(_) => {}
     }
 
@@ -92,7 +92,7 @@ pub fn prompt_template_selection(colors: Colors) -> TemplateSelectionResult {
 
     let mut template_input = String::new();
     match io::stdin().read_line(&mut template_input) {
-        Ok(0) | Err(_) => return None, // EOF or error
+        Ok(0) | Err(_) => return None, // EOF
         Ok(_) => {}
     }
 

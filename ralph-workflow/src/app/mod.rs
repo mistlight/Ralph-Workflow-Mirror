@@ -88,14 +88,14 @@ struct PipelineContext {
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
+#[allow(clippy::too_many_lines)]
 pub fn run(args: Args) -> anyhow::Result<()> {
     let colors = Colors::new();
     let mut logger = Logger::new(colors);
 
     // Initialize configuration and agent registry
-    let init_result = match initialize_config(&args, colors, &mut logger)? {
-        Some(result) => result,
-        None => return Ok(()), // Early exit (--init/--init-global/--init-legacy)
+    let Some(init_result) = initialize_config(&args, colors, &mut logger)? else {
+        return Ok(()); // Early exit (--init/--init-global/--init-legacy)
     };
 
     let config_init::ConfigInitResult {
@@ -229,7 +229,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     if args.dry_run {
         return handle_dry_run(
             &logger,
-            &colors,
+            colors,
             &config,
             &developer_display,
             &reviewer_display,
@@ -250,7 +250,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Run the full pipeline
-    run_pipeline(PipelineContext {
+    let ctx = PipelineContext {
         args,
         config,
         registry,
@@ -261,7 +261,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         repo_root,
         logger,
         colors,
-    })
+    };
+    run_pipeline(&ctx)
 }
 
 /// Handles listing commands that don't require the full pipeline.
@@ -284,7 +285,8 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
 }
 
 /// Runs the full development/review/commit pipeline.
-fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
+#[allow(clippy::too_many_lines)]
+fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     // Handle --resume
     let resume_checkpoint = handle_resume(
         &ctx.args,

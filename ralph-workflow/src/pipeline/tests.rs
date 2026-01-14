@@ -62,7 +62,7 @@ fn run_with_prompt_returns_command_result_for_missing_binary() {
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
-        colors: colors,
+        colors,
         config: &config,
     };
 
@@ -165,7 +165,7 @@ exit 0
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
-        colors: colors,
+        colors,
         config: &config,
     };
 
@@ -404,7 +404,7 @@ exit 0
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
-        colors: colors,
+        colors,
         config: &config,
     };
 

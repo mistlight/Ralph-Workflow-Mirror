@@ -15,7 +15,6 @@
 //! (`~/.config/ralph/agents.toml` and `.agent/agents.toml`) and emits
 //! deprecation warnings when they are used.
 
-#![expect(clippy::too_many_lines)]
 use super::parser::parse_env_bool;
 use super::types::{Config, ReviewDepth, Verbosity};
 use super::unified::{unified_config_path, UnifiedConfig};
@@ -54,7 +53,8 @@ pub fn load_config_from_path(
     let mut warnings = Vec::new();
 
     // Try to load unified config from specified path or default
-    let unified = config_path.map_or_else(UnifiedConfig::load_default, |path| {
+    #[allow(clippy::option_if_let_else)]
+    let unified = if let Some(path) = config_path {
         if path.exists() {
             match UnifiedConfig::load_from_path(path) {
                 Ok(cfg) => Some(cfg),
@@ -71,7 +71,9 @@ pub fn load_config_from_path(
             warnings.push(format!("Config file not found: {}", path.display()));
             None
         }
-    });
+    } else {
+        UnifiedConfig::load_default()
+    };
 
     // Start with defaults, then apply unified config if found
     let config = if let Some(ref unified_cfg) = unified {
@@ -92,13 +94,16 @@ pub fn load_config_from_path(
 fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> Config {
     let general = &unified.general;
 
-    let review_depth = ReviewDepth::from_str(&general.review_depth).unwrap_or_else(|| {
+    #[allow(clippy::option_if_let_else)]
+    let review_depth = if let Some(d) = ReviewDepth::from_str(&general.review_depth) {
+        d
+    } else {
         warnings.push(format!(
             "Invalid review_depth '{}' in config; falling back to 'standard'.",
             general.review_depth
         ));
         ReviewDepth::default()
-    });
+    };
 
     // Warn if container_mode is explicitly disabled
     if !general.container_mode {
@@ -159,6 +164,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
             Some(general.container_image.clone())
         },
         container_network: general.container_network,
+        container_auto_pull: Some(general.container_auto_pull),
     }
 }
 
@@ -197,10 +203,12 @@ fn default_config() -> Config {
         container_engine: None,
         container_image: None,
         container_network: true,
+        container_auto_pull: Some(true),
     }
 }
 
 /// Apply environment variable overrides to config.
+#[allow(clippy::too_many_lines)]
 fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config {
     const MAX_ITERS: u32 = 50;
     const MAX_REVIEWS: u32 = 10;
@@ -458,6 +466,11 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
     if let Ok(val) = env::var("RALPH_CONTAINER_NETWORK") {
         if let Some(b) = parse_env_bool(&val) {
             config.container_network = b;
+        }
+    }
+    if let Ok(val) = env::var("RALPH_CONTAINER_AUTO_PULL") {
+        if let Some(b) = parse_env_bool(&val) {
+            config.container_auto_pull = Some(b);
         }
     }
 

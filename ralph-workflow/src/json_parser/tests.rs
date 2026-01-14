@@ -1044,9 +1044,8 @@ fn test_delta_with_embedded_newline_displays_inline() {
 
     // Verify that the output doesn't have an actual newline in the delta text portion
     // (there should only be one line from the prefix+text, not two)
-    let lines: Vec<&str> = out.lines().collect();
     assert_eq!(
-        lines.len(),
+        out.lines().count(),
         1,
         "Delta with embedded newline should produce a single output line"
     );

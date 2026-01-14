@@ -24,6 +24,7 @@ pub fn print_provider_info(colors: Colors, provider: OpenCodeProviderType, agent
 ///
 /// Displays a categorized list of all `OpenCode` provider types with their
 /// model prefixes, authentication commands, and example agent aliases.
+#[allow(clippy::too_many_lines)]
 pub fn handle_list_providers(colors: Colors) {
     println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());
     println!();
