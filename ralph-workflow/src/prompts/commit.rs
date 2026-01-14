@@ -173,26 +173,55 @@ Fixes #42
 - Are they semantically different? → Use the most significant type with a comprehensive subject
 - What is the COMMON THREAD that connects these changes?
 
-**OUTPUT REQUIREMENT**: Respond with ONLY the commit message.
-- NO markdown fences, explanations, "Here is" prefixes, analysis, numbered/bullet lists, or phrases like "Looking at this diff" or "I can see"
-- JUST the commit message itself
+**OUTPUT REQUIREMENT**: Return ONLY a JSON object with this exact schema:
+{{"subject": "<type>[scope]: <description>", "body": "<optional body or null>"}}
+
+CRITICAL RULES:
+- Return ONLY the JSON object, nothing else
+- No text before or after the JSON
+- No markdown fences around the JSON
+- `subject` is required, must be valid conventional commit format (max 72 chars)
+- `body` is optional (use null if no body needed)
+
+WRONG (with preamble):
+Here is the commit message:
+{{"subject": "feat: add feature", "body": null}}
 
 WRONG (with analysis):
-```
-Looking at this diff, I can see:
-1. Updated parser
-
-feat: add feature
-```
-
-WRONG (with prefix):
-```
-Here is the commit message:
-feat: add feature
-```
+Looking at this diff, I can see changes.
+{{"subject": "feat: add feature", "body": null}}
 
 CORRECT:
-feat: add feature"#
+{{"subject": "feat: add feature", "body": null}}
+
+CORRECT (with body):
+{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\nAdd session management for OAuth tokens."}}"#
+    )
+}
+
+/// Generate strict re-prompt when initial JSON extraction fails.
+///
+/// This is a simplified prompt used when the agent's first response was not valid JSON.
+/// It provides a shorter, more direct instruction to maximize compliance.
+pub fn prompt_strict_json_commit(diff: &str) -> String {
+    let diff_content = diff.trim();
+    format!(
+        r#"Your previous response was not valid JSON. Return ONLY a JSON object.
+
+REQUIRED FORMAT (nothing else):
+{{"subject": "<type>: <description>", "body": null}}
+
+DIFF:
+{diff_content}
+
+RULES:
+- Return ONLY the JSON object
+- No text before or after
+- subject must start with: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
+- Keep subject under 72 characters
+
+Example:
+{{"subject": "fix: correct null pointer in user lookup", "body": null}}"#
     )
 }
 

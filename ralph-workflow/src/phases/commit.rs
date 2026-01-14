@@ -16,13 +16,13 @@ use crate::agents::{AgentRegistry, AgentRole};
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::llm_output_extraction::{
-    extract_llm_output, generate_fallback_commit_message, try_salvage_commit_message,
-    validate_commit_message, OutputFormat,
+    extract_llm_output, generate_fallback_commit_message, try_extract_structured_commit,
+    try_salvage_commit_message, validate_commit_message, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
-use crate::prompts::prompt_generate_commit_message_with_diff;
+use crate::prompts::{prompt_generate_commit_message_with_diff, prompt_strict_json_commit};
 use crate::timer::Timer;
 use std::fs::{self, File};
 use std::io::Read;
@@ -96,10 +96,42 @@ pub fn generate_commit_message(
                 _log_path: log_file,
             },
             Ok(None) => {
-                // Agent succeeded but no commit message found
+                // Agent succeeded but no valid commit message found - try re-prompt
+                runtime.logger.warn(
+                    "No valid commit message extracted, re-prompting with stricter instruction...",
+                );
+
+                // Run agent again with stricter JSON-only prompt
+                let strict_prompt = prompt_strict_json_commit(diff);
+                let retry_exit = run_with_fallback(
+                    AgentRole::Commit,
+                    "generate commit message (strict retry)",
+                    &strict_prompt,
+                    log_dir,
+                    runtime,
+                    registry,
+                    commit_agent,
+                )?;
+
+                if retry_exit == 0 {
+                    if let Ok(Some(message)) = extract_commit_message_from_logs(
+                        log_dir,
+                        diff,
+                        commit_agent,
+                        runtime.logger,
+                    ) {
+                        return Ok(CommitMessageResult {
+                            message,
+                            success: true,
+                            _log_path: log_file,
+                        });
+                    }
+                }
+
+                // Both attempts failed
                 runtime
                     .logger
-                    .warn("Agent succeeded but no commit message was extracted");
+                    .warn("Re-prompt also failed to produce valid commit message");
                 CommitMessageResult {
                     message: String::new(),
                     success: false,
@@ -261,6 +293,15 @@ fn extract_commit_message_from_logs(
         logger.warn("Log file is empty");
         return Ok(None);
     }
+
+    // FIRST: Try structured JSON extraction (new primary method)
+    // This is the preferred method when the agent outputs JSON schema format
+    if let Some(message) = try_extract_structured_commit(&content) {
+        logger.info("Successfully extracted commit message from JSON schema");
+        return Ok(Some(message));
+    }
+
+    logger.info("JSON schema extraction failed, falling back to pattern-based extraction");
 
     // Detect format hint from agent command
     let format_hint = agent_cmd
