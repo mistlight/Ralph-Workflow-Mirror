@@ -49,8 +49,6 @@ QUICK EXAMPLES:\n\
     ralph -U \"feat: add button\"      Rapid mode for minor features\n\
     ralph -a claude \"fix: bug\"       Use specific agent\n\
     ralph --list-templates            See all prompt templates\n\
-\n\
-For all options and details:  ralph --help-advanced\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")]
 pub struct Args {
     /// Commit message for the final commit
@@ -354,24 +352,6 @@ pub struct Args {
     )]
     pub review_depth: Option<String>,
 
-    /// Git user name for commits (overrides config)
-    #[arg(
-        long,
-        value_name = "NAME",
-        help = "Git user name for commits (overrides config file)",
-        hide = true
-    )]
-    pub git_user_name: Option<String>,
-
-    /// Git user email for commits (overrides config)
-    #[arg(
-        long,
-        value_name = "EMAIL",
-        help = "Git user email for commits (overrides config file)",
-        hide = true
-    )]
-    pub git_user_email: Option<String>,
-
     /// Path to configuration file (default: ~/.config/ralph-workflow.toml)
     #[arg(
         long,
@@ -405,7 +385,21 @@ pub struct Args {
     )]
     pub interactive: bool,
 
-    /// Show advanced help with all options and details
-    #[arg(long, help = "Show advanced help with all options, templates, and documentation")]
-    pub help_advanced: bool,
+    /// Git user name override (highest priority in identity resolution chain)
+    #[arg(
+        long,
+        env = "RALPH_GIT_USER_NAME",
+        value_name = "NAME",
+        help = "Git user name for commits (overrides config, env, and git config)"
+    )]
+    pub git_user_name: Option<String>,
+
+    /// Git user email override (highest priority in identity resolution chain)
+    #[arg(
+        long,
+        env = "RALPH_GIT_USER_EMAIL",
+        value_name = "EMAIL",
+        help = "Git user email for commits (overrides config, env, and git config)"
+    )]
+    pub git_user_email: Option<String>,
 }

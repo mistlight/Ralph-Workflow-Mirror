@@ -952,14 +952,12 @@ profiles:
         // Config with ~/ path that needs expansion
         fs::write(
             ccs_dir.join("config.yaml"),
-            format!(
-                r#"version: 7
+            r#"version: 7
 profiles:
   expand:
     type: api
     settings: "~/.ccs/expand.settings.json"
 "#,
-            ),
         )
         .unwrap();
 
