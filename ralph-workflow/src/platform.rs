@@ -4,7 +4,6 @@
 
 #![expect(clippy::too_many_lines)]
 use std::env::consts::OS;
-use std::process::Command;
 
 /// Detected platform type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,11 +46,7 @@ impl Platform {
 
 /// Check if a command exists in PATH
 fn has_command(cmd: &str) -> bool {
-    Command::new("which")
-        .arg(cmd)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    which::which(cmd).is_ok()
 }
 
 /// Detect Linux distribution based on available package managers

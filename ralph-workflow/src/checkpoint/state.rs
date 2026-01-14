@@ -9,8 +9,21 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-/// Path to the checkpoint file.
-const CHECKPOINT_PATH: &str = ".agent/checkpoint.json";
+/// Default directory for Ralph's internal files.
+const AGENT_DIR: &str = ".agent";
+
+/// Default checkpoint file name.
+const CHECKPOINT_FILE: &str = "checkpoint.json";
+
+/// Get the checkpoint file path.
+///
+/// By default, the checkpoint is stored in `.agent/checkpoint.json`
+/// relative to the current working directory. This function provides
+/// a single point of control for the checkpoint location, making it
+/// easier to configure or override in the future if needed.
+fn checkpoint_path() -> String {
+    format!("{AGENT_DIR}/{CHECKPOINT_FILE}")
+}
 
 /// Pipeline phases for checkpoint tracking.
 ///
@@ -165,9 +178,10 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
     })?;
 
     // Write atomically by writing to temp file then renaming
-    let temp_path = format!("{CHECKPOINT_PATH}.tmp");
+    let checkpoint = checkpoint_path();
+    let temp_path = format!("{checkpoint}.tmp");
     fs::write(&temp_path, &json)?;
-    fs::rename(&temp_path, CHECKPOINT_PATH)?;
+    fs::rename(&temp_path, checkpoint)?;
 
     Ok(())
 }
@@ -183,7 +197,8 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
 /// Returns an error if the checkpoint file exists but cannot be read
 /// or contains invalid JSON.
 pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
-    let path = Path::new(CHECKPOINT_PATH);
+    let checkpoint = checkpoint_path();
+    let path = Path::new(&checkpoint);
     if !path.exists() {
         return Ok(None);
     }
@@ -208,7 +223,8 @@ pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
 ///
 /// Returns an error if the file exists but cannot be deleted.
 pub fn clear_checkpoint() -> io::Result<()> {
-    let path = Path::new(CHECKPOINT_PATH);
+    let checkpoint = checkpoint_path();
+    let path = Path::new(&checkpoint);
     if path.exists() {
         fs::remove_file(path)?;
     }
@@ -219,7 +235,7 @@ pub fn clear_checkpoint() -> io::Result<()> {
 ///
 /// Returns `true` if a checkpoint file exists, `false` otherwise.
 pub fn checkpoint_exists() -> bool {
-    Path::new(CHECKPOINT_PATH).exists()
+    Path::new(&checkpoint_path()).exists()
 }
 
 #[cfg(test)]
