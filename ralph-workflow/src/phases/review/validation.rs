@@ -1,0 +1,246 @@
+//! Review phase validation checks.
+//!
+//! This module contains pre-flight and post-flight validation logic for the review phase.
+//! These checks verify that the environment is suitable for running the review agent
+//! and help diagnose issues early.
+
+use crate::agents::is_glm_like_agent;
+use crate::review_metrics::ReviewMetrics;
+use std::fs;
+use std::path::Path;
+
+/// Result of pre-flight validation
+#[derive(Debug)]
+pub enum PreflightResult {
+    /// All checks passed
+    Ok,
+    /// Warning issued but can proceed
+    Warning(String),
+    /// Critical error that should halt execution
+    Error(String),
+}
+
+/// Result of post-flight validation
+#[derive(Debug)]
+pub enum PostflightResult {
+    /// ISSUES.md found and valid
+    Valid,
+    /// ISSUES.md missing or empty
+    Missing(String),
+    /// ISSUES.md has unexpected format
+    Malformed(String),
+}
+
+/// Run pre-flight validation checks before starting a review pass.
+///
+/// These checks verify that the environment is suitable for running
+/// the review agent and help diagnose issues early.
+pub fn pre_flight_review_check(
+    logger: &crate::logger::Logger,
+    cycle: u32,
+    reviewer_agent: &str,
+    reviewer_model: Option<&str>,
+) -> PreflightResult {
+    let agent_dir = Path::new(".agent");
+    let issues_path = Path::new(".agent/ISSUES.md");
+
+    // Check 0: Agent compatibility warning (non-blocking)
+    let is_problematic_reviewer = is_problematic_prompt_target(reviewer_agent, reviewer_model);
+
+    if is_problematic_reviewer {
+        logger.warn(&format!(
+            "Note: Reviewer may have compatibility issues with review tasks. (agent='{}', model={})",
+            reviewer_agent,
+            reviewer_model.unwrap_or("none")
+        ));
+        logger.info("If review fails, consider these workarounds:");
+        logger.info("  1. Use Claude/Codex as reviewer: ralph --reviewer-agent codex");
+        logger.info("  2. Try generic parser: ralph --reviewer-json-parser generic");
+        logger.info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
+        // Continue anyway - don't block execution
+    }
+
+    // Check 0.1: GLM-specific command validation (diagnostic only)
+    if is_glm_like_agent(reviewer_agent) {
+        // Log diagnostic info about GLM agent configuration
+        logger.info(&format!(
+            "GLM agent detected: '{reviewer_agent}'. Command will include '-p' flag for non-interactive mode."
+        ));
+        logger.info("Tip: Use --verbosity debug to see the full command being executed");
+    }
+
+    // Check 0.5: Check for existing ISSUES.md from previous failed run
+    if issues_path.exists() {
+        match fs::metadata(issues_path) {
+            Ok(metadata) if metadata.len() > 0 => {
+                logger.warn(&format!(
+                    "ISSUES.md already exists from a previous run (size: {} bytes).",
+                    metadata.len()
+                ));
+                logger
+                    .info("The review agent will overwrite this file. If the previous run failed,");
+                logger.info("consider checking the old ISSUES.md for clues about what went wrong.");
+            }
+            Ok(_) => {
+                // Empty ISSUES.md - warn but continue
+                logger.warn("Found empty ISSUES.md from previous run. Will be overwritten.");
+            }
+            Err(e) => {
+                logger.warn(&format!("Cannot check ISSUES.md metadata: {e}"));
+            }
+        }
+    }
+
+    // Check 1: Verify .agent directory is writable
+    if !agent_dir.exists() {
+        // Try to create it
+        if let Err(e) = fs::create_dir_all(agent_dir) {
+            return PreflightResult::Error(format!(
+                "Cannot create .agent directory: {e}. Check directory permissions."
+            ));
+        }
+    }
+
+    // Test write by touching a temp file
+    let test_file = agent_dir.join(format!(".write_test_{cycle}"));
+    match fs::write(&test_file, b"test") {
+        Ok(()) => {
+            let _ = fs::remove_file(&test_file);
+        }
+        Err(e) => {
+            return PreflightResult::Error(format!(
+                ".agent directory is not writable: {e}. Check file permissions."
+            ));
+        }
+    }
+
+    // Check 2: Verify available disk space (at least 10MB free)
+    if let Ok(_metadata) = fs::metadata(agent_dir) {
+        // We can't easily get disk space on all platforms, so we'll
+        // just log a reminder if the directory seems unusually large
+        if let Ok(mut entries) = fs::read_dir(agent_dir) {
+            let entry_count = entries.by_ref().count();
+            if entry_count > 1000 {
+                logger.warn(&format!(
+                    ".agent directory has {entry_count} files. Consider cleaning up old logs."
+                ));
+                return PreflightResult::Warning(
+                    "Large .agent directory detected. Review may be slow.".to_string(),
+                );
+            }
+        }
+    }
+
+    PreflightResult::Ok
+}
+
+/// Run post-flight validation after a review pass completes.
+///
+/// These checks verify that the review agent produced expected output.
+pub fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> PostflightResult {
+    let issues_path = Path::new(".agent/ISSUES.md");
+
+    // Check 1: Verify ISSUES.md exists
+    if !issues_path.exists() {
+        logger.warn(&format!(
+            "Review cycle {cycle} completed but ISSUES.md was not created. \
+             The agent may have failed or used a different output format."
+        ));
+        logger.info("Possible causes:");
+        logger.info("  - Agent failed to write the file (permission/execution error)");
+        logger.info("  - Agent used a different output filename or format");
+        logger.info("  - Agent was interrupted during execution");
+        return PostflightResult::Missing(
+            "ISSUES.md not found after review. Agent may have failed.".to_string(),
+        );
+    }
+
+    // Check 2: Verify ISSUES.md is not empty and log its size
+    let file_size = match fs::metadata(issues_path) {
+        Ok(metadata) if metadata.len() == 0 => {
+            logger.warn(&format!("Review cycle {cycle} created an empty ISSUES.md."));
+            logger.info("Possible causes:");
+            logger.info("  - Agent reviewed but found no issues (should write 'No issues found.')");
+            logger.info("  - Agent failed during file write");
+            logger.info("  - Agent doesn't understand the expected output format");
+            return PostflightResult::Missing("ISSUES.md is empty".to_string());
+        }
+        Ok(metadata) => {
+            // Log the file size for debugging
+            logger.info(&format!("ISSUES.md created ({} bytes)", metadata.len()));
+            metadata.len()
+        }
+        Err(e) => {
+            logger.warn(&format!("Cannot read ISSUES.md metadata: {e}"));
+            return PostflightResult::Missing(format!("Cannot read ISSUES.md: {e}"));
+        }
+    };
+
+    // Check 3: Verify ISSUES.md has valid structure
+    match ReviewMetrics::from_issues_file() {
+        Ok(metrics) => {
+            // Check if metrics indicate reasonable content
+            if metrics.total_issues == 0 && !metrics.no_issues_declared {
+                // Partial recovery: file has content but no parseable issues
+                logger.warn(&format!(
+                    "Review cycle {cycle} produced ISSUES.md ({file_size} bytes) but no parseable issues detected."
+                ));
+                logger.info("Content may be in unexpected format. The fix pass may still work.");
+                logger.info(
+                    "Consider checking .agent/ISSUES.md manually to see what the agent wrote.",
+                );
+                return PostflightResult::Malformed(
+                    "ISSUES.md exists but no issues detected. Check format.".to_string(),
+                );
+            }
+
+            // Log a summary of what was found
+            if metrics.total_issues > 0 {
+                logger.info(&format!(
+                    "Review found {} issues ({} critical, {} high, {} medium, {} low)",
+                    metrics.total_issues,
+                    metrics.critical_issues,
+                    metrics.high_issues,
+                    metrics.medium_issues,
+                    metrics.low_issues
+                ));
+            } else if metrics.no_issues_declared {
+                logger.info("Review declared no issues found.");
+            }
+
+            PostflightResult::Valid
+        }
+        Err(e) => {
+            // Partial recovery: attempt to show what content we can
+            logger.warn(&format!("Failed to parse ISSUES.md: {e}"));
+            logger.info(&format!(
+                "ISSUES.md has {file_size} bytes but failed to parse."
+            ));
+            logger.info("The file may be malformed or in an unexpected format.");
+            logger.info(
+                "Attempting partial recovery: fix pass will proceed but may have limited success.",
+            );
+
+            // Try to read first few lines to give user a hint
+            if let Ok(content) = fs::read_to_string(issues_path) {
+                let preview: String = content.lines().take(5).collect::<Vec<_>>().join("\n");
+                if !preview.is_empty() {
+                    logger.info("ISSUES.md preview (first 5 lines):");
+                    for line in preview.lines() {
+                        logger.info(&format!("  {line}"));
+                    }
+                }
+            }
+
+            PostflightResult::Malformed(format!("Failed to parse ISSUES.md: {e}"))
+        }
+    }
+}
+
+/// Check if the given agent/model combination is a problematic prompt target.
+///
+/// Certain AI agents have known compatibility issues with complex structured prompts.
+/// This function detects those agents for which alternative handling may be needed.
+fn is_problematic_prompt_target(agent: &str, model_flag: Option<&str>) -> bool {
+    is_glm_like_agent(agent) || model_flag.is_some_and(is_glm_like_agent)
+}
