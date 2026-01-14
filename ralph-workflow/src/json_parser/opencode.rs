@@ -20,6 +20,9 @@
 //! [OpenCode] ✓ Step finished... (step_finish shows prefix with newline)
 //! ```
 
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::items_after_statements)]
+
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
@@ -197,11 +200,11 @@ impl OpenCodeParser {
                 drop(in_text);
                 self.in_text_content.borrow_mut().set(false);
 
-                if let Some(ref part) = event.part {
+                event.part.as_ref().map_or_else(String::new, |part| {
                     let reason = part.reason.as_deref().unwrap_or("unknown");
                     let cost = part.cost.unwrap_or(0.0);
 
-                    let tokens_str = if let Some(ref tokens) = part.tokens {
+                    let tokens_str = part.tokens.as_ref().map_or_else(String::new, |tokens| {
                         let input = tokens.input.unwrap_or(0);
                         let output = tokens.output.unwrap_or(0);
                         let reasoning = tokens.reasoning.unwrap_or(0);
@@ -213,9 +216,7 @@ impl OpenCodeParser {
                         } else {
                             format!("in:{input} out:{output}")
                         }
-                    } else {
-                        String::new()
-                    };
+                    });
 
                     let is_success = reason == "tool-calls" || reason == "end_turn";
                     let icon = if is_success { CHECK } else { CROSS };
@@ -241,19 +242,20 @@ impl OpenCodeParser {
                         reason
                     );
                     if !tokens_str.is_empty() {
-                        out.push_str(&format!(", {tokens_str}"));
+                        use std::fmt::Write;
+                        let _ = write!(out, ", {tokens_str}");
                     }
                     if cost > 0.0 {
-                        out.push_str(&format!(", ${cost:.4}"));
+                        use std::fmt::Write;
+                        let _ = write!(out, ", ${cost:.4}");
                     }
-                    out.push_str(&format!("){}\n", c.reset()));
+                    use std::fmt::Write;
+                    let _ = writeln!(out, "){}", c.reset());
                     out
-                } else {
-                    String::new()
-                }
+                })
             }
             "tool_use" => {
-                if let Some(ref part) = event.part {
+                event.part.as_ref().map_or_else(String::new, |part| {
                     let tool_name = part.tool.as_deref().unwrap_or("unknown");
                     let status = part
                         .state
@@ -285,15 +287,17 @@ impl OpenCodeParser {
                     if let Some(t) = title {
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(t, limit);
-                        out.push_str(&format!(
-                            "{}[{}]{} {}  └─ {}{}\n",
+                        use std::fmt::Write;
+                        let _ = writeln!(
+                            out,
+                            "{}[{}]{} {}  └─ {}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.dim(),
                             preview,
                             c.reset()
-                        ));
+                        );
                     }
 
                     // Show tool input at Normal+ verbosity
@@ -304,15 +308,17 @@ impl OpenCodeParser {
                                 let limit = self.verbosity.truncate_limit("tool_input");
                                 let preview = truncate_text(&input_str, limit);
                                 if !preview.is_empty() {
-                                    out.push_str(&format!(
-                                        "{}[{}]{} {}  └─ {}{}\n",
+                                    use std::fmt::Write;
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}  └─ {}{}",
                                         c.dim(),
                                         prefix,
                                         c.reset(),
                                         c.dim(),
                                         preview,
                                         c.reset()
-                                    ));
+                                    );
                                 }
                             }
                         }
@@ -334,23 +340,23 @@ impl OpenCodeParser {
                                 let limit = self.verbosity.truncate_limit("tool_result");
                                 let preview = truncate_text(&output_str, limit);
                                 if !preview.is_empty() {
-                                    out.push_str(&format!(
-                                        "{}[{}]{} {}  └─ Output: {}{}\n",
+                                    use std::fmt::Write;
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}  └─ Output: {}{}",
                                         c.dim(),
                                         prefix,
                                         c.reset(),
                                         c.dim(),
                                         preview,
                                         c.reset()
-                                    ));
+                                    );
                                 }
                             }
                         }
                     }
                     out
-                } else {
-                    String::new()
-                }
+                })
             }
             "text" => {
                 if let Some(ref part) = event.part {
@@ -513,7 +519,7 @@ impl OpenCodeParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
+        if let Some(warning) = monitor.check_and_warn(*c) {
             writeln!(writer, "{warning}")?;
         }
         Ok(())

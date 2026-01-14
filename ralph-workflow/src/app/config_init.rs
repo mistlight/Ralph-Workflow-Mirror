@@ -14,7 +14,7 @@ use crate::cli::{
 use crate::colors::Colors;
 use crate::config::{loader, unified_config_path, Config, UnifiedConfig};
 use crate::git_helpers::get_repo_root;
-use crate::utils::Logger;
+use crate::logger::Logger;
 use std::path::PathBuf;
 
 /// Result of configuration initialization.
@@ -51,15 +51,16 @@ pub struct ConfigInitResult {
 /// (e.g., --init, --init-prompt, --list-templates), or an error if initialization fails.
 pub fn initialize_config(
     args: &Args,
-    colors: &Colors,
-    logger: &mut Logger,
+    colors: Colors,
+    logger: &Logger,
 ) -> anyhow::Result<Option<ConfigInitResult>> {
     // Load configuration from unified config file (with env overrides)
-    let (mut config, unified, warnings) = if let Some(config_path) = &args.config {
-        loader::load_config_from_path(Some(config_path.as_path()))
-    } else {
-        loader::load_config()
-    };
+    let (mut config, unified, warnings) = args
+        .config
+        .as_ref()
+        .map_or_else(loader::load_config, |config_path| {
+            loader::load_config_from_path(Some(config_path.as_path()))
+        });
 
     // Display any deprecation warnings from config loading
     for warning in warnings {
@@ -79,7 +80,7 @@ pub fn initialize_config(
     apply_args_to_config(args, &mut config, colors);
 
     // Handle --list-templates flag: display available templates and exit
-    if args.list_templates && handle_list_templates(colors)? {
+    if args.list_templates && handle_list_templates(colors) {
         return Ok(None);
     }
 
@@ -108,7 +109,7 @@ pub fn initialize_config(
     }
 
     // Initialize agent registry with built-in defaults + unified config.
-    let (registry, config_sources) = load_agent_registry(&unified, config_path.as_path())?;
+    let (registry, config_sources) = load_agent_registry(unified.as_ref(), config_path.as_path())?;
 
     // Apply default agents from fallback chains
     apply_default_agents(&mut config, &registry);
@@ -122,7 +123,7 @@ pub fn initialize_config(
 }
 
 fn load_agent_registry(
-    unified: &Option<UnifiedConfig>,
+    unified: Option<&UnifiedConfig>,
     config_path: &std::path::Path,
 ) -> anyhow::Result<(AgentRegistry, Vec<ConfigSource>)> {
     let mut registry = AgentRegistry::new().map_err(|e| {

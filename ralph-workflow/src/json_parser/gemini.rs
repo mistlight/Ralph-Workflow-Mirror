@@ -20,6 +20,9 @@
 //! [Gemini] Hello World\n   (final non-delta message shows complete result)
 //! ```
 
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::items_after_statements)]
+
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
@@ -216,15 +219,17 @@ impl GeminiParser {
                         let limit = self.verbosity.truncate_limit("tool_input");
                         let preview = truncate_text(&params_str, limit);
                         if !preview.is_empty() {
-                            out.push_str(&format!(
-                                "{}[{}]{} {}  └─ {}{}\n",
+                            use std::fmt::Write;
+                            let _ = writeln!(
+                                out,
+                                "{}[{}]{} {}  └─ {}{}",
                                 c.dim(),
                                 prefix,
                                 c.reset(),
                                 c.dim(),
                                 preview,
                                 c.reset()
-                            ));
+                            );
                         }
                     }
                 }
@@ -250,15 +255,17 @@ impl GeminiParser {
                     if let Some(ref output_text) = output {
                         let limit = self.verbosity.truncate_limit("tool_result");
                         let preview = truncate_text(output_text, limit);
-                        out.push_str(&format!(
-                            "{}[{}]{} {}  └─ {}{}\n",
+                        use std::fmt::Write;
+                        let _ = writeln!(
+                            out,
+                            "{}[{}]{} {}  └─ {}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.dim(),
                             preview,
                             c.reset()
-                        ));
+                        );
                     }
                 }
                 out
@@ -284,7 +291,7 @@ impl GeminiParser {
                 let icon = if is_success { CHECK } else { CROSS };
                 let color = if is_success { c.green() } else { c.red() };
 
-                let stats_display = if let Some(s) = stats {
+                let stats_display = stats.map_or_else(String::new, |s| {
                     let duration_s = s.duration_ms.unwrap_or(0) / 1000;
                     let duration_m = duration_s / 60;
                     let duration_s_rem = duration_s % 60;
@@ -294,9 +301,7 @@ impl GeminiParser {
                     format!(
                         "({duration_m}m {duration_s_rem}s, in:{input} out:{output}, {tools} tools)"
                     )
-                } else {
-                    String::new()
-                };
+                });
 
                 format!(
                     "{}[{}]{} {}{} {}{} {}{}{}\n",
@@ -332,10 +337,8 @@ impl GeminiParser {
     /// to avoid false health warnings.
     const fn is_control_event(event: &GeminiEvent) -> bool {
         match event {
-            // Init event is a control event
-            GeminiEvent::Init { .. } => true,
-            // Result event is a control event (aggregated stats, no direct user output)
-            GeminiEvent::Result { .. } => true,
+            // Init and Result events are control events
+            GeminiEvent::Init { .. } | GeminiEvent::Result { .. } => true,
             _ => false,
         }
     }
@@ -413,8 +416,8 @@ impl GeminiParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
-            writeln!(writer, "{warning}")?;
+        if let Some(warning) = monitor.check_and_warn(*c) {
+            writeln!(writer, "{warning}\n")?;
         }
         Ok(())
     }

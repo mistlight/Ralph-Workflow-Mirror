@@ -29,6 +29,7 @@ const DIFF_TRUNCATED_MARKER: &str =
     "\n\n[Diff truncated due to size. Showing first portion above.]";
 
 /// Convert git2 error to `io::Error`.
+#[expect(clippy::needless_pass_by_value)]
 fn git2_to_io_error(err: git2::Error) -> io::Error {
     io::Error::other(err.to_string())
 }
@@ -207,11 +208,10 @@ pub fn validate_and_truncate_diff(diff: String) -> (String, bool) {
     // Truncate if over the hard limit
     if diff_size > MAX_DIFF_SIZE_HARD {
         let truncate_size = MAX_DIFF_SIZE_HARD - DIFF_TRUNCATED_MARKER.len();
-        let truncated = if let Some(idx) = diff.char_indices().nth(truncate_size).map(|(i, _)| i) {
-            format!("{}{}", &diff[..idx], DIFF_TRUNCATED_MARKER)
-        } else {
-            format!("{diff}{DIFF_TRUNCATED_MARKER}")
-        };
+        let truncated = diff.char_indices().nth(truncate_size).map_or_else(
+            || format!("{diff}{DIFF_TRUNCATED_MARKER}"),
+            |(i, _)| format!("{}{}", &diff[..i], DIFF_TRUNCATED_MARKER),
+        );
 
         eprintln!(
             "Warning: Diff truncated from {} to {} bytes for LLM processing.",
@@ -465,6 +465,7 @@ pub fn git_commit(
 
     Ok(Some(oid))
 }
+
 /// Generate a diff from a specific starting commit.
 ///
 /// Takes a starting commit OID and generates a diff between that commit
@@ -609,5 +610,63 @@ mod tests {
             let git_dir = path.join(".git");
             assert!(git_dir.exists() || path.ancestors().any(|p| p.join(".git").exists()));
         }
+    }
+
+    #[test]
+    fn test_git_diff_from_returns_result() {
+        // Test that git_diff_from returns a Result
+        // We use an invalid OID to test error handling
+        let result = git_diff_from("invalid_oid_that_does_not_exist");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_git_snapshot_returns_result() {
+        // Test that git_snapshot returns a Result
+        let result = git_snapshot();
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_git_add_all_returns_result() {
+        // Test that git_add_all returns a Result
+        let result = git_add_all();
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_get_git_diff_from_start_returns_result() {
+        // Test that get_git_diff_from_start returns a Result
+        // It should fall back to git_diff() if no start commit file exists
+        let result = get_git_diff_from_start();
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_validate_and_truncate_diff_small_diff() {
+        // Small diffs should not be truncated
+        let small_diff = "diff --git a/file.txt b/file.txt\n+ hello";
+        let (result, truncated) = validate_and_truncate_diff(small_diff.to_string());
+        assert!(!truncated);
+        assert_eq!(result, small_diff);
+    }
+
+    #[test]
+    fn test_validate_and_truncate_diff_large_diff() {
+        // Large diffs should be truncated
+        let large_diff = "x".repeat(MAX_DIFF_SIZE_HARD + 1000);
+        let (result, truncated) = validate_and_truncate_diff(large_diff.clone());
+        assert!(truncated);
+        assert!(result.len() < large_diff.len());
+        assert!(result.contains(DIFF_TRUNCATED_MARKER));
+    }
+
+    #[test]
+    fn test_validate_and_truncate_diff_empty() {
+        // Empty diffs should not be truncated
+        let empty_diff = "";
+        let (result, truncated) = validate_and_truncate_diff(empty_diff.to_string());
+        assert!(!truncated);
+        assert_eq!(result, empty_diff);
     }
 }

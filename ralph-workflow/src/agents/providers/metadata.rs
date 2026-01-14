@@ -6,7 +6,7 @@ use super::types::OpenCodeProviderType;
 
 impl OpenCodeProviderType {
     /// Get the display name for this provider.
-    pub const fn name(&self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::OpenCodeZen => "OpenCode Zen",
             Self::ZaiDirect => "Z.AI Direct",
@@ -57,7 +57,7 @@ impl OpenCodeProviderType {
     }
 
     /// Get authentication command/instructions for this provider.
-    pub const fn auth_command(&self) -> &'static str {
+    pub const fn auth_command(self) -> &'static str {
         match self {
             Self::OpenCodeZen => "Run: opencode auth login -> select 'OpenCode Zen'",
             Self::ZaiDirect => "Run: opencode auth login -> select 'Z.AI' or 'Z.AI Coding Plan'",
@@ -118,7 +118,7 @@ impl OpenCodeProviderType {
     }
 
     /// Get the model prefix for this provider.
-    pub const fn prefix(&self) -> &'static str {
+    pub const fn prefix(self) -> &'static str {
         match self {
             Self::OpenCodeZen => "opencode/",
             Self::ZaiDirect => "zai/",
@@ -169,7 +169,7 @@ impl OpenCodeProviderType {
     }
 
     /// Check if this provider requires special cloud configuration.
-    pub const fn requires_cloud_config(&self) -> bool {
+    pub const fn requires_cloud_config(self) -> bool {
         matches!(
             self,
             Self::GoogleVertex
@@ -181,7 +181,7 @@ impl OpenCodeProviderType {
     }
 
     /// Check if this is a local provider (no API key needed).
-    pub const fn is_local(&self) -> bool {
+    pub const fn is_local(self) -> bool {
         matches!(self, Self::Ollama | Self::LMStudio | Self::LlamaCpp)
     }
 }

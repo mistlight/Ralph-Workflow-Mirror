@@ -20,7 +20,6 @@
 pub fn parse_env_bool(value: &str) -> Option<bool> {
     let normalized = value.trim().to_ascii_lowercase();
     match normalized.as_str() {
-        "" => None,
         "1" | "true" | "yes" | "y" | "on" => Some(true),
         "0" | "false" | "no" | "n" | "off" => Some(false),
         _ => None,

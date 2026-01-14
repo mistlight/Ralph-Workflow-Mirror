@@ -10,6 +10,8 @@
 //! 3. Extracts the commit message from agent output
 //! 4. Returns the generated message for use by the caller
 
+#![expect(clippy::trivially_copy_pass_by_ref)]
+#![expect(clippy::too_many_arguments)]
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::colors::Colors;
 use crate::config::Config;
@@ -17,10 +19,10 @@ use crate::files::llm_output_extraction::{
     extract_llm_output, validate_commit_message, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
+use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::prompt_generate_commit_message_with_diff;
 use crate::timer::Timer;
-use crate::utils::Logger;
 use std::fs::{self, File};
 use std::io::Read;
 
@@ -239,9 +241,7 @@ fn extract_commit_message_from_logs(
     // Find the most recent log file
     let log_path = find_most_recent_log(log_dir)?;
 
-    let log_file = if let Some(path) = log_path {
-        path
-    } else {
+    let Some(log_file) = log_path else {
         logger.warn("No log files found in commit generation directory");
         return Ok(None);
     };

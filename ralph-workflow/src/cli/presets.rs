@@ -24,7 +24,7 @@ pub enum Preset {
 /// - Quick mode (--quick)
 /// - Agent and model overrides
 /// - Isolation mode
-pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: &Colors) {
+pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Colors) {
     // Handle verbosity shorthand flags (--quiet, --full, --debug take precedence)
     let base_verbosity = config.verbosity;
     config.verbosity = if args.quiet {

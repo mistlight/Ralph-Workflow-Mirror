@@ -2,6 +2,8 @@
 //!
 //! Contains the fundamental structures used across all language-specific guideline modules.
 
+#![expect(clippy::items_after_statements)]
+
 /// Severity level for code review checks
 ///
 /// Used to prioritize review feedback and help developers focus on
@@ -257,7 +259,7 @@ impl ReviewGuidelines {
         fn push_section(
             sections: &mut Vec<String>,
             header: &str,
-            checks: Vec<SeverityCheck>,
+            checks: &[SeverityCheck],
             limit: usize,
         ) {
             if checks.is_empty() {
@@ -285,7 +287,7 @@ impl ReviewGuidelines {
         push_section(
             &mut sections,
             "🔴 CRITICAL (must fix before merge):",
-            critical_checks,
+            &critical_checks,
             10,
         );
 
@@ -300,7 +302,7 @@ impl ReviewGuidelines {
         push_section(
             &mut sections,
             "🟠 HIGH (should fix before merge):",
-            high_checks,
+            &high_checks,
             10,
         );
 
@@ -318,7 +320,7 @@ impl ReviewGuidelines {
         push_section(
             &mut sections,
             "🟡 MEDIUM (should address):",
-            medium_checks,
+            &medium_checks,
             12,
         );
 
@@ -330,7 +332,7 @@ impl ReviewGuidelines {
             .cloned()
             .map(SeverityCheck::low)
             .collect();
-        push_section(&mut sections, "🟢 LOW (nice to have):", low_checks, 10);
+        push_section(&mut sections, "🟢 LOW (nice to have):", &low_checks, 10);
 
         // Info: Idioms.
         let info_checks: Vec<SeverityCheck> = self
@@ -339,7 +341,7 @@ impl ReviewGuidelines {
             .cloned()
             .map(SeverityCheck::info)
             .collect();
-        push_section(&mut sections, "🔵 INFO (observations):", info_checks, 10);
+        push_section(&mut sections, "🔵 INFO (observations):", &info_checks, 10);
 
         sections.join("\n\n")
     }

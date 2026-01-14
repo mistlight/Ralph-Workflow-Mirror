@@ -2,11 +2,12 @@
 //!
 //! Contains functions for displaying `OpenCode` provider information.
 
+#![expect(clippy::too_many_lines)]
 use crate::agents::OpenCodeProviderType;
 use crate::colors::Colors;
 
 /// Helper function to print provider information for --list-providers.
-pub fn print_provider_info(colors: &Colors, provider: OpenCodeProviderType, agent_alias: &str) {
+pub fn print_provider_info(colors: Colors, provider: OpenCodeProviderType, agent_alias: &str) {
     let examples = provider.example_models();
     let example_str = if examples.is_empty() {
         String::new()
@@ -24,7 +25,7 @@ pub fn print_provider_info(colors: &Colors, provider: OpenCodeProviderType, agen
 ///
 /// Displays a categorized list of all `OpenCode` provider types with their
 /// model prefixes, authentication commands, and example agent aliases.
-pub fn handle_list_providers(colors: &Colors) {
+pub fn handle_list_providers(colors: Colors) {
     println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());
     println!();
     println!("Ralph includes built-in guidance for major OpenCode provider prefixes (plus a custom fallback).");

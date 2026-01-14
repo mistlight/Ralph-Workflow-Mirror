@@ -4,6 +4,7 @@
 //! artifacts (e.g. non-UTF8 files from interrupted writes), we attempt a small
 //! set of best-effort repairs so the pipeline can proceed.
 
+#![expect(clippy::unnecessary_debug_formatting)]
 use std::fs;
 use std::io;
 use std::path::Path;

@@ -26,7 +26,7 @@ impl Colors {
     }
 
     // Style codes
-    pub(crate) const fn bold(&self) -> &'static str {
+    pub(crate) const fn bold(self) -> &'static str {
         if self.enabled {
             "\x1b[1m"
         } else {
@@ -34,7 +34,7 @@ impl Colors {
         }
     }
 
-    pub(crate) const fn dim(&self) -> &'static str {
+    pub(crate) const fn dim(self) -> &'static str {
         if self.enabled {
             "\x1b[2m"
         } else {
@@ -42,7 +42,7 @@ impl Colors {
         }
     }
 
-    pub(crate) const fn reset(&self) -> &'static str {
+    pub(crate) const fn reset(self) -> &'static str {
         if self.enabled {
             "\x1b[0m"
         } else {
@@ -51,7 +51,7 @@ impl Colors {
     }
 
     // Foreground colors
-    pub(crate) const fn red(&self) -> &'static str {
+    pub(crate) const fn red(self) -> &'static str {
         if self.enabled {
             "\x1b[31m"
         } else {
@@ -59,7 +59,7 @@ impl Colors {
         }
     }
 
-    pub(crate) const fn green(&self) -> &'static str {
+    pub(crate) const fn green(self) -> &'static str {
         if self.enabled {
             "\x1b[32m"
         } else {
@@ -67,7 +67,7 @@ impl Colors {
         }
     }
 
-    pub(crate) const fn yellow(&self) -> &'static str {
+    pub(crate) const fn yellow(self) -> &'static str {
         if self.enabled {
             "\x1b[33m"
         } else {
@@ -75,7 +75,7 @@ impl Colors {
         }
     }
 
-    pub(crate) const fn blue(&self) -> &'static str {
+    pub(crate) const fn blue(self) -> &'static str {
         if self.enabled {
             "\x1b[34m"
         } else {
@@ -83,7 +83,7 @@ impl Colors {
         }
     }
 
-    pub(crate) const fn magenta(&self) -> &'static str {
+    pub(crate) const fn magenta(self) -> &'static str {
         if self.enabled {
             "\x1b[35m"
         } else {
@@ -91,7 +91,7 @@ impl Colors {
         }
     }
 
-    pub(crate) const fn cyan(&self) -> &'static str {
+    pub(crate) const fn cyan(self) -> &'static str {
         if self.enabled {
             "\x1b[36m"
         } else {
@@ -99,7 +99,7 @@ impl Colors {
         }
     }
 
-    pub(crate) const fn white(&self) -> &'static str {
+    pub(crate) const fn white(self) -> &'static str {
         if self.enabled {
             "\x1b[37m"
         } else {

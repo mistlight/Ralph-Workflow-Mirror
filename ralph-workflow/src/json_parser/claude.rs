@@ -24,6 +24,9 @@
 //! This pattern is consistent across all parsers (Claude, Codex, Gemini, `OpenCode`)
 //! with variations in when the prefix is shown based on each format's event structure.
 
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::items_after_statements)]
+
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
@@ -120,15 +123,18 @@ impl ClaudeParser {
                         c.reset()
                     );
                     if let Some(cwd) = cwd {
-                        out.push_str(&format!(
-                            "{}[{}]{} {}Working dir: {}{}\n",
+                        use std::fmt::Write;
+                        writeln!(
+                            out,
+                            "{}[{}]{} {}Working dir: {}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.dim(),
                             cwd,
                             c.reset()
-                        ));
+                        )
+                        .unwrap();
                     }
                     out
                 } else {
@@ -157,22 +163,26 @@ impl ClaudeParser {
                                         if let Some(text) = text {
                                             let limit = self.verbosity.truncate_limit("text");
                                             let preview = truncate_text(&text, limit);
-                                            out.push_str(&format!(
-                                                "{}[{}]{} {}{}{}\n",
+                                            use std::fmt::Write;
+                                            let _ = writeln!(
+                                                out,
+                                                "{}[{}]{} {}{}{}",
                                                 c.dim(),
                                                 prefix,
                                                 c.reset(),
                                                 c.white(),
                                                 preview,
                                                 c.reset()
-                                            ));
+                                            );
                                         }
                                     }
                                 }
                                 ContentBlock::ToolUse { name: tool, input } => {
                                     let tool_name = tool.unwrap_or_else(|| "unknown".to_string());
-                                    out.push_str(&format!(
-                                        "{}[{}]{} {}Tool{}: {}{}{}\n",
+                                    use std::fmt::Write;
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}Tool{}: {}{}{}",
                                         c.dim(),
                                         prefix,
                                         c.reset(),
@@ -181,7 +191,7 @@ impl ClaudeParser {
                                         c.bold(),
                                         tool_name,
                                         c.reset(),
-                                    ));
+                                    );
                                     // Show tool input details at Normal and above (not just Verbose)
                                     // Tool inputs provide crucial context for understanding agent actions
                                     if self.verbosity.show_tool_input() {
@@ -190,15 +200,17 @@ impl ClaudeParser {
                                             let limit = self.verbosity.truncate_limit("tool_input");
                                             let preview = truncate_text(&input_str, limit);
                                             if !preview.is_empty() {
-                                                out.push_str(&format!(
-                                                    "{}[{}]{} {}  └─ {}{}\n",
+                                                use std::fmt::Write;
+                                                let _ = writeln!(
+                                                    out,
+                                                    "{}[{}]{} {}  └─ {}{}",
                                                     c.dim(),
                                                     prefix,
                                                     c.reset(),
                                                     c.dim(),
                                                     preview,
                                                     c.reset()
-                                                ));
+                                                );
                                             }
                                         }
                                     }
@@ -211,15 +223,17 @@ impl ClaudeParser {
                                         };
                                         let limit = self.verbosity.truncate_limit("tool_result");
                                         let preview = truncate_text(&content_str, limit);
-                                        out.push_str(&format!(
-                                            "{}[{}]{} {}Result:{} {}\n",
+                                        use std::fmt::Write;
+                                        let _ = writeln!(
+                                            out,
+                                            "{}[{}]{} {}Result:{} {}",
                                             c.dim(),
                                             prefix,
                                             c.reset(),
                                             c.dim(),
                                             c.reset(),
                                             preview
-                                        ));
+                                        );
                                     }
                                 }
                                 ContentBlock::Unknown => {}
@@ -303,14 +317,16 @@ impl ClaudeParser {
                 if let Some(result) = result {
                     let limit = self.verbosity.truncate_limit("result");
                     let preview = truncate_text(&result, limit);
-                    out.push_str(&format!(
-                        "\n{}Result summary:{}\n{}{}{}\n",
+                    use std::fmt::Write;
+                    let _ = writeln!(
+                        out,
+                        "\n{}Result summary:{}\n{}{}{}",
                         c.bold(),
                         c.reset(),
                         c.dim(),
                         preview,
                         c.reset()
-                    ));
+                    );
                 }
                 out
             }
@@ -417,14 +433,15 @@ impl ClaudeParser {
                     let was_in_block = in_block.get();
                     drop(in_block);
 
+                    // Mark that we're now in a content block
+                    self.in_content_block.borrow_mut().set(true);
+
                     // Only show prefix on the first chunk of a content block
                     if was_in_block {
                         // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                        self.in_content_block.borrow_mut().set(true);
                         format!("{}\x1b[0K\r{}", c.white(), sanitized_text)
                     } else {
                         // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                        self.in_content_block.borrow_mut().set(true);
                         format!(
                             "{}[{}]{} {}{}{}",
                             c.dim(),
@@ -442,22 +459,20 @@ impl ClaudeParser {
                     // Accumulate thinking content
                     acc.add_thinking_delta(index, &text);
                     // Display thinking with visual distinction
-                    Self::formatter().format_thinking(text.as_str(), prefix, c)
+                    Self::formatter().format_thinking(text.as_str(), prefix, *c)
                 }
                 ContentBlockDelta::ToolUseDelta {
                     tool_use: Some(tool_delta),
                 } => {
                     // Handle tool input streaming
                     // Extract the tool input from the delta
-                    let input_str = if let Some(input) = tool_delta.get("input") {
-                        match input {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => format_tool_input(other),
-                        }
-                    } else {
-                        // No input in this delta, accumulate empty string
-                        String::new()
-                    };
+                    let input_str =
+                        tool_delta
+                            .get("input")
+                            .map_or_else(String::new, |input| match input {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => format_tool_input(other),
+                            });
 
                     if input_str.is_empty() {
                         String::new()
@@ -467,12 +482,13 @@ impl ClaudeParser {
 
                         // Show partial tool input in real-time
                         let formatter = DeltaDisplayFormatter::new();
-                        formatter.format_tool_input(&input_str, prefix, c)
+                        formatter.format_tool_input(&input_str, prefix, *c)
                     }
                 }
                 _ => String::new(),
             },
-            StreamInnerEvent::ContentBlockDelta { .. } => String::new(),
+            #[expect(clippy::match_same_arms)]
+            StreamInnerEvent::ContentBlockDelta { .. } | StreamInnerEvent::Ping => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Mark that we've streamed content for this message
                 self.has_streamed_content.borrow_mut().set(true);
@@ -487,13 +503,14 @@ impl ClaudeParser {
                 let was_in_block = in_block.get();
                 drop(in_block);
 
+                // Mark that we're now in a content block
+                self.in_content_block.borrow_mut().set(true);
+
                 if was_in_block {
                     // Subsequent chunks: clear line, overwrite with carriage return, show accumulated text without prefix
-                    self.in_content_block.borrow_mut().set(true);
                     format!("{}\x1b[0K\r{}", c.white(), sanitized_text)
                 } else {
                     // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
-                    self.in_content_block.borrow_mut().set(true);
                     format!(
                         "{}[{}]{} {}{}{}",
                         c.dim(),
@@ -505,7 +522,6 @@ impl ClaudeParser {
                     )
                 }
             }
-            StreamInnerEvent::TextDelta { .. } => String::new(),
             StreamInnerEvent::MessageStop => {
                 // Message complete - add final newline if we were in a content block
                 let was_in_block = in_block.get();
@@ -534,8 +550,7 @@ impl ClaudeParser {
                     c.reset()
                 )
             }
-            StreamInnerEvent::Error { .. } => String::new(),
-            StreamInnerEvent::Ping => String::new(),
+            StreamInnerEvent::TextDelta { .. } | StreamInnerEvent::Error { .. } => String::new(),
             StreamInnerEvent::Unknown => {
                 // Unknown stream event - in debug mode, log it
                 if self.verbosity.is_debug() {
@@ -681,7 +696,7 @@ impl ClaudeParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(c) {
+        if let Some(warning) = monitor.check_and_warn(*c) {
             writeln!(writer, "{warning}")?;
         }
         Ok(())

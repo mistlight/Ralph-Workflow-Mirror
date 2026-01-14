@@ -143,8 +143,8 @@ impl Logger {
     ///
     /// * `title` - The header title text
     /// * `color_fn` - Function that returns the color to use
-    pub fn header(&self, title: &str, color_fn: fn(&Colors) -> &'static str) {
-        let c = &self.colors;
+    pub fn header(&self, title: &str, color_fn: fn(Colors) -> &'static str) {
+        let c = self.colors;
         let color = color_fn(c);
         let width = 60;
         let title_len = title.chars().count();
@@ -205,10 +205,9 @@ impl Default for Logger {
 pub fn strip_ansi_codes(s: &str) -> String {
     static ANSI_RE: std::sync::LazyLock<Result<regex::Regex, regex::Error>> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"\x1b\[[0-9;]*m"));
-    match &*ANSI_RE {
-        Ok(re) => re.replace_all(s, "").to_string(),
-        Err(_) => s.to_string(),
-    }
+    (*ANSI_RE)
+        .as_ref()
+        .map_or_else(|_| s.to_string(), |re| re.replace_all(s, "").to_string())
 }
 
 #[cfg(test)]
