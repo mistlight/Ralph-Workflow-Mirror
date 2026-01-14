@@ -409,3 +409,100 @@ pub(crate) fn format_tool_input(input: &serde_json::Value) -> String {
         other => other.to_string(),
     }
 }
+
+/// Format an unknown JSON event for display in verbose/debug mode
+///
+/// This is a generic handler for unknown events that works across all parsers.
+/// It extracts key fields from the JSON to provide useful debugging info.
+///
+/// # Arguments
+/// * `line` - The raw JSON line
+/// * `parser_name` - Name of the parser for display prefix
+/// * `colors` - Colors struct for formatting
+///
+/// # Returns
+/// A formatted string showing the event type and key fields, or an empty string
+/// if the JSON couldn't be parsed or verbosity should suppress it.
+pub(crate) fn format_unknown_json_event(
+    line: &str,
+    parser_name: &str,
+    colors: &crate::colors::Colors,
+    is_verbose: bool,
+) -> String {
+    // Only show unknown events in verbose mode
+    if !is_verbose {
+        return String::new();
+    }
+
+    // Try to parse as generic JSON to extract type and key fields
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+        if let Some(obj) = value.as_object() {
+            // Extract the type field - try both "type" and common variants
+            let event_type = obj
+                .get("type")
+                .and_then(|v| v.as_str())
+                .or_else(|| obj.get("event_type").and_then(|v| v.as_str()))
+                .unwrap_or("unknown");
+
+            // Extract a few other common fields for context
+            let mut fields = Vec::new();
+            for key in [
+                "subtype",
+                "session_id",
+                "sessionID",
+                "message_id",
+                "messageID",
+                "index",
+                "reason",
+                "status",
+            ] {
+                if let Some(val) = obj.get(key) {
+                    let val_str = match val {
+                        serde_json::Value::String(s) => {
+                            // Truncate long strings for display
+                            if s.len() > 20 {
+                                format!("{}...", &s[..17.min(s.len())])
+                            } else {
+                                s.clone()
+                            }
+                        }
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::Bool(b) => b.to_string(),
+                        _ => continue,
+                    };
+                    fields.push(format!("{}={}", key, val_str));
+                }
+            }
+
+            let fields_str = if fields.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", fields.join(", "))
+            };
+
+            return format!(
+                "{}[{}]{} {}Unknown event: {}{}{}\n",
+                colors.dim(),
+                parser_name,
+                colors.reset(),
+                colors.dim(),
+                event_type,
+                fields_str,
+                colors.reset()
+            );
+        }
+    }
+
+    // Fallback: just note it was an unknown event (in verbose mode only)
+    if is_verbose {
+        format!(
+            "{}[{}]{} {}Unknown event\n",
+            colors.dim(),
+            parser_name,
+            colors.reset(),
+            colors.dim()
+        )
+    } else {
+        String::new()
+    }
+}

@@ -11,8 +11,8 @@ use std::rc::Rc;
 
 use super::health::HealthMonitor;
 use super::types::{
-    format_tool_input, ClaudeEvent, ContentBlock, ContentBlockDelta, DeltaAccumulator,
-    StreamInnerEvent,
+    format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock,
+    ContentBlockDelta, DeltaAccumulator, StreamInnerEvent,
 };
 
 /// Claude event parser
@@ -282,12 +282,10 @@ impl ClaudeParser {
                 self.parse_stream_event(event)
             }
             ClaudeEvent::Unknown => {
-                // In verbose/debug mode, show information about unknown events
-                if self.verbosity.is_verbose() {
-                    self.format_unknown_event(line)
-                } else {
-                    String::new()
-                }
+                // Use the generic unknown event formatter for consistent handling
+                // In verbose mode, this will show the event type and key fields
+                // In normal mode, this returns empty string
+                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
             }
         };
 
@@ -431,68 +429,6 @@ impl ClaudeParser {
         }
     }
 
-    /// Format an unknown event for display in verbose/debug mode
-    ///
-    /// Extracts key fields from unknown events to provide useful debugging info
-    /// without exposing potentially sensitive data.
-    fn format_unknown_event(&self, line: &str) -> String {
-        let c = &self.colors;
-        let prefix = &self.display_name;
-
-        // Try to parse as generic JSON to extract type and key fields
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
-            if let Some(obj) = value.as_object() {
-                // Extract the type field
-                let event_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
-
-                // Extract a few other common fields for context
-                let mut fields = Vec::new();
-                for key in ["subtype", "session_id", "message_id", "index"] {
-                    if let Some(val) = obj.get(key) {
-                        let val_str = match val {
-                            serde_json::Value::String(s) => {
-                                // Truncate long strings for display
-                                if s.len() > 20 {
-                                    format!("{}...", &s[..17])
-                                } else {
-                                    s.clone()
-                                }
-                            }
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::Bool(b) => b.to_string(),
-                            _ => continue,
-                        };
-                        fields.push(format!("{}={}", key, val_str));
-                    }
-                }
-
-                let fields_str = if fields.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({})", fields.join(", "))
-                };
-
-                return format!(
-                    "{}[{}]{} {}Unknown event: {}{}{}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    c.dim(),
-                    event_type,
-                    fields_str,
-                    c.reset()
-                );
-            }
-        }
-
-        // Fallback: just note it was an unknown event
-        format!(
-            "[{}]{} Unknown event\n",
-            prefix,
-            c.reset()
-        )
-    }
-
     /// Parse a stream of Claude NDJSON events
     pub(crate) fn parse_stream<R: BufRead, W: Write>(
         &self,
@@ -543,7 +479,15 @@ impl ClaudeParser {
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    monitor.record_ignored();
+                    // Check if this was valid JSON but an unknown event type
+                    // Valid JSON that wasn't handled should be tracked as "unknown" not "ignored"
+                    if trimmed.starts_with('{') {
+                        // Line is valid JSON (since parse_event deserializes it)
+                        // but returned None, meaning it's an Unknown variant
+                        monitor.record_unknown_event();
+                    } else {
+                        monitor.record_ignored();
+                    }
                 }
             }
 

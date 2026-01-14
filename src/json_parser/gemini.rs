@@ -8,7 +8,7 @@ use crate::utils::truncate_text;
 use std::io::{self, BufRead, Write};
 
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, GeminiEvent};
+use super::types::{format_tool_input, format_unknown_json_event, GeminiEvent};
 
 /// Gemini event parser
 pub(crate) struct GeminiParser {
@@ -239,7 +239,10 @@ impl GeminiParser {
                     c.reset()
                 )
             }
-            GeminiEvent::Unknown => String::new(),
+            GeminiEvent::Unknown => {
+                // Use the generic unknown event formatter for consistent handling
+                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+            }
         };
 
         if output.is_empty() {
@@ -299,7 +302,12 @@ impl GeminiParser {
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    monitor.record_ignored();
+                    // Check if this was valid JSON but an unknown event type
+                    if trimmed.starts_with('{') {
+                        monitor.record_unknown_event();
+                    } else {
+                        monitor.record_ignored();
+                    }
                 }
             }
 
