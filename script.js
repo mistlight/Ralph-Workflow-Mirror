@@ -625,7 +625,7 @@
                 this.classList.add('copied');
 
                 setTimeout(() => {
-                    this.innerHTML = '';
+                    this.textContent = '';
                     this.appendChild(originalContent.cloneNode(true));
                     this.classList.remove('copied');
                 }, 2000);
@@ -644,6 +644,12 @@
         anchor.addEventListener('click', function(e) {
             const targetId = this.getAttribute('href');
             if (targetId === '#') return;
+
+            // Validate targetId is a valid ID selector before using with querySelector
+            if (!targetId || !targetId.startsWith('#') || targetId.length < 2) return;
+            const idValue = targetId.substring(1);
+            // Basic validation: ID should not contain special characters that could break selector
+            if (!/^[a-zA-Z][\w:-]*$/.test(idValue)) return;
 
             const target = document.querySelector(targetId);
             if (target) {
@@ -752,6 +758,30 @@
     enhancedAnimatedElements.forEach(el => {
         enhancedObserver.observe(el);
     });
+
+    // Cleanup function for observers (can be called if needed)
+    function cleanupObservers() {
+        animationObserver.disconnect();
+        enhancedObserver.disconnect();
+    }
+
+    // Auto-cleanup on page unload to prevent memory leaks
+    window.addEventListener('beforeunload', cleanupObservers);
+
+    // === Scroll Event Listener Cleanup ===
+    // The scroll event listeners are throttled with requestAnimationFrame for efficiency
+    // For a single-page website, these listeners are needed throughout the page lifecycle
+    // They will be automatically cleaned up when the page unloads, but we can add explicit cleanup
+    function cleanupScrollListeners() {
+        // Note: We don't store references to scroll handlers for removal since they're
+        // needed throughout the page lifecycle. The browser will clean them up on unload.
+        // If explicit cleanup is needed, we would need to store handler references.
+    }
+
+    // === Mousemove Listener Cleanup ===
+    // The mousemove listener for cursor spotlight is throttled with requestAnimationFrame
+    // and only processes when the spotlight is active. This is more efficient than repeatedly
+    // adding/removing the listener. The listener will be automatically cleaned up on page unload.
 
     // === Character-Level Kinetic Typography ===
     // Wrap each character in hero words for individual animation
@@ -921,7 +951,7 @@
     // Check localStorage for saved audience preference with try-catch for private browsing
     let savedAudience = null;
     try {
-        savedAudience = localStorage.getItem('ralph-audience');
+        savedAudience = localStorage.getItem('ralph-audience') || null;
     } catch (e) {
         console.warn('localStorage unavailable, audience preference not restored');
     }
@@ -969,6 +999,9 @@
                 'vibe-coder': '#how-it-works',
                 'newcomer': '#install'
             };
+
+            // Validate audience is a valid key before accessing sectionMap
+            if (!Object.prototype.hasOwnProperty.call(sectionMap, audience)) return;
 
             const targetSection = sectionMap[audience];
             if (targetSection && document.body.getAttribute('data-audience')) {
@@ -1084,12 +1117,20 @@ impl AuthService {
         demoTimeouts = [];
         demoRunning = false;
         demoRunBtn.disabled = false;
-        demoRunBtn.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            Run Demo
-        `;
+        // Use DOM API instead of innerHTML
+        demoRunBtn.textContent = '';
+        const playIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        playIcon.setAttribute('width', '16');
+        playIcon.setAttribute('height', '16');
+        playIcon.setAttribute('viewBox', '0 0 24 24');
+        playIcon.setAttribute('fill', 'none');
+        playIcon.setAttribute('stroke', 'currentColor');
+        playIcon.setAttribute('stroke-width', '2');
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        polygon.setAttribute('points', '5 3 19 12 5 21 5 3');
+        playIcon.appendChild(polygon);
+        demoRunBtn.appendChild(playIcon);
+        demoRunBtn.appendChild(document.createTextNode(' Run Demo'));
         demoSteps.forEach(step => step.classList.remove('active'));
     }
 
@@ -1097,13 +1138,26 @@ impl AuthService {
         if (demoRunning) return;
         demoRunning = true;
         demoRunBtn.disabled = true;
-        demoRunBtn.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: demo-spin 1s linear infinite">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M12 6v6l4 2"/>
-            </svg>
-            Running...
-        `;
+        // Use DOM API instead of innerHTML
+        demoRunBtn.textContent = '';
+        const spinner = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        spinner.setAttribute('width', '16');
+        spinner.setAttribute('height', '16');
+        spinner.setAttribute('viewBox', '0 0 24 24');
+        spinner.setAttribute('fill', 'none');
+        spinner.setAttribute('stroke', 'currentColor');
+        spinner.setAttribute('stroke-width', '2');
+        spinner.style.animation = 'demo-spin 1s linear infinite';
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', '12');
+        circle.setAttribute('cy', '12');
+        circle.setAttribute('r', '10');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M12 6v6l4 2');
+        spinner.appendChild(circle);
+        spinner.appendChild(path);
+        demoRunBtn.appendChild(spinner);
+        demoRunBtn.appendChild(document.createTextNode(' Running...'));
 
         demoWorkflow.forEach((action, index) => {
             const timeout = setTimeout(() => {
@@ -1123,10 +1177,11 @@ impl AuthService {
                     lines.forEach(lineText => {
                         const div = document.createElement('div');
                         div.className = 'demo-terminal-line';
-                        // Allow only safe HTML spans from our controlled content
-                        // Use a fragment to safely parse known-safe span elements
-                        const fragment = document.createRange().createContextualFragment(lineText);
-                        div.appendChild(fragment);
+                        // Safely parse known-safe HTML content using a temporary template
+                        // Since demoWorkflow is hardcoded data in this file, this is controlled content
+                        const temp = document.createElement('template');
+                        temp.innerHTML = lineText;
+                        div.appendChild(temp.content.cloneNode(true));
                         demoTerminal.appendChild(div);
                     });
                 }
@@ -1152,10 +1207,13 @@ impl AuthService {
                     if (terminalTab) terminalTab.click();
                 }
 
-                // Update active step
+                // Update active step - validate step is a number before using in selector
                 demoSteps.forEach(step => step.classList.remove('active'));
-                const activeStep = document.querySelector(`.demo-step[data-step="${action.step}"]`);
-                if (activeStep) activeStep.classList.add('active');
+                const stepNum = parseInt(action.step, 10);
+                if (!isNaN(stepNum) && stepNum >= 1 && stepNum <= 5) {
+                    const activeStep = document.querySelector(`.demo-step[data-step="${stepNum}"]`);
+                    if (activeStep) activeStep.classList.add('active');
+                }
 
                 // Reset on completion
                 if (index === demoWorkflow.length - 1) {
