@@ -3394,4 +3394,129 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         // Whitespace-only body should result in just the subject
         assert_eq!(result, Some("fix: bug".to_string()));
     }
+
+    // =========================================================================
+    // Regression Tests: Exact Bug Report Output (wt-commit-bug)
+    // =========================================================================
+
+    #[test]
+    fn test_regression_exact_bug_report_output() {
+        // Regression test for the exact output from the bug report that triggered this fix.
+        // The bug was that AI agents included their explanatory analysis ("thought process")
+        // in the commit message output instead of only the intended commit subject/body.
+        let content = "Looking at this diff, I can see several distinct types of changes across multiple files:\n\
+\n\
+1. **Test assertion style** (agents/config.rs, pipeline/tests.rs): Replacing panic!() with assert!(false, ...) for more idiomatic test failure messages\n\
+2. **Refactoring** (app/mod.rs): Extracting many parameters into a PipelineContext struct to improve maintainability\n\
+3. **String literal consistency** (files/result_extraction.rs): Using raw strings where needed\n\
+4. **Error handling** (git_helpers/repo.rs): Replacing unreachable!() with proper error return\n\
+5. **Type conversion safety** (logger/progress.rs): Using try_from() with explicit error handling instead of casting\n\
+\n\
+The main cohesive theme is **code quality improvements** - fixing warnings, improving error handling, and refactoring for maintainability. The most significant change is the PipelineContext refactoring in app/mod.rs.\n\
+\n\
+refactor: extract PipelineContext and improve error handling\n\
+\n\
+Extract PipelineContext struct to reduce parameter count in run_pipeline,\n\
+replacing unreachable!() with proper error returns, and standardize test\n\
+assertion style to use assert!(false, ...) instead of panic!(). Also\n\
+simplify raw string literals and add explicit type conversion handling.";
+
+        let result = extract_llm_output(content, None);
+
+        // Should extract only the commit message, not the thought process
+        assert!(
+            result.content.contains("refactor: extract PipelineContext"),
+            "Should contain the commit subject: {}",
+            result.content
+        );
+        assert!(
+            !result.content.contains("Looking at this diff"),
+            "Should NOT contain thought process prefix: {}",
+            result.content
+        );
+        assert!(
+            !result.content.contains("1. **Test assertion style**"),
+            "Should NOT contain numbered markdown-bold analysis: {}",
+            result.content
+        );
+        assert!(
+            !result.content.contains("The main cohesive theme"),
+            "Should NOT contain summary paragraph: {}",
+            result.content
+        );
+
+        // Should pass validation
+        assert!(
+            validate_commit_message(&result.content).is_ok(),
+            "Extracted content should pass validation: {}",
+            result.content
+        );
+    }
+
+    #[test]
+    fn test_regression_analysis_only_rejected() {
+        // Test case where output is analysis-only with no valid commit message
+        let content =
+            "Looking at this diff, I can see changes to the parser and tests. The main theme is code quality improvements.";
+
+        let result = extract_llm_output(content, None);
+
+        // Should NOT pass validation - no valid commit message exists
+        assert!(
+            validate_commit_message(&result.content).is_err(),
+            "Analysis-only content should fail validation: {}",
+            result.content
+        );
+    }
+
+    #[test]
+    fn test_regression_glm_substantive_change_pattern() {
+        // GLM agent specific pattern with "most substantive change" phrasing
+        let content =
+            "The most substantive change is to the parser module\n\nfix(parser): resolve edge case";
+
+        let result = extract_llm_output(content, None);
+
+        assert_eq!(result.content, "fix(parser): resolve edge case");
+        assert!(
+            !result.content.contains("substantive change"),
+            "Should NOT contain GLM analysis pattern"
+        );
+    }
+
+    #[test]
+    fn test_regression_json_with_leading_analysis() {
+        // JSON schema output with leading analysis text that should be ignored
+        let content = r#"Here's the commit message:
+{"subject": "feat: add feature", "body": null}"#;
+
+        let result = try_extract_structured_commit(content);
+
+        // Should extract the valid JSON, ignoring the preamble
+        assert!(result.is_some(), "Should extract JSON despite preamble");
+        let extracted = result.unwrap();
+        assert_eq!(extracted, "feat: add feature");
+    }
+
+    #[test]
+    fn test_regression_two_commit_messages_deterministic() {
+        // When two potential commit messages exist, extraction should be deterministic
+        let content = "fix(parser): resolve edge case in parsing\n\nfeat: add new feature to the parser";
+
+        let result = extract_llm_output(content, None);
+
+        // Should pick one deterministically (first one found)
+        assert!(
+            result.content.starts_with("fix(parser): resolve edge case")
+                || result.content.starts_with("feat: add new feature"),
+            "Should extract a valid commit message: {}",
+            result.content
+        );
+        // Run twice to verify determinism
+        let result2 = extract_llm_output(content, None);
+        assert_eq!(
+            result.content, result2.content,
+            "Extraction should be deterministic"
+        );
+    }
 }

@@ -322,3 +322,15 @@ exit 0
 // - Thinking content without blank line separator
 // - Only thinking content, no actual commit message
 // - Validation rejects formatted thinking patterns at start
+
+// Note: The thought process leakage bug (wt-commit-bug) is comprehensively tested in
+// ralph-workflow/src/files/llm_output_extraction.rs via these regression tests:
+// - test_regression_exact_bug_report_output: Tests the exact bug report output format
+// - test_regression_analysis_only_rejected: Verifies analysis-only content is rejected
+// - test_regression_glm_substantive_change_pattern: Tests GLM agent specific patterns
+// - test_regression_json_with_leading_analysis: Tests JSON extraction with preamble
+// - test_regression_two_commit_messages_deterministic: Tests deterministic extraction
+// The 7-layer defense system ensures these patterns are filtered at multiple points:
+// 1. Structured JSON extraction (primary), 2. Pattern-based filtering,
+// 3. Thought process removal, 4. Formatted thinking removal, 5. Validation gate,
+// 6. Salvage recovery, 7. Fallback generation.
