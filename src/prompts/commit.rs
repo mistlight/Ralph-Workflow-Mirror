@@ -16,7 +16,6 @@ pub fn prompt_fix() -> String {
 
 INPUTS TO READ:
 - .agent/ISSUES.md - Issues to address (if it exists)
-- PROMPT.md - Original requirements for context
 
 YOUR TASK:
 1. Read .agent/ISSUES.md to understand any issues (if it exists)

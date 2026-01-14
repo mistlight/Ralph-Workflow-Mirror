@@ -59,12 +59,104 @@ impl PromptValidationResult {
     }
 }
 
+/// Restore PROMPT.md from backup if missing or empty.
+///
+/// This is a lightweight periodic check called during pipeline execution
+/// to detect and recover from accidental PROMPT.md deletion by agents.
+/// Unlike `validate_prompt_md()`, this function only checks for file
+/// existence and non-empty content - it doesn't validate structure.
+///
+/// # Auto-Restore
+///
+/// If PROMPT.md is missing or empty but a backup exists, the backup is
+/// automatically copied to PROMPT.md. Tries backups in order:
+/// - `.agent/PROMPT.md.backup`
+/// - `.agent/PROMPT.md.backup.1`
+/// - `.agent/PROMPT.md.backup.2`
+///
+/// # Returns
+///
+/// - `Ok(true)` - File exists and has content (no action needed)
+/// - `Ok(false)` - File was restored from backup
+/// - `Err` - File missing/empty and no valid backup available
+pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
+    let prompt_path = Path::new("PROMPT.md");
+
+    // Check if PROMPT.md exists and has content
+    let prompt_ok = prompt_path
+        .exists()
+        .then(|| fs::read_to_string(prompt_path).ok())
+        .flatten()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+
+    if prompt_ok {
+        return Ok(true);
+    }
+
+    // PROMPT.md is missing or empty - try to restore from backup chain
+    let backup_paths = [
+        Path::new(".agent/PROMPT.md.backup"),
+        Path::new(".agent/PROMPT.md.backup.1"),
+        Path::new(".agent/PROMPT.md.backup.2"),
+    ];
+
+    for backup_path in &backup_paths {
+        if backup_path.exists() {
+            // Verify backup has content
+            let backup_content = match fs::read_to_string(backup_path) {
+                Ok(c) => c,
+                Err(_) => continue, // Try next backup
+            };
+
+            if backup_content.trim().is_empty() {
+                continue; // Try next backup
+            }
+
+            // Restore from backup
+            fs::write(prompt_path, backup_content)?;
+
+            // Set read-only permissions on restored file (best-effort)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(metadata) = fs::metadata(prompt_path) {
+                    let mut perms = metadata.permissions();
+                    perms.set_mode(0o444);
+                    let _ = fs::set_permissions(prompt_path, perms);
+                }
+            }
+
+            #[cfg(windows)]
+            {
+                if let Ok(metadata) = fs::metadata(prompt_path) {
+                    let mut perms = metadata.permissions();
+                    perms.set_readonly(true);
+                    let _ = fs::set_permissions(prompt_path, perms);
+                }
+            }
+
+            return Ok(false);
+        }
+    }
+
+    // No valid backup available
+    anyhow::bail!(
+        "PROMPT.md is missing/empty and no valid backup available (tried .agent/PROMPT.md.backup, .agent/PROMPT.md.backup.1, .agent/PROMPT.md.backup.2)"
+    );
+}
+
 /// Validate PROMPT.md structure and content.
 ///
 /// Checks for:
-/// - File existence and non-empty content
+/// - File existence and non-empty content (auto-restores from backup if missing)
 /// - Goal section (## Goal or # Goal)
 /// - Acceptance section (## Acceptance, Acceptance Criteria, or acceptance)
+///
+/// # Auto-Restore
+///
+/// If PROMPT.md is missing but `.agent/PROMPT.md.backup` exists, the backup is
+/// automatically copied to PROMPT.md. This prevents accidental deletion by agents.
 ///
 /// # Arguments
 ///
@@ -87,21 +179,73 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
     };
 
     if !result.exists {
-        if interactive && std::io::stdout().is_terminal() {
-            // Interactive mode: the caller should have already prompted
-            // We just return an error result so they can handle it
-            result.errors.push(
-                "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
-                    .to_string(),
-            );
-        } else {
-            result.errors.push(
-                "PROMPT.md not found. Run 'ralph --list-templates' to see available templates, \
-                 then 'ralph --init-prompt <template>' to create one."
-                    .to_string(),
-            );
+        // Auto-restore from backup with fallback chain
+        // Try backup, backup.1, backup.2 in order
+        let backup_paths = [
+            Path::new(".agent/PROMPT.md.backup"),
+            Path::new(".agent/PROMPT.md.backup.1"),
+            Path::new(".agent/PROMPT.md.backup.2"),
+        ];
+
+        let mut restored = false;
+        let mut backup_used = None;
+
+        for (idx, backup_path) in backup_paths.iter().enumerate() {
+            if backup_path.exists() {
+                // Check if backup has content before restoring
+                let backup_content = match fs::read_to_string(backup_path) {
+                    Ok(c) => c,
+                    Err(_) => continue, // Try next backup
+                };
+
+                if backup_content.trim().is_empty() {
+                    continue; // Try next backup
+                }
+
+                match fs::copy(backup_path, prompt_path) {
+                    Ok(_) => {
+                        result.exists = true;
+                        restored = true;
+                        backup_used = Some(match idx {
+                            0 => ".agent/PROMPT.md.backup",
+                            1 => ".agent/PROMPT.md.backup.1",
+                            2 => ".agent/PROMPT.md.backup.2",
+                            _ => "unknown",
+                        });
+                        break;
+                    }
+                    Err(_) => {
+                        // Try next backup
+                        continue;
+                    }
+                }
+            }
         }
-        return result;
+
+        if restored {
+            if let Some(source) = backup_used {
+                result.warnings.push(format!(
+                    "PROMPT.md was missing and was automatically restored from {}",
+                    source
+                ));
+            }
+        } else {
+            if interactive && std::io::stdout().is_terminal() {
+                // Interactive mode: the caller should have already prompted
+                // We just return an error result so they can handle it
+                result.errors.push(
+                    "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
+                        .to_string(),
+                );
+            } else {
+                result.errors.push(
+                    "PROMPT.md not found. Run 'ralph --list-templates' to see available templates, \
+                     then 'ralph --init-prompt <template>' to create one."
+                        .to_string(),
+                );
+            }
+            return result;
+        }
     }
 
     let content = match fs::read_to_string(prompt_path) {
@@ -152,6 +296,71 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
 mod tests {
     use super::*;
     use crate::test_utils::testing::with_temp_cwd;
+
+    #[test]
+    fn test_restore_prompt_if_needed_ok() {
+        with_temp_cwd(|_dir| {
+            fs::write("PROMPT.md", "# Test\n\nContent").unwrap();
+            assert!(restore_prompt_if_needed().unwrap());
+        });
+    }
+
+    #[test]
+    fn test_restore_prompt_if_needed_missing() {
+        with_temp_cwd(|_dir| {
+            // No PROMPT.md, no backup
+            let result = restore_prompt_if_needed();
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("no valid backup available"));
+        });
+    }
+
+    #[test]
+    fn test_restore_prompt_if_needed_restores_from_backup() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/PROMPT.md.backup", "# Restored\n\nContent").unwrap();
+
+            // File is missing, should restore from backup
+            let was_restored = restore_prompt_if_needed().unwrap();
+            assert!(!was_restored);
+
+            // Verify PROMPT.md exists with backup content
+            let content = fs::read_to_string("PROMPT.md").unwrap();
+            assert_eq!(content, "# Restored\n\nContent");
+        });
+    }
+
+    #[test]
+    fn test_restore_prompt_if_needed_empty_file() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            fs::write("PROMPT.md", "").unwrap();
+            fs::write(".agent/PROMPT.md.backup", "# Restored\n\nContent").unwrap();
+
+            // File is empty, should restore from backup
+            let was_restored = restore_prompt_if_needed().unwrap();
+            assert!(!was_restored);
+
+            // Verify PROMPT.md has backup content
+            let content = fs::read_to_string("PROMPT.md").unwrap();
+            assert_eq!(content, "# Restored\n\nContent");
+        });
+    }
+
+    #[test]
+    fn test_restore_prompt_if_needed_empty_backup() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(".agent/PROMPT.md.backup", "").unwrap();
+
+            // Backup is empty, should fail
+            let result = restore_prompt_if_needed();
+            assert!(result.is_err());
+            // Error should mention no valid backup (since empty backup is skipped)
+            assert!(result.unwrap_err().to_string().contains("no valid backup available"));
+        });
+    }
 
     #[test]
     fn test_validate_prompt_md_not_exists() {
