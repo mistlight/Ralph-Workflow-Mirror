@@ -1015,7 +1015,7 @@ profiles:
             CcsEnvVarsError::ProfileNotFound { profile, .. } => {
                 assert_eq!(profile, "nonexistent");
             }
-            other => panic!("Expected ProfileNotFound error, got: {other:?}"),
+            _ => panic!("Expected ProfileNotFound error"),
         }
     }
 
@@ -1066,7 +1066,7 @@ profiles:
 
         match result.unwrap_err() {
             CcsEnvVarsError::MissingEnv { .. } => {}
-            other => panic!("Expected MissingEnv error, got: {other:?}"),
+            _ => panic!("Expected MissingEnv error"),
         }
     }
 
@@ -1080,7 +1080,7 @@ profiles:
             CcsEnvVarsError::InvalidProfile { profile } => {
                 assert_eq!(profile, "");
             }
-            other => panic!("Expected InvalidProfile error, got: {other:?}"),
+            _ => panic!("Expected InvalidProfile error"),
         }
     }
 

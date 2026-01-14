@@ -139,6 +139,7 @@ struct DetectionResults {
 }
 
 impl DetectionResults {
+    #[expect(clippy::missing_const_for_fn)]
     fn new() -> Self {
         Self {
             frameworks: Vec::new(),

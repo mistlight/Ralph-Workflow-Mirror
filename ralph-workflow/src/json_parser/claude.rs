@@ -588,7 +588,7 @@ impl ClaudeParser {
                     c.reset()
                 )
             }
-            StreamInnerEvent::TextDelta { .. } | StreamInnerEvent::Error { .. } => String::new(),
+            StreamInnerEvent::TextDelta { text: None } | StreamInnerEvent::Error { error: None } => String::new(),
             StreamInnerEvent::Unknown => {
                 // Unknown stream event - in debug mode, log it
                 if self.verbosity.is_debug() {

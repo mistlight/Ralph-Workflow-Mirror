@@ -237,19 +237,17 @@ impl HealthMonitor {
     }
 
     /// Check if we should warn about parser health (only warn once)
-    #[expect(clippy::option_if_let_else)]
     pub fn check_and_warn(&self, colors: Colors) -> Option<String> {
         if self.threshold_warned.get() {
             return None;
         }
 
         let health = self.health.get();
-        if let Some(warning) = health.warning(self.parser_name, colors) {
+        let warning = health.warning(self.parser_name, colors);
+        if warning.is_some() {
             self.threshold_warned.set(true);
-            Some(warning)
-        } else {
-            None
         }
+        warning
     }
 
     #[cfg(test)]
