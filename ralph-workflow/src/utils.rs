@@ -30,6 +30,20 @@ pub use crate::logger::{strip_ansi_codes, timestamp};
 pub use crate::files::{cleanup_generated_files, PromptValidationResult, GENERATED_FILES};
 
 // Keep backward-compatibility re-exports "used" without suppressing lints.
+//
+// The const block below exists solely to prevent the compiler from treating
+// the re-exported items as "dead code". This is necessary because we want
+// to maintain backward compatibility by re-exporting these items through
+// this module, but the items themselves are actually used/imported from
+// their original modules (crate::logger and crate::files).
+//
+// By creating const expressions that "use" these items, we tell the compiler
+// that they are not dead, which prevents dead code warnings without needing
+// to use #[allow(dead_code)] (which is prohibited by this project's rules).
+//
+// New code should import directly from the appropriate modules:
+// - `crate::logger::{strip_ansi_codes, timestamp}`
+// - `crate::files::{cleanup_generated_files, PromptValidationResult, GENERATED_FILES}`
 const _: () = {
     let _ = strip_ansi_codes as fn(&str) -> String;
     let _ = timestamp as fn() -> String;
