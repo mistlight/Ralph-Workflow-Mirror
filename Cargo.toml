@@ -55,6 +55,9 @@ ctrlc = "3.4"
 # Git library for direct git operations (bypasses CLI)
 git2 = "0.18"
 
+# File system monitoring for PROMPT.md protection
+notify = "6.1"
+
 [dev-dependencies]
 # Testing utilities
 tempfile = "3.10"
