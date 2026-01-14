@@ -99,21 +99,7 @@ impl GeminiParser {
                         let mut acc = self.delta_accumulator.borrow_mut();
                         acc.add_delta(ContentType::Text, "main", &text);
 
-                        // In verbose mode, show full accumulated text
-                        if self.verbosity.is_verbose() {
-                            if let Some(full_text) = acc.get(ContentType::Text, "main") {
-                                return Some(format!(
-                                    "{}[{}]{} {}{}{}\n",
-                                    c.dim(),
-                                    prefix,
-                                    c.reset(),
-                                    c.white(),
-                                    full_text,
-                                    c.reset()
-                                ));
-                            }
-                        }
-                        // Normal mode: show delta in real-time
+                        // Show delta in real-time (both verbose and normal mode)
                         return Some(format!(
                             "{}[{}]{} {}{}{}\n",
                             c.dim(),
