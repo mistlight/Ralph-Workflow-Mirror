@@ -8,9 +8,16 @@
 /// Instructions for NOTES.md are intentionally vague to avoid creating
 /// overly-specific context that could contaminate future runs.
 ///
+/// # Agent-Orchestrator Separation
+///
 /// The fix agent reads ISSUES.md (written by the orchestrator after extracting
-/// from the reviewer's output) and fixes the issues. The agent should NOT
-/// modify ISSUES.md - the orchestrator handles file I/O.
+/// from the reviewer's JSON output) and modifies source code files to fix issues.
+/// The agent returns structured output (completion status) that the orchestrator
+/// captures via JSON logging.
+///
+/// ISSUES.md is an orchestrator-managed file - the agent should NOT modify it.
+/// The orchestrator writes ISSUES.md before invoking the fix agent and may
+/// delete it after fix cycles (e.g., in isolation mode).
 pub fn prompt_fix() -> String {
     r#"You are in FIX MODE. Address issues found during review.
 
@@ -28,7 +35,8 @@ Return your completion status as structured output:
 - "Issues remain." (if you believe issues still exist)
 - "No issues found." (if ISSUES.md didn't exist or was empty)
 
-DO NOT modify ISSUES.md or any other files. The orchestrator handles file updates.
+DO NOT modify ISSUES.md - the orchestrator manages this file.
+You SHOULD modify source code files to fix the issues.
 
 GUIDELINES:
 - Fix issues properly, don't just suppress warnings
@@ -190,9 +198,11 @@ mod tests {
     fn test_prompt_fix() {
         let result = prompt_fix();
         assert!(result.contains("ISSUES.md"));
-        // Agent should NOT modify files - orchestrator handles I/O
+        // Agent should NOT modify ISSUES.md - orchestrator manages this file
         assert!(result.contains("DO NOT modify ISSUES.md"));
-        assert!(result.contains("orchestrator handles file updates"));
+        assert!(result.contains("orchestrator manages this file"));
+        // Agent SHOULD modify source code files to fix issues
+        assert!(result.contains("SHOULD modify source code files"));
         assert!(result.contains("FIX MODE"));
         // Agent should return status as structured output
         assert!(result.contains("All issues addressed"));
