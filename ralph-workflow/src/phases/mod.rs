@@ -16,11 +16,12 @@
 //! - [`review`] - Code review and fix cycle execution
 //! - [`commit`] - Automated commit message generation with fallback
 
-mod commit;
+pub mod commit;
 mod context;
 mod development;
 mod review;
 
+pub use commit::generate_commit_message;
 pub use context::PhaseContext;
 pub use development::run_development_phase;
 pub use review::run_review_phase;
