@@ -33,7 +33,7 @@ use std::io;
 use std::path::PathBuf;
 
 /// Default unified config template embedded at compile time.
-pub const DEFAULT_UNIFIED_CONFIG: &str = include_str!("../../examples/ralph-workflow.toml");
+pub const DEFAULT_UNIFIED_CONFIG: &str = include_str!("../../../examples/ralph-workflow.toml");
 
 /// Result of config initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

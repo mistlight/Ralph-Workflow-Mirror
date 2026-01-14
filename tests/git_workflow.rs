@@ -9,7 +9,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-mod test_support;
+use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -24,9 +24,9 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 }
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
-    let repo = test_support::init_git_repo(dir);
-    test_support::write_file(dir.path().join("initial.txt"), "initial content");
-    test_support::commit_all(&repo, "initial commit");
+    let repo = init_git_repo(dir);
+    write_file(dir.path().join("initial.txt"), "initial content");
+    commit_all(&repo, "initial commit");
     repo
 }
 
@@ -88,10 +88,10 @@ fn ralph_reset_start_commit_flag_works() {
 
     // First, create a new commit so we have a new HEAD
     fs::write(dir.path().join("new_file.txt"), "content").unwrap();
-    test_support::commit_all(&repo, "second commit");
+    commit_all(&repo, "second commit");
 
     // Get the current HEAD commit OID
-    let head_oid_str = test_support::head_oid(&repo);
+    let head_oid_str = head_oid(&repo);
 
     // Run ralph with --reset-start-commit
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
@@ -321,7 +321,7 @@ fn ralph_reviewer_receives_cumulative_diff_from_start() {
     // Create multiple files to generate a meaningful diff
     fs::write(dir.path().join("file1.txt"), "content1").unwrap();
     fs::write(dir.path().join("file2.txt"), "content2").unwrap();
-    test_support::commit_all(&repo, "baseline");
+    commit_all(&repo, "baseline");
 
     // Track if diff was received and check its content
     let diff_log_path = dir.path().join(".agent/diff_log.txt");
@@ -522,7 +522,7 @@ fn ralph_get_git_diff_from_start_returns_cumulative_diff() {
     let repo = init_repo_with_initial_commit(&dir);
 
     // Create the start_commit file
-    let head_oid_str = test_support::head_oid(&repo);
+    let head_oid_str = head_oid(&repo);
 
     fs::write(dir.path().join(".agent/start_commit"), &head_oid_str).unwrap();
 
@@ -634,7 +634,7 @@ exit 0
     // Create a new commit
     fs::write(dir.path().join("new_file.txt"), "content").unwrap();
     let repo = git2::Repository::open(dir.path()).unwrap();
-    test_support::commit_all(&repo, "new commit");
+    commit_all(&repo, "new commit");
 
     // Second run - start_commit should still be the same (not reset)
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
@@ -676,7 +676,7 @@ fn ralph_save_start_commit_handles_empty_repo() {
     let dir = TempDir::new().unwrap();
 
     // Initialize an empty git repo (no commits)
-    test_support::init_git_repo(&dir);
+    init_git_repo(&dir);
     fs::write(dir.path().join("PROMPT.md"), "# Test\n").unwrap();
 
     // Try to run ralph with --reset-start-commit on empty repo
@@ -697,7 +697,7 @@ fn ralph_save_start_commit_handles_empty_repo() {
     // Now create an initial commit and verify --reset-start-commit succeeds
     fs::write(dir.path().join("initial.txt"), "initial content").unwrap();
     let repo = git2::Repository::open(dir.path()).unwrap();
-    test_support::commit_all(&repo, "initial commit");
+    commit_all(&repo, "initial commit");
 
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     cmd.current_dir(dir.path())
@@ -726,7 +726,7 @@ fn ralph_start_commit_persists_empty_repo_baseline_across_runs() {
     let dir = TempDir::new().unwrap();
 
     // Initialize an empty git repo (no commits)
-    test_support::init_git_repo(&dir);
+    init_git_repo(&dir);
 
     let script_path = dir.path().join("dev_script.sh");
     fs::write(
@@ -761,7 +761,7 @@ exit 0
     // Create an initial commit and ensure the empty baseline persists unless explicitly reset.
     fs::write(dir.path().join("initial.txt"), "initial content").unwrap();
     let repo = git2::Repository::open(dir.path()).unwrap();
-    test_support::commit_all(&repo, "initial commit");
+    commit_all(&repo, "initial commit");
 
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
     base_env(&mut cmd)
