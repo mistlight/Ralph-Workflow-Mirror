@@ -423,7 +423,18 @@ fn extract_opencode_result(content: &str) -> Option<String> {
 /// - Analysis followed by single newline (aggressive filtering)
 /// - Numbered/bullet lists without proper separation
 /// - Multi-line analysis that ends with conventional commit format
+/// - JSON commit messages in markdown code fences
 fn remove_thought_process_patterns(content: &str) -> String {
+    // Check for JSON commit in markdown code fence first
+    // This handles AI output that includes analysis followed by a JSON commit in a code block
+    if let Some(json_content) = extract_json_from_code_fence(content) {
+        if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&json_content) {
+            if let Some(formatted) = format_structured_commit(&msg) {
+                return formatted;
+            }
+        }
+    }
+
     let mut result = content;
 
     // Remove AI thought process prefixes
@@ -974,6 +985,42 @@ fn clean_plain_text(content: &str) -> String {
         .join("\n")
 }
 
+/// Extract JSON content from a markdown code fence.
+///
+/// Handles patterns like:
+/// ```json
+/// {"subject": "feat: add feature", "body": "description"}
+/// ```
+///
+/// Returns the raw JSON string if found, None otherwise.
+fn extract_json_from_code_fence(content: &str) -> Option<String> {
+    let fence_patterns = ["```json\n", "```JSON\n", "```\n"];
+
+    for pattern in fence_patterns {
+        if let Some(start_pos) = content.find(pattern) {
+            let after_fence = &content[start_pos + pattern.len()..];
+            if let Some(end_pos) = after_fence.find("```") {
+                let json_content = after_fence[..end_pos].trim();
+                if json_content.starts_with('{') && json_content.ends_with('}') {
+                    return Some(json_content.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Check if content looks like NDJSON (newline-delimited JSON) stream.
+///
+/// Returns true if the first line looks like a JSON object with a "type" field,
+/// which is characteristic of streaming agent output (Claude CLI, etc.).
+fn looks_like_ndjson(content: &str) -> bool {
+    content.lines().next().is_some_and(|first_line| {
+        let trimmed = first_line.trim();
+        trimmed.starts_with('{') && trimmed.contains(r#""type""#)
+    })
+}
+
 /// Structured commit message from JSON output.
 ///
 /// This struct matches the schema we request from the LLM:
@@ -989,12 +1036,57 @@ struct StructuredCommitMessage {
 /// This function attempts to parse the LLM output as a structured JSON object
 /// following the schema `{"subject": "...", "body": "..."}`.
 ///
+/// Supports multiple input formats:
+/// - Direct JSON: `{"subject": "feat: ...", "body": "..."}`
+/// - JSON in markdown code fence: ` ```json\n{...}\n``` `
+/// - NDJSON streams where commit is in the `result` field
+///
 /// # Returns
 ///
 /// * `Some(message)` if valid JSON with a valid conventional commit subject was found
 /// * `None` if parsing fails or subject is invalid
 pub fn try_extract_structured_commit(content: &str) -> Option<String> {
     let trimmed = content.trim();
+
+    // If content looks like NDJSON stream, extract from result field first
+    if looks_like_ndjson(trimmed) {
+        for line in trimmed.lines() {
+            let line = line.trim();
+            if !line.starts_with('{') {
+                continue;
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                if json.get("type").and_then(|v| v.as_str()) == Some("result") {
+                    if let Some(result_str) = json.get("result").and_then(|v| v.as_str()) {
+                        // Try to extract commit from the result content
+                        if let Some(msg) = try_extract_from_text(result_str) {
+                            return Some(msg);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Try extraction from text content (direct JSON, code fence, or embedded)
+    try_extract_from_text(trimmed)
+}
+
+/// Try to extract a structured commit message from text content.
+///
+/// This handles:
+/// - Direct JSON parsing
+/// - JSON inside markdown code fences
+/// - JSON embedded within other text
+fn try_extract_from_text(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+
+    // Try extracting from markdown code fence first
+    if let Some(json_content) = extract_json_from_code_fence(trimmed) {
+        if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&json_content) {
+            return format_structured_commit(&msg);
+        }
+    }
 
     // Try direct parse
     if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(trimmed) {
@@ -3518,6 +3610,100 @@ simplify raw string literals and add explicit type conversion handling.";
         assert_eq!(
             result.content, result2.content,
             "Extraction should be deterministic"
+        );
+    }
+
+    // =========================================================================
+    // Regression Tests: JSON in Markdown Code Fence (wt-commit-bug)
+    // =========================================================================
+
+    #[test]
+    fn test_regression_json_in_markdown_code_fence() {
+        // The exact bug scenario: analysis followed by JSON in code fence
+        let content = r#"Looking at the diff, I need to analyze...
+
+1. **colors.rs** - Adds a constant
+2. **claude.rs** - Changes handling
+
+```json
+{"subject": "fix(streaming): improve message lifecycle tracking", "body": "Add turn_counter for ID generation."}
+```
+"#;
+
+        // Test via remove_thought_process_patterns
+        let filtered = remove_thought_process_patterns(content);
+        assert!(
+            filtered.contains("fix(streaming):"),
+            "Should extract commit from code fence, got: {filtered}"
+        );
+        assert!(
+            !filtered.contains("Looking at"),
+            "Should remove analysis, got: {filtered}"
+        );
+    }
+
+    #[test]
+    fn test_structured_commit_from_code_fence() {
+        let content = r#"Here's the commit:
+
+```json
+{"subject": "feat: add feature", "body": "Description here."}
+```
+"#;
+
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some(), "Should extract JSON from code fence");
+        assert_eq!(result.unwrap(), "feat: add feature\n\nDescription here.");
+    }
+
+    #[test]
+    fn test_structured_commit_from_ndjson_with_code_fence() {
+        // NDJSON stream with JSON commit in code fence inside result field
+        let ndjson = r#"{"type":"system","session_id":"abc"}
+{"type":"result","result":"Analysis...\n\n```json\n{\"subject\": \"fix: bug\", \"body\": null}\n```"}"#;
+
+        let result = try_extract_structured_commit(ndjson);
+        assert!(
+            result.is_some(),
+            "Should extract JSON from NDJSON result field with code fence"
+        );
+        assert_eq!(result.unwrap(), "fix: bug");
+    }
+
+    #[test]
+    fn test_structured_commit_from_code_fence_with_body_null() {
+        let content = r#"```json
+{"subject": "chore: update dependencies", "body": null}
+```"#;
+
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "chore: update dependencies");
+    }
+
+    #[test]
+    fn test_extract_llm_output_with_json_code_fence() {
+        // End-to-end test: extract_llm_output should handle JSON in code fences
+        let content = r#"Looking at the changes:
+
+1. First change
+2. Second change
+
+```json
+{"subject": "refactor: simplify logic", "body": "Remove redundant code."}
+```
+"#;
+
+        let result = extract_llm_output(content, None);
+        assert!(
+            result.content.contains("refactor: simplify logic"),
+            "Should extract commit from code fence: {}",
+            result.content
+        );
+        assert!(
+            !result.content.contains("Looking at"),
+            "Should not contain analysis: {}",
+            result.content
         );
     }
 }
