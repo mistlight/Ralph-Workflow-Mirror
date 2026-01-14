@@ -444,7 +444,7 @@ pub struct Args {
         long,
         env = "RALPH_SECURITY_MODE",
         value_name = "MODE",
-        help = "Security mode: auto (default), container, user-account, none"
+        help = "Security mode (default: auto → platform-specific: container on Linux, user-account on macOS, none elsewhere). Options: auto, container, user-account, none"
     )]
     pub security_mode: Option<String>,
 

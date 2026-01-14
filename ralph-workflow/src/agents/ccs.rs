@@ -74,7 +74,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// CCS alias prefix for agent names.
-pub const CCS_PREFIX: &str = "ccs/";
+const CCS_PREFIX: &str = "ccs/";
 
 /// Parse a CCS agent reference and extract the alias name.
 ///
@@ -89,7 +89,7 @@ pub const CCS_PREFIX: &str = "ccs/";
 /// assert_eq!(parse_ccs_ref("ccs"), Some(""));
 /// assert_eq!(parse_ccs_ref("claude"), None);
 /// ```
-pub fn parse_ccs_ref(agent_name: &str) -> Option<&str> {
+fn parse_ccs_ref(agent_name: &str) -> Option<&str> {
     if agent_name == "ccs" {
         Some("")
     } else if let Some(alias) = agent_name.strip_prefix(CCS_PREFIX) {

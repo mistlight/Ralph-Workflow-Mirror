@@ -26,7 +26,7 @@ pub(crate) use repo::{
 };
 pub(crate) use start_commit::{reset_start_commit, save_start_commit};
 pub(crate) use wrapper::{
-    cleanup_orphaned_marker, cleanup_agent_phase_silent, disable_git_wrapper, end_agent_phase,
+    cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
     start_agent_phase, GitHelpers,
 };
 
