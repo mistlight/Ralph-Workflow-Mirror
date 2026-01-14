@@ -273,6 +273,40 @@ const PresetCards = {
     }
 };
 
+// === MAGNETIC BUTTON EFFECT ===
+const MagneticButtons = {
+    init() {
+        const buttons = document.querySelectorAll('.btn');
+        if (Utils.prefersReducedMotion()) return;
+
+        buttons.forEach(btn => {
+            btn.addEventListener('mousemove', (e) => this.onMouseMove(e, btn));
+            btn.addEventListener('mouseleave', (e) => this.onMouseLeave(e, btn));
+        });
+    },
+
+    onMouseMove(e, btn) {
+        const rect = btn.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+
+        const deltaX = (x - centerX) / centerX;
+        const deltaY = (y - centerY) / centerY;
+
+        const moveX = deltaX * 3;
+        const moveY = deltaY * 3;
+
+        btn.style.transform = `translate(${moveX}px, ${moveY}px)`;
+    },
+
+    onMouseLeave(e, btn) {
+        btn.style.transform = '';
+    }
+};
+
 // === HANDLE RESIZE ===
 let resizeTimer;
 window.addEventListener('resize', () => {
@@ -328,31 +362,41 @@ const HeroAnimation = {
 
         elements.forEach((el, index) => {
             el.style.opacity = '0';
-            el.style.transform = 'translateY(20px)';
+            el.style.transform = 'translateY(30px)';
         });
 
-        // Stagger reveal
+        // Stagger reveal with spring physics
         setTimeout(() => {
             elements.forEach((el, index) => {
                 setTimeout(() => {
-                    el.style.transition = 'opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1)';
+                    el.style.transition = 'opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.34, 1.56, 0.64, 1)';
                     el.style.opacity = '1';
                     el.style.transform = 'translateY(0)';
-                }, index * 150);
+                }, index * 120);
             });
-        }, 200);
+        }, 150);
 
-        // Terminal visual
+        // Terminal visual with enhanced animation
         const terminal = document.querySelector('.hero-visual');
         if (terminal) {
             terminal.style.opacity = '0';
-            terminal.style.transform = 'perspective(1000px) rotateY(-10deg) translateX(50px)';
+            terminal.style.transform = 'perspective(1000px) rotateY(-15deg) rotateX(10deg) translateX(80px) translateY(40px)';
             setTimeout(() => {
-                terminal.style.transition = 'opacity 1s ease, transform 1s cubic-bezier(0.16, 1, 0.3, 1)';
+                terminal.style.transition = 'opacity 1.2s ease, transform 1.2s cubic-bezier(0.16, 1, 0.3, 1)';
                 terminal.style.opacity = '1';
-                terminal.style.transform = 'perspective(1000px) rotateY(-2deg) rotateX(1deg) translateX(0)';
-            }, 600);
+                terminal.style.transform = 'perspective(1000px) rotateY(-3deg) rotateX(2deg) translateX(0) translateY(0)';
+            }, 400);
         }
+
+        // Animate glows
+        const glows = document.querySelectorAll('.hero-glow');
+        glows.forEach((glow, index) => {
+            glow.style.opacity = '0';
+            setTimeout(() => {
+                glow.style.transition = 'opacity 1.5s ease';
+                glow.style.opacity = '';
+            }, 800 + (index * 200));
+        });
     }
 };
 
@@ -366,6 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CopyButton.init();
     NavHighlight.init();
     PresetCards.init();
+    MagneticButtons.init();
     TerminalTyping.init();
     HeroAnimation.init();
 });
