@@ -1097,6 +1097,25 @@ pre code {
     letter-spacing: var(--tracking-tighter);
     color: var(--color-text);
     margin: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: none;
+}
+
+/* Small screen adjustment for hero title */
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: clamp(1.75rem, 9vw, 2.5rem);
+        letter-spacing: -0.03em;
+    }
+}
+
+/* Extra small screen adjustment for hero title */
+@media (max-width: 380px) {
+    .hero-title {
+        font-size: clamp(1.5rem, 8vw, 2rem);
+        letter-spacing: -0.02em;
+    }
 }
 
 .hero-title-line {
