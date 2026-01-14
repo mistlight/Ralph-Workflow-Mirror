@@ -545,3 +545,75 @@ fn test_delta_accumulator_clear_key() {
     assert_eq!(acc.get_text(&0), None);
     assert_eq!(acc.get_text(&1), Some("Text 1"));
 }
+
+#[test]
+fn test_format_unknown_json_event_control_event() {
+    let colors = Colors { enabled: false };
+    // Control events should not show output even in verbose mode
+    let json = r#"{"type":"message_start","message":{"id":"msg_123"}}"#;
+    let output = super::types::format_unknown_json_event(json, "Claude", &colors, true);
+    // Control events should return empty string
+    assert!(output.is_empty());
+}
+
+#[test]
+fn test_format_unknown_json_event_partial_event() {
+    let colors = Colors { enabled: false };
+    // Partial events with content should show in non-verbose mode
+    let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
+    let output = super::types::format_unknown_json_event(json, "Claude", &colors, false);
+    // Should show content for partial events
+    assert!(!output.is_empty());
+    assert!(output.contains("content="));
+}
+
+#[test]
+fn test_format_unknown_json_event_partial_event_verbose() {
+    let colors = Colors { enabled: false };
+    // Partial events should be labeled as such in verbose mode
+    let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
+    let output = super::types::format_unknown_json_event(json, "Claude", &colors, true);
+    // Should show "Partial event:" in verbose mode
+    assert!(!output.is_empty());
+    assert!(output.contains("Partial event"));
+}
+
+#[test]
+fn test_format_unknown_json_event_complete_event_verbose() {
+    let colors = Colors { enabled: false };
+    // Complete events only show in verbose mode
+    let json = r#"{"type":"message","content":"This is a complete message with substantial content that should be displayed as is."}"#;
+    let output = super::types::format_unknown_json_event(json, "Claude", &colors, true);
+    assert!(!output.is_empty());
+    assert!(output.contains("Complete event"));
+}
+
+#[test]
+fn test_format_unknown_json_event_complete_event_normal() {
+    let colors = Colors { enabled: false };
+    // Complete events should not show in non-verbose mode if no explicit content
+    let json = r#"{"type":"status","status":"ok"}"#;
+    let output = super::types::format_unknown_json_event(json, "Claude", &colors, false);
+    // Should return empty in non-verbose mode for complete events without content
+    assert!(output.is_empty());
+}
+
+#[test]
+fn test_format_unknown_json_event_with_explicit_delta_flag() {
+    let colors = Colors { enabled: false };
+    // Events with explicit delta: true should be detected as partial
+    let json = r#"{"type":"message","delta":true,"content":"partial content"}"#;
+    let output = super::types::format_unknown_json_event(json, "Test", &colors, true);
+    assert!(!output.is_empty());
+    assert!(output.contains("Partial event"));
+}
+
+#[test]
+fn test_format_unknown_json_event_error_control() {
+    let colors = Colors { enabled: false };
+    // Error events are control events and should not show
+    let json = r#"{"type":"error","message":"Something went wrong"}"#;
+    let output = super::types::format_unknown_json_event(json, "Claude", &colors, true);
+    // Error events are control events - should return empty
+    assert!(output.is_empty());
+}

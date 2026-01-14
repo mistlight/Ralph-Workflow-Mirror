@@ -8,6 +8,9 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+// Import stream classifier for algorithmic event detection
+use super::stream_classifier::{StreamEventClassifier, StreamEventType};
+
 static SECRET_VALUE_RE: Lazy<Option<Regex>> = Lazy::new(|| {
     // Keep this intentionally conservative to reduce false positives in normal text.
     // Primary goal: avoid leaking common API key formats to stdout/logs.
@@ -495,15 +498,42 @@ pub(crate) fn format_tool_input(input: &serde_json::Value) -> String {
     }
 }
 
+/// Helper function to extract text from nested JSON structures
+///
+/// This function attempts to extract text content from common nested patterns
+/// like `{"text": "..."}`, `{"delta": {"text": "..."}}`, etc.
+fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
+    // If it's already a string, return it
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+
+    // If it's an object, look for common text fields
+    if let Some(obj) = value.as_object() {
+        // Check common text field names
+        for field in ["text", "content", "message", "output", "result"] {
+            if let Some(val) = obj.get(field) {
+                if let Some(text) = val.as_str() {
+                    return Some(text.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Format an unknown JSON event for display in verbose/debug mode
 ///
 /// This is a generic handler for unknown events that works across all parsers.
-/// It extracts key fields from the JSON to provide useful debugging info.
+/// It uses algorithmic classification to detect delta/partial events vs control events,
+/// and extracts key fields from the JSON to provide useful debugging info.
 ///
 /// # Arguments
 /// * `line` - The raw JSON line
 /// * `parser_name` - Name of the parser for display prefix
 /// * `colors` - Colors struct for formatting
+/// * `is_verbose` - Whether to show unknown events
 ///
 /// # Returns
 /// A formatted string showing the event type and key fields, or an empty string
@@ -514,80 +544,183 @@ pub(crate) fn format_unknown_json_event(
     colors: &crate::colors::Colors,
     is_verbose: bool,
 ) -> String {
-    // Only show unknown events in verbose mode
-    if !is_verbose {
-        return String::new();
-    }
-
     // Try to parse as generic JSON to extract type and key fields
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
-        if let Some(obj) = value.as_object() {
-            // Extract the type field - try both "type" and common variants
-            let event_type = obj
-                .get("type")
-                .and_then(|v| v.as_str())
-                .or_else(|| obj.get("event_type").and_then(|v| v.as_str()))
-                .unwrap_or("unknown");
-
-            // Extract a few other common fields for context
-            let mut fields = Vec::new();
-            for key in [
-                "subtype",
-                "session_id",
-                "sessionID",
-                "message_id",
-                "messageID",
-                "index",
-                "reason",
-                "status",
-            ] {
-                if let Some(val) = obj.get(key) {
-                    let val_str = match val {
-                        serde_json::Value::String(s) => {
-                            // Truncate long strings for display
-                            if s.len() > 20 {
-                                format!("{}...", &s[..17.min(s.len())])
-                            } else {
-                                s.clone()
-                            }
-                        }
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::Bool(b) => b.to_string(),
-                        _ => continue,
-                    };
-                    fields.push(format!("{}={}", key, val_str));
-                }
+    let value = match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(v) => v,
+        Err(_) => {
+            // Only show parsing failure message in verbose mode
+            if is_verbose {
+                return format!(
+                    "{}[{}]{} {}Unknown event (invalid JSON)\n",
+                    colors.dim(),
+                    parser_name,
+                    colors.reset(),
+                    colors.dim()
+                );
             }
+            return String::new();
+        }
+    };
 
-            let fields_str = if fields.is_empty() {
-                String::new()
+    let obj = match value.as_object() {
+        Some(o) => o,
+        None => {
+            if is_verbose {
+                return format!(
+                    "{}[{}]{} {}Unknown event (non-object JSON)\n",
+                    colors.dim(),
+                    parser_name,
+                    colors.reset(),
+                    colors.dim()
+                );
+            }
+            return String::new();
+        }
+    };
+
+    // Use stream classifier for algorithmic event detection
+    let classifier = StreamEventClassifier::new();
+    let classification = classifier.classify(&value);
+
+    // Extract the type field - try both "type" and common variants
+    let event_type = obj
+        .get("type")
+        .and_then(|v| v.as_str())
+        .or_else(|| obj.get("event_type").and_then(|v| v.as_str()))
+        .unwrap_or_else(|| {
+            // Use classifier's detected type name if available
+            classification.type_name.as_deref().unwrap_or("unknown")
+        });
+
+    // For partial/delta events, try to extract and show content
+    let content_info = if classification.event_type == StreamEventType::Partial {
+        // Try to extract content from various nested structures
+        let extracted_text = if let Some(content) = classification.content_field {
+            // Content field was found at top level
+            if let Some(val) = obj.get(&content) {
+                if let Some(text) = val.as_str() {
+                    Some(text.to_string())
+                } else {
+                    // Content field exists but is not a string - try to extract nested text
+                    extract_nested_text(val)
+                }
             } else {
-                format!(" ({})", fields.join(", "))
-            };
+                None
+            }
+        } else {
+            // No content field found - try to extract from delta field
+            obj.get("delta")
+                .and_then(|delta_val| extract_nested_text(delta_val))
+                .or_else(|| {
+                    // Try other common nested structures
+                    obj.get("data").and_then(|d| extract_nested_text(d))
+                })
+        };
 
-            return format!(
-                "{}[{}]{} {}Unknown event: {}{}{}\n",
-                colors.dim(),
-                parser_name,
-                colors.reset(),
-                colors.dim(),
-                event_type,
-                fields_str,
-                colors.reset()
-            );
+        extracted_text.map(|text: String| {
+            let truncated = if text.len() > 30 {
+                format!("{}...", &text[..27.min(text.len())])
+            } else {
+                text
+            };
+            format!(" content=\"{}\"", truncated)
+        })
+    } else {
+        None
+    };
+
+    // Build event type label based on classification
+    let type_label = match classification.event_type {
+        StreamEventType::Partial => {
+            // Only show partial events in non-verbose mode if they have explicit delta indicators
+            // in the type name (like "delta", "partial", "chunk"), not just because content is short
+            let type_name_lower = event_type.to_lowercase();
+            let is_explicit_delta = type_name_lower.contains("delta")
+                || type_name_lower.contains("partial")
+                || type_name_lower.contains("chunk");
+
+            if is_verbose {
+                format!("Partial event: {}", event_type)
+            } else if is_explicit_delta {
+                // In non-verbose mode, only show explicit partial events (they're user content)
+                return content_info.map_or(String::new(), |content| {
+                    format!(
+                        "{}[{}]{} {}{}\n",
+                        colors.dim(),
+                        parser_name,
+                        colors.reset(),
+                        colors.white(),
+                        content.trim(),
+                    )
+                });
+            } else {
+                // Short content that looks like partial - don't show in non-verbose mode
+                return String::new();
+            }
+        }
+        StreamEventType::Control => {
+            // Control events are state management - don't show in output
+            return String::new();
+        }
+        StreamEventType::Complete => {
+            if is_verbose {
+                format!("Complete event: {}", event_type)
+            } else {
+                // In non-verbose mode, don't show complete events without content
+                return String::new();
+            }
+        }
+    };
+
+    // Extract a few other common fields for context
+    let mut fields = Vec::new();
+    for key in [
+        "subtype",
+        "session_id",
+        "sessionID",
+        "message_id",
+        "messageID",
+        "index",
+        "reason",
+        "status",
+    ] {
+        if let Some(val) = obj.get(key) {
+            let val_str = match val {
+                serde_json::Value::String(s) => {
+                    // Truncate long strings for display
+                    if s.len() > 20 {
+                        format!("{}...", &s[..17.min(s.len())])
+                    } else {
+                        s.clone()
+                    }
+                }
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                _ => continue,
+            };
+            fields.push(format!("{}={}", key, val_str));
         }
     }
 
-    // Fallback: just note it was an unknown event (in verbose mode only)
-    if is_verbose {
-        format!(
-            "{}[{}]{} {}Unknown event\n",
-            colors.dim(),
-            parser_name,
-            colors.reset(),
-            colors.dim()
-        )
-    } else {
+    let mut fields_str = if fields.is_empty() {
         String::new()
+    } else {
+        format!(" ({})", fields.join(", "))
+    };
+
+    // Add content info if available
+    if let Some(content) = content_info {
+        fields_str.push_str(&content);
     }
+
+    format!(
+        "{}[{}]{} {}{}{}{}\n",
+        colors.dim(),
+        parser_name,
+        colors.reset(),
+        colors.dim(),
+        type_label,
+        fields_str,
+        colors.reset()
+    )
 }
