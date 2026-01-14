@@ -91,7 +91,7 @@
     --font-mono: 'IBM Plex Mono', 'SF Mono', 'Consolas', monospace;
 
     /* Typography Refinement - Enhanced Letter-spacing */
-    --tracking-tightest: -0.02em;  /* Improved readability while maintaining brutalist impact */
+    --tracking-tightest: -0.04em;  /* Improved readability for hero title while maintaining brutalist impact */
     --tracking-tighter: -0.06em;
     --tracking-tight: -0.04em;
     --tracking-normal: -0.02em;
@@ -157,10 +157,10 @@
     --nav-height: 80px;
 
     /* Section Spacing Scale - Vertical Rhythm */
-    --section-padding-compact: var(--space-20);  /* 80px */
-    --section-padding-default: var(--space-30);  /* 120px - Enhanced from 96px */
-    --section-padding-relaxed: var(--space-36);  /* 144px - Enhanced from 128px */
-    --section-padding-generous: var(--space-48); /* 192px */
+    --section-padding-compact: var(--space-24);  /* 96px */
+    --section-padding-default: var(--space-36);  /* 144px - Enhanced for better breathing room */
+    --section-padding-relaxed: var(--space-44);  /* 176px - Enhanced for visual impact */
+    --section-padding-generous: var(--space-56); /* 224px */
 
     /* Component Spacing Standards */
     --gap-element: var(--space-4);     /* 16px - between related elements */
@@ -542,7 +542,7 @@ code.inline {
 }
 
 .nav-logo:hover {
-    transform: scale(1.05);
+    transform: scale(1.02);
     filter: brightness(1.1);
 }
 
@@ -1137,7 +1137,8 @@ a:not(.btn):not(.nav-link):not(.badge):not(.audience-option):not(.install-tab):n
     text-transform: uppercase;
     perspective: 1000px;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5),
-                 0 8px 16px rgba(0, 0, 0, 0.3);
+                 0 8px 16px rgba(0, 0, 0, 0.3),
+                 0 0 30px rgba(204, 255, 0, 0.15);
 }
 
 .hero-title-line {
@@ -1163,7 +1164,7 @@ a:not(.btn):not(.nav-link):not(.badge):not(.audience-option):not(.install-tab):n
 }
 
 .hero-word:hover {
-    transform: translateY(-8%) scale(1.05) rotateX(5deg);
+    transform: translateY(-8%) scale(1.02) rotateX(5deg);
     text-shadow: 0 0 40px currentColor, 0 0 80px currentColor;
     filter: blur(0);
 }
@@ -1212,7 +1213,7 @@ a:not(.btn):not(.nav-link):not(.badge):not(.audience-option):not(.install-tab):n
         opacity: 1;
     }
     70% {
-        transform: translateY(-15%) scale(1.05);
+        transform: translateY(-15%) scale(1.02);
     }
     100% {
         opacity: 1;
@@ -1395,7 +1396,7 @@ a:not(.btn):not(.nav-link):not(.badge):not(.audience-option):not(.install-tab):n
     border-color: var(--color-primary);
     color: var(--color-bg);
     box-shadow: 0 0 20px rgba(204, 255, 0, 0.4);
-    transform: scale(1.05);
+    transform: scale(1.02);
 }
 
 .audience-option[aria-pressed="true"] svg {
@@ -1866,7 +1867,7 @@ body:not([data-audience]) .audience-newcomer-content {
     background: var(--color-bg-elevated);
     border-color: var(--color-primary);
     color: var(--color-text);
-    transform: scale(1.05);
+    transform: scale(1.02);
 }
 
 .terminal-control-btn:active {
@@ -1956,13 +1957,13 @@ body:not([data-audience]) .audience-newcomer-content {
 
 /* === SECTIONS === */
 .section {
-    padding: var(--space-36) var(--space-6);
+    padding: var(--section-padding-default) var(--space-6);
     position: relative;
 }
 
 @media (min-width: 1024px) {
     .section {
-        padding: var(--space-48) var(--space-10);
+        padding: var(--section-padding-relaxed) var(--space-12);
     }
 }
 
@@ -1971,7 +1972,7 @@ body:not([data-audience]) .audience-newcomer-content {
 .how-section,
 .features-section,
 .install-section {
-    padding: var(--space-36) var(--space-6);
+    padding: var(--section-padding-default) var(--space-6);
 }
 
 @media (min-width: 768px) {
@@ -1979,7 +1980,7 @@ body:not([data-audience]) .audience-newcomer-content {
     .how-section,
     .features-section,
     .install-section {
-        padding: var(--space-40) var(--space-8);
+        padding: var(--section-padding-relaxed) var(--space-10);
     }
 }
 
@@ -1988,36 +1989,36 @@ body:not([data-audience]) .audience-newcomer-content {
     .how-section,
     .features-section,
     .install-section {
-        padding: var(--space-48) var(--space-10);
+        padding: var(--section-padding-generous) var(--space-12);
     }
 }
 
 /* Hero-to-content transitions with extra breathing room */
 .what-section {
-    padding-top: var(--space-48);
+    padding-top: var(--section-padding-generous);
 }
 
 .how-section {
-    padding-top: var(--space-40);
-    padding-bottom: var(--space-40);
+    padding-top: var(--section-padding-relaxed);
+    padding-bottom: var(--section-padding-relaxed);
 }
 
 .features-section {
-    padding-top: var(--space-40);
+    padding-top: var(--section-padding-relaxed);
 }
 
 .install-section {
-    padding-top: var(--space-40);
+    padding-top: var(--section-padding-relaxed);
 }
 
 /* Interactive demo section breathing room */
 #try-ralph.section {
-    padding: var(--space-40) var(--space-6);
+    padding: var(--section-padding-relaxed) var(--space-6);
 }
 
 @media (min-width: 1024px) {
     #try-ralph.section {
-        padding: var(--space-48) var(--space-10);
+        padding: var(--section-padding-generous) var(--space-12);
     }
 }
 
@@ -3606,10 +3607,12 @@ body:not([data-audience]) .audience-newcomer-content {
 details {
     position: relative;
     transition: var(--transition-base);
+    overflow: hidden;
 }
 
 details[open] {
     border-color: var(--color-primary);
+    box-shadow: 0 0 30px rgba(204, 255, 0, 0.1);
 }
 
 details summary {
@@ -3623,6 +3626,7 @@ details summary:hover {
 
 details[open] summary span:last-child {
     transform: rotate(45deg);
+    color: var(--color-accent);
 }
 
 details summary::-webkit-details-marker {
@@ -3643,6 +3647,22 @@ details summary::before {
 
 details[open] summary::before {
     transform: scaleY(1);
+}
+
+/* Smooth expand/collapse animation for FAQ content */
+details > div:not(summary) {
+    animation: faq-expand 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes faq-expand {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .footer-content {
@@ -3907,6 +3927,22 @@ details[open] summary::before {
         animation-duration: 20s;
     }
 
+    /* Reduce section padding on mobile for better UX */
+    .section {
+        padding: var(--section-padding-compact) var(--space-6);
+    }
+
+    .what-section,
+    .how-section,
+    .features-section,
+    .install-section {
+        padding: var(--section-padding-compact) var(--space-6);
+    }
+
+    #try-ralph.section {
+        padding: var(--section-padding-compact) var(--space-6);
+    }
+
     .features-grid,
     .audience-grid {
         grid-template-columns: 1fr;
@@ -3940,6 +3976,21 @@ details[open] summary::before {
 
     .terminal-window:hover {
         transform: scale(1.01);
+    }
+
+    /* Optimize audience selector for mobile */
+    .audience-selector {
+        flex-direction: column;
+        gap: var(--space-4);
+        align-items: stretch;
+    }
+
+    .audience-options {
+        width: 100%;
+    }
+
+    .audience-option {
+        flex: 1;
     }
 }
 
