@@ -3501,7 +3501,8 @@ simplify raw string literals and add explicit type conversion handling.";
     #[test]
     fn test_regression_two_commit_messages_deterministic() {
         // When two potential commit messages exist, extraction should be deterministic
-        let content = "fix(parser): resolve edge case in parsing\n\nfeat: add new feature to the parser";
+        let content =
+            "fix(parser): resolve edge case in parsing\n\nfeat: add new feature to the parser";
 
         let result = extract_llm_output(content, None);
 
