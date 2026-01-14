@@ -1,6 +1,6 @@
 //! Codex CLI JSON parser.
 //!
-//! Parses NDJSON output from `OpenAI` Codex CLI and formats it for display.
+//! Parses NDJSON output from OpenAI Codex CLI and formats it for display.
 //!
 //! # Streaming Output Behavior
 //!
@@ -10,55 +10,40 @@
 //!
 //! 1. **Accumulates** text deltas from each chunk into a buffer
 //! 2. **Displays** the accumulated text after each chunk
-//! 3. **Uses carriage return (`\r`) and line clearing (`\x1b[2K`)** to rewrite the entire line,
-//!    creating an updating effect that shows the content building up in real-time
-//! 4. **Shows prefix on every delta**, rewriting the entire line each time (industry standard)
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix** on the first `item.started` event and again on `item.completed`
 //!
 //! Example output sequence for streaming "Hello World" in two chunks:
 //! ```text
 //! [Codex] Hello\r          (first chunk with prefix, no newline)
-//! \x1b[2K\r[Codex] Hello World\r  (second chunk clears line, rewrites with accumulated)
+//! Hello World\r              (second chunk overwrites with accumulated text)
 //! [Codex] Hello World\n     (item.completed shows final result with prefix)
 //! ```
-//!
-//! # Single-Line Pattern
-//!
-//! The renderer uses a single-line pattern with carriage return for in-place updates.
-//! This is the industry standard for streaming CLIs (used by Rich, Ink, Bubble Tea).
-//!
-//! Each delta rewrites the entire line with prefix, ensuring that:
-//! - The user always sees the prefix
-//! - Content updates in-place without visual artifacts
-//! - Terminal state is clean and predictable
 
-#![expect(clippy::too_many_lines)]
-use crate::common::truncate_text;
+use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
-use crate::logger::{Colors, CHECK, CROSS};
-use std::cell::RefCell;
+use crate::utils::truncate_text;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
+use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
-use super::streaming_state::StreamingSession;
 use super::types::{
     format_tool_input, format_unknown_json_event, CodexEvent, ContentType, DeltaAccumulator,
 };
 
 /// Codex event parser
-pub struct CodexParser {
+pub(crate) struct CodexParser {
     colors: Colors,
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
-    /// Unified streaming session for state tracking
-    streaming_session: Rc<RefCell<StreamingSession>>,
-    /// Delta accumulator for reasoning content (which uses special display)
-    /// Note: We keep this for reasoning only, as it uses `DeltaDisplayFormatter`
-    reasoning_accumulator: Rc<RefCell<DeltaAccumulator>>,
-    /// Turn counter for generating synthetic turn IDs
-    turn_counter: Rc<RefCell<u64>>,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Track if we're currently streaming an agent message
+    in_agent_message: Rc<RefCell<Cell<bool>>>,
 }
 
 impl CodexParser {
@@ -68,9 +53,8 @@ impl CodexParser {
             verbosity,
             log_file: None,
             display_name: "Codex".to_string(),
-            streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
-            reasoning_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
-            turn_counter: Rc::new(RefCell::new(0)),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            in_agent_message: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -86,20 +70,21 @@ impl CodexParser {
 
     /// Parse and display a single Codex JSON event
     ///
-    /// Returns `Some(formatted_output)` for valid events, or None for:
+    /// Returns Some(formatted_output) for valid events, or None for:
     /// - Malformed JSON (non-JSON text passed through if meaningful)
     /// - Unknown event types
     /// - Empty or whitespace-only output
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
-        let event: CodexEvent = if let Ok(e) = serde_json::from_str(line) {
-            e
-        } else {
-            // Non-JSON line - pass through as-is if meaningful
-            let trimmed = line.trim();
-            if !trimmed.is_empty() && !trimmed.starts_with('{') {
-                return Some(format!("{trimmed}\n"));
+        let event: CodexEvent = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => {
+                // Non-JSON line - pass through as-is if meaningful
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                    return Some(format!("{}\n", trimmed));
+                }
+                return None;
             }
-            return None;
         };
         let c = &self.colors;
         let name = &self.display_name;
@@ -107,10 +92,6 @@ impl CodexParser {
         let output = match event {
             CodexEvent::ThreadStarted { thread_id } => {
                 let tid = thread_id.unwrap_or_else(|| "unknown".to_string());
-                // Set the current message ID for duplicate detection
-                self.streaming_session
-                    .borrow_mut()
-                    .set_current_message_id(Some(tid.clone()));
                 format!(
                     "{}[{}]{} {}Thread started{} {}({:.8}...){}\n",
                     c.dim(),
@@ -124,21 +105,6 @@ impl CodexParser {
                 )
             }
             CodexEvent::TurnStarted {} => {
-                // Reset streaming state on new turn
-                self.streaming_session.borrow_mut().on_message_start();
-                self.reasoning_accumulator.borrow_mut().clear();
-
-                // Generate and set synthetic turn ID for duplicate detection
-                let turn_id = {
-                    let mut counter = self.turn_counter.borrow_mut();
-                    let id = format!("turn-{}", *counter);
-                    *counter += 1;
-                    id
-                };
-                self.streaming_session
-                    .borrow_mut()
-                    .set_current_message_id(Some(turn_id));
-
                 format!(
                     "{}[{}]{} {}Turn started{}\n",
                     c.dim(),
@@ -149,23 +115,11 @@ impl CodexParser {
                 )
             }
             CodexEvent::TurnCompleted { usage } => {
-                // Mark the turn message as complete
-                let was_in_block = self.streaming_session.borrow_mut().on_message_stop();
-
-                let (input, output) = usage.map_or((0, 0), |u| {
-                    (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0))
-                });
-
-                // Add completion newline if we were in a content block
-                let completion = if was_in_block {
-                    TextDeltaRenderer::render_completion()
-                } else {
-                    String::new()
-                };
-
+                let (input, output) = usage
+                    .map(|u| (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0)))
+                    .unwrap_or((0, 0));
                 format!(
-                    "{}{}[{}]{} {}{} Turn completed{} {}(in:{} out:{}){}\n",
-                    completion,
+                    "{}[{}]{} {}{} Turn completed{} {}(in:{} out:{}){}\n",
                     c.dim(),
                     name,
                     c.reset(),
@@ -179,20 +133,9 @@ impl CodexParser {
                 )
             }
             CodexEvent::TurnFailed { error } => {
-                // Mark the turn message as complete even on failure
-                let was_in_block = self.streaming_session.borrow_mut().on_message_stop();
-
-                // Add completion newline if we were in a content block
-                let completion = if was_in_block {
-                    TextDeltaRenderer::render_completion()
-                } else {
-                    String::new()
-                };
-
                 let err = error.unwrap_or_else(|| "unknown error".to_string());
                 format!(
-                    "{}{}[{}]{} {}{} Turn failed:{} {}\n",
-                    completion,
+                    "{}[{}]{} {}{} Turn failed:{} {}\n",
                     c.dim(),
                     name,
                     c.reset(),
@@ -224,31 +167,33 @@ impl CodexParser {
                         Some("agent_message") => {
                             // For streaming support, accumulate partial content
                             if let Some(ref text) = item.text {
-                                let (show_prefix, accumulated_text) = {
-                                    let mut session = self.streaming_session.borrow_mut();
-                                    let show_prefix = session.on_text_delta_key("agent_msg", text);
-                                    // Get accumulated text for streaming display
-                                    let accumulated_text = session
-                                        .get_accumulated(ContentType::Text, "agent_msg")
-                                        .unwrap_or("")
-                                        .to_string();
-                                    (show_prefix, accumulated_text)
-                                };
+                                let mut acc = self.delta_accumulator.borrow_mut();
+                                acc.add_delta(ContentType::Text, "agent_msg", text);
+                                // Get accumulated text for streaming display
+                                let accumulated_text =
+                                    acc.get(ContentType::Text, "agent_msg").unwrap_or("");
 
-                                // Use TextDeltaRenderer for consistent rendering across all parsers
-                                if show_prefix {
-                                    // First delta: use renderer with prefix
-                                    return Some(TextDeltaRenderer::render_first_delta(
-                                        &accumulated_text,
-                                        name,
-                                        *c,
-                                    ));
+                                // Check if we're already streaming an agent message
+                                let in_msg = self.in_agent_message.borrow();
+                                let was_in_msg = in_msg.get();
+                                drop(in_msg);
+
+                                // Only show prefix on the first chunk
+                                if was_in_msg {
+                                    // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                                    self.in_agent_message.borrow_mut().set(true);
+                                    return Some(format!("{}\r{}", c.white(), accumulated_text));
                                 }
-                                // Subsequent deltas: use renderer for in-place update
-                                return Some(TextDeltaRenderer::render_subsequent_delta(
-                                    &accumulated_text,
+                                // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
+                                self.in_agent_message.borrow_mut().set(true);
+                                return Some(format!(
+                                    "{}[{}]{} {}{}{}",
+                                    c.dim(),
                                     name,
-                                    *c,
+                                    c.reset(),
+                                    c.white(),
+                                    accumulated_text,
+                                    c.reset()
                                 ));
                             }
                             // No text yet, show placeholder in non-verbose mode
@@ -268,12 +213,12 @@ impl CodexParser {
                         Some("reasoning") => {
                             // For streaming support, accumulate reasoning content
                             if let Some(ref text) = item.text {
-                                let mut acc = self.reasoning_accumulator.borrow_mut();
+                                let mut acc = self.delta_accumulator.borrow_mut();
                                 acc.add_delta(ContentType::Thinking, "reasoning", text);
 
                                 // Show reasoning in real-time using delta display formatter
                                 let formatter = DeltaDisplayFormatter::new();
-                                return Some(formatter.format_thinking(text, name, *c));
+                                return Some(formatter.format_thinking(text, name, c));
                             }
                             // No reasoning yet
                             if self.verbosity.is_verbose() {
@@ -324,17 +269,15 @@ impl CodexParser {
                                     let limit = self.verbosity.truncate_limit("tool_input");
                                     let preview = truncate_text(&args_str, limit);
                                     if !preview.is_empty() {
-                                        use std::fmt::Write;
-                                        let _ = writeln!(
-                                            out,
-                                            "{}[{}]{} {}  └─ {}{}",
+                                        out.push_str(&format!(
+                                            "{}[{}]{} {}  └─ {}{}\n",
                                             c.dim(),
                                             name,
                                             c.reset(),
                                             c.dim(),
                                             preview,
                                             c.reset()
-                                        );
+                                        ));
                                     }
                                 }
                             }
@@ -393,35 +336,55 @@ impl CodexParser {
                 if let Some(item) = item {
                     match item.item_type.as_deref() {
                         Some("agent_message") => {
-                            // Check for duplicate final message using message ID or fallback to streaming content check
-                            let session = self.streaming_session.borrow();
-                            let is_duplicate = session.get_current_message_id().map_or_else(
-                                || session.has_any_streamed_content(),
-                                |message_id| session.is_duplicate_final_message(message_id),
-                            );
-                            let was_streaming = session.has_any_streamed_content();
-                            drop(session);
+                            // Check if we were streaming an agent message
+                            let in_msg = self.in_agent_message.borrow();
+                            let was_in_msg = in_msg.get();
+                            drop(in_msg);
+                            self.in_agent_message.borrow_mut().set(false);
 
-                            // Finalize the message (this marks it as displayed)
-                            let _was_in_block =
-                                self.streaming_session.borrow_mut().on_message_stop();
+                            // Show final accumulated message and clear accumulator
+                            let full_text = self
+                                .delta_accumulator
+                                .borrow()
+                                .get(ContentType::Text, "agent_msg")
+                                .map(|s| s.to_string());
+                            self.delta_accumulator
+                                .borrow_mut()
+                                .clear_key(ContentType::Text, "agent_msg");
 
-                            // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
-                            if is_duplicate || was_streaming {
-                                return Some(TextDeltaRenderer::render_completion());
-                            }
+                            // Add final newline if we were streaming
+                            let newline_suffix = if was_in_msg {
+                                format!("{}\n", c.reset())
+                            } else {
+                                String::new()
+                            };
 
-                            // Fallback: show item text if no streaming occurred
-                            if let Some(ref text) = item.text {
+                            if let Some(text) = full_text {
                                 let limit = self.verbosity.truncate_limit("agent_msg");
-                                let preview = truncate_text(text, limit);
+                                let preview = truncate_text(&text, limit);
                                 return Some(format!(
-                                    "{}[{}]{} {}{}{}\n",
+                                    "{}[{}]{} {}{}{}{}",
                                     c.dim(),
                                     name,
                                     c.reset(),
                                     c.white(),
                                     preview,
+                                    newline_suffix,
+                                    c.reset()
+                                ));
+                            }
+                            // Fallback to item text if no accumulated content
+                            if let Some(ref text) = item.text {
+                                let limit = self.verbosity.truncate_limit("agent_msg");
+                                let preview = truncate_text(text, limit);
+                                return Some(format!(
+                                    "{}[{}]{} {}{}{}{}\n",
+                                    c.dim(),
+                                    name,
+                                    c.reset(),
+                                    c.white(),
+                                    preview,
+                                    newline_suffix,
                                     c.reset()
                                 ));
                             }
@@ -430,17 +393,19 @@ impl CodexParser {
                         Some("reasoning") => {
                             // Clear reasoning accumulator on completion
                             let full_reasoning = self
-                                .reasoning_accumulator
+                                .delta_accumulator
                                 .borrow()
                                 .get(ContentType::Thinking, "reasoning")
-                                .map(std::string::ToString::to_string);
-                            self.reasoning_accumulator
+                                .map(|s| s.to_string());
+                            self.delta_accumulator
                                 .borrow_mut()
                                 .clear_key(ContentType::Thinking, "reasoning");
 
                             // Show reasoning content in verbose mode
                             if self.verbosity.is_verbose() {
-                                if let Some(text) = full_reasoning.as_ref().or(item.text.as_ref()) {
+                                if let Some(ref text) =
+                                    full_reasoning.as_ref().or(item.text.as_ref())
+                                {
                                     let limit = self.verbosity.truncate_limit("text");
                                     let preview = truncate_text(text, limit);
                                     return Some(format!(
@@ -526,32 +491,29 @@ impl CodexParser {
                         }
                         Some("plan_update") => {
                             if self.verbosity.is_verbose() {
-                                let limit = self.verbosity.truncate_limit("text");
-                                item.plan.as_ref().map_or_else(
-                                    || {
-                                        format!(
-                                            "{}[{}]{} {}{} Plan updated{}\n",
-                                            c.dim(),
-                                            name,
-                                            c.reset(),
-                                            c.green(),
-                                            CHECK,
-                                            c.reset()
-                                        )
-                                    },
-                                    |plan| {
-                                        let preview = truncate_text(plan, limit);
-                                        format!(
-                                            "{}[{}]{} {}Plan:{} {}\n",
-                                            c.dim(),
-                                            name,
-                                            c.reset(),
-                                            c.blue(),
-                                            c.reset(),
-                                            preview
-                                        )
-                                    },
-                                )
+                                if let Some(ref plan) = item.plan {
+                                    let limit = self.verbosity.truncate_limit("text");
+                                    let preview = truncate_text(plan, limit);
+                                    format!(
+                                        "{}[{}]{} {}Plan:{} {}\n",
+                                        c.dim(),
+                                        name,
+                                        c.reset(),
+                                        c.blue(),
+                                        c.reset(),
+                                        preview
+                                    )
+                                } else {
+                                    format!(
+                                        "{}[{}]{} {}{} Plan updated{}\n",
+                                        c.dim(),
+                                        name,
+                                        c.reset(),
+                                        c.green(),
+                                        CHECK,
+                                        c.reset()
+                                    )
+                                }
                             } else {
                                 String::new()
                             }
@@ -621,10 +583,16 @@ impl CodexParser {
     fn is_partial_event(event: &CodexEvent) -> bool {
         match event {
             // Item started events for agent_message and reasoning produce streaming content
-            CodexEvent::ItemStarted { item: Some(item) } => matches!(
-                item.item_type.as_deref(),
-                Some("agent_message" | "reasoning")
-            ),
+            CodexEvent::ItemStarted { item } => {
+                if let Some(item) = item {
+                    matches!(
+                        item.item_type.as_deref(),
+                        Some("agent_message" | "reasoning")
+                    )
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }
@@ -683,7 +651,7 @@ impl CodexParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{output}")?;
+                    write!(writer, "{}", output)?;
                     writer.flush()?;
                 }
                 None => {
@@ -708,15 +676,15 @@ impl CodexParser {
 
             // Log raw JSON to file if configured
             if let Some(ref mut file) = log_writer {
-                writeln!(file, "{line}")?;
+                writeln!(file, "{}", line)?;
             }
         }
 
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(*c) {
-            writeln!(writer, "{warning}")?;
+        if let Some(warning) = monitor.check_and_warn(c) {
+            writeln!(writer, "{}", warning)?;
         }
         Ok(())
     }

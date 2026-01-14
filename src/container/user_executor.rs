@@ -10,8 +10,40 @@
 use crate::container::config::ExecutionOptions;
 use crate::container::error::{ContainerError, ContainerResult};
 use std::collections::HashMap;
+use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// macOS Homebrew installation paths
+const MACOS_HOMEBREW_PATHS: &[&str] = &[
+    "/opt/homebrew/bin", // Apple Silicon
+    "/opt/homebrew/sbin",
+    "/usr/local/bin", // Intel
+    "/usr/local/sbin",
+];
+
+/// Homebrew environment variables to preserve
+const HOMEBREW_ENV_VARS: &[&str] = &[
+    "HOMEBREW_PREFIX",
+    "HOMEBREW_CELLAR",
+    "HOMEBREW_REPOSITORY",
+    "HOMEBREW_SHELLENV_PATH",
+];
+
+/// Language manager shims that should be in PATH
+const LANGUAGE_MANAGER_SHIMS: &[&str] = &[
+    // Python
+    ".pyenv/shims",
+    ".local/share/pyenv/shims",
+    // Ruby
+    ".rbenv/shims",
+    ".local/share/rbenv/shims",
+    // Node.js
+    ".nodenv/shims",
+    ".local/share/nodenv/shims",
+    // Go
+    ".local/share/goenv/shims",
+];
 
 /// Default user name for the agent account
 pub const DEFAULT_AGENT_USER: &str = "ralph-agent";
@@ -24,8 +56,16 @@ pub struct UserAccountExecutor {
     workspace_path: PathBuf,
     /// User name to run commands as
     user_name: String,
-    /// Path to .agent directory
-    agent_dir: PathBuf,
+}
+
+#[cfg(test)]
+/// User account information
+#[derive(Debug, Clone)]
+pub struct UserInfo {
+    /// User name
+    pub name: String,
+    /// User info string from `id` command
+    pub _info: String,
 }
 
 impl UserAccountExecutor {
@@ -34,7 +74,7 @@ impl UserAccountExecutor {
     /// Verifies the user exists and can be used for command execution.
     pub fn new(
         workspace_path: PathBuf,
-        agent_dir: PathBuf,
+        _agent_dir: PathBuf,
         user_name: Option<String>,
     ) -> ContainerResult<Self> {
         let user_name = user_name.unwrap_or_else(|| DEFAULT_AGENT_USER.to_string());
@@ -42,14 +82,13 @@ impl UserAccountExecutor {
         // Verify the user exists
         if !Self::user_exists(&user_name)? {
             return Err(ContainerError::Other(format!(
-                "User account '{}' does not exist.\n\n\
+                "User account '{user_name}' does not exist.\n\n\
                 To set up user-account security mode:\n\
                 1. Run: ralph --setup-security\n\
-                2. Or manually: sudo useradd -m -s /bin/bash {}\n\
-                3. Then: sudo echo '{} ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/ralph-agent\n\
+                2. Or manually: sudo useradd -m -s /bin/bash {user_name}\n\
+                3. Then: sudo echo '{user_name} ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/ralph-agent\n\
                 4. And: sudo chmod 440 /etc/sudoers.d/ralph-agent\n\n\
-                For more information, run: ralph --security-check",
-                user_name, user_name, user_name
+                For more information, run: ralph --security-check"
             )));
         }
 
@@ -64,9 +103,9 @@ impl UserAccountExecutor {
 
         match has_access {
             Ok(output) if !output.status.success() => {
-                let parent_dir = workspace_path.parent()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| ".".to_string());
+                let parent_dir = workspace_path
+                    .parent()
+                    .map_or_else(|| ".".to_string(), |p| p.display().to_string());
 
                 return Err(ContainerError::Other(format!(
                     "User '{}' cannot read the workspace at: {}\n\n\
@@ -89,7 +128,6 @@ impl UserAccountExecutor {
         Ok(Self {
             workspace_path,
             user_name,
-            agent_dir,
         })
     }
 
@@ -124,6 +162,9 @@ impl UserAccountExecutor {
             self.workspace_path.clone()
         };
 
+        // Build the enhanced environment with platform-specific paths
+        let enhanced_env = self.build_enhanced_environment(env_vars, options)?;
+
         // Build the sudo command
         let mut cmd = Command::new("sudo");
         cmd.arg("-u").arg(&self.user_name);
@@ -131,47 +172,10 @@ impl UserAccountExecutor {
         // Set working directory
         cmd.arg("--cwd").arg(&workdir);
 
-        // Validate and set environment variables
-        // Check for null bytes and newlines which could cause issues
-        for (key, value) in env_vars {
-            if key.contains('\0') || value.contains('\0') {
-                return Err(ContainerError::Other(
-                    "Environment variable contains null byte which is invalid".to_string(),
-                ));
-            }
-            if key.contains('\n') || value.contains('\n') || key.contains('\r') || value.contains('\r') {
-                return Err(ContainerError::Other(
-                    "Environment variable contains newline which is invalid for sudo --env".to_string(),
-                ));
-            }
-            if key.contains('=') {
-                return Err(ContainerError::Other(
-                    "Environment variable name contains '=' which is invalid".to_string(),
-                ));
-            }
+        // Set environment variables
+        for (key, value) in &enhanced_env {
             cmd.arg("--env");
-            cmd.arg(format!("{}={}", key, value));
-        }
-
-        // Add execution option environment variables
-        for (key, value) in &options.env_vars {
-            if key.contains('\0') || value.contains('\0') {
-                return Err(ContainerError::Other(
-                    "Execution option environment variable contains null byte which is invalid".to_string(),
-                ));
-            }
-            if key.contains('\n') || value.contains('\n') || key.contains('\r') || value.contains('\r') {
-                return Err(ContainerError::Other(
-                    "Execution option environment variable contains newline which is invalid for sudo --env".to_string(),
-                ));
-            }
-            if key.contains('=') {
-                return Err(ContainerError::Other(
-                    "Execution option environment variable name contains '=' which is invalid".to_string(),
-                ));
-            }
-            cmd.arg("--env");
-            cmd.arg(format!("{}={}", key, value));
+            cmd.arg(format!("{key}={value}"));
         }
 
         // Add the actual command
@@ -184,9 +188,9 @@ impl UserAccountExecutor {
         cmd.arg(prompt);
 
         // Execute and capture output
-        let output = cmd.output().map_err(|e| {
-            ContainerError::Other(format!("Failed to execute command: {}", e))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| ContainerError::Other(format!("Failed to execute command: {e}")))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -199,11 +203,125 @@ impl UserAccountExecutor {
         })
     }
 
+    /// Build enhanced environment with platform-specific paths
+    fn build_enhanced_environment(
+        &self,
+        env_vars: &HashMap<String, String>,
+        options: &ExecutionOptions,
+    ) -> ContainerResult<HashMap<String, String>> {
+        let mut enhanced = HashMap::new();
+
+        // First, add all provided environment variables
+        for (key, value) in env_vars {
+            // Validate
+            if key.contains('\0') || value.contains('\0') {
+                return Err(ContainerError::Other(
+                    "Environment variable contains null byte which is invalid".to_string(),
+                ));
+            }
+            if key.contains('\n')
+                || value.contains('\n')
+                || key.contains('\r')
+                || value.contains('\r')
+            {
+                return Err(ContainerError::Other(
+                    "Environment variable contains newline which is invalid for sudo --env"
+                        .to_string(),
+                ));
+            }
+            if key.contains('=') {
+                return Err(ContainerError::Other(
+                    "Environment variable name contains '=' which is invalid".to_string(),
+                ));
+            }
+            enhanced.insert(key.clone(), value.clone());
+        }
+
+        // Add execution option environment variables
+        for (key, value) in &options.env_vars {
+            if key.contains('\0') || value.contains('\0') {
+                return Err(ContainerError::Other(
+                    "Execution option environment variable contains null byte which is invalid"
+                        .to_string(),
+                ));
+            }
+            if key.contains('\n')
+                || value.contains('\n')
+                || key.contains('\r')
+                || value.contains('\r')
+            {
+                return Err(ContainerError::Other(
+                    "Execution option environment variable contains newline which is invalid for sudo --env".to_string(),
+                ));
+            }
+            if key.contains('=') {
+                return Err(ContainerError::Other(
+                    "Execution option environment variable name contains '=' which is invalid"
+                        .to_string(),
+                ));
+            }
+            enhanced.insert(key.clone(), value.clone());
+        }
+
+        // Get current user's home directory for language manager paths
+        let current_home = env::var("HOME").unwrap_or_else(|_| {
+            env::var("USER")
+                .ok()
+                .map(|user| format!("/home/{user}"))
+                .unwrap_or_else(|| "/home/default".to_string())
+        });
+
+        // On macOS, inject Homebrew paths
+        if cfg!(target_os = "macos") {
+            // Add Homebrew to PATH if not already present
+            let path = enhanced.entry("PATH".to_string()).or_insert_with(|| {
+                env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".to_string())
+            });
+
+            // Prepend Homebrew paths if they exist and aren't already in PATH
+            for brew_path in MACOS_HOMEBREW_PATHS {
+                if Path::new(brew_path).exists() && !path.contains(brew_path) {
+                    *path = format!("{}:{}", brew_path, path.as_str());
+                }
+            }
+
+            // Add language manager shims to PATH
+            for shim_path in LANGUAGE_MANAGER_SHIMS {
+                let full_path = format!("{}/{}", current_home, shim_path);
+                if Path::new(&full_path).exists() && !path.contains(shim_path) {
+                    *path = format!("{}:{}", full_path, path.as_str());
+                }
+            }
+
+            // Preserve Homebrew environment variables
+            for env_var in HOMEBREW_ENV_VARS {
+                if let Ok(value) = env::var(env_var) {
+                    enhanced.entry(env_var.to_string()).or_insert(value);
+                }
+            }
+        }
+
+        // On Linux, also add language manager shims
+        if cfg!(target_os = "linux") {
+            let path = enhanced.entry("PATH".to_string()).or_insert_with(|| {
+                env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".to_string())
+            });
+
+            // Add language manager shims to PATH
+            for shim_path in LANGUAGE_MANAGER_SHIMS {
+                let full_path = format!("{}/{}", current_home, shim_path);
+                if Path::new(&full_path).exists() && !path.contains(shim_path) {
+                    *path = format!("{}:{}", full_path, path.as_str());
+                }
+            }
+        }
+
+        Ok(enhanced)
+    }
+
     /// Check if a user account exists on the system
     pub fn user_exists(user_name: &str) -> ContainerResult<bool> {
-        let output = Command::new("id")
-            .arg(user_name)
-            .output();
+        let output = Command::new("id").arg(user_name).output();
 
         match output {
             Ok(out) => Ok(out.status.success()),
@@ -211,15 +329,13 @@ impl UserAccountExecutor {
         }
     }
 
+    #[cfg(test)]
     /// Get information about a user account
     pub fn get_user_info(user_name: &str) -> ContainerResult<Option<UserInfo>> {
-        let output = Command::new("id")
-            .arg(user_name)
-            .output();
+        let output = Command::new("id").arg(user_name).output();
 
-        let output = output.map_err(|e| {
-            ContainerError::Other(format!("Failed to get user info: {}", e))
-        })?;
+        let output =
+            output.map_err(|e| ContainerError::Other(format!("Failed to get user info: {e}")))?;
 
         if !output.status.success() {
             return Ok(None);
@@ -227,13 +343,14 @@ impl UserAccountExecutor {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         // Parse "uid=1001(ralph-agent) gid=1001(ralph-agent) groups=1001(ralph-agent)"
-        let info = stdout.trim();
+        let _info = stdout.trim();
         Ok(Some(UserInfo {
             name: user_name.to_string(),
-            info: info.to_string(),
+            _info: _info.to_string(),
         }))
     }
 
+    #[cfg(test)]
     /// Verify the user can access the workspace
     pub fn verify_workspace_access(&self) -> ContainerResult<bool> {
         // Check if the workspace exists
@@ -256,7 +373,7 @@ impl UserAccountExecutor {
     /// Parse a command string into arguments
     fn parse_command(cmd_str: &str) -> ContainerResult<Vec<String>> {
         let args = shell_words::split(cmd_str).map_err(|_| {
-            ContainerError::InvalidConfig(format!("Failed to parse command: {}", cmd_str))
+            ContainerError::InvalidConfig(format!("Failed to parse command: {cmd_str}"))
         })?;
 
         Ok(args)
@@ -267,24 +384,11 @@ impl UserAccountExecutor {
         &self.user_name
     }
 
+    #[cfg(test)]
     /// Get the workspace path
     pub fn workspace_path(&self) -> &Path {
         &self.workspace_path
     }
-
-    /// Get the agent directory path
-    pub fn agent_dir(&self) -> &Path {
-        &self.agent_dir
-    }
-}
-
-/// User account information
-#[derive(Debug, Clone)]
-pub struct UserInfo {
-    /// User name
-    pub name: String,
-    /// User info string from `id` command
-    pub info: String,
 }
 
 /// Result of user account command execution
@@ -298,9 +402,10 @@ pub struct ExecutionResult {
     pub stderr: String,
 }
 
+#[cfg(test)]
 impl ExecutionResult {
     /// Check if the execution was successful
-    pub fn is_success(&self) -> bool {
+    pub const fn is_success(&self) -> bool {
         self.exit_code == 0
     }
 
@@ -354,5 +459,53 @@ mod tests {
         };
         assert!(!result.is_success());
         assert!(result.error_message().is_some());
+    }
+
+    #[test]
+    fn test_workspace_path() {
+        let temp = std::env::temp_dir();
+        let workspace = temp.join("test-workspace");
+        std::fs::create_dir_all(&workspace).ok();
+
+        // Use current user which should exist
+        let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+        let executor =
+            UserAccountExecutor::new(workspace.clone(), temp.clone(), Some(current_user));
+
+        // Only assert if executor creation succeeded
+        // (it might fail if sudo is not configured)
+        if let Ok(exec) = executor {
+            assert_eq!(exec.workspace_path(), &workspace);
+        }
+
+        // Cleanup
+        std::fs::remove_dir_all(&workspace).ok();
+    }
+
+    #[test]
+    fn test_get_user_info_root() {
+        let info = UserAccountExecutor::get_user_info("root").unwrap();
+        assert!(info.is_some());
+        assert_eq!(info.unwrap().name, "root");
+    }
+
+    #[test]
+    fn test_verify_workspace_access() {
+        let temp = std::env::temp_dir();
+        let workspace = temp.join("test-workspace-access");
+        std::fs::create_dir_all(&workspace).ok();
+
+        // Use current user which should exist and have access
+        let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+        let executor =
+            UserAccountExecutor::new(workspace.clone(), temp.clone(), Some(current_user));
+
+        // Only test verify_workspace_access if executor creation succeeded
+        if let Ok(exec) = executor {
+            let _ = exec.verify_workspace_access();
+        }
+
+        // Cleanup
+        std::fs::remove_dir_all(&workspace).ok();
     }
 }

@@ -9,61 +9,45 @@
 //!
 //! 1. **Accumulates** text deltas from each chunk into a buffer
 //! 2. **Displays** the accumulated text after each chunk
-//! 3. **Uses carriage return (`\r`) and line clearing (`\x1b[2K`)** to rewrite the entire line,
-//!    creating an updating effect that shows the content building up in real-time
-//! 4. **Shows prefix on every delta**, rewriting the entire line each time (industry standard)
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix only once** at the start of streaming, avoiding duplicate
+//!    prefixes on each line
 //!
 //! Example output sequence for streaming "Hello World" in two chunks:
 //! ```text
 //! [Claude] Hello\r          (first chunk with prefix, no newline)
-//! \x1b[2K\r[Claude] Hello World\r  (second chunk clears line, rewrites with accumulated)
-//! [Claude] Hello World\n    (message_stop adds final newline)
+//! Hello World\r              (second chunk overwrites with accumulated text)
+//! Hello World\n              (message_stop adds final newline)
 //! ```
 //!
-//! # Single-Line Pattern
-//!
-//! The renderer uses a single-line pattern with carriage return for in-place updates.
-//! This is the industry standard for streaming CLIs (used by Rich, Ink, Bubble Tea).
-//!
-//! Each delta rewrites the entire line with prefix, ensuring that:
-//! - The user always sees the prefix
-//! - Content updates in-place without visual artifacts
-//! - Terminal state is clean and predictable
-//!
-//! This pattern is consistent across all parsers (Claude, Codex, Gemini, `OpenCode`)
+//! This pattern is consistent across all parsers (Claude, Codex, Gemini, OpenCode)
 //! with variations in when the prefix is shown based on each format's event structure.
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::items_after_statements)]
-
-use crate::common::truncate_text;
+use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
-use crate::logger::{Colors, CHECK, CROSS};
-use std::cell::RefCell;
+use crate::utils::truncate_text;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
+use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
-use super::streaming_state::StreamingSession;
 use super::types::{
     format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock, ContentBlockDelta,
-    ContentType, StreamInnerEvent,
+    ContentType, DeltaAccumulator, StreamInnerEvent,
 };
 
 /// Claude event parser
-///
-/// Note: This parser is designed for single-threaded use only.
-/// The internal state uses `Rc<RefCell<>>` for convenience, not for thread safety.
-/// Do not share this parser across threads.
 pub struct ClaudeParser {
     colors: Colors,
     pub(crate) verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
-    /// Unified streaming session tracker
-    /// Provides single source of truth for streaming state across all content types
-    streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Track if we're currently streaming a content block
+    in_content_block: Rc<RefCell<Cell<bool>>>,
 }
 
 impl ClaudeParser {
@@ -73,7 +57,8 @@ impl ClaudeParser {
             verbosity,
             log_file: None,
             display_name: "Claude".to_string(),
-            streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            in_content_block: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -85,16 +70,6 @@ impl ClaudeParser {
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
         self
-    }
-
-    /// Check if this parser is handling a GLM agent.
-    ///
-    /// GLM agents are known to send snapshot-style content when deltas are expected,
-    /// so we apply stricter validation and automatic conversion for them.
-    fn is_glm_agent(&self) -> bool {
-        // GLM agents are identified by display names containing "glm" or "ccs-glm"
-        let name = self.display_name.to_lowercase();
-        name.contains("glm") || name.contains("ccs")
     }
 
     /// Parse and display a single Claude JSON event
@@ -138,17 +113,15 @@ impl ClaudeParser {
                         c.reset()
                     );
                     if let Some(cwd) = cwd {
-                        use std::fmt::Write;
-                        let _ = writeln!(
-                            out,
-                            "{}[{}]{} {}Working dir: {}{}",
+                        out.push_str(&format!(
+                            "{}[{}]{} {}Working dir: {}{}\n",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.dim(),
                             cwd,
                             c.reset()
-                        );
+                        ));
                     }
                     out
                 } else {
@@ -164,115 +137,85 @@ impl ClaudeParser {
                 }
             }
             ClaudeEvent::Assistant { message } => {
-                // CRITICAL FIX: When ANY content has been streamed via deltas,
-                // the Assistant event should NOT display it again.
-                // The Assistant event represents the "complete" message, but if we've
-                // already shown the streaming deltas, showing it again causes duplication.
-                let session = self.streaming_session.borrow();
-
-                // Check for duplicate using message ID if available
-                let is_duplicate = session.get_current_message_id().map_or_else(
-                    || session.has_any_streamed_content(),
-                    |message_id| session.is_duplicate_final_message(message_id),
-                );
-
-                // If this is a duplicate message, skip the entire display
-                // This prevents duplicate text AND duplicate tool use events
-                drop(session);
-                if is_duplicate {
-                    String::new()
-                } else {
-                    let mut out = String::new();
-                    if let Some(msg) = message {
-                        if let Some(content) = msg.content {
-                            for block in content {
-                                match block {
-                                    ContentBlock::Text { text } => {
-                                        if let Some(text) = text {
-                                            let limit = self.verbosity.truncate_limit("text");
-                                            let preview = truncate_text(&text, limit);
-                                            use std::fmt::Write;
-                                            let _ = writeln!(
-                                                out,
-                                                "{}[{}]{} {}{}{}",
-                                                c.dim(),
-                                                prefix,
-                                                c.reset(),
-                                                c.white(),
-                                                preview,
-                                                c.reset()
-                                            );
-                                        }
-                                    }
-                                    ContentBlock::ToolUse { name: tool, input } => {
-                                        let tool_name =
-                                            tool.unwrap_or_else(|| "unknown".to_string());
-                                        use std::fmt::Write;
-                                        let _ = writeln!(
-                                            out,
-                                            "{}[{}]{} {}Tool{}: {}{}{}",
+                let mut out = String::new();
+                if let Some(msg) = message {
+                    if let Some(content) = msg.content {
+                        for block in content {
+                            match block {
+                                ContentBlock::Text { text } => {
+                                    if let Some(text) = text {
+                                        let limit = self.verbosity.truncate_limit("text");
+                                        let preview = truncate_text(&text, limit);
+                                        out.push_str(&format!(
+                                            "{}[{}]{} {}{}{}\n",
                                             c.dim(),
                                             prefix,
                                             c.reset(),
-                                            c.magenta(),
-                                            c.reset(),
-                                            c.bold(),
-                                            tool_name,
-                                            c.reset(),
-                                        );
-                                        // Show tool input details at Normal and above (not just Verbose)
-                                        // Tool inputs provide crucial context for understanding agent actions
-                                        if self.verbosity.show_tool_input() {
-                                            if let Some(ref input_val) = input {
-                                                let input_str = format_tool_input(input_val);
-                                                let limit =
-                                                    self.verbosity.truncate_limit("tool_input");
-                                                let preview = truncate_text(&input_str, limit);
-                                                if !preview.is_empty() {
-                                                    use std::fmt::Write;
-                                                    let _ = writeln!(
-                                                        out,
-                                                        "{}[{}]{} {}  └─ {}{}",
-                                                        c.dim(),
-                                                        prefix,
-                                                        c.reset(),
-                                                        c.dim(),
-                                                        preview,
-                                                        c.reset()
-                                                    );
-                                                }
+                                            c.white(),
+                                            preview,
+                                            c.reset()
+                                        ));
+                                    }
+                                }
+                                ContentBlock::ToolUse { name: tool, input } => {
+                                    let tool_name = tool.unwrap_or_else(|| "unknown".to_string());
+                                    out.push_str(&format!(
+                                        "{}[{}]{} {}Tool{}: {}{}{}\n",
+                                        c.dim(),
+                                        prefix,
+                                        c.reset(),
+                                        c.magenta(),
+                                        c.reset(),
+                                        c.bold(),
+                                        tool_name,
+                                        c.reset(),
+                                    ));
+                                    // Show tool input details at Normal and above (not just Verbose)
+                                    // Tool inputs provide crucial context for understanding agent actions
+                                    if self.verbosity.show_tool_input() {
+                                        if let Some(ref input_val) = input {
+                                            let input_str = format_tool_input(input_val);
+                                            let limit = self.verbosity.truncate_limit("tool_input");
+                                            let preview = truncate_text(&input_str, limit);
+                                            if !preview.is_empty() {
+                                                out.push_str(&format!(
+                                                    "{}[{}]{} {}  └─ {}{}\n",
+                                                    c.dim(),
+                                                    prefix,
+                                                    c.reset(),
+                                                    c.dim(),
+                                                    preview,
+                                                    c.reset()
+                                                ));
                                             }
                                         }
                                     }
-                                    ContentBlock::ToolResult { content } => {
-                                        if let Some(content) = content {
-                                            let content_str = match content {
-                                                serde_json::Value::String(s) => s,
-                                                other => other.to_string(),
-                                            };
-                                            let limit =
-                                                self.verbosity.truncate_limit("tool_result");
-                                            let preview = truncate_text(&content_str, limit);
-                                            use std::fmt::Write;
-                                            let _ = writeln!(
-                                                out,
-                                                "{}[{}]{} {}Result:{} {}",
-                                                c.dim(),
-                                                prefix,
-                                                c.reset(),
-                                                c.dim(),
-                                                c.reset(),
-                                                preview
-                                            );
-                                        }
-                                    }
-                                    ContentBlock::Unknown => {}
                                 }
+                                ContentBlock::ToolResult { content } => {
+                                    if let Some(content) = content {
+                                        let content_str = match content {
+                                            serde_json::Value::String(s) => s,
+                                            other => other.to_string(),
+                                        };
+                                        let limit = self.verbosity.truncate_limit("tool_result");
+                                        let preview = truncate_text(&content_str, limit);
+                                        out.push_str(&format!(
+                                            "{}[{}]{} {}Result:{} {}\n",
+                                            c.dim(),
+                                            prefix,
+                                            c.reset(),
+                                            c.dim(),
+                                            c.reset(),
+                                            preview
+                                        ));
+                                    }
+                                }
+                                ContentBlock::Unknown => {}
                             }
                         }
                     }
-                    out
                 }
+                out
             }
             ClaudeEvent::User { message } => {
                 if let Some(msg) = message {
@@ -348,16 +291,14 @@ impl ClaudeParser {
                 if let Some(result) = result {
                     let limit = self.verbosity.truncate_limit("result");
                     let preview = truncate_text(&result, limit);
-                    use std::fmt::Write;
-                    let _ = writeln!(
-                        out,
-                        "\n{}Result summary:{}\n{}{}{}",
+                    out.push_str(&format!(
+                        "\n{}Result summary:{}\n{}{}{}\n",
                         c.bold(),
                         c.reset(),
                         c.dim(),
                         preview,
                         c.reset()
-                    );
+                    ));
                 }
                 out
             }
@@ -392,43 +333,42 @@ impl ClaudeParser {
     fn parse_stream_event(&self, event: StreamInnerEvent) -> String {
         let c = &self.colors;
         let prefix = &self.display_name;
-        let mut session = self.streaming_session.borrow_mut();
+        let mut acc = self.delta_accumulator.borrow_mut();
+        let in_block = self.in_content_block.borrow();
 
         match event {
-            StreamInnerEvent::MessageStart {
-                message: _,
-                message_id,
-            } => {
-                // Set message ID for tracking and clear session state on new message
-                session.set_current_message_id(message_id);
-                session.on_message_start();
+            StreamInnerEvent::MessageStart { .. } => {
+                // Clear accumulator on new message
+                acc.clear();
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart {
                 index: Some(index),
                 content_block: Some(block),
             } => {
-                // Initialize a new content block at this index
-                session.on_content_block_start(index);
+                // Initialize a new content block at this index with initial content
+                acc.clear_index(index);
                 match &block {
                     ContentBlock::Text { text: Some(t) } if !t.is_empty() => {
-                        // Initial text in ContentBlockStart - treat as first delta
-                        session.on_text_delta(index, t);
+                        acc.add_text_delta(index, t);
                     }
                     ContentBlock::ToolUse {
                         name: _,
                         input: Some(i),
                     } => {
                         // Initialize tool input accumulator
-                        let input_str = if let serde_json::Value::String(s) = &i {
-                            s.clone()
+                        if let serde_json::Value::String(s) = i {
+                            acc.add_delta(ContentType::ToolInput, &index.to_string(), s);
                         } else {
-                            format_tool_input(i)
-                        };
-                        session.on_tool_input_delta(index, &input_str);
+                            let input_str = format_tool_input(i);
+                            acc.add_delta(ContentType::ToolInput, &index.to_string(), &input_str);
+                        }
                     }
                     _ => {}
                 }
+                // Reset streaming state for new content block
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart {
@@ -436,7 +376,11 @@ impl ClaudeParser {
                 content_block: None,
             } => {
                 // Content block started but no initial content provided
-                session.on_content_block_start(index);
+                // Just clear the index for future deltas
+                acc.clear_index(index);
+                // Reset streaming state
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
                 String::new()
             }
             StreamInnerEvent::ContentBlockStart { .. } => {
@@ -448,149 +392,111 @@ impl ClaudeParser {
                 delta: Some(delta),
             } => match delta {
                 ContentBlockDelta::TextDelta { text: Some(text) } => {
-                    // Check for snapshot-as-delta bug (GLM sending full accumulated content)
-                    // If detected, extract only the delta portion
-                    let index_str = index.to_string();
-                    let is_glm = self.is_glm_agent();
-                    let text_to_process = if session.is_likely_snapshot(&text, &index_str) {
-                        // Snapshot detected - log warning and extract delta
-                        let previous = session.get_accumulated(ContentType::Text, &index_str);
-                        if is_glm {
-                            eprintln!(
-                                "GLM streaming bug detected: Agent sent full accumulated content instead of delta (index={index}). \
-                                This is a known GLM/CCS issue. Auto-correcting to prevent duplication. \
-                                Previous length: {}, Received length: {len}",
-                                previous.map_or(0, str::len),
-                                len = text.len()
-                            );
-                        } else {
-                            eprintln!(
-                                "Warning: Detected snapshot-as-delta for index {index}. \
-                                Converting to delta. Previous: {previous:?}, Received: {text:?}"
-                            );
-                        }
-                        match session.get_delta_from_snapshot(&text, &index_str) {
-                            Ok(delta) => delta,
-                            Err(e) => {
-                                // Snapshot extraction failed - fall back to original text.
-                                // This preserves content on false positives, though it may cause
-                                // some duplication. Better to duplicate than to lose data.
-                                eprintln!(
-                                    "Warning: Snapshot extraction failed: {e}. \
-                                     Falling back to original text to prevent data loss. \
-                                     May cause some duplication.",
-                                );
-                                &text
-                            }
-                        }
-                    } else {
-                        // Genuine delta - use as-is
-                        &text
-                    };
-
-                    // Use StreamingSession to track state and determine prefix display
-                    let show_prefix = session.on_text_delta(index, text_to_process);
-
+                    // Accumulate the text delta for completion events
+                    acc.add_text_delta(index, &text);
                     // Get accumulated text for streaming display
-                    let accumulated_text = session
-                        .get_accumulated(ContentType::Text, &index_str)
-                        .unwrap_or("");
+                    let accumulated_text =
+                        acc.get(ContentType::Text, &index.to_string()).unwrap_or("");
+                    // Replace embedded newlines with spaces to prevent artificial line breaks
+                    let sanitized_text = accumulated_text.replace('\n', " ");
+                    let was_in_block = in_block.get();
+                    drop(in_block);
 
-                    // Use TextDeltaRenderer for consistent rendering
-                    if show_prefix {
-                        TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
+                    // Only show prefix on the first chunk of a content block
+                    if was_in_block {
+                        // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                        self.in_content_block.borrow_mut().set(true);
+                        format!("{}\r{}", c.white(), sanitized_text)
                     } else {
-                        TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
+                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
+                        self.in_content_block.borrow_mut().set(true);
+                        format!(
+                            "{}[{}]{} {}{}{}",
+                            c.dim(),
+                            prefix,
+                            c.reset(),
+                            c.white(),
+                            sanitized_text,
+                            c.reset()
+                        )
                     }
                 }
                 ContentBlockDelta::ThinkingDelta {
                     thinking: Some(text),
                 } => {
-                    // Track thinking deltas
-                    session.on_thinking_delta(index, &text);
+                    // Accumulate thinking content
+                    acc.add_thinking_delta(index, &text);
                     // Display thinking with visual distinction
-                    Self::formatter().format_thinking(text.as_str(), prefix, *c)
+                    Self::formatter().format_thinking(text.as_str(), prefix, c)
                 }
                 ContentBlockDelta::ToolUseDelta {
                     tool_use: Some(tool_delta),
                 } => {
                     // Handle tool input streaming
                     // Extract the tool input from the delta
-                    let input_str =
-                        tool_delta
-                            .get("input")
-                            .map_or_else(String::new, |input| match input {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => format_tool_input(other),
-                            });
+                    let input_str = if let Some(input) = tool_delta.get("input") {
+                        match input {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => format_tool_input(other),
+                        }
+                    } else {
+                        // No input in this delta, accumulate empty string
+                        String::new()
+                    };
 
                     if input_str.is_empty() {
                         String::new()
                     } else {
                         // Accumulate tool input
-                        session.on_tool_input_delta(index, &input_str);
+                        acc.add_delta(ContentType::ToolInput, &index.to_string(), &input_str);
 
                         // Show partial tool input in real-time
                         let formatter = DeltaDisplayFormatter::new();
-                        formatter.format_tool_input(&input_str, prefix, *c)
+                        formatter.format_tool_input(&input_str, prefix, c)
                     }
                 }
                 _ => String::new(),
             },
-            #[expect(clippy::match_same_arms)]
-            StreamInnerEvent::ContentBlockDelta { .. } | StreamInnerEvent::Ping => String::new(),
+            StreamInnerEvent::ContentBlockDelta { .. } => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Standalone text delta (not part of content block)
                 // Use default index "0" for standalone text
                 let default_index = 0u64;
-                let default_index_str = "0";
-
-                // Check for snapshot-as-delta bug
-                let text_to_process = if session.is_likely_snapshot(&text, default_index_str) {
-                    eprintln!(
-                        "Warning: Detected snapshot-as-delta for standalone text. Converting to delta."
-                    );
-                    match session.get_delta_from_snapshot(&text, default_index_str) {
-                        Ok(delta) => delta,
-                        Err(e) => {
-                            // Snapshot extraction failed - fall back to original text.
-                            // This preserves content on false positives, though it may cause
-                            // some duplication. Better to duplicate than to lose data.
-                            eprintln!(
-                                "Warning: Snapshot extraction failed: {e}. \
-                                 Falling back to original text to prevent data loss. \
-                                 May cause some duplication.",
-                            );
-                            &text
-                        }
-                    }
-                } else {
-                    &text
-                };
-
-                let show_prefix = session.on_text_delta(default_index, text_to_process);
-                let accumulated_text = session
-                    .get_accumulated(ContentType::Text, default_index_str)
+                acc.add_text_delta(default_index, &text);
+                let accumulated_text = acc
+                    .get(ContentType::Text, &default_index.to_string())
                     .unwrap_or("");
+                let sanitized_text = accumulated_text.replace('\n', " ");
+                let was_in_block = in_block.get();
+                drop(in_block);
 
-                // Use TextDeltaRenderer for consistent rendering across all parsers
-                if show_prefix {
-                    // First delta - use the renderer with prefix
-                    TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
+                if was_in_block {
+                    // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                    self.in_content_block.borrow_mut().set(true);
+                    format!("{}\r{}", c.white(), sanitized_text)
                 } else {
-                    // Subsequent delta - use renderer for in-place update
-                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
+                    // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
+                    self.in_content_block.borrow_mut().set(true);
+                    format!(
+                        "{}[{}]{} {}{}{}",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.white(),
+                        sanitized_text,
+                        c.reset()
+                    )
                 }
             }
+            StreamInnerEvent::TextDelta { .. } => String::new(),
             StreamInnerEvent::MessageStop => {
                 // Message complete - add final newline if we were in a content block
-                // OR if any content was streamed (handles edge cases where block state
-                // may not have been set but content was still streamed)
-                let was_in_block = session.on_message_stop();
-                let had_content = session.has_any_streamed_content();
-                if was_in_block || had_content {
-                    // Use TextDeltaRenderer for completion - adds final newline
-                    format!("{}{}", c.reset(), TextDeltaRenderer::render_completion())
+                let was_in_block = in_block.get();
+                drop(in_block);
+                self.in_content_block.borrow_mut().set(false);
+                acc.clear();
+                if was_in_block {
+                    format!("{}\n", c.reset())
                 } else {
                     String::new()
                 }
@@ -611,8 +517,8 @@ impl ClaudeParser {
                     c.reset()
                 )
             }
-            StreamInnerEvent::TextDelta { text: None }
-            | StreamInnerEvent::Error { error: None } => String::new(),
+            StreamInnerEvent::Error { .. } => String::new(),
+            StreamInnerEvent::Ping => String::new(),
             StreamInnerEvent::Unknown => {
                 // Unknown stream event - in debug mode, log it
                 if self.verbosity.is_debug() {
@@ -667,7 +573,7 @@ impl ClaudeParser {
     }
 
     /// Get a shared delta display formatter
-    const fn formatter() -> DeltaDisplayFormatter {
+    fn formatter() -> DeltaDisplayFormatter {
         DeltaDisplayFormatter::new()
     }
 
@@ -725,7 +631,7 @@ impl ClaudeParser {
                     } else {
                         monitor.record_parsed();
                     }
-                    write!(writer, "{output}")?;
+                    write!(writer, "{}", output)?;
                     writer.flush()?;
                 }
                 None => {
@@ -758,7 +664,7 @@ impl ClaudeParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(*c) {
+        if let Some(warning) = monitor.check_and_warn(c) {
             writeln!(writer, "{warning}")?;
         }
         Ok(())

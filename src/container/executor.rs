@@ -4,10 +4,10 @@
 
 use crate::container::config::{ContainerConfig, ExecutionOptions};
 use crate::container::engine::{ContainerEngine, RunOptions};
-use crate::container::volume::VolumeManager;
+use crate::container::error::{ContainerError, ContainerResult};
 use crate::container::port::{detect_ports_from_command, PortMapping};
 use crate::container::tool::ToolManager;
-use crate::container::error::{ContainerError, ContainerResult};
+use crate::container::volume::VolumeManager;
 use std::collections::{HashMap, HashSet};
 
 /// Container command executor
@@ -100,7 +100,7 @@ impl ContainerExecutor {
 
         // Set working directory
         let workdir = if let Some(ref wd) = options.working_dir {
-            format!("/workspace/{}", wd)
+            format!("/workspace/{wd}")
         } else {
             "/workspace".to_string()
         };
@@ -109,14 +109,14 @@ impl ContainerExecutor {
         let detected_ports = detect_ports_from_command(&argv);
         let published_ports: Vec<PortMapping> = detected_ports
             .into_iter()
-            .map(|p| PortMapping::auto_allocate(p))
+            .map(PortMapping::auto_allocate)
             .collect();
 
         // Build container run options
         let run_opts = RunOptions {
             image: self.config.image.clone(),
             command: {
-                let mut cmd = argv.clone();
+                let mut cmd = argv;
                 cmd.push("<PROMPT>".to_string()); // Placeholder
                 cmd
             },
@@ -129,8 +129,7 @@ impl ContainerExecutor {
 
         // Execute in container
         let prompt_bytes = prompt.as_bytes();
-        let (stdout, stderr, exit_code) =
-            engine.run_and_capture(&run_opts, Some(prompt_bytes))?;
+        let (stdout, stderr, exit_code) = engine.run_and_capture(&run_opts, Some(prompt_bytes))?;
 
         Ok(ExecutionResult {
             exit_code,
@@ -139,33 +138,18 @@ impl ContainerExecutor {
         })
     }
 
-    /// Check if container mode is enabled
-    pub fn is_enabled(&self) -> bool {
-        self.config.enabled
-    }
-
     /// Get the container configuration
-    pub fn config(&self) -> &ContainerConfig {
+    pub const fn config(&self) -> &ContainerConfig {
         &self.config
     }
 
     /// Parse a command string into arguments
     fn parse_command(cmd_str: &str) -> ContainerResult<Vec<String>> {
         let args = shell_words::split(cmd_str).map_err(|_| {
-            ContainerError::InvalidConfig(format!("Failed to parse command: {}", cmd_str))
+            ContainerError::InvalidConfig(format!("Failed to parse command: {cmd_str}"))
         })?;
 
         Ok(args)
-    }
-
-    /// Get the repository root path
-    pub fn repository_root(&self) -> &std::path::Path {
-        &self.config.repository_root
-    }
-
-    /// Get the agent directory path
-    pub fn agent_dir(&self) -> &std::path::Path {
-        &self.config.agent_dir
     }
 }
 
@@ -180,28 +164,29 @@ pub struct ExecutionResult {
     pub stderr: String,
 }
 
-impl ExecutionResult {
-    /// Check if the execution was successful
-    pub fn is_success(&self) -> bool {
-        self.exit_code == 0
-    }
-
-    /// Get error message if execution failed
-    pub fn error_message(&self) -> Option<String> {
-        if self.is_success() {
-            None
-        } else {
-            Some(format!(
-                "Container command failed with exit code {}: {}",
-                self.exit_code, self.stderr
-            ))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Test-only helper methods for ExecutionResult
+    impl ExecutionResult {
+        /// Check if the execution was successful
+        pub(crate) const fn is_success(&self) -> bool {
+            self.exit_code == 0
+        }
+
+        /// Get error message if execution failed
+        pub(crate) fn error_message(&self) -> Option<String> {
+            if self.is_success() {
+                None
+            } else {
+                Some(format!(
+                    "Container command failed with exit code {}: {}",
+                    self.exit_code, self.stderr
+                ))
+            }
+        }
+    }
 
     #[test]
     fn test_parse_command() {

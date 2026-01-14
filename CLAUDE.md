@@ -67,3 +67,29 @@ rg -n --pcre2 '(?x)
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
+```
+
+---
+
+## Security considerations
+
+This codebase includes a security model for isolating AI agent execution. When modifying security-related code:
+
+1. **Path Validation**: Never allow unvalidated paths from external config
+   - Use `is_path_safe_for_resolution()` for CCS settings paths
+   - Block absolute paths from external configuration sources
+
+2. **Environment Variables**: Filter dangerous environment variables
+   - Use `is_dangerous_env_var_name()` to check for dangerous keys
+   - Use `is_safe_env_var_value()` to validate values
+   - Dangerous vars include: `PATH`, `LD_*`, `DYLD_*`, `IFS`, etc.
+
+3. **Command Injection**: Always properly escape shell arguments
+   - Use `shell_words::split()` for parsing command strings
+   - For wrapper scripts, use proper single-quote escaping: `'\'\'`
+
+4. **Volume Mounts**: Validate mount sources before mounting
+   - Use `VolumeManager::validate_mount_source()` internally
+   - Block mounting of sensitive system paths
+
+See `SECURITY.md` for detailed threat model and `AGENTS.md` for security architecture.

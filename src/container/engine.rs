@@ -4,7 +4,7 @@
 
 use crate::container::error::{ContainerError, ContainerResult};
 use crate::container::port::PortMapping;
-use std::process::{Command, Output};
+use std::process::Command;
 
 /// Container engine type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,20 +19,20 @@ pub enum EngineType {
 
 impl EngineType {
     /// Get the binary name for this engine type
-    pub fn binary_name(&self) -> &str {
+    pub const fn binary_name(&self) -> &str {
         match self {
-            EngineType::Docker => "docker",
-            EngineType::Podman => "podman",
-            EngineType::Auto => "docker", // Default to docker for auto
+            Self::Docker => "docker",
+            Self::Podman => "podman",
+            Self::Auto => "docker", // Default to docker for auto
         }
     }
 
     /// Get all engine types to try (in order of preference)
-    pub fn detection_order(&self) -> Vec<EngineType> {
+    pub fn detection_order(&self) -> Vec<Self> {
         match self {
-            EngineType::Auto => vec![EngineType::Docker, EngineType::Podman],
-            EngineType::Docker => vec![EngineType::Docker],
-            EngineType::Podman => vec![EngineType::Podman],
+            Self::Auto => vec![Self::Docker, Self::Podman],
+            Self::Docker => vec![Self::Docker],
+            Self::Podman => vec![Self::Podman],
         }
     }
 }
@@ -41,8 +41,8 @@ impl EngineType {
 ///
 /// Provides a unified interface for running containers with either Docker or Podman.
 pub struct ContainerEngine {
-    /// The detected engine type
-    engine_type: EngineType,
+    /// The detected engine type (stored for potential future use)
+    _engine_type: EngineType,
     /// The binary name (docker or podman)
     binary: String,
 }
@@ -51,14 +51,14 @@ impl ContainerEngine {
     /// Detect and create a container engine
     ///
     /// Tries to find an available container runtime in the following order:
-    /// 1. Docker (if engine_type is Auto or Docker)
-    /// 2. Podman (if engine_type is Auto or Podman)
+    /// 1. Docker (if `engine_type` is Auto or Docker)
+    /// 2. Podman (if `engine_type` is Auto or Podman)
     pub fn detect(engine_type: EngineType) -> ContainerResult<Self> {
         for candidate in engine_type.detection_order() {
             let binary = candidate.binary_name();
             if Self::is_available(binary) {
                 return Ok(Self {
-                    engine_type: candidate,
+                    _engine_type: candidate,
                     binary: binary.to_string(),
                 });
             }
@@ -66,19 +66,8 @@ impl ContainerEngine {
 
         // No engine found
         let order = engine_type.detection_order();
-        let names: Vec<&str> = order.iter().map(|e| e.binary_name()).collect();
+        let names: Vec<&str> = order.iter().map(EngineType::binary_name).collect();
         Err(ContainerError::RuntimeNotFound(names.join(" or ")))
-    }
-
-    /// Create a container engine with a specific type
-    ///
-    /// This doesn't check if the engine is available. Use [`detect`] for auto-detection.
-    pub fn new(engine_type: EngineType) -> Self {
-        let binary = engine_type.binary_name().to_string();
-        Self {
-            engine_type,
-            binary,
-        }
     }
 
     /// Check if a container runtime binary is available
@@ -90,79 +79,41 @@ impl ContainerEngine {
             .unwrap_or(false)
     }
 
-    /// Get the engine type
-    pub fn engine_type(&self) -> EngineType {
-        self.engine_type
-    }
-
     /// Get the binary name
     pub fn binary(&self) -> &str {
         &self.binary
     }
 
-    /// Check if this engine is available
-    pub fn available(&self) -> bool {
-        Self::is_available(&self.binary)
+    /// Get the engine type
+    pub const fn engine_type(&self) -> EngineType {
+        self._engine_type
     }
 
-    /// Run a container with the given configuration
-    ///
-    /// Builds and executes a container run command with the specified options.
-    pub fn run_container(&self, opts: &RunOptions) -> ContainerResult<Output> {
-        let mut cmd = Command::new(&self.binary);
-        cmd.arg("run");
+    /// Check if an image exists locally
+    pub fn image_exists(&self, image: &str) -> ContainerResult<bool> {
+        let output = Command::new(&self.binary)
+            .args(["image", "ls", "--format", "{{.Repository}}:{{.Tag}}", image])
+            .output()?;
 
-        // Remove container after exit
-        cmd.arg("--rm");
+        // docker image ls returns 0 exit code even if image not found
+        // Check if output contains the image name
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(output.status.success() && stdout.lines().any(|line| line == image))
+    }
 
-        // Network configuration
-        if opts.network_enabled {
-            // Enable network (default)
+    /// Pull a container image
+    pub fn pull_image(&self, image: &str) -> ContainerResult<()> {
+        let output = Command::new(&self.binary).args(["pull", image]).output()?;
+
+        if output.status.success() {
+            Ok(())
         } else {
-            cmd.arg("--network=none");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(ContainerError::ImagePullFailed {
+                image: image.to_string(),
+                error: stderr.to_string(),
+            })
         }
-
-        // Volume mounts
-        for mount in &opts.mounts {
-            cmd.arg("--mount");
-            let mount_arg = if mount.read_only {
-                format!("type=bind,source={},target={},readonly", mount.source, mount.target)
-            } else {
-                format!("type=bind,source={},target={}", mount.source, mount.target)
-            };
-            cmd.arg(mount_arg);
-        }
-
-        // Environment variables
-        for (key, value) in &opts.env_vars {
-            cmd.arg("--env");
-            cmd.arg(format!("{}={}", key, value));
-        }
-
-        // Published ports
-        for port_mapping in &opts.published_ports {
-            cmd.arg("-p");
-            cmd.arg(port_mapping.to_publish_flag());
-        }
-
-        // Working directory
-        if let Some(workdir) = &opts.working_dir {
-            cmd.args(["-w", workdir]);
-        }
-
-        // Interactive flag for stdin
-        cmd.arg("-i");
-
-        // Image
-        cmd.arg(&opts.image);
-
-        // Command and arguments
-        cmd.args(&opts.command);
-
-        // Execute
-        let output = cmd.output()?;
-
-        Ok(output)
     }
 
     /// Run a container and capture stdout/stderr
@@ -184,7 +135,10 @@ impl ContainerEngine {
         for mount in &opts.mounts {
             cmd.arg("--mount");
             let mount_arg = if mount.read_only {
-                format!("type=bind,source={},target={},readonly", mount.source, mount.target)
+                format!(
+                    "type=bind,source={},target={},readonly",
+                    mount.source, mount.target
+                )
             } else {
                 format!("type=bind,source={},target={}", mount.source, mount.target)
             };
@@ -194,7 +148,7 @@ impl ContainerEngine {
         // Environment variables
         for (key, value) in &opts.env_vars {
             cmd.arg("--env");
-            cmd.arg(format!("{}={}", key, value));
+            cmd.arg(format!("{key}={value}"));
         }
 
         // Published ports
@@ -260,7 +214,7 @@ pub struct RunOptions {
     pub working_dir: Option<String>,
     /// Whether network is enabled
     pub network_enabled: bool,
-    /// Published port mappings (container_port -> host_port)
+    /// Published port mappings (`container_port` -> `host_port`)
     pub published_ports: Vec<PortMapping>,
 }
 
@@ -277,7 +231,7 @@ pub struct Mount {
 
 impl Mount {
     /// Create a new volume mount
-    pub fn new(source: String, target: String) -> Self {
+    pub const fn new(source: String, target: String) -> Self {
         Self {
             source,
             target,
@@ -286,7 +240,7 @@ impl Mount {
     }
 
     /// Create a read-only mount
-    pub fn read_only(source: String, target: String) -> Self {
+    pub const fn read_only(source: String, target: String) -> Self {
         Self {
             source,
             target,

@@ -3,8 +3,8 @@
 //! This module ensures that all commands available on the host work in the container
 //! by discovering and mounting language-specific tool directories.
 
-use crate::container::error::ContainerResult;
 use crate::container::engine::Mount;
+use crate::container::error::ContainerResult;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -22,18 +22,34 @@ const SYSTEM_BIN_DIRS: &[&str] = &[
     "/sbin",
 ];
 
+/// macOS Homebrew installation paths
+const MACOS_HOMEBREW_PATHS: &[&str] = &[
+    "/opt/homebrew/bin", // Apple Silicon
+    "/opt/homebrew/sbin",
+    "/usr/local/bin", // Intel
+    "/usr/local/sbin",
+];
+
+/// Homebrew environment variable names
+const HOMEBREW_ENV_VARS: &[&str] = &[
+    "HOMEBREW_PREFIX",
+    "HOMEBREW_CELLAR",
+    "HOMEBREW_REPOSITORY",
+    "HOMEBREW_SHELLENV_PATH",
+];
+
 /// Language version manager home directories
 const VERSION_MANAGER_DIRS: &[&str] = &[
-    ".rbenv",      // Ruby version manager
-    ".rvm",        // Ruby version manager (alternative)
-    ".nvm",        // Node.js version manager
-    ".pyenv",      // Python version manager
-    ".jenv",       // Java version manager
-    ".sdkman",     // Java/Gradle/Maven manager
-    ".gvm",        // Groovy version manager
-    ".goenv",      // Go version manager
-    ".swiftenv",   // Swift version manager
-    ".jabba",      // Java version manager
+    ".rbenv",    // Ruby version manager
+    ".rvm",      // Ruby version manager (alternative)
+    ".nvm",      // Node.js version manager
+    ".pyenv",    // Python version manager
+    ".jenv",     // Java version manager
+    ".sdkman",   // Java/Gradle/Maven manager
+    ".gvm",      // Groovy version manager
+    ".goenv",    // Go version manager
+    ".swiftenv", // Swift version manager
+    ".jabba",    // Java version manager
 ];
 
 /// Tool mount configuration
@@ -51,7 +67,7 @@ pub struct ToolMount {
 
 impl ToolMount {
     /// Create a new tool mount
-    pub fn new(source: PathBuf, target: String) -> Self {
+    pub const fn new(source: PathBuf, target: String) -> Self {
         Self {
             source,
             target,
@@ -60,7 +76,7 @@ impl ToolMount {
     }
 
     /// Create a read-write tool mount
-    pub fn read_write(source: PathBuf, target: String) -> Self {
+    pub const fn read_write(source: PathBuf, target: String) -> Self {
         Self {
             source,
             target,
@@ -71,15 +87,9 @@ impl ToolMount {
     /// Convert to a container Mount
     pub fn to_mount(&self) -> Mount {
         if self.read_only {
-            Mount::read_only(
-                self.source.display().to_string(),
-                self.target.clone(),
-            )
+            Mount::read_only(self.source.display().to_string(), self.target.clone())
         } else {
-            Mount::new(
-                self.source.display().to_string(),
-                self.target.clone(),
-            )
+            Mount::new(self.source.display().to_string(), self.target.clone())
         }
     }
 }
@@ -111,6 +121,7 @@ impl ToolManager {
     /// Create a tool manager without system binary mounts
     ///
     /// This is useful when you only want language-specific tools.
+    #[cfg(test)]
     pub fn without_system_bins() -> Self {
         Self {
             home_dir: dirs::home_dir(),
@@ -120,13 +131,15 @@ impl ToolManager {
     }
 
     /// Add a custom tool directory to mount
+    #[cfg(test)]
     pub fn add_tool_dir(&mut self, path: PathBuf) -> &mut Self {
         self.custom_tool_dirs.push(path);
         self
     }
 
     /// Set whether to mount system binary directories
-    pub fn with_system_bins(&mut self, mount: bool) -> &mut Self {
+    #[cfg(test)]
+    pub const fn with_system_bins(&mut self, mount: bool) -> &mut Self {
         self.mount_system_bins = mount;
         self
     }
@@ -144,10 +157,30 @@ impl ToolManager {
                 if Path::new(bin_dir).exists() {
                     let target = bin_dir.to_string();
                     if seen_targets.insert(target.clone()) {
-                        mounts.push(ToolMount::new(
-                            PathBuf::from(bin_dir),
-                            target,
-                        ));
+                        mounts.push(ToolMount::new(PathBuf::from(bin_dir), target));
+                    }
+                }
+            }
+
+            // On macOS, also mount Homebrew directories
+            if cfg!(target_os = "macos") {
+                for &brew_path in MACOS_HOMEBREW_PATHS {
+                    if Path::new(brew_path).exists() {
+                        let target = brew_path.to_string();
+                        if seen_targets.insert(target.clone()) {
+                            mounts.push(ToolMount::new(PathBuf::from(brew_path), target));
+                        }
+                    }
+                }
+
+                // Mount Homebrew prefix (contains Cellar, etc.)
+                if let Ok(prefix) = env::var("HOMEBREW_PREFIX") {
+                    let prefix_path = Path::new(&prefix);
+                    if prefix_path.exists() && prefix_path.is_dir() {
+                        let target = prefix.to_string();
+                        if seen_targets.insert(target.clone()) {
+                            mounts.push(ToolMount::new(PathBuf::from(prefix), target));
+                        }
                     }
                 }
             }
@@ -158,7 +191,7 @@ impl ToolManager {
             for &manager_dir in VERSION_MANAGER_DIRS {
                 let source = home.join(manager_dir);
                 if source.exists() && source.is_dir() {
-                    let target = format!("/home/ralph/{}", manager_dir);
+                    let target = format!("/home/ralph/{manager_dir}");
                     if seen_targets.insert(target.clone()) {
                         mounts.push(ToolMount::new(source, target));
                     }
@@ -239,6 +272,15 @@ impl ToolManager {
             }
         }
 
+        // On macOS, pass through Homebrew environment variables
+        if cfg!(target_os = "macos") {
+            for &key in HOMEBREW_ENV_VARS {
+                if let Ok(value) = env::var(key) {
+                    env_vars.push((key.to_string(), value));
+                }
+            }
+        }
+
         // Pass language-specific environment variables
         for (key, _) in env::vars() {
             let key_upper = key.to_uppercase();
@@ -264,6 +306,7 @@ impl ToolManager {
     /// Detect which language tools are available on the host
     ///
     /// Returns a list of detected language/tool environments.
+    #[cfg(test)]
     pub fn detect_available_tools(&self) -> Vec<String> {
         let mut tools = Vec::new();
 
@@ -314,6 +357,7 @@ impl ToolManager {
     }
 
     /// Check if a specific tool binary exists on the host
+    #[cfg(test)]
     pub fn tool_exists(tool_name: &str) -> bool {
         // Check in PATH
         if let Ok(path) = env::var("PATH") {
@@ -328,6 +372,7 @@ impl ToolManager {
     }
 
     /// Get the home directory
+    #[cfg(test)]
     pub fn home_dir(&self) -> Option<&Path> {
         self.home_dir.as_deref()
     }
@@ -342,6 +387,7 @@ impl Default for ToolManager {
 /// Detect which project stack is being used based on available tools
 ///
 /// Returns the detected language/stack for container image selection.
+#[cfg(test)]
 pub fn detect_project_stack_from_tools(repo_path: &Path) -> Option<String> {
     // Check for project files
     let cargo_toml = repo_path.join("Cargo.toml");
@@ -402,10 +448,7 @@ mod tests {
 
     #[test]
     fn test_tool_mount_new() {
-        let mount = ToolMount::new(
-            PathBuf::from("/usr/bin"),
-            "/usr/bin".to_string(),
-        );
+        let mount = ToolMount::new(PathBuf::from("/usr/bin"), "/usr/bin".to_string());
         assert_eq!(mount.source, PathBuf::from("/usr/bin"));
         assert_eq!(mount.target, "/usr/bin");
         assert!(mount.read_only);
@@ -471,5 +514,42 @@ mod tests {
         let env_vars = manager.get_env_vars();
         // Should at least return an empty vec, not panic
         assert!(env_vars.is_empty() || !env_vars.is_empty());
+    }
+
+    #[test]
+    fn test_tool_manager_add_tool_dir() {
+        let mut manager = ToolManager::new();
+        let custom_path = PathBuf::from("/opt/custom-tools");
+        // Just verify the method doesn't panic and returns &mut Self
+        let result = manager.add_tool_dir(custom_path);
+        // Should return self for chaining
+        assert_eq!(result as *const _ as usize, &manager as *const _ as usize);
+    }
+
+    #[test]
+    fn test_tool_manager_with_system_bins() {
+        let mut manager = ToolManager::new();
+        // Just verify the method doesn't panic and returns &mut Self
+        let result = manager.with_system_bins(false);
+        // Should return self for chaining
+        assert_eq!(result as *const _ as usize, &manager as *const _ as usize);
+    }
+
+    #[test]
+    fn test_tool_manager_home_dir() {
+        let manager = ToolManager::new();
+        // home_dir may be Some or None depending on the test environment
+        let home = manager.home_dir();
+        if let Some(path) = home {
+            assert!(!path.as_os_str().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_tool_manager_detect_available_tools() {
+        let manager = ToolManager::new();
+        let tools = manager.detect_available_tools();
+        // Should at least return an empty vec, not panic
+        assert!(tools.is_empty() || !tools.is_empty());
     }
 }

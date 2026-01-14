@@ -9,41 +9,28 @@
 //!
 //! 1. **Accumulates** text deltas from each chunk into a buffer
 //! 2. **Displays** the accumulated text after each chunk
-//! 3. **Uses carriage return (`\r`) and line clearing (`\x1b[2K`)** to rewrite the entire line,
-//!    creating an updating effect that shows the content building up in real-time
-//! 4. **Shows prefix on every delta**, rewriting the entire line each time (industry standard)
+//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
+//!    updating effect that shows the content building up in real-time
+//! 4. **Shows prefix** on the first delta event and again on the final non-delta message
 //!
 //! Example output sequence for streaming "Hello World" in two chunks:
 //! ```text
 //! [Gemini] Hello\r         (first delta with prefix, no newline)
-//! \x1b[2K\r[Gemini] Hello World\r  (second delta clears line, rewrites with accumulated)
+//! Hello World\r             (second delta overwrites with accumulated text)
 //! [Gemini] Hello World\n   (final non-delta message shows complete result)
 //! ```
-//!
-//! # Single-Line Pattern
-//!
-//! The renderer uses a single-line pattern with carriage return for in-place updates.
-//! This is the industry standard for streaming CLIs (used by Rich, Ink, Bubble Tea).
-//!
-//! Each delta rewrites the entire line with prefix, ensuring that:
-//! - The user always sees the prefix
-//! - Content updates in-place without visual artifacts
-//! - Terminal state is clean and predictable
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::items_after_statements)]
-
-use crate::common::truncate_text;
+use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
-use crate::logger::{Colors, CHECK, CROSS};
-use std::cell::RefCell;
+use crate::utils::truncate_text;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
-use super::streaming_state::StreamingSession;
-use super::types::{format_tool_input, format_unknown_json_event, ContentType, GeminiEvent};
+use super::types::{
+    format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, GeminiEvent,
+};
 
 /// Gemini event parser
 pub struct GeminiParser {
@@ -51,8 +38,10 @@ pub struct GeminiParser {
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
-    /// Unified streaming session for state tracking
-    streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
+    /// Track if we're currently streaming delta content
+    in_delta_content: Rc<RefCell<Cell<bool>>>,
 }
 
 impl GeminiParser {
@@ -62,7 +51,8 @@ impl GeminiParser {
             verbosity,
             log_file: None,
             display_name: "Gemini".to_string(),
-            streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
+            in_delta_content: Rc::new(RefCell::new(Cell::new(false))),
         }
     }
 
@@ -100,13 +90,9 @@ impl GeminiParser {
             GeminiEvent::Init {
                 session_id, model, ..
             } => {
-                // Reset streaming state on new session
-                self.streaming_session.borrow_mut().on_message_start();
+                // Clear accumulator on new session
+                self.delta_accumulator.borrow_mut().clear();
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
-                // Set the current message ID for duplicate detection
-                self.streaming_session
-                    .borrow_mut()
-                    .set_current_message_id(Some(sid.clone()));
                 let model_str = model.unwrap_or_else(|| "unknown".to_string());
                 format!(
                     "{}[{}]{} {}Session started{} {}({:.8}..., {}){}\n",
@@ -131,62 +117,60 @@ impl GeminiParser {
 
                 if let Some(text) = content {
                     if is_delta && role_str == "assistant" {
-                        // Accumulate delta content using StreamingSession
-                        let (show_prefix, accumulated_text) = {
-                            let mut session = self.streaming_session.borrow_mut();
-                            let show_prefix = session.on_text_delta_key("main", &text);
-                            // Get accumulated text for streaming display
-                            let accumulated_text = session
-                                .get_accumulated(ContentType::Text, "main")
-                                .unwrap_or("")
-                                .to_string();
-                            (show_prefix, accumulated_text)
-                        };
+                        // Accumulate delta content
+                        let mut acc = self.delta_accumulator.borrow_mut();
+                        acc.add_delta(ContentType::Text, "main", &text);
+                        // Get accumulated text for streaming display
+                        let accumulated_text = acc.get(ContentType::Text, "main").unwrap_or("");
 
-                        // Use TextDeltaRenderer for consistent rendering across all parsers
-                        if show_prefix {
-                            // First delta: use renderer with prefix
-                            return Some(TextDeltaRenderer::render_first_delta(
-                                &accumulated_text,
-                                prefix,
-                                *c,
-                            ));
+                        // Check if we're already streaming delta content
+                        let in_delta_state = self.in_delta_content.borrow();
+                        let was_in_delta = in_delta_state.get();
+                        drop(in_delta_state);
+
+                        // Only show prefix on the first delta chunk
+                        if was_in_delta {
+                            // Subsequent chunks: overwrite with carriage return, show accumulated text without prefix
+                            self.in_delta_content.borrow_mut().set(true);
+                            return Some(format!("{}\r{}", c.white(), accumulated_text));
                         }
-                        // Subsequent deltas: use renderer for in-place update
-                        return Some(TextDeltaRenderer::render_subsequent_delta(
-                            &accumulated_text,
+                        // First chunk: show prefix + text WITHOUT newline (streaming stays on same line)
+                        self.in_delta_content.borrow_mut().set(true);
+                        return Some(format!(
+                            "{}[{}]{} {}{}{}",
+                            c.dim(),
                             prefix,
-                            *c,
+                            c.reset(),
+                            c.white(),
+                            accumulated_text,
+                            c.reset()
                         ));
                     } else if !is_delta && role_str == "assistant" {
-                        // Non-delta message - check for duplicate using message ID or fallback to streaming content check
-                        let session = self.streaming_session.borrow();
-                        let is_duplicate = session.get_current_message_id().map_or_else(
-                            || session.has_any_streamed_content(),
-                            |message_id| session.is_duplicate_final_message(message_id),
-                        );
-                        let was_streaming = session.has_any_streamed_content();
-                        drop(session);
+                        // Non-delta message - reset streaming state, clear accumulator and show full content
+                        let in_delta_state = self.in_delta_content.borrow();
+                        let was_in_delta = in_delta_state.get();
+                        drop(in_delta_state);
+                        self.in_delta_content.borrow_mut().set(false);
 
-                        // Finalize the message (this marks it as displayed)
-                        let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
-
-                        // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
-                        if is_duplicate || was_streaming {
-                            return Some(TextDeltaRenderer::render_completion());
-                        }
-
-                        // Otherwise, show the full content (non-streaming path)
+                        self.delta_accumulator.borrow_mut().clear();
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(&text, limit);
 
+                        // Add final newline if we were streaming
+                        let newline_suffix = if was_in_delta {
+                            format!("{}\n", c.reset())
+                        } else {
+                            String::new()
+                        };
+
                         return Some(format!(
-                            "{}[{}]{} {}{}{}\n",
+                            "{}[{}]{} {}{}{}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.white(),
                             preview,
+                            newline_suffix,
                             c.reset()
                         ));
                     }
@@ -231,17 +215,15 @@ impl GeminiParser {
                         let limit = self.verbosity.truncate_limit("tool_input");
                         let preview = truncate_text(&params_str, limit);
                         if !preview.is_empty() {
-                            use std::fmt::Write;
-                            let _ = writeln!(
-                                out,
-                                "{}[{}]{} {}  └─ {}{}",
+                            out.push_str(&format!(
+                                "{}[{}]{} {}  └─ {}{}\n",
                                 c.dim(),
                                 prefix,
                                 c.reset(),
                                 c.dim(),
                                 preview,
                                 c.reset()
-                            );
+                            ));
                         }
                     }
                 }
@@ -267,17 +249,15 @@ impl GeminiParser {
                     if let Some(ref output_text) = output {
                         let limit = self.verbosity.truncate_limit("tool_result");
                         let preview = truncate_text(output_text, limit);
-                        use std::fmt::Write;
-                        let _ = writeln!(
-                            out,
-                            "{}[{}]{} {}  └─ {}{}",
+                        out.push_str(&format!(
+                            "{}[{}]{} {}  └─ {}{}\n",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.dim(),
                             preview,
                             c.reset()
-                        );
+                        ));
                     }
                 }
                 out
@@ -303,7 +283,7 @@ impl GeminiParser {
                 let icon = if is_success { CHECK } else { CROSS };
                 let color = if is_success { c.green() } else { c.red() };
 
-                let stats_display = stats.map_or_else(String::new, |s| {
+                let stats_display = if let Some(s) = stats {
                     let duration_s = s.duration_ms.unwrap_or(0) / 1000;
                     let duration_m = duration_s / 60;
                     let duration_s_rem = duration_s % 60;
@@ -313,7 +293,9 @@ impl GeminiParser {
                     format!(
                         "({duration_m}m {duration_s_rem}s, in:{input} out:{output}, {tools} tools)"
                     )
-                });
+                } else {
+                    String::new()
+                };
 
                 format!(
                     "{}[{}]{} {}{} {}{} {}{}{}\n",
@@ -349,8 +331,10 @@ impl GeminiParser {
     /// to avoid false health warnings.
     const fn is_control_event(event: &GeminiEvent) -> bool {
         match event {
-            // Init and Result events are control events
-            GeminiEvent::Init { .. } | GeminiEvent::Result { .. } => true,
+            // Init event is a control event
+            GeminiEvent::Init { .. } => true,
+            // Result event is a control event (aggregated stats, no direct user output)
+            GeminiEvent::Result { .. } => true,
             _ => false,
         }
     }
@@ -396,7 +380,7 @@ impl GeminiParser {
             match self.parse_event(&line) {
                 Some(output) => {
                     monitor.record_parsed();
-                    write!(writer, "{output}")?;
+                    write!(writer, "{}", output)?;
                     writer.flush()?;
                 }
                 None => {
@@ -428,8 +412,8 @@ impl GeminiParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(*c) {
-            writeln!(writer, "{warning}\n")?;
+        if let Some(warning) = monitor.check_and_warn(c) {
+            writeln!(writer, "{warning}")?;
         }
         Ok(())
     }
