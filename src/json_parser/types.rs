@@ -145,17 +145,36 @@ pub(crate) struct StreamError {
     pub(crate) code: Option<String>,
 }
 
+/// Content type for delta accumulation
+///
+/// Distinguishes between different types of content that may be streamed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ContentType {
+    /// Regular text content
+    Text,
+    /// Thinking/reasoning content
+    Thinking,
+    /// Tool input content
+    ToolInput,
+    /// Custom content type (for extensibility)
+    Custom(&'static str),
+}
+
 /// Delta accumulator for streaming content
 ///
 /// Tracks partial content across multiple streaming events, accumulating
-/// deltas for text and other content types. Uses a simple key-based approach
-/// to track content by (event_type, index).
+/// deltas for different content types. Uses a composite key approach
+/// to track content by (content_type, key).
+///
+/// Supports both index-based tracking (for parsers with numeric indices)
+/// and string-based key tracking (for parsers with string identifiers).
 #[derive(Debug, Default, Clone)]
 pub(crate) struct DeltaAccumulator {
-    /// Accumulated text content for each stream index
-    text_buffers: std::collections::HashMap<u64, String>,
-    /// Accumulated thinking/reasoning content
-    thinking_buffers: std::collections::HashMap<u64, String>,
+    /// Accumulated content by (content_type, key) composite key
+    /// Using a String key to support both numeric and string-based identifiers
+    buffers: std::collections::HashMap<(ContentType, String), String>,
+    /// Track the order of keys for most_recent operations
+    key_order: Vec<(ContentType, String)>,
 }
 
 impl DeltaAccumulator {
@@ -166,53 +185,119 @@ impl DeltaAccumulator {
 
     /// Add a text delta for a specific index
     pub(crate) fn add_text_delta(&mut self, index: u64, delta: &str) {
-        self.text_buffers
-            .entry(index)
-            .and_modify(|buf| buf.push_str(delta))
-            .or_insert_with(|| delta.to_string());
+        self.add_delta(ContentType::Text, &index.to_string(), delta)
     }
 
     /// Add a thinking delta for a specific index
     pub(crate) fn add_thinking_delta(&mut self, index: u64, delta: &str) {
-        self.thinking_buffers
-            .entry(index)
+        self.add_delta(ContentType::Thinking, &index.to_string(), delta)
+    }
+
+    /// Add a delta for a specific content type and key
+    ///
+    /// This is the generic method that supports both index-based and
+    /// string-based key tracking.
+    pub(crate) fn add_delta(&mut self, content_type: ContentType, key: &str, delta: &str) {
+        let composite_key = (content_type, key.to_string());
+        self.buffers
+            .entry(composite_key.clone())
             .and_modify(|buf| buf.push_str(delta))
             .or_insert_with(|| delta.to_string());
+
+        // Track order for most_recent operations
+        if !self.key_order.contains(&composite_key) {
+            self.key_order.push(composite_key);
+        }
     }
 
     /// Get the accumulated text for a specific index
     pub(crate) fn get_text(&self, index: &u64) -> Option<&str> {
-        self.text_buffers.get(index).map(|s| s.as_str())
+        self.get(ContentType::Text, &index.to_string())
     }
 
     /// Get the accumulated thinking for a specific index
     pub(crate) fn get_thinking(&self, index: &u64) -> Option<&str> {
-        self.thinking_buffers.get(index).map(|s| s.as_str())
+        self.get(ContentType::Thinking, &index.to_string())
     }
 
-    /// Get the most recent text (highest index)
-    pub(crate) fn get_most_recent_text(&self) -> Option<&str> {
-        self.text_buffers
+    /// Get accumulated content for a specific content type and key
+    pub(crate) fn get(&self, content_type: ContentType, key: &str) -> Option<&str> {
+        self.buffers.get(&(content_type, key.to_string())).map(|s| s.as_str())
+    }
+
+    /// Get the most recent content of a specific type
+    pub(crate) fn get_most_recent_of_type(&self, content_type: ContentType) -> Option<&str> {
+        self.key_order
             .iter()
-            .max_by_key(|(k, _)| *k)
-            .map(|(_, s)| s.as_str())
+            .rev()
+            .find(|(t, _)| *t == content_type)
+            .and_then(|key| self.buffers.get(key).map(|s| s.as_str()))
+    }
+
+    /// Get the most recent text (highest index or last added)
+    pub(crate) fn get_most_recent_text(&self) -> Option<&str> {
+        self.get_most_recent_of_type(ContentType::Text)
+    }
+
+    /// Get the most recent thinking (highest index or last added)
+    pub(crate) fn get_most_recent_thinking(&self) -> Option<&str> {
+        self.get_most_recent_of_type(ContentType::Thinking)
+    }
+
+    /// Get all accumulated text entries
+    pub(crate) fn get_all_text(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.buffers
+            .iter()
+            .filter(|((ct, _), _)| *ct == ContentType::Text)
+            .map(|((_, key), value)| (key.as_str(), value.as_str()))
+    }
+
+    /// Get all accumulated thinking entries
+    pub(crate) fn get_all_thinking(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.buffers
+            .iter()
+            .filter(|((ct, _), _)| *ct == ContentType::Thinking)
+            .map(|((_, key), value)| (key.as_str(), value.as_str()))
     }
 
     /// Clear all accumulated content
     pub(crate) fn clear(&mut self) {
-        self.text_buffers.clear();
-        self.thinking_buffers.clear();
+        self.buffers.clear();
+        self.key_order.clear();
     }
 
     /// Clear content for a specific index
     pub(crate) fn clear_index(&mut self, index: u64) {
-        self.text_buffers.remove(&index);
-        self.thinking_buffers.remove(&index);
+        let index_str = index.to_string();
+        for content_type in [ContentType::Text, ContentType::Thinking, ContentType::ToolInput] {
+            let key = (content_type, index_str.clone());
+            self.buffers.remove(&key);
+            self.key_order.retain(|k| k != &key);
+        }
+    }
+
+    /// Clear content for a specific content type and key
+    pub(crate) fn clear_key(&mut self, content_type: ContentType, key: &str) {
+        let composite_key = (content_type, key.to_string());
+        self.buffers.remove(&composite_key);
+        self.key_order.retain(|k| k != &composite_key);
     }
 
     /// Check if there is any accumulated content
     pub(crate) fn is_empty(&self) -> bool {
-        self.text_buffers.is_empty() && self.thinking_buffers.is_empty()
+        self.buffers.is_empty()
+    }
+
+    /// Check if there is accumulated content of a specific type
+    pub(crate) fn has_content_of_type(&self, content_type: ContentType) -> bool {
+        self.buffers
+            .keys()
+            .any(|(ct, _)| *ct == content_type)
+    }
+
+    /// Get the total number of accumulated entries
+    pub(crate) fn len(&self) -> usize {
+        self.buffers.len()
     }
 }
 

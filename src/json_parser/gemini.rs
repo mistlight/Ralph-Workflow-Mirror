@@ -5,10 +5,12 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
+use std::rc::Rc;
 
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, format_unknown_json_event, GeminiEvent};
+use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, GeminiEvent};
 
 /// Gemini event parser
 pub(crate) struct GeminiParser {
@@ -16,6 +18,8 @@ pub(crate) struct GeminiParser {
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
 }
 
 impl GeminiParser {
@@ -25,6 +29,7 @@ impl GeminiParser {
             verbosity,
             log_file: None,
             display_name: "Gemini".to_string(),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
 
@@ -63,6 +68,8 @@ impl GeminiParser {
             GeminiEvent::Init {
                 session_id, model, ..
             } => {
+                // Clear accumulator on new session
+                self.delta_accumulator.borrow_mut().clear();
                 let sid = session_id.unwrap_or_else(|| "unknown".to_string());
                 let model_str = model.unwrap_or_else(|| "unknown".to_string());
                 format!(
@@ -81,16 +88,47 @@ impl GeminiParser {
             GeminiEvent::Message {
                 role,
                 content,
-                ..
+                delta,
             } => {
                 let role_str = role.unwrap_or_else(|| "unknown".to_string());
+                let is_delta = delta.unwrap_or(false);
+
                 if let Some(text) = content {
-                    let limit = self.verbosity.truncate_limit("text");
-                    let preview = truncate_text(&text, limit);
-                    // Display content naturally - delta streaming is handled seamlessly
-                    // No visual indicator needed for partial/streaming content
-                    if role_str == "assistant" {
-                        format!(
+                    if is_delta && role_str == "assistant" {
+                        // Accumulate delta content
+                        let mut acc = self.delta_accumulator.borrow_mut();
+                        acc.add_delta(ContentType::Text, "main", &text);
+
+                        // In verbose mode, show full accumulated text
+                        if self.verbosity.is_verbose() {
+                            if let Some(full_text) = acc.get(ContentType::Text, "main") {
+                                return Some(format!(
+                                    "{}[{}]{} {}{}{}\n",
+                                    c.dim(),
+                                    prefix,
+                                    c.reset(),
+                                    c.white(),
+                                    full_text,
+                                    c.reset()
+                                ));
+                            }
+                        }
+                        // Normal mode: show delta in real-time
+                        return Some(format!(
+                            "{}[{}]{} {}{}{}\n",
+                            c.dim(),
+                            prefix,
+                            c.reset(),
+                            c.white(),
+                            text,
+                            c.reset()
+                        ));
+                    } else if !is_delta && role_str == "assistant" {
+                        // Non-delta message - clear accumulator and show full content
+                        self.delta_accumulator.borrow_mut().clear();
+                        let limit = self.verbosity.truncate_limit("text");
+                        let preview = truncate_text(&text, limit);
+                        return Some(format!(
                             "{}[{}]{} {}{}{}\n",
                             c.dim(),
                             prefix,
@@ -98,9 +136,12 @@ impl GeminiParser {
                             c.white(),
                             preview,
                             c.reset()
-                        )
+                        ));
                     } else {
-                        format!(
+                        // User or other role messages
+                        let limit = self.verbosity.truncate_limit("text");
+                        let preview = truncate_text(&text, limit);
+                        return Some(format!(
                             "{}[{}]{} {}{}:{} {}{}{}\n",
                             c.dim(),
                             prefix,
@@ -111,11 +152,10 @@ impl GeminiParser {
                             c.dim(),
                             preview,
                             c.reset()
-                        )
+                        ));
                     }
-                } else {
-                    String::new()
                 }
+                String::new()
             }
             GeminiEvent::ToolUse {
                 tool_name,

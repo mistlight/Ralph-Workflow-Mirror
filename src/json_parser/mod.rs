@@ -9,18 +9,30 @@
 //! # Module Structure
 //!
 //! - [`types`] - Shared types and event structures
-//! - [`claude`] - Claude CLI output parser
-//! - [`codex`] - OpenAI Codex CLI output parser
-//! - [`gemini`] - Google Gemini CLI output parser
-//! - [`opencode`] - OpenCode CLI output parser
+//! - [`stream_classifier`] - Algorithmic detection of partial vs complete events
+//! - [`claude`] - Claude CLI output parser (with streaming support)
+//! - [`codex`] - OpenAI Codex CLI output parser (with streaming support)
+//! - [`gemini`] - Google Gemini CLI output parser (with streaming support)
+//! - [`opencode`] - OpenCode CLI output parser (with streaming support)
 //! - [`health`] - Parser health monitoring and graceful degradation
+//!
+//! # Streaming Support
+//!
+//! All parsers now support delta streaming for real-time content display:
+//! - **Claude**: Full streaming with `DeltaAccumulator` for text and thinking deltas
+//! - **Gemini**: Streaming with delta flag support for message content
+//! - **Codex**: Streaming for agent_message and reasoning item types
+//! - **OpenCode**: Streaming for text events
+//!
+//! In verbose mode, parsers show full accumulated content. In normal mode,
+//! they show real-time deltas for immediate feedback.
 //!
 //! ## Verbosity Levels
 //!
 //! The parsers respect the configured verbosity level:
 //! - **Quiet (0)**: Minimal output, aggressive truncation
-//! - **Normal (1)**: Balanced output with moderate truncation
-//! - **Verbose (2)**: Default - shows more detail including tool inputs
+//! - **Normal (1)**: Balanced output with moderate truncation, shows real-time deltas
+//! - **Verbose (2)**: Default - shows more detail including tool inputs and full accumulated text
 //! - **Full (3)**: No truncation, show all content
 //! - **Debug (4)**: Maximum verbosity, includes raw JSON output
 
@@ -29,6 +41,7 @@ mod codex;
 mod gemini;
 pub mod health;
 mod opencode;
+mod stream_classifier;
 mod types;
 
 pub(crate) use claude::ClaudeParser;
