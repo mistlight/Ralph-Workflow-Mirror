@@ -101,6 +101,13 @@ impl UserAccountExecutor {
         env_vars: &HashMap<String, String>,
         options: &ExecutionOptions,
     ) -> ContainerResult<ExecutionResult> {
+        // Validate prompt for null bytes which are universally invalid in command arguments
+        if prompt.contains('\0') {
+            return Err(ContainerError::Other(
+                "Prompt contains null byte which is invalid for command execution".to_string(),
+            ));
+        }
+
         // Parse the command
         let argv = Self::parse_command(agent_command)?;
 
@@ -124,14 +131,45 @@ impl UserAccountExecutor {
         // Set working directory
         cmd.arg("--cwd").arg(&workdir);
 
-        // Set environment variables
+        // Validate and set environment variables
+        // Check for null bytes and newlines which could cause issues
         for (key, value) in env_vars {
+            if key.contains('\0') || value.contains('\0') {
+                return Err(ContainerError::Other(
+                    "Environment variable contains null byte which is invalid".to_string(),
+                ));
+            }
+            if key.contains('\n') || value.contains('\n') || key.contains('\r') || value.contains('\r') {
+                return Err(ContainerError::Other(
+                    "Environment variable contains newline which is invalid for sudo --env".to_string(),
+                ));
+            }
+            if key.contains('=') {
+                return Err(ContainerError::Other(
+                    "Environment variable name contains '=' which is invalid".to_string(),
+                ));
+            }
             cmd.arg("--env");
             cmd.arg(format!("{}={}", key, value));
         }
 
         // Add execution option environment variables
         for (key, value) in &options.env_vars {
+            if key.contains('\0') || value.contains('\0') {
+                return Err(ContainerError::Other(
+                    "Execution option environment variable contains null byte which is invalid".to_string(),
+                ));
+            }
+            if key.contains('\n') || value.contains('\n') || key.contains('\r') || value.contains('\r') {
+                return Err(ContainerError::Other(
+                    "Execution option environment variable contains newline which is invalid for sudo --env".to_string(),
+                ));
+            }
+            if key.contains('=') {
+                return Err(ContainerError::Other(
+                    "Execution option environment variable name contains '=' which is invalid".to_string(),
+                ));
+            }
             cmd.arg("--env");
             cmd.arg(format!("{}={}", key, value));
         }

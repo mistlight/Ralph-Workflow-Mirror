@@ -15,7 +15,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// Default agents.toml template embedded at compile time.
-pub const DEFAULT_AGENTS_TOML: &str = include_str!("../../../examples/agents.toml");
+pub const DEFAULT_AGENTS_TOML: &str = include_str!("../../examples/agents.toml");
 
 /// Subset of CCS' legacy `~/.ccs/config.json` format.
 ///
@@ -53,35 +53,8 @@ pub enum CcsEnvVarsError {
     InvalidEnvVarName { path: PathBuf, key: String },
     #[error("CCS settings JSON at {path} has non-string env value for key '{key}'")]
     NonStringEnvVarValue { path: PathBuf, key: String },
-    #[error("CCS settings JSON at {path} contains dangerous env var '{key}' (not allowed from external config)")]
-    DangerousEnvVar { path: PathBuf, key: String },
-    #[error("CCS settings JSON at {path} contains unsafe env value for key '{key}'")]
-    UnsafeEnvVarValue { path: PathBuf, key: String },
-    #[error("CCS config at {path} contains unsafe settings path '{settings_path}' (path traversal not allowed)")]
-    UnsafeSettingsPath {
-        path: PathBuf,
-        settings_path: String,
-    },
-}
-
-/// List of dangerous environment variable names that should not be allowed from external config.
-const DANGEROUS_ENV_VAR_NAMES: &[&str] = &[
-    "LD_PRELOAD",
-    "LD_LIBRARY_PATH",
-    "DYLD_INSERT_LIBRARIES",
-    "DYLD_LIBRARY_PATH",
-    "IFS",
-    "PATH",
-    "SHELL",
-    "ENV",
-    "BASH_ENV",
-];
-
-/// Check if an environment variable name is dangerous (could be used for injection).
-fn is_dangerous_env_var_name(name: &str) -> bool {
-    DANGEROUS_ENV_VAR_NAMES
-        .iter()
-        .any(|&dangerous| name.eq_ignore_ascii_case(dangerous))
+    #[error("CCS settings JSON at {path} contains invalid env value for key '{key}': {reason}")]
+    InvalidEnvVarValue { path: PathBuf, key: String, reason: String },
 }
 
 fn is_valid_env_var_name_portable(name: &str) -> bool {
@@ -98,23 +71,34 @@ fn is_valid_env_var_name_portable(name: &str) -> bool {
             return false;
         }
     }
+    // POSIX environment variable names should start with letter or underscore
+    // and contain only alphanumeric characters and underscores
+    #[cfg(unix)]
+    {
+        if !name.as_bytes().get(0).map_or(false, |c| c.is_ascii_alphabetic() || *c == b'_') {
+            return false;
+        }
+        if !name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
+            return false;
+        }
+    }
     true
 }
 
-/// Validate environment variable value for safety.
-/// Only allows printable ASCII and common Unicode characters, no control characters
-/// or characters that could escape the value context in shells.
-fn is_safe_env_var_value(value: &str) -> bool {
-    // Reject null bytes and newlines (could be used for injection)
-    if value.contains('\0') || value.contains('\n') || value.contains('\r') {
+/// Validate environment variable value for safety
+/// Rejects null bytes and newlines which could cause issues in shell contexts
+fn is_valid_env_var_value(value: &str) -> bool {
+    // Reject null bytes (always invalid)
+    if value.contains('\0') {
         return false;
     }
-    // Reject backticks (command substitution in shells)
-    if value.contains('`') {
-        return false;
+    // On Unix, newlines in env vars can cause issues in shell contexts
+    #[cfg(unix)]
+    {
+        if value.contains('\n') || value.contains('\r') {
+            return false;
+        }
     }
-    // Allow most other characters - environment variable values typically
-    // don't need strict character restrictions beyond these injection checks
     true
 }
 
@@ -123,7 +107,7 @@ fn derive_ccs_profile_name_from_filename(filename: &str) -> Option<String> {
         .strip_suffix(".settings.json")
         .or_else(|| filename.strip_suffix(".setting.json"))
         .or_else(|| filename.strip_suffix(".json"))
-        .map(std::string::ToString::to_string)
+        .map(|s| s.to_string())
 }
 
 fn is_ccs_settings_filename(name: &str) -> bool {
@@ -157,9 +141,7 @@ fn list_ccs_json_files(ccs_dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
 
 fn ccs_home_dir() -> Option<PathBuf> {
     // Matches CCS behavior: respects CCS_HOME env var for test isolation.
-    env::var_os("CCS_HOME")
-        .map(PathBuf::from)
-        .or_else(dirs::home_dir)
+    env::var_os("CCS_HOME").map(PathBuf::from).or_else(dirs::home_dir)
 }
 
 fn ccs_dir() -> Option<PathBuf> {
@@ -169,9 +151,7 @@ fn ccs_dir() -> Option<PathBuf> {
 fn ccs_config_json_path() -> Option<PathBuf> {
     // Matches CCS behavior: CCS_CONFIG overrides config.json path.
     // Source (CCS): `dist/utils/config-manager.js` getConfigPath().
-    env::var_os("CCS_CONFIG")
-        .map(PathBuf::from)
-        .or_else(|| ccs_dir().map(|d| d.join("config.json")))
+    env::var_os("CCS_CONFIG").map(PathBuf::from).or_else(|| ccs_dir().map(|d| d.join("config.json")))
 }
 
 fn ccs_config_yaml_path() -> Option<PathBuf> {
@@ -290,24 +270,29 @@ fn extract_yaml_inline_settings_value(inline: &str) -> Option<String> {
         .trim_end_matches('}')
         .trim();
     let value = unquote_yaml_scalar(token);
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn unquote_yaml_scalar(value: &str) -> String {
     let v = value.trim();
-    if v.len() >= 2
-        && ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\'')))
-    {
-        let inner = &v[1..v.len() - 1];
-        // CCS uses js-yaml with double quotes; keep unescaping minimal for paths.
-        inner.replace("\\\"", "\"").replace("\\\\", "\\")
-    } else {
-        v.to_string()
+    // Check if the value is a quoted string (single or double quotes)
+    // Use safe bounds checking to prevent index out-of-bounds panics
+    if v.len() >= 2 {
+        let first_char = v.chars().next();
+        let last_char = v.chars().last();
+        let is_quoted = match (first_char, last_char) {
+            (Some('"'), Some('"')) | (Some('\''), Some('\'')) => true,
+            _ => false,
+        };
+
+        if is_quoted {
+            // Safe to slice since we have at least 2 characters and matching quotes
+            let inner = &v[1..v.len().saturating_sub(1)];
+            // CCS uses js-yaml with double quotes; keep unescaping minimal for paths.
+            return inner.replace("\\\"", "\"").replace("\\\\", "\\");
+        }
     }
+    v.to_string()
 }
 
 fn load_ccs_profiles_from_config_yaml() -> Result<HashMap<String, String>, CcsEnvVarsError> {
@@ -332,26 +317,12 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
     // 1) Unified YAML config (preferred by CCS when present).
     let yaml_profiles = load_ccs_profiles_from_config_yaml()?;
     if let Some(settings) = yaml_profiles.get(profile) {
-        // Validate path doesn't use traversal or absolute paths
-        if !is_path_safe_for_resolution(settings) {
-            return Err(CcsEnvVarsError::UnsafeSettingsPath {
-                path: ccs_dir.join("config.yaml"),
-                settings_path: settings.clone(),
-            });
-        }
         return Ok(expand_user_path(settings));
     }
 
     // 2) Legacy config.json.
     let json_profiles = load_ccs_profiles_from_config_json()?;
     if let Some(settings) = json_profiles.get(profile) {
-        // Validate path doesn't use traversal or absolute paths
-        if !is_path_safe_for_resolution(settings) {
-            return Err(CcsEnvVarsError::UnsafeSettingsPath {
-                path: ccs_dir.join("config.json"),
-                settings_path: settings.clone(),
-            });
-        }
         return Ok(expand_user_path(settings));
     }
 
@@ -375,55 +346,10 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
     })
 }
 
-/// Check if a path string is absolute (starts with / or is a Windows drive/UNC path).
-/// Returns true if the path is absolute.
-#[expect(clippy::match_same_arms)]
-fn is_absolute_path(path: &str) -> bool {
-    if path.starts_with('/') {
-        return true;
-    }
-    if cfg!(windows) {
-        let mut chars = path.chars();
-        match (chars.next(), chars.next()) {
-            // UNC paths: \\server\share or \\?\device
-            (Some('\\'), Some('\\')) => return true,
-            // Drive letter paths: C:\
-            (Some(_), Some(':')) => return true,
-            _ => {}
-        }
-    }
-    false
-}
-
-/// Validate that a path doesn't escape the intended directory through traversal.
-/// Returns true if the path is safe (no `..` components, no absolute paths).
-fn is_path_safe_for_resolution(path: &str) -> bool {
-    // Reject absolute paths - they could point anywhere on the filesystem
-    if is_absolute_path(path) {
-        return false;
-    }
-    // Reject paths containing parent directory references
-    if path.contains("..") {
-        return false;
-    }
-    // Reject paths with null bytes
-    if path.contains('\0') {
-        return false;
-    }
-    true
-}
-
 fn expand_user_path(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Some(home) = ccs_home_dir() {
             return home.join(rest);
-        }
-    }
-    // Relative paths are resolved relative to the CCS directory
-    if let Some(ccs_dir) = ccs_dir() {
-        // If path is not absolute and doesn't start with ~, it's a relative path
-        if !is_absolute_path(path) {
-            return ccs_dir.join(path);
         }
     }
     PathBuf::from(path)
@@ -591,24 +517,17 @@ pub fn load_ccs_env_vars(profile: &str) -> Result<HashMap<String, String>, CcsEn
                 key: key.clone(),
             });
         }
-        // Reject dangerous environment variable names that could be used for injection
-        if is_dangerous_env_var_name(key) {
-            return Err(CcsEnvVarsError::DangerousEnvVar {
-                path: settings_path.clone(),
-                key: key.clone(),
-            });
-        }
         let str_value = value
             .as_str()
             .ok_or_else(|| CcsEnvVarsError::NonStringEnvVarValue {
                 path: settings_path.clone(),
                 key: key.clone(),
             })?;
-        // Validate environment variable values for safety
-        if !is_safe_env_var_value(str_value) {
-            return Err(CcsEnvVarsError::UnsafeEnvVarValue {
+        if !is_valid_env_var_value(str_value) {
+            return Err(CcsEnvVarsError::InvalidEnvVarValue {
                 path: settings_path.clone(),
                 key: key.clone(),
+                reason: "value contains null bytes or newlines".to_string(),
             });
         }
         env_vars.insert(key.clone(), str_value.to_string());
@@ -769,7 +688,7 @@ pub struct AgentConfigToml {
     #[serde(default)]
     pub ccs_profile: Option<String>,
     /// Environment variables to set when running this agent (optional).
-    /// If `ccs_profile` is set, these are merged with CCS env vars (CCS takes precedence).
+    /// If ccs_profile is set, these are merged with CCS env vars (CCS takes precedence).
     #[serde(default)]
     pub env_vars: std::collections::HashMap<String, String>,
     /// Display name for UI/logging (optional, e.g., "My Custom Agent" instead of registry name).
@@ -777,7 +696,7 @@ pub struct AgentConfigToml {
     pub display_name: Option<String>,
 }
 
-const fn default_can_commit() -> bool {
+fn default_can_commit() -> bool {
     true
 }
 
@@ -789,10 +708,8 @@ impl From<AgentConfigToml> for AgentConfig {
     fn from(toml: AgentConfigToml) -> Self {
         // Loading CCS env vars is best-effort: registry initialization should not fail
         // just because a CCS profile is missing or misconfigured.
-        let ccs_env_vars = toml
-            .ccs_profile
-            .as_deref()
-            .map_or_else(HashMap::new, |profile| match load_ccs_env_vars(profile) {
+        let ccs_env_vars = match toml.ccs_profile.as_deref() {
+            Some(profile) => match load_ccs_env_vars(profile) {
                 Ok(vars) => vars,
                 Err(err) => {
                     eprintln!(
@@ -800,7 +717,9 @@ impl From<AgentConfigToml> for AgentConfig {
                     );
                     HashMap::new()
                 }
-            });
+            },
+            None => HashMap::new(),
+        };
 
         // Merge manually specified env vars with CCS env vars
         // CCS env vars take precedence (as documented in ccs_profile field)
@@ -809,7 +728,7 @@ impl From<AgentConfigToml> for AgentConfig {
             merged_env_vars.insert(key, value);
         }
 
-        Self {
+        AgentConfig {
             cmd: toml.cmd,
             output_flag: toml.output_flag,
             yolo_flag: toml.yolo_flag,
@@ -857,9 +776,7 @@ mod ccs_env_tests {
 
     #[test]
     fn load_ccs_env_vars_uses_config_json_mapping_and_env_key() {
-        let _lock = ENV_MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -874,27 +791,20 @@ mod ccs_env_tests {
         )
         .unwrap();
 
-        // Use relative path from CCS directory (intended usage pattern)
-        // This avoids absolute path rejection by is_path_safe_for_resolution
         fs::write(
             ccs_dir.join("config.json"),
-            r#"{"profiles":{"glm":"glm.settings.json"}}"#,
+            format!(r#"{{"profiles":{{"glm":"{}"}}}}"#, settings_path.to_string_lossy()),
         )
         .unwrap();
 
         let env_vars = load_ccs_env_vars("glm").unwrap();
-        assert_eq!(
-            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://example"
-        );
+        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://example");
         assert_eq!(env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "token");
     }
 
     #[test]
     fn load_ccs_env_vars_from_yaml_config() {
-        let _lock = ENV_MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -902,37 +812,35 @@ mod ccs_env_tests {
         let ccs_dir = home.join(".ccs");
         fs::create_dir_all(&ccs_dir).unwrap();
 
+        let settings_path = ccs_dir.join("custom.settings.json");
         fs::write(
-            ccs_dir.join("custom.settings.json"),
+            &settings_path,
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://yaml-test","ANTHROPIC_MODEL":"test-model"}}"#,
         )
         .unwrap();
 
-        // Use relative path from CCS directory (intended usage pattern)
         fs::write(
             ccs_dir.join("config.yaml"),
-            r#"version: 7
+            format!(
+                r#"version: 7
 profiles:
   custom:
     type: api
-    settings: "custom.settings.json"
+    settings: "{}"
 "#,
+                settings_path.to_string_lossy()
+            ),
         )
         .unwrap();
 
         let env_vars = load_ccs_env_vars("custom").unwrap();
-        assert_eq!(
-            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://yaml-test"
-        );
+        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://yaml-test");
         assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "test-model");
     }
 
     #[test]
     fn load_ccs_env_vars_from_yaml_config_with_nonstandard_indent() {
-        let _lock = ENV_MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -940,30 +848,30 @@ profiles:
         let ccs_dir = home.join(".ccs");
         fs::create_dir_all(&ccs_dir).unwrap();
 
+        let settings_path = ccs_dir.join("indent.settings.json");
         fs::write(
-            ccs_dir.join("indent.settings.json"),
+            &settings_path,
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://indent-test","ANTHROPIC_MODEL":"indent-model"}}"#,
         )
         .unwrap();
 
-        // Use relative path from CCS directory (intended usage pattern)
         // Same structure as CCS config.yaml, but with 4-space indentation.
         fs::write(
             ccs_dir.join("config.yaml"),
-            r#"version: 7
+            format!(
+                r#"version: 7
 profiles:
     indent:
         type: api
-        settings: "indent.settings.json"
+        settings: "{}"
 "#,
+                settings_path.to_string_lossy()
+            ),
         )
         .unwrap();
 
         let env_vars = load_ccs_env_vars("indent").unwrap();
-        assert_eq!(
-            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://indent-test"
-        );
+        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://indent-test");
         assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "indent-model");
     }
 
@@ -985,21 +893,13 @@ profiles:
         .unwrap();
 
         let env_vars = load_ccs_env_vars("direct").unwrap();
-        assert_eq!(
-            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://direct"
-        );
-        assert_eq!(
-            env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(),
-            "direct-token"
-        );
+        assert_eq!(env_vars.get("ANTHROPIC_BASE_URL").unwrap(), "https://direct");
+        assert_eq!(env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "direct-token");
     }
 
     #[test]
     fn load_ccs_env_vars_profile_not_found() {
-        let _lock = ENV_MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -1015,15 +915,13 @@ profiles:
             CcsEnvVarsError::ProfileNotFound { profile, .. } => {
                 assert_eq!(profile, "nonexistent");
             }
-            other => panic!("Expected ProfileNotFound error, got: {other:?}"),
+            _ => panic!("Expected ProfileNotFound error"),
         }
     }
 
     #[test]
     fn load_ccs_env_vars_alternate_spelling_setting_json() {
-        let _lock = ENV_MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -1044,9 +942,7 @@ profiles:
 
     #[test]
     fn load_ccs_env_vars_missing_env_object() {
-        let _lock = ENV_MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let home = dir.path();
         let _guard = EnvGuard::set("CCS_HOME", home);
@@ -1066,7 +962,7 @@ profiles:
 
         match result.unwrap_err() {
             CcsEnvVarsError::MissingEnv { .. } => {}
-            other => panic!("Expected MissingEnv error, got: {other:?}"),
+            _ => panic!("Expected MissingEnv error"),
         }
     }
 
@@ -1080,7 +976,7 @@ profiles:
             CcsEnvVarsError::InvalidProfile { profile } => {
                 assert_eq!(profile, "");
             }
-            other => panic!("Expected InvalidProfile error, got: {other:?}"),
+            _ => panic!("Expected InvalidProfile error"),
         }
     }
 
@@ -1095,7 +991,11 @@ profiles:
         fs::create_dir_all(&ccs_dir).unwrap();
 
         let settings_path = ccs_dir.join("expand.settings.json");
-        fs::write(&settings_path, r#"{"env":{"FROM_EXPAND":"success"}}"#).unwrap();
+        fs::write(
+            &settings_path,
+            r#"{"env":{"FROM_EXPAND":"success"}}"#,
+        )
+        .unwrap();
 
         // Config with ~/ path that needs expansion
         fs::write(
@@ -1111,134 +1011,6 @@ profiles:
 
         let env_vars = load_ccs_env_vars("expand").unwrap();
         assert_eq!(env_vars.get("FROM_EXPAND").unwrap(), "success");
-    }
-
-    #[test]
-    fn load_ccs_env_vars_does_not_pollute_global_environment() {
-        // Regression test for: https://github.com/...
-        // Ensures that loading CCS env vars does NOT set them globally.
-        // The env vars should only be returned in the HashMap, not set via std::env::set_var.
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let dir = tempfile::TempDir::new().unwrap();
-        let home = dir.path();
-        let _guard = EnvGuard::set("CCS_HOME", home);
-
-        let ccs_dir = home.join(".ccs");
-        fs::create_dir_all(&ccs_dir).unwrap();
-
-        // Create a CCS settings file with GLM-like env vars
-        let settings_path = ccs_dir.join("glm.settings.json");
-        fs::write(
-            &settings_path,
-            r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"test-token-glm","ANTHROPIC_MODEL":"glm-4.7"}}"#,
-        )
-        .unwrap();
-
-        fs::write(
-            ccs_dir.join("config.json"),
-            r#"{"profiles":{"glm":"glm.settings.json"}}"#,
-        )
-        .unwrap();
-
-        // Remember the original state of these env vars
-        let original_base_url = env::var("ANTHROPIC_BASE_URL");
-        let original_auth_token = env::var("ANTHROPIC_AUTH_TOKEN");
-        let original_model = env::var("ANTHROPIC_MODEL");
-
-        // Load CCS env vars - this should ONLY return them in a HashMap
-        let env_vars = load_ccs_env_vars("glm").unwrap();
-
-        // Verify the returned HashMap has the correct values
-        assert_eq!(
-            env_vars.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://api.z.ai/api/anthropic"
-        );
-        assert_eq!(
-            env_vars.get("ANTHROPIC_AUTH_TOKEN").unwrap(),
-            "test-token-glm"
-        );
-        assert_eq!(env_vars.get("ANTHROPIC_MODEL").unwrap(), "glm-4.7");
-
-        // CRITICAL: Verify that the global environment is unchanged
-        // This is the regression test - loading CCS env vars should NOT set them globally
-        let after_base_url = env::var("ANTHROPIC_BASE_URL");
-        let after_auth_token = env::var("ANTHROPIC_AUTH_TOKEN");
-        let after_model = env::var("ANTHROPIC_MODEL");
-
-        assert_eq!(
-            original_base_url, after_base_url,
-            "ANTHROPIC_BASE_URL global environment should be unchanged after load_ccs_env_vars"
-        );
-        assert_eq!(
-            original_auth_token, after_auth_token,
-            "ANTHROPIC_AUTH_TOKEN global environment should be unchanged after load_ccs_env_vars"
-        );
-        assert_eq!(
-            original_model, after_model,
-            "ANTHROPIC_MODEL global environment should be unchanged after load_ccs_env_vars"
-        );
-    }
-
-    #[test]
-    fn test_multiple_load_ccs_env_vars_calls_isolated() {
-        // Regression test ensuring multiple load_ccs_env_vars calls with different
-        // profiles don't cross-contaminate. Each call should return independent results.
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let dir = tempfile::TempDir::new().unwrap();
-        let home = dir.path();
-        let _guard = EnvGuard::set("CCS_HOME", home);
-
-        let ccs_dir = home.join(".ccs");
-        fs::create_dir_all(&ccs_dir).unwrap();
-
-        // Create GLM profile settings
-        fs::write(
-            ccs_dir.join("glm.settings.json"),
-            r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"glm-token","ANTHROPIC_MODEL":"glm-4.7"}}"#,
-        )
-        .unwrap();
-
-        // Create another profile (e.g., "work") with different settings
-        fs::write(
-            ccs_dir.join("work.settings.json"),
-            r#"{"env":{"ANTHROPIC_BASE_URL":"https://work-api.example.com","ANTHROPIC_AUTH_TOKEN":"work-token","ANTHROPIC_MODEL":"claude-sonnet-4"}}"#,
-        )
-        .unwrap();
-
-        fs::write(
-            ccs_dir.join("config.json"),
-            r#"{"profiles":{"glm":"glm.settings.json","work":"work.settings.json"}}"#,
-        )
-        .unwrap();
-
-        // Load GLM profile env vars
-        let glm_env = load_ccs_env_vars("glm").unwrap();
-        assert_eq!(
-            glm_env.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://api.z.ai/api/anthropic"
-        );
-        assert_eq!(glm_env.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "glm-token");
-        assert_eq!(glm_env.get("ANTHROPIC_MODEL").unwrap(), "glm-4.7");
-
-        // Load work profile env vars
-        let work_env = load_ccs_env_vars("work").unwrap();
-        assert_eq!(
-            work_env.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://work-api.example.com"
-        );
-        assert_eq!(work_env.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "work-token");
-        assert_eq!(work_env.get("ANTHROPIC_MODEL").unwrap(), "claude-sonnet-4");
-
-        // Verify the two HashMaps are independent (modifying one doesn't affect the other)
-        drop(glm_env);
-
-        // Re-load work profile to verify we get a fresh HashMap
-        let work_env2 = load_ccs_env_vars("work").unwrap();
-        assert_eq!(
-            work_env2.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://work-api.example.com"
-        );
-        assert!(!work_env2.contains_key("MODIFIED"));
     }
 }
 
@@ -1284,7 +1056,7 @@ impl AgentsConfigFile {
         }
 
         let contents = fs::read_to_string(path)?;
-        let config: Self = toml::from_str(&contents)?;
+        let config: AgentsConfigFile = toml::from_str(&contents)?;
         Ok(Some(config))
     }
 

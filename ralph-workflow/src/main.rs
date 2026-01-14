@@ -43,12 +43,15 @@ use clap::Parser;
 
 fn main() -> anyhow::Result<()> {
     // Set up Ctrl+C handler for cleanup on unexpected exit
-    ctrlc::set_handler(move || {
+    if let Err(e) = ctrlc::set_handler(move || {
         eprintln!("\n✋ Interrupted! Cleaning up generated files...");
         cleanup_agent_phase_silent();
         std::process::exit(130); // Standard exit code for SIGINT
-    })
-    .ok(); // Ignore errors if handler can't be set (e.g., nested handlers)
+    }) {
+        // Log a warning but don't fail - the program can still function without the handler
+        eprintln!("Warning: Failed to set Ctrl+C handler: {e}");
+        eprintln!("Cleanup on Ctrl+C may not work properly.");
+    }
 
     app::run(Args::parse())
 }
