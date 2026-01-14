@@ -7,7 +7,6 @@
 //! - `--generate-commit-msg`: Generate a commit message for staged changes
 
 use crate::agents::AgentRegistry;
-use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::{
     delete_commit_message_file, read_commit_message_file, write_commit_message_file,
@@ -15,10 +14,11 @@ use crate::files::{
 use crate::git_helpers::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
 };
+use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::generate_commit_message;
 use crate::pipeline::PipelineRuntime;
-use crate::timer::Timer;
+use crate::pipeline::Timer;
 use std::env;
 
 /// Handles the `--show-commit-msg` command.

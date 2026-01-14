@@ -474,7 +474,7 @@ pub fn make_prompt_read_only() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::colors::Colors;
+    use crate::logger::Colors;
     use crate::test_utils::testing::with_temp_cwd;
     use tempfile::TempDir;
 

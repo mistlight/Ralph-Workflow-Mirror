@@ -22,10 +22,10 @@
 //! ```
 
 #![expect(clippy::too_many_lines)]
-use crate::colors::{Colors, CHECK, CROSS};
+use crate::cli::truncate_text;
 use crate::config::Verbosity;
-use crate::utils::truncate_text;
-use std::cell::RefCell;
+use crate::logger::{Colors, CHECK, CROSS};
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 

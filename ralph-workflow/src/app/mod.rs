@@ -33,9 +33,9 @@ use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
     handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
 };
-use crate::colors::Colors;
 use crate::files::{ensure_files, reset_context_for_isolation};
 use crate::git_helpers::{get_repo_root, require_git_repo, reset_start_commit};
+use crate::logger::Colors;
 use crate::logger::Logger;
 use std::env;
 

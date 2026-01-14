@@ -35,7 +35,7 @@
 #![expect(clippy::cast_sign_loss)]
 #![expect(clippy::cast_possible_truncation)]
 #![expect(clippy::cast_precision_loss)]
-use crate::colors::Colors;
+use crate::logger::Colors;
 use std::cell::Cell;
 
 /// Parser health statistics

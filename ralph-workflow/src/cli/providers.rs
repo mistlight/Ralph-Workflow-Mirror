@@ -3,7 +3,7 @@
 //! Contains functions for displaying `OpenCode` provider information.
 
 use crate::agents::OpenCodeProviderType;
-use crate::colors::Colors;
+use crate::logger::Colors;
 
 /// Provider category for display organization
 #[derive(Debug, Clone, Copy)]

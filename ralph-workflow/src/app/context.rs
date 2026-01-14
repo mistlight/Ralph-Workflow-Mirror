@@ -4,8 +4,8 @@
 
 use crate::agents::AgentRegistry;
 use crate::cli::Args;
-use crate::colors::Colors;
 use crate::config::Config;
+use crate::logger::Colors;
 use crate::logger::Logger;
 
 /// Context for running the pipeline.

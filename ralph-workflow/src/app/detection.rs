@@ -3,10 +3,10 @@
 //! This module handles automatic detection of the project technology stack
 //! and generation of language-specific review guidelines.
 
-use crate::colors::Colors;
 use crate::config::Config;
 use crate::guidelines::ReviewGuidelines;
 use crate::language_detector::ProjectStack;
+use crate::logger::Colors;
 use crate::logger::Logger;
 
 /// Detects project stack and generates review guidelines.

@@ -5,10 +5,10 @@
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::checkpoint::load_checkpoint;
-use crate::colors::Colors;
 use crate::config::Config;
 use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::language_detector;
+use crate::logger::Colors;
 use std::fs;
 use std::path::Path;
 use std::process::Command;

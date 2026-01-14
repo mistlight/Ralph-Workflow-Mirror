@@ -20,6 +20,10 @@ mod handlers;
 mod init;
 pub mod presets;
 mod providers;
+pub mod utils;
+
+// Re-export CLI utility functions
+pub use utils::{format_argv_for_log, split_command, truncate_text};
 
 // Re-export all public items for backward compatibility
 pub use args::Args;
