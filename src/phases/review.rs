@@ -943,13 +943,7 @@ fn get_commit_agent_chain(ctx: &PhaseContext<'_>) -> Vec<String> {
 
 /// Resolve an agent name to its command string.
 fn resolve_agent_command(ctx: &PhaseContext<'_>, agent_name: &str) -> Option<String> {
-    // First check if there's a cmd override for this agent in config
-    // For commit agents, we'll use the developer_cmd as a fallback
-    if let Some(cmd) = ctx.config.developer_cmd.clone() {
-        return Some(cmd);
-    }
-
-    // Otherwise, get the command from the registry
+    // Get the command from the registry
     // For commit messages, we use the developer-style command (with yolo=true)
     ctx.registry
         .resolve_config(agent_name)
