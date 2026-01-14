@@ -20,11 +20,9 @@ pub fn prompt_developer_iteration(_iteration: u32, _total: u32, context: Context
 
 INPUTS TO READ:
 1. .agent/PLAN.md - The implementation plan (execute these steps)
-2. PROMPT.md - The original requirements (for reference)
 
 YOUR TASK:
 Execute the next steps from .agent/PLAN.md that haven't been completed yet.
-Work toward satisfying all acceptance checks in PROMPT.md.
 
 GUIDELINES:
 - Make meaningful progress in each iteration
@@ -37,7 +35,7 @@ GUIDELINES:
 
 /// Generate prompt for planning phase.
 ///
-/// Agent does a deep dive on PROMPT.md and creates a detailed plan.
+/// The orchestrator provides requirements via the planning task context.
 /// The plan content is returned as structured output (captured by JSON parser)
 /// and the orchestrator writes it to .agent/PLAN.md.
 ///
@@ -63,7 +61,8 @@ You MAY use read-only operations: reading files, searching code, listing directo
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 1: UNDERSTANDING
 ═══════════════════════════════════════════════════════════════════════════════
-Read PROMPT.md thoroughly to understand:
+The orchestrator has provided requirements to you via the planning task.
+Understand:
 - The Goal: What is the desired end state?
 - Acceptance Checks: What specific conditions must be satisfied?
 - Constraints: Any requirements, limitations, or quality standards mentioned?
@@ -95,7 +94,7 @@ Design your implementation approach:
 PHASE 4: REVIEW
 ═══════════════════════════════════════════════════════════════════════════════
 Validate your plan against the requirements:
-- Does the approach satisfy ALL acceptance checks in PROMPT.md?
+- Does the approach satisfy ALL acceptance checks?
 - Are there edge cases or error scenarios to handle?
 - Is the plan specific enough to implement without ambiguity?
 - Have you identified the correct files to modify?
@@ -138,7 +137,8 @@ mod tests {
     #[test]
     fn test_prompt_developer_iteration() {
         let result = prompt_developer_iteration(2, 5, ContextLevel::Normal);
-        assert!(result.contains("PROMPT.md"));
+        // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+        assert!(!result.contains("PROMPT.md"));
         assert!(result.contains("PLAN.md"));
         assert!(result.contains("IMPLEMENTATION MODE"));
         // STATUS.md should NOT be referenced (vague prompts, isolation mode)
@@ -149,7 +149,8 @@ mod tests {
     fn test_developer_iteration_minimal_context() {
         let result = prompt_developer_iteration(1, 5, ContextLevel::Minimal);
         // Minimal context should include essential files (not STATUS.md in isolation mode)
-        assert!(result.contains("PROMPT.md"));
+        // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+        assert!(!result.contains("PROMPT.md"));
         assert!(result.contains("PLAN.md"));
         // STATUS.md should NOT be referenced (vague prompts, isolation mode)
         assert!(!result.contains("STATUS.md"));
@@ -158,7 +159,8 @@ mod tests {
     #[test]
     fn test_prompt_plan() {
         let result = prompt_plan();
-        assert!(result.contains("PROMPT.md"));
+        // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+        assert!(!result.contains("PROMPT.md"));
         // Plan is now returned as structured output, not written to file
         assert!(result.contains("PLANNING MODE"));
         assert!(result.contains("Implementation Steps"));

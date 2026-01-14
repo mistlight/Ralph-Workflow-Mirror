@@ -62,9 +62,14 @@ impl PromptValidationResult {
 /// Validate PROMPT.md structure and content.
 ///
 /// Checks for:
-/// - File existence and non-empty content
+/// - File existence and non-empty content (auto-restores from backup if missing)
 /// - Goal section (## Goal or # Goal)
 /// - Acceptance section (## Acceptance, Acceptance Criteria, or acceptance)
+///
+/// # Auto-Restore
+///
+/// If PROMPT.md is missing but `.agent/PROMPT.md.backup` exists, the backup is
+/// automatically copied to PROMPT.md. This prevents accidental deletion by agents.
 ///
 /// # Arguments
 ///
@@ -87,21 +92,41 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
     };
 
     if !result.exists {
-        if interactive && std::io::stdout().is_terminal() {
-            // Interactive mode: the caller should have already prompted
-            // We just return an error result so they can handle it
-            result.errors.push(
-                "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
-                    .to_string(),
-            );
+        // Auto-restore from backup if available
+        let backup_path = Path::new(".agent/PROMPT.md.backup");
+        if backup_path.exists() {
+            match fs::copy(backup_path, prompt_path) {
+                Ok(_) => {
+                    result.exists = true;
+                    result.warnings.push(
+                        "PROMPT.md was missing and was automatically restored from .agent/PROMPT.md.backup"
+                            .to_string(),
+                    );
+                }
+                Err(e) => {
+                    result.errors.push(format!(
+                        "PROMPT.md not found and restore from backup failed: {}", e
+                    ));
+                    return result;
+                }
+            }
         } else {
-            result.errors.push(
-                "PROMPT.md not found. Run 'ralph --list-templates' to see available templates, \
-                 then 'ralph --init-prompt <template>' to create one."
-                    .to_string(),
-            );
+            if interactive && std::io::stdout().is_terminal() {
+                // Interactive mode: the caller should have already prompted
+                // We just return an error result so they can handle it
+                result.errors.push(
+                    "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
+                        .to_string(),
+                );
+            } else {
+                result.errors.push(
+                    "PROMPT.md not found. Run 'ralph --list-templates' to see available templates, \
+                     then 'ralph --init-prompt <template>' to create one."
+                        .to_string(),
+                );
+            }
+            return result;
         }
-        return result;
     }
 
     let content = match fs::read_to_string(prompt_path) {
