@@ -213,6 +213,9 @@ impl PromptMonitor {
     /// - .agent/PROMPT.md.backup.2
     ///
     /// Returns true if restoration succeeded, false otherwise.
+    ///
+    /// Uses atomic open to avoid TOCTOU race conditions - opens and reads
+    /// the file in one operation rather than checking existence separately.
     fn restore_from_backup() -> bool {
         let backup_paths = [
             Path::new(".agent/PROMPT.md.backup"),
@@ -221,41 +224,54 @@ impl PromptMonitor {
         ];
 
         for backup_path in &backup_paths {
-            if backup_path.exists() {
-                // Verify backup has content
-                let backup_content = match fs::read_to_string(backup_path) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
+            // Use std::fs::File::open to atomically open the file, avoiding TOCTOU
+            // race conditions where the file could be replaced between exists() check
+            // and read operation
+            let backup_content = match std::fs::File::open(backup_path) {
+                Ok(mut file) => {
+                    // Verify it's a regular file, not a symlink or special file
+                    match file.metadata() {
+                        Ok(metadata) if metadata.is_file() => {
+                            // Read the content
+                            let mut buffer = String::new();
+                            match std::io::Read::read_to_string(&mut file, &mut buffer) {
+                                Ok(_) => buffer,
+                                Err(_) => continue,
+                            }
+                        }
+                        _ => continue, // Not a regular file, skip
+                    }
+                }
+                Err(_) => continue, // File doesn't exist or can't be opened
+            };
 
-                if backup_content.trim().is_empty() {
-                    continue;
+            if backup_content.trim().is_empty() {
+                continue;
+            }
+
+            // Restore from backup
+            if fs::write("PROMPT.md", backup_content).is_ok() {
+                // Set read-only permissions
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = fs::metadata("PROMPT.md") {
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o444);
+                        let _ = fs::set_permissions("PROMPT.md", perms);
+                    }
                 }
 
-                // Restore from backup
-                if fs::write("PROMPT.md", backup_content).is_ok() {
-                    // Set read-only permissions
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        if let Ok(metadata) = fs::metadata("PROMPT.md") {
-                            let mut perms = metadata.permissions();
-                            perms.set_mode(0o444);
-                            let _ = fs::set_permissions("PROMPT.md", perms);
-                        }
+                #[cfg(windows)]
+                {
+                    if let Ok(metadata) = fs::metadata("PROMPT.md") {
+                        let mut perms = metadata.permissions();
+                        perms.set_readonly(true);
+                        let _ = fs::set_permissions("PROMPT.md", perms);
                     }
-
-                    #[cfg(windows)]
-                    {
-                        if let Ok(metadata) = fs::metadata("PROMPT.md") {
-                            let mut perms = metadata.permissions();
-                            perms.set_readonly(true);
-                            let _ = fs::set_permissions("PROMPT.md", perms);
-                        }
-                    }
-
-                    return true;
                 }
+
+                return true;
             }
         }
 
