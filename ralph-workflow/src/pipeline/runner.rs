@@ -110,10 +110,10 @@ pub fn run_with_prompt(
 
     // Build full command
     let argv = split_command(cmd.cmd_str)?;
-    if argv.is_empty() {
+    if argv.is_empty() || cmd.cmd_str.trim().is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Agent command is empty",
+            "Agent command is empty or contains only whitespace",
         ));
     }
 

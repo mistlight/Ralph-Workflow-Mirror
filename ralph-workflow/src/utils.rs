@@ -66,15 +66,21 @@ pub fn split_command(cmd: &str) -> io::Result<Vec<String>> {
 }
 
 static SECRET_LIKE_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
+    // Fixed ReDoS vulnerability by:
+    // 1. Using \b (word boundary) anchors to prevent overlapping matches
+    // 2. Making patterns more specific with exact length ranges
+    // 3. Limiting max character class repetition to 100
     Regex::new(
         r"(?ix)
-        \b(
-          sk-[a-z0-9]{20,} |
-          ghp_[a-z0-9]{20,} |
-          github_pat_[a-z0-9_]{20,} |
-          xox[baprs]-[a-z0-9-]{10,} |
+        \b
+        (?:
+          sk-[a-z0-9]{20,100} |
+          ghp_[a-z0-9]{20,100} |
+          github_pat_[a-z0-9_]{20,100} |
+          xox[baprs]-[a-z0-9-]{10,100} |
           AKIA[0-9A-Z]{16}
-        )\b
+        )
+        \b
         ",
     )
     .ok()

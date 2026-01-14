@@ -150,6 +150,9 @@ pub(crate) enum ContentType {
     ToolInput,
 }
 
+/// Maximum buffer size per key to prevent unbounded memory growth
+const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB per key
+
 /// Delta accumulator for streaming content
 ///
 /// Tracks partial content across multiple streaming events, accumulating
@@ -158,6 +161,12 @@ pub(crate) enum ContentType {
 ///
 /// Supports both index-based tracking (for parsers with numeric indices)
 /// and string-based key tracking (for parsers with string identifiers).
+///
+/// # Memory Safety
+///
+/// Each buffer has a maximum size of 10MB to prevent memory exhaustion
+/// in long-running sessions. When a buffer exceeds this limit, new deltas
+/// are ignored for that key.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct DeltaAccumulator {
     /// Accumulated content by (`content_type`, key) composite key
@@ -186,13 +195,34 @@ impl DeltaAccumulator {
     /// Add a delta for a specific content type and key
     ///
     /// This is the generic method that supports both index-based and
-    /// string-based key tracking.
+    /// string-based key tracking. Enforces `MAX_BUFFER_SIZE` to prevent
+    /// unbounded memory growth.
     pub(crate) fn add_delta(&mut self, content_type: ContentType, key: &str, delta: &str) {
         let composite_key = (content_type, key.to_string());
         self.buffers
             .entry(composite_key.clone())
-            .and_modify(|buf| buf.push_str(delta))
-            .or_insert_with(|| delta.to_string());
+            .and_modify(|buf| {
+                // Only add delta if buffer hasn't exceeded maximum size
+                if buf.len() < MAX_BUFFER_SIZE {
+                    // Calculate how much we can add without exceeding the limit
+                    let remaining = MAX_BUFFER_SIZE.saturating_sub(buf.len());
+                    if delta.len() <= remaining {
+                        buf.push_str(delta);
+                    } else if remaining > 0 {
+                        // Add partial delta up to the limit
+                        buf.push_str(&delta[..remaining]);
+                    }
+                    // If remaining is 0, buffer is full - ignore new deltas
+                }
+            })
+            .or_insert_with(|| {
+                // For new buffers, truncate delta if it exceeds MAX_BUFFER_SIZE
+                if delta.len() <= MAX_BUFFER_SIZE {
+                    delta.to_string()
+                } else {
+                    delta[..MAX_BUFFER_SIZE].to_string()
+                }
+            });
 
         // Track order for most_recent operations
         if !self.key_order.contains(&composite_key) {
