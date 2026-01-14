@@ -7,8 +7,7 @@
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::config::Config;
 use crate::guidelines::ReviewGuidelines;
-use crate::logger::Colors;
-use crate::logger::Logger;
+use crate::logger::{Colors, Logger};
 use crate::pipeline::Stats;
 use crate::pipeline::Timer;
 

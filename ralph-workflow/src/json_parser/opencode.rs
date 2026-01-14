@@ -195,6 +195,9 @@ impl OpenCodeParser {
                 let was_streaming = session.has_any_streamed_content();
                 drop(session);
 
+                // Finalize the message
+                let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
+
                 event.part.as_ref().map_or_else(String::new, |part| {
                     let reason = part.reason.as_deref().unwrap_or("unknown");
                     let cost = part.cost.unwrap_or(0.0);
