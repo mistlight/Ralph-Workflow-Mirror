@@ -10,11 +10,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <!-- Fonts: Space Grotesk for headings, Inter for body, JetBrains Mono for code -->
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Fonts: Righteous (display), DM Sans (headings/body), JetBrains Mono (code) -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Righteous&display=swap" rel="stylesheet">
 
     <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%231A1A18' rx='12'/%3E%3Cpath d='M18 20h24M18 30h18M18 40h12' stroke='%23B8FF00' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%2309090B' rx='12'/%3E%3Cpath d='M18 20h24M18 30h18M18 40h12' stroke='%23C8FF00' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 
     <style>
         *, *::before, *::after {
@@ -24,19 +24,21 @@
         }
 
         :root {
-            --color-bg: #FAF8F3;
-            --color-bg-alt: #F5F2EB;
-            --color-bg-warm: #F0ECE4;
-            --color-bg-dark: #1A1A18;
-            --color-text: #1A1A18;
-            --color-text-muted: #6B6963;
-            --color-text-on-dark: #FAF8F3;
-            --color-primary: #FF4D00;
-            --color-lime: #B8FF00;
-            --border-color: #D1CFC7;
-            --font-heading: 'Space Grotesk', 'Satoshi', 'Inter', -apple-system, sans-serif;
-            --font-body: 'Söhne', 'Inter', 'Source Sans Pro', -apple-system, sans-serif;
-            --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
+            --color-bg: #09090B;
+            --color-bg-alt: #0C0C0E;
+            --color-bg-card: #18181B;
+            --color-text: #E4E4E7;
+            --color-text-muted: #A1A1AA;
+            --color-text-dim: #52525B;
+            --color-primary: #C8FF00;
+            --color-accent: #00FFD5;
+            --color-error: #FF0080;
+            --border-subtle: #27272A;
+            --border-medium: #3F3F46;
+            --font-display: 'Righteous', 'Orbitron', 'Rajdhani', cursive;
+            --font-heading: 'DM Sans', 'Outfit', 'Plus Jakarta Sans', sans-serif;
+            --font-body: 'DM Sans', 'Outfit', -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
         }
 
         html {
@@ -54,9 +56,10 @@
             flex-direction: column;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
         }
 
-        /* Subtle Grain Texture */
+        /* Scanline Effect */
         body::before {
             content: '';
             position: fixed;
@@ -65,14 +68,37 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
-            z-index: 1;
+            z-index: 10;
+            opacity: 0.03;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 1px,
+                rgba(200, 255, 0, 0.1) 1px,
+                rgba(200, 255, 0, 0.1) 2px
+            );
+        }
+
+        /* Grid Pattern Background */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
             opacity: 0.4;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            background-image:
+                linear-gradient(var(--border-subtle) 1px, transparent 1px),
+                linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+            background-size: 60px 60px;
         }
 
         body > * {
             position: relative;
-            z-index: 2;
+            z-index: 1;
         }
 
         .container {
@@ -86,16 +112,17 @@
         }
 
         .error-code {
-            font-family: var(--font-heading);
+            font-family: var(--font-display);
             font-size: clamp(120px, 25vw, 220px);
-            font-weight: 800;
-            color: var(--color-bg-alt);
+            font-weight: 400;
+            color: var(--color-bg-card);
             line-height: 0.9;
-            letter-spacing: -0.05em;
-            margin-bottom: -4rem;
+            letter-spacing: 0.02em;
+            margin-bottom: -3rem;
             position: relative;
             z-index: 0;
             user-select: none;
+            text-shadow: 0 0 40px rgba(200, 255, 0, 0.1);
         }
 
         .content {
@@ -113,20 +140,23 @@
         .logo-mark {
             width: 40px;
             height: 40px;
-            background: var(--color-bg-dark);
+            background: var(--color-bg-card);
+            border: 1px solid var(--color-primary);
             border-radius: 8px;
-            color: var(--color-text-on-dark);
+            color: var(--color-primary);
             display: flex;
             align-items: center;
             justify-content: center;
+            box-shadow: 0 0 20px rgba(200, 255, 0, 0.3);
         }
 
         .logo-text {
-            font-family: var(--font-heading);
-            font-weight: 700;
+            font-family: var(--font-display);
+            font-weight: 400;
             font-size: 1.25rem;
             text-transform: lowercase;
-            letter-spacing: -0.02em;
+            letter-spacing: 0.05em;
+            color: var(--color-primary);
         }
 
         .error-title {
@@ -134,7 +164,7 @@
             font-size: clamp(2rem, 5vw, 3rem);
             font-weight: 700;
             margin-bottom: 1rem;
-            letter-spacing: -0.02em;
+            letter-spacing: -0.03em;
         }
 
         .error-title span {
@@ -152,20 +182,33 @@
         .terminal-output {
             font-family: var(--font-mono);
             font-size: 0.875rem;
-            color: var(--color-text-on-dark);
-            background: var(--color-bg-dark);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--color-text);
+            background: var(--color-bg);
+            border: 1px solid var(--border-subtle);
             border-radius: 12px;
             padding: 1.5rem;
             margin-bottom: 2.5rem;
             text-align: left;
             max-width: 500px;
-            box-shadow: 0 12px 32px rgba(26, 26, 24, 0.12);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 40px rgba(200, 255, 0, 0.05);
         }
 
         .terminal-line {
             margin-bottom: 0.5rem;
             line-height: 1.6;
+            opacity: 0;
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        .terminal-line:nth-child(1) { animation-delay: 0.2s; }
+        .terminal-line:nth-child(2) { animation-delay: 0.6s; }
+        .terminal-line:nth-child(3) { animation-delay: 1s; }
+        .terminal-line:nth-child(4) { animation-delay: 1.4s; }
+        .terminal-line:nth-child(5) { animation-delay: 1.8s; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
         }
 
         .terminal-line:last-child {
@@ -173,24 +216,36 @@
         }
 
         .terminal-prompt {
-            color: var(--color-lime);
+            color: var(--color-primary);
         }
 
         .terminal-error {
-            color: #FF4B40;
+            color: var(--color-error);
         }
 
         .terminal-warn {
-            color: #FFB300;
+            color: #FFAA00;
         }
 
         .terminal-success {
-            color: var(--color-lime);
+            color: var(--color-accent);
         }
 
         .terminal-link {
-            color: var(--color-lime);
+            color: var(--color-accent);
             text-decoration: underline;
+        }
+
+        .terminal-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: var(--color-primary);
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
         }
 
         .actions {
@@ -205,9 +260,11 @@
             align-items: center;
             gap: 0.5rem;
             padding: 0.875rem 1.75rem;
-            font-family: var(--font-body);
+            font-family: var(--font-mono);
             font-size: 0.9375rem;
             font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
             cursor: pointer;
             text-decoration: none;
             transition: all 0.25s ease;
@@ -216,31 +273,33 @@
         }
 
         .btn--primary {
-            background: var(--color-bg-dark);
-            color: var(--color-text-on-dark);
+            background: var(--color-primary);
+            color: var(--color-bg);
+            box-shadow: 0 0 20px rgba(200, 255, 0, 0.3);
         }
 
         .btn--primary:hover {
-            background: var(--color-primary);
+            background: var(--color-text);
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(255, 77, 0, 0.2);
+            box-shadow: 0 0 30px rgba(200, 255, 0, 0.5);
         }
 
         .btn--secondary {
-            background: white;
+            background: transparent;
             color: var(--color-text);
-            border: 2px solid var(--border-color);
+            border: 2px solid var(--border-medium);
         }
 
         .btn--secondary:hover {
-            border-color: var(--color-text);
+            border-color: var(--color-accent);
+            color: var(--color-accent);
         }
 
         footer {
             padding: 2rem;
             text-align: center;
-            border-top: 1px solid var(--border-color);
-            color: var(--color-text-muted);
+            border-top: 1px solid var(--border-subtle);
+            color: var(--color-text-dim);
             font-size: 0.875rem;
         }
 
@@ -251,7 +310,7 @@
         }
 
         footer a:hover {
-            text-decoration: underline;
+            color: var(--color-accent);
         }
 
         @media (max-width: 480px) {
@@ -267,6 +326,14 @@
             .terminal-output {
                 font-size: 0.8rem;
                 padding: 1rem;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
             }
         }
     </style>
@@ -306,7 +373,7 @@
                     <span class="terminal-success">[INFO]</span> best match: <a href="/" class="terminal-link">index.html</a>
                 </div>
                 <div class="terminal-line">
-                    <span class="terminal-prompt">$</span> <span style="opacity: 0.5;">_</span>
+                    <span class="terminal-prompt">$</span> <span class="terminal-cursor"></span>
                 </div>
             </div>
 

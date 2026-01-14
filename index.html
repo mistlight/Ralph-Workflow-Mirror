@@ -23,17 +23,17 @@
     <meta name="twitter:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
 
     <link rel="canonical" href="https://mistlight.codeberg.page/ralph/">
-    <meta name="theme-color" content="#FAF8F3">
+    <meta name="theme-color" content="#09090B">
 
     <title>Ralph Workflow - Your Ideas, Shipped by AI</title>
 
-    <!-- Fonts: Space Grotesk for headings, Inter for body, JetBrains Mono for code -->
+    <!-- Fonts: Righteous (display), DM Sans (headings/body), JetBrains Mono (code) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Righteous&display=swap" rel="stylesheet">
 
     <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%231A1A18' rx='12'/%3E%3Cpath d='M18 20h24M18 30h18M18 40h12' stroke='%23B8FF00' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%2309090B' rx='12'/%3E%3Cpath d='M18 20h24M18 30h18M18 40h12' stroke='%23C8FF00' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -61,7 +61,7 @@
         <div class="nav-container">
             <a href="#" class="nav-logo" aria-label="Ralph Workflow - Home">
                 <div class="logo-mark">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
                         <path d="M8 6h8M8 12h5M8 18h3"/>
                     </svg>
                 </div>
@@ -86,12 +86,9 @@
     <main id="main" role="main">
         <!-- Hero Section -->
         <section class="hero">
-            <!-- Decorative Shapes -->
-            <div class="hero-shapes" aria-hidden="true">
-                <div class="hero-shape hero-shape-1"></div>
-                <div class="hero-shape hero-shape-2"></div>
-                <div class="hero-shape hero-shape-3"></div>
-            </div>
+            <!-- Animated Glow Effects -->
+            <div class="hero-glow" aria-hidden="true"></div>
+            <div class="hero-glow-2" aria-hidden="true"></div>
 
             <div class="hero-grid">
                 <div class="hero-content">
@@ -130,20 +127,42 @@
                             <span class="terminal-dot terminal-dot-red"></span>
                             <span class="terminal-dot terminal-dot-yellow"></span>
                             <span class="terminal-dot terminal-dot-green"></span>
-                            <span class="terminal-title">terminal</span>
+                            <span class="terminal-title">ralph — terminal</span>
                         </div>
                         <div class="terminal-body">
                             <div class="terminal-line">
                                 <span class="terminal-prompt">$</span>
                                 <span class="terminal-command">ralph -S</span>
                             </div>
-                            <div class="terminal-output">
-                                <p><span class="terminal-success">→</span> Reading PROMPT.md</p>
-                                <p><span class="terminal-success">→</span> Developer agent: Writing code...</p>
-                                <p><span class="terminal-success">→</span> Reviewer agent: Validating...</p>
-                                <p><span class="terminal-success">→</span> Iteration 3/10 complete</p>
-                                <p><span class="terminal-success">✓</span> Code approved, creating commit...</p>
-                                <p style="color: #6B6963;">Changes shipped in 3m 42s<span class="terminal-cursor"></span></p>
+                            <div class="terminal-line">
+                                <div class="terminal-output">
+                                    <p><span class="terminal-success">→</span> Reading PROMPT.md</p>
+                                </div>
+                            </div>
+                            <div class="terminal-line">
+                                <div class="terminal-output">
+                                    <p><span class="terminal-success">→</span> Developer agent: Writing code...</p>
+                                </div>
+                            </div>
+                            <div class="terminal-line">
+                                <div class="terminal-output">
+                                    <p><span class="terminal-success">→</span> Reviewer agent: Validating...</p>
+                                </div>
+                            </div>
+                            <div class="terminal-line">
+                                <div class="terminal-output">
+                                    <p><span class="terminal-success">→</span> Iteration 3/10 complete</p>
+                                </div>
+                            </div>
+                            <div class="terminal-line">
+                                <div class="terminal-output">
+                                    <p><span class="terminal-success">✓</span> Code approved, creating commit...</p>
+                                </div>
+                            </div>
+                            <div class="terminal-line">
+                                <div class="terminal-output">
+                                    <p style="color: #A1A1AA;">Changes shipped in 3m 42s<span class="terminal-cursor"></span></p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -228,7 +247,7 @@
 
             <div style="max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; text-align: center;">
                 <div>
-                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-warm); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
+                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
                             <path d="M14 2v6h6"/>
@@ -241,7 +260,7 @@
                 </div>
 
                 <div>
-                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-warm); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
+                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="16 18 22 12 16 6"/>
                             <polyline points="8 6 2 12 8 18"/>
@@ -252,7 +271,7 @@
                 </div>
 
                 <div>
-                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-warm); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
+                    <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; color: var(--color-primary);">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="20 6 9 17 4 12"/>
                         </svg>
@@ -292,13 +311,13 @@
                         </ul>
                     </div>
 
-                    <div style="padding: 2rem; background: rgba(255,255,255,0.05); border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.1);">
-                        <h4 style="margin-bottom: 1rem; color: var(--color-lime);">Quick Start</h4>
-                        <ol style="margin: 0; padding-left: 1.25rem; color: rgba(255,255,255,0.8);">
+                    <div style="padding: 2rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);">
+                        <h4 style="margin-bottom: 1rem; color: var(--color-primary); font-family: var(--font-display);">Quick Start</h4>
+                        <ol style="margin: 0; padding-left: 1.25rem; color: var(--color-text-muted);">
                             <li style="margin-bottom: 0.5rem;">Install Ralph via cargo</li>
                             <li style="margin-bottom: 0.5rem;">Configure your AI agent</li>
                             <li style="margin-bottom: 0.5rem;">Create PROMPT.md</li>
-                            <li>Run <code class="inline" style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.2);">ralph -S</code></li>
+                            <li>Run <code class="inline">ralph -S</code></li>
                         </ol>
                     </div>
                 </div>
@@ -323,7 +342,7 @@
                             </div>
                             <pre><code>cargo install ralph-workflow</code></pre>
                         </div>
-                        <p style="margin-top: 1rem; color: rgba(255,255,255,0.6); font-size: 0.875rem;">Requires Rust 1.70+ and cargo in PATH</p>
+                        <p style="margin-top: 1rem; color: var(--color-text-dim); font-size: 0.875rem;">Requires Rust 1.70+ and cargo in PATH</p>
                     </div>
 
                     <div class="install-content" data-content="source" style="display: none;">
@@ -363,7 +382,7 @@ fallback = ["codex", "opencode"]
 model = "claude-sonnet-4"
 max_iterations = 10</code></pre>
                         </div>
-                        <p style="margin-top: 1rem; color: rgba(255,255,255,0.6); font-size: 0.875rem;">Create this file at <code class="inline" style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.2);">~/.ralph/config.toml</code></p>
+                        <p style="margin-top: 1rem; color: var(--color-text-dim); font-size: 0.875rem;">Create this file at <code class="inline">~/.ralph/config.toml</code></p>
                     </div>
                 </div>
             </div>
@@ -467,7 +486,7 @@ max_iterations = 10</code></pre>
                 </article>
 
                 <article class="audience-card">
-                    <span class="audience-badge" style="background: var(--color-lime); color: var(--color-bg-dark);">Efficient</span>
+                    <span class="audience-badge" style="background: var(--color-primary); color: var(--color-bg);">Efficient</span>
                     <h3>For Vibe Coders</h3>
                     <p>You let AI do the heavy lifting. Ralph removes the friction—no more copy-pasting between chat and editor.</p>
                     <ul>
@@ -479,7 +498,7 @@ max_iterations = 10</code></pre>
                 </article>
 
                 <article class="audience-card">
-                    <span class="audience-badge" style="background: var(--color-aqua); color: white;">Learning</span>
+                    <span class="audience-badge" style="background: var(--color-accent); color: var(--color-bg);">Learning</span>
                     <h3>New to CLI?</h3>
                     <p>Welcome! Ralph is a great tool to learn with. The terminal is where you run commands—Ralph handles the complexity.</p>
                     <ul>
