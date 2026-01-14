@@ -8,7 +8,7 @@ use crate::utils::truncate_text;
 use std::io::{self, BufRead, Write};
 
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, CodexEvent};
+use super::types::{format_tool_input, format_unknown_json_event, CodexEvent};
 
 /// Codex event parser
 pub(crate) struct CodexParser {
@@ -423,7 +423,10 @@ impl CodexParser {
                     err
                 )
             }
-            CodexEvent::Unknown => String::new(),
+            CodexEvent::Unknown => {
+                // Use the generic unknown event formatter for consistent handling
+                format_unknown_json_event(line, name, c, self.verbosity.is_verbose())
+            }
         };
 
         if output.is_empty() {
@@ -483,7 +486,12 @@ impl CodexParser {
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    monitor.record_ignored();
+                    // Check if this was valid JSON but an unknown event type
+                    if trimmed.starts_with('{') {
+                        monitor.record_unknown_event();
+                    } else {
+                        monitor.record_ignored();
+                    }
                 }
             }
 

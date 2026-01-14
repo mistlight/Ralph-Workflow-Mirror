@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Write};
 
 use super::health::HealthMonitor;
-use super::types::format_tool_input;
+use super::types::{format_tool_input, format_unknown_json_event};
 
 /// OpenCode event types
 ///
@@ -334,8 +334,8 @@ impl OpenCodeParser {
                 }
             }
             _ => {
-                // Unknown event type - ignore silently
-                String::new()
+                // Unknown event type - use the generic formatter in verbose mode
+                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
             }
         };
 
@@ -395,7 +395,12 @@ impl OpenCodeParser {
                     write!(writer, "{}", output)?;
                 }
                 None => {
-                    monitor.record_ignored();
+                    // Check if this was valid JSON but an unknown event type
+                    if trimmed.starts_with('{') {
+                        monitor.record_unknown_event();
+                    } else {
+                        monitor.record_ignored();
+                    }
                 }
             }
 

@@ -328,4 +328,105 @@ mod tests {
         let warning2 = monitor.check_and_warn(&colors);
         assert!(warning2.is_none()); // Already warned
     }
+
+    #[test]
+    fn test_health_monitor_many_unknown_no_warning() {
+        let monitor = HealthMonitor::new("test");
+        let colors = Colors { enabled: false };
+
+        // Add many unknown events (simulating 97.5% unknown like the bug report)
+        for _ in 0..2049 {
+            monitor.record_unknown_event();
+        }
+        for _ in 0..53 {
+            monitor.record_parsed();
+        }
+
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_none()); // Should NOT warn even with 97.5% unknown events
+    }
+
+    #[test]
+    fn test_health_monitor_mixed_unknown_and_parse_errors() {
+        let monitor = HealthMonitor::new("test");
+        let colors = Colors { enabled: false };
+
+        // Mix of unknown and parse errors - only parse errors count for warning
+        for _ in 0..100 {
+            monitor.record_unknown_event();
+        }
+        for _ in 0..20 {
+            monitor.record_parse_error();
+        }
+        for _ in 0..20 {
+            monitor.record_parsed();
+        }
+
+        // 140 total events, 20 parse errors = ~14% (not concerning)
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_none());
+
+        // Add more parse errors to trigger warning
+        for _ in 0..30 {
+            monitor.record_parse_error();
+        }
+
+        // 170 total events, 50 parse errors = ~29% (still not concerning)
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_none());
+
+        // Add even more parse errors
+        for _ in 0..60 {
+            monitor.record_parse_error();
+        }
+
+        // 230 total events, 110 parse errors = ~48% (close to threshold)
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_none());
+
+        // Push it over 50%
+        for _ in 0..30 {
+            monitor.record_parse_error();
+        }
+
+        // 260 total events, 140 parse errors = ~54% (concerning!)
+        let warning = monitor.check_and_warn(&colors);
+        assert!(warning.is_some());
+    }
+
+    #[test]
+    fn test_parser_health_parse_error_percentage() {
+        let mut health = ParserHealth::new();
+        assert_eq!(health.parse_error_percentage(), 0.0);
+
+        // Parse errors only
+        for _ in 0..5 {
+            health.record_parse_error();
+        }
+        assert_eq!(health.parse_error_percentage(), 100.0);
+
+        // Add parsed events
+        let mut health2 = ParserHealth::new();
+        for _ in 0..5 {
+            health2.record_parse_error();
+        }
+        for _ in 0..5 {
+            health2.record_parsed();
+        }
+        assert_eq!(health2.parse_error_percentage(), 50.0);
+
+        // Unknown events don't affect parse error percentage
+        let mut health3 = ParserHealth::new();
+        for _ in 0..5 {
+            health3.record_parse_error();
+        }
+        for _ in 0..10 {
+            health3.record_unknown_event();
+        }
+        for _ in 0..5 {
+            health3.record_parsed();
+        }
+        // 20 total, 5 parse errors = 25%
+        assert_eq!(health3.parse_error_percentage(), 25.0);
+    }
 }
