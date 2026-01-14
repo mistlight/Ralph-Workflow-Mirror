@@ -3,29 +3,29 @@
 //! This module contains the main pipeline orchestration that coordinates
 //! the various phases of the workflow.
 
+#![expect(clippy::needless_pass_by_value)]
+#![expect(clippy::too_many_lines)]
+
 use crate::banner::print_welcome_banner;
-use crate::checkpoint::save_start_commit;
-use crate::colors::Colors;
-use crate::detection::detect_project_stack;
 use crate::files::monitoring::PromptMonitor;
 use crate::files::{
     create_prompt_backup, make_prompt_read_only, update_status, validate_prompt_md,
 };
-use crate::git_helpers::{cleanup_orphaned_marker, start_agent_phase};
-use crate::logger::Logger;
+use crate::git_helpers::{cleanup_orphaned_marker, save_start_commit, start_agent_phase};
 use crate::phases::PhaseContext;
 use crate::pipeline::{AgentPhaseGuard, Stats};
 use crate::timer::Timer;
-use std::env;
 
 use super::context::PipelineContext;
+use super::detection::detect_project_stack;
 use super::finalization::finalize_pipeline;
 use super::phase_runners::{run_development, run_final_validation, run_review_and_fix};
+use super::resume::handle_resume;
 
 /// Runs the full development/review/commit pipeline.
 pub fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
     // Handle --resume
-    let resume_checkpoint = crate::resume::handle_resume(
+    let resume_checkpoint = handle_resume(
         &ctx.args,
         &ctx.logger,
         &ctx.developer_display,
@@ -78,14 +78,12 @@ pub fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Ok(Some(warning)) => {
             ctx.logger.warn(&format!(
-                "PROMPT.md backup created but: {}. Continuing anyway.",
-                warning
+                "PROMPT.md backup created but: {warning}. Continuing anyway.",
             ));
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to create PROMPT.md backup: {}. Continuing anyway.",
-                e
+                "Failed to create PROMPT.md backup: {e}. Continuing anyway.",
             ));
         }
     }
@@ -98,7 +96,7 @@ pub fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
             // Read-only permissions set successfully
         }
         Some(warning) => {
-            ctx.logger.warn(&format!("{}. Continuing anyway.", warning));
+            ctx.logger.warn(&format!("{warning}. Continuing anyway."));
         }
     }
 
@@ -109,8 +107,7 @@ pub fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         Ok(mut monitor) => {
             if let Err(e) = monitor.start() {
                 ctx.logger.warn(&format!(
-                    "Failed to start PROMPT.md monitoring: {}. Continuing anyway.",
-                    e
+                    "Failed to start PROMPT.md monitoring: {e}. Continuing anyway.",
                 ));
                 None
             } else {
@@ -122,8 +119,7 @@ pub fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to create PROMPT.md monitor: {}. Continuing anyway.",
-                e
+                "Failed to create PROMPT.md monitor: {e}. Continuing anyway.",
             ));
             None
         }
@@ -173,9 +169,8 @@ pub fn run_pipeline(ctx: PipelineContext) -> anyhow::Result<()> {
         }
         Err(e) => {
             ctx.logger.warn(&format!(
-                "Failed to save starting commit: {}. \
+                "Failed to save starting commit: {e}. \
                  Incremental diffs may be unavailable as a result.",
-                e
             ));
             ctx.logger.info(
                 "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
