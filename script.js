@@ -944,6 +944,84 @@
         });
     }
 
+    // === Dark Mode Toggle ===
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
+
+    // Check for saved theme preference or system preference
+    let savedTheme = null;
+    try {
+        savedTheme = localStorage.getItem('ralph-theme');
+    } catch (e) {
+        console.warn('localStorage unavailable, using system theme preference');
+    }
+
+    // Function to set theme
+    function setTheme(theme) {
+        if (theme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+        }
+    }
+
+    // Initialize theme
+    if (savedTheme) {
+        setTheme(savedTheme);
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        setTheme('dark');
+    }
+
+    // Dark mode toggle functionality
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+            setTheme(newTheme);
+
+            // Save preference
+            try {
+                localStorage.setItem('ralph-theme', newTheme);
+            } catch (e) {
+                console.warn('Could not save theme preference');
+            }
+
+            // Add transition animation
+            darkModeToggle.style.transform = 'rotate(180deg)';
+            setTimeout(() => {
+                darkModeToggle.style.transform = '';
+            }, 300);
+        });
+    }
+
+    // === Scroll Progress Indicator ===
+    const scrollProgress = document.getElementById('scroll-progress');
+
+    function updateScrollProgress() {
+        if (!scrollProgress) return;
+
+        const windowHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        const scrolled = (window.scrollY / windowHeight) * 100;
+        const progress = Math.min(Math.max(scrolled, 0), 100);
+
+        scrollProgress.style.width = `${progress}%`;
+    }
+
+    // Throttled scroll handler
+    let scrollProgressTicking = false;
+    window.addEventListener('scroll', () => {
+        if (!scrollProgressTicking) {
+            window.requestAnimationFrame(() => {
+                updateScrollProgress();
+                scrollProgressTicking = false;
+            });
+            scrollProgressTicking = true;
+        }
+    });
+
+    // Initial call
+    updateScrollProgress();
+
     // === Audience Selector ===
     const audienceOptions = document.querySelectorAll('.audience-option');
     const audienceSelector = document.getElementById('audience-selector');

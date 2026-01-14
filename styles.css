@@ -2657,6 +2657,131 @@ body[data-audience="newcomer"] .audience-vibe-coder-content {
     visibility: visible;
 }
 
+/* === Dark Mode Toggle === */
+.dark-mode-toggle {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-out);
+    position: relative;
+    overflow: hidden;
+}
+
+.dark-mode-toggle:hover {
+    background: var(--color-bg-elevated);
+    border-color: var(--border-medium);
+}
+
+.dark-mode-toggle:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.dark-mode-toggle .sun-icon,
+.dark-mode-toggle .moon-icon {
+    position: absolute;
+    transition: all var(--duration-normal) var(--ease-out);
+}
+
+.dark-mode-toggle .sun-icon {
+    color: var(--color-text);
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+.dark-mode-toggle .moon-icon {
+    color: var(--color-text);
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.5);
+}
+
+/* Dark mode states */
+[data-theme="dark"] .dark-mode-toggle .sun-icon {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.5);
+}
+
+[data-theme="dark"] .dark-mode-toggle .moon-icon {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+/* Toggle animation */
+.dark-mode-toggle::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at center, rgba(196, 120, 74, 0.1), transparent);
+    opacity: 0;
+    transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.dark-mode-toggle:hover::before {
+    opacity: 1;
+}
+
+/* Mobile adjustment for dark mode toggle */
+@media (max-width: 768px) {
+    .dark-mode-toggle {
+        order: 3;
+        margin-left: var(--space-4);
+    }
+
+    .nav-menu.mobile-open ~ .dark-mode-toggle {
+        display: none;
+    }
+}
+
+/* === Scroll Progress Indicator === */
+.scroll-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0%;
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    z-index: 1000;
+    transition: width 0.1s linear;
+    box-shadow: 0 2px 8px rgba(196, 120, 74, 0.3);
+}
+
+/* Enhanced scroll progress with smooth animation */
+@keyframes scrollPulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
+
+.scroll-progress::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 100px;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: scrollShine 2s ease-in-out infinite;
+}
+
+@keyframes scrollShine {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+
 /* Visible class for enhanced animations */
 .fade-in-up.visible,
 .fade-in-left.visible,

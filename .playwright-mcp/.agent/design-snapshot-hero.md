@@ -1,0 +1,633 @@
+### Page state
+- Page URL: http://localhost:8080/
+- Page Title: Ralph Workflow - Multi-Agent AI Orchestration for Developers
+- Page Snapshot:
+```yaml
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - navigation "Main navigation" [ref=e3]:
+    - generic [ref=e4]:
+      - link "Ralph Workflow - Home" [ref=e5] [cursor=pointer]:
+        - /url: "#"
+        - img [ref=e7]
+        - generic [ref=e10]: ralph
+      - list [ref=e11]:
+        - listitem [ref=e12]:
+          - link "What is Ralph" [ref=e13] [cursor=pointer]:
+            - /url: "#what-is-ralph"
+        - listitem [ref=e14]:
+          - link "How it works" [ref=e15] [cursor=pointer]:
+            - /url: "#how-it-works"
+        - listitem [ref=e16]:
+          - link "Install" [ref=e17] [cursor=pointer]:
+            - /url: "#install"
+        - listitem [ref=e18]:
+          - link "Features" [ref=e19] [cursor=pointer]:
+            - /url: "#features"
+        - listitem [ref=e20]:
+          - link "Codeberg" [ref=e21] [cursor=pointer]:
+            - /url: https://codeberg.org/mistlight/Ralph-Workflow
+            - text: Codeberg
+            - generic [ref=e22]: →
+  - main [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e27]:
+            - generic [ref=e28]: Open Source
+            - generic [ref=e30]: AGPL-3.0
+            - generic [ref=e32]: Built with Rust
+          - heading "M u l t i - A g e n t A I T h a t W r i t e s , R e v i e w s , & L o o p s U n t i l R e a d y" [level=1] [ref=e34]:
+            - generic [ref=e36]:
+              - generic [ref=e37]: M
+              - generic [ref=e38]: u
+              - generic [ref=e39]: l
+              - generic [ref=e40]: t
+              - generic [ref=e41]: i
+              - generic [ref=e42]: "-"
+              - generic [ref=e43]: A
+              - generic [ref=e44]: g
+              - generic [ref=e45]: e
+              - generic [ref=e46]: "n"
+              - generic [ref=e47]: t
+              - generic [ref=e48]: A
+              - generic [ref=e49]: I
+              - generic [ref=e50]: T
+              - generic [ref=e51]: h
+              - generic [ref=e52]: a
+              - generic [ref=e53]: t
+            - generic [ref=e55]:
+              - generic [ref=e56]: W
+              - generic [ref=e57]: r
+              - generic [ref=e58]: i
+              - generic [ref=e59]: t
+              - generic [ref=e60]: e
+              - generic [ref=e61]: s
+              - generic [ref=e62]: ","
+              - generic [ref=e63]: R
+              - generic [ref=e64]: e
+              - generic [ref=e65]: v
+              - generic [ref=e66]: i
+              - generic [ref=e67]: e
+              - generic [ref=e68]: w
+              - generic [ref=e69]: s
+              - generic [ref=e70]: ","
+              - generic [ref=e71]: "&"
+            - generic [ref=e73]:
+              - generic [ref=e74]: L
+              - generic [ref=e75]: o
+              - generic [ref=e76]: o
+              - generic [ref=e77]: p
+              - generic [ref=e78]: s
+              - generic [ref=e79]: U
+              - generic [ref=e80]: "n"
+              - generic [ref=e81]: t
+              - generic [ref=e82]: i
+              - generic [ref=e83]: l
+              - generic [ref=e84]: R
+              - generic [ref=e85]: e
+              - generic [ref=e86]: a
+              - generic [ref=e87]: d
+              - generic [ref=e88]: "y"
+          - paragraph [ref=e89]:
+            - text: A
+            - strong [ref=e90]: multi-agent AI orchestration CLI tool
+            - text: that runs Developer and Reviewer agents in a self-correcting loop. Write your requirements in
+            - code [ref=e91]: PROMPT.md
+            - text: ", run"
+            - code [ref=e92]: ralph -S
+            - text: ", and wake up to production-ready code with semantic commits."
+          - generic [ref=e93]:
+            - generic [ref=e94]: "I am a:"
+            - generic [ref=e95]:
+              - button "Developer" [ref=e96] [cursor=pointer]:
+                - img [ref=e97]
+                - text: Developer
+              - button "Vibe Coder" [ref=e100] [cursor=pointer]:
+                - img [ref=e101]
+                - text: Vibe Coder
+              - button "New to CLI" [pressed] [ref=e104] [cursor=pointer]:
+                - img [ref=e105]
+                - text: New to CLI
+          - generic [ref=e108]:
+            - link "Install Ralph Install Ralph" [ref=e109] [cursor=pointer]:
+              - /url: "#install"
+              - text: Install Ralph
+              - generic [ref=e110]: →
+              - text: Install Ralph
+            - link "How it works How it works" [ref=e111] [cursor=pointer]:
+              - /url: "#what-is-ralph"
+        - generic [ref=e112]:
+          - generic "Terminal showing Ralph in action" [ref=e113]:
+            - generic [ref=e118]: ralph — bash — 80x24
+            - generic [ref=e121]:
+              - generic [ref=e122]:
+                - generic [ref=e123]: ~
+                - generic [ref=e124]: $
+                - generic [ref=e125]: ralph -S
+              - generic [ref=e126]:
+                - generic [ref=e127]: →
+                - generic [ref=e128]: Reading PROMPT.md
+              - generic [ref=e130]:
+                - generic [ref=e131]: →
+                - generic [ref=e132]: "Developer agent: Writing code..."
+                - generic [ref=e133]: ●
+              - generic [ref=e134]:
+                - generic [ref=e135]: →
+                - generic [ref=e136]: "Reviewer agent: Validating..."
+                - generic [ref=e137]: ●
+              - generic [ref=e138]:
+                - generic [ref=e139]: →
+                - generic [ref=e140]: Iteration 3/10 complete
+              - generic [ref=e145]:
+                - generic [ref=e146]: ✓
+                - generic [ref=e147]: Code approved, creating commit...
+              - generic [ref=e148]:
+                - generic [ref=e149]: Changes shipped in
+                - generic [ref=e150]: 3m 42s
+          - generic "Terminal playback controls" [ref=e152]:
+            - generic [ref=e153]:
+              - button "Restart animation" [ref=e154] [cursor=pointer]:
+                - img [ref=e155]
+              - button "Pause animation" [ref=e158] [cursor=pointer]:
+                - img [ref=e159]
+            - button "Run full demo" [ref=e163] [cursor=pointer]:
+              - img [ref=e164]
+              - text: Run Full Demo
+            - generic [ref=e166]:
+              - generic [ref=e167]: 1x
+              - generic [ref=e168]:
+                - button "0.5x speed" [ref=e169] [cursor=pointer]: 0.5x
+                - button "1x speed" [ref=e170] [cursor=pointer]: 1x
+                - button "2x speed" [ref=e171] [cursor=pointer]: 2x
+      - generic [ref=e175]: Scroll
+    - generic [ref=e177]:
+      - generic [ref=e178]:
+        - heading "What is Ralph?" [level=2] [ref=e179]
+        - paragraph [ref=e180]:
+          - text: Ralph is an
+          - strong [ref=e181]: open-source command-line tool
+          - text: that automates your AI coding workflow. Instead of copying prompts to a chat and pasting code back, Ralph orchestrates two specialized AI agents that collaborate to ship your changes.
+        - generic [ref=e182]:
+          - generic [ref=e183]:
+            - generic [ref=e184]: "1"
+            - generic [ref=e185]:
+              - heading "You write PROMPT.md" [level=3] [ref=e186]
+              - paragraph [ref=e187]: Describe what you want to build in plain English
+          - generic [ref=e188]:
+            - generic [ref=e189]: "2"
+            - generic [ref=e190]:
+              - heading "Developer agent writes code" [level=3] [ref=e191]
+              - paragraph [ref=e192]: AI implements your requirements automatically
+          - generic [ref=e193]:
+            - generic [ref=e194]: "3"
+            - generic [ref=e195]:
+              - heading "Reviewer agent validates" [level=3] [ref=e196]
+              - paragraph [ref=e197]: Quality checks and automatic iterations
+          - generic [ref=e198]:
+            - generic [ref=e199]: "4"
+            - generic [ref=e200]:
+              - heading "Commit is created" [level=3] [ref=e201]
+              - paragraph [ref=e202]: Semantic git commit, ready to push
+        - img [ref=e204]:
+          - generic [ref=e210]:
+            - generic [ref=e212]: 📝
+            - generic [ref=e213]: PROMPT.md
+            - generic [ref=e214]: You write
+          - generic [ref=e215]:
+            - generic [ref=e217]: ⚙️
+            - generic [ref=e218]: DEV AGENT
+            - generic [ref=e219]: Writes code
+          - generic [ref=e220]:
+            - generic [ref=e222]: 🔍
+            - generic [ref=e223]: REVIEWER
+            - generic [ref=e224]: Validates
+          - generic [ref=e225]:
+            - generic [ref=e227]: ✓
+            - generic [ref=e228]: COMMIT
+            - generic [ref=e229]: Ready to push
+          - generic [ref=e231]: iterate until approved
+      - generic [ref=e234]:
+        - generic [ref=e235]:
+          - heading "No copy-paste" [level=4] [ref=e236]
+          - paragraph [ref=e237]: Ralph runs locally and modifies files directly. No clipboard shuffling between chat and editor.
+        - generic [ref=e238]:
+          - heading "Self-correcting" [level=4] [ref=e239]
+          - paragraph [ref=e240]: The reviewer catches bugs and the developer fixes them—iterating until approved.
+        - generic [ref=e241]:
+          - heading "Yours forever" [level=4] [ref=e242]
+          - paragraph [ref=e243]: Open source (AGPL). No vendor lock-in. Runs on your machine with your API keys.
+    - generic [ref=e244]:
+      - generic [ref=e245]:
+        - generic [ref=e246]: "01"
+        - heading "How Ralph works" [level=2] [ref=e247]
+        - paragraph [ref=e248]: Three steps from idea to committed code
+      - generic [ref=e250]:
+        - generic [ref=e251]:
+          - generic [ref=e252]:
+            - img [ref=e253]
+            - heading "Save Time" [level=3] [ref=e256]
+          - paragraph [ref=e257]: Ship changes in 3-10 minutes instead of 30-60 minutes of manual back-and-forth.
+        - generic [ref=e258]:
+          - generic [ref=e259]:
+            - img [ref=e260]
+            - heading "Better Quality" [level=3] [ref=e262]
+          - paragraph [ref=e263]: Reviewer agent catches bugs automatically. Iterate until code quality meets standards.
+        - generic [ref=e264]:
+          - generic [ref=e265]:
+            - img [ref=e266]
+            - heading "Stay in Flow" [level=3] [ref=e269]
+          - paragraph [ref=e270]: No context switching. Write requirements, run Ralph, stay in your editor while AI works.
+      - generic [ref=e271]:
+        - generic [ref=e272]:
+          - img [ref=e274]
+          - heading "Write" [level=3] [ref=e277]
+          - paragraph [ref=e278]:
+            - text: Create
+            - code [ref=e279]: PROMPT.md
+            - text: with your requirements
+        - generic [ref=e280]:
+          - img [ref=e282]
+          - heading "Run" [level=3] [ref=e285]
+          - paragraph [ref=e286]: Developer and Reviewer agents iterate automatically until approved
+        - generic [ref=e287]:
+          - img [ref=e289]
+          - heading "Ship" [level=3] [ref=e291]
+          - paragraph [ref=e292]: Review and push the automatic commit
+    - generic [ref=e293]:
+      - generic [ref=e294]:
+        - generic [ref=e295]: "02"
+        - heading "What is PROMPT.md?" [level=2] [ref=e296]
+        - paragraph [ref=e297]: Your requirements, AI's implementation
+      - generic [ref=e298]:
+        - generic [ref=e300]:
+          - generic [ref=e301]:
+            - code [ref=e302]: PROMPT.md
+            - generic [ref=e303]: Markdown
+          - code [ref=e305]: "# Add user authentication ## Requirements - Email/password login - Session management - Password reset flow ## Tech Stack - Backend: Rust with Actix-web - Frontend: React + TypeScript - Database: PostgreSQL ## Notes - Use JWT for sessions - Implement rate limiting - Add unit tests for auth module"
+        - generic [ref=e306]:
+          - heading "The source of truth for your changes" [level=3] [ref=e307]
+          - paragraph [ref=e308]:
+            - strong [ref=e309]: PROMPT.md
+            - text: is a simple Markdown file where you describe what you want to build. Think of it as a ticket, a spec, and a prompt all in one.
+          - list [ref=e310]:
+            - listitem [ref=e311]:
+              - img [ref=e312]
+              - generic [ref=e314]: Write in plain English with Markdown formatting
+            - listitem [ref=e315]:
+              - img [ref=e316]
+              - generic [ref=e318]: Include requirements, tech stack, and constraints
+            - listitem [ref=e319]:
+              - img [ref=e320]
+              - generic [ref=e322]: Commit it alongside your changes for full context
+            - listitem [ref=e323]:
+              - img [ref=e324]
+              - generic [ref=e326]: AI agents read it and iterate until satisfied
+    - generic [ref=e327]:
+      - generic [ref=e328]:
+        - generic [ref=e329]: "03"
+        - heading "Ralph vs. Manual AI Chat" [level=2] [ref=e330]
+        - paragraph [ref=e331]: Why orchestration beats copy-paste
+      - table [ref=e333]:
+        - rowgroup [ref=e334]:
+          - row "Feature Manual AI Chat Workflow Ralph Workflow" [ref=e335]:
+            - columnheader "Feature" [ref=e336]
+            - columnheader "Manual AI Chat Workflow" [ref=e337]
+            - columnheader "Ralph Workflow" [ref=e338]
+        - rowgroup [ref=e339]:
+          - row "Code Application Copy-paste from chat to editor Direct file modification" [ref=e340]:
+            - cell "Code Application" [ref=e341]:
+              - strong [ref=e342]: Code Application
+            - cell "Copy-paste from chat to editor" [ref=e343]
+            - cell "Direct file modification" [ref=e344]
+          - row "Quality Review Manual code review Automated Reviewer agent" [ref=e345]:
+            - cell "Quality Review" [ref=e346]:
+              - strong [ref=e347]: Quality Review
+            - cell "Manual code review" [ref=e348]
+            - cell "Automated Reviewer agent" [ref=e349]
+          - row "Iteration Re-prompt with feedback manually Self-correcting loops" [ref=e350]:
+            - cell "Iteration" [ref=e351]:
+              - strong [ref=e352]: Iteration
+            - cell "Re-prompt with feedback manually" [ref=e353]
+            - cell "Self-correcting loops" [ref=e354]
+          - row "Commit History Manual commits, messy messages Semantic commits with descriptions" [ref=e355]:
+            - cell "Commit History" [ref=e356]:
+              - strong [ref=e357]: Commit History
+            - cell "Manual commits, messy messages" [ref=e358]
+            - cell "Semantic commits with descriptions" [ref=e359]
+          - row "Context Limited by chat window Full repo access with each iteration" [ref=e360]:
+            - cell "Context" [ref=e361]:
+              - strong [ref=e362]: Context
+            - cell "Limited by chat window" [ref=e363]
+            - cell "Full repo access with each iteration" [ref=e364]
+          - row "Time to Ship 30-60 minutes of back-and-forth 3-10 minutes, unattended" [ref=e365]:
+            - cell "Time to Ship" [ref=e366]:
+              - strong [ref=e367]: Time to Ship
+            - cell "30-60 minutes of back-and-forth" [ref=e368]
+            - cell "3-10 minutes, unattended" [ref=e369]
+    - generic [ref=e370]:
+      - generic [ref=e371]:
+        - generic [ref=e372]: "04"
+        - heading "Try Ralph Now" [level=2] [ref=e373]
+        - paragraph [ref=e374]: Experience the multi-agent workflow without installing anything
+      - generic [ref=e375]:
+        - generic [ref=e376]:
+          - generic [ref=e377]:
+            - generic [ref=e378]:
+              - button "PROMPT.md" [ref=e379] [cursor=pointer]
+              - button "Terminal Output" [ref=e380] [cursor=pointer]
+              - button "Generated Code" [ref=e381] [cursor=pointer]
+            - button "Run Demo" [ref=e382] [cursor=pointer]:
+              - img [ref=e383]
+              - text: Run Demo
+          - generic [ref=e387]:
+            - generic [ref=e388]: "1"
+            - generic [ref=e389]: "2"
+            - generic [ref=e390]: "3"
+            - generic [ref=e391]: "4"
+            - generic [ref=e392]: "5"
+            - generic [ref=e393]: "6"
+            - generic [ref=e394]: "7"
+            - generic [ref=e395]: "8"
+            - textbox [ref=e396]: "# Task: Add User Authentication Add user authentication to the application with: - Email/password login - Session management - Password reset functionality Use JWT tokens and store sessions in Redis. The API should return proper error messages."
+          - generic [ref=e397]:
+            - generic [ref=e398]: Ready to run demo
+            - generic [ref=e399]: "Iteration: 0/10"
+        - generic [ref=e400]:
+          - heading "What's Happening?" [level=3] [ref=e401]
+          - generic [ref=e402]:
+            - generic [ref=e403]:
+              - generic [ref=e404]: "1"
+              - generic [ref=e405]:
+                - heading "Developer Agent Analyzes" [level=4] [ref=e406]
+                - paragraph [ref=e407]: Reads your PROMPT.md and breaks down the task into implementable steps.
+            - generic [ref=e408]:
+              - generic [ref=e409]: "2"
+              - generic [ref=e410]:
+                - heading "Developer Agent Writes Code" [level=4] [ref=e411]
+                - paragraph [ref=e412]: Implements the authentication system with the specified requirements.
+            - generic [ref=e413]:
+              - generic [ref=e414]: "3"
+              - generic [ref=e415]:
+                - heading "Reviewer Agent Checks" [level=4] [ref=e416]
+                - paragraph [ref=e417]: Analyzes the code for quality, security, and completeness.
+            - generic [ref=e418]:
+              - generic [ref=e419]: "4"
+              - generic [ref=e420]:
+                - heading "Loop Until Approved" [level=4] [ref=e421]
+                - paragraph [ref=e422]: If issues found, Developer fixes them. This repeats until Reviewer approves.
+            - generic [ref=e423]:
+              - generic [ref=e424]: "5"
+              - generic [ref=e425]:
+                - heading "Git Commit Created" [level=4] [ref=e426]
+                - paragraph [ref=e427]: Ralph creates a semantic commit with your changes. Ready to push!
+    - generic [ref=e428]:
+      - generic [ref=e429]:
+        - generic [ref=e430]: "05"
+        - heading "Get started in minutes" [level=2] [ref=e431]
+        - paragraph [ref=e432]: Install Ralph and run your first automated workflow
+      - generic [ref=e433]:
+        - generic [ref=e434]: Simple
+        - switch "Toggle installation mode" [checked] [ref=e435] [cursor=pointer]
+        - generic [ref=e437]: Advanced
+      - generic [ref=e438]:
+        - generic [ref=e439]:
+          - generic [ref=e440]:
+            - heading "Requirements" [level=3] [ref=e441]
+            - list [ref=e442]:
+              - listitem [ref=e443]:
+                - img [ref=e444]
+                - text: Rust toolchain (1.70+)
+              - listitem [ref=e447]:
+                - img [ref=e448]
+                - text: AI agent API (Claude, Codex, or OpenCode)
+            - generic [ref=e450]:
+              - heading "New to the terminal?" [level=4] [ref=e451]
+              - paragraph [ref=e452]: The terminal is where you run commands on your computer. Don't worry—Ralph handles the complexity. Just follow the installation steps below.
+          - generic [ref=e453]:
+            - heading "Quick Start" [level=4] [ref=e454]
+            - list [ref=e455]:
+              - listitem [ref=e456]: Install Rust (one-time setup)
+              - listitem [ref=e457]: Clone Ralph from Codeberg
+              - listitem [ref=e458]: Install Ralph with cargo
+              - listitem [ref=e459]:
+                - text: Run
+                - code [ref=e460]: ralph -S
+                - text: in your project folder
+            - paragraph [ref=e461]: Need help? Each step below has detailed instructions.
+        - generic [ref=e462]:
+          - tablist [ref=e463]:
+            - button "Install" [ref=e464] [cursor=pointer]
+            - button "Config" [ref=e465] [cursor=pointer]
+          - generic [ref=e466]:
+            - generic [ref=e467]:
+              - generic [ref=e468]:
+                - generic [ref=e469]: bash
+                - button "Copy to clipboard" [ref=e470] [cursor=pointer]:
+                  - img [ref=e471]
+              - code [ref=e475]: git clone ssh://git@codeberg.org/mistlight/Ralph-Workflow.git cd Ralph-Workflow cargo install --path .
+            - paragraph [ref=e476]:
+              - text: Requires Rust 1.70+ and cargo in PATH. Get Rust from
+              - link "rustup.rs" [ref=e477] [cursor=pointer]:
+                - /url: https://rustup.rs
+            - paragraph [ref=e478]:
+              - text: The package will be installed as
+              - code [ref=e479]: ralph-workflow
+              - text: . Use
+              - code [ref=e480]: ralph
+              - text: or
+              - code [ref=e481]: ralph-workflow
+              - text: to run.
+    - generic [ref=e482]:
+      - generic [ref=e483]:
+        - generic [ref=e484]: "06"
+        - heading "Features" [level=2] [ref=e485]
+        - paragraph [ref=e486]: Built for developers who value autonomy and quality
+      - generic [ref=e487]:
+        - generic [ref=e488]:
+          - img [ref=e490]
+          - heading "Multi-Agent Orchestration" [level=3] [ref=e493]
+          - paragraph [ref=e494]: Developer and Reviewer agents collaborate in real-time. The Developer writes code while the Reviewer validates quality. They iterate automatically until approval.
+          - button "Learn more" [ref=e495] [cursor=pointer]:
+            - generic [ref=e496]: Learn more
+            - img [ref=e497]
+          - generic:
+            - heading "How the agents work together:" [level=4] [ref=e499]
+            - list [ref=e500]:
+              - listitem [ref=e501]:
+                - text: →
+                - strong [ref=e502]: "Developer Agent:"
+                - text: Analyzes your PROMPT.md, breaks down requirements, and implements the code changes. It has full access to your repository and can modify files directly.
+              - listitem [ref=e503]:
+                - text: →
+                - strong [ref=e504]: "Reviewer Agent:"
+                - text: Examines the code for quality issues, security vulnerabilities, and adherence to best practices. It provides specific feedback when issues are found.
+              - listitem [ref=e505]:
+                - text: →
+                - strong [ref=e506]: "Self-Correcting Loop:"
+                - text: If the Reviewer finds problems, it sends feedback to the Developer, which fixes them automatically. This continues until both agents agree the code is ready.
+        - generic [ref=e507]:
+          - img [ref=e509]
+          - heading "Preset Iteration Modes" [level=3] [ref=e512]
+          - paragraph [ref=e513]: Five modes from Quick (3 passes) to Long (30 passes). Choose the iteration depth for your task complexity.
+        - generic [ref=e514]:
+          - img [ref=e516]
+          - heading "Git Integration" [level=3] [ref=e518]
+          - paragraph [ref=e519]: Automatic commits with semantic messages. Full history tracking with meaningful descriptions.
+        - generic [ref=e520]:
+          - img [ref=e522]
+          - heading "Flexible Agent Selection" [level=3] [ref=e524]
+          - paragraph [ref=e525]: Claude Code, Codex, or OpenCode. Configure fallback chains for reliability.
+        - generic [ref=e526]:
+          - img [ref=e528]
+          - heading "Verbosity Control" [level=3] [ref=e530]
+          - paragraph [ref=e531]: Quiet mode for CI, full output for debugging, diagnose mode for deep inspection.
+        - generic [ref=e532]:
+          - img [ref=e534]
+          - heading "Custom Flags" [level=3] [ref=e537]
+          - paragraph [ref=e538]:
+            - text: Fine-tune with
+            - code [ref=e539]: "-D"
+            - text: (developer) and
+            - code [ref=e540]: "-R"
+            - text: (reviewer) for exact pass control.
+    - generic [ref=e541]:
+      - generic [ref=e542]:
+        - generic [ref=e543]: "07"
+        - heading "Built for how you work" [level=2] [ref=e544]
+        - paragraph [ref=e545]: Whether you're a terminal power user or just getting started
+      - generic [ref=e546]:
+        - article [ref=e547]:
+          - generic [ref=e548]: Technical
+          - heading "For Developers" [level=3] [ref=e549]
+          - paragraph [ref=e550]: You know your way around a terminal. Ralph gives you full CLI control with configurable options and agent fallback chains.
+          - list [ref=e551]:
+            - listitem [ref=e552]: → Full CLI with flags and options
+            - listitem [ref=e553]: → TOML configuration files
+            - listitem [ref=e554]: → Git integration that respects your workflow
+            - listitem [ref=e555]: → Extensible architecture
+        - article [ref=e556]:
+          - generic [ref=e557]: Efficient
+          - heading "For Vibe Coders" [level=3] [ref=e558]
+          - paragraph [ref=e559]: You let AI do the heavy lifting. Ralph removes the friction—no more copy-pasting between chat and editor.
+          - list [ref=e560]:
+            - listitem [ref=e561]: → Set it and forget it
+            - listitem [ref=e562]: → Preset modes for different tasks
+            - listitem [ref=e563]: → Hands-free from prompt to commit
+            - listitem [ref=e564]: → Automatic quality checking
+        - article [ref=e565]:
+          - generic [ref=e566]: Learning
+          - heading "New to CLI?" [level=3] [ref=e567]
+          - paragraph [ref=e568]: Welcome! Ralph is a great tool to learn with. The terminal is where you run commands—Ralph handles the complexity.
+          - list [ref=e569]:
+            - listitem [ref=e570]: → Simple installation process
+            - listitem [ref=e571]: → Clear documentation
+            - listitem [ref=e572]: → Helpful error messages
+            - listitem [ref=e573]: → Quick start guide
+    - generic [ref=e574]:
+      - generic [ref=e575]:
+        - generic [ref=e576]: "08"
+        - heading "Frequently Asked Questions" [level=2] [ref=e577]
+        - paragraph [ref=e578]: Common questions about Ralph Workflow
+      - generic [ref=e579]:
+        - heading "Getting Started" [level=3] [ref=e580]
+        - group [ref=e581]:
+          - generic "What AI providers does Ralph support? +" [ref=e582] [cursor=pointer]:
+            - generic [ref=e583]: What AI providers does Ralph support?
+            - generic [ref=e584]: +
+        - group [ref=e585]:
+          - generic "Is Ralph safe to use with my code? +" [ref=e586] [cursor=pointer]:
+            - generic [ref=e587]: Is Ralph safe to use with my code?
+            - generic [ref=e588]: +
+        - group [ref=e589]:
+          - generic "How do I install Ralph if I don't have Rust? +" [ref=e590] [cursor=pointer]:
+            - generic [ref=e591]: How do I install Ralph if I don't have Rust?
+            - generic [ref=e592]: +
+        - group [ref=e593]:
+          - generic "What is PROMPT.md and how do I create one? +" [ref=e594] [cursor=pointer]:
+            - generic [ref=e595]: What is PROMPT.md and how do I create one?
+            - generic [ref=e596]: +
+        - group [ref=e597]:
+          - generic "How much does it cost to use Ralph? +" [ref=e598] [cursor=pointer]:
+            - generic [ref=e599]: How much does it cost to use Ralph?
+            - generic [ref=e600]: +
+        - heading "Technical" [level=3] [ref=e601]
+        - group [ref=e602]:
+          - generic "Can Ralph work with my existing codebase? +" [ref=e603] [cursor=pointer]:
+            - generic [ref=e604]: Can Ralph work with my existing codebase?
+            - generic [ref=e605]: +
+        - group [ref=e606]:
+          - generic "What if Ralph makes a mistake? +" [ref=e607] [cursor=pointer]:
+            - generic [ref=e608]: What if Ralph makes a mistake?
+            - generic [ref=e609]: +
+        - group [ref=e610]:
+          - generic "How do I configure API keys? +" [ref=e611] [cursor=pointer]:
+            - generic [ref=e612]: How do I configure API keys?
+            - generic [ref=e613]: +
+        - group [ref=e614]:
+          - generic "Can I use Ralph in CI/CD? +" [ref=e615] [cursor=pointer]:
+            - generic [ref=e616]: Can I use Ralph in CI/CD?
+            - generic [ref=e617]: +
+        - heading "New to CLI?" [level=3] [ref=e618]
+        - group [ref=e619]:
+          - generic "What is the terminal? +" [ref=e620] [cursor=pointer]:
+            - generic [ref=e621]: What is the terminal?
+            - generic [ref=e622]: +
+        - group [ref=e623]:
+          - generic "What does \"PATH\" mean? +" [ref=e624] [cursor=pointer]:
+            - generic [ref=e625]: What does "PATH" mean?
+            - generic [ref=e626]: +
+        - group [ref=e627]:
+          - generic "Is Ralph safe for beginners? +" [ref=e628] [cursor=pointer]:
+            - generic [ref=e629]: Is Ralph safe for beginners?
+            - generic [ref=e630]: +
+  - contentinfo [ref=e631]:
+    - generic [ref=e632]:
+      - generic [ref=e633]:
+        - heading "Ralph Workflow" [level=3] [ref=e634]
+        - paragraph [ref=e635]: Multi-agent AI orchestration for automated code development. Ship your ideas with autonomous agents that collaborate until quality is achieved.
+      - generic [ref=e636]:
+        - heading "Project" [level=4] [ref=e637]
+        - list [ref=e638]:
+          - listitem [ref=e639]:
+            - link "Repository" [ref=e640] [cursor=pointer]:
+              - /url: https://codeberg.org/mistlight/Ralph-Workflow
+          - listitem [ref=e641]:
+            - link "Issues" [ref=e642] [cursor=pointer]:
+              - /url: https://codeberg.org/mistlight/Ralph-Workflow/issues
+          - listitem [ref=e643]:
+            - link "License (AGPL-3.0)" [ref=e644] [cursor=pointer]:
+              - /url: https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE
+      - generic [ref=e645]:
+        - heading "Resources" [level=4] [ref=e646]
+        - list [ref=e647]:
+          - listitem [ref=e648]:
+            - link "Documentation" [ref=e649] [cursor=pointer]:
+              - /url: https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/README.md
+          - listitem [ref=e650]:
+            - link "Original Concept" [ref=e651] [cursor=pointer]:
+              - /url: https://codeberg.org/ghuntley/ralph
+      - generic [ref=e652]:
+        - heading "Quick Links" [level=4] [ref=e653]
+        - list [ref=e654]:
+          - listitem [ref=e655]:
+            - link "Installation" [ref=e656] [cursor=pointer]:
+              - /url: "#install"
+          - listitem [ref=e657]:
+            - link "Features" [ref=e658] [cursor=pointer]:
+              - /url: "#features"
+          - listitem [ref=e659]:
+            - link "crates.io" [ref=e660] [cursor=pointer]:
+              - /url: https://crates.io/crates/ralph-workflow
+    - generic [ref=e661]:
+      - paragraph [ref=e663]:
+        - text: © 2025 Ralph Workflow Contributors. Licensed under
+        - link "AGPL-3.0" [ref=e664] [cursor=pointer]:
+          - /url: https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE
+        - text: .
+      - link "Star on Codeberg" [ref=e665] [cursor=pointer]:
+        - /url: https://codeberg.org/mistlight/Ralph-Workflow
+        - img [ref=e666]
+        - text: Star on Codeberg
+```
