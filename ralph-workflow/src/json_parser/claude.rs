@@ -436,20 +436,19 @@ impl ClaudeParser {
                     let is_glm = self.is_glm_agent();
                     let text_to_process = if session.is_likely_snapshot(&text, &index_str) {
                         // Snapshot detected - log warning and extract delta
+                        let previous = session.get_accumulated(ContentType::Text, &index_str);
                         if is_glm {
                             eprintln!(
-                                "GLM contract violation: Detected snapshot-as-delta for index {index}. \
-                                This is a known GLM streaming bug. Automatically converting to delta. \
-                                Previous: {:?}, Received (first 100 chars): {:?}",
-                                session.get_accumulated(ContentType::Text, &index_str),
-                                &text.chars().take(100).collect::<String>()
+                                "GLM streaming bug detected: Agent sent full accumulated content instead of delta (index={index}). \
+                                This is a known GLM/CCS issue. Auto-correcting to prevent duplication. \
+                                Previous length: {}, Received length: {len}",
+                                previous.map_or(0, str::len),
+                                len = text.len()
                             );
                         } else {
                             eprintln!(
                                 "Warning: Detected snapshot-as-delta for index {index}. \
-                                Converting to delta. Previous: {:?}, Received: {:?}",
-                                session.get_accumulated(ContentType::Text, &index_str),
-                                text
+                                Converting to delta. Previous: {previous:?}, Received: {text:?}"
                             );
                         }
                         match session.get_delta_from_snapshot(&text, &index_str) {
