@@ -526,40 +526,43 @@ pub fn format_unknown_json_event(
     // For partial/delta events, try to extract and show content
     let content_info = if classification.event_type == StreamEventType::Partial {
         // Try to extract content from various nested structures
-        let extracted_text = classification.content_field.as_ref().and_then(|content| {
-            // Content field was found at top level by classifier
-            obj.get(content).and_then(|val| {
-                val.as_str()
-                    .map_or_else(
+        let extracted_text = classification
+            .content_field
+            .as_ref()
+            .and_then(|content| {
+                // Content field was found at top level by classifier
+                obj.get(content).and_then(|val| {
+                    val.as_str().map_or_else(
                         || {
                             // Content field exists but is not a string - try to extract nested text
                             extract_nested_text(val)
                         },
-                        |s| Some(s.to_string())
+                        |s| Some(s.to_string()),
                     )
+                })
             })
-        }).or_else(|| {
-            // No content field found - try to extract from delta field
-            obj.get("delta")
-                .and_then(extract_nested_text)
-                .or_else(|| {
-                    // Try nested delta structure: delta.text or delta.content
-                    obj.get("delta")
-                        .and_then(|d| d.as_object())
-                        .and_then(|delta_obj| {
-                            // First try delta.text, then delta.content
-                            delta_obj
-                                .get("text")
-                                .or_else(|| delta_obj.get("content"))
-                                .and_then(|v| v.as_str())
-                                .map(std::string::ToString::to_string)
-                        })
-                })
-                .or_else(|| {
-                    // Try other common nested structures
-                    obj.get("data").and_then(extract_nested_text)
-                })
-        });
+            .or_else(|| {
+                // No content field found - try to extract from delta field
+                obj.get("delta")
+                    .and_then(extract_nested_text)
+                    .or_else(|| {
+                        // Try nested delta structure: delta.text or delta.content
+                        obj.get("delta")
+                            .and_then(|d| d.as_object())
+                            .and_then(|delta_obj| {
+                                // First try delta.text, then delta.content
+                                delta_obj
+                                    .get("text")
+                                    .or_else(|| delta_obj.get("content"))
+                                    .and_then(|v| v.as_str())
+                                    .map(std::string::ToString::to_string)
+                            })
+                    })
+                    .or_else(|| {
+                        // Try other common nested structures
+                        obj.get("data").and_then(extract_nested_text)
+                    })
+            });
 
         extracted_text.map(|text: String| {
             let truncated = if text.len() > 30 {
@@ -595,8 +598,10 @@ pub fn format_unknown_json_event(
             } else if is_explicit_delta {
                 // In non-verbose mode, show explicit partial events (they're user content)
                 // Extract full content (not truncated) for delta events
-                let full_content: Option<String> =
-                    classification.content_field.as_ref().and_then(|content| {
+                let full_content: Option<String> = classification
+                    .content_field
+                    .as_ref()
+                    .and_then(|content| {
                         // Use classifier's detected content field first
                         obj.get(content)
                             .and_then(|v| v.as_str())
@@ -605,7 +610,8 @@ pub fn format_unknown_json_event(
                                 // Content field wasn't a string, try extracting nested text
                                 obj.get(content).and_then(extract_nested_text)
                             })
-                    }).or_else(|| {
+                    })
+                    .or_else(|| {
                         // Try delta field (common pattern)
                         obj.get("delta")
                             .and_then(|v| v.as_str())
@@ -619,7 +625,8 @@ pub fn format_unknown_json_event(
                                         .map(std::string::ToString::to_string)
                                 })
                             })
-                    }).or_else(|| {
+                    })
+                    .or_else(|| {
                         // Try common text fields at top level
                         for field in ["text", "content", "message"] {
                             if let Some(val) = obj.get(field) {

@@ -380,7 +380,7 @@ fn try_agent_with_retries(
                 argv_for_log.push("<PROMPT>".to_string());
                 truncate_text(&format_argv_for_log(&argv_for_log), 160)
             })
-            .unwrap_or_else(| | "<unparseable command>".to_string());
+            .unwrap_or_else(|| "<unparseable command>".to_string());
 
         if runtime.config.verbosity.is_debug() {
             runtime

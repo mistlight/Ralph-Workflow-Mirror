@@ -48,7 +48,9 @@ pub(super) fn count_extensions(root: &Path) -> io::Result<HashMap<String, usize>
             return Ok(());
         }
 
-        let Ok(entries) = fs::read_dir(dir) else { return Ok(()) };
+        let Ok(entries) = fs::read_dir(dir) else {
+            return Ok(());
+        };
 
         for entry in entries.flatten() {
             if *files_scanned >= MAX_FILES_TO_SCAN {
@@ -98,7 +100,9 @@ pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
         if scanned_files >= MAX_FILES_TO_SCAN {
             break;
         }
-        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
 
         for entry in entries.flatten() {
             if scanned_files >= MAX_FILES_TO_SCAN {
@@ -148,15 +152,15 @@ pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
                 }
                 "Python" => {
                     // Note: file_name is already lowercase
-                    if (file_name.starts_with("test_") && std::path::Path::new(file_name)
-    .extension()
-    .is_some_and(|ext| ext.eq_ignore_ascii_case("py")))
+                    if (file_name.starts_with("test_")
+                        && std::path::Path::new(file_name)
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("py")))
                         || file_name.ends_with("_test.py")
-                        || (file_name.starts_with("test_")
-                            && {
-                                #[expect(clippy::case_sensitive_file_extension_comparisons)]
-                                file_name.ends_with(".py")
-                            })
+                        || (file_name.starts_with("test_") && {
+                            #[expect(clippy::case_sensitive_file_extension_comparisons)]
+                            file_name.ends_with(".py")
+                        })
                     {
                         return true;
                     }

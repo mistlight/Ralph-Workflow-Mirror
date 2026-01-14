@@ -220,10 +220,10 @@ pub fn validate_and_truncate_diff(diff: String) -> (String, bool) {
     // Truncate if over the hard limit
     if diff_size > MAX_DIFF_SIZE_HARD {
         let truncate_size = MAX_DIFF_SIZE_HARD - DIFF_TRUNCATED_MARKER.len();
-        let truncated = diff
-            .char_indices()
-            .nth(truncate_size)
-            .map_or_else(|| format!("{diff}{DIFF_TRUNCATED_MARKER}"), |(i, _)| format!("{}{}", &diff[..i], DIFF_TRUNCATED_MARKER));
+        let truncated = diff.char_indices().nth(truncate_size).map_or_else(
+            || format!("{diff}{DIFF_TRUNCATED_MARKER}"),
+            |(i, _)| format!("{}{}", &diff[..i], DIFF_TRUNCATED_MARKER),
+        );
 
         eprintln!(
             "Warning: Diff truncated from {} to {} bytes for LLM processing.",
@@ -748,7 +748,7 @@ fn call_llm_agent(
             stderr: String::new(),
             agent_cmd: agent_cmd.to_string(),
             message: "Agent command is empty".to_string(),
-        })
+        });
     };
 
     let mut child = Command::new(program)
@@ -1256,9 +1256,10 @@ fn combine_chunk_messages(messages: &[String]) -> String {
 
             // Extract subject (after colon, before newline)
             let subject_start = colon_pos + 1;
-            let subject = msg[subject_start..]
-                .find('\n')
-                .map_or_else(|| msg[subject_start..].trim(), |newline_pos| msg[subject_start..subject_start + newline_pos].trim());
+            let subject = msg[subject_start..].find('\n').map_or_else(
+                || msg[subject_start..].trim(),
+                |newline_pos| msg[subject_start..subject_start + newline_pos].trim(),
+            );
 
             // Skip chunk placeholders and generic subjects
             if subject.starts_with('[') || subject.contains("chunk") {

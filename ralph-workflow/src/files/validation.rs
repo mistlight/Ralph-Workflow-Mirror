@@ -104,7 +104,9 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     for backup_path in &backup_paths {
         if backup_path.exists() {
             // Verify backup has content
-            let Ok(backup_content) = fs::read_to_string(backup_path) else { continue };
+            let Ok(backup_content) = fs::read_to_string(backup_path) else {
+                continue;
+            };
 
             if backup_content.trim().is_empty() {
                 continue; // Try next backup
@@ -190,7 +192,9 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
         for (idx, backup_path) in backup_paths.iter().enumerate() {
             if backup_path.exists() {
                 // Check if backup has content before restoring
-                let Ok(backup_content) = fs::read_to_string(backup_path) else { continue };
+                let Ok(backup_content) = fs::read_to_string(backup_path) else {
+                    continue;
+                };
 
                 if backup_content.trim().is_empty() {
                     continue; // Try next backup

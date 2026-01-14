@@ -183,7 +183,9 @@ pub fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
 ///
 /// Does not log output; safe to call during cleanup.
 pub fn uninstall_hooks_silent() {
-    let Ok(hooks_dir) = get_hooks_dir() else { return };
+    let Ok(hooks_dir) = get_hooks_dir() else {
+        return;
+    };
     if !hooks_dir.exists() {
         return;
     }

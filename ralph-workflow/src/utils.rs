@@ -112,9 +112,10 @@ fn redact_arg_value(key: &str, value: &str) -> String {
     if is_sensitive_key(key) {
         return "<redacted>".to_string();
     }
-    SECRET_LIKE_RE
-        .as_ref()
-        .map_or_else(|| value.to_string(), |re| re.replace_all(value, "<redacted>").to_string())
+    SECRET_LIKE_RE.as_ref().map_or_else(
+        || value.to_string(),
+        |re| re.replace_all(value, "<redacted>").to_string(),
+    )
 }
 
 fn shell_quote_for_log(arg: &str) -> String {
@@ -167,9 +168,10 @@ pub fn format_argv_for_log(argv: &[String]) -> String {
             continue;
         }
 
-        let redacted = SECRET_LIKE_RE
-            .as_ref()
-            .map_or_else(|| arg.clone(), |re| re.replace_all(arg, "<redacted>").to_string());
+        let redacted = SECRET_LIKE_RE.as_ref().map_or_else(
+            || arg.clone(),
+            |re| re.replace_all(arg, "<redacted>").to_string(),
+        );
         out.push(shell_quote_for_log(&redacted));
     }
 

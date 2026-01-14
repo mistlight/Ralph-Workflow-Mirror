@@ -170,160 +170,152 @@ impl OpenCodeParser {
                     c.reset()
                 )
             }
-            "step_finish" => {
-                event.part.as_ref().map_or_else(
-                    String::new,
-                    |part| {
-                        let reason = part.reason.as_deref().unwrap_or("unknown");
-                        let cost = part.cost.unwrap_or(0.0);
+            "step_finish" => event.part.as_ref().map_or_else(String::new, |part| {
+                let reason = part.reason.as_deref().unwrap_or("unknown");
+                let cost = part.cost.unwrap_or(0.0);
 
-                        let tokens_str = part.tokens.as_ref().map_or_else(
-                            String::new,
-                            |tokens| {
-                                let input = tokens.input.unwrap_or(0);
-                                let output = tokens.output.unwrap_or(0);
-                                let reasoning = tokens.reasoning.unwrap_or(0);
-                                let cache_read = tokens.cache.as_ref().and_then(|c| c.read).unwrap_or(0);
-                                if reasoning > 0 {
-                                    format!("in:{input} out:{output} reason:{reasoning} cache:{cache_read}")
-                                } else if cache_read > 0 {
-                                    format!("in:{input} out:{output} cache:{cache_read}")
-                                } else {
-                                    format!("in:{input} out:{output}")
-                                }
-                            }
-                        );
-
-                        let is_success = reason == "tool-calls" || reason == "end_turn";
-                        let icon = if is_success { CHECK } else { CROSS };
-                        let color = if is_success { c.green() } else { c.yellow() };
-
-                        let mut out = format!(
-                            "{}[{}]{} {}{} Step finished{} {}({}",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            color,
-                            icon,
-                            c.reset(),
-                            c.dim(),
-                            reason
-                        );
-                        use std::fmt::Write;
-                        if !tokens_str.is_empty() {
-                            let _ = write!(out, ", {tokens_str}");
-                        }
-                        if cost > 0.0 {
-                            let _ = write!(out, ", ${cost:.4}");
-                        }
-                        let _ = writeln!(out, "){}", c.reset());
-                        out
+                let tokens_str = part.tokens.as_ref().map_or_else(String::new, |tokens| {
+                    let input = tokens.input.unwrap_or(0);
+                    let output = tokens.output.unwrap_or(0);
+                    let reasoning = tokens.reasoning.unwrap_or(0);
+                    let cache_read = tokens.cache.as_ref().and_then(|c| c.read).unwrap_or(0);
+                    if reasoning > 0 {
+                        format!("in:{input} out:{output} reason:{reasoning} cache:{cache_read}")
+                    } else if cache_read > 0 {
+                        format!("in:{input} out:{output} cache:{cache_read}")
+                    } else {
+                        format!("in:{input} out:{output}")
                     }
-                )
-            }
+                });
+
+                let is_success = reason == "tool-calls" || reason == "end_turn";
+                let icon = if is_success { CHECK } else { CROSS };
+                let color = if is_success { c.green() } else { c.yellow() };
+
+                let mut out = format!(
+                    "{}[{}]{} {}{} Step finished{} {}({}",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    color,
+                    icon,
+                    c.reset(),
+                    c.dim(),
+                    reason
+                );
+                use std::fmt::Write;
+                if !tokens_str.is_empty() {
+                    let _ = write!(out, ", {tokens_str}");
+                }
+                if cost > 0.0 {
+                    let _ = write!(out, ", ${cost:.4}");
+                }
+                let _ = writeln!(out, "){}", c.reset());
+                out
+            }),
             "tool_use" => {
-                event.part.as_ref().map_or_else(
-                    String::new,
-                    |part| {
-                        let tool_name = part.tool.as_deref().unwrap_or("unknown");
-                        let status = part
-                            .state
-                            .as_ref()
-                            .and_then(|s| s.status.as_deref())
-                            .unwrap_or("pending");
-                        let title = part.state.as_ref().and_then(|s| s.title.as_deref());
+                event.part.as_ref().map_or_else(String::new, |part| {
+                    let tool_name = part.tool.as_deref().unwrap_or("unknown");
+                    let status = part
+                        .state
+                        .as_ref()
+                        .and_then(|s| s.status.as_deref())
+                        .unwrap_or("pending");
+                    let title = part.state.as_ref().and_then(|s| s.title.as_deref());
 
-                        let is_completed = status == "completed";
-                        let icon = if is_completed { CHECK } else { '⏳' };
-                        let color = if is_completed { c.green() } else { c.yellow() };
+                    let is_completed = status == "completed";
+                    let icon = if is_completed { CHECK } else { '⏳' };
+                    let color = if is_completed { c.green() } else { c.yellow() };
 
-                        let mut out = format!(
-                            "{}[{}]{} {}Tool{}: {}{}{} {}{}{}\n",
+                    let mut out = format!(
+                        "{}[{}]{} {}Tool{}: {}{}{} {}{}{}\n",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.magenta(),
+                        c.reset(),
+                        c.bold(),
+                        tool_name,
+                        c.reset(),
+                        color,
+                        icon,
+                        c.reset()
+                    );
+
+                    // Show title if available
+                    if let Some(t) = title {
+                        let limit = self.verbosity.truncate_limit("text");
+                        let preview = truncate_text(t, limit);
+                        use std::fmt::Write;
+                        let _ = writeln!(
+                            out,
+                            "{}[{}]{} {}  └─ {}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
-                            c.magenta(),
-                            c.reset(),
-                            c.bold(),
-                            tool_name,
-                            c.reset(),
-                            color,
-                            icon,
+                            c.dim(),
+                            preview,
                             c.reset()
                         );
-
-                        // Show title if available
-                        if let Some(t) = title {
-                            let limit = self.verbosity.truncate_limit("text");
-                            let preview = truncate_text(t, limit);
-                            use std::fmt::Write;
-                            let _ = writeln!(out,
-                                "{}[{}]{} {}  └─ {}{}",
-                                c.dim(),
-                                prefix,
-                                c.reset(),
-                                c.dim(),
-                                preview,
-                                c.reset()
-                            );
-                        }
-
-                        // Show tool input at Normal+ verbosity
-                        if self.verbosity.show_tool_input() {
-                            if let Some(ref state) = part.state {
-                                if let Some(ref input_val) = state.input {
-                                    let input_str = format_tool_input(input_val);
-                                    let limit = self.verbosity.truncate_limit("tool_input");
-                                    let preview = truncate_text(&input_str, limit);
-                                    if !preview.is_empty() {
-                                        use std::fmt::Write;
-                                        let _ = writeln!(out,
-                                            "{}[{}]{} {}  └─ {}{}",
-                                            c.dim(),
-                                            prefix,
-                                            c.reset(),
-                                            c.dim(),
-                                            preview,
-                                            c.reset()
-                                        );
-                                    }
-                                }
-                            }
-                        }
-
-                        // Show tool output in verbose mode if completed
-                        if self.verbosity.is_verbose() && is_completed {
-                            if let Some(ref state) = part.state {
-                                if let Some(ref output_val) = state.output {
-                                    let output_str = match output_val {
-                                        serde_json::Value::String(s) => s.as_str(),
-                                        _ => "",
-                                    };
-                                    let output_str = if output_str.is_empty() {
-                                        output_val.to_string()
-                                    } else {
-                                        output_str.to_string()
-                                    };
-                                    let limit = self.verbosity.truncate_limit("tool_result");
-                                    let preview = truncate_text(&output_str, limit);
-                                    if !preview.is_empty() {
-                                        use std::fmt::Write;
-                                        let _ = writeln!(out,
-                                            "{}[{}]{} {}  └─ Output: {}{}",
-                                            c.dim(),
-                                            prefix,
-                                            c.reset(),
-                                            c.dim(),
-                                            preview,
-                                            c.reset()
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        out
                     }
-                )
+
+                    // Show tool input at Normal+ verbosity
+                    if self.verbosity.show_tool_input() {
+                        if let Some(ref state) = part.state {
+                            if let Some(ref input_val) = state.input {
+                                let input_str = format_tool_input(input_val);
+                                let limit = self.verbosity.truncate_limit("tool_input");
+                                let preview = truncate_text(&input_str, limit);
+                                if !preview.is_empty() {
+                                    use std::fmt::Write;
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}  └─ {}{}",
+                                        c.dim(),
+                                        prefix,
+                                        c.reset(),
+                                        c.dim(),
+                                        preview,
+                                        c.reset()
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // Show tool output in verbose mode if completed
+                    if self.verbosity.is_verbose() && is_completed {
+                        if let Some(ref state) = part.state {
+                            if let Some(ref output_val) = state.output {
+                                let output_str = match output_val {
+                                    serde_json::Value::String(s) => s.as_str(),
+                                    _ => "",
+                                };
+                                let output_str = if output_str.is_empty() {
+                                    output_val.to_string()
+                                } else {
+                                    output_str.to_string()
+                                };
+                                let limit = self.verbosity.truncate_limit("tool_result");
+                                let preview = truncate_text(&output_str, limit);
+                                if !preview.is_empty() {
+                                    use std::fmt::Write;
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}  └─ Output: {}{}",
+                                        c.dim(),
+                                        prefix,
+                                        c.reset(),
+                                        c.dim(),
+                                        preview,
+                                        c.reset()
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    out
+                })
             }
             "text" => {
                 if let Some(ref part) = event.part {

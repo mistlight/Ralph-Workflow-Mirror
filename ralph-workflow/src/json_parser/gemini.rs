@@ -170,7 +170,8 @@ impl GeminiParser {
                         let preview = truncate_text(&params_str, limit);
                         if !preview.is_empty() {
                             use std::fmt::Write;
-                            let _ = writeln!(out,
+                            let _ = writeln!(
+                                out,
                                 "{}[{}]{} {}  └─ {}{}",
                                 c.dim(),
                                 prefix,
@@ -205,7 +206,8 @@ impl GeminiParser {
                         let limit = self.verbosity.truncate_limit("tool_result");
                         let preview = truncate_text(output_text, limit);
                         use std::fmt::Write;
-                        let _ = writeln!(out,
+                        let _ = writeln!(
+                            out,
                             "{}[{}]{} {}  └─ {}{}",
                             c.dim(),
                             prefix,
@@ -239,20 +241,17 @@ impl GeminiParser {
                 let icon = if is_success { CHECK } else { CROSS };
                 let color = if is_success { c.green() } else { c.red() };
 
-                let stats_display = stats.as_ref().map_or_else(
-                    String::new,
-                    |s| {
-                        let duration_s = s.duration_ms.unwrap_or(0) / 1000;
-                        let duration_m = duration_s / 60;
-                        let duration_s_rem = duration_s % 60;
-                        let input = s.input_tokens.unwrap_or(0);
-                        let output = s.output_tokens.unwrap_or(0);
-                        let tools = s.tool_calls.unwrap_or(0);
-                        format!(
-                            "({duration_m}m {duration_s_rem}s, in:{input} out:{output}, {tools} tools)"
-                        )
-                    }
-                );
+                let stats_display = stats.as_ref().map_or_else(String::new, |s| {
+                    let duration_s = s.duration_ms.unwrap_or(0) / 1000;
+                    let duration_m = duration_s / 60;
+                    let duration_s_rem = duration_s % 60;
+                    let input = s.input_tokens.unwrap_or(0);
+                    let output = s.output_tokens.unwrap_or(0);
+                    let tools = s.tool_calls.unwrap_or(0);
+                    format!(
+                        "({duration_m}m {duration_s_rem}s, in:{input} out:{output}, {tools} tools)"
+                    )
+                });
 
                 format!(
                     "{}[{}]{} {}{} {}{} {}{}{}\n",

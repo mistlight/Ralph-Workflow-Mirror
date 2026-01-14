@@ -221,10 +221,14 @@ fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec
             continue;
         }
 
-        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else { continue };
+        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
 
         // Match files like "planning_1_glm_0.log" when prefix is "planning_1"
-        if file_name.starts_with(&prefix_pattern) && file_name.to_ascii_lowercase().ends_with(".log") {
+        if file_name.starts_with(&prefix_pattern)
+            && file_name.to_ascii_lowercase().ends_with(".log")
+        {
             log_files.push(path);
         }
     }
@@ -263,7 +267,9 @@ fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<P
             continue;
         }
 
-        let Some(dir_name) = path.file_name().and_then(|s| s.to_str()) else { continue };
+        let Some(dir_name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
 
         // Match directories like "planning_1_ccs" when prefix is "planning_1"
         if dir_name.starts_with(&prefix_pattern) {
