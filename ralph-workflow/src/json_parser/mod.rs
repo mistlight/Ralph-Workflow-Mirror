@@ -51,7 +51,7 @@ mod opencode;
 #[cfg(test)]
 mod opencode_tests;
 mod stream_classifier;
-mod streaming_state;
+pub mod streaming_state;
 mod types;
 
 pub use claude::ClaudeParser;
