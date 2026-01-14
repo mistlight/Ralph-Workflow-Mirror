@@ -6,10 +6,12 @@ use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
+use std::rc::Rc;
 
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, format_unknown_json_event};
+use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator};
 
 /// OpenCode event types
 ///
@@ -97,6 +99,8 @@ pub(crate) struct OpenCodeParser {
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
 }
 
 impl OpenCodeParser {
@@ -106,6 +110,7 @@ impl OpenCodeParser {
             verbosity,
             log_file: None,
             display_name: "OpenCode".to_string(),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
 
@@ -142,6 +147,8 @@ impl OpenCodeParser {
 
         let output = match event.event_type.as_str() {
             "step_start" => {
+                // Clear accumulator on new step
+                self.delta_accumulator.borrow_mut().clear();
                 let _sid = event.session_id.unwrap_or_else(|| "unknown".to_string());
                 let snapshot = event
                     .part
@@ -315,9 +322,30 @@ impl OpenCodeParser {
             "text" => {
                 if let Some(ref part) = event.part {
                     if let Some(ref text) = part.text {
+                        // Accumulate streaming text
+                        let mut acc = self.delta_accumulator.borrow_mut();
+                        acc.add_delta(ContentType::Text, "main", text);
+
+                        // In verbose mode, show full accumulated text
+                        if self.verbosity.is_verbose() {
+                            if let Some(full_text) = acc.get(ContentType::Text, "main") {
+                                let limit = self.verbosity.truncate_limit("text");
+                                let preview = truncate_text(full_text, limit);
+                                return Some(format!(
+                                    "{}[{}]{} {}{}{}\n",
+                                    c.dim(),
+                                    prefix,
+                                    c.reset(),
+                                    c.white(),
+                                    preview,
+                                    c.reset()
+                                ));
+                            }
+                        }
+                        // Normal mode: show delta in real-time
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(text, limit);
-                        format!(
+                        return Some(format!(
                             "{}[{}]{} {}{}{}\n",
                             c.dim(),
                             prefix,
@@ -325,13 +353,10 @@ impl OpenCodeParser {
                             c.white(),
                             preview,
                             c.reset()
-                        )
-                    } else {
-                        String::new()
+                        ));
                     }
-                } else {
-                    String::new()
                 }
+                String::new()
             }
             _ => {
                 // Unknown event type - use the generic formatter in verbose mode

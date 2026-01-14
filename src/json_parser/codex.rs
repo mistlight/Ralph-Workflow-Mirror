@@ -5,10 +5,12 @@
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
+use std::rc::Rc;
 
 use super::health::HealthMonitor;
-use super::types::{format_tool_input, format_unknown_json_event, CodexEvent};
+use super::types::{format_tool_input, format_unknown_json_event, ContentType, DeltaAccumulator, CodexEvent};
 
 /// Codex event parser
 pub(crate) struct CodexParser {
@@ -16,6 +18,8 @@ pub(crate) struct CodexParser {
     verbosity: Verbosity,
     log_file: Option<String>,
     display_name: String,
+    /// Delta accumulator for streaming content
+    delta_accumulator: Rc<RefCell<DeltaAccumulator>>,
 }
 
 impl CodexParser {
@@ -25,6 +29,7 @@ impl CodexParser {
             verbosity,
             log_file: None,
             display_name: "Codex".to_string(),
+            delta_accumulator: Rc::new(RefCell::new(DeltaAccumulator::new())),
         }
     }
 
@@ -135,8 +140,37 @@ impl CodexParser {
                             )
                         }
                         Some("agent_message") => {
-                            // Show "Thinking..." only in non-verbose mode
-                            // In verbose mode, we'll show the actual message in ItemCompleted
+                            // For streaming support, accumulate partial content
+                            if let Some(ref text) = item.text {
+                                let mut acc = self.delta_accumulator.borrow_mut();
+                                acc.add_delta(ContentType::Text, "agent_msg", text);
+
+                                // In verbose mode, show full accumulated text
+                                if self.verbosity.is_verbose() {
+                                    if let Some(full_text) = acc.get(ContentType::Text, "agent_msg") {
+                                        return Some(format!(
+                                            "{}[{}]{} {}{}{}\n",
+                                            c.dim(),
+                                            name,
+                                            c.reset(),
+                                            c.white(),
+                                            full_text,
+                                            c.reset()
+                                        ));
+                                    }
+                                }
+                                // Normal mode: show delta in real-time
+                                return Some(format!(
+                                    "{}[{}]{} {}{}{}\n",
+                                    c.dim(),
+                                    name,
+                                    c.reset(),
+                                    c.white(),
+                                    text,
+                                    c.reset()
+                                ));
+                            }
+                            // No text yet, show placeholder in non-verbose mode
                             if self.verbosity.is_verbose() {
                                 String::new()
                             } else {
@@ -151,7 +185,25 @@ impl CodexParser {
                             }
                         }
                         Some("reasoning") => {
-                            // Show reasoning/thinking in verbose mode
+                            // For streaming support, accumulate reasoning content
+                            if let Some(ref text) = item.text {
+                                let mut acc = self.delta_accumulator.borrow_mut();
+                                acc.add_delta(ContentType::Thinking, "reasoning", text);
+
+                                // Show reasoning in real-time
+                                return Some(format!(
+                                    "{}[{}]{} {}Reasoning:{} {}{}{}\n",
+                                    c.dim(),
+                                    name,
+                                    c.reset(),
+                                    c.cyan(),
+                                    c.reset(),
+                                    c.dim(),
+                                    text,
+                                    c.reset()
+                                ));
+                            }
+                            // No reasoning yet
                             if self.verbosity.is_verbose() {
                                 format!(
                                     "{}[{}]{} {}Reasoning...{}\n",
@@ -267,10 +319,16 @@ impl CodexParser {
                 if let Some(item) = item {
                     match item.item_type.as_deref() {
                         Some("agent_message") => {
-                            if let Some(ref text) = item.text {
+                            // Show final accumulated message and clear accumulator
+                            let full_text = self.delta_accumulator.borrow()
+                                .get(ContentType::Text, "agent_msg")
+                                .map(|s| s.to_string());
+                            self.delta_accumulator.borrow_mut().clear_key(ContentType::Text, "agent_msg");
+
+                            if let Some(text) = full_text {
                                 let limit = self.verbosity.truncate_limit("agent_msg");
-                                let preview = truncate_text(text, limit);
-                                format!(
+                                let preview = truncate_text(&text, limit);
+                                return Some(format!(
                                     "{}[{}]{} {}{}{}\n",
                                     c.dim(),
                                     name,
@@ -278,18 +336,37 @@ impl CodexParser {
                                     c.white(),
                                     preview,
                                     c.reset()
-                                )
-                            } else {
-                                String::new()
+                                ));
                             }
+                            // Fallback to item text if no accumulated content
+                            if let Some(ref text) = item.text {
+                                let limit = self.verbosity.truncate_limit("agent_msg");
+                                let preview = truncate_text(text, limit);
+                                return Some(format!(
+                                    "{}[{}]{} {}{}{}\n",
+                                    c.dim(),
+                                    name,
+                                    c.reset(),
+                                    c.white(),
+                                    preview,
+                                    c.reset()
+                                ));
+                            }
+                            String::new()
                         }
                         Some("reasoning") => {
+                            // Clear reasoning accumulator on completion
+                            let full_reasoning = self.delta_accumulator.borrow()
+                                .get(ContentType::Thinking, "reasoning")
+                                .map(|s| s.to_string());
+                            self.delta_accumulator.borrow_mut().clear_key(ContentType::Thinking, "reasoning");
+
                             // Show reasoning content in verbose mode
                             if self.verbosity.is_verbose() {
-                                if let Some(ref text) = item.text {
+                                if let Some(ref text) = full_reasoning.as_ref().or(item.text.as_ref()) {
                                     let limit = self.verbosity.truncate_limit("text");
                                     let preview = truncate_text(text, limit);
-                                    format!(
+                                    return Some(format!(
                                         "{}[{}]{} {}Thought:{} {}{}{}\n",
                                         c.dim(),
                                         name,
@@ -299,13 +376,10 @@ impl CodexParser {
                                         c.dim(),
                                         preview,
                                         c.reset()
-                                    )
-                                } else {
-                                    String::new()
+                                    ));
                                 }
-                            } else {
-                                String::new()
                             }
+                            String::new()
                         }
                         Some("command_execution") => {
                             format!(
