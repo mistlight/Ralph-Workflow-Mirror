@@ -176,10 +176,20 @@ impl InstallGuidance {
                     guidance
                         .notes
                         .push("Consider installing Homebrew first:".to_string());
+                    // Provide safer installation instructions:
+                    // 1. Download script for inspection
+                    // 2. Execute after review
+                    guidance
+                        .notes
+                        .push("Step 1: Download and review the installer:".to_string());
                     guidance.install_cmd = Some(
-                            "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"".to_string()
-                        );
-                    guidance.alternative = Some(format!("Then: brew install {binary}"));
+                        "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/install.sh".to_string()
+                    );
+                    guidance
+                        .notes
+                        .push("Step 2: After reviewing, execute: bash /tmp/install.sh".to_string());
+                    guidance.alternative =
+                        Some(format!("After brew is installed: brew install {binary}"));
                 }
                 Platform::DebianLinux => {
                     guidance.install_cmd = Some(format!("sudo apt-get install {binary}"));

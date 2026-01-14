@@ -243,30 +243,41 @@ impl PromptMonitor {
                 continue;
             }
 
-            // Restore from backup
-            if fs::write("PROMPT.md", backup_content).is_ok() {
-                // Set read-only permissions
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    if let Ok(metadata) = fs::metadata("PROMPT.md") {
-                        let mut perms = metadata.permissions();
-                        perms.set_mode(0o444);
-                        let _ = fs::set_permissions("PROMPT.md", perms);
-                    }
+            // Restore from backup - ensure parent directory exists
+            let prompt_path = Path::new("PROMPT.md");
+            if let Some(parent) = prompt_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    eprintln!("Failed to create parent directory for PROMPT.md: {e}");
+                    continue;
                 }
-
-                #[cfg(windows)]
-                {
-                    if let Ok(metadata) = fs::metadata("PROMPT.md") {
-                        let mut perms = metadata.permissions();
-                        perms.set_readonly(true);
-                        let _ = fs::set_permissions("PROMPT.md", perms);
-                    }
-                }
-
-                return true;
             }
+
+            if fs::write(prompt_path, backup_content).is_err() {
+                eprintln!("Failed to write PROMPT.md from backup");
+                continue;
+            }
+
+            // Set read-only permissions
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(metadata) = fs::metadata(prompt_path) {
+                    let mut perms = metadata.permissions();
+                    perms.set_mode(0o444);
+                    let _ = fs::set_permissions(prompt_path, perms);
+                }
+            }
+
+            #[cfg(windows)]
+            {
+                if let Ok(metadata) = fs::metadata(prompt_path) {
+                    let mut perms = metadata.permissions();
+                    perms.set_readonly(true);
+                    let _ = fs::set_permissions(prompt_path, perms);
+                }
+            }
+
+            return true;
         }
 
         false
@@ -303,15 +314,19 @@ impl PromptMonitor {
         if let Some(handle) = self.monitor_thread.take() {
             if let Err(panic_payload) = handle.join() {
                 // Thread panicked - extract and log panic message for diagnostics
-                let panic_msg = panic_payload.downcast_ref::<String>().map_or_else(
-                    || {
-                        panic_payload.downcast_ref::<&str>().map_or_else(
-                            || "<unknown panic>".to_string(),
-                            std::string::ToString::to_string,
+                // Try common panic payload types
+                let panic_msg = panic_payload
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| panic_payload.downcast_ref::<&str>().map(ToString::to_string))
+                    .or_else(|| panic_payload.downcast_ref::<&String>().map(|s| (*s).clone()))
+                    .unwrap_or_else(|| {
+                        // Fallback: Try to get any available information
+                        format!(
+                            "<unknown panic type: {}>",
+                            std::any::type_name_of_val(&panic_payload)
                         )
-                    },
-                    std::clone::Clone::clone,
-                );
+                    });
                 eprintln!("Warning: File monitoring thread panicked: {panic_msg}");
             }
         }

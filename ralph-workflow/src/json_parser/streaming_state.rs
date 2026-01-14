@@ -460,11 +460,17 @@ impl StreamingSession {
         if let Some(previous) = self.accumulated.get(&content_key) {
             // A snapshot would start with the previous accumulated content
             // Only consider it a snapshot if:
-            // 1. The incoming text is at least as long as previous content
+            // 1. The incoming text is longer than previous content (strictly greater)
             // 2. The incoming text starts with the exact previous content
-            // 3. The incoming text is not identical to previous content (that's just a duplicate, not a snapshot)
+            // Note: If text.len() == previous.len() and text starts with previous,
+            // they are identical duplicates, not snapshots.
             if text.len() > previous.len() && text.starts_with(previous) {
                 return true;
+            }
+            // Explicitly handle duplicate content (identical to previous)
+            // This is not a snapshot, just a duplicate delta that should be ignored
+            if text == *previous {
+                return false;
             }
         }
 

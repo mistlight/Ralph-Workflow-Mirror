@@ -177,11 +177,25 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
         )
     })?;
 
+    // Ensure the .agent directory exists before attempting to write
+    fs::create_dir_all(AGENT_DIR)?;
+
     // Write atomically by writing to temp file then renaming
     let checkpoint = checkpoint_path();
     let temp_path = format!("{checkpoint}.tmp");
-    fs::write(&temp_path, &json)?;
-    fs::rename(&temp_path, checkpoint)?;
+
+    // Ensure temp file is cleaned up even if write or rename fails
+    let write_result = fs::write(&temp_path, &json);
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+        return write_result;
+    }
+
+    let rename_result = fs::rename(&temp_path, &checkpoint);
+    if rename_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+        return rename_result;
+    }
 
     Ok(())
 }
