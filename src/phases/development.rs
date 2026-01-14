@@ -8,7 +8,7 @@
 //! 4. Optionally runs fast checks
 
 use crate::agents::AgentRole;
-use crate::files::{extract_plan, extract_plan_from_logs_text};
+use crate::files::{extract_plan, extract_plan_from_logs_text, restore_prompt_if_needed};
 use crate::git_helpers::{commit_with_auto_message_result, git_snapshot};
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
@@ -19,6 +19,40 @@ use crate::utils::{
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+/// Periodically restore PROMPT.md if it was deleted by an agent.
+///
+/// This is a defense-in-depth measure to ensure PROMPT.md is always available
+/// even if an agent accidentally deletes it during pipeline execution.
+///
+/// The enhanced logging helps identify which phase/agent likely caused
+/// the deletion for debugging purposes.
+fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, iteration: u32) {
+    match restore_prompt_if_needed() {
+        Ok(true) => {
+            // File exists with content, no action needed
+        }
+        Ok(false) => {
+            logger.warn(&format!(
+                "[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup",
+            ));
+            logger.warn(&format!(
+                "[PROMPT_INTEGRITY] Deletion detected during {} phase (iteration {})",
+                phase, iteration
+            ));
+            logger.warn("[PROMPT_INTEGRITY] Possible cause: Agent used 'rm' or file write tools on PROMPT.md");
+            logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
+        }
+        Err(e) => {
+            logger.error(&format!("[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}", e));
+            logger.error(&format!(
+                "[PROMPT_INTEGRITY] Error occurred during {} phase (iteration {})",
+                phase, iteration
+            ));
+            logger.error("Pipeline may not function correctly without PROMPT.md");
+        }
+    }
+}
 
 use super::context::PhaseContext;
 
@@ -101,6 +135,7 @@ pub fn run_development_phase(
             Some(i),
             Some(ctx.config.developer_iters),
             None, // No guidelines needed for development iteration
+            None, // No PROMPT.md content needed for iteration
         );
 
         let exit_code = {
@@ -188,6 +223,10 @@ pub fn run_development_phase(
             run_fast_check(ctx, fast_cmd, i)?;
         }
 
+        // Periodic restoration check - ensure PROMPT.md still exists
+        // This catches agent deletions and restores from backup
+        ensure_prompt_integrity(ctx.logger, "development", i);
+
         // Step 3: Delete the PLAN
         ctx.logger.info("Deleting PLAN.md...");
         if let Err(err) = delete_plan_file() {
@@ -221,6 +260,11 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
     ctx.logger.info("Creating plan from PROMPT.md...");
     update_status("Starting planning phase", ctx.config.isolation_mode)?;
 
+    // Read PROMPT.md content to include directly in the planning prompt
+    // This prevents agents from discovering PROMPT.md through file exploration,
+    // which reduces the risk of accidental deletion.
+    let prompt_md_content = std::fs::read_to_string("PROMPT.md").ok();
+
     let plan_prompt = prompt_for_agent(
         Role::Developer,
         Action::Plan,
@@ -228,6 +272,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         None,
         None,
         None, // No guidelines needed for planning
+        prompt_md_content.as_deref(),
     );
 
     let log_dir = format!(".agent/logs/planning_{}", iteration);

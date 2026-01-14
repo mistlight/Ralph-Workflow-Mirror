@@ -27,14 +27,11 @@ pub fn prompt_reviewer_review(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"You are in REVIEW MODE with fresh eyes perspective.
 
-INPUTS TO READ:
-- PROMPT.md - The requirements (Goal and Acceptance checks)
-
 YOUR TASK:
-Evaluate the codebase against PROMPT.md. Focus on:
-1) Goal alignment
-2) Each acceptance check (explicit pass/fail)
-3) Bugs, error handling, tests, security
+Evaluate the codebase changes. Focus on:
+1) Code quality and correctness
+2) Bugs, error handling, tests, security
+3) Code style and idiomatic usage
 
 OUTPUT:
 Return your findings as structured output.
@@ -42,11 +39,11 @@ If no issues found, return "No issues found.""#
             .to_string(),
         ContextLevel::Normal => r#"You are in REVIEW MODE.
 
-INPUTS TO READ:
-- PROMPT.md
-
 YOUR TASK:
-Review the repository against PROMPT.md requirements (goal, acceptance checks, quality).
+Review the codebase for:
+- Code quality and correctness
+- Bugs, error handling, tests
+- Security issues
 
 OUTPUT:
 Return your findings as structured output.
@@ -67,14 +64,13 @@ pub fn prompt_detailed_review_without_guidelines(context: ContextLevel) -> Strin
         ContextLevel::Minimal => r#"You are in DETAILED REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
-- PROMPT.md - The requirements (Goal and Acceptance checks)
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md (you need unbiased perspective)
 
 YOUR TASK:
-Produce actionable issues against PROMPT.md:
-1) Goal alignment
-2) Each acceptance check (explicit pass/fail with evidence)
-3) Code quality, bugs, security, tests
+Produce actionable issues:
+1) Code quality and correctness
+2) Bugs, security, tests
+3) Code style and maintainability
 
 OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Description (blocks merge)
@@ -86,11 +82,10 @@ If no issues found, return "No issues found.""#
             .to_string(),
         ContextLevel::Normal => r#"You are in DETAILED REVIEW MODE.
 
-INPUTS TO READ:
-- PROMPT.md
-
 YOUR TASK:
-Review against PROMPT.md (goal, acceptance checks, quality).
+Review for quality and correctness:
+- Bugs, security, tests
+- Code style and maintainability
 
 OUTPUT (prioritized checklist):
 - [ ] Critical: [file:line] Blocks merge
@@ -121,12 +116,11 @@ pub fn prompt_incremental_review_with_diff(context: ContextLevel, diff: &str) ->
             r#"You are in INCREMENTAL REVIEW MODE with fresh eyes.
 
 INPUTS TO READ:
-- PROMPT.md - The requirements (Goal and Acceptance checks)
 - DIFF below - Changes since the start of this pipeline
 
 YOUR TASK:
 Review ONLY the changes in the DIFF below. Focus on:
-1) Alignment with PROMPT.md goal/acceptance checks
+1) Code quality and correctness
 2) Bugs, error handling, tests
 3) Security regressions (inputs validated, outputs escaped)
 
@@ -148,7 +142,6 @@ If no issues found, return "No issues found in changed files.""#,
             r#"You are in INCREMENTAL REVIEW MODE.
 
 INPUTS TO READ:
-- PROMPT.md
 - DIFF below - Changes since the start of this pipeline
 
 DIFF TO REVIEW:
@@ -183,11 +176,10 @@ pub fn prompt_universal_review(context: ContextLevel) -> String {
     match context {
         ContextLevel::Minimal => r#"REVIEW TASK
 
-Read PROMPT.md to understand the requirements.
-
-Check if the code meets the goal and acceptance checks in PROMPT.md.
-
-Look for bugs, errors, security issues, and missing tests.
+Review the codebase for:
+- Bugs, errors, security issues
+- Missing tests
+- Code quality and style
 
 OUTPUT FORMAT
 
@@ -204,8 +196,7 @@ IMPORTANT: Use the format [file:line] for each issue."#
             .to_string(),
         ContextLevel::Normal => r#"REVIEW TASK
 
-Read PROMPT.md to understand the requirements.
-Review the codebase against those requirements.
+Review the codebase for quality and correctness.
 
 OUTPUT FORMAT
 

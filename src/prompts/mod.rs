@@ -40,6 +40,10 @@ use crate::guidelines::ReviewGuidelines;
 /// The optional `guidelines` parameter allows providing language-specific review
 /// guidance when the project stack has been detected. When provided, review prompts
 /// will include tailored checks for the detected language and frameworks.
+///
+/// The optional `prompt_md_content` parameter allows providing PROMPT.md content
+/// directly to the planning prompt, preventing agents from discovering it through
+/// file exploration.
 pub(crate) fn prompt_for_agent(
     role: Role,
     action: Action,
@@ -47,9 +51,10 @@ pub(crate) fn prompt_for_agent(
     iteration: Option<u32>,
     total_iterations: Option<u32>,
     guidelines: Option<&ReviewGuidelines>,
+    prompt_md_content: Option<&str>,
 ) -> String {
     match (role, action) {
-        (_, Action::Plan) => prompt_plan(),
+        (_, Action::Plan) => prompt_plan(prompt_md_content),
         (Role::Developer, Action::Iterate) => prompt_developer_iteration(
             iteration.unwrap_or(1),
             total_iterations.unwrap_or(1),
@@ -89,8 +94,11 @@ mod tests {
             Some(3),
             Some(10),
             None,
+            None,
         );
-        assert!(result.contains("PROMPT.md"));
+        // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+        assert!(!result.contains("PROMPT.md"));
+        assert!(result.contains("PLAN.md"));
     }
 
     #[test]
@@ -105,6 +113,7 @@ mod tests {
             Role::Developer,
             Action::Plan,
             ContextLevel::Normal,
+            None,
             None,
             None,
             None,
@@ -129,7 +138,7 @@ mod tests {
             prompt_reviewer_review(ContextLevel::Normal),
             prompt_reviewer_review(ContextLevel::Minimal),
             prompt_fix(),
-            prompt_plan(),
+            prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
         ];
 
@@ -155,6 +164,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         assert!(result.contains("FIX MODE"));
         assert!(result.contains("ISSUES.md"));
@@ -169,6 +179,7 @@ mod tests {
             ContextLevel::Normal,
             Some(1),
             Some(3),
+            None,
             None,
         );
         // Should fall back to developer iteration prompt
@@ -195,6 +206,7 @@ mod tests {
             None,
             None,
             Some(&guidelines),
+            None,
         );
 
         // Should use the enhanced prompt with guidelines
@@ -209,6 +221,7 @@ mod tests {
             Role::Reviewer,
             Action::Review,
             ContextLevel::Minimal,
+            None,
             None,
             None,
             None,
@@ -286,7 +299,7 @@ mod tests {
             prompt_reviewer_review(ContextLevel::Normal),
             prompt_reviewer_review(ContextLevel::Minimal),
             prompt_fix(),
-            prompt_plan(),
+            prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b\n"),
         ];
 
