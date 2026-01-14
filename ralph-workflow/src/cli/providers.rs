@@ -2,9 +2,126 @@
 //!
 //! Contains functions for displaying `OpenCode` provider information.
 
-#![expect(clippy::too_many_lines)]
 use crate::agents::OpenCodeProviderType;
 use crate::colors::Colors;
+
+/// Provider category for display organization
+#[derive(Debug, Clone, Copy)]
+struct ProviderCategory {
+    name: &'static str,
+    providers: &'static [(OpenCodeProviderType, &'static str)],
+}
+
+/// Provider categories with their providers and example aliases
+const PROVIDER_CATEGORIES: &[ProviderCategory] = &[
+    ProviderCategory {
+        name: "OPENCODE GATEWAY",
+        providers: &[(OpenCodeProviderType::OpenCodeZen, "opencode-zen-glm")],
+    },
+    ProviderCategory {
+        name: "CHINESE AI PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::ZaiDirect, "opencode-zai-glm"),
+            (
+                OpenCodeProviderType::ZaiCodingPlan,
+                "opencode-zai-glm-codingplan",
+            ),
+            (OpenCodeProviderType::Moonshot, "opencode-moonshot"),
+            (OpenCodeProviderType::MiniMax, "opencode-minimax"),
+        ],
+    },
+    ProviderCategory {
+        name: "MAJOR CLOUD PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::Anthropic, "opencode-direct-claude"),
+            (OpenCodeProviderType::OpenAI, "opencode-openai"),
+            (OpenCodeProviderType::Google, "opencode-google"),
+            (OpenCodeProviderType::GoogleVertex, "opencode-vertex"),
+            (OpenCodeProviderType::AmazonBedrock, "opencode-bedrock"),
+            (OpenCodeProviderType::AzureOpenAI, "opencode-azure"),
+            (OpenCodeProviderType::GithubCopilot, "opencode-copilot"),
+        ],
+    },
+    ProviderCategory {
+        name: "FAST INFERENCE PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::Groq, "opencode-groq"),
+            (OpenCodeProviderType::Together, "opencode-together"),
+            (OpenCodeProviderType::Fireworks, "opencode-fireworks"),
+            (OpenCodeProviderType::Cerebras, "opencode-cerebras"),
+            (OpenCodeProviderType::SambaNova, "opencode-sambanova"),
+            (OpenCodeProviderType::DeepInfra, "opencode-deepinfra"),
+        ],
+    },
+    ProviderCategory {
+        name: "GATEWAY PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::OpenRouter, "opencode-openrouter"),
+            (OpenCodeProviderType::Cloudflare, "opencode-cloudflare"),
+        ],
+    },
+    ProviderCategory {
+        name: "SPECIALIZED PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::DeepSeek, "opencode-deepseek"),
+            (OpenCodeProviderType::Xai, "opencode-xai"),
+            (OpenCodeProviderType::Mistral, "opencode-mistral"),
+            (OpenCodeProviderType::Cohere, "opencode-cohere"),
+            (OpenCodeProviderType::Perplexity, "opencode-perplexity"),
+            (OpenCodeProviderType::AI21, "opencode-ai21"),
+            (OpenCodeProviderType::VeniceAI, "opencode-venice"),
+        ],
+    },
+    ProviderCategory {
+        name: "OPEN-SOURCE MODEL PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::HuggingFace, "opencode-huggingface"),
+            (OpenCodeProviderType::Replicate, "opencode-replicate"),
+        ],
+    },
+    ProviderCategory {
+        name: "CLOUD PLATFORM PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::Baseten, "opencode-baseten"),
+            (OpenCodeProviderType::Cortecs, "opencode-cortecs"),
+            (OpenCodeProviderType::Scaleway, "opencode-scaleway"),
+            (OpenCodeProviderType::OVHcloud, "opencode-ovhcloud"),
+            (OpenCodeProviderType::IONet, "opencode-ionet"),
+            (OpenCodeProviderType::Nebius, "opencode-nebius"),
+        ],
+    },
+    ProviderCategory {
+        name: "AI GATEWAY PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::Vercel, "opencode-vercel"),
+            (OpenCodeProviderType::Helicone, "opencode-helicone"),
+            (OpenCodeProviderType::ZenMux, "opencode-zenmux"),
+        ],
+    },
+    ProviderCategory {
+        name: "ENTERPRISE PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::SapAICore, "opencode-sap"),
+            (
+                OpenCodeProviderType::AzureCognitiveServices,
+                "opencode-azure-cognitive",
+            ),
+        ],
+    },
+    ProviderCategory {
+        name: "LOCAL PROVIDERS",
+        providers: &[
+            (OpenCodeProviderType::Ollama, "opencode-ollama"),
+            (OpenCodeProviderType::LMStudio, "opencode-lmstudio"),
+            (OpenCodeProviderType::OllamaCloud, "opencode-ollama-cloud"),
+            (OpenCodeProviderType::LlamaCpp, "opencode-llamacpp"),
+        ],
+    },
+    ProviderCategory {
+        name: "CUSTOM",
+        providers: &[(OpenCodeProviderType::Custom, "(custom)")],
+    },
+];
 
 /// Helper function to print provider information for --list-providers.
 pub fn print_provider_info(colors: Colors, provider: OpenCodeProviderType, agent_alias: &str) {
@@ -21,215 +138,22 @@ pub fn print_provider_info(colors: Colors, provider: OpenCodeProviderType, agent
     println!("  Agent: {agent_alias}");
 }
 
-/// Handle --list-providers command.
-///
-/// Displays a categorized list of all `OpenCode` provider types with their
-/// model prefixes, authentication commands, and example agent aliases.
-pub fn handle_list_providers(colors: Colors) {
-    println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());
-    println!();
-    println!("Ralph includes built-in guidance for major OpenCode provider prefixes (plus a custom fallback).");
-    println!("OpenCode may support additional providers; consult OpenCode docs for the full set.");
-    println!();
-
-    // Category: OpenCode Gateway
+/// Print a provider category with all its providers
+fn print_category(colors: Colors, category: &ProviderCategory) {
     println!(
-        "{}═══ OPENCODE GATEWAY ═══{}",
+        "{}═══ {} ═══{}",
         colors.bold(),
+        category.name,
         colors.reset()
     );
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::OpenCodeZen,
-        "opencode-zen-glm",
-    );
+    for (provider, alias) in category.providers {
+        print_provider_info(colors, *provider, alias);
+    }
     println!();
+}
 
-    // Category: Chinese AI Providers
-    println!(
-        "{}═══ CHINESE AI PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(colors, OpenCodeProviderType::ZaiDirect, "opencode-zai-glm");
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::ZaiCodingPlan,
-        "opencode-zai-glm-codingplan",
-    );
-    print_provider_info(colors, OpenCodeProviderType::Moonshot, "opencode-moonshot");
-    print_provider_info(colors, OpenCodeProviderType::MiniMax, "opencode-minimax");
-    println!();
-
-    // Category: Major Cloud Providers
-    println!(
-        "{}═══ MAJOR CLOUD PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::Anthropic,
-        "opencode-direct-claude",
-    );
-    print_provider_info(colors, OpenCodeProviderType::OpenAI, "opencode-openai");
-    print_provider_info(colors, OpenCodeProviderType::Google, "opencode-google");
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::GoogleVertex,
-        "opencode-vertex",
-    );
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::AmazonBedrock,
-        "opencode-bedrock",
-    );
-    print_provider_info(colors, OpenCodeProviderType::AzureOpenAI, "opencode-azure");
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::GithubCopilot,
-        "opencode-copilot",
-    );
-    println!();
-
-    // Category: Fast Inference Providers
-    println!(
-        "{}═══ FAST INFERENCE PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(colors, OpenCodeProviderType::Groq, "opencode-groq");
-    print_provider_info(colors, OpenCodeProviderType::Together, "opencode-together");
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::Fireworks,
-        "opencode-fireworks",
-    );
-    print_provider_info(colors, OpenCodeProviderType::Cerebras, "opencode-cerebras");
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::SambaNova,
-        "opencode-sambanova",
-    );
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::DeepInfra,
-        "opencode-deepinfra",
-    );
-    println!();
-
-    // Category: Gateway/Aggregator Providers
-    println!(
-        "{}═══ GATEWAY PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::OpenRouter,
-        "opencode-openrouter",
-    );
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::Cloudflare,
-        "opencode-cloudflare",
-    );
-    println!();
-
-    // Category: Specialized Providers
-    println!(
-        "{}═══ SPECIALIZED PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(colors, OpenCodeProviderType::DeepSeek, "opencode-deepseek");
-    print_provider_info(colors, OpenCodeProviderType::Xai, "opencode-xai");
-    print_provider_info(colors, OpenCodeProviderType::Mistral, "opencode-mistral");
-    print_provider_info(colors, OpenCodeProviderType::Cohere, "opencode-cohere");
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::Perplexity,
-        "opencode-perplexity",
-    );
-    print_provider_info(colors, OpenCodeProviderType::AI21, "opencode-ai21");
-    print_provider_info(colors, OpenCodeProviderType::VeniceAI, "opencode-venice");
-    println!();
-
-    // Category: Open-Source Model Providers
-    println!(
-        "{}═══ OPEN-SOURCE MODEL PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::HuggingFace,
-        "opencode-huggingface",
-    );
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::Replicate,
-        "opencode-replicate",
-    );
-    println!();
-
-    // Category: Cloud Platform Providers
-    println!(
-        "{}═══ CLOUD PLATFORM PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(colors, OpenCodeProviderType::Baseten, "opencode-baseten");
-    print_provider_info(colors, OpenCodeProviderType::Cortecs, "opencode-cortecs");
-    print_provider_info(colors, OpenCodeProviderType::Scaleway, "opencode-scaleway");
-    print_provider_info(colors, OpenCodeProviderType::OVHcloud, "opencode-ovhcloud");
-    print_provider_info(colors, OpenCodeProviderType::IONet, "opencode-ionet");
-    print_provider_info(colors, OpenCodeProviderType::Nebius, "opencode-nebius");
-    println!();
-
-    // Category: AI Gateway Providers
-    println!(
-        "{}═══ AI GATEWAY PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(colors, OpenCodeProviderType::Vercel, "opencode-vercel");
-    print_provider_info(colors, OpenCodeProviderType::Helicone, "opencode-helicone");
-    print_provider_info(colors, OpenCodeProviderType::ZenMux, "opencode-zenmux");
-    println!();
-
-    // Category: Enterprise/Industry Providers
-    println!(
-        "{}═══ ENTERPRISE PROVIDERS ═══{}",
-        colors.bold(),
-        colors.reset()
-    );
-    print_provider_info(colors, OpenCodeProviderType::SapAICore, "opencode-sap");
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::AzureCognitiveServices,
-        "opencode-azure-cognitive",
-    );
-    println!();
-
-    // Category: Local Providers
-    println!("{}═══ LOCAL PROVIDERS ═══{}", colors.bold(), colors.reset());
-    print_provider_info(colors, OpenCodeProviderType::Ollama, "opencode-ollama");
-    print_provider_info(colors, OpenCodeProviderType::LMStudio, "opencode-lmstudio");
-    print_provider_info(
-        colors,
-        OpenCodeProviderType::OllamaCloud,
-        "opencode-ollama-cloud",
-    );
-    print_provider_info(colors, OpenCodeProviderType::LlamaCpp, "opencode-llamacpp");
-    println!();
-
-    // Category: Custom
-    println!("{}═══ CUSTOM ═══{}", colors.bold(), colors.reset());
-    print_provider_info(colors, OpenCodeProviderType::Custom, "(custom)");
-    println!();
-
-    // Important notes
+/// Print important notes about providers
+fn print_notes(colors: Colors) {
     println!("{}═══ IMPORTANT NOTES ═══{}", colors.bold(), colors.reset());
     println!(
         "• OpenCode Zen (opencode/*) and Z.AI Direct (zai/* or zhipuai/*) are SEPARATE endpoints!"
@@ -243,4 +167,73 @@ pub fn handle_list_providers(colors: Colors) {
     );
     println!("• Use clear naming: opencode-zen-*, opencode-zai-*, opencode-direct-* aliases");
     println!();
+}
+
+/// Handle --list-providers command.
+///
+/// Displays a categorized list of all `OpenCode` provider types with their
+/// model prefixes, authentication commands, and example agent aliases.
+pub fn handle_list_providers(colors: Colors) {
+    println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());
+    println!();
+    println!("Ralph includes built-in guidance for major OpenCode provider prefixes (plus a custom fallback).");
+    println!("OpenCode may support additional providers; consult OpenCode docs for the full set.");
+    println!();
+
+    for category in PROVIDER_CATEGORIES {
+        print_category(colors, category);
+    }
+
+    print_notes(colors);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_categories_count() {
+        // Verify we have all expected categories
+        assert_eq!(PROVIDER_CATEGORIES.len(), 12);
+    }
+
+    #[test]
+    fn test_category_names() {
+        let expected_names = &[
+            "OPENCODE GATEWAY",
+            "CHINESE AI PROVIDERS",
+            "MAJOR CLOUD PROVIDERS",
+            "FAST INFERENCE PROVIDERS",
+            "GATEWAY PROVIDERS",
+            "SPECIALIZED PROVIDERS",
+            "OPEN-SOURCE MODEL PROVIDERS",
+            "CLOUD PLATFORM PROVIDERS",
+            "AI GATEWAY PROVIDERS",
+            "ENTERPRISE PROVIDERS",
+            "LOCAL PROVIDERS",
+            "CUSTOM",
+        ];
+        let actual_names: Vec<_> = PROVIDER_CATEGORIES.iter().map(|c| c.name).collect();
+        assert_eq!(actual_names, expected_names);
+    }
+
+    #[test]
+    fn test_no_empty_categories() {
+        for category in PROVIDER_CATEGORIES {
+            assert!(
+                !category.providers.is_empty(),
+                "Category '{}' is empty",
+                category.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_providers_have_aliases() {
+        for category in PROVIDER_CATEGORIES {
+            for (provider, alias) in category.providers {
+                assert!(!alias.is_empty(), "Provider {:?} has empty alias", provider);
+            }
+        }
+    }
 }
