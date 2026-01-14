@@ -27,10 +27,11 @@
 
     <title>Ralph Workflow - Your Ideas, Shipped by AI</title>
 
-    <!-- Fonts: Bebas Neue (display), Syne (headings), DM Sans (body), IBM Plex Mono (code) -->
+    <!-- Fonts: Bebas Neue (display), Syne (headings), Space Grotesk (body), IBM Plex Mono (code) -->
+    <!-- Space Grotesk provides distinctive geometric character with excellent readability -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 
     <!-- Favicon - Enhanced with distinctive R logo -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg-grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23111'/%3E%3Cstop offset='100%25' style='stop-color:%23000'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg-grad)' rx='14'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%23CCFF00' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23CCFF00'/%3E%3C/svg%3E">
@@ -114,9 +115,18 @@
                     </div>
 
                     <h1 class="hero-title">
-                        <span class="hero-title-line">Your ideas.</span>
-                        <span class="hero-title-line"><span class="hero-title-accent">Shipped by AI.</span></span>
-                        <span class="hero-title-line">No copy-paste.</span>
+                        <span class="hero-title-line">
+                            <span class="hero-word" style="--word-index: 0;">Your</span>
+                            <span class="hero-word" style="--word-index: 1;">ideas.</span>
+                        </span>
+                        <span class="hero-title-line">
+                            <span class="hero-word" style="--word-index: 2;">Shipped</span>
+                            <span class="hero-word hero-title-accent" style="--word-index: 3;">by AI.</span>
+                        </span>
+                        <span class="hero-title-line">
+                            <span class="hero-word" style="--word-index: 4;">No</span>
+                            <span class="hero-word" style="--word-index: 5;">copy-paste.</span>
+                        </span>
                     </h1>
 
                     <p class="hero-description">
@@ -125,11 +135,11 @@
                     </p>
 
                     <div class="hero-actions">
-                        <a href="#install" class="btn btn-primary">
+                        <a href="#install" class="btn btn-primary" data-text="Install Ralph">
                             Install Ralph
                             <span class="btn-arrow" aria-hidden="true">→</span>
                         </a>
-                        <a href="#what-is-ralph" class="btn btn-secondary">
+                        <a href="#what-is-ralph" class="btn btn-secondary" data-text="How it works">
                             How it works
                         </a>
                     </div>
@@ -142,42 +152,49 @@
                             <span class="terminal-dot terminal-dot-red"></span>
                             <span class="terminal-dot terminal-dot-yellow"></span>
                             <span class="terminal-dot terminal-dot-green"></span>
-                            <span class="terminal-title">ralph — terminal</span>
+                            <span class="terminal-title">ralph — bash — 80x24</span>
+                        </div>
+                        <div class="terminal-progress" aria-hidden="true">
+                            <div class="terminal-progress-bar"></div>
                         </div>
                         <div class="terminal-body">
                             <div class="terminal-line">
-                                <span class="terminal-prompt">$</span>
+                                <span class="terminal-prompt">~</span>
+                                <span class="terminal-prompt-symbol">$</span>
                                 <span class="terminal-command">ralph -S</span>
                             </div>
-                            <div class="terminal-line">
-                                <div class="terminal-output">
-                                    <p><span class="terminal-success">→</span> Reading PROMPT.md</p>
-                                </div>
+                            <div class="terminal-line terminal-output-line">
+                                <span class="terminal-output-icon">→</span>
+                                <span class="terminal-output-text">Reading PROMPT.md</span>
+                                <span class="terminal-spinner" aria-hidden="true"></span>
                             </div>
-                            <div class="terminal-line">
-                                <div class="terminal-output">
-                                    <p><span class="terminal-success">→</span> Developer agent: Writing code...</p>
-                                </div>
+                            <div class="terminal-line terminal-output-line">
+                                <span class="terminal-output-icon">→</span>
+                                <span class="terminal-output-text"><span class="terminal-highlight">Developer</span> agent: Writing code...</span>
+                                <span class="terminal-status terminal-status-working">●</span>
                             </div>
-                            <div class="terminal-line">
-                                <div class="terminal-output">
-                                    <p><span class="terminal-success">→</span> Reviewer agent: Validating...</p>
-                                </div>
+                            <div class="terminal-line terminal-output-line">
+                                <span class="terminal-output-icon">→</span>
+                                <span class="terminal-output-text"><span class="terminal-highlight">Reviewer</span> agent: Validating...</span>
+                                <span class="terminal-status terminal-status-working">●</span>
                             </div>
-                            <div class="terminal-line">
-                                <div class="terminal-output">
-                                    <p><span class="terminal-success">→</span> Iteration 3/10 complete</p>
-                                </div>
+                            <div class="terminal-line terminal-output-line">
+                                <span class="terminal-output-icon">→</span>
+                                <span class="terminal-output-text">Iteration <span class="terminal-number">3</span>/<span class="terminal-number">10</span> complete</span>
+                                <span class="terminal-progress-indicator" aria-hidden="true">
+                                    <span class="terminal-progress-dot"></span>
+                                    <span class="terminal-progress-dot"></span>
+                                    <span class="terminal-progress-dot terminal-progress-dot-active"></span>
+                                </span>
                             </div>
-                            <div class="terminal-line">
-                                <div class="terminal-output">
-                                    <p><span class="terminal-success">✓</span> Code approved, creating commit...</p>
-                                </div>
+                            <div class="terminal-line terminal-output-line">
+                                <span class="terminal-output-icon terminal-icon-success">✓</span>
+                                <span class="terminal-output-text terminal-success-text">Code approved, creating commit...</span>
                             </div>
-                            <div class="terminal-line">
-                                <div class="terminal-output">
-                                    <p style="color: #A1A1AA;">Changes shipped in 3m 42s<span class="terminal-cursor"></span></p>
-                                </div>
+                            <div class="terminal-line terminal-output-line">
+                                <span class="terminal-output-dim">Changes shipped in </span>
+                                <span class="terminal-time">3m 42s</span>
+                                <span class="terminal-cursor" aria-hidden="true"></span>
                             </div>
                         </div>
                     </div>

@@ -7,53 +7,80 @@
 
 /* === CSS CUSTOM PROPERTIES === */
 :root {
-    /* Dark Terminal Background - Deepest Black */
+    /* === REFINED COLOR PALETTE === */
+    /* Dark Terminal Background - Deepest Black with Sophisticated Grays */
     --color-bg: #000000;
-    --color-bg-alt: #030303;
-    --color-bg-elevated: #0A0A0A;
+    --color-bg-alt: #050505;
+    --color-bg-elevated: #0C0C0C;
     --color-bg-card: #111111;
     --color-bg-code: #000000;
     --color-bg-glass: rgba(10, 10, 10, 0.8);
 
-    /* Text Colors - High Contrast */
-    --color-text: #F0F0F0;
-    --color-text-muted: #8A8A8A;
-    --color-text-dim: #3A3A3A;
+    /* Text Colors - High Contrast with Refined Muted Scale */
+    --color-text: #F2F2F2;
+    --color-text-muted: #9A9A9A;
+    --color-text-dim: #4A4A4A;
     --color-text-bright: #FFFFFF;
+    --color-text-accent: #D4D4D4;
 
-    /* Electric Neon Accent Palette */
-    --color-neon-lime: #CCFF00;
-    --color-neon-cyan: #00FFF0;
-    --color-neon-pink: #FF006E;
-    --color-neon-amber: #FF9500;
-    --color-neon-violet: #9D00FF;
-
-    /* Semantic Colors */
+    /* Primary Accent - Neon Lime (Refined) */
     --color-primary: #CCFF00;
+    --color-primary-dim: rgba(204, 255, 0, 0.15);
+    --color-primary-glow: rgba(204, 255, 0, 0.5);
+
+    /* Secondary Accent - Electric Cyan (Refined) */
     --color-accent: #00FFF0;
+    --color-accent-dim: rgba(0, 255, 240, 0.12);
+    --color-accent-glow: rgba(0, 255, 240, 0.4);
+
+    /* Semantic Colors - Refined Palette */
     --color-success: #CCFF00;
-    --color-warning: #FF9500;
-    --color-error: #FF006E;
+    --color-warning: #FFB800;
+    --color-error: #FF3366;
 
-    /* Code Styling */
-    --code-bg: #000000;
+    /* Neutral Scale - Sophisticated Grays */
+    --neutral-50: #FAFAFA;
+    --neutral-100: #E5E5E5;
+    --neutral-200: #C4C4C4;
+    --neutral-300: #9A9A9A;
+    --neutral-400: #6B6B6B;
+    --neutral-500: #4A4A4A;
+    --neutral-600: #2A2A2A;
+    --neutral-700: #1A1A1A;
+    --neutral-800: #0F0F0F;
+    --neutral-900: #050505;
+
+    /* Code Styling - Refined Syntax Colors */
+    --code-bg: #030303;
     --code-text: #CCFF00;
-    --code-keyword: #FF006E;
+    --code-keyword: #FF3366;
     --code-string: #00FFF0;
-    --code-comment: #3A3A3A;
-    --code-border: #222222;
+    --code-comment: #4A4A4A;
+    --code-function: #FFB800;
+    --code-number: #CC99FF;
+    --code-border: #1A1A1A;
 
-    /* Borders & Lines */
-    --border-subtle: #1A1A1A;
-    --border-medium: #2A2A2A;
+    /* Borders & Lines - Refined Scale */
+    --border-subtle: #151515;
+    --border-medium: #252525;
     --border-bright: #3A3A3A;
     --border-accent: #CCFF00;
 
     /* Typography - Commercial-Grade Font Stack */
+    /* Space Grotesk: Distinctive geometric sans with tech-forward character */
     --font-display: 'Bebas Neue', impact, 'Arial Black', sans-serif;
     --font-heading: 'Syne', 'Bebas Neue', sans-serif;
-    --font-body: 'DM Sans', 'Inter', -apple-system, system-ui, sans-serif;
+    --font-body: 'Space Grotesk', 'DM Sans', 'Inter', -apple-system, system-ui, sans-serif;
     --font-mono: 'IBM Plex Mono', 'SF Mono', 'Consolas', monospace;
+
+    /* Typography Refinement - Enhanced Letter-spacing */
+    --tracking-tightest: -0.08em;
+    --tracking-tighter: -0.06em;
+    --tracking-tight: -0.04em;
+    --tracking-normal: -0.02em;
+    --tracking-wide: 0.02em;
+    --tracking-wider: 0.05em;
+    --tracking-widest: 0.1em;
 
     /* Font Sizes - Fluid Typography Scale */
     --text-xs: clamp(0.65rem, 0.6rem + 0.25vw, 0.7rem);
@@ -70,28 +97,59 @@
     --text-8xl: clamp(6rem, 5rem + 5vw, 9rem);
     --text-9xl: clamp(8rem, 6rem + 10vw, 12rem);
 
-    /* Spacing Scale */
-    --space-1: 0.25rem;
-    --space-2: 0.5rem;
-    --space-3: 0.75rem;
-    --space-4: 1rem;
-    --space-5: 1.25rem;
-    --space-6: 1.5rem;
-    --space-8: 2rem;
-    --space-10: 2.5rem;
-    --space-12: 3rem;
-    --space-16: 4rem;
-    --space-20: 5rem;
-    --space-24: 6rem;
-    --space-32: 8rem;
-    --space-40: 10rem;
-    --space-48: 12rem;
-    --space-56: 14rem;
-    --space-64: 16rem;
+    /* Spacing Scale - 8-Point Grid System */
+    --space-0: 0;
+    --space-px: 1px;
+    --space-0_5: 0.125rem;  /* 2px */
+    --space-1: 0.25rem;      /* 4px */
+    --space-1_5: 0.375rem;   /* 6px */
+    --space-2: 0.5rem;       /* 8px */
+    --space-2_5: 0.625rem;   /* 10px */
+    --space-3: 0.75rem;      /* 12px */
+    --space-3_5: 0.875rem;   /* 14px */
+    --space-4: 1rem;         /* 16px */
+    --space-5: 1.25rem;      /* 20px */
+    --space-6: 1.5rem;       /* 24px */
+    --space-7: 1.75rem;      /* 28px */
+    --space-8: 2rem;         /* 32px */
+    --space-9: 2.25rem;      /* 36px */
+    --space-10: 2.5rem;      /* 40px */
+    --space-11: 2.75rem;     /* 44px */
+    --space-12: 3rem;        /* 48px */
+    --space-14: 3.5rem;      /* 56px */
+    --space-16: 4rem;        /* 64px */
+    --space-20: 5rem;        /* 80px */
+    --space-24: 6rem;        /* 96px */
+    --space-28: 7rem;        /* 112px */
+    --space-32: 8rem;        /* 128px */
+    --space-36: 9rem;        /* 144px */
+    --space-40: 10rem;       /* 160px */
+    --space-44: 11rem;       /* 176px */
+    --space-48: 12rem;       /* 192px */
+    --space-52: 13rem;       /* 208px */
+    --space-56: 14rem;       /* 224px */
+    --space-60: 15rem;       /* 240px */
+    --space-64: 16rem;       /* 256px */
+    --space-72: 18rem;       /* 288px */
+    --space-80: 20rem;       /* 320px */
+    --space-96: 24rem;       /* 384px */
 
     /* Layout */
     --container-max: 1400px;
     --nav-height: 80px;
+
+    /* Section Spacing Scale - Vertical Rhythm */
+    --section-padding-compact: var(--space-16);  /* 64px */
+    --section-padding-default: var(--space-24);  /* 96px */
+    --section-padding-relaxed: var(--space-32);  /* 128px */
+    --section-padding-generous: var(--space-48); /* 192px */
+
+    /* Component Spacing Standards */
+    --gap-element: var(--space-4);     /* 16px - between related elements */
+    --gap-component: var(--space-8);   /* 32px - between components */
+    --gap-section: var(--space-16);    /* 64px - between sections */
+
+    /* Border Radius - Brutalist (Sharp) */
     --radius-sm: 0px;
     --radius-md: 0px;
     --radius-lg: 0px;
@@ -303,14 +361,14 @@ h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-heading);
     font-weight: 700;
     line-height: 1.1;
-    letter-spacing: -0.03em;
+    letter-spacing: var(--tracking-tight);
     text-transform: uppercase;
 }
 
 h1 {
     font-size: var(--text-7xl);
     font-weight: 900;
-    letter-spacing: -0.05em;
+    letter-spacing: var(--tracking-tightest);
     line-height: 0.95;
 }
 
@@ -318,21 +376,38 @@ h2 {
     font-size: var(--text-5xl);
     font-weight: 800;
     line-height: 1.05;
+    letter-spacing: var(--tracking-tighter);
 }
 
-h3 { font-size: var(--text-3xl); font-weight: 700; line-height: 1.15; }
-h4 { font-size: var(--text-2xl); font-weight: 700; line-height: 1.2; }
-h5 { font-size: var(--text-xl); font-weight: 600; }
+h3 {
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: var(--tracking-tight);
+}
+h4 {
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: var(--tracking-tight);
+}
+h5 {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: var(--tracking-normal);
+}
 
 .display-text {
     font-family: var(--font-display);
     font-weight: 400;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--tracking-wider);
     text-transform: uppercase;
 }
 
 p {
     max-width: 65ch;
+    line-height: 1.6;
+    letter-spacing: var(--tracking-normal);
 }
 
 a {
@@ -656,28 +731,36 @@ code.inline {
     50% { opacity: 0.6; transform: scale(0.85); box-shadow: 0 0 0 8px rgba(204, 255, 0, 0); }
 }
 
-/* Hero Title - Dramatic */
+/* Hero Title - Dramatic with Word-by-Word Animation */
 .hero-title {
-    font-size: var(--text-7xl);
+    font-size: var(--text-8xl);
     font-weight: 900;
-    line-height: 1.05;
-    letter-spacing: -0.04em;
-    margin-bottom: var(--space-8);
+    line-height: 1.02;
+    letter-spacing: var(--tracking-tightest);
+    margin-bottom: var(--space-10);
     text-transform: uppercase;
+    perspective: 1000px;
 }
 
 .hero-title-line {
     display: block;
-    opacity: 0;
-    transform: translateY(60px) rotateX(-15deg);
-    animation: hero-reveal-dramatic 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    overflow: hidden;
 }
 
-.hero-title-line:nth-child(1) { animation-delay: 0.1s; }
-.hero-title-line:nth-child(2) { animation-delay: 0.25s; }
-.hero-title-line:nth-child(3) { animation-delay: 0.4s; }
+.hero-word {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(120%) rotateX(-20deg);
+    animation: word-reveal-dramatic 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: calc(var(--word-index) * 0.08s + 0.3s);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-@keyframes hero-reveal-dramatic {
+.hero-word:hover {
+    transform: translateY(-5%) scale(1.02);
+}
+
+@keyframes word-reveal-dramatic {
     to {
         opacity: 1;
         transform: translateY(0) rotateX(0deg);
@@ -688,18 +771,18 @@ code.inline {
     color: var(--color-primary);
     position: relative;
     display: inline-block;
-    text-shadow: 0 0 40px rgba(204, 255, 0, 0.5);
+    text-shadow: 0 0 50px rgba(204, 255, 0, 0.6);
 }
 
 .hero-title-accent::after {
     content: '';
     position: absolute;
-    bottom: -0.1em;
-    left: -5%;
-    width: 110%;
-    height: 0.15em;
+    bottom: -0.05em;
+    left: -2%;
+    width: 104%;
+    height: 0.2em;
     background: var(--gradient-primary);
-    animation: underline-grow-dramatic 1s cubic-bezier(0.16, 1, 0.3, 1) 0.8s forwards;
+    animation: underline-grow-dramatic 0.8s cubic-bezier(0.16, 1, 0.3, 1) 1.2s forwards;
     transform-origin: left;
     transform: scaleX(0);
     z-index: -1;
@@ -798,6 +881,19 @@ code.inline {
     box-shadow: 0 0 60px rgba(204, 255, 0, 0.7);
 }
 
+.btn-primary:active {
+    transform: translateY(-2px) scale(1.01);
+}
+
+/* Button Arrow Animation */
+.btn-arrow {
+    transition: transform var(--transition-base);
+}
+
+.btn-primary:hover .btn-arrow {
+    transform: translateX(4px);
+}
+
 .btn-secondary {
     background: transparent;
     color: var(--color-text);
@@ -853,6 +949,33 @@ code.inline {
     z-index: 1;
 }
 
+/* Terminal Progress Bar */
+.terminal-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--color-bg-elevated);
+    z-index: 2;
+    overflow: hidden;
+}
+
+.terminal-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--gradient-primary);
+    animation: terminal-progress 4s ease-out forwards;
+    animation-delay: 0.5s;
+}
+
+@keyframes terminal-progress {
+    0% { width: 0%; }
+    30% { width: 30%; }
+    60% { width: 70%; }
+    100% { width: 100%; }
+}
+
 .terminal-header {
     display: flex;
     align-items: center;
@@ -893,7 +1016,7 @@ code.inline {
     margin-bottom: var(--space-4);
     display: flex;
     align-items: flex-start;
-    gap: var(--space-4);
+    gap: var(--space-3);
     opacity: 0;
     transform: translateX(-15px);
 }
@@ -918,23 +1041,127 @@ code.inline {
 .terminal-line:nth-child(7) { animation-delay: 4s; }
 
 .terminal-prompt {
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+.terminal-prompt-symbol {
     color: var(--color-primary);
     font-weight: 700;
+    margin-right: var(--space-2);
 }
 
 .terminal-command {
     color: var(--color-text-bright);
+    font-weight: 600;
 }
 
-.terminal-output {
-    color: var(--color-text-dim);
-    margin-left: var(--space-10);
+/* Enhanced Terminal Output Styling */
+.terminal-output-line {
+    padding-left: var(--space-10);
 }
 
-.terminal-success {
+.terminal-output-icon {
+    color: var(--color-primary);
+    font-weight: 700;
+    margin-right: var(--space-2);
+}
+
+.terminal-output-text {
+    color: var(--color-text-muted);
+}
+
+.terminal-highlight {
     color: var(--color-accent);
     font-weight: 600;
-    text-shadow: 0 0 10px rgba(0, 255, 240, 0.5);
+    text-shadow: 0 0 8px rgba(0, 255, 240, 0.3);
+}
+
+.terminal-number {
+    color: var(--color-warning);
+    font-weight: 600;
+}
+
+.terminal-icon-success {
+    color: var(--color-success);
+    text-shadow: 0 0 10px rgba(204, 255, 0, 0.5);
+}
+
+.terminal-success-text {
+    color: var(--color-text);
+    font-weight: 500;
+}
+
+.terminal-output-dim {
+    color: var(--color-text-dim);
+}
+
+.terminal-time {
+    color: var(--color-accent);
+    font-weight: 600;
+    font-family: var(--font-mono);
+}
+
+/* Terminal Spinner Animation */
+.terminal-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-medium);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: terminal-spin 0.8s linear infinite;
+    margin-left: auto;
+}
+
+@keyframes terminal-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Terminal Status Indicator */
+.terminal-status {
+    margin-left: auto;
+    font-size: 0.8em;
+}
+
+.terminal-status-working {
+    color: var(--color-warning);
+    animation: terminal-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes terminal-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* Terminal Progress Indicator (Dots) */
+.terminal-progress-indicator {
+    display: flex;
+    gap: var(--space-1);
+    margin-left: auto;
+}
+
+.terminal-progress-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--border-medium);
+}
+
+.terminal-progress-dot-active {
+    background: var(--color-primary);
+    animation: progress-dot-pulse 1s ease-in-out infinite;
+}
+
+@keyframes progress-dot-pulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.5);
+    }
+    50% {
+        transform: scale(1.2);
+        box-shadow: 0 0 0 4px rgba(204, 255, 0, 0);
+    }
 }
 
 .terminal-cursor {

@@ -1,13 +1,30 @@
 /**
  * Ralph Workflow - Enhanced JavaScript
  * Handles: mobile nav, install tabs, copy-to-clipboard, smooth scroll, scroll animations,
- * terminal typing effect, nav scroll detection, parallax effects
+ * terminal typing effect, nav scroll detection, parallax effects, magnetic buttons
  */
 
 (function() {
     'use strict';
 
-    // === Parallax Effect for Hero Glows ===
+    // === Magnetic Button Effect ===
+    const buttons = document.querySelectorAll('.btn');
+
+    buttons.forEach(btn => {
+        btn.addEventListener('mousemove', function(e) {
+            const rect = btn.getBoundingClientRect();
+            const x = e.clientX - rect.left - rect.width / 2;
+            const y = e.clientY - rect.top - rect.height / 2;
+
+            btn.style.transform = `translate(${x * 0.15}px, ${y * 0.15}px)`;
+        });
+
+        btn.addEventListener('mouseleave', function() {
+            btn.style.transform = '';
+        });
+    });
+
+    // === Enhanced Parallax Effect for Hero Glows ===
     const heroGlows = document.querySelectorAll('.hero-glow, .hero-glow-2, .hero-glow-3');
 
     function updateParallax() {
@@ -262,7 +279,7 @@
     // Initial call
     updateActiveNav();
 
-    // === Scroll Animations (Intersection Observer) ===
+    // === Enhanced Scroll Animations (Intersection Observer) ===
     const observerOptions = {
         root: null,
         rootMargin: '0px 0px -100px 0px',
@@ -291,6 +308,47 @@
         el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
         el.style.transitionDelay = `${index * 0.05}s`;
         animationObserver.observe(el);
+    });
+
+    // === Kinetic Typography on Scroll ===
+    const heroWords = document.querySelectorAll('.hero-word');
+    let kineticScrollY = window.scrollY;
+
+    function updateKineticTypography() {
+        const scrollY = window.scrollY;
+        const scrollDelta = scrollY - kineticScrollY;
+        const heroSection = document.querySelector('.hero');
+
+        if (!heroSection) return;
+
+        const heroRect = heroSection.getBoundingClientRect();
+        const heroVisible = heroRect.bottom > 0 && heroRect.top < window.innerHeight;
+
+        if (heroVisible) {
+            heroWords.forEach((word, index) => {
+                const speed = (index + 1) * 0.02;
+                const yPos = scrollDelta * speed;
+                const currentTransform = word.style.transform || 'translateY(0) scale(1)';
+                const match = currentTransform.match(/translateY\(([^)]+)\)/);
+                const currentY = match ? parseFloat(match[1]) : 0;
+                const newY = Math.max(Math.min(currentY + yPos, 20), -20);
+
+                word.style.transform = `translateY(${newY}px)`;
+            });
+        }
+
+        kineticScrollY = scrollY;
+    }
+
+    let kineticTicking = false;
+    window.addEventListener('scroll', () => {
+        if (!kineticTicking) {
+            window.requestAnimationFrame(() => {
+                updateKineticTypography();
+                kineticTicking = false;
+            });
+            kineticTicking = true;
+        }
     });
 
     // === Reduced Motion Support ===
