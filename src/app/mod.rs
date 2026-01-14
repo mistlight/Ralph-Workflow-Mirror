@@ -308,16 +308,32 @@ fn run_pipeline(
     // Create a backup of PROMPT.md to protect against accidental deletion.
     // This must happen after validation and before any agent phases begin.
     // If PROMPT.md doesn't exist (e.g., non-interactive mode with missing file),
-    // create_prompt_backup() returns Ok(()) and does nothing.
-    if let Err(e) = create_prompt_backup() {
-        logger.warn(&format!("Failed to create PROMPT.md backup: {}. Continuing anyway.", e));
+    // create_prompt_backup() returns Ok(None) and does nothing.
+    match create_prompt_backup() {
+        Ok(None) => {
+            // Backup created successfully with read-only permissions
+        }
+        Ok(Some(warning)) => {
+            logger.warn(&format!("PROMPT.md backup created but: {}. Continuing anyway.", warning));
+        }
+        Err(e) => {
+            logger.warn(&format!("Failed to create PROMPT.md backup: {}. Continuing anyway.", e));
+        }
     }
 
     // Make PROMPT.md read-only to protect against accidental deletion.
     // This is a best-effort protection - it may not work on all filesystems.
-    // If PROMPT.md doesn't exist, make_prompt_read_only() returns Ok(()) and does nothing.
-    if let Err(e) = make_prompt_read_only() {
-        logger.warn(&format!("Failed to make PROMPT.md read-only: {}. Continuing anyway.", e));
+    // If PROMPT.md doesn't exist, make_prompt_read_only() returns Ok(None).
+    match make_prompt_read_only() {
+        Ok(None) => {
+            // Read-only permissions set successfully
+        }
+        Ok(Some(warning)) => {
+            logger.warn(&format!("{}. Continuing anyway.", warning));
+        }
+        Err(e) => {
+            logger.warn(&format!("Failed to make PROMPT.md read-only: {}. Continuing anyway.", e));
+        }
     }
 
     // Detect project stack and generate review guidelines

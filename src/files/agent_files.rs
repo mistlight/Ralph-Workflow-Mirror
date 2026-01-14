@@ -285,18 +285,21 @@ pub fn write_commit_message_file(message: &str) -> io::Result<()> {
 /// - Creates the `.agent` directory if it doesn't exist
 /// - Uses atomic write to ensure backup file integrity
 /// - Sets backup file to read-only (best-effort; failures don't error)
+/// - Returns a warning string in the Ok variant if read-only setting fails
 /// - Overwrites existing backup if present
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` if backup was created or PROMPT.md doesn't exist.
+/// Returns `Ok(Option<String>)` where:
+/// - `Ok(None)` - backup created and read-only set successfully
+/// - `Ok(Some(warning))` - backup created but read-only couldn't be set
 /// Returns an error if the backup cannot be created.
-pub fn create_prompt_backup() -> io::Result<()> {
+pub fn create_prompt_backup() -> io::Result<Option<String>> {
     let prompt_path = Path::new("PROMPT.md");
 
     // If PROMPT.md doesn't exist, that's fine - nothing to backup
     if !prompt_path.exists() {
-        return Ok(());
+        return Ok(None);
     }
 
     // Ensure .agent directory exists
@@ -321,26 +324,51 @@ pub fn create_prompt_backup() -> io::Result<()> {
         )
     })?;
 
-    // Set read-only permissions (best-effort - don't fail if this fails)
+    // Set read-only permissions and track any failure
+    let mut readonly_warning = None;
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(mut perms) = fs::metadata(backup_path).map(|m| m.permissions()) {
-            perms.set_mode(0o444); // Read-only for all
-            let _ = fs::set_permissions(backup_path, perms);
+        match fs::metadata(backup_path) {
+            Ok(metadata) => {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o444); // Read-only for all
+                if fs::set_permissions(backup_path, perms).is_err() {
+                    readonly_warning = Some(
+                        "Failed to set read-only permissions on .agent/PROMPT.md.backup".to_string()
+                    );
+                }
+            }
+            Err(_) => {
+                readonly_warning = Some(
+                    "Failed to read metadata for .agent/PROMPT.md.backup".to_string()
+                );
+            }
         }
     }
 
     #[cfg(windows)]
     {
-        // On Windows, read-only is set via the readonly flag
-        if let Ok(mut perms) = fs::metadata(backup_path).map(|m| m.permissions()) {
-            perms.set_readonly(true);
-            let _ = fs::set_permissions(backup_path, perms);
+        match fs::metadata(backup_path) {
+            Ok(metadata) => {
+                let mut perms = metadata.permissions();
+                perms.set_readonly(true);
+                if fs::set_permissions(backup_path, perms).is_err() {
+                    readonly_warning = Some(
+                        "Failed to set read-only permissions on .agent/PROMPT.md.backup".to_string()
+                    );
+                }
+            }
+            Err(_) => {
+                readonly_warning = Some(
+                    "Failed to read metadata for .agent/PROMPT.md.backup".to_string()
+                );
+            }
         }
     }
 
-    Ok(())
+    Ok(readonly_warning)
 }
 
 /// Clean up all generated files.
@@ -365,47 +393,68 @@ pub fn cleanup_generated_files() {
 ///
 /// # Behavior
 ///
-/// - If PROMPT.md doesn't exist, returns `Ok(())` (nothing to protect)
+/// - If PROMPT.md doesn't exist, returns `Ok(None)` (nothing to protect)
 /// - Uses platform-specific permission setting
-/// - Returns `Ok(())` even if setting permissions fails (best-effort)
+/// - Returns a warning string if setting permissions fails (best-effort)
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` if permissions were set or file doesn't exist.
-/// Returns an error only if metadata retrieval fails unexpectedly.
-///
-/// # Platform Behavior
-///
-/// - Unix: Sets mode to 0o444 (read-only for all)
-/// - Windows: Sets the readonly flag
-pub fn make_prompt_read_only() -> io::Result<()> {
+/// Returns `Ok(Option<String>)` where:
+/// - `Ok(None)` - permissions set successfully or file doesn't exist
+/// - `Ok(Some(warning))` - couldn't set read-only permissions
+pub fn make_prompt_read_only() -> io::Result<Option<String>> {
     let prompt_path = Path::new("PROMPT.md");
 
     // If PROMPT.md doesn't exist, that's fine - nothing to protect
     if !prompt_path.exists() {
-        return Ok(());
+        return Ok(None);
     }
 
-    // Try to set read-only permissions (best-effort - don't fail if this fails)
+    // Try to set read-only permissions and track any failure
+    let mut readonly_warning = None;
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(mut perms) = fs::metadata(prompt_path).map(|m| m.permissions()) {
-            perms.set_mode(0o444); // Read-only for all
-            let _ = fs::set_permissions(prompt_path, perms);
+        match fs::metadata(prompt_path) {
+            Ok(metadata) => {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o444); // Read-only for all
+                if fs::set_permissions(prompt_path, perms).is_err() {
+                    readonly_warning = Some(
+                        "Failed to set read-only permissions on PROMPT.md".to_string()
+                    );
+                }
+            }
+            Err(_) => {
+                readonly_warning = Some(
+                    "Failed to read metadata for PROMPT.md".to_string()
+                );
+            }
         }
     }
 
     #[cfg(windows)]
     {
-        // On Windows, read-only is set via the readonly flag
-        if let Ok(mut perms) = fs::metadata(prompt_path).map(|m| m.permissions()) {
-            perms.set_readonly(true);
-            let _ = fs::set_permissions(prompt_path, perms);
+        match fs::metadata(prompt_path) {
+            Ok(metadata) => {
+                let mut perms = metadata.permissions();
+                perms.set_readonly(true);
+                if fs::set_permissions(prompt_path, perms).is_err() {
+                    readonly_warning = Some(
+                        "Failed to set read-only permissions on PROMPT.md".to_string()
+                    );
+                }
+            }
+            Err(_) => {
+                readonly_warning = Some(
+                    "Failed to read metadata for PROMPT.md".to_string()
+                );
+            }
         }
     }
 
-    Ok(())
+    Ok(readonly_warning)
 }
 
 #[cfg(test)]
