@@ -18,7 +18,10 @@ pub fn handle_resume(
 
     match load_checkpoint() {
         Ok(Some(checkpoint)) => {
-            logger.header("RESUME: Loading Checkpoint", |c| c.yellow());
+            logger.header(
+                "RESUME: Loading Checkpoint",
+                super::super::colors::Colors::yellow,
+            );
             logger.info(&format!("Resuming from: {}", checkpoint.description()));
             logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
 
@@ -43,17 +46,14 @@ pub fn handle_resume(
             None
         }
         Err(e) => {
-            logger.warn(&format!(
-                "Failed to load checkpoint (starting fresh): {}",
-                e
-            ));
+            logger.warn(&format!("Failed to load checkpoint (starting fresh): {e}"));
             None
         }
     }
 }
 
 /// Helper to get phase rank for resume logic.
-pub fn phase_rank(p: PipelinePhase) -> u8 {
+pub const fn phase_rank(p: PipelinePhase) -> u8 {
     match p {
         PipelinePhase::Planning => 0,
         PipelinePhase::Development => 1,
@@ -67,7 +67,7 @@ pub fn phase_rank(p: PipelinePhase) -> u8 {
 }
 
 /// Determines if a phase should run based on resume checkpoint.
-pub fn should_run_from(
+pub const fn should_run_from(
     phase: PipelinePhase,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> bool {

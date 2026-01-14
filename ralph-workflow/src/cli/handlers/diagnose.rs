@@ -4,11 +4,11 @@
 //! Ralph configuration and environment issues.
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
+use crate::checkpoint::load_checkpoint;
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::language_detector;
-use crate::checkpoint::load_checkpoint;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -33,7 +33,7 @@ use std::process::Command;
 /// * `config_path` - Path to the unified config file
 /// * `config_sources` - List of configuration sources that were loaded
 pub fn handle_diagnose(
-    colors: &Colors,
+    colors: Colors,
     config: &Config,
     registry: &AgentRegistry,
     config_path: &Path,
@@ -65,20 +65,20 @@ pub fn handle_diagnose(
 }
 
 /// Print system information section.
-fn print_system_info(colors: &Colors) {
+fn print_system_info(colors: Colors) {
     println!("{}System:{}", colors.bold(), colors.reset());
     println!("  OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
     if let Ok(cwd) = std::env::current_dir() {
         println!("  Working directory: {}", cwd.display());
     }
     if let Ok(shell) = std::env::var("SHELL") {
-        println!("  Shell: {}", shell);
+        println!("  Shell: {shell}");
     }
     println!();
 }
 
 /// Print git information section.
-fn print_git_info(colors: &Colors) {
+fn print_git_info(colors: Colors) {
     println!("{}Git:{}", colors.bold(), colors.reset());
     if let Ok(output) = Command::new("git").args(["--version"]).output() {
         if let Ok(version) = std::str::from_utf8(&output.stdout) {
@@ -104,7 +104,7 @@ fn print_git_info(colors: &Colors) {
         if let Ok(output) = Command::new("git").args(["status", "--porcelain"]).output() {
             if let Ok(status) = std::str::from_utf8(&output.stdout) {
                 let changes = status.lines().count();
-                println!("  Uncommitted changes: {}", changes);
+                println!("  Uncommitted changes: {changes}");
             }
         }
     }
@@ -113,7 +113,7 @@ fn print_git_info(colors: &Colors) {
 
 /// Print configuration information section.
 fn print_config_info(
-    colors: &Colors,
+    colors: Colors,
     config: &Config,
     config_path: &Path,
     config_sources: &[ConfigSource],
@@ -144,20 +144,20 @@ fn print_config_info(
 }
 
 /// Print agent chain configuration section.
-fn print_agent_chain_info(colors: &Colors, registry: &AgentRegistry) {
+fn print_agent_chain_info(colors: Colors, registry: &AgentRegistry) {
     println!("{}Agent Chain:{}", colors.bold(), colors.reset());
     let fallback = registry.fallback_config();
     let dev_chain = fallback.get_fallbacks(AgentRole::Developer);
     let rev_chain = fallback.get_fallbacks(AgentRole::Reviewer);
-    println!("  Developer chain: {:?}", dev_chain);
-    println!("  Reviewer chain: {:?}", rev_chain);
+    println!("  Developer chain: {dev_chain:?}");
+    println!("  Reviewer chain: {rev_chain:?}");
     println!("  Max retries: {}", fallback.max_retries);
     println!("  Retry delay: {}ms", fallback.retry_delay_ms);
     println!();
 }
 
 /// Print agent availability section.
-fn print_agent_availability(colors: &Colors, registry: &AgentRegistry) {
+fn print_agent_availability(colors: Colors, registry: &AgentRegistry) {
     println!("{}Agent Availability:{}", colors.bold(), colors.reset());
     let all_agents = registry.list();
     let mut sorted_agents: Vec<_> = all_agents.into_iter().collect();
@@ -185,7 +185,7 @@ fn print_agent_availability(colors: &Colors, registry: &AgentRegistry) {
 }
 
 /// Print PROMPT.md status section.
-fn print_prompt_status(colors: &Colors) {
+fn print_prompt_status(colors: Colors) {
     println!("{}PROMPT.md:{}", colors.bold(), colors.reset());
     let prompt_path = Path::new("PROMPT.md");
     if prompt_path.exists() {
@@ -212,7 +212,7 @@ fn print_prompt_status(colors: &Colors) {
 }
 
 /// Print checkpoint status section.
-fn print_checkpoint_status(colors: &Colors) {
+fn print_checkpoint_status(colors: Colors) {
     println!("{}Checkpoint:{}", colors.bold(), colors.reset());
     let checkpoint_path = Path::new(".agent/checkpoint.json");
     if checkpoint_path.exists() {
@@ -233,7 +233,7 @@ fn print_checkpoint_status(colors: &Colors) {
 }
 
 /// Print project stack detection section.
-fn print_project_stack(colors: &Colors) {
+fn print_project_stack(colors: Colors) {
     println!("{}Project Stack:{}", colors.bold(), colors.reset());
     if let Ok(cwd) = std::env::current_dir() {
         match language_detector::detect_stack(&cwd) {
@@ -246,10 +246,10 @@ fn print_project_stack(colors: &Colors) {
                     println!("  Frameworks: {:?}", stack.frameworks);
                 }
                 if let Some(pm) = &stack.package_manager {
-                    println!("  Package manager: {}", pm);
+                    println!("  Package manager: {pm}");
                 }
                 if let Some(tf) = &stack.test_framework {
-                    println!("  Test framework: {}", tf);
+                    println!("  Test framework: {tf}");
                 }
 
                 // Show language type indicators
@@ -289,14 +289,11 @@ fn print_project_stack(colors: &Colors) {
                     .filter(|c| matches!(c.severity, CheckSeverity::High))
                     .count();
                 if critical_count > 0 || high_count > 0 {
-                    println!(
-                        "  Check severities: {} critical, {} high",
-                        critical_count, high_count
-                    );
+                    println!("  Check severities: {critical_count} critical, {high_count} high");
                 }
             }
             Err(e) => {
-                println!("  Detection failed: {}", e);
+                println!("  Detection failed: {e}");
             }
         }
     }
@@ -304,7 +301,7 @@ fn print_project_stack(colors: &Colors) {
 }
 
 /// Print recent log entries section.
-fn print_recent_logs(colors: &Colors) {
+fn print_recent_logs(colors: Colors) {
     let log_path = Path::new(".agent/logs/pipeline.log");
     if log_path.exists() {
         println!(
@@ -316,7 +313,7 @@ fn print_recent_logs(colors: &Colors) {
             let lines: Vec<&str> = content.lines().collect();
             let start = lines.len().saturating_sub(10);
             for line in &lines[start..] {
-                println!("  {}", line);
+                println!("  {line}");
             }
         }
     }

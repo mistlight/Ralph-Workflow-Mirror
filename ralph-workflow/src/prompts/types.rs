@@ -18,9 +18,9 @@ pub enum ContextLevel {
 impl From<u8> for ContextLevel {
     fn from(v: u8) -> Self {
         if v == 0 {
-            ContextLevel::Minimal
+            Self::Minimal
         } else {
-            ContextLevel::Normal
+            Self::Normal
         }
     }
 }

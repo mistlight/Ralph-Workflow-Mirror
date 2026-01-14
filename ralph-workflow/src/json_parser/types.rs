@@ -3,15 +3,15 @@
 //! This module contains event types and utility functions used by
 //! all the CLI parsers (Claude, Codex, Gemini).
 
+#![expect(clippy::too_many_lines)]
 use crate::utils::truncate_text;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 // Import stream classifier for algorithmic event detection
 use super::stream_classifier::{StreamEventClassifier, StreamEventType};
 
-static SECRET_VALUE_RE: Lazy<Option<Regex>> = Lazy::new(|| {
+static SECRET_VALUE_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
     // Keep this intentionally conservative to reduce false positives in normal text.
     // Primary goal: avoid leaking common API key formats to stdout/logs.
     Regex::new(
@@ -28,7 +28,7 @@ fn is_sensitive_key(key: &str) -> bool {
     let normalized = key
         .to_lowercase()
         .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
+        .filter(char::is_ascii_alphanumeric)
         .collect::<String>();
 
     // Common sensitive key patterns. We intentionally use `contains` to catch variants like:
@@ -51,7 +51,7 @@ fn looks_like_secret_value(value: &str) -> bool {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ClaudeEvent {
+pub enum ClaudeEvent {
     System {
         subtype: Option<String>,
         session_id: Option<String>,
@@ -79,7 +79,7 @@ pub(crate) enum ClaudeEvent {
     Unknown,
 }
 
-/// Inner events within a Claude stream_event
+/// Inner events within a Claude `stream_event`
 ///
 /// These events represent the streaming protocol used by Claude CLI
 /// when --include-partial-messages is enabled. The streaming protocol
@@ -87,7 +87,7 @@ pub(crate) enum ClaudeEvent {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StreamInnerEvent {
+pub enum StreamInnerEvent {
     /// Message start - initialization of a new message stream
     MessageStart { message: Option<AssistantMessage> },
     /// Content block start - initialization of a new content block (text, tool use, etc.)
@@ -118,7 +118,7 @@ pub(crate) enum StreamInnerEvent {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ContentBlockDelta {
+pub enum ContentBlockDelta {
     /// Delta for text content blocks
     TextDelta { text: Option<String> },
     /// Delta for tool use content blocks (input streaming)
@@ -131,7 +131,7 @@ pub(crate) enum ContentBlockDelta {
 
 /// Error information for streaming errors
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct StreamError {
+pub struct StreamError {
     pub(crate) message: Option<String>,
     pub(crate) code: Option<String>,
 }
@@ -153,16 +153,16 @@ pub enum ContentType {
 ///
 /// Tracks partial content across multiple streaming events, accumulating
 /// deltas for different content types. Uses a composite key approach
-/// to track content by (content_type, key).
+/// to track content by (`content_type`, key).
 ///
 /// Supports both index-based tracking (for parsers with numeric indices)
 /// and string-based key tracking (for parsers with string identifiers).
 #[derive(Debug, Default, Clone)]
-pub(crate) struct DeltaAccumulator {
-    /// Accumulated content by (content_type, key) composite key
+pub struct DeltaAccumulator {
+    /// Accumulated content by (`content_type`, key) composite key
     /// Using a String key to support both numeric and string-based identifiers
     buffers: std::collections::HashMap<(ContentType, String), String>,
-    /// Track the order of keys for most_recent operations
+    /// Track the order of keys for `most_recent` operations
     key_order: Vec<(ContentType, String)>,
 }
 
@@ -174,12 +174,12 @@ impl DeltaAccumulator {
 
     /// Add a text delta for a specific index
     pub(crate) fn add_text_delta(&mut self, index: u64, delta: &str) {
-        self.add_delta(ContentType::Text, &index.to_string(), delta)
+        self.add_delta(ContentType::Text, &index.to_string(), delta);
     }
 
     /// Add a thinking delta for a specific index
     pub(crate) fn add_thinking_delta(&mut self, index: u64, delta: &str) {
-        self.add_delta(ContentType::Thinking, &index.to_string(), delta)
+        self.add_delta(ContentType::Thinking, &index.to_string(), delta);
     }
 
     /// Add a delta for a specific content type and key
@@ -203,7 +203,7 @@ impl DeltaAccumulator {
     pub(crate) fn get(&self, content_type: ContentType, key: &str) -> Option<&str> {
         self.buffers
             .get(&(content_type, key.to_string()))
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
     }
 
     /// Clear all accumulated content
@@ -241,19 +241,19 @@ impl DeltaAccumulator {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct AssistantMessage {
+pub struct AssistantMessage {
     pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct UserMessage {
+pub struct UserMessage {
     pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ContentBlock {
+pub enum ContentBlock {
     Text {
         text: Option<String>,
     },
@@ -270,18 +270,18 @@ pub(crate) enum ContentBlock {
 
 /// Codex event types
 ///
-/// Based on OpenAI Codex CLI documentation, events include:
-/// - `thread.started`: Thread initialization with thread_id
+/// Based on `OpenAI` Codex CLI documentation, events include:
+/// - `thread.started`: Thread initialization with `thread_id`
 /// - `turn.started`/`turn.completed`/`turn.failed`: Turn lifecycle events
 /// - `item.started`/`item.completed`: Item events for commands, file ops, messages, etc.
 /// - `error`: Error events
 ///
-/// Item types include: agent_message, reasoning, command_execution, file_read,
-/// file_write, file_change, mcp_tool_call, web_search, plan_update
+/// Item types include: `agent_message`, reasoning, `command_execution`, `file_read`,
+/// `file_write`, `file_change`, `mcp_tool_call`, `web_search`, `plan_update`
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CodexEvent {
+pub enum CodexEvent {
     #[serde(rename = "thread.started")]
     ThreadStarted { thread_id: Option<String> },
     #[serde(rename = "turn.started")]
@@ -303,7 +303,7 @@ pub(crate) enum CodexEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct CodexUsage {
+pub struct CodexUsage {
     pub(crate) input_tokens: Option<u64>,
     pub(crate) output_tokens: Option<u64>,
 }
@@ -319,30 +319,30 @@ pub(crate) struct CodexUsage {
 /// - `web_search`: Web search operations
 /// - `plan_update`: Changes to execution plan
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct CodexItem {
-    /// Item type (command_execution, agent_message, reasoning, file_read, etc.)
+pub struct CodexItem {
+    /// Item type (`command_execution`, `agent_message`, reasoning, `file_read`, etc.)
     #[serde(rename = "type")]
     pub(crate) item_type: Option<String>,
-    /// Command text (for command_execution)
+    /// Command text (for `command_execution`)
     pub(crate) command: Option<String>,
-    /// Message/reasoning text (for agent_message, reasoning)
+    /// Message/reasoning text (for `agent_message`, reasoning)
     pub(crate) text: Option<String>,
     /// File path (for file operations)
     pub(crate) path: Option<String>,
-    /// Tool name (for mcp_tool_call)
+    /// Tool name (for `mcp_tool_call`)
     pub(crate) tool: Option<String>,
-    /// Tool arguments (for mcp_tool_call)
+    /// Tool arguments (for `mcp_tool_call`)
     pub(crate) arguments: Option<serde_json::Value>,
-    /// Search query (for web_search)
+    /// Search query (for `web_search`)
     pub(crate) query: Option<String>,
-    /// Plan content (for plan_update)
+    /// Plan content (for `plan_update`)
     pub(crate) plan: Option<String>,
 }
 
 /// Gemini event types
 ///
 /// Based on Gemini CLI documentation, events include:
-/// - `init`: Session initialization with session_id and model
+/// - `init`: Session initialization with `session_id` and model
 /// - `message`: User or assistant messages with content and role
 /// - `tool_use`: Tool invocations with tool name, ID, and parameters
 /// - `tool_result`: Tool execution results with status and output
@@ -351,7 +351,7 @@ pub(crate) struct CodexItem {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum GeminiEvent {
+pub enum GeminiEvent {
     Init {
         session_id: Option<String>,
         model: Option<String>,
@@ -382,7 +382,7 @@ pub(crate) enum GeminiEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct GeminiStats {
+pub struct GeminiStats {
     pub(crate) input_tokens: Option<u64>,
     pub(crate) output_tokens: Option<u64>,
     pub(crate) duration_ms: Option<u64>,
@@ -417,7 +417,7 @@ fn format_tool_value(key: Option<&str>, value: &serde_json::Value) -> String {
 ///
 /// Converts JSON input to a human-readable string, showing key parameters.
 /// Uses character-safe truncation to handle UTF-8 properly.
-pub(crate) fn format_tool_input(input: &serde_json::Value) -> String {
+pub fn format_tool_input(input: &serde_json::Value) -> String {
     match input {
         serde_json::Value::Object(map) => {
             let parts: Vec<String> = map
@@ -474,44 +474,39 @@ fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
 /// # Returns
 /// A formatted string showing the event type and key fields, or an empty string
 /// if the JSON couldn't be parsed or verbosity should suppress it.
-pub(crate) fn format_unknown_json_event(
+#[expect(clippy::trivially_copy_pass_by_ref)]
+pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,
     colors: &crate::colors::Colors,
     is_verbose: bool,
 ) -> String {
     // Try to parse as generic JSON to extract type and key fields
-    let value = match serde_json::from_str::<serde_json::Value>(line) {
-        Ok(v) => v,
-        Err(_) => {
-            // Only show parsing failure message in verbose mode
-            if is_verbose {
-                return format!(
-                    "{}[{}]{} {}Unknown event (invalid JSON)\n",
-                    colors.dim(),
-                    parser_name,
-                    colors.reset(),
-                    colors.dim()
-                );
-            }
-            return String::new();
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        // Only show parsing failure message in verbose mode
+        if is_verbose {
+            return format!(
+                "{}[{}]{} {}Unknown event (invalid JSON)\n",
+                colors.dim(),
+                parser_name,
+                colors.reset(),
+                colors.dim()
+            );
         }
+        return String::new();
     };
 
-    let obj = match value.as_object() {
-        Some(o) => o,
-        None => {
-            if is_verbose {
-                return format!(
-                    "{}[{}]{} {}Unknown event (non-object JSON)\n",
-                    colors.dim(),
-                    parser_name,
-                    colors.reset(),
-                    colors.dim()
-                );
-            }
-            return String::new();
+    let Some(obj) = value.as_object() else {
+        if is_verbose {
+            return format!(
+                "{}[{}]{} {}Unknown event (non-object JSON)\n",
+                colors.dim(),
+                parser_name,
+                colors.reset(),
+                colors.dim()
+            );
         }
+        return String::new();
     };
 
     // Use stream classifier for algorithmic event detection
@@ -531,22 +526,22 @@ pub(crate) fn format_unknown_json_event(
     // For partial/delta events, try to extract and show content
     let content_info = if classification.event_type == StreamEventType::Partial {
         // Try to extract content from various nested structures
-        let extracted_text = if let Some(ref content) = classification.content_field {
+        let extracted_text = classification.content_field.as_ref().and_then(|content| {
             // Content field was found at top level by classifier
-            if let Some(val) = obj.get(content) {
-                if let Some(text) = val.as_str() {
-                    Some(text.to_string())
-                } else {
-                    // Content field exists but is not a string - try to extract nested text
-                    extract_nested_text(val)
-                }
-            } else {
-                None
-            }
-        } else {
+            obj.get(content).and_then(|val| {
+                val.as_str()
+                    .map_or_else(
+                        || {
+                            // Content field exists but is not a string - try to extract nested text
+                            extract_nested_text(val)
+                        },
+                        |s| Some(s.to_string())
+                    )
+            })
+        }).or_else(|| {
             // No content field found - try to extract from delta field
             obj.get("delta")
-                .and_then(|delta_val| extract_nested_text(delta_val))
+                .and_then(extract_nested_text)
                 .or_else(|| {
                     // Try nested delta structure: delta.text or delta.content
                     obj.get("delta")
@@ -557,14 +552,14 @@ pub(crate) fn format_unknown_json_event(
                                 .get("text")
                                 .or_else(|| delta_obj.get("content"))
                                 .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .map(std::string::ToString::to_string)
                         })
                 })
                 .or_else(|| {
                     // Try other common nested structures
-                    obj.get("data").and_then(|d| extract_nested_text(d))
+                    obj.get("data").and_then(extract_nested_text)
                 })
-        };
+        });
 
         extracted_text.map(|text: String| {
             let truncated = if text.len() > 30 {
@@ -572,7 +567,7 @@ pub(crate) fn format_unknown_json_event(
             } else {
                 text
             };
-            format!(" content=\"{}\"", truncated)
+            format!(" content=\"{truncated}\"")
         })
     } else {
         None
@@ -596,50 +591,49 @@ pub(crate) fn format_unknown_json_event(
                 || has_delta_field;
 
             if is_verbose {
-                format!("Partial event: {}", event_type)
+                format!("Partial event: {event_type}")
             } else if is_explicit_delta {
                 // In non-verbose mode, show explicit partial events (they're user content)
                 // Extract full content (not truncated) for delta events
                 let full_content: Option<String> =
-                    if let Some(ref content) = classification.content_field {
+                    classification.content_field.as_ref().and_then(|content| {
                         // Use classifier's detected content field first
                         obj.get(content)
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(std::string::ToString::to_string)
                             .or_else(|| {
                                 // Content field wasn't a string, try extracting nested text
-                                obj.get(content).and_then(|v| extract_nested_text(v))
+                                obj.get(content).and_then(extract_nested_text)
                             })
-                    } else {
+                    }).or_else(|| {
                         // Try delta field (common pattern)
                         obj.get("delta")
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(std::string::ToString::to_string)
                             .or_else(|| {
                                 // Try nested delta.text or delta.content
                                 obj.get("delta").and_then(|d| d.as_object()).and_then(|o| {
                                     o.get("text")
                                         .or_else(|| o.get("content"))
                                         .and_then(|t| t.as_str())
-                                        .map(|s| s.to_string())
+                                        .map(std::string::ToString::to_string)
                                 })
                             })
-                            .or_else(|| {
-                                // Try common text fields at top level
-                                for field in ["text", "content", "message"] {
-                                    if let Some(val) = obj.get(field) {
-                                        if let Some(text) = val.as_str() {
-                                            return Some(text.to_string());
-                                        }
-                                    }
+                    }).or_else(|| {
+                        // Try common text fields at top level
+                        for field in ["text", "content", "message"] {
+                            if let Some(val) = obj.get(field) {
+                                if let Some(text) = val.as_str() {
+                                    return Some(text.to_string());
                                 }
-                                None
-                            })
-                    };
+                            }
+                        }
+                        None
+                    });
 
                 if let Some(content) = full_content {
                     if !content.trim().is_empty() {
-                        return format!("{}\n", content);
+                        return format!("{content}\n");
                     }
                 }
                 return String::new();
@@ -654,7 +648,7 @@ pub(crate) fn format_unknown_json_event(
         }
         StreamEventType::Complete => {
             if is_verbose {
-                format!("Complete event: {}", event_type)
+                format!("Complete event: {event_type}")
             } else {
                 // In non-verbose mode, don't show complete events without content
                 return String::new();
@@ -688,7 +682,7 @@ pub(crate) fn format_unknown_json_event(
                 serde_json::Value::Bool(b) => b.to_string(),
                 _ => continue,
             };
-            fields.push(format!("{}={}", key, val_str));
+            fields.push(format!("{key}={val_str}"));
         }
     }
 

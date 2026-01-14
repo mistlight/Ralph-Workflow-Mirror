@@ -1,20 +1,20 @@
 //! Colors & Formatting Module
 //!
 //! Provides ANSI escape codes for terminal coloring.
-//! Respects NO_COLOR env var (<https://no-color.org/>).
+//! Respects `NO_COLOR` env var (<https://no-color.org/>).
 //! Falls back to no colors if terminal doesn't support them.
 
 use std::env;
 use std::io::IsTerminal;
 
 /// Check if colors should be enabled
-pub(crate) fn colors_enabled() -> bool {
+pub fn colors_enabled() -> bool {
     env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal()
 }
 
 /// ANSI color codes
 #[derive(Clone, Copy)]
-pub(crate) struct Colors {
+pub struct Colors {
     pub(crate) enabled: bool,
 }
 
@@ -26,7 +26,7 @@ impl Colors {
     }
 
     // Style codes
-    pub(crate) fn bold(&self) -> &'static str {
+    pub(crate) const fn bold(self) -> &'static str {
         if self.enabled {
             "\x1b[1m"
         } else {
@@ -34,7 +34,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn dim(&self) -> &'static str {
+    pub(crate) const fn dim(self) -> &'static str {
         if self.enabled {
             "\x1b[2m"
         } else {
@@ -42,7 +42,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn reset(&self) -> &'static str {
+    pub(crate) const fn reset(self) -> &'static str {
         if self.enabled {
             "\x1b[0m"
         } else {
@@ -51,7 +51,7 @@ impl Colors {
     }
 
     // Foreground colors
-    pub(crate) fn red(&self) -> &'static str {
+    pub(crate) const fn red(self) -> &'static str {
         if self.enabled {
             "\x1b[31m"
         } else {
@@ -59,7 +59,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn green(&self) -> &'static str {
+    pub(crate) const fn green(self) -> &'static str {
         if self.enabled {
             "\x1b[32m"
         } else {
@@ -67,7 +67,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn yellow(&self) -> &'static str {
+    pub(crate) const fn yellow(self) -> &'static str {
         if self.enabled {
             "\x1b[33m"
         } else {
@@ -75,7 +75,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn blue(&self) -> &'static str {
+    pub(crate) const fn blue(self) -> &'static str {
         if self.enabled {
             "\x1b[34m"
         } else {
@@ -83,7 +83,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn magenta(&self) -> &'static str {
+    pub(crate) const fn magenta(self) -> &'static str {
         if self.enabled {
             "\x1b[35m"
         } else {
@@ -91,7 +91,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn cyan(&self) -> &'static str {
+    pub(crate) const fn cyan(self) -> &'static str {
         if self.enabled {
             "\x1b[36m"
         } else {
@@ -99,7 +99,7 @@ impl Colors {
         }
     }
 
-    pub(crate) fn white(&self) -> &'static str {
+    pub(crate) const fn white(self) -> &'static str {
         if self.enabled {
             "\x1b[37m"
         } else {
@@ -115,19 +115,19 @@ impl Default for Colors {
 }
 
 /// Box-drawing characters for visual structure
-pub(crate) const BOX_TL: char = '╭';
-pub(crate) const BOX_TR: char = '╮';
-pub(crate) const BOX_BL: char = '╰';
-pub(crate) const BOX_BR: char = '╯';
-pub(crate) const BOX_H: char = '─';
-pub(crate) const BOX_V: char = '│';
+pub const BOX_TL: char = '╭';
+pub const BOX_TR: char = '╮';
+pub const BOX_BL: char = '╰';
+pub const BOX_BR: char = '╯';
+pub const BOX_H: char = '─';
+pub const BOX_V: char = '│';
 
 /// Icons for output
-pub(crate) const ARROW: char = '→';
-pub(crate) const CHECK: char = '✓';
-pub(crate) const CROSS: char = '✗';
-pub(crate) const WARN: char = '⚠';
-pub(crate) const INFO: char = 'ℹ';
+pub const ARROW: char = '→';
+pub const CHECK: char = '✓';
+pub const CROSS: char = '✗';
+pub const WARN: char = '⚠';
+pub const INFO: char = 'ℹ';
 
 #[cfg(test)]
 mod tests {

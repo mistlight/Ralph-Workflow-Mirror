@@ -47,8 +47,7 @@ fn test_verbosity_affects_output() {
 
     let long_text = "a".repeat(200);
     let json = format!(
-        r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{}"}}]}}}}"#,
-        long_text
+        r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{long_text}"}}]}}}}"#
     );
 
     let quiet_output = quiet_parser.parse_event(&json).unwrap();
@@ -789,7 +788,7 @@ fn test_format_unknown_json_event_very_long_content() {
     let colors = Colors { enabled: false };
     // Test very long content doesn't cause issues
     let long_text = "a".repeat(10000);
-    let json = format!(r#"{{"type":"delta","text":"{}"}}"#, long_text);
+    let json = format!(r#"{{"type":"delta","text":"{long_text}"}}"#);
     let output = super::types::format_unknown_json_event(&json, "Test", &colors, false);
     // Should handle long content without crashing
     assert!(!output.is_empty());
@@ -856,7 +855,7 @@ fn test_health_monitor_no_warning_with_high_partial_percentage() {
     }
 
     // Should NOT warn even with 97.5% "partial" events
-    let warning = monitor.check_and_warn(&colors);
+    let warning = monitor.check_and_warn(colors);
     assert!(
         warning.is_none(),
         "Should not warn with high percentage of partial events"
@@ -882,7 +881,7 @@ fn test_health_monitor_warning_only_for_parse_errors() {
         monitor.record_parsed();
     }
 
-    let warning = monitor.check_and_warn(&colors);
+    let warning = monitor.check_and_warn(colors);
     assert!(
         warning.is_none(),
         "Should not warn with mix of partial, control, and parsed events"
@@ -899,7 +898,7 @@ fn test_health_monitor_warning_only_for_parse_errors() {
         monitor.record_parsed();
     }
 
-    let warning = monitor.check_and_warn(&colors);
+    let warning = monitor.check_and_warn(colors);
     assert!(warning.is_some(), "Should warn with >50% parse errors");
     assert!(warning.unwrap().contains("parse errors"));
 }
@@ -1047,9 +1046,8 @@ fn test_delta_with_embedded_newline_displays_inline() {
 
     // Verify that the output doesn't have an actual newline in the delta text portion
     // (there should only be one line from the prefix+text, not two)
-    let lines: Vec<&str> = out.lines().collect();
     assert_eq!(
-        lines.len(),
+        out.lines().count(),
         1,
         "Delta with embedded newline should produce a single output line"
     );

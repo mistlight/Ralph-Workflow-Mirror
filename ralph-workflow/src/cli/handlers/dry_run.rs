@@ -31,13 +31,13 @@ use std::path::Path;
 /// Returns `Ok(())` if validation passes, or an error if PROMPT.md validation fails.
 pub fn handle_dry_run(
     logger: &Logger,
-    _colors: &crate::colors::Colors,
+    _colors: crate::colors::Colors,
     config: &Config,
     developer_agent: &str,
     reviewer_agent: &str,
     repo_root: &Path,
 ) -> anyhow::Result<()> {
-    logger.header("DRY RUN: Validation", |c| c.cyan());
+    logger.header("DRY RUN: Validation", crate::colors::Colors::cyan);
 
     // Validate PROMPT.md using the utility function
     // Dry run is non-interactive by definition
@@ -50,7 +50,7 @@ pub fn handle_dry_run(
 
     // Report warnings
     for warn in &validation.warnings {
-        logger.warn(&format!("{} (recommended)", warn));
+        logger.warn(&format!("{warn} (recommended)"));
     }
 
     // Bail if validation failed
@@ -69,8 +69,8 @@ pub fn handle_dry_run(
         logger.success("PROMPT.md validation passed with no warnings");
     }
 
-    logger.success(&format!("Developer agent: {}", developer_agent));
-    logger.success(&format!("Reviewer agent: {}", reviewer_agent));
+    logger.success(&format!("Developer agent: {developer_agent}"));
+    logger.success(&format!("Reviewer agent: {reviewer_agent}"));
     logger.success(&format!("Developer iterations: {}", config.developer_iters));
     logger.success(&format!("Reviewer passes: {}", config.reviewer_reviews));
 

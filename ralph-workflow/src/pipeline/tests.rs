@@ -8,9 +8,9 @@ use crate::agents::{AgentRegistry, JsonParserType};
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::config::Verbosity;
+use crate::logger::Logger;
 use crate::output::argv_requests_json;
 use crate::timer::Timer;
-use crate::logger::Logger;
 use crate::utils::split_command;
 use std::collections::HashMap;
 
@@ -143,7 +143,7 @@ exit 0
             ..Default::default()
         },
     );
-    registry.set_ccs_aliases(aliases, defaults);
+    registry.set_ccs_aliases(&aliases, defaults);
 
     registry.set_fallback(crate::agents::fallback::FallbackConfig {
         reviewer: vec!["ccs/glm".to_string(), "ccs/ok".to_string()],
@@ -212,7 +212,7 @@ fn contract_qwen_stream_json_parses_with_claude_parser() {
     // Claude stream-json compatibility (used by qwen-code)
     let json =
         r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from qwen"}]}}"#;
-    let input = std::io::Cursor::new(format!("{}\n", json));
+    let input = std::io::Cursor::new(format!("{json}\n"));
     let reader = std::io::BufReader::new(input);
 
     let mut out = Vec::new();
@@ -288,7 +288,7 @@ fn test_glm_reviewer_command_includes_print_flag() {
     );
 
     let mut registry = AgentRegistry::new().unwrap();
-    registry.set_ccs_aliases(aliases, defaults);
+    registry.set_ccs_aliases(&aliases, defaults);
 
     // Get the GLM agent config
     let glm_config = registry
@@ -301,8 +301,7 @@ fn test_glm_reviewer_command_includes_print_flag() {
     // Verify the command contains the -p flag
     assert!(
         cmd.contains(" -p"),
-        "GLM reviewer command must include -p flag for non-interactive mode. Command was: {}",
-        cmd
+        "GLM reviewer command must include -p flag for non-interactive mode. Command was: {cmd}"
     );
 
     // Verify the command structure is correct: "claude -p ..." (not "ccs glm -p ..." anymore)
@@ -310,8 +309,7 @@ fn test_glm_reviewer_command_includes_print_flag() {
     let first_word = cmd.split_whitespace().next().unwrap_or("");
     assert!(
         first_word.ends_with("claude") || cmd.starts_with("ccs glm"),
-        "GLM command must start with a path ending in 'claude' or with 'ccs glm'. Command was: {}",
-        cmd
+        "GLM command must start with a path ending in 'claude' or with 'ccs glm'. Command was: {cmd}"
     );
 
     // Verify flag ordering: -p must come after the command name
@@ -319,11 +317,10 @@ fn test_glm_reviewer_command_includes_print_flag() {
     if let Some(p_index) = parts.iter().position(|&s| s == "-p") {
         assert!(
             p_index > 0,
-            "-p flag must come after command name. Command was: {}",
-            cmd
+            "-p flag must come after command name. Command was: {cmd}"
         );
     } else {
-        panic!("GLM command must contain -p flag. Command was: {}", cmd);
+        panic!("GLM command must contain -p flag. Command was: {cmd}");
     }
 }
 
@@ -386,7 +383,7 @@ exit 0
     );
 
     let mut registry = AgentRegistry::new().unwrap();
-    registry.set_ccs_aliases(aliases, defaults);
+    registry.set_ccs_aliases(&aliases, defaults);
     registry.set_fallback(crate::agents::fallback::FallbackConfig {
         reviewer: vec!["ccs/glm".to_string(), "ccs/ok".to_string()],
         max_retries: 3, // Should not retry GLM

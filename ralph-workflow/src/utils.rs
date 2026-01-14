@@ -18,7 +18,6 @@
 
 use std::io;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 // Re-exports from checkpoint module
@@ -32,10 +31,10 @@ pub use crate::files::{cleanup_generated_files, PromptValidationResult, GENERATE
 
 // Keep backward-compatibility re-exports "used" without suppressing lints.
 const _: () = {
-    let _strip_ansi_codes: fn(&str) -> String = strip_ansi_codes;
-    let _timestamp: fn() -> String = timestamp;
-    let _generated_files = GENERATED_FILES;
-    let _prompt_validation_result_size = std::mem::size_of::<PromptValidationResult>();
+    let _ = strip_ansi_codes as fn(&str) -> String;
+    let _ = timestamp as fn() -> String;
+    let _ = GENERATED_FILES;
+    let _ = std::mem::size_of::<PromptValidationResult>();
 };
 
 /// Split a shell-like command string into argv parts.
@@ -52,7 +51,7 @@ const _: () = {
 /// # Errors
 ///
 /// Returns an error if the command string has unmatched quotes.
-pub(crate) fn split_command(cmd: &str) -> io::Result<Vec<String>> {
+pub fn split_command(cmd: &str) -> io::Result<Vec<String>> {
     let cmd = cmd.trim();
     if cmd.is_empty() {
         return Ok(vec![]);
@@ -61,12 +60,12 @@ pub(crate) fn split_command(cmd: &str) -> io::Result<Vec<String>> {
     shell_words::split(cmd).map_err(|err| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("Failed to parse command string: {}", err),
+            format!("Failed to parse command string: {err}"),
         )
     })
 }
 
-static SECRET_LIKE_RE: Lazy<Option<Regex>> = Lazy::new(|| {
+static SECRET_LIKE_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
     Regex::new(
         r"(?ix)
         \b(
@@ -86,8 +85,7 @@ fn is_sensitive_key(key: &str) -> bool {
     let key = key
         .split_once('=')
         .or_else(|| key.split_once(':'))
-        .map(|(k, _)| k)
-        .unwrap_or(key)
+        .map_or(key, |(k, _)| k)
         .trim()
         .to_ascii_lowercase()
         .replace('_', "-");
@@ -114,10 +112,9 @@ fn redact_arg_value(key: &str, value: &str) -> String {
     if is_sensitive_key(key) {
         return "<redacted>".to_string();
     }
-    match SECRET_LIKE_RE.as_ref() {
-        Some(re) => re.replace_all(value, "<redacted>").to_string(),
-        None => value.to_string(),
-    }
+    SECRET_LIKE_RE
+        .as_ref()
+        .map_or_else(|| value.to_string(), |re| re.replace_all(value, "<redacted>").to_string())
 }
 
 fn shell_quote_for_log(arg: &str) -> String {
@@ -131,11 +128,11 @@ fn shell_quote_for_log(arg: &str) -> String {
         return arg.to_string();
     }
     let escaped = arg.replace('\'', r#"'\"'\"'"#);
-    format!("'{}'", escaped)
+    format!("'{escaped}'")
 }
 
 /// Format argv for logs, redacting likely secrets.
-pub(crate) fn format_argv_for_log(argv: &[String]) -> String {
+pub fn format_argv_for_log(argv: &[String]) -> String {
     let mut out = Vec::with_capacity(argv.len());
     let mut redact_next_value = false;
 
@@ -160,7 +157,7 @@ pub(crate) fn format_argv_for_log(argv: &[String]) -> String {
                 continue;
             }
             let redacted = redact_arg_value(k, v);
-            out.push(shell_quote_for_log(&format!("{}={}", k, redacted)));
+            out.push(shell_quote_for_log(&format!("{k}={redacted}")));
             continue;
         }
 
@@ -170,10 +167,9 @@ pub(crate) fn format_argv_for_log(argv: &[String]) -> String {
             continue;
         }
 
-        let redacted = match SECRET_LIKE_RE.as_ref() {
-            Some(re) => re.replace_all(arg, "<redacted>").to_string(),
-            None => arg.to_string(),
-        };
+        let redacted = SECRET_LIKE_RE
+            .as_ref()
+            .map_or_else(|| arg.clone(), |re| re.replace_all(arg, "<redacted>").to_string());
         out.push(shell_quote_for_log(&redacted));
     }
 
@@ -191,7 +187,7 @@ pub(crate) fn format_argv_for_log(argv: &[String]) -> String {
 /// assert_eq!(truncate_text("hello world", 8), "hello...");
 /// assert_eq!(truncate_text("short", 10), "short");
 /// ```
-pub(crate) fn truncate_text(text: &str, limit: usize) -> String {
+pub fn truncate_text(text: &str, limit: usize) -> String {
     // Handle edge case where limit is too small for even "..."
     if limit <= 3 {
         return text.chars().take(limit).collect();
@@ -204,7 +200,7 @@ pub(crate) fn truncate_text(text: &str, limit: usize) -> String {
         // Leave room for "..."
         let truncate_at = limit.saturating_sub(3);
         let truncated: String = text.chars().take(truncate_at).collect();
-        format!("{}...", truncated)
+        format!("{truncated}...")
     }
 }
 

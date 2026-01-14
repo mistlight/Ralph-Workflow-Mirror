@@ -30,8 +30,8 @@ pub struct GitIdentity {
 }
 
 impl GitIdentity {
-    /// Create a new GitIdentity with the given name and email.
-    pub fn new(name: String, email: String) -> Self {
+    /// Create a new `GitIdentity` with the given name and email.
+    pub const fn new(name: String, email: String) -> Self {
         Self { name, email }
     }
 
@@ -46,23 +46,19 @@ impl GitIdentity {
         // Basic email validation - check for @ and at least one . after @
         let email = self.email.trim();
         if !email.contains('@') {
-            return Err(format!("Invalid email format: '{}'", email));
+            return Err(format!("Invalid email format: '{email}'"));
         }
         let parts: Vec<&str> = email.split('@').collect();
         if parts.len() != 2 {
-            return Err(format!("Invalid email format: '{}'", email));
+            return Err(format!("Invalid email format: '{email}'"));
         }
         if parts[0].trim().is_empty() {
             return Err(format!(
-                "Invalid email format: '{}' (missing local part)",
-                email
+                "Invalid email format: '{email}' (missing local part)"
             ));
         }
         if parts[1].trim().is_empty() || !parts[1].contains('.') {
-            return Err(format!(
-                "Invalid email format: '{}' (invalid domain)",
-                email
-            ));
+            return Err(format!("Invalid email format: '{email}' (invalid domain)"));
         }
         Ok(())
     }
@@ -118,7 +114,7 @@ pub fn fallback_email(username: &str) -> String {
         _ => "localhost".to_string(),
     };
 
-    format!("{}@{}", username, hostname)
+    format!("{username}@{hostname}")
 }
 
 /// Get the system hostname.
@@ -178,7 +174,7 @@ pub fn resolve_git_identity(
     if let (Some(name), Some(email)) = (cli_name, cli_email) {
         let identity = GitIdentity::new(name.to_string(), email.to_string());
         if let Err(e) = identity.validate() {
-            return Err(format!("CLI git identity validation failed: {}", e));
+            return Err(format!("CLI git identity validation failed: {e}"));
         }
         return Ok((identity, IdentitySource::CliArgs));
     }
@@ -193,7 +189,7 @@ pub fn resolve_git_identity(
         if !name.is_empty() && !email.is_empty() {
             let identity = GitIdentity::new(name.to_string(), email.to_string());
             if let Err(e) = identity.validate() {
-                return Err(format!("Environment git identity validation failed: {}", e));
+                return Err(format!("Environment git identity validation failed: {e}"));
             }
             return Ok((identity, IdentitySource::Environment));
         }
@@ -206,7 +202,7 @@ pub fn resolve_git_identity(
         if !name.is_empty() && !email.is_empty() {
             let identity = GitIdentity::new(name.to_string(), email.to_string());
             if let Err(e) = identity.validate() {
-                return Err(format!("Config git identity validation failed: {}", e));
+                return Err(format!("Config git identity validation failed: {e}"));
             }
             return Ok((identity, IdentitySource::RalphConfig));
         }
@@ -222,12 +218,11 @@ pub fn resolve_git_identity(
     // Priority 5: System username + derived email
     let username = fallback_username();
     let email = fallback_email(&username);
-    let identity = GitIdentity::new(username.clone(), email);
+    let identity = GitIdentity::new(username, email);
     if let Err(e) = identity.validate() {
         // Shouldn't happen with our fallbacks, but handle it
         return Err(format!(
-            "System fallback git identity validation failed: {}",
-            e
+            "System fallback git identity validation failed: {e}"
         ));
     }
     Ok((identity, IdentitySource::SystemFallback))
@@ -268,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_git_identity_validation_empty_name() {
-        let identity = GitIdentity::new("".to_string(), "test@example.com".to_string());
+        let identity = GitIdentity::new(String::new(), "test@example.com".to_string());
         assert!(identity
             .validate()
             .contains_err("Git user name cannot be empty"));
@@ -276,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_git_identity_validation_empty_email() {
-        let identity = GitIdentity::new("Test User".to_string(), "".to_string());
+        let identity = GitIdentity::new("Test User".to_string(), String::new());
         assert!(identity
             .validate()
             .contains_err("Git user email cannot be empty"));

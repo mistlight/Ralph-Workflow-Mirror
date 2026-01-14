@@ -36,10 +36,10 @@ fn detect_model_flag_style(model_flag: &str) -> Option<ModelFlagStyle> {
 /// Format a model flag using the given style.
 fn format_model_flag(style: ModelFlagStyle, model: &str) -> String {
     match style {
-        ModelFlagStyle::DashMSpace => format!("-m {}", model),
-        ModelFlagStyle::DashMEquals => format!("-m={}", model),
-        ModelFlagStyle::DoubleDashModelSpace => format!("--model {}", model),
-        ModelFlagStyle::DoubleDashModelEquals => format!("--model={}", model),
+        ModelFlagStyle::DashMSpace => format!("-m {model}"),
+        ModelFlagStyle::DashMEquals => format!("-m={model}"),
+        ModelFlagStyle::DoubleDashModelSpace => format!("--model {model}"),
+        ModelFlagStyle::DoubleDashModelEquals => format!("--model={model}"),
     }
 }
 
@@ -64,10 +64,10 @@ fn normalize_provider_override(provider: &str) -> Option<String> {
 /// Resolve the effective model flag considering provider override.
 ///
 /// Priority:
-/// 1. If provider is specified, construct "{provider}/{model_name}"
+/// 1. If provider is specified, construct "{`provider}/{model_name`}"
 /// 2. If model is specified, use it directly
-/// 3. Otherwise, use agent's configured model_flag
-pub(crate) fn resolve_model_with_provider(
+/// 3. Otherwise, use agent's configured `model_flag`
+pub fn resolve_model_with_provider(
     cli_provider: Option<&str>,
     cli_model: Option<&str>,
     agent_model_flag: Option<&str>,
@@ -95,7 +95,7 @@ pub(crate) fn resolve_model_with_provider(
             }
             Some(format_model_flag(
                 style,
-                &format!("{}/{}", provider, model_name),
+                &format!("{provider}/{model_name}"),
             ))
         }
         // Provider only: use provider with agent's default model
@@ -106,7 +106,7 @@ pub(crate) fn resolve_model_with_provider(
             }
             Some(format_model_flag(
                 style,
-                &format!("{}/{}", provider, model_name),
+                &format!("{provider}/{model_name}"),
             ))
         }
         // Model only: normalize to a full model flag (preserve -m/--model style if present)

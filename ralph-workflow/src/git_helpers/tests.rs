@@ -69,8 +69,8 @@ fn test_git_helpers_new() {
 
 #[test]
 fn test_uninstall_hook_restores_original() {
-    let logger = Logger::new(crate::colors::Colors { enabled: false });
     use crate::test_utils::testing::with_temp_cwd;
+    let logger = Logger::new(crate::colors::Colors { enabled: false });
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();

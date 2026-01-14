@@ -1,11 +1,18 @@
 //! Command execution helpers and fallback orchestration.
 
-use crate::agents::{is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType};
+#![expect(clippy::too_many_arguments)]
+#![expect(clippy::needless_pass_by_value)]
+#![expect(clippy::map_unwrap_or)]
+#![expect(clippy::needless_continue)]
+#![expect(clippy::too_many_lines)]
+use crate::agents::{
+    is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType,
+};
 use crate::colors::Colors;
 use crate::config::Config;
+use crate::logger::Logger;
 use crate::output::{argv_requests_json, format_generic_json_for_display};
 use crate::timer::Timer;
-use crate::logger::Logger;
 use crate::utils::{format_argv_for_log, split_command, truncate_text};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -29,7 +36,7 @@ enum TryAgentResult {
 }
 
 /// Runtime services required for running agent commands.
-pub(crate) struct PipelineRuntime<'a> {
+pub struct PipelineRuntime<'a> {
     pub(crate) timer: &'a mut Timer,
     pub(crate) logger: &'a Logger,
     pub(crate) colors: &'a Colors,
@@ -37,7 +44,7 @@ pub(crate) struct PipelineRuntime<'a> {
 }
 
 /// A single prompt-based agent invocation.
-pub(crate) struct PromptCommand<'a> {
+pub struct PromptCommand<'a> {
     pub(crate) label: &'a str,
     pub(crate) display_name: &'a str,
     pub(crate) cmd_str: &'a str,
@@ -50,7 +57,7 @@ pub(crate) struct PromptCommand<'a> {
 /// Run a command with a prompt argument.
 ///
 /// This is an internal helper for `run_with_fallback`.
-pub(crate) fn run_with_prompt(
+pub fn run_with_prompt(
     cmd: PromptCommand<'_>,
     runtime: &mut PipelineRuntime<'_>,
 ) -> io::Result<CommandResult> {
@@ -115,7 +122,7 @@ pub(crate) fn run_with_prompt(
     if is_glm_cmd && runtime.config.verbosity.is_debug() {
         runtime
             .logger
-            .info(&format!("GLM command details: {}", display_cmd));
+            .info(&format!("GLM command details: {display_cmd}"));
         // Verify -p flag is present
         if argv.iter().any(|arg| arg == "-p") {
             runtime
@@ -151,7 +158,7 @@ pub(crate) fn run_with_prompt(
             ));
             // Show env var keys only (redact values for security)
             for key in cmd.env_vars.keys() {
-                runtime.logger.info(&format!("  - {}", key));
+                runtime.logger.info(&format!("  - {key}"));
             }
         }
         for (key, value) in cmd.env_vars {
@@ -294,8 +301,8 @@ pub(crate) fn run_with_prompt(
 
         for line in reader.lines() {
             let line = line?;
-            writeln!(out, "{}", line)?;
-            writeln!(logfile, "{}", line)?;
+            writeln!(out, "{line}")?;
+            writeln!(logfile, "{line}")?;
         }
     }
 
@@ -315,7 +322,7 @@ pub(crate) fn run_with_prompt(
         ));
         // Show first few lines of stderr for debugging
         for (i, line) in stderr_output.lines().take(5).enumerate() {
-            runtime.logger.info(&format!("  stderr[{}]: {}", i, line));
+            runtime.logger.info(&format!("  stderr[{i}]: {line}"));
         }
         if stderr_output.lines().count() > 5 {
             runtime.logger.info(&format!(
@@ -359,13 +366,13 @@ fn try_agent_with_retries(
 ) -> io::Result<TryAgentResult> {
     let model_suffix = model_flag
         .as_ref()
-        .map(|m| format!(" [{}]", m))
+        .map(|m| format!(" [{m}]"))
         .unwrap_or_default();
     let is_glm_agent = is_glm_like_agent(agent_name);
 
     // GLM-specific diagnostic output (only on first try to avoid spam)
     if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
-        let cmd_argv = split_command(&cmd_str).ok();
+        let cmd_argv = split_command(cmd_str).ok();
         let full_cmd_log = cmd_argv
             .as_ref()
             .map(|argv| {
@@ -373,16 +380,15 @@ fn try_agent_with_retries(
                 argv_for_log.push("<PROMPT>".to_string());
                 truncate_text(&format_argv_for_log(&argv_for_log), 160)
             })
-            .unwrap_or_else(|| "<unparseable command>".to_string());
+            .unwrap_or_else(| | "<unparseable command>".to_string());
 
         if runtime.config.verbosity.is_debug() {
-            runtime.logger.info(&format!(
-                "GLM agent '{}' command configuration:",
-                agent_name
-            ));
             runtime
                 .logger
-                .info(&format!("  Full command: {}", full_cmd_log));
+                .info(&format!("GLM agent '{agent_name}' command configuration:"));
+            runtime
+                .logger
+                .info(&format!("  Full command: {full_cmd_log}"));
         }
     }
 
@@ -458,7 +464,9 @@ fn try_agent_with_retries(
 
         // Provide provider-specific auth advice for auth failures
         if matches!(error_kind, crate::agents::AgentErrorKind::AuthFailure) {
-            runtime.logger.info(&crate::agents::auth_failure_advice(model_flag));
+            runtime
+                .logger
+                .info(&crate::agents::auth_failure_advice(model_flag));
         } else {
             runtime.logger.info(error_kind.recovery_advice());
         }
@@ -472,9 +480,9 @@ fn try_agent_with_retries(
 
         // Provide network-specific guidance
         if error_kind.is_network_error() {
-            runtime.logger.info(
-                "Tip: Check your internet connection, firewall, or VPN settings.",
-            );
+            runtime
+                .logger
+                .info("Tip: Check your internet connection, firewall, or VPN settings.");
         }
 
         // Provide context reduction hint for memory-related errors
@@ -493,8 +501,7 @@ fn try_agent_with_retries(
         // Check if we should fallback to next agent
         if error_kind.should_fallback() {
             runtime.logger.info(&format!(
-                "Switching from '{}'{} to next configured fallback...",
-                display_name, model_suffix
+                "Switching from '{display_name}'{model_suffix} to next configured fallback..."
             ));
             return Ok(TryAgentResult::Fallback);
         }
@@ -525,7 +532,7 @@ fn try_agent_with_retries(
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
-pub(crate) fn run_with_fallback(
+pub fn run_with_fallback(
     role: AgentRole,
     base_label: &str,
     prompt: &str,
@@ -538,8 +545,7 @@ pub(crate) fn run_with_fallback(
     let fallbacks = registry.available_fallbacks(role);
     if !fallback_config.has_fallbacks(role) {
         runtime.logger.info(&format!(
-            "No configured fallbacks for {}, using primary only",
-            role
+            "No configured fallbacks for {role}, using primary only"
         ));
     }
 
@@ -580,8 +586,7 @@ pub(crate) fn run_with_fallback(
         for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
             let Some(agent_config) = registry.resolve_config(agent_name) else {
                 runtime.logger.warn(&format!(
-                    "Agent '{}' not found in registry, skipping",
-                    agent_name
+                    "Agent '{agent_name}' not found in registry, skipping"
                 ));
                 continue;
             };
@@ -648,8 +653,7 @@ pub(crate) fn run_with_fallback(
                         // Only log on first try to avoid spam
                         if agent_index == 0 && cycle == 0 && model_index == 0 {
                             runtime.logger.info(&format!(
-                                "Using JSON parser override '{}' for reviewer",
-                                parser_override
+                                "Using JSON parser override '{parser_override}' for reviewer"
                             ));
                         }
                     }
@@ -685,23 +689,24 @@ pub(crate) fn run_with_fallback(
                 };
 
                 // GLM-specific diagnostic output for print flag validation
-                if is_glm_like_agent(agent_name) && agent_index == 0 && cycle == 0 && model_index == 0 {
+                if is_glm_like_agent(agent_name)
+                    && agent_index == 0
+                    && cycle == 0
+                    && model_index == 0
+                {
                     let cmd_argv = split_command(&cmd_str).ok();
                     let has_print_flag = cmd_argv
                         .as_ref()
-                        .map(|argv| argv.iter().any(|arg| arg == "-p"))
-                        .unwrap_or(false);
+                        .is_some_and(|argv| argv.iter().any(|arg| arg == "-p"));
                     if !has_print_flag {
                         if agent_config.print_flag.is_empty() {
                             runtime.logger.warn(&format!(
-                                "GLM agent '{}' is missing '-p' flag: print_flag is empty in configuration. \
-                                 Add 'print_flag = \"-p\"' to [ccs] section in ~/.config/ralph-workflow.toml",
-                                agent_name
+                                "GLM agent '{agent_name}' is missing '-p' flag: print_flag is empty in configuration. \
+                                 Add 'print_flag = \"-p\"' to [ccs] section in ~/.config/ralph-workflow.toml"
                             ));
                         } else {
                             runtime.logger.warn(&format!(
-                                "GLM agent '{}' may be missing '-p' flag in command. Check configuration.",
-                                agent_name
+                                "GLM agent '{agent_name}' may be missing '-p' flag in command. Check configuration."
                             ));
                         }
                     }
@@ -709,13 +714,13 @@ pub(crate) fn run_with_fallback(
 
                 let model_suffix = model_flag
                     .as_ref()
-                    .map(|m| format!(" [{}]", m))
+                    .map(|m| format!(" [{m}]"))
                     .unwrap_or_default();
-                let label = format!("{} ({}{})", base_label, display_name, model_suffix);
+                let label = format!("{base_label} ({display_name}{model_suffix})");
                 // Sanitize agent name for log file path - replace "/" with "-" to avoid
                 // creating subdirectories (e.g., "ccs/glm" -> "ccs-glm")
                 let safe_agent_name = agent_name.replace('/', "-");
-                let logfile = format!("{}_{}_{}.log", logfile_prefix, safe_agent_name, model_index);
+                let logfile = format!("{logfile_prefix}_{safe_agent_name}_{model_index}.log");
 
                 // Try this agent/model configuration with retries
                 let result = try_agent_with_retries(

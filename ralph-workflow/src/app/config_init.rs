@@ -51,15 +51,16 @@ pub struct ConfigInitResult {
 /// (e.g., --init, --init-prompt, --list-templates), or an error if initialization fails.
 pub fn initialize_config(
     args: &Args,
-    colors: &Colors,
-    logger: &mut Logger,
+    colors: Colors,
+    logger: &Logger,
 ) -> anyhow::Result<Option<ConfigInitResult>> {
     // Load configuration from unified config file (with env overrides)
-    let (mut config, unified, warnings) = if let Some(config_path) = &args.config {
-        loader::load_config_from_path(Some(config_path.as_path()))
-    } else {
-        loader::load_config()
-    };
+    let (mut config, unified, warnings) = args
+        .config
+        .as_ref()
+        .map_or_else(loader::load_config, |config_path| {
+            loader::load_config_from_path(Some(config_path.as_path()))
+        });
 
     // Display any deprecation warnings from config loading
     for warning in warnings {
@@ -79,7 +80,7 @@ pub fn initialize_config(
     apply_args_to_config(args, &mut config, colors);
 
     // Handle --list-templates flag: display available templates and exit
-    if args.list_templates && handle_list_templates(colors)? {
+    if args.list_templates && handle_list_templates(colors) {
         return Ok(None);
     }
 
@@ -98,16 +99,17 @@ pub fn initialize_config(
     // Handle --init-legacy flag: legacy per-repo agents.toml creation and exit
     if args.init_legacy {
         let repo_root = get_repo_root().ok();
-        let legacy_path = repo_root
-            .map(|root| root.join(".agent/agents.toml"))
-            .unwrap_or_else(|| PathBuf::from(".agent/agents.toml"));
+        let legacy_path = repo_root.map_or_else(
+            || PathBuf::from(".agent/agents.toml"),
+            |root| root.join(".agent/agents.toml"),
+        );
         if handle_init_legacy(colors, &legacy_path)? {
             return Ok(None);
         }
     }
 
     // Initialize agent registry with built-in defaults + unified config.
-    let (registry, config_sources) = load_agent_registry(&unified, config_path.as_path())?;
+    let (registry, config_sources) = load_agent_registry(unified.as_ref(), config_path.as_path())?;
 
     // Apply default agents from fallback chains
     apply_default_agents(&mut config, &registry);
@@ -121,14 +123,11 @@ pub fn initialize_config(
 }
 
 fn load_agent_registry(
-    unified: &Option<UnifiedConfig>,
+    unified: Option<&UnifiedConfig>,
     config_path: &std::path::Path,
 ) -> anyhow::Result<(AgentRegistry, Vec<ConfigSource>)> {
     let mut registry = AgentRegistry::new().map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to load built-in default agents config (examples/agents.toml): {}",
-            e
-        )
+        anyhow::anyhow!("Failed to load built-in default agents config (examples/agents.toml): {e}")
     })?;
 
     let mut sources = Vec::new();
@@ -153,9 +152,10 @@ fn load_agent_registry(
         }
 
         let repo_root = get_repo_root().ok();
-        let project_path = repo_root
-            .map(|root| root.join(".agent/agents.toml"))
-            .unwrap_or_else(|| PathBuf::from(".agent/agents.toml"));
+        let project_path = repo_root.map_or_else(
+            || PathBuf::from(".agent/agents.toml"),
+            |root| root.join(".agent/agents.toml"),
+        );
         if project_path.exists() {
             let loaded = registry.load_from_file(&project_path).map_err(|e| {
                 anyhow::anyhow!(
@@ -187,7 +187,7 @@ fn load_agent_registry(
 /// Applies default agent selection from fallback chains.
 ///
 /// If no agent was explicitly selected via CLI/env/preset, uses the first entry
-/// from the agent_chain configuration.
+/// from the `agent_chain` configuration.
 fn apply_default_agents(config: &mut Config, registry: &AgentRegistry) {
     if config.developer_agent.is_none() {
         config.developer_agent = registry

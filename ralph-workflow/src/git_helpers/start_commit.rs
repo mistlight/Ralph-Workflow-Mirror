@@ -32,7 +32,7 @@ const START_COMMIT_FILE: &str = ".agent/start_commit";
 const EMPTY_REPO_SENTINEL: &str = "__EMPTY_REPO__";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StartPoint {
+pub enum StartPoint {
     /// A concrete commit OID to diff from.
     Commit(git2::Oid),
     /// An empty repository baseline (diff from the empty tree).
@@ -49,7 +49,7 @@ pub(crate) enum StartPoint {
 /// - Not in a git repository
 /// - HEAD cannot be resolved (e.g., unborn branch)
 /// - HEAD is not a commit (e.g., symbolic ref to tag)
-pub(crate) fn get_current_head_oid() -> io::Result<String> {
+pub fn get_current_head_oid() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(to_io_error)?;
 
     let head = repo.head().map_err(|e| {
@@ -85,7 +85,7 @@ fn get_current_start_point() -> io::Result<StartPoint> {
 /// Save the current HEAD commit as the starting commit.
 ///
 /// Writes the current HEAD OID to `.agent/start_commit` only if it doesn't
-/// already exist. This ensures the start_commit persists across pipeline runs
+/// already exist. This ensures the `start_commit` persists across pipeline runs
 /// and is only reset when explicitly requested via `--reset-start-commit`.
 ///
 /// # Errors
@@ -94,7 +94,7 @@ fn get_current_start_point() -> io::Result<StartPoint> {
 /// - The current HEAD cannot be determined
 /// - The `.agent` directory cannot be created
 /// - The file cannot be written
-pub(crate) fn save_start_commit() -> io::Result<()> {
+pub fn save_start_commit() -> io::Result<()> {
     // If a start commit exists and is valid, preserve it across runs.
     // If it exists but is invalid/corrupt, automatically repair it.
     if load_start_point().is_ok() {
@@ -142,7 +142,7 @@ fn write_start_point(start_point: StartPoint) -> io::Result<()> {
 /// - The file does not exist
 /// - The file cannot be read
 /// - The file content is invalid
-pub(crate) fn load_start_point() -> io::Result<StartPoint> {
+pub fn load_start_point() -> io::Result<StartPoint> {
     let content = fs::read_to_string(START_COMMIT_FILE)?;
 
     let raw = content.trim();
@@ -164,7 +164,7 @@ pub(crate) fn load_start_point() -> io::Result<StartPoint> {
     let oid = git2::Oid::from_str(raw).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Invalid OID format: {}", raw),
+            format!("Invalid OID format: {raw}"),
         )
     })?;
 
@@ -186,7 +186,7 @@ pub(crate) fn load_start_point() -> io::Result<StartPoint> {
 /// Returns an error if:
 /// - The current HEAD cannot be determined
 /// - The file cannot be written
-pub(crate) fn reset_start_commit() -> io::Result<()> {
+pub fn reset_start_commit() -> io::Result<()> {
     // Unlike `save_start_commit`, a reset is an explicit user request and should
     // fail on empty repositories where there is no HEAD commit to reference.
     let oid = get_current_head_oid()?;
@@ -198,7 +198,8 @@ fn has_start_commit() -> bool {
     load_start_point().is_ok()
 }
 
-/// Convert git2 error to io::Error.
+/// Convert git2 error to `io::Error`.
+#[expect(clippy::needless_pass_by_value)]
 fn to_io_error(err: git2::Error) -> io::Error {
     io::Error::other(err.to_string())
 }

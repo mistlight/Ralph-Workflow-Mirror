@@ -6,11 +6,15 @@
 //! 2. Fixes the issues found
 //! 3. Cleans up ISSUES.md (in isolation mode)
 
+#![expect(clippy::too_many_lines)]
 use crate::agents::{is_glm_like_agent, AgentRole};
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::config::ReviewDepth;
+use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::files::{extract_issues, restore_prompt_if_needed};
 use crate::git_helpers::{get_git_diff_from_start, git_snapshot, CommitResultFallback};
 use crate::guidelines::ReviewGuidelines;
+use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
@@ -19,9 +23,6 @@ use crate::prompts::{
     Action, ContextLevel, Role,
 };
 use crate::review_metrics::ReviewMetrics;
-use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
-use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
-use crate::logger::print_progress;
 
 use super::context::PhaseContext;
 use std::fs;
@@ -40,24 +41,19 @@ fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, cycle: u
             // File exists with content, no action needed
         }
         Ok(false) => {
+            logger.warn("[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup");
             logger.warn(&format!(
-                "[PROMPT_INTEGRITY] PROMPT.md was missing or empty and has been restored from backup",
-            ));
-            logger.warn(&format!(
-                "[PROMPT_INTEGRITY] Deletion detected during {} phase (cycle {})",
-                phase, cycle
+                "[PROMPT_INTEGRITY] Deletion detected during {phase} phase (cycle {cycle})"
             ));
             logger.warn("[PROMPT_INTEGRITY] Possible cause: Agent used 'rm' or file write tools on PROMPT.md");
             logger.success("PROMPT.md restored from .agent/PROMPT.md.backup");
         }
         Err(e) => {
             logger.error(&format!(
-                "[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {}",
-                e
+                "[PROMPT_INTEGRITY] Failed to restore PROMPT.md: {e}"
             ));
             logger.error(&format!(
-                "[PROMPT_INTEGRITY] Error occurred during {} phase (cycle {})",
-                phase, cycle
+                "[PROMPT_INTEGRITY] Error occurred during {phase} phase (cycle {cycle})"
             ));
             logger.error("Pipeline may not function correctly without PROMPT.md");
         }
@@ -135,8 +131,7 @@ fn pre_flight_review_check(
     if is_glm_agent(reviewer_agent) {
         // Log diagnostic info about GLM agent configuration
         logger.info(&format!(
-            "GLM agent detected: '{}'. Command will include '-p' flag for non-interactive mode.",
-            reviewer_agent
+            "GLM agent detected: '{reviewer_agent}'. Command will include '-p' flag for non-interactive mode."
         ));
         logger.info("Tip: Use --verbosity debug to see the full command being executed");
     }
@@ -158,7 +153,7 @@ fn pre_flight_review_check(
                 logger.warn("Found empty ISSUES.md from previous run. Will be overwritten.");
             }
             Err(e) => {
-                logger.warn(&format!("Cannot check ISSUES.md metadata: {}", e));
+                logger.warn(&format!("Cannot check ISSUES.md metadata: {e}"));
             }
         }
     }
@@ -168,22 +163,20 @@ fn pre_flight_review_check(
         // Try to create it
         if let Err(e) = fs::create_dir_all(agent_dir) {
             return PreflightResult::Error(format!(
-                "Cannot create .agent directory: {}. Check directory permissions.",
-                e
+                "Cannot create .agent directory: {e}. Check directory permissions."
             ));
         }
     }
 
     // Test write by touching a temp file
-    let test_file = agent_dir.join(format!(".write_test_{}", cycle));
+    let test_file = agent_dir.join(format!(".write_test_{cycle}"));
     match fs::write(&test_file, b"test") {
-        Ok(_) => {
+        Ok(()) => {
             let _ = fs::remove_file(&test_file);
         }
         Err(e) => {
             return PreflightResult::Error(format!(
-                ".agent directory is not writable: {}. Check file permissions.",
-                e
+                ".agent directory is not writable: {e}. Check file permissions."
             ));
         }
     }
@@ -196,8 +189,7 @@ fn pre_flight_review_check(
             let entry_count = entries.by_ref().count();
             if entry_count > 1000 {
                 logger.warn(&format!(
-                    ".agent directory has {} files. Consider cleaning up old logs.",
-                    entry_count
+                    ".agent directory has {entry_count} files. Consider cleaning up old logs."
                 ));
                 return PreflightResult::Warning(
                     "Large .agent directory detected. Review may be slow.".to_string(),
@@ -218,9 +210,8 @@ fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> Postf
     // Check 1: Verify ISSUES.md exists
     if !issues_path.exists() {
         logger.warn(&format!(
-            "Review cycle {} completed but ISSUES.md was not created. \
-             The agent may have failed or used a different output format.",
-            cycle
+            "Review cycle {cycle} completed but ISSUES.md was not created. \
+             The agent may have failed or used a different output format."
         ));
         logger.info("Possible causes:");
         logger.info("  - Agent failed to write the file (permission/execution error)");
@@ -234,10 +225,7 @@ fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> Postf
     // Check 2: Verify ISSUES.md is not empty and log its size
     let file_size = match fs::metadata(issues_path) {
         Ok(metadata) if metadata.len() == 0 => {
-            logger.warn(&format!(
-                "Review cycle {} created an empty ISSUES.md.",
-                cycle
-            ));
+            logger.warn(&format!("Review cycle {cycle} created an empty ISSUES.md."));
             logger.info("Possible causes:");
             logger.info("  - Agent reviewed but found no issues (should write 'No issues found.')");
             logger.info("  - Agent failed during file write");
@@ -250,8 +238,8 @@ fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> Postf
             metadata.len()
         }
         Err(e) => {
-            logger.warn(&format!("Cannot read ISSUES.md metadata: {}", e));
-            return PostflightResult::Missing(format!("Cannot read ISSUES.md: {}", e));
+            logger.warn(&format!("Cannot read ISSUES.md metadata: {e}"));
+            return PostflightResult::Missing(format!("Cannot read ISSUES.md: {e}"));
         }
     };
 
@@ -262,8 +250,7 @@ fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> Postf
             if metrics.total_issues == 0 && !metrics.no_issues_declared {
                 // Partial recovery: file has content but no parseable issues
                 logger.warn(&format!(
-                    "Review cycle {} produced ISSUES.md ({} bytes) but no parseable issues detected.",
-                    cycle, file_size
+                    "Review cycle {cycle} produced ISSUES.md ({file_size} bytes) but no parseable issues detected."
                 ));
                 logger.info("Content may be in unexpected format. The fix pass may still work.");
                 logger.info(
@@ -292,10 +279,9 @@ fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> Postf
         }
         Err(e) => {
             // Partial recovery: attempt to show what content we can
-            logger.warn(&format!("Failed to parse ISSUES.md: {}", e));
+            logger.warn(&format!("Failed to parse ISSUES.md: {e}"));
             logger.info(&format!(
-                "ISSUES.md has {} bytes but failed to parse.",
-                file_size
+                "ISSUES.md has {file_size} bytes but failed to parse."
             ));
             logger.info("The file may be malformed or in an unexpected format.");
             logger.info(
@@ -308,12 +294,12 @@ fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> Postf
                 if !preview.is_empty() {
                     logger.info("ISSUES.md preview (first 5 lines):");
                     for line in preview.lines() {
-                        logger.info(&format!("  {}", line));
+                        logger.info(&format!("  {line}"));
                     }
                 }
             }
 
-            PostflightResult::Malformed(format!("Failed to parse ISSUES.md: {}", e))
+            PostflightResult::Malformed(format!("Failed to parse ISSUES.md: {e}"))
         }
     }
 }
@@ -404,11 +390,9 @@ pub fn run_review_phase(
                 // Continue anyway
             }
             PreflightResult::Error(msg) => {
-                ctx.logger
-                    .error(&format!("Pre-flight check failed: {}", msg));
+                ctx.logger.error(&format!("Pre-flight check failed: {msg}"));
                 return Err(anyhow::anyhow!(
-                    "Review pre-flight validation failed: {}",
-                    msg
+                    "Review pre-flight validation failed: {msg}"
                 ));
             }
         }
@@ -421,10 +405,8 @@ pub fn run_review_phase(
         // Check if the review prompt is empty (e.g., due to diff retrieval failure)
         // If so, skip the review and fix passes but still check for git changes
         if review_prompt.is_empty() {
-            ctx.logger.warn(&format!(
-                "Skipping review cycle {} due to: {}",
-                j, review_label
-            ));
+            ctx.logger
+                .warn(&format!("Skipping review cycle {j} due to: {review_label}"));
             skipped_cycles += 1;
 
             // Even though review/fix are skipped, we still check for external git changes.
@@ -442,8 +424,7 @@ pub fn run_review_phase(
                 let commit_agent = get_primary_commit_agent(ctx);
                 if let Some(agent) = commit_agent {
                     ctx.logger.info(&format!(
-                        "Creating commit with auto-generated message (agent: {})...",
-                        agent
+                        "Creating commit with auto-generated message (agent: {agent})..."
                     ));
 
                     // Get the diff for commit message generation
@@ -451,7 +432,7 @@ pub fn run_review_phase(
                         Ok(d) => d,
                         Err(e) => {
                             ctx.logger
-                                .error(&format!("Failed to get diff for commit: {}", e));
+                                .error(&format!("Failed to get diff for commit: {e}"));
                             return Err(anyhow::anyhow!(e));
                         }
                     };
@@ -473,15 +454,14 @@ pub fn run_review_phase(
                     ) {
                         CommitResultFallback::Success(oid) => {
                             ctx.logger
-                                .success(&format!("Commit created successfully: {}", oid));
+                                .success(&format!("Commit created successfully: {oid}"));
                             ctx.stats.commits_created += 1;
                         }
                         CommitResultFallback::NoChanges => {
                             ctx.logger.info("No commit created (no meaningful changes)");
                         }
                         CommitResultFallback::Failed(err) => {
-                            ctx.logger
-                                .error(&format!("Failed to create commit: {}", err));
+                            ctx.logger.error(&format!("Failed to create commit: {err}"));
                             return Err(anyhow::anyhow!(err));
                         }
                     }
@@ -506,7 +486,7 @@ pub fn run_review_phase(
         }
 
         let issues_path = Path::new(".agent/ISSUES.md");
-        let log_dir = format!(".agent/logs/reviewer_review_{}", j);
+        let log_dir = format!(".agent/logs/reviewer_review_{j}");
 
         let _ = {
             let mut runtime = PipelineRuntime {
@@ -517,7 +497,7 @@ pub fn run_review_phase(
             };
             run_with_fallback(
                 AgentRole::Reviewer,
-                &format!("{} #{}", review_label, j),
+                &format!("{review_label} #{j}"),
                 &review_prompt,
                 &log_dir,
                 &mut runtime,
@@ -561,8 +541,7 @@ pub fn run_review_phase(
                 .exists()
                 .then(|| fs::read_to_string(issues_path).ok())
                 .flatten()
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
+                .is_some_and(|s| !s.trim().is_empty());
 
             if agent_wrote_file {
                 ctx.logger
@@ -585,8 +564,7 @@ pub fn run_review_phase(
             }
             PostflightResult::Missing(msg) => {
                 ctx.logger.warn(&format!(
-                    "Post-flight check: {}. Proceeding with fix pass anyway.",
-                    msg
+                    "Post-flight check: {msg}. Proceeding with fix pass anyway."
                 ));
                 // If using a problematic agent, suggest alternatives
                 if should_use_universal_prompt(
@@ -610,8 +588,7 @@ pub fn run_review_phase(
             }
             PostflightResult::Malformed(msg) => {
                 ctx.logger.warn(&format!(
-                    "Post-flight check: {}. The fix pass may not work correctly.",
-                    msg
+                    "Post-flight check: {msg}. The fix pass may not work correctly."
                 ));
                 // Suggest trying with generic parser as fallback
                 ctx.logger.info(&format!(
@@ -629,10 +606,8 @@ pub fn run_review_phase(
         // Orchestrator always writes ISSUES.md, so we check its content
         if let Ok(metrics) = ReviewMetrics::from_issues_file() {
             if metrics.no_issues_declared && metrics.total_issues == 0 {
-                ctx.logger.success(&format!(
-                    "No issues found after cycle {} - stopping early",
-                    j
-                ));
+                ctx.logger
+                    .success(&format!("No issues found after cycle {j} - stopping early"));
                 // Clean up ISSUES.md before early exit in isolation mode
                 if ctx.config.isolation_mode {
                     delete_issues_file_for_isolation(ctx.logger)?;
@@ -664,9 +639,9 @@ pub fn run_review_phase(
             };
             run_with_fallback(
                 AgentRole::Reviewer,
-                &format!("fix #{}", j),
+                &format!("fix #{j}"),
                 &fix_prompt,
-                &format!(".agent/logs/reviewer_fix_{}", j),
+                &format!(".agent/logs/reviewer_fix_{j}"),
                 &mut runtime,
                 ctx.registry,
                 ctx.reviewer_agent,
@@ -693,8 +668,7 @@ pub fn run_review_phase(
             let commit_agent = get_primary_commit_agent(ctx);
             if let Some(agent) = commit_agent {
                 ctx.logger.info(&format!(
-                    "Creating commit with auto-generated message (agent: {})...",
-                    agent
+                    "Creating commit with auto-generated message (agent: {agent})..."
                 ));
 
                 // Get the diff for commit message generation
@@ -702,7 +676,7 @@ pub fn run_review_phase(
                     Ok(d) => d,
                     Err(e) => {
                         ctx.logger
-                            .error(&format!("Failed to get diff for commit: {}", e));
+                            .error(&format!("Failed to get diff for commit: {e}"));
                         return Err(anyhow::anyhow!(e));
                     }
                 };
@@ -724,7 +698,7 @@ pub fn run_review_phase(
                 ) {
                     CommitResultFallback::Success(oid) => {
                         ctx.logger
-                            .success(&format!("Commit created successfully: {}", oid));
+                            .success(&format!("Commit created successfully: {oid}"));
                         ctx.stats.commits_created += 1;
                     }
                     CommitResultFallback::NoChanges => {
@@ -734,8 +708,7 @@ pub fn run_review_phase(
                     CommitResultFallback::Failed(err) => {
                         // Actual git operation failed - this is critical
                         ctx.logger.error(&format!(
-                            "Failed to create commit (git operation failed): {}",
-                            err
+                            "Failed to create commit (git operation failed): {err}"
                         ));
                         // Don't continue - this is a real error that needs attention
                         return Err(anyhow::anyhow!(err));
@@ -753,8 +726,7 @@ pub fn run_review_phase(
     if skipped_cycles > 0 {
         let total_cycles = ctx.config.reviewer_reviews;
         ctx.logger.warn(&format!(
-            "{} of {} review cycle(s) were skipped due to diff retrieval failures.",
-            skipped_cycles, total_cycles
+            "{skipped_cycles} of {total_cycles} review cycle(s) were skipped due to diff retrieval failures."
         ));
         ctx.logger.info(
             "This may indicate a git repository issue or that no changes have been made yet.",
@@ -799,6 +771,7 @@ fn should_use_universal_prompt(agent: &str, model_flag: Option<&str>, force: boo
 }
 
 /// Build the review prompt based on configuration and agent type.
+#[expect(clippy::option_if_let_else)]
 fn build_review_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
@@ -878,8 +851,7 @@ fn build_review_prompt(
                     // Diff retrieval failed - this is a more serious issue
                     // Return an error result to signal the caller should skip this cycle
                     ctx.logger.error(&format!(
-                        "Failed to get diff from starting commit: {}; skipping review cycle",
-                        e
+                        "Failed to get diff from starting commit: {e}; skipping review cycle"
                     ));
                     ctx.logger.info(
                         "This may indicate a git repository issue. The review cycle will be skipped.",
@@ -957,13 +929,13 @@ fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
     let commit_agents = fallback_config.get_fallbacks(AgentRole::Commit);
     if !commit_agents.is_empty() {
         // Return the first commit agent as the primary
-        return commit_agents.first().map(|s| s.to_string());
+        return commit_agents.first().cloned();
     }
 
     // Fallback to using developer agents for commit generation
     let developer_agents = fallback_config.get_fallbacks(AgentRole::Developer);
     if !developer_agents.is_empty() {
-        return developer_agents.first().map(|s| s.to_string());
+        return developer_agents.first().cloned();
     }
 
     // Last resort: use the current developer agent

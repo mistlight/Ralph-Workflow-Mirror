@@ -22,4 +22,4 @@ mod severity;
 mod tests;
 
 // Re-export public types at module level
-pub(crate) use metrics::ReviewMetrics;
+pub use metrics::ReviewMetrics;

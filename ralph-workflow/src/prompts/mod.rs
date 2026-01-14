@@ -7,7 +7,7 @@
 //!
 //! # Module Structure
 //!
-//! - [`types`] - Type definitions (ContextLevel, Role, Action)
+//! - [`types`] - Type definitions (`ContextLevel`, Role, Action)
 //! - [`developer`] - Developer prompts (iteration, planning)
 //! - [`reviewer`] - Reviewer prompts (review, comprehensive, security, incremental)
 //! - [`commit`] - Fix and commit message prompts
@@ -18,17 +18,17 @@ mod reviewer;
 mod types;
 
 // Re-export all public items for backward compatibility
-pub(crate) use commit::{
+pub use commit::{
     prompt_fix, prompt_generate_commit_message_with_diff, prompt_retry_commit_message_with_feedback,
 };
-pub(crate) use developer::{prompt_developer_iteration, prompt_plan};
-pub(crate) use reviewer::{
+pub use developer::{prompt_developer_iteration, prompt_plan};
+pub use reviewer::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines,
     prompt_incremental_review_with_diff, prompt_reviewer_review,
     prompt_reviewer_review_with_guidelines, prompt_security_focused_review,
     prompt_universal_review,
 };
-pub(crate) use types::{Action, ContextLevel, Role};
+pub use types::{Action, ContextLevel, Role};
 
 use crate::guidelines::ReviewGuidelines;
 
@@ -44,7 +44,7 @@ use crate::guidelines::ReviewGuidelines;
 /// The optional `prompt_md_content` parameter allows providing PROMPT.md content
 /// directly to the planning prompt, preventing agents from discovering it through
 /// file exploration.
-pub(crate) fn prompt_for_agent(
+pub fn prompt_for_agent(
     role: Role,
     action: Action,
     context: ContextLevel,
@@ -55,26 +55,14 @@ pub(crate) fn prompt_for_agent(
 ) -> String {
     match (role, action) {
         (_, Action::Plan) => prompt_plan(prompt_md_content),
-        (Role::Developer, Action::Iterate) => prompt_developer_iteration(
-            iteration.unwrap_or(1),
-            total_iterations.unwrap_or(1),
-            context,
-        ),
-        (Role::Reviewer, Action::Review) => {
-            // Use guidelines-enhanced prompt if guidelines are available
-            if let Some(g) = guidelines {
-                prompt_reviewer_review_with_guidelines(context, g)
-            } else {
-                prompt_reviewer_review(context)
-            }
+        (Role::Developer | Role::Reviewer, Action::Iterate) => {
+            prompt_developer_iteration(iteration.unwrap_or(1), total_iterations.unwrap_or(1), context)
         }
-        (_, Action::Fix) => prompt_fix(),
-        // Fallback for Reviewer + Iterate (shouldn't happen but be safe)
-        (Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
-            iteration.unwrap_or(1),
-            total_iterations.unwrap_or(1),
-            context,
+        (Role::Reviewer, Action::Review) => guidelines.map_or_else(
+            || prompt_reviewer_review(context),
+            |g| prompt_reviewer_review_with_guidelines(context, g),
         ),
+        (_, Action::Fix) => prompt_fix(),
         // Fallback for Developer + Review (shouldn't happen but be safe)
         (Role::Developer, Action::Review) => prompt_reviewer_review(context),
     }
@@ -326,8 +314,7 @@ mod tests {
         for pattern in git_command_patterns {
             assert!(
                 !orchestrator_prompt.contains(pattern),
-                "Orchestrator prompt contains git command pattern '{}'",
-                pattern
+                "Orchestrator prompt contains git command pattern '{pattern}'"
             );
         }
     }

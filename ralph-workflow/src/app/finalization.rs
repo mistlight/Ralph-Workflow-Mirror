@@ -19,22 +19,22 @@ use crate::timer::Timer;
 pub fn finalize_pipeline(
     agent_phase_guard: &mut AgentPhaseGuard,
     logger: &Logger,
-    colors: &Colors,
+    colors: Colors,
     config: &Config,
     timer: &Timer,
     stats: &Stats,
     prompt_monitor: Option<PromptMonitor>,
-) -> anyhow::Result<()> {
+) {
     // Stop the PROMPT.md monitor if it was started
     if let Some(monitor) = prompt_monitor {
         monitor.stop();
     }
 
     // End agent phase and clean up
-    crate::git_helpers::end_agent_phase()?;
+    crate::git_helpers::end_agent_phase();
     crate::git_helpers::disable_git_wrapper(agent_phase_guard.git_helpers);
     if let Err(err) = crate::git_helpers::uninstall_hooks(logger) {
-        logger.warn(&format!("Failed to uninstall Ralph hooks: {}", err));
+        logger.warn(&format!("Failed to uninstall Ralph hooks: {err}"));
     }
 
     // Note: Individual commits were created per-iteration during development
@@ -45,10 +45,9 @@ pub fn finalize_pipeline(
 
     if config.checkpoint_enabled {
         if let Err(err) = clear_checkpoint() {
-            logger.warn(&format!("Failed to clear checkpoint: {}", err));
+            logger.warn(&format!("Failed to clear checkpoint: {err}"));
         }
     }
 
     agent_phase_guard.disarm();
-    Ok(())
 }
