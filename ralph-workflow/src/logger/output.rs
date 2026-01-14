@@ -7,6 +7,7 @@ use super::{
     Colors, ARROW, BOX_BL, BOX_BR, BOX_H, BOX_TL, BOX_TR, BOX_V, CHECK, CROSS, INFO, WARN,
 };
 use crate::checkpoint::timestamp;
+use crate::common::truncate_text;
 use crate::config::Verbosity;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -236,34 +237,6 @@ mod tests {
 
 // ===== Output Formatting Functions =====
 
-/// Truncate text to a limit with ellipsis.
-///
-/// Uses character count rather than byte length to avoid panics on UTF-8 text.
-/// Truncates at character boundaries and appends "..." when truncation occurs.
-///
-/// # Example
-///
-/// ```ignore
-/// assert_eq!(truncate_text("hello world", 8), "hello...");
-/// assert_eq!(truncate_text("short", 10), "short");
-/// ```
-pub fn truncate_text(text: &str, limit: usize) -> String {
-    // Handle edge case where limit is too small for even "..."
-    if limit <= 3 {
-        return text.chars().take(limit).collect();
-    }
-
-    let char_count = text.chars().count();
-    if char_count <= limit {
-        text.to_string()
-    } else {
-        // Leave room for "..."
-        let truncate_at = limit.saturating_sub(3);
-        let truncated: String = text.chars().take(truncate_at).collect();
-        format!("{truncated}...")
-    }
-}
-
 /// Detect if command-line arguments request JSON output.
 ///
 /// Scans the provided argv for common JSON output flags used by various CLIs:
@@ -356,43 +329,6 @@ pub fn format_generic_json_for_display(line: &str, verbosity: Verbosity) -> Stri
 #[cfg(test)]
 mod output_formatting_tests {
     use super::*;
-
-    #[test]
-    fn test_truncate_text_no_truncation() {
-        assert_eq!(truncate_text("hello", 10), "hello");
-        assert_eq!(truncate_text("hello", 5), "hello");
-    }
-
-    #[test]
-    fn test_truncate_text_with_ellipsis() {
-        // "hello world" is 11 chars, limit 8 means 5 chars + "..."
-        assert_eq!(truncate_text("hello world", 8), "hello...");
-    }
-
-    #[test]
-    fn test_truncate_text_unicode() {
-        // Should not panic on UTF-8 multibyte characters
-        let text = "日本語テスト"; // 6 Japanese characters
-        assert_eq!(truncate_text(text, 10), "日本語テスト");
-        assert_eq!(truncate_text(text, 6), "日本語テスト");
-        assert_eq!(truncate_text(text, 5), "日本...");
-    }
-
-    #[test]
-    fn test_truncate_text_emoji() {
-        // Emojis can be multi-byte but should be handled correctly
-        let text = "Hello 👋 World";
-        assert_eq!(truncate_text(text, 20), "Hello 👋 World");
-        assert_eq!(truncate_text(text, 10), "Hello 👋...");
-    }
-
-    #[test]
-    fn test_truncate_text_edge_cases() {
-        assert_eq!(truncate_text("abc", 3), "abc");
-        assert_eq!(truncate_text("abcd", 3), "abc"); // limit too small for ellipsis
-        assert_eq!(truncate_text("ab", 1), "a");
-        assert_eq!(truncate_text("", 5), "");
-    }
 
     #[test]
     fn test_argv_requests_json_detects_common_flags() {
