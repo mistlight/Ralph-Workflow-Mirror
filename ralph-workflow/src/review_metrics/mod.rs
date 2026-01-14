@@ -7,15 +7,11 @@
 //! # Module Structure
 //!
 //! - [`severity`] - Issue severity levels (Critical, High, Medium, Low)
-//! - [`issue`] - Individual issue representation
 //! - [`metrics`] - Core `ReviewMetrics` struct and parsing logic
-//! - [`parser`] - Helper functions for extracting issue data
 
 #![deny(unsafe_code)]
 
-mod issue;
 mod metrics;
-mod parser;
 mod severity;
 
 #[cfg(test)]
