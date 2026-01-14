@@ -118,6 +118,7 @@
     // === Terminal Control Buttons ===
     const terminalPlayPause = document.getElementById('terminal-play-pause');
     const terminalRestart = document.getElementById('terminal-restart');
+    const terminalRunDemo = document.getElementById('terminal-run-demo');
     const speedButtons = document.querySelectorAll('.terminal-speed-btn');
     const speedLabel = document.getElementById('speed-label');
     const progressBar = document.getElementById('progress-bar');
@@ -206,6 +207,98 @@
             }
         });
     });
+
+    // Run Full Demo functionality
+    if (terminalRunDemo) {
+        terminalRunDemo.addEventListener('click', () => {
+            // Clear any existing animations
+            clearTerminalAnimations();
+            terminalLines.forEach(line => {
+                line.classList.remove('typed');
+            });
+
+            // Reset progress bar
+            if (progressBar) {
+                progressBar.style.transition = 'none';
+                progressBar.style.width = '0%';
+                setTimeout(() => {
+                    progressBar.style.transition = `width ${4 / animationSpeed}s ease-out`;
+                    progressBar.style.width = '100%';
+                }, 50);
+            }
+
+            // Create extended demo content
+            const demoSteps = [
+                { text: 'ralph -S', delay: 0, type: 'command' },
+                { text: 'Reading PROMPT.md', delay: 600, type: 'output' },
+                { text: 'Developer agent: Analyzing requirements...', delay: 1500, type: 'output' },
+                { text: 'Developer agent: Writing feature implementation...', delay: 3000, type: 'output' },
+                { text: 'Reviewer agent: Checking code quality...', delay: 5000, type: 'output' },
+                { text: 'Reviewer agent: Found 2 issues, requesting fixes...', delay: 6500, type: 'output' },
+                { text: 'Developer agent: Applying fixes...', delay: 8000, type: 'output' },
+                { text: 'Reviewer agent: Validating fixes...', delay: 9500, type: 'output' },
+                { text: 'Iteration 2/10 complete', delay: 11000, type: 'output' },
+                { text: 'Developer agent: Running tests...', delay: 12500, type: 'output' },
+                { text: 'All tests passed!', delay: 14000, type: 'output' },
+                { text: 'Code approved, creating commit...', delay: 15500, type: 'success' },
+                { text: 'Changes shipped in 3m 42s', delay: 17000, type: 'time' }
+            ];
+
+            // Run demo with extended content
+            demoSteps.forEach((step, index) => {
+                const timeout = setTimeout(() => {
+                    if (step.type === 'command') {
+                        const commandLine = terminalLines[0];
+                        commandLine.querySelector('.terminal-command').textContent = step.text;
+                        commandLine.classList.add('typed');
+                    } else {
+                        // For demo, we'll just animate the existing lines
+                        if (index < terminalLines.length - 1) {
+                            const line = terminalLines[index + 1];
+                            if (line) {
+                                line.classList.add('typed');
+                                // Update text for demo
+                                if (step.text) {
+                                    const textElement = line.querySelector('.terminal-output-text');
+                                    const iconElement = line.querySelector('.terminal-output-icon');
+                                    if (textElement) textElement.textContent = step.text;
+                                    if (iconElement && step.type === 'success') {
+                                        iconElement.textContent = '✓';
+                                        iconElement.classList.add('terminal-icon-success');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }, step.delay / animationSpeed);
+
+                animationTimeouts.push(timeout);
+            });
+
+            // Update button text during demo
+            terminalRunDemo.disabled = true;
+            terminalRunDemo.style.opacity = '0.5';
+            terminalRunDemo.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Running...
+            `;
+
+            // Reset button after demo
+            setTimeout(() => {
+                terminalRunDemo.disabled = false;
+                terminalRunDemo.style.opacity = '1';
+                terminalRunDemo.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Run Full Demo
+                `;
+            }, 18000 / animationSpeed);
+        });
+    }
 
     // Progress bar animation
     function animateProgressBar() {
@@ -591,16 +684,8 @@
 
     // === Platform Detection for Install Tabs (Optional Enhancement) ===
     function detectPlatform() {
-        const platform = navigator.platform.toLowerCase();
-        let defaultTab = 'cargo';
-
-        if (platform.includes('win')) {
-            // Windows users might prefer source install
-            defaultTab = 'source';
-        } else if (platform.includes('mac') || platform.includes('linux')) {
-            // Mac/Linux users can use cargo
-            defaultTab = 'cargo';
-        }
+        // All users use the same install method now (git clone)
+        const defaultTab = 'install';
 
         // Click the default tab
         const defaultTabButton = document.querySelector(`[data-tab="${defaultTab}"]`);

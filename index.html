@@ -220,6 +220,14 @@
                                 </svg>
                             </button>
                         </div>
+                        <div class="terminal-controls-center">
+                            <button class="terminal-run-demo-btn" id="terminal-run-demo" aria-label="Run full demo">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                                Run Full Demo
+                            </button>
+                        </div>
                         <div class="terminal-controls-right">
                             <span class="terminal-speed-label" id="speed-label">1x</span>
                             <div class="terminal-speed-controls">
@@ -538,7 +546,7 @@
                                     <polygon points="12 2 2 7 12 12 22 7 12 2"/>
                                     <polyline points="2 17 12 22 22 17"/>
                                 </svg>
-                                Rust toolchain (for cargo install)
+                                Rust toolchain (1.70+)
                             </li>
                             <li class="requirement">
                                 <svg class="requirement-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -552,9 +560,9 @@
                     <div style="padding: 2rem; background: var(--color-bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);">
                         <h4 style="margin-bottom: 1rem; color: var(--color-primary); font-family: var(--font-display);">Quick Start</h4>
                         <ol style="margin: 0; padding-left: 1.25rem; color: var(--color-text-muted);">
-                            <li style="margin-bottom: 0.5rem;">Install Ralph via cargo</li>
+                            <li style="margin-bottom: 0.5rem;">Clone Ralph from Codeberg</li>
+                            <li style="margin-bottom: 0.5rem;">Install via cargo from source</li>
                             <li style="margin-bottom: 0.5rem;">Configure your AI agent</li>
-                            <li style="margin-bottom: 0.5rem;">Create PROMPT.md</li>
                             <li>Run <code class="inline">ralph -S</code></li>
                         </ol>
                     </div>
@@ -562,28 +570,11 @@
 
                 <div class="install-code">
                     <div class="install-tabs" role="tablist">
-                        <button class="install-tab install-tab-simple install-tab-active" data-tab="cargo">Cargo Install</button>
-                        <button class="install-tab install-tab-advanced" data-tab="source" style="display: none;">From Source</button>
+                        <button class="install-tab install-tab-simple install-tab-active" data-tab="install">Install</button>
                         <button class="install-tab install-tab-advanced" data-tab="config" style="display: none;">Config</button>
                     </div>
 
-                    <div class="install-content" data-content="cargo">
-                        <div class="code-block">
-                            <div class="code-block-header">
-                                <span class="code-lang">bash</span>
-                                <button class="copy-btn" aria-label="Copy to clipboard">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
-                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                                    </svg>
-                                </button>
-                            </div>
-                            <pre><code>cargo install ralph-workflow</code></pre>
-                        </div>
-                        <p style="margin-top: 1rem; color: var(--color-text-dim); font-size: 0.875rem;">Requires Rust 1.70+ and cargo in PATH</p>
-                    </div>
-
-                    <div class="install-content" data-content="source" style="display: none;">
+                    <div class="install-content" data-content="install">
                         <div class="code-block">
                             <div class="code-block-header">
                                 <span class="code-lang">bash</span>
@@ -598,6 +589,7 @@
 cd Ralph-Workflow
 cargo install --path .</code></pre>
                         </div>
+                        <p style="margin-top: 1rem; color: var(--color-text-dim); font-size: 0.875rem;">Requires Rust 1.70+ and cargo in PATH. Get Rust from <a href="https://rustup.rs" target="_blank" rel="noopener" style="color: var(--color-primary);">rustup.rs</a></p>
                     </div>
 
                     <div class="install-content" data-content="config" style="display: none;">
@@ -805,6 +797,46 @@ max_iterations = 10</code></pre>
                     </summary>
                     <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
                         <p style="margin: 0;">Ralph itself is free and open-source (AGPL-3.0). You only pay for the AI API calls you make to your provider (like Claude or OpenAI). Costs depend on your usage, but typically range from a few cents to a few dollars per task depending on complexity.</p>
+                    </div>
+                </details>
+
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>Can Ralph work with my existing codebase?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">Yes! Ralph works with any codebase that uses Git. Simply create a PROMPT.md file in your project root describing the changes you want, and Ralph will read your existing code and make the requested modifications while maintaining your project's structure and conventions.</p>
+                    </div>
+                </details>
+
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>What if Ralph makes a mistake?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">The Reviewer agent is specifically designed to catch mistakes. It validates code quality, checks for bugs, and requests fixes from the Developer agent until the code meets standards. You can also review the commit before pushing, and Ralph never makes changes to your repository without creating a proper Git commit that you can inspect or revert.</p>
+                    </div>
+                </details>
+
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>How do I configure API keys?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">Ralph uses your existing AI provider API keys. Configure them in <code class="inline">~/.ralph/config.toml</code> or set them as environment variables. Ralph supports Claude, Codex, and OpenCode agents. See the Advanced install tab for a sample configuration file.</p>
+                    </div>
+                </details>
+
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>Can I use Ralph in CI/CD?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">Yes! Ralph supports quiet mode (<code class="inline">-q</code>) and verbosity control for CI/CD environments. You can run Ralph in automated workflows, GitHub Actions, or any CI/CD pipeline. Configure your API keys as environment variables and run <code class="inline">ralph -S -q</code> for silent operation.</p>
                     </div>
                 </details>
             </div>
