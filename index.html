@@ -32,8 +32,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%2309090B' rx='12'/%3E%3Cpath d='M18 20h24M18 30h18M18 40h12' stroke='%23C8FF00' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+    <!-- Favicon - Enhanced with distinctive R logo -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg-grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23111'/%3E%3Cstop offset='100%25' style='stop-color:%23000'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg-grad)' rx='14'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%23CCFF00' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23CCFF00'/%3E%3C/svg%3E">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -61,8 +61,9 @@
         <div class="nav-container">
             <a href="#" class="nav-logo" aria-label="Ralph Workflow - Home">
                 <div class="logo-mark">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                        <path d="M8 6h8M8 12h5M8 18h3"/>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4h6c1.5 0 2.5.5 2.5 2v3c0 1-.5 1.5-1.5 2S11 12.5 10 15H8l1.5-5c-.75 0-1.75-.25-2.25-1V4z"/>
+                        <path d="M8 7.5h3c.4 0 .5.1.5.5v1.5c0 .3-.1.5-.5.5H8" fill="currentColor"/>
                     </svg>
                 </div>
                 <span class="logo-text">ralph</span>
@@ -265,6 +266,41 @@
                 <span class="section-number">01</span>
                 <h2 class="section-title">How Ralph works</h2>
                 <p class="section-subtitle">Three steps from idea to committed code</p>
+            </div>
+
+            <!-- Quick Benefits - Why Ralph? -->
+            <div style="max-width: var(--container-max); margin: 0 auto var(--space-24);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-6);">
+                    <div style="padding: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <h4 style="margin: 0; color: var(--color-primary); font-family: var(--font-display); text-transform: uppercase;">Save Time</h4>
+                        </div>
+                        <p style="margin: 0; color: var(--color-text-muted);">Ship changes in 3-10 minutes instead of 30-60 minutes of manual back-and-forth.</p>
+                    </div>
+                    <div style="padding: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <h4 style="margin: 0; color: var(--color-accent); font-family: var(--font-display); text-transform: uppercase;">Better Quality</h4>
+                        </div>
+                        <p style="margin: 0; color: var(--color-text-muted);">Reviewer agent catches bugs automatically. Iterate until code quality meets standards.</p>
+                    </div>
+                    <div style="padding: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                        <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4);">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-neon-pink)" stroke-width="2">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                            </svg>
+                            <h4 style="margin: 0; color: var(--color-neon-pink); font-family: var(--font-display); text-transform: uppercase;">Stay in Flow</h4>
+                        </div>
+                        <p style="margin: 0; color: var(--color-text-muted);">No context switching. Write requirements, run Ralph, stay in your editor while AI works.</p>
+                    </div>
+                </div>
             </div>
 
             <div class="how-steps">
@@ -653,6 +689,67 @@ max_iterations = 10</code></pre>
                         <li>Quick start guide</li>
                     </ul>
                 </article>
+            </div>
+        </section>
+
+        <!-- FAQ Section -->
+        <section class="section" style="background: var(--color-bg);">
+            <div class="section-header">
+                <span class="section-number">05</span>
+                <h2 class="section-title">Frequently Asked Questions</h2>
+                <p class="section-subtitle">Common questions about Ralph Workflow</p>
+            </div>
+
+            <div style="max-width: 900px; margin: 0 auto;">
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>What AI providers does Ralph support?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">Ralph supports Claude Code, Codex, and OpenCode agents. You can configure a fallback chain in your config file so if one provider fails, Ralph automatically tries the next.</p>
+                    </div>
+                </details>
+
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>Is Ralph safe to use with my code?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">Yes! Ralph runs entirely locally on your machine. Your code never leaves your computer except when sent to your configured AI provider for processing. You keep full control of your API keys and data.</p>
+                    </div>
+                </details>
+
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>How do I install Ralph if I don't have Rust?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">You'll need to install Rust first. Visit <a href="https://rustup.rs" target="_blank" rel="noopener" style="color: var(--color-accent);">rustup.rs</a> for a simple installer. Once Rust is installed, you can use <code class="inline">cargo install ralph-workflow</code> or build from source.</p>
+                    </div>
+                </details>
+
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>What is PROMPT.md and how do I create one?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">PROMPT.md is a simple Markdown file in your project directory where you describe what you want to build. Just create a file named <code class="inline">PROMPT.md</code> and write your requirements in plain English. Include details like features, tech stack preferences, and constraints. Ralph reads this file and uses it as the source of truth for generating code.</p>
+                    </div>
+                </details>
+
+                <details style="margin-bottom: var(--space-6); background: var(--color-bg-card); border: 2px solid var(--border-subtle);">
+                    <summary style="padding: var(--space-6); cursor: pointer; font-weight: 700; font-family: var(--font-heading); color: var(--color-primary); list-style: none; display: flex; justify-content: space-between; align-items: center; transition: var(--transition-base);">
+                        <span>How much does it cost to use Ralph?</span>
+                        <span style="font-size: 1.5rem; transition: var(--transition-base);">+</span>
+                    </summary>
+                    <div style="padding: 0 var(--space-6) var(--space-6); color: var(--color-text-muted);">
+                        <p style="margin: 0;">Ralph itself is free and open-source (AGPL-3.0). You only pay for the AI API calls you make to your provider (like Claude or OpenAI). Costs depend on your usage, but typically range from a few cents to a few dollars per task depending on complexity.</p>
+                    </div>
+                </details>
             </div>
         </section>
     </main>

@@ -7,6 +7,35 @@
 (function() {
     'use strict';
 
+    // === Parallax Effect for Hero Glows ===
+    const heroGlows = document.querySelectorAll('.hero-glow, .hero-glow-2, .hero-glow-3');
+
+    function updateParallax() {
+        const scrollY = window.scrollY;
+        const windowHeight = window.innerHeight;
+
+        if (scrollY < windowHeight * 1.5) {
+            const parallaxValue = scrollY * 0.15;
+
+            heroGlows.forEach((glow, index) => {
+                const factor = (index + 1) * 0.5;
+                glow.style.transform = `translate(${parallaxValue * factor}px, ${parallaxValue * factor * 0.5}px)`;
+            });
+        }
+    }
+
+    // Throttled scroll handler for parallax
+    let parallaxTicking = false;
+    window.addEventListener('scroll', () => {
+        if (!parallaxTicking) {
+            window.requestAnimationFrame(() => {
+                updateParallax();
+                parallaxTicking = false;
+            });
+            parallaxTicking = true;
+        }
+    });
+
     // === Navigation Scroll Effect ===
     const nav = document.querySelector('.nav');
     let lastScrollY = 0;
@@ -50,11 +79,14 @@
             line.classList.remove('typed');
         });
 
+        // More realistic timing - first lines faster, slower for output
+        const timing = [600, 1200, 1500, 1800, 2200, 2800, 3500];
+
         // Animate lines sequentially
         terminalLines.forEach((line, index) => {
             setTimeout(() => {
                 line.classList.add('typed');
-            }, index * 800);
+            }, timing[index] || index * 600);
         });
     }
 
@@ -76,8 +108,10 @@
 
             if (isOpen) {
                 navMenu.classList.remove('mobile-open');
+                document.body.style.overflow = '';
             } else {
                 navMenu.classList.add('mobile-open');
+                document.body.style.overflow = 'hidden';
             }
         });
 
@@ -86,6 +120,7 @@
             link.addEventListener('click', () => {
                 navToggle.setAttribute('aria-expanded', 'false');
                 navMenu.classList.remove('mobile-open');
+                document.body.style.overflow = '';
             });
         });
 
@@ -94,6 +129,17 @@
             if (!navToggle.contains(e.target) && !navMenu.contains(e.target)) {
                 navToggle.setAttribute('aria-expanded', 'false');
                 navMenu.classList.remove('mobile-open');
+                document.body.style.overflow = '';
+            }
+        });
+
+        // Close menu on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && navMenu.classList.contains('mobile-open')) {
+                navToggle.setAttribute('aria-expanded', 'false');
+                navMenu.classList.remove('mobile-open');
+                document.body.style.overflow = '';
+                navToggle.focus();
             }
         });
     }
@@ -263,6 +309,13 @@
             document.querySelectorAll('a[href^="#"]').forEach(anchor => {
                 anchor.style.scrollBehavior = 'auto';
             });
+
+            // Disable parallax
+            if (heroGlows.length > 0) {
+                heroGlows.forEach(glow => {
+                    glow.style.transform = '';
+                });
+            }
         }
     }
 
