@@ -383,8 +383,10 @@ fn is_absolute_path(path: &str) -> bool {
     if cfg!(windows) {
         let mut chars = path.chars();
         match (chars.next(), chars.next()) {
-            // UNC paths: \\server\share or \\?\device, or Drive letter paths: C:\
-            (Some('\\'), Some('\\')) | (Some(_), Some(':')) => return true,
+            // UNC paths: \\server\share or \\?\device
+            (Some('\\'), Some('\\')) => return true,
+            // Drive letter paths: C:\
+            (Some(_), Some(':')) => return true,
             _ => {}
         }
     }
