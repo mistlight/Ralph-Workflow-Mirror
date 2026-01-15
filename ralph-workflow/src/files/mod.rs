@@ -14,7 +14,7 @@
 //!
 //! The files module is organized by domain concern:
 //!
-//! - [`io`] - File I/O operations (agent files, recovery)
+//! - [`io`] - File I/O operations (agent files, recovery, backup, context)
 //! - [`protection`] - File protection and integrity (validation, integrity, monitoring)
 //! - [`llm_output_extraction`] - LLM output extraction (commit message, JSON extraction)
 //! - [`result_extraction`] - Plan and issue extraction from logs
@@ -38,9 +38,6 @@ pub mod protection;
 // Extraction modules (already domain-organized)
 pub mod llm_output_extraction;
 pub mod result_extraction;
-
-// Legacy flat modules (deprecated, use io::* and protection::* instead)
-mod agent_files;
 
 // Re-exports from new domain structure for backward compatibility
 pub use io::{
