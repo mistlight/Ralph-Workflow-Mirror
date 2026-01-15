@@ -193,6 +193,27 @@ fn check_user_exists() -> bool {
         .unwrap_or(false)
 }
 
+/// Prompt user for yes/no confirmation
+fn prompt_yes_no(colors: Colors, prompt: &str, default: bool) -> anyhow::Result<bool> {
+    println!(
+        "\n{}{}{} [{}Y/n{}]: ",
+        colors.bold(),
+        prompt,
+        colors.reset(),
+        colors.green(),
+        colors.reset()
+    );
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+
+    if input.is_empty() {
+        Ok(default)
+    } else {
+        Ok(input.starts_with('y') || input.starts_with('1'))
+    }
+}
+
 /// Prompt user for confirmation
 fn prompt_confirmation(colors: Colors) -> anyhow::Result<bool> {
     println!(
@@ -256,6 +277,63 @@ fn print_next_steps(colors: Colors) {
     println!("  providing isolation from your main user account.");
 }
 
+/// Get detected version managers on the system
+fn get_detected_version_managers() -> Vec<String> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+
+    let mut detected = Vec::new();
+
+    for manager in &[
+        ".rbenv",
+        ".rvm",
+        ".nvm",
+        ".pyenv",
+        ".jenv",
+        ".sdkman",
+        ".gvm",
+        ".goenv",
+        ".swiftenv",
+        ".jabba",
+        ".asdf",
+        ".mise",
+        ".chruby",
+        ".fnm",
+        ".volta",
+    ] {
+        if home.join(manager).exists() {
+            detected.push(manager.to_string());
+        }
+    }
+
+    detected
+}
+
+/// Display detected version managers and prompt for linking
+fn prompt_version_manager_links(colors: Colors) -> anyhow::Result<bool> {
+    let detected = get_detected_version_managers();
+
+    if detected.is_empty() {
+        return Ok(false);
+    }
+
+    println!("\n{}{}", colors.dim(), colors.reset());
+    println!(
+        "{}Detected Version Managers:{}",
+        colors.bold(),
+        colors.reset()
+    );
+    for manager in &detected {
+        println!("  • {}", manager);
+    }
+
+    println!("\nThese will be linked to the ralph-agent user's home directory,",);
+    println!("allowing the agent to use the same language versions as you.");
+
+    prompt_yes_no(colors, "Link version manager directories?", true)
+}
+
 /// Handle the --setup-security command
 ///
 /// Sets up the user account for user-account security mode.
@@ -271,6 +349,9 @@ pub fn handle_setup_security(colors: Colors) -> anyhow::Result<()> {
         );
         println!("Setup will skip user creation and focus on configuration.");
     }
+
+    // Show detected version managers and prompt for linking
+    let _link_managers = prompt_version_manager_links(colors)?;
 
     if !prompt_confirmation(colors)? {
         println!("Setup cancelled.");
@@ -473,6 +554,139 @@ fn check_user_account_status(colors: Colors) -> bool {
     user_exists
 }
 
+/// Tool availability check result
+struct ToolCheckResult {
+    name: &'static str,
+    found: bool,
+}
+
+/// Check availability of common development tools
+fn check_tool_availability() -> Vec<ToolCheckResult> {
+    let tools = vec![
+        ("git", "git"),
+        ("node", "node"),
+        ("npm", "npm"),
+        ("python3", "python3"),
+        ("python", "python"),
+        ("ruby", "ruby"),
+        ("cargo", "cargo"),
+        ("go", "go"),
+        ("rustc", "rustc"),
+        ("php", "php"),
+        ("java", "java"),
+        ("javac", "javac"),
+        ("gradle", "gradle"),
+        ("mvn", "mvn"),
+        ("lein", "lein"),
+        ("sbt", "sbt"),
+        ("scala", "scala"),
+        ("swift", "swift"),
+        ("dart", "dart"),
+        ("flutter", "flutter"),
+        ("jbang", "jbang"),
+        ("pip", "pip"),
+        ("pip3", "pip3"),
+        ("poetry", "poetry"),
+        ("composer", "composer"),
+        ("mix", "mix"),
+        ("bun", "bun"),
+        ("deno", "deno"),
+        ("pnpm", "pnpm"),
+        ("yarn", "yarn"),
+        ("bazel", "bazel"),
+        ("cmake", "cmake"),
+        ("make", "make"),
+        ("ninja", "ninja"),
+        ("docker", "docker"),
+        ("podman", "podman"),
+        ("terraform", "terraform"),
+        ("kubectl", "kubectl"),
+        ("aws", "aws"),
+        ("az", "az"),
+        ("gcloud", "gcloud"),
+    ];
+
+    let mut results = Vec::new();
+
+    for (name, binary) in tools {
+        let found = std::process::Command::new("which")
+            .arg(binary)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        results.push(ToolCheckResult { name, found });
+    }
+
+    results
+}
+
+/// Display tool availability section
+fn print_tool_availability(colors: Colors) {
+    println!("\n{}Tool Availability:{}", colors.bold(), colors.reset());
+
+    let results = check_tool_availability();
+
+    // Group results by category
+    let mut version_managers = Vec::new();
+    let mut languages = Vec::new();
+    let mut build_tools = Vec::new();
+    let mut container_tools = Vec::new();
+    let mut cloud_tools = Vec::new();
+
+    for result in &results {
+        match result.name {
+            "rbenv" | "nvm" | "pyenv" | "jenv" | "sdkman" | "gvm" | "goenv" | "swiftenv"
+            | "jabba" | "asdf" | "mise" | "chruby" | "fnm" | "volta" => {
+                version_managers.push(result);
+            }
+            "git" | "docker" | "podman" => container_tools.push(result),
+            "terraform" | "kubectl" | "aws" | "az" | "gcloud" => cloud_tools.push(result),
+            "gradle" | "mvn" | "lein" | "sbt" | "bazel" | "cmake" | "make" | "ninja" => {
+                build_tools.push(result);
+            }
+            _ => languages.push(result),
+        }
+    }
+
+    // Display version managers
+    if !version_managers.is_empty() {
+        println!("  {}Version Managers:{}", colors.dim(), colors.reset());
+        for tool in version_managers {
+            if tool.found {
+                println!("    {}✓{} {}", colors.green(), colors.reset(), tool.name);
+            }
+        }
+    }
+
+    // Display languages (show first 8 found)
+    let found_languages: Vec<_> = languages.iter().filter(|t| t.found).take(8).collect();
+    if !found_languages.is_empty() {
+        println!("  {}Languages:{}", colors.dim(), colors.reset());
+        for tool in found_languages {
+            println!("    {}✓{} {}", colors.green(), colors.reset(), tool.name);
+        }
+    }
+
+    // Display build tools
+    let found_build: Vec<_> = build_tools.iter().filter(|t| t.found).collect();
+    if !found_build.is_empty() {
+        println!("  {}Build Tools:{}", colors.dim(), colors.reset());
+        for tool in found_build {
+            println!("    {}✓{} {}", colors.green(), colors.reset(), tool.name);
+        }
+    }
+
+    // Count total found
+    let total_found = results.iter().filter(|r| r.found).count();
+    println!(
+        "\n  {}Total tools found: {}{}",
+        colors.cyan(),
+        total_found,
+        colors.reset()
+    );
+}
+
 /// Display environment variables section
 fn print_env_variables(colors: Colors) {
     println!(
@@ -591,6 +805,7 @@ pub fn handle_security_check(colors: Colors, config: &Config, _logger: &Logger) 
     print_security_config(colors, config, resolved_mode);
     check_container_mode_status(colors, config, resolved_mode);
     let user_exists = check_user_account_status(colors);
+    print_tool_availability(colors);
     print_env_variables(colors);
 
     // Summary

@@ -2,6 +2,7 @@
 //!
 //! Translates agent commands into container execution.
 
+use crate::container::codex;
 use crate::container::config::{validate_working_dir, ContainerConfig, ExecutionOptions};
 use crate::container::engine::{ContainerEngine, RunOptions};
 use crate::container::error::{ContainerError, ContainerResult};
@@ -9,6 +10,86 @@ use crate::container::port::{detect_ports_from_command, PortMapping};
 use crate::container::tool::ToolManager;
 use crate::container::volume::VolumeManager;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+/// macOS-specific binaries that won't work in Linux containers
+const MACOS_SPECIFIC_BINARIES: &[&str] = &[
+    // macOS system utilities
+    "brew",
+    "sw_vers",
+    "system_profiler",
+    "defaults",
+    "plutil",
+    "pbcopy",
+    "pbpaste",
+    "osascript",
+    "launchctl",
+    "launchd",
+    "kextstat",
+    "kextload",
+    "kextunload",
+    "dscl",
+    "dscacheutil",
+    "scutil",
+    "networksetup",
+    "diskutil",
+    "hdiutil",
+    "tmutil",
+    "afsutil",
+    "fsck",
+    "diskutil",
+    "pwpolicy",
+    "security",
+    "codesign",
+    "sip",
+    // macOS-specific development tools
+    "xcodebuild",
+    "xcrun",
+    "swift",
+    "swiftc",
+    "swift-package",
+    "swift-test",
+    // Homebrew macOS-only tools
+    "mas",
+    "brewcask",
+];
+
+/// Check if a command appears to be a macOS-specific binary
+///
+/// This helps detect cases where the agent is trying to run a binary
+/// that only works on macOS and won't work in a Linux container.
+fn is_macos_specific_command(command: &str) -> Option<&'static str> {
+    let command_lower = command.to_lowercase();
+
+    MACOS_SPECIFIC_BINARIES
+        .iter()
+        .find(|&&binary| command_lower.contains(binary))
+        .copied()
+}
+
+/// Check if a binary file is a macOS Mach-O binary
+///
+/// Reads the first few bytes of a file to check for Mach-O magic numbers.
+fn is_macho_binary(path: &Path) -> bool {
+    if !path.exists() {
+        return false;
+    }
+
+    // Read first 4 bytes to check for Mach-O magic numbers
+    let magic = match std::fs::read(path) {
+        Ok(mut bytes) if bytes.len() >= 4 => {
+            bytes.truncate(4);
+            u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+        }
+        _ => return false,
+    };
+
+    // Mach-O magic numbers (32-bit and 64-bit, both byte orders)
+    matches!(
+        magic,
+        0xFEED_FACE | 0xFEED_FACF | 0xCEFA_EDFE | 0xCFFA_EDFE
+    )
+}
 
 /// Check if an environment variable name is dangerous and should be filtered.
 ///
@@ -154,6 +235,28 @@ impl ContainerExecutor {
             ));
         }
 
+        // Check for macOS-specific commands (when running on macOS)
+        if cfg!(target_os = "macos") {
+            if let Some(binary) = is_macos_specific_command(agent_command) {
+                return Err(ContainerError::Other(format!(
+                    "The command '{binary}' is macOS-specific and won't work in a Linux container. \
+                    Consider using --security-mode user-account instead, or ensure you're using cross-platform tools."
+                )));
+            }
+
+            // Additionally check if the first argument is a Mach-O binary
+            if let Some(first_arg) = argv.first() {
+                let binary_path = Path::new(first_arg.as_str());
+                if binary_path.is_file() && is_macho_binary(binary_path) {
+                    return Err(ContainerError::Other(format!(
+                        "The binary '{}' appears to be a macOS Mach-O executable and won't work in a Linux container. \
+                        Consider using --security-mode user-account instead.",
+                        first_arg
+                    )));
+                }
+            }
+        }
+
         // Build volume mounts (avoiding duplicate targets)
         let mut mounts = self.volume_manager.get_mounts()?;
         let mut seen_targets: HashSet<String> = mounts.iter().map(|m| m.target.clone()).collect();
@@ -163,6 +266,18 @@ impl ContainerExecutor {
         for tool_mount in tool_mounts {
             if seen_targets.insert(tool_mount.target.clone()) {
                 mounts.push(tool_mount.to_mount());
+            }
+        }
+
+        // Add Codex-specific volume mounts if Codex is detected
+        if codex::is_codex_command(agent_command) {
+            for (source, target) in codex::get_codex_volume_mounts() {
+                if seen_targets.insert(target.clone()) {
+                    mounts.push(crate::container::engine::Mount::read_only(
+                        source.display().to_string(),
+                        target,
+                    ));
+                }
             }
         }
 
@@ -213,6 +328,15 @@ impl ContainerExecutor {
             // Tool manager variables are considered trusted, but still filter dangerous names
             if !is_dangerous_env_var_name(&key) {
                 container_env.push((key, value));
+            }
+        }
+
+        // Add Codex-specific environment variables if Codex is detected
+        if codex::is_codex_command(agent_command) {
+            for (key, value) in codex::get_codex_container_env() {
+                if !is_dangerous_env_var_name(&key) {
+                    container_env.push((key, value));
+                }
             }
         }
 

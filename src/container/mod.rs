@@ -33,6 +33,7 @@
 //! let result = ContainerExecutor::run(&engine, &cmd, &config)?;
 //! ```
 
+pub mod codex;
 pub mod config;
 pub mod engine;
 pub mod error;

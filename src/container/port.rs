@@ -197,6 +197,71 @@ pub fn detect_ports_from_command(command: &[String]) -> Vec<u16> {
         ports.push(3000);
     }
 
+    // Nuxt.js (defaults to 3000)
+    if cmd_str.contains("nuxt dev") || cmd_str.contains("nuxt") {
+        ports.push(3000);
+        ports.push(24678); // Nuxt's alternative default for newer versions
+    }
+
+    // Bun (defaults to 3000)
+    if cmd_str.contains("bun run") || cmd_str.contains("bun dev") {
+        ports.push(3000);
+    }
+
+    // Turbopack (Next.js with turbopack)
+    if cmd_str.contains("turbo") || cmd_str.contains("next dev --turbo") {
+        ports.push(3000);
+    }
+
+    // Gatsby (defaults to 8000)
+    if cmd_str.contains("gatsby develop") || cmd_str.contains("gatsby") {
+        ports.push(8000);
+    }
+
+    // Eleventy (defaults to 8080)
+    if cmd_str.contains("eleventy") || cmd_str.contains("11ty") {
+        ports.push(8080);
+    }
+
+    // Hugo (defaults to 1313)
+    if cmd_str.contains("hugo server") || cmd_str.contains("hugo") {
+        ports.push(1313);
+    }
+
+    // Jekyll (defaults to 4000)
+    if cmd_str.contains("jekyll serve") || cmd_str.contains("jekyll") {
+        ports.push(4000);
+        ports.push(4100);
+    }
+
+    // Docusaurus (defaults to 3000)
+    if cmd_str.contains("docusaurus start") || cmd_str.contains("docusaurus") {
+        ports.push(3000);
+    }
+
+    // Laravel (defaults to 8000)
+    if cmd_str.contains("artisan serve") || cmd_str.contains("php artisan serve") {
+        ports.push(8000);
+    }
+
+    // Symfony (defaults to 8000)
+    if cmd_str.contains("symfony server:start") || cmd_str.contains("symfony") {
+        ports.push(8000);
+    }
+
+    // FastAPI (defaults to 8000)
+    if cmd_str.contains("uvicorn")
+        || cmd_str.contains("fastapi dev")
+        || cmd_str.contains("python -m uvicorn")
+    {
+        ports.push(8000);
+    }
+
+    // Tornado (Python async web framework, defaults to 8000)
+    if cmd_str.contains("tornado") || cmd_str.contains("python -m tornado") {
+        ports.push(8000);
+    }
+
     ports.sort_unstable();
     ports.dedup();
     ports
@@ -288,5 +353,51 @@ mod tests {
         let cmd = vec!["remix".to_string(), "dev".to_string()];
         let ports = detect_ports_from_command(&cmd);
         assert!(ports.contains(&3000));
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_nuxt() {
+        let cmd = vec!["nuxt".to_string(), "dev".to_string()];
+        let ports = detect_ports_from_command(&cmd);
+        assert!(ports.contains(&3000) || ports.contains(&24678));
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_bun() {
+        let cmd = vec!["bun".to_string(), "run".to_string()];
+        let ports = detect_ports_from_command(&cmd);
+        assert!(ports.contains(&3000));
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_gatsby() {
+        let cmd = vec!["gatsby".to_string(), "develop".to_string()];
+        let ports = detect_ports_from_command(&cmd);
+        assert!(ports.contains(&8000));
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_hugo() {
+        let cmd = vec!["hugo".to_string(), "server".to_string()];
+        let ports = detect_ports_from_command(&cmd);
+        assert!(ports.contains(&1313));
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_laravel() {
+        let cmd = vec![
+            "php".to_string(),
+            "artisan".to_string(),
+            "serve".to_string(),
+        ];
+        let ports = detect_ports_from_command(&cmd);
+        assert!(ports.contains(&8000));
+    }
+
+    #[test]
+    fn test_detect_ports_from_command_fastapi() {
+        let cmd = vec!["uvicorn".to_string(), "main:app".to_string()];
+        let ports = detect_ports_from_command(&cmd);
+        assert!(ports.contains(&8000));
     }
 }

@@ -195,6 +195,41 @@ fn try_init_security_mode(config: &Config) -> Option<SecurityModeContext<'static
     }
 }
 
+/// Attempt to initialize user account mode as a fallback from container mode
+///
+/// This is called when container execution fails, providing a graceful fallback
+/// to user account mode before finally falling back to direct execution.
+fn fallback_to_user_account_mode(_config: &Config) -> Option<UserAccountContext<'static>> {
+    // Get repository root
+    let workspace_path = match get_repo_root() {
+        Ok(root) => root,
+        Err(_e) => {
+            return None;
+        }
+    };
+
+    // Create user account executor
+    let executor = match UserAccountExecutor::new(
+        workspace_path,
+        PathBuf::from(".agent"),
+        None, // Use default user name
+    ) {
+        Ok(exec) => exec,
+        Err(_e) => {
+            return None;
+        }
+    };
+
+    // Create execution options
+    let options = ExecutionOptions::default();
+
+    Some(UserAccountContext {
+        executor,
+        options,
+        _phantom: std::marker::PhantomData,
+    })
+}
+
 /// Security mode execution context (enum for different modes)
 enum SecurityModeContext<'a> {
     Container(Box<ContainerContext<'a>>),
@@ -425,25 +460,155 @@ pub fn run_with_prompt(
                         (result.exit_code, result.stderr)
                     }
                     Err(e) => {
-                        // Container execution failed - fall back to direct execution
+                        // Container execution failed - try user account mode before direct execution
                         runtime.logger.warn(&format!(
-                            "{}Container execution failed: {}. Falling back to direct execution.{}",
+                            "{}Container execution failed: {}. Attempting user account mode fallback.{}",
                             runtime.colors.yellow(),
                             e,
                             runtime.colors.reset()
                         ));
-                        execute_command_direct(
-                            DirectExecutionConfig {
-                                argv: &argv,
-                                prompt: cmd.prompt,
-                                env_vars: &env_vars_map,
-                                logfile: cmd.logfile,
-                                parser_type: cmd.parser_type,
-                                display_name: cmd.display_name,
-                                uses_json,
-                            },
-                            runtime,
-                        )?
+
+                        // Try to initialize user account mode as fallback
+                        match fallback_to_user_account_mode(runtime.config) {
+                            Some(user_ctx) => {
+                                runtime.logger.info(&format!(
+                                    "{}Successfully initialized user account mode as fallback.{}",
+                                    runtime.colors.green(),
+                                    runtime.colors.reset()
+                                ));
+
+                                // Build execution options with env vars
+                                let mut options = user_ctx.options;
+                                for (key, value) in &env_vars_map {
+                                    options.env_vars.push((key.clone(), value.clone()));
+                                }
+
+                                match user_ctx.executor.execute(
+                                    cmd.cmd_str,
+                                    cmd.prompt,
+                                    &env_vars_map,
+                                    &options,
+                                ) {
+                                    Ok(result) => {
+                                        // Write captured stdout to log file
+                                        if let Ok(mut f) = OpenOptions::new()
+                                            .create(true)
+                                            .append(true)
+                                            .open(cmd.logfile)
+                                        {
+                                            let _ = f.write_all(result.stdout.as_bytes());
+                                        }
+
+                                        // Parse and display the captured output
+                                        if uses_json {
+                                            let stdout = io::stdout();
+                                            let mut out = stdout.lock();
+                                            let mut cursor =
+                                                std::io::Cursor::new(result.stdout.as_bytes());
+                                            let reader = BufReader::new(&mut cursor);
+
+                                            match cmd.parser_type {
+                                                JsonParserType::Claude => {
+                                                    let p = crate::json_parser::ClaudeParser::new(
+                                                        runtime.colors,
+                                                        runtime.config.verbosity,
+                                                    )
+                                                    .with_display_name(cmd.display_name)
+                                                    .with_log_file(cmd.logfile);
+                                                    p.parse_stream(reader, &mut out)?;
+                                                }
+                                                JsonParserType::Codex => {
+                                                    let p = crate::json_parser::CodexParser::new(
+                                                        runtime.colors,
+                                                        runtime.config.verbosity,
+                                                    )
+                                                    .with_display_name(cmd.display_name)
+                                                    .with_log_file(cmd.logfile);
+                                                    p.parse_stream(reader, &mut out)?;
+                                                }
+                                                JsonParserType::Gemini => {
+                                                    let p = crate::json_parser::GeminiParser::new(
+                                                        runtime.colors,
+                                                        runtime.config.verbosity,
+                                                    )
+                                                    .with_display_name(cmd.display_name)
+                                                    .with_log_file(cmd.logfile);
+                                                    p.parse_stream(reader, &mut out)?;
+                                                }
+                                                JsonParserType::OpenCode => {
+                                                    let p =
+                                                        crate::json_parser::OpenCodeParser::new(
+                                                            runtime.colors,
+                                                            runtime.config.verbosity,
+                                                        )
+                                                        .with_display_name(cmd.display_name)
+                                                        .with_log_file(cmd.logfile);
+                                                    p.parse_stream(reader, &mut out)?;
+                                                }
+                                                JsonParserType::Generic => {
+                                                    let mut buf = String::new();
+                                                    for line in reader.lines() {
+                                                        buf.push_str(&line?);
+                                                        buf.push('\n');
+                                                    }
+                                                    let formatted = format_generic_json_for_display(
+                                                        &buf,
+                                                        runtime.config.verbosity,
+                                                    );
+                                                    out.write_all(formatted.as_bytes())?;
+                                                }
+                                            }
+                                        } else {
+                                            let stdout = io::stdout();
+                                            let mut out = stdout.lock();
+                                            out.write_all(result.stdout.as_bytes())?;
+                                        }
+                                        (result.exit_code, result.stderr)
+                                    }
+                                    Err(e2) => {
+                                        // User account mode also failed - fall back to direct execution
+                                        runtime.logger.warn(&format!(
+                                            "{}User account mode fallback also failed: {}. Falling back to direct execution.{}",
+                                            runtime.colors.yellow(),
+                                            e2,
+                                            runtime.colors.reset()
+                                        ));
+                                        execute_command_direct(
+                                            DirectExecutionConfig {
+                                                argv: &argv,
+                                                prompt: cmd.prompt,
+                                                env_vars: &env_vars_map,
+                                                logfile: cmd.logfile,
+                                                parser_type: cmd.parser_type,
+                                                display_name: cmd.display_name,
+                                                uses_json,
+                                            },
+                                            runtime,
+                                        )?
+                                    }
+                                }
+                            }
+                            None => {
+                                // User account mode not available - fall back to direct execution
+                                runtime.logger.warn(&format!(
+                                    "{}User account mode not available. Falling back to direct execution.{}",
+                                    runtime.colors.yellow(),
+                                    runtime.colors.reset()
+                                ));
+                                execute_command_direct(
+                                    DirectExecutionConfig {
+                                        argv: &argv,
+                                        prompt: cmd.prompt,
+                                        env_vars: &env_vars_map,
+                                        logfile: cmd.logfile,
+                                        parser_type: cmd.parser_type,
+                                        display_name: cmd.display_name,
+                                        uses_json,
+                                    },
+                                    runtime,
+                                )?
+                            }
+                        }
                     }
                 }
             }

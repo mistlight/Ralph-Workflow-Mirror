@@ -291,6 +291,41 @@ impl ToolManager {
                 // Note for environment setup
             }
 
+            // asdf.local.toml (project-local asdf configuration)
+            let asdf_local = repo_root.join(".asdf-local.toml");
+            if asdf_local.exists() && asdf_local.is_file() {
+                // Note for environment setup - asdf already mounted from home
+            }
+
+            // mise local configuration (.mise.local.toml)
+            let mise_local = repo_root.join(".mise.local.toml");
+            if mise_local.exists() && mise_local.is_file() {
+                // Note for environment setup - mise already mounted from home
+            }
+
+            // Java ecosystem directories
+            for java_dir in &[".gradle", "build", "target"] {
+                let java_path = repo_root.join(java_dir);
+                if java_path.exists() && java_path.is_dir() {
+                    let target = format!("/workspace/{java_dir}");
+                    if seen_targets.insert(target.clone()) {
+                        // Mount read-write as build tools write here
+                        mounts.push(ToolMount::read_write(java_path, target));
+                    }
+                }
+            }
+
+            // Node.js specific directories
+            for node_dir in &["node_modules", ".next", ".nuxt", "dist", ".output"] {
+                let node_path = repo_root.join(node_dir);
+                if node_path.exists() && node_path.is_dir() {
+                    let target = format!("/workspace/{node_dir}");
+                    if seen_targets.insert(target.clone()) {
+                        mounts.push(ToolMount::read_write(node_path, target));
+                    }
+                }
+            }
+
             // Go workspace directories
             let go_bin = repo_root.join("bin");
             if go_bin.exists() && go_bin.is_dir() {

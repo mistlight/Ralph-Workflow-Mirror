@@ -299,19 +299,8 @@ impl ClaudeParser {
                     let limit = self.verbosity.truncate_limit("result");
                     let preview = truncate_text(&result, limit);
                     out.push('\n');
-                    let _ = writeln!(
-                        out,
-                        "{}Result summary:{}",
-                        c.bold(),
-                        c.reset()
-                    );
-                    let _ = writeln!(
-                        out,
-                        "{}{}{}",
-                        c.dim(),
-                        preview,
-                        c.reset()
-                    );
+                    let _ = writeln!(out, "{}Result summary:{}", c.bold(), c.reset());
+                    let _ = writeln!(out, "{}{}{}", c.dim(), preview, c.reset());
                 }
                 out
             }
