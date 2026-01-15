@@ -575,8 +575,11 @@ impl ClaudeParser {
             }
             StreamInnerEvent::MessageStop => {
                 // Message complete - add final newline if we were in a content block
+                // OR if any content was streamed (handles edge cases where block state
+                // may not have been set but content was still streamed)
                 let was_in_block = session.on_message_stop();
-                if was_in_block {
+                let had_content = session.has_any_streamed_content();
+                if was_in_block || had_content {
                     // Use TextDeltaRenderer for completion - adds final newline
                     format!("{}{}", c.reset(), TextDeltaRenderer::render_completion())
                 } else {
