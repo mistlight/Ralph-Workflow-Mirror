@@ -16,21 +16,37 @@ use crate::agents::AgentErrorKind;
 ///
 /// This handles cases where agents output errors in their result field instead of stderr.
 /// Patterns include: "Prompt is too long", "token limit exceeded", etc.
+///
+/// Enhanced with more patterns to catch additional error variations from different agents.
 pub fn detect_agent_errors_in_output(content: &str) -> Option<AgentErrorKind> {
     let content_lower = content.to_lowercase();
 
     // Check for token/context exhaustion patterns in output
+    // These patterns indicate the prompt was too large for the agent's context window
     if content_lower.contains("prompt is too long")
         || content_lower.contains("token limit exceeded")
         || content_lower.contains("context length exceeded")
         || content_lower.contains("maximum context")
         || content_lower.contains("input too large")
+        || content_lower.contains("context window")
+        || content_lower.contains("max tokens")
+        || content_lower.contains("token limit")
+        || content_lower.contains("too many tokens")
+        || content_lower.contains("exceeds context")
+        || content_lower.contains("model's context length")
+        || content_lower.contains("input exceeds")
     {
         return Some(AgentErrorKind::TokenExhausted);
     }
 
     // Check for agent failure patterns
-    if content_lower.contains("invalid request") || content_lower.contains("request failed") {
+    // These indicate other types of agent errors (API issues, invalid requests, etc.)
+    if content_lower.contains("invalid request")
+        || content_lower.contains("request failed")
+        || content_lower.contains("api error")
+        || content_lower.contains("rate limit")
+        || content_lower.contains("service unavailable")
+    {
         return Some(AgentErrorKind::InvalidResponse);
     }
 
@@ -284,7 +300,28 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         }
     }
 
-    // Check for literal escape sequences COMBINED WITH JSON artifacts
+    // Check for literal escape sequences that indicate JSON unescaping failure.
+    // These patterns suggest that JSON was partially decoded but escape sequences
+    // leaked through. We check for multiple patterns to catch different failure modes.
+
+    // Pattern 1: Body starts with literal \n\n (most common JSON escaping issue)
+    // After a subject line like "feat: add", the body should start with actual newlines,
+    // not literal "\n\n" characters. This indicates the JSON wasn't properly unescaped.
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.len() >= 2 {
+        let second_line = lines[1].trim();
+        // Check if body starts with literal escape sequences
+        if second_line == "\\n" || second_line == "\\n\\n" || second_line.starts_with("\\n\\n") {
+            return Err(
+                "Commit message body appears to contain literal escape sequences (\\n\\n). \
+                 This indicates JSON was not properly unescaped. \
+                 Expected actual newlines after subject line."
+                    .to_string(),
+            );
+        }
+    }
+
+    // Pattern 2: Check for literal escape sequences COMBINED WITH JSON artifacts
     // This is a safety check for cases where unescaping failed but only when
     // combined with other JSON indicators that indicate actual parsing failure.
     // Individual literal \n, \t, \r without JSON artifacts may be legitimate
@@ -301,6 +338,16 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
                 "Commit message contains both JSON artifacts ({json_pattern}) and literal escape sequences ({escape_pattern}). This indicates JSON parsing failure."
             ));
         }
+    }
+
+    // Pattern 3: Check for repeated literal escape sequences that suggest bulk unescaping failure
+    // This catches cases where \\n\\n\\n appears (multiple escaped newlines that weren't processed)
+    if content.contains("\\n\\n\\n") || content.contains("\\n\\n\\n\\n") {
+        return Err(
+            "Commit message contains repeated literal escape sequences (\\n\\n\\n). \
+             This indicates JSON string values were not properly unescaped."
+                .to_string(),
+        );
     }
 
     // Check for error markers
@@ -1063,6 +1110,110 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         );
     }
 
+    // =========================================================================
+    // Tests for enhanced error detection (Step 4 improvements)
+    // =========================================================================
+
+    #[test]
+    fn test_detect_agent_errors_context_window() {
+        // "context window" should be detected as TokenExhausted
+        let content = "error: context window exceeded";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_max_tokens() {
+        // "max tokens" should be detected as TokenExhausted
+        let content = "max tokens exceeded for this request";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_token_limit() {
+        // "token limit" should be detected as TokenExhausted
+        let content = "token limit reached";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_too_many_tokens() {
+        // "too many tokens" should be detected as TokenExhausted
+        let content = "error: too many tokens in input";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_exceeds_context() {
+        // "exceeds context" should be detected as TokenExhausted
+        let content = "input exceeds context length";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_model_context_length() {
+        // "model's context length" should be detected as TokenExhausted
+        let content = "input exceeds the model's context length";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_input_exceeds() {
+        // "input exceeds" should be detected as TokenExhausted
+        let content = "input exceeds maximum length";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_api_error() {
+        // "api error" should be detected as InvalidResponse
+        let content = "api error occurred";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::InvalidResponse)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_rate_limit() {
+        // "rate limit" should be detected as InvalidResponse
+        let content = "rate limit exceeded";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::InvalidResponse)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_service_unavailable() {
+        // "service unavailable" should be detected as InvalidResponse
+        let content = "service unavailable, try again later";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::InvalidResponse)
+        );
+    }
+
     #[test]
     fn test_validate_rejects_prompt_too_long() {
         // Validation should reject "Prompt is too long" messages
@@ -1133,6 +1284,72 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     fn test_validate_accepts_actual_newlines() {
         // Validation should accept actual newlines (not literal escape sequences)
         let result = validate_commit_message("feat: add feature\n\nBody text here");
+        assert!(result.is_ok());
+    }
+
+    // =========================================================================
+    // Tests for enhanced escape sequence validation (Step 1 improvements)
+    // =========================================================================
+
+    #[test]
+    fn test_validate_rejects_body_starts_with_literal_newline_sequences() {
+        // Validation should reject when body starts with literal \n\n after subject
+        // This happens when JSON like {"subject": "feat", "body": "\\n\\ntext"}
+        // is parsed but not unescaped - the body value contains literal \n\n
+        // The test input has an actual newline after the subject, then literal \\n\\n
+        let result = validate_commit_message("feat: add feature\n\\n\\nBody text here");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("literal escape sequences"));
+    }
+
+    #[test]
+    fn test_validate_rejects_body_second_line_is_literal_escape() {
+        // Validation should reject when second line is literally "\\n"
+        let result = validate_commit_message("feat: add feature\n\\n");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("literal escape sequences"));
+    }
+
+    #[test]
+    fn test_validate_rejects_body_second_line_is_double_literal_escape() {
+        // Validation should reject when second line is literally "\\n\\n"
+        let result = validate_commit_message("feat: add feature\n\\n\\n");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("literal escape sequences"));
+    }
+
+    #[test]
+    fn test_validate_rejects_repeated_literal_escape_sequences() {
+        // Validation should reject repeated literal \\n\\n\\n patterns
+        let result = validate_commit_message("feat: add feature\\n\\n\\nBody text");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("repeated literal escape sequences"));
+    }
+
+    #[test]
+    fn test_validate_rejects_quadruple_literal_escape_sequences() {
+        // Validation should reject \\n\\n\\n\\n patterns
+        let result = validate_commit_message("feat: add feature\\n\\n\\n\\nBody text");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("repeated literal escape sequences"));
+    }
+
+    #[test]
+    fn test_validate_accepts_legitimate_single_escape_in_middle() {
+        // Validation should accept single \\n in middle of text (legitimate content)
+        let result = validate_commit_message("feat: handle backslash-n in parser");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_accepts_body_with_actual_newlines() {
+        // Validation should accept actual newlines in body
+        let result =
+            validate_commit_message("feat: add feature\n\nThis is the body\nwith multiple lines");
         assert!(result.is_ok());
     }
 
