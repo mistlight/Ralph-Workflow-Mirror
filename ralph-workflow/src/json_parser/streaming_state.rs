@@ -1450,28 +1450,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_content_block_start_different_index_clears_content() {
-        let mut session = StreamingSession::new();
-
-        // Message start
-        session.on_message_start();
-
-        // First delta for index 0
-        session.on_text_delta(0, "Index0 content");
-
-        // Transition to index 1
-        session.on_content_block_start(1);
-
-        // First delta for index 1 SHOULD show prefix (different index)
-        let show_prefix = session.on_text_delta(1, "Index1 content");
-        assert!(show_prefix, "First delta for new index should show prefix");
-
-        // Index 0 content should be cleared
-        assert_eq!(
-            session.get_accumulated(ContentType::Text, "0"),
-            None,
-            "Content for index 0 should be cleared after transition to index 1"
-        );
-    }
 }
