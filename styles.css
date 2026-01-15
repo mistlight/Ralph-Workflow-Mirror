@@ -1352,9 +1352,20 @@ pre code {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    animation: gradientShift 8s ease-in-out infinite;
+    /* Combine slideUp entrance animation with continuous gradientShift */
+    animation:
+        slideUp 0.9s cubic-bezier(0.16, 1, 1, 1) forwards,
+        gradientShift 8s ease-in-out 0.9s infinite;
+    animation-delay: calc(var(--word-index, 0) * 0.12s), calc(var(--word-index, 0) * 0.12s + 0.9s);
     /* Add subtle glow effect */
     filter: drop-shadow(0 0 20px rgba(212, 165, 116, 0.2));
+}
+
+/* Fix for when JS wraps characters in spans - use solid color fallback since
+   background-clip: text doesn't work with nested elements */
+.hero-title-accent .hero-char {
+    -webkit-text-fill-color: var(--color-primary);
+    color: var(--color-primary);
 }
 
 @keyframes gradientShift {

@@ -841,6 +841,17 @@
         const heroWords = document.querySelectorAll('.hero-word');
 
         heroWords.forEach((word, wordIndex) => {
+            // Skip hero-title-accent - it uses background-clip: text for gradient effect
+            // which doesn't work when text is wrapped in child spans
+            if (word.classList.contains('hero-title-accent')) {
+                // Just mark as complete after animation delay
+                const totalDelay = (word.textContent.length * 0.05 + wordIndex * 0.3 + 0.3) * 1000;
+                setTimeout(() => {
+                    word.classList.add('word-complete');
+                }, totalDelay + 600);
+                return;
+            }
+
             const text = word.textContent;
             const charCount = text.length;
 
