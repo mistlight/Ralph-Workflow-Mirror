@@ -12,13 +12,25 @@
 //! - [`config_init`]: Configuration loading and agent registry initialization
 //! - [`plumbing`]: Low-level git operations (show/apply commit messages)
 //! - [`validation`]: Agent validation and chain validation
+//! - [`resume`]: Checkpoint resume functionality
+//! - [`detection`]: Project stack detection
+//! - [`finalization`]: Pipeline cleanup and finalization
+
+#![expect(clippy::too_many_lines)]
 
 pub mod config_init;
+pub mod context;
+pub mod detection;
+pub mod finalization;
 pub mod plumbing;
+pub mod resume;
 pub mod validation;
 
 use crate::agents::AgentRegistry;
-use crate::banner::{print_final_summary, print_welcome_banner};
+use crate::app::finalization::finalize_pipeline;
+use crate::app::resume::{phase_rank, should_run_from};
+use crate::banner::print_welcome_banner;
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
     handle_list_available_agents, handle_list_providers, handle_security_check,
@@ -30,46 +42,29 @@ use crate::cli::handle_build_image;
 use crate::colors::Colors;
 use crate::config::Config;
 use crate::files::monitoring::PromptMonitor;
+use crate::files::{
+    create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
+    update_status, validate_prompt_md,
+};
 use crate::git_helpers::{
     cleanup_orphaned_marker, get_repo_root, require_git_repo, reset_start_commit,
     save_start_commit, start_agent_phase,
 };
-use crate::guidelines::ReviewGuidelines;
-use crate::language_detector::{detect_stack, ProjectStack};
+use crate::logger::Logger;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
-use crate::pipeline::{AgentPhaseGuard, Stats};
-use crate::timer::Timer;
-use crate::utils::{
-    clear_checkpoint, create_prompt_backup, ensure_files, load_checkpoint, make_prompt_read_only,
-    reset_context_for_isolation, save_checkpoint, update_status, validate_prompt_md, Logger,
-    PipelineCheckpoint, PipelinePhase,
-};
+use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
 use config_init::initialize_config;
+use context::PipelineContext;
+use detection::detect_project_stack;
 use plumbing::{handle_apply_commit, handle_generate_commit_msg, handle_show_commit_msg};
+use resume::handle_resume;
 use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
-
-/// Context for running the pipeline.
-///
-/// Groups together the various parameters needed to run the development/review/commit
-/// pipeline, reducing function parameter count and improving maintainability.
-struct PipelineContext {
-    args: Args,
-    config: Config,
-    registry: AgentRegistry,
-    developer_agent: String,
-    reviewer_agent: String,
-    developer_display: String,
-    reviewer_display: String,
-    repo_root: std::path::PathBuf,
-    logger: Logger,
-    colors: Colors,
-}
 
 /// Main application entry point.
 ///
@@ -566,104 +561,6 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     )
 }
 
-/// Handles the --resume flag and loads checkpoint if applicable.
-fn handle_resume(
-    args: &Args,
-    logger: &Logger,
-    developer_agent: &str,
-    reviewer_agent: &str,
-) -> Option<PipelineCheckpoint> {
-    if !args.resume {
-        return None;
-    }
-
-    match load_checkpoint() {
-        Ok(Some(checkpoint)) => {
-            logger.header("RESUME: Loading Checkpoint", super::colors::Colors::yellow);
-            logger.info(&format!("Resuming from: {}", checkpoint.description()));
-            logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
-
-            // Verify agents match
-            if checkpoint.developer_agent != developer_agent {
-                logger.warn(&format!(
-                    "Developer agent changed: {} -> {}",
-                    checkpoint.developer_agent, developer_agent
-                ));
-            }
-            if checkpoint.reviewer_agent != reviewer_agent {
-                logger.warn(&format!(
-                    "Reviewer agent changed: {} -> {}",
-                    checkpoint.reviewer_agent, reviewer_agent
-                ));
-            }
-
-            Some(checkpoint)
-        }
-        Ok(None) => {
-            logger.warn("No checkpoint found. Starting fresh pipeline...");
-            None
-        }
-        Err(e) => {
-            logger.warn(&format!("Failed to load checkpoint (starting fresh): {e}"));
-            None
-        }
-    }
-}
-
-/// Detects project stack and generates review guidelines.
-fn detect_project_stack(
-    config: &Config,
-    repo_root: &std::path::Path,
-    logger: &Logger,
-    colors: Colors,
-) -> (Option<ProjectStack>, Option<ReviewGuidelines>) {
-    if !config.auto_detect_stack {
-        return (None, None);
-    }
-
-    match detect_stack(repo_root) {
-        Ok(stack) => {
-            logger.info(&format!(
-                "Detected stack: {}{}{}",
-                colors.cyan(),
-                stack.summary(),
-                colors.reset()
-            ));
-            let guidelines = ReviewGuidelines::for_stack(&stack);
-            (Some(stack), Some(guidelines))
-        }
-        Err(e) => {
-            logger.warn(&format!("Could not detect project stack: {e}"));
-            (None, None)
-        }
-    }
-}
-
-/// Helper to get phase rank for resume logic.
-const fn phase_rank(p: PipelinePhase) -> u8 {
-    match p {
-        PipelinePhase::Planning => 0,
-        PipelinePhase::Development => 1,
-        PipelinePhase::Review => 2,
-        PipelinePhase::Fix => 3,
-        PipelinePhase::ReviewAgain => 4,
-        PipelinePhase::CommitMessage => 5,
-        PipelinePhase::FinalValidation => 6,
-        PipelinePhase::Complete => 7,
-    }
-}
-
-/// Determines if a phase should run based on resume checkpoint.
-const fn should_run_from(
-    phase: PipelinePhase,
-    resume_checkpoint: Option<&PipelineCheckpoint>,
-) -> bool {
-    match resume_checkpoint {
-        None => true,
-        Some(checkpoint) => phase_rank(phase) >= phase_rank(checkpoint.phase),
-    }
-}
-
 /// Runs the development phase.
 fn run_development(
     ctx: &mut PhaseContext,
@@ -820,43 +717,3 @@ fn run_final_validation(
     Ok(())
 }
 
-/// Finalizes the pipeline: cleans up and prints summary.
-///
-/// Commits now happen per-iteration during development and per-cycle during review,
-/// so this function only handles cleanup and final summary.
-fn finalize_pipeline(
-    agent_phase_guard: &mut AgentPhaseGuard,
-    logger: &Logger,
-    colors: Colors,
-    config: &Config,
-    timer: &Timer,
-    stats: &Stats,
-    prompt_monitor: Option<PromptMonitor>,
-) -> anyhow::Result<()> {
-    // Stop the PROMPT.md monitor if it was started
-    if let Some(monitor) = prompt_monitor {
-        monitor.stop();
-    }
-
-    // End agent phase and clean up
-    crate::git_helpers::end_agent_phase();
-    crate::git_helpers::disable_git_wrapper(agent_phase_guard.git_helpers);
-    if let Err(err) = crate::git_helpers::uninstall_hooks(logger) {
-        logger.warn(&format!("Failed to uninstall Ralph hooks: {err}"));
-    }
-
-    // Note: Individual commits were created per-iteration during development
-    // and per-cycle during review. The final commit phase has been removed.
-
-    // Final summary
-    print_final_summary(colors, config, timer, stats, logger);
-
-    if config.checkpoint_enabled {
-        if let Err(err) = clear_checkpoint() {
-            logger.warn(&format!("Failed to clear checkpoint: {err}"));
-        }
-    }
-
-    agent_phase_guard.disarm();
-    Ok(())
-}

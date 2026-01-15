@@ -102,12 +102,6 @@ pub fn stage_all(repo: &Repository) {
     index.write().expect("write index");
 }
 
-/// Global mutex for tests that modify the current working directory.
-///
-/// Since changing CWD affects all threads, tests that do so must be
-/// serialized. This mutex ensures that only one test can change CWD at
-/// a time, preventing race conditions and flaky tests.
-pub static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// RAII guard to restore the working directory on drop.
 struct DirGuard(std::path::PathBuf);

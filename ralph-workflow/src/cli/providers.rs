@@ -3,39 +3,16 @@
 //! Contains functions for displaying `OpenCode` provider information.
 
 use crate::agents::OpenCodeProviderType;
-use crate::colors::Colors;
+use crate::logger::Colors;
 
-
-/// Helper function to print provider information for --list-providers.
-fn print_provider_info(colors: Colors, provider: OpenCodeProviderType, agent_alias: &str) {
-    let examples = provider.example_models();
-    let example_str = if examples.is_empty() {
-        String::new()
-    } else {
-        format!(" (e.g., {})", examples[0])
-    };
-
-    println!("{}{}{}", colors.bold(), provider.name(), colors.reset());
-    println!("  Prefix: {}{}", provider.prefix(), example_str);
-    println!("  Auth: {}", provider.auth_command());
-    println!("  Agent: {agent_alias}");
+/// Provider category for display organization
+#[derive(Debug, Clone, Copy)]
+struct ProviderCategory {
+    name: &'static str,
+    providers: &'static [(OpenCodeProviderType, &'static str)],
 }
 
-/// Print a category of providers
-fn print_provider_category(colors: Colors, category: &ProviderCategory) {
-    println!(
-        "{}═══ {} ═══{}",
-        colors.bold(),
-        category.name,
-        colors.reset()
-    );
-    for (provider, alias) in category.providers {
-        print_provider_info(colors, *provider, alias);
-    }
-    println!();
-}
-
-/// Provider categories for listing
+/// Provider categories with their providers and example aliases
 const PROVIDER_CATEGORIES: &[ProviderCategory] = &[
     ProviderCategory {
         name: "OPENCODE GATEWAY",
@@ -146,34 +123,83 @@ const PROVIDER_CATEGORIES: &[ProviderCategory] = &[
     },
 ];
 
-/// Handle --list-providers command.
-///
-/// Displays a categorized list of all `OpenCode` provider types with their
-/// model prefixes, authentication commands, and example agent aliases.
-pub fn handle_list_providers(colors: Colors) {
-    println!("{}OpenCode Provider Types{}", colors.bold(), colors.reset());
-    println!();
-    println!("Ralph includes built-in guidance for major OpenCode provider prefixes (plus a custom fallback).");
-    println!("OpenCode may support additional providers; consult OpenCode docs for the full set.");
-    println!();
 
-    // Print all provider categories
-    for category in PROVIDER_CATEGORIES {
-        print_provider_category(colors, category);
+/// Helper function to print provider information for --list-providers.
+fn print_provider_info(colors: Colors, provider: OpenCodeProviderType, agent_alias: &str) {
+    let examples = provider.example_models();
+    let example_str = if examples.is_empty() {
+        String::new()
+    } else {
+        format!(" (e.g., {})", examples[0])
+    };
+
+    println!("{}{}{}", colors.bold(), provider.name(), colors.reset());
+    println!("  Prefix: {}{}", provider.prefix(), example_str);
+    println!("  Auth: {}", provider.auth_command());
+    println!("  Agent: {agent_alias}");
+}
+
+/// Print a category of providers
+fn print_provider_category(colors: Colors, category: &ProviderCategory) {
+    println!(
+        "{}═══ {} ═══{}",
+        colors.bold(),
+        category.name,
+        colors.reset()
+    );
+    for (provider, alias) in category.providers {
+        print_provider_info(colors, *provider, alias);
+    }
+    println!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_categories_count() {
+        // Verify we have all expected categories
+        assert_eq!(PROVIDER_CATEGORIES.len(), 12);
     }
 
-    // Important notes
-    println!("{}═══ IMPORTANT NOTES ═══{}", colors.bold(), colors.reset());
-    println!(
-        "• OpenCode Zen (opencode/*) and Z.AI Direct (zai/* or zhipuai/*) are SEPARATE endpoints!"
-    );
-    println!("  - opencode/* routes through OpenCode's Zen gateway at opencode.ai");
-    println!("  - zai/* or zhipuai/* connects directly to Z.AI's API at api.z.ai");
-    println!("  - Z.AI Coding Plan is an auth tier; model prefix remains zai/* or zhipuai/*");
-    println!("• Cloud providers (Vertex, Bedrock, Azure, SAP) require additional configuration");
-    println!(
-        "• Local providers (Ollama, LM Studio, llama.cpp) run on your hardware - no API key needed"
-    );
-    println!("• Use clear naming: opencode-zen-*, opencode-zai-*, opencode-direct-* aliases");
-    println!();
+    #[test]
+    fn test_category_names() {
+        let expected_names = &[
+            "OPENCODE GATEWAY",
+            "CHINESE AI PROVIDERS",
+            "MAJOR CLOUD PROVIDERS",
+            "FAST INFERENCE PROVIDERS",
+            "GATEWAY PROVIDERS",
+            "SPECIALIZED PROVIDERS",
+            "OPEN-SOURCE MODEL PROVIDERS",
+            "CLOUD PLATFORM PROVIDERS",
+            "AI GATEWAY PROVIDERS",
+            "ENTERPRISE PROVIDERS",
+            "LOCAL PROVIDERS",
+            "CUSTOM",
+        ];
+        let actual_names: Vec<_> = PROVIDER_CATEGORIES.iter().map(|c| c.name).collect();
+        assert_eq!(actual_names, expected_names);
+    }
+
+    #[test]
+    fn test_no_empty_categories() {
+        for category in PROVIDER_CATEGORIES {
+            assert!(
+                !category.providers.is_empty(),
+                "Category '{}' is empty",
+                category.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_providers_have_aliases() {
+        for category in PROVIDER_CATEGORIES {
+            for (provider, alias) in category.providers {
+                assert!(!alias.is_empty(), "Provider {provider:?} has empty alias");
+            }
+        }
+    }
 }
