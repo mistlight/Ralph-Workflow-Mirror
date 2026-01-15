@@ -6,18 +6,32 @@
 //! - Context cleanup and file operations
 //! - Error recovery for file operations
 //! - File integrity and atomic writes
+//! - PROMPT.md backup management
 //!
 //! # Submodules
 //!
 //! - [`integrity`] - File integrity and atomic writes
 //! - [`recovery`] - Error recovery and state repair
+//! - [`context`] - Context file management (STATUS.md, NOTES.md, ISSUES.md)
+//! - [`agent_files`] - Agent file operations (`ensure_files`, commit message, etc.)
+//! - [`backup`] - PROMPT.md backup and read-only protection
 
 pub(in crate::files) mod integrity;
 pub(in crate::files) mod recovery;
 
-pub use super::agent_files::{
-    clean_context_for_reviewer, cleanup_generated_files, create_prompt_backup,
-    delete_commit_message_file, delete_issues_file_for_isolation, delete_plan_file, ensure_files,
-    file_contains_marker, make_prompt_read_only, read_commit_message_file,
-    reset_context_for_isolation, update_status, write_commit_message_file,
+pub mod agent_files;
+pub mod backup;
+pub mod context;
+
+// Re-exports for backward compatibility
+pub use agent_files::{
+    cleanup_generated_files, delete_commit_message_file, delete_plan_file, ensure_files,
+    file_contains_marker, read_commit_message_file, write_commit_message_file,
+};
+
+pub use backup::{create_prompt_backup, make_prompt_read_only};
+
+pub use context::{
+    clean_context_for_reviewer, delete_issues_file_for_isolation, reset_context_for_isolation,
+    update_status,
 };
