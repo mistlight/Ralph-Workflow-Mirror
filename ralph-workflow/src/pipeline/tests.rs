@@ -75,12 +75,15 @@ exit 0
     );
     registry.set_ccs_aliases(&aliases, defaults);
 
-    registry.set_fallback(crate::agents::fallback::FallbackConfig {
-        reviewer: vec!["ccs/glm".to_string(), "ccs/ok".to_string()],
-        max_retries: 3,
-        max_cycles: 1,
-        ..Default::default()
-    });
+    // Use apply_unified_config to set fallback chain (public API)
+    let toml_str = r#"
+        [agent_chain]
+        reviewer = ["ccs/glm", "ccs/ok"]
+        max_retries = 3
+        max_cycles = 1
+    "#;
+    let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+    registry.apply_unified_config(&unified);
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -314,12 +317,15 @@ exit 0
 
     let mut registry = AgentRegistry::new().unwrap();
     registry.set_ccs_aliases(&aliases, defaults);
-    registry.set_fallback(crate::agents::fallback::FallbackConfig {
-        reviewer: vec!["ccs/glm".to_string(), "ccs/ok".to_string()],
-        max_retries: 3, // Should not retry GLM
-        max_cycles: 1,
-        ..Default::default()
-    });
+    // Use apply_unified_config to set fallback chain (public API)
+    let toml_str = r#"
+        [agent_chain]
+        reviewer = ["ccs/glm", "ccs/ok"]
+        max_retries = 3
+        max_cycles = 1
+    "#;
+    let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+    registry.apply_unified_config(&unified);
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);

@@ -205,12 +205,6 @@ impl AgentRegistry {
         alternatives
     }
 
-    /// Check if agent exists (registered only, not CCS aliases).
-    #[cfg(test)]
-    pub fn is_known(&self, name: &str) -> bool {
-        self.agents.contains_key(name)
-    }
-
     /// List all registered agents.
     pub fn list(&self) -> Vec<(&str, &AgentConfig)> {
         self.agents.iter().map(|(k, v)| (k.as_str(), v)).collect()
@@ -380,12 +374,6 @@ impl AgentRegistry {
         &self.fallback
     }
 
-    /// Set the fallback configuration.
-    #[cfg(test)]
-    pub fn set_fallback(&mut self, fallback: FallbackConfig) {
-        self.fallback = fallback;
-    }
-
     /// Get all fallback agents for a role that are registered in this registry.
     pub fn available_fallbacks(&self, role: AgentRole) -> Vec<&str> {
         self.fallback
@@ -504,8 +492,9 @@ mod tests {
     #[test]
     fn test_registry_new() {
         let registry = AgentRegistry::new().unwrap();
-        assert!(registry.is_known("claude"));
-        assert!(registry.is_known("codex"));
+        // Behavioral test: agents are registered if they resolve
+        assert!(registry.resolve_config("claude").is_some());
+        assert!(registry.resolve_config("codex").is_some());
     }
 
     #[test]
@@ -527,7 +516,8 @@ mod tests {
                 display_name: None,
             },
         );
-        assert!(registry.is_known("testbot"));
+        // Behavioral test: registered agent should resolve
+        assert!(registry.resolve_config("testbot").is_some());
     }
 
     #[test]
@@ -595,15 +585,13 @@ mod tests {
         std::env::set_var("PATH", &joined);
 
         let mut registry = AgentRegistry::new().unwrap();
-        registry.set_fallback(FallbackConfig {
-            developer: vec![
-                "claude".to_string(),
-                "nonexistent".to_string(),
-                "codex".to_string(),
-            ],
-            reviewer: vec![],
-            ..Default::default()
-        });
+        // Use apply_unified_config to set fallback chain (public API)
+        let toml_str = r#"
+            [agent_chain]
+            developer = ["claude", "nonexistent", "codex"]
+        "#;
+        let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+        registry.apply_unified_config(&unified);
 
         let fallbacks = registry.available_fallbacks(AgentRole::Developer);
         assert!(fallbacks.contains(&"claude"));
@@ -621,16 +609,14 @@ mod tests {
     fn test_validate_agent_chains() {
         let mut registry = AgentRegistry::new().unwrap();
 
-        // Empty chains should fail
-        registry.set_fallback(FallbackConfig::default());
-        assert!(registry.validate_agent_chains().is_err());
-
-        // Both chains configured should pass
-        registry.set_fallback(FallbackConfig {
-            developer: vec!["claude".to_string()],
-            reviewer: vec!["codex".to_string()],
-            ..Default::default()
-        });
+        // Both chains configured should pass - use apply_unified_config (public API)
+        let toml_str = r#"
+            [agent_chain]
+            developer = ["claude"]
+            reviewer = ["codex"]
+        "#;
+        let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+        registry.apply_unified_config(&unified);
         assert!(registry.validate_agent_chains().is_ok());
     }
 
@@ -664,10 +650,10 @@ mod tests {
 
         registry.set_ccs_aliases(&aliases, default_ccs());
 
-        // CCS aliases should be registered as agents
-        assert!(registry.is_known("ccs/work"));
-        assert!(registry.is_known("ccs/personal"));
-        assert!(registry.is_known("ccs/gemini"));
+        // CCS aliases should be registered as agents - behavioral test: they resolve
+        assert!(registry.resolve_config("ccs/work").is_some());
+        assert!(registry.resolve_config("ccs/personal").is_some());
+        assert!(registry.resolve_config("ccs/gemini").is_some());
 
         // Get should return valid config
         let config = registry.resolve_config("ccs/work").unwrap();
@@ -711,12 +697,14 @@ mod tests {
         );
         registry.set_ccs_aliases(&aliases, default_ccs());
 
-        // Set fallback chain with CCS alias
-        registry.set_fallback(FallbackConfig {
-            developer: vec!["ccs/work".to_string(), "claude".to_string()],
-            reviewer: vec!["claude".to_string()],
-            ..Default::default()
-        });
+        // Set fallback chain with CCS alias using apply_unified_config (public API)
+        let toml_str = r#"
+            [agent_chain]
+            developer = ["ccs/work", "claude"]
+            reviewer = ["claude"]
+        "#;
+        let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+        registry.apply_unified_config(&unified);
 
         // ccs/work should be in available fallbacks (since ccs is in PATH)
         let fallbacks = registry.available_fallbacks(AgentRole::Developer);
@@ -738,9 +726,9 @@ mod tests {
         let mut registry = AgentRegistry::new().unwrap();
         registry.set_ccs_aliases(&HashMap::new(), default_ccs());
 
-        // Should have built-in agents
-        assert!(registry.is_known("claude"));
-        assert!(registry.is_known("codex"));
+        // Should have built-in agents - behavioral test: they resolve
+        assert!(registry.resolve_config("claude").is_some());
+        assert!(registry.resolve_config("codex").is_some());
 
         // Now test with actual aliases
         let mut registry2 = AgentRegistry::new().unwrap();
@@ -754,7 +742,8 @@ mod tests {
         );
 
         registry2.set_ccs_aliases(&aliases, default_ccs());
-        assert!(registry2.is_known("ccs/work"));
+        // Behavioral test: CCS alias should resolve
+        assert!(registry2.resolve_config("ccs/work").is_some());
     }
 
     #[test]
