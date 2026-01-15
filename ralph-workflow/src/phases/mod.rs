@@ -18,7 +18,7 @@
 
 pub mod commit;
 mod context;
-mod development;
+pub mod development;
 mod integrity;
 mod review;
 

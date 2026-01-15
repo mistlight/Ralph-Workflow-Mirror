@@ -1,38 +1,26 @@
-//! Review phase execution.
+//! Main review phase execution logic.
 //!
-//! This module handles the review and fix phase of the Ralph pipeline. It runs
-//! a configurable number of review-fix cycles, where each cycle:
-//! 1. Reviews the code and creates ISSUES.md
-//! 2. Fixes the issues found
-//! 3. Cleans up ISSUES.md (in isolation mode)
-//!
-//! # Module Structure
-//!
-//! - [`prompt`] - Review prompt building logic
-//! - [`validation`] - Pre-flight and post-flight validation checks
+//! This module contains the core loop for the review phase, handling
+//! each review-fix cycle.
 
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::files::extract_issues;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
-use crate::git_helpers::{git_snapshot, CommitResultFallback};
+use crate::git_helpers::git_snapshot;
 use crate::logger::print_progress;
-use crate::phases::commit::commit_with_generated_message;
-use crate::phases::get_primary_commit_agent;
+use crate::phases::context::PhaseContext;
 use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
 use crate::review_metrics::ReviewMetrics;
 
-mod prompt;
-pub use prompt::{build_review_prompt, should_use_universal_prompt};
-
-mod validation;
-pub use validation::{
+use super::commit::handle_review_commit;
+use super::prompt::{build_review_prompt, should_use_universal_prompt};
+use super::validation::{
     post_flight_review_check, pre_flight_review_check, PostflightResult, PreflightResult,
 };
 
-use super::context::PhaseContext;
 use std::fs;
 use std::path::Path;
 
@@ -157,45 +145,7 @@ pub fn run_review_phase(
                 ctx.logger
                     .success("Repository modified (external changes detected)");
                 ctx.stats.changes_detected += 1;
-
-                // Get the primary commit agent
-                let commit_agent = get_primary_commit_agent(ctx);
-                if let Some(agent) = commit_agent {
-                    ctx.logger.info(&format!(
-                        "Creating commit with auto-generated message (agent: {agent})..."
-                    ));
-
-                    // Get the diff for commit message generation
-                    let diff = match crate::git_helpers::git_diff() {
-                        Ok(d) => d,
-                        Err(e) => {
-                            ctx.logger
-                                .error(&format!("Failed to get diff for commit: {e}"));
-                            return Err(anyhow::anyhow!(e));
-                        }
-                    };
-
-                    // Get git identity from config
-                    let git_name = ctx.config.git_user_name.as_deref();
-                    let git_email = ctx.config.git_user_email.as_deref();
-
-                    match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
-                        CommitResultFallback::Success(oid) => {
-                            ctx.logger
-                                .success(&format!("Commit created successfully: {oid}"));
-                            ctx.stats.commits_created += 1;
-                        }
-                        CommitResultFallback::NoChanges => {
-                            ctx.logger.info("No commit created (no meaningful changes)");
-                        }
-                        CommitResultFallback::Failed(err) => {
-                            ctx.logger.error(&format!("Failed to create commit: {err}"));
-                            return Err(anyhow::anyhow!(err));
-                        }
-                    }
-                } else {
-                    ctx.logger.warn("Unable to get commit agent for commit");
-                }
+                handle_review_commit(ctx)?;
             }
             prev_snap = snap;
             continue;
@@ -391,51 +341,7 @@ pub fn run_review_phase(
         if snap != prev_snap {
             ctx.logger.success("Repository modified during fix pass");
             ctx.stats.changes_detected += 1;
-
-            // Get the primary commit agent
-            let commit_agent = get_primary_commit_agent(ctx);
-            if let Some(agent) = commit_agent {
-                ctx.logger.info(&format!(
-                    "Creating commit with auto-generated message (agent: {agent})..."
-                ));
-
-                // Get the diff for commit message generation
-                let diff = match crate::git_helpers::git_diff() {
-                    Ok(d) => d,
-                    Err(e) => {
-                        ctx.logger
-                            .error(&format!("Failed to get diff for commit: {e}"));
-                        return Err(anyhow::anyhow!(e));
-                    }
-                };
-
-                // Get git identity from config
-                let git_name = ctx.config.git_user_name.as_deref();
-                let git_email = ctx.config.git_user_email.as_deref();
-
-                match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
-                    CommitResultFallback::Success(oid) => {
-                        ctx.logger
-                            .success(&format!("Commit created successfully: {oid}"));
-                        ctx.stats.commits_created += 1;
-                    }
-                    CommitResultFallback::NoChanges => {
-                        // No meaningful changes to commit
-                        ctx.logger.info("No commit created (no meaningful changes)");
-                    }
-                    CommitResultFallback::Failed(err) => {
-                        // Actual git operation failed - this is critical
-                        ctx.logger.error(&format!(
-                            "Failed to create commit (git operation failed): {err}"
-                        ));
-                        // Don't continue - this is a real error that needs attention
-                        return Err(anyhow::anyhow!(err));
-                    }
-                }
-            } else {
-                ctx.logger
-                    .warn("Unable to get commit agent chain for commit");
-            }
+            handle_review_commit(ctx)?;
         }
         prev_snap = snap;
     }
