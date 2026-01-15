@@ -28,15 +28,24 @@ fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
     false
 }
 
+/// File existence state for PROMPT.md validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileState {
+    /// File does not exist
+    Missing,
+    /// File exists but is empty
+    Empty,
+    /// File exists with content
+    Present,
+}
+
 /// Result of PROMPT.md validation.
 ///
 /// Contains flags indicating what was found and any errors or warnings.
 #[derive(Debug, Clone)]
 pub struct PromptValidationResult {
-    /// Whether PROMPT.md exists
-    pub exists: bool,
-    /// Whether PROMPT.md has non-empty content
-    pub has_content: bool,
+    /// File existence and content state
+    pub file_state: FileState,
     /// Whether a Goal section was found
     pub has_goal: bool,
     /// Whether an Acceptance section was found
@@ -45,6 +54,18 @@ pub struct PromptValidationResult {
     pub warnings: Vec<String>,
     /// List of errors (blocking issues)
     pub errors: Vec<String>,
+}
+
+impl PromptValidationResult {
+    /// Returns true if PROMPT.md exists.
+    pub const fn exists(&self) -> bool {
+        matches!(self.file_state, FileState::Present | FileState::Empty)
+    }
+
+    /// Returns true if PROMPT.md has non-empty content.
+    pub const fn has_content(&self) -> bool {
+        matches!(self.file_state, FileState::Present)
+    }
 }
 
 impl PromptValidationResult {
@@ -144,6 +165,55 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     );
 }
 
+/// Attempt to restore PROMPT.md from backup files.
+///
+/// Tries to restore from backup files in order:
+/// 1. `.agent/PROMPT.md.backup`
+/// 2. `.agent/PROMPT.md.backup.1`
+/// 3. `.agent/PROMPT.md.backup.2`
+///
+/// # Returns
+///
+/// `Some(String)` with the backup source name if restored, `None` otherwise.
+fn try_restore_from_backup(prompt_path: &Path) -> Option<String> {
+    let backup_paths = [
+        (Path::new(".agent/PROMPT.md.backup"), ".agent/PROMPT.md.backup"),
+        (Path::new(".agent/PROMPT.md.backup.1"), ".agent/PROMPT.md.backup.1"),
+        (Path::new(".agent/PROMPT.md.backup.2"), ".agent/PROMPT.md.backup.2"),
+    ];
+
+    for (backup_path, name) in backup_paths {
+        if backup_path.exists() {
+            let Ok(backup_content) = fs::read_to_string(backup_path) else {
+                continue;
+            };
+
+            if backup_content.trim().is_empty() {
+                continue;
+            }
+
+            if fs::copy(backup_path, prompt_path).is_ok() {
+                return Some(name.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+/// Check content for Goal section.
+fn check_goal_section(content: &str) -> bool {
+    content.contains("## Goal") || content.contains("# Goal")
+}
+
+/// Check content for Acceptance section.
+fn check_acceptance_section(content: &str) -> bool {
+    content.contains("## Acceptance")
+        || content.contains("# Acceptance")
+        || content.contains("Acceptance Criteria")
+        || contains_ascii_case_insensitive(content, "acceptance")
+}
+
 /// Validate PROMPT.md structure and content.
 ///
 /// Checks for:
@@ -167,62 +237,29 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
 /// A `PromptValidationResult` containing validation findings.
 pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationResult {
     let prompt_path = Path::new("PROMPT.md");
+    let file_exists = prompt_path.exists();
     let mut result = PromptValidationResult {
-        exists: prompt_path.exists(),
-        has_content: false,
+        file_state: if file_exists {
+            FileState::Empty
+        } else {
+            FileState::Missing
+        },
         has_goal: false,
         has_acceptance: false,
         warnings: Vec::new(),
         errors: Vec::new(),
     };
 
-    if !result.exists {
-        // Auto-restore from backup with fallback chain
-        // Try backup, backup.1, backup.2 in order
-        let backup_paths = [
-            Path::new(".agent/PROMPT.md.backup"),
-            Path::new(".agent/PROMPT.md.backup.1"),
-            Path::new(".agent/PROMPT.md.backup.2"),
-        ];
-
-        let mut restored = false;
-        let mut backup_used = None;
-
-        for (idx, backup_path) in backup_paths.iter().enumerate() {
-            if backup_path.exists() {
-                // Check if backup has content before restoring
-                let Ok(backup_content) = fs::read_to_string(backup_path) else {
-                    continue;
-                };
-
-                if backup_content.trim().is_empty() {
-                    continue; // Try next backup
-                }
-
-                if fs::copy(backup_path, prompt_path).is_ok() {
-                    result.exists = true;
-                    restored = true;
-                    backup_used = Some(match idx {
-                        0 => ".agent/PROMPT.md.backup",
-                        1 => ".agent/PROMPT.md.backup.1",
-                        2 => ".agent/PROMPT.md.backup.2",
-                        _ => "unknown",
-                    });
-                    break;
-                }
-            }
-        }
-
-        if restored {
-            if let Some(source) = backup_used {
-                result.warnings.push(format!(
-                    "PROMPT.md was missing and was automatically restored from {source}"
-                ));
-            }
+    if !result.exists() {
+        // Try to restore from backup
+        if let Some(source) = try_restore_from_backup(prompt_path) {
+            result.file_state = FileState::Empty;
+            result
+                .warnings
+                .push(format!("PROMPT.md was missing and was automatically restored from {source}"));
         } else {
+            // No backup available
             if interactive && std::io::stdout().is_terminal() {
-                // Interactive mode: the caller should have already prompted
-                // We just return an error result so they can handle it
                 result.errors.push(
                     "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
                         .to_string(),
@@ -246,14 +283,19 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
         }
     };
 
-    result.has_content = !content.trim().is_empty();
-    if !result.has_content {
+    result.file_state = if content.trim().is_empty() {
+        FileState::Empty
+    } else {
+        FileState::Present
+    };
+
+    if !result.has_content() {
         result.errors.push("PROMPT.md is empty".to_string());
         return result;
     }
 
     // Check for Goal section
-    result.has_goal = content.contains("## Goal") || content.contains("# Goal");
+    result.has_goal = check_goal_section(&content);
     if !result.has_goal {
         let msg = "PROMPT.md missing '## Goal' section".to_string();
         if strict {
@@ -264,10 +306,7 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
     }
 
     // Check for Acceptance section
-    result.has_acceptance = content.contains("## Acceptance")
-        || content.contains("# Acceptance")
-        || content.contains("Acceptance Criteria")
-        || contains_ascii_case_insensitive(&content, "acceptance");
+    result.has_acceptance = check_acceptance_section(&content);
     if !result.has_acceptance {
         let msg = "PROMPT.md missing acceptance checks section".to_string();
         if strict {
@@ -360,7 +399,7 @@ mod tests {
     fn test_validate_prompt_md_not_exists() {
         with_temp_cwd(|_dir| {
             let result = validate_prompt_md(false, false);
-            assert!(!result.exists);
+            assert!(!result.exists());
             assert!(!result.is_valid());
             assert!(result.errors.iter().any(|e| e.contains("not found")));
             // Verify template suggestion is included
@@ -376,8 +415,8 @@ mod tests {
         with_temp_cwd(|_dir| {
             fs::write("PROMPT.md", "   \n\n  ").unwrap();
             let result = validate_prompt_md(false, false);
-            assert!(result.exists);
-            assert!(!result.has_content);
+            assert!(result.exists());
+            assert!(!result.has_content());
             assert!(!result.is_valid());
             assert!(result.errors.iter().any(|e| e.contains("empty")));
         });
@@ -399,8 +438,8 @@ Build a feature
             )
             .unwrap();
             let result = validate_prompt_md(false, false);
-            assert!(result.exists);
-            assert!(result.has_content);
+            assert!(result.exists());
+            assert!(result.has_content());
             assert!(result.has_goal);
             assert!(result.has_acceptance);
             assert!(result.is_valid());
@@ -413,8 +452,8 @@ Build a feature
         with_temp_cwd(|_dir| {
             fs::write("PROMPT.md", "Just some random content").unwrap();
             let result = validate_prompt_md(false, false);
-            assert!(result.exists);
-            assert!(result.has_content);
+            assert!(result.exists());
+            assert!(result.has_content());
             assert!(!result.has_goal);
             assert!(!result.has_acceptance);
             // In lenient mode, missing sections are warnings, not errors
@@ -429,8 +468,8 @@ Build a feature
         with_temp_cwd(|_dir| {
             fs::write("PROMPT.md", "Just some random content").unwrap();
             let result = validate_prompt_md(true, false);
-            assert!(result.exists);
-            assert!(result.has_content);
+            assert!(result.exists());
+            assert!(result.has_content());
             assert!(!result.has_goal);
             assert!(!result.has_acceptance);
             // In strict mode, missing sections are errors

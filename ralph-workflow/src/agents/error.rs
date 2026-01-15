@@ -17,7 +17,10 @@
 /// # Returns
 ///
 /// `true` if the string indicates a GLM-like agent, `false` otherwise
-pub fn is_glm_like_agent(s: &str) -> bool {
+pub fn is_glm_like_agent(s: impl AsRef<str>) -> bool {
+    let s = s.as_ref();
+    // Check for each keyword case-insensitively.
+    // We lowercase once and reuse the result for all keyword checks.
     let s_lower = s.to_lowercase();
     s_lower.contains("glm")
         || s_lower.contains("zhipuai")
@@ -367,8 +370,21 @@ impl AgentErrorKind {
 
         // If we know this is a GLM-like agent and it failed with exit code 1,
         // classify it as AgentSpecificQuirk to trigger fallback instead of retry
-        let is_problematic_agent = agent_name.map_or(false, is_glm_like_agent)
-            || model_flag.map_or(false, is_glm_like_agent);
+        let is_problematic_agent = agent_name.is_some_and(|name| {
+            let name_lower = name.to_lowercase();
+            name_lower.contains("glm")
+                || name_lower.contains("zhipuai")
+                || name_lower.contains("zai")
+                || name_lower.contains("qwen")
+                || name_lower.contains("deepseek")
+        }) || model_flag.is_some_and(|flag| {
+            let flag_lower = flag.to_lowercase();
+            flag_lower.contains("glm")
+                || flag_lower.contains("zhipuai")
+                || flag_lower.contains("zai")
+                || flag_lower.contains("qwen")
+                || flag_lower.contains("deepseek")
+        });
 
         if is_problematic_agent && exit_code == 1 {
             // GLM and similar agents often exit with code 1 for various issues.
