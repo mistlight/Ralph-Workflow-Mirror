@@ -111,9 +111,9 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         reviewer_provider: None,
         reviewer_json_parser: None, // Set from env var or CLI
         features: FeatureFlags {
-            checkpoint_enabled: general.features.checkpoint_enabled,
-            force_universal_prompt: general.features.force_universal_prompt,
-            auto_rebase_enabled: general.features.auto_rebase_enabled,
+            checkpoint_enabled: general.workflow.checkpoint_enabled,
+            force_universal_prompt: general.execution.force_universal_prompt,
+            auto_rebase_enabled: general.workflow.auto_rebase_enabled,
         },
         developer_iters: general.developer_iters,
         reviewer_reviews: general.reviewer_reviews,
@@ -133,7 +133,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         verbosity: Verbosity::from(general.verbosity),
         commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
         review_depth,
-        isolation_mode: general.features.isolation_mode,
+        isolation_mode: general.execution.isolation_mode,
         git_user_name: general.git_user_name.clone(),
         git_user_email: general.git_user_email.clone(),
     }

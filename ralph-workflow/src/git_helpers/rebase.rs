@@ -81,7 +81,9 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
         )
     })?;
 
-    let upstream_commit = upstream_object.peel_to_commit().map_err(|e| git2_to_io_error(&e))?;
+    let upstream_commit = upstream_object
+        .peel_to_commit()
+        .map_err(|e| git2_to_io_error(&e))?;
 
     // Get our branch commit
     let head = repo.head().map_err(|e| git2_to_io_error(&e))?;
@@ -133,7 +135,9 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
                 }
             }
         }
-        Err(e) => Err(io::Error::other(format!("Failed to execute git rebase: {e}"))),
+        Err(e) => Err(io::Error::other(format!(
+            "Failed to execute git rebase: {e}"
+        ))),
     }
 }
 
@@ -173,10 +177,14 @@ pub fn abort_rebase() -> io::Result<()> {
                 Ok(())
             } else {
                 let stderr = String::from_utf8_lossy(&result.stderr);
-                Err(io::Error::other(format!("Failed to abort rebase: {stderr}")))
+                Err(io::Error::other(format!(
+                    "Failed to abort rebase: {stderr}"
+                )))
             }
         }
-        Err(e) => Err(io::Error::other(format!("Failed to execute git rebase --abort: {e}"))),
+        Err(e) => Err(io::Error::other(format!(
+            "Failed to execute git rebase --abort: {e}"
+        ))),
     }
 }
 

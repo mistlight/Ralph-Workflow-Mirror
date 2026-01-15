@@ -77,20 +77,28 @@ pub struct GeneralBehaviorFlags {
     pub strict_validation: bool,
 }
 
-/// General configuration feature flags.
+/// General configuration workflow automation flags.
 ///
-/// Groups optional feature toggle settings for `GeneralConfig`.
+/// Groups workflow automation features for `GeneralConfig`.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
-pub struct GeneralFeatureFlags {
+pub struct GeneralWorkflowFlags {
     /// Enable checkpoint/resume functionality.
     pub checkpoint_enabled: bool,
+    /// Enable automatic rebase before and after pipeline.
+    pub auto_rebase_enabled: bool,
+}
+
+/// General configuration execution behavior flags.
+///
+/// Groups execution behavior settings for `GeneralConfig`.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct GeneralExecutionFlags {
     /// Force universal review prompt for all agents.
     pub force_universal_prompt: bool,
     /// Isolation mode (prevent context contamination).
     pub isolation_mode: bool,
-    /// Enable automatic rebase before and after pipeline.
-    pub auto_rebase_enabled: bool,
 }
 
 /// General configuration section.
@@ -104,9 +112,12 @@ pub struct GeneralConfig {
     /// Behavioral flags (interactive, auto-detect, strict validation)
     #[serde(default)]
     pub behavior: GeneralBehaviorFlags,
-    /// Feature flags (checkpoint, universal prompt, isolation mode)
-    #[serde(default)]
-    pub features: GeneralFeatureFlags,
+    /// Workflow automation flags (checkpoint, auto-rebase)
+    #[serde(default, flatten)]
+    pub workflow: GeneralWorkflowFlags,
+    /// Execution behavior flags (universal prompt, isolation mode)
+    #[serde(default, flatten)]
+    pub execution: GeneralExecutionFlags,
     /// Number of developer iterations.
     pub developer_iters: u32,
     /// Number of reviewer re-review passes.
@@ -138,11 +149,13 @@ impl Default for GeneralConfig {
                 auto_detect_stack: true,
                 strict_validation: false,
             },
-            features: GeneralFeatureFlags {
+            workflow: GeneralWorkflowFlags {
                 checkpoint_enabled: true,
+                auto_rebase_enabled: true,
+            },
+            execution: GeneralExecutionFlags {
                 force_universal_prompt: false,
                 isolation_mode: true,
-                auto_rebase_enabled: true,
             },
             developer_iters: 5,
             reviewer_reviews: 2,
@@ -392,9 +405,9 @@ mod tests {
         let config = GeneralConfig::default();
         assert_eq!(config.verbosity, 2);
         assert!(config.behavior.interactive);
-        assert!(config.features.isolation_mode);
+        assert!(config.execution.isolation_mode);
         assert!(config.behavior.auto_detect_stack);
-        assert!(config.features.checkpoint_enabled);
+        assert!(config.workflow.checkpoint_enabled);
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
     }
