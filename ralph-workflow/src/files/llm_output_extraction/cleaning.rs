@@ -4,6 +4,7 @@
 //! removing AI thought processes, formatted thinking patterns, and other artifacts.
 
 use regex::Regex;
+use std::sync::OnceLock;
 
 /// Remove AI thought process patterns from extracted content.
 ///
@@ -407,6 +408,13 @@ pub fn looks_like_analysis_text(text: &str) -> bool {
     false
 }
 
+/// ANSI escape code regex - compiled once using OnceLock for efficiency.
+/// Matches patterns like \x1b[...m or \x1b[...K used for terminal formatting.
+fn ansi_escape_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*[mK]").expect("ANSI regex should be valid"))
+}
+
 /// Remove formatted thinking output patterns from CLI display output.
 ///
 /// This handles formatted thinking content that appears in log files from display
@@ -441,8 +449,7 @@ fn remove_formatted_thinking_patterns(content: &str) -> String {
     // Strip ANSI escape codes for pattern matching
     let strip_ansi = |text: &str| -> String {
         // ANSI escape codes match pattern: \x1b[...m or \x1b[...K
-        let re = Regex::new(r"\x1b\[[0-9;]*[mK]").expect("ANSI regex should be valid");
-        re.replace_all(text, "").to_string()
+        ansi_escape_regex().replace_all(text, "").to_string()
     };
 
     for line in content.lines() {

@@ -6,6 +6,7 @@
 
 use regex::Regex;
 use serde::Deserialize;
+use std::sync::OnceLock;
 
 use super::cleaning::{
     final_escape_sequence_cleanup, find_conventional_commit_start, looks_like_analysis_text,
@@ -258,6 +259,16 @@ fn looks_like_ndjson(content: &str) -> bool {
     content.lines().count() > 1 && content.contains("{\"type\":")
 }
 
+/// File count pattern regex - compiled once using OnceLock for efficiency.
+/// Matches patterns like "chore: N file(s) changed" for any number N.
+fn file_count_pattern_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^chore:\s*\d+\s+(?:file\(s\)|files?)\s+changed$")
+            .expect("file count regex should be valid")
+    })
+}
+
 /// Validate extracted content for use as a commit message.
 ///
 /// # Returns
@@ -489,9 +500,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
 
     // Pattern 1: "chore: N file(s) changed" for ANY number N
     // Handles: "file(s) changed", "files changed", "file changed" variations
-    let file_count_pattern = Regex::new(r"^chore:\s*\d+\s+(?:file\(s\)|files?)\s+changed$")
-        .expect("file count regex should be valid");
-    if file_count_pattern.is_match(&content_lower) {
+    if file_count_pattern_regex().is_match(&content_lower) {
         return Err(format!(
             "Commit message matches bad pattern (file count pattern): '{content}'. Use semantic description instead."
         ));
