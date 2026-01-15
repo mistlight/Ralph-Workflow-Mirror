@@ -17,6 +17,33 @@ use std::collections::HashMap;
 #[cfg(unix)]
 #[test]
 fn run_with_fallback_does_not_retry_problematic_glm_reviewer() {
+    let (dir, fail_script, ok_script) = setup_fallback_test_scripts();
+    let mut registry = setup_fallback_test_registry(&dir, &fail_script, &ok_script);
+    apply_fallback_test_config(&mut registry);
+
+    let exit = run_fallback_test_execution(&dir, &registry);
+    let fail_count = dir.path().join("fail_count.txt");
+    let ok_count = dir.path().join("ok_count.txt");
+
+    assert_eq!(exit, 0, "fallback agent should succeed");
+    assert_eq!(
+        std::fs::read_to_string(&fail_count)
+            .unwrap()
+            .lines()
+            .count(),
+        1,
+        "problematic agent should not be retried"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&ok_count).unwrap().lines().count(),
+        1,
+        "fallback agent should run once"
+    );
+}
+
+/// Sets up the test directory and creates the fail/ok scripts
+#[cfg(unix)]
+fn setup_fallback_test_scripts() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let fail_count = dir.path().join("fail_count.txt");
     let ok_count = dir.path().join("ok_count.txt");
@@ -47,6 +74,16 @@ exit 0
     )
     .unwrap();
 
+    (dir, fail_script, ok_script)
+}
+
+/// Creates and configures the agent registry with test aliases
+#[cfg(unix)]
+fn setup_fallback_test_registry(
+    _dir: &tempfile::TempDir,
+    fail_script: &std::path::Path,
+    ok_script: &std::path::Path,
+) -> AgentRegistry {
     let mut registry = AgentRegistry::new().unwrap();
     let defaults = crate::config::CcsConfig {
         output_flag: String::new(),
@@ -74,8 +111,12 @@ exit 0
         },
     );
     registry.set_ccs_aliases(&aliases, defaults);
+    registry
+}
 
-    // Use apply_unified_config to set fallback chain (public API)
+/// Applies the unified config with fallback chain to the registry
+#[cfg(unix)]
+fn apply_fallback_test_config(registry: &mut AgentRegistry) {
     let toml_str = r#"
         [agent_chain]
         reviewer = ["ccs/glm", "ccs/ok"]
@@ -84,7 +125,11 @@ exit 0
     "#;
     let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
     registry.apply_unified_config(&unified);
+}
 
+/// Creates the pipeline runtime and runs the fallback test
+#[cfg(unix)]
+fn run_fallback_test_execution(dir: &tempfile::TempDir, registry: &AgentRegistry) -> i32 {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -106,31 +151,16 @@ exit 0
         config: &config,
     };
 
-    let exit = run_with_fallback(
+    run_with_fallback(
         crate::agents::AgentRole::Reviewer,
         "test",
         "hello",
         &dir.path().join("logs").display().to_string(),
         &mut runtime,
-        &registry,
+        registry,
         "ccs/glm",
     )
-    .unwrap();
-
-    assert_eq!(exit, 0, "fallback agent should succeed");
-    assert_eq!(
-        std::fs::read_to_string(&fail_count)
-            .unwrap()
-            .lines()
-            .count(),
-        1,
-        "problematic agent should not be retried"
-    );
-    assert_eq!(
-        std::fs::read_to_string(&ok_count).unwrap().lines().count(),
-        1,
-        "fallback agent should run once"
-    );
+    .unwrap()
 }
 
 #[test]
