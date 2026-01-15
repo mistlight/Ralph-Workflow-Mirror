@@ -108,7 +108,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Handle --diagnose
-    if args.diagnose {
+    if args.recovery.diagnose {
         handle_diagnose(colors, &config, &registry, &config_path, &config_sources);
         return Ok(());
     }
@@ -117,13 +117,13 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     validate_agent_chains(&registry, colors);
 
     // Handle plumbing commands (these need git repo but not full validation)
-    if args.show_commit_msg {
+    if args.commit_display.show_commit_msg {
         return handle_show_commit_msg();
     }
-    if args.apply_commit {
+    if args.commit_plumbing.apply_commit {
         return handle_apply_commit(&logger, colors);
     }
-    if args.reset_start_commit {
+    if args.commit_display.reset_start_commit {
         require_git_repo()?;
         let repo_root = get_repo_root()?;
         env::set_current_dir(&repo_root)?;
@@ -166,7 +166,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
 
     // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
     // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
-    if args.interactive && !std::path::Path::new("PROMPT.md").exists() {
+    if config.behavior.interactive && !std::path::Path::new("PROMPT.md").exists() {
         if let Some(template_name) = prompt_template_selection(colors) {
             create_prompt_from_template(&template_name, colors)?;
             println!();
@@ -197,7 +197,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
     // Handle --dry-run
-    if args.dry_run {
+    if args.recovery.dry_run {
         return handle_dry_run(
             &logger,
             colors,
@@ -209,7 +209,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Handle --generate-commit-msg
-    if args.generate_commit_msg {
+    if args.commit_plumbing.generate_commit_msg {
         return handle_generate_commit_msg(
             &config,
             &registry,
@@ -240,15 +240,15 @@ pub fn run(args: Args) -> anyhow::Result<()> {
 ///
 /// Returns `true` if a listing command was handled and we should exit.
 fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors) -> bool {
-    if args.list_agents {
+    if args.agent_list.list_agents {
         handle_list_agents(registry);
         return true;
     }
-    if args.list_available_agents {
+    if args.agent_list.list_available_agents {
         handle_list_available_agents(registry);
         return true;
     }
-    if args.list_providers {
+    if args.provider_list.list_providers {
         handle_list_providers(colors);
         return true;
     }
@@ -334,7 +334,8 @@ fn print_pipeline_info(ctx: &PipelineContext) {
 
 /// Validate PROMPT.md and set up backup/protection.
 fn validate_prompt_and_setup_backup(ctx: &PipelineContext) -> anyhow::Result<()> {
-    let prompt_validation = validate_prompt_md(ctx.config.strict_validation, ctx.args.interactive);
+    let prompt_validation =
+        validate_prompt_md(ctx.config.behavior.strict_validation, ctx.args.interactive);
     for err in &prompt_validation.errors {
         ctx.logger.error(err);
     }
@@ -498,7 +499,8 @@ fn run_development(
         _ => 1,
     };
 
-    let resuming_from_development = args.resume && resume_phase == Some(PipelinePhase::Development);
+    let resuming_from_development =
+        args.recovery.resume && resume_phase == Some(PipelinePhase::Development);
     let development_result = run_development_phase(ctx, start_iter, resuming_from_development)?;
 
     if development_result.had_errors {
@@ -584,7 +586,7 @@ fn run_final_validation(
         return Ok(());
     }
 
-    if ctx.config.checkpoint_enabled {
+    if ctx.config.features.checkpoint_enabled {
         let _ = save_checkpoint(&PipelineCheckpoint::new(
             PipelinePhase::FinalValidation,
             ctx.config.developer_iters,
