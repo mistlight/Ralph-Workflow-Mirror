@@ -169,6 +169,7 @@ impl ClaudeParser {
                 if is_duplicate {
                     String::new()
                 } else {
+                    use std::fmt::Write;
                     let mut out = String::new();
                     if let Some(msg) = message {
                         if let Some(content) = msg.content {
@@ -471,13 +472,13 @@ impl ClaudeParser {
                 } => {
                     // Handle tool input streaming
                     // Extract the tool input from the delta
-                    let input_str = tool_delta
-                        .get("input")
-                        .map(|input| match input {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => format_tool_input(other),
-                        })
-                        .unwrap_or_default();
+                    let input_str =
+                        tool_delta
+                            .get("input")
+                            .map_or_else(String::new, |input| match input {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => format_tool_input(other),
+                            });
 
                     if input_str.is_empty() {
                         String::new()

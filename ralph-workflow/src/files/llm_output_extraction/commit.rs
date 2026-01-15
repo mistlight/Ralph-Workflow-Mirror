@@ -273,6 +273,17 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         }
     }
 
+    // Check for literal escape sequences that indicate JSON wasn't unescaped
+    // This catches cases where LLMs output content with literal "\n" instead of newlines
+    let escape_sequence_patterns = ["\\n", "\\t", "\\r"];
+    for pattern in &escape_sequence_patterns {
+        if content.contains(pattern) {
+            return Err(format!(
+                "Commit message contains literal escape sequence ({pattern}). JSON may not have been properly unescaped."
+            ));
+        }
+    }
+
     // Check for error markers
     let error_markers = [
         "error:",
@@ -1064,6 +1075,37 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         // Valid commit message containing words like "error" in a different context should pass
         // For example, "fix: resolve parsing error" is valid
         let result = validate_commit_message("fix(parser): resolve parsing error");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_literal_escape_sequence_newline() {
+        // Validation should reject literal \n (backslash-n) escape sequences
+        let result = validate_commit_message("feat: add feature\\nBody text");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("escape sequence"));
+    }
+
+    #[test]
+    fn test_validate_rejects_literal_escape_sequence_tab() {
+        // Validation should reject literal \t (backslash-t) escape sequences
+        let result = validate_commit_message("feat: add feature\\t- bullet");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("escape sequence"));
+    }
+
+    #[test]
+    fn test_validate_rejects_literal_escape_sequence_carriage_return() {
+        // Validation should reject literal \r (backslash-r) escape sequences
+        let result = validate_commit_message("feat: add feature\\r\\nBody");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("escape sequence"));
+    }
+
+    #[test]
+    fn test_validate_accepts_actual_newlines() {
+        // Validation should accept actual newlines (not literal escape sequences)
+        let result = validate_commit_message("feat: add feature\n\nBody text here");
         assert!(result.is_ok());
     }
 

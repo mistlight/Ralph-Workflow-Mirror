@@ -1572,3 +1572,48 @@ fn test_multiple_messages_with_proper_separation() {
         "Second message should appear exactly once. Found {second_count} times. Output: {output:?}"
     );
 }
+
+/// Test for content block state tracking
+///
+/// This test verifies that the `ContentBlockState` implementation correctly
+/// tracks block transitions and the `started_output` flag. This is the foundation
+/// for future enhancements where block transitions can emit newlines.
+///
+/// Note: This is a unit test that directly tests the `StreamingSession` state
+/// tracking, not the end-to-end parser behavior (which would require additional
+/// parser-layer changes to actually emit newlines on block transitions).
+///
+/// This test verifies that content is preserved across content blocks (wt-commit-bug behavior).
+#[test]
+fn test_content_block_state_tracking_preserves_content() {
+    use crate::json_parser::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // Initially, no content has been streamed
+    assert!(!session.has_any_streamed_content());
+
+    // Start streaming content in block 0
+    let show_prefix = session.on_text_delta(0, "First");
+    assert!(show_prefix, "First delta should show prefix");
+    assert!(session.has_any_streamed_content());
+
+    // Transition to block 1 via on_content_block_start
+    // This should finalize block 0 and return true (had output)
+    session.on_content_block_start(1);
+
+    // Stream content in block 1
+    let show_prefix = session.on_text_delta(1, "Second");
+    assert!(show_prefix, "First delta in new block should show prefix");
+
+    // Verify both blocks have separate accumulated content
+    assert_eq!(
+        session.get_accumulated(crate::json_parser::types::ContentType::Text, "0"),
+        Some("First")
+    );
+    assert_eq!(
+        session.get_accumulated(crate::json_parser::types::ContentType::Text, "1"),
+        Some("Second")
+    );
+}

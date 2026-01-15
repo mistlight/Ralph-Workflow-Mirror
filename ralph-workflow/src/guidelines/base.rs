@@ -252,7 +252,6 @@ impl ReviewGuidelines {
     /// This produces a more detailed prompt section that groups checks by priority,
     /// helping agents focus on the most critical issues first.
     pub(crate) fn format_for_prompt_with_priorities(&self) -> String {
-        // Define inner function first to satisfy clippy::items_after_statements
         fn push_section(
             sections: &mut Vec<String>,
             header: &str,

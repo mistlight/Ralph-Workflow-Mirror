@@ -818,9 +818,9 @@ pub fn generate_commit_message(
     runtime
         .logger
         .warn("Using hardcoded fallback commit message as last resort.");
-    runtime
-        .logger
-        .warn(&format!("Fallback message: \"{HARDCODED_FALLBACK_COMMIT}\""));
+    runtime.logger.warn(&format!(
+        "Fallback message: \"{HARDCODED_FALLBACK_COMMIT}\""
+    ));
     runtime.logger.warn("");
 
     Ok(CommitMessageResult {

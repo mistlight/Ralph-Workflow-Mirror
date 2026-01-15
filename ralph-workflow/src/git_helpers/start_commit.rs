@@ -200,8 +200,8 @@ fn has_start_commit() -> bool {
 
 /// Convert git2 error to `io::Error`.
 fn to_io_error(err: git2::Error) -> io::Error {
+    // Consume the error to extract its message
     let msg = err.to_string();
-    drop(err);
     io::Error::other(msg)
 }
 
