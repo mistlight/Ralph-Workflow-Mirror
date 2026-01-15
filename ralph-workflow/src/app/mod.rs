@@ -45,6 +45,7 @@ use crate::utils::{
     PipelineCheckpoint, PipelinePhase,
 };
 use std::env;
+use std::path::PathBuf;
 use std::process::Command;
 
 use config_init::initialize_config;
@@ -88,13 +89,12 @@ struct PipelineContext {
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
-#[allow(clippy::too_many_lines)]
 pub fn run(args: Args) -> anyhow::Result<()> {
     let colors = Colors::new();
     let mut logger = Logger::new(colors);
 
     // Initialize configuration and agent registry
-    let Some(init_result) = initialize_config(&args, colors, &mut logger)? else {
+    let Some(init_result) = initialize_config(&args, colors, &logger)? else {
         return Ok(()); // Early exit (--init/--init-global/--init-legacy)
     };
 
@@ -119,59 +119,29 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Handle --diagnose
-    if args.diagnose {
-        handle_diagnose(colors, &config, &registry, &config_path, &config_sources);
-        return Ok(());
-    }
-
-    // Handle security commands
-    if args.setup_security {
-        handle_setup_security(colors)?;
-        return Ok(());
-    }
-
-    if args.security_check {
-        handle_security_check(colors, &config, &mut logger)?;
-        return Ok(());
-    }
-
-    #[cfg(feature = "build-image")]
-    if args.build_image.is_some() {
-        handle_build_image(args.build_image, colors)?;
-        return Ok(());
+    // Handle special commands that exit early
+    if let Some(result) = handle_special_commands(
+        &args,
+        colors,
+        &config,
+        &registry,
+        &config_path,
+        &config_sources,
+        &logger,
+    ) {
+        return result;
     }
 
     // Validate agent chains
     validate_agent_chains(&registry, colors);
 
     // Handle plumbing commands (these need git repo but not full validation)
-    if args.show_commit_msg {
-        return handle_show_commit_msg();
-    }
-    if args.apply_commit {
-        return handle_apply_commit(&logger, colors);
-    }
-    if args.reset_start_commit {
-        require_git_repo()?;
-        let repo_root = get_repo_root()?;
-        env::set_current_dir(&repo_root)?;
-
-        match reset_start_commit() {
-            Ok(()) => {
-                logger.success("Starting commit reference reset to current HEAD");
-                logger.info(".agent/start_commit has been updated");
-                return Ok(());
-            }
-            Err(e) => {
-                logger.error(&format!("Failed to reset starting commit: {e}"));
-                anyhow::bail!("Failed to reset starting commit");
-            }
-        }
+    if let Some(result) = handle_plumbing_commands(&args, &logger, colors) {
+        return result;
     }
 
-    // Validate agent commands exist
-    validate_agent_commands(
+    // Setup and validate agents, get repo root
+    let repo_root = setup_and_validate_agents(
         &config,
         &registry,
         &developer_agent,
@@ -179,41 +149,9 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         &config_path,
     )?;
 
-    // Validate agents are workflow-capable
-    validate_can_commit(
-        &config,
-        &registry,
-        &developer_agent,
-        &reviewer_agent,
-        &config_path,
-    )?;
-
-    // Set up git repo and working directory
-    require_git_repo()?;
-    let repo_root = get_repo_root()?;
-    env::set_current_dir(&repo_root)?;
-
-    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
-    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
-    if args.interactive && !std::path::Path::new("PROMPT.md").exists() {
-        if let Some(template_name) = prompt_template_selection(colors) {
-            create_prompt_from_template(&template_name, colors)?;
-            println!();
-            logger.info(
-                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
-            );
-            logger.info(&format!(
-                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-                config.commit_msg
-            ));
-            return Ok(());
-        }
-        println!();
-        logger.info("PROMPT.md is required to run the pipeline.");
-        logger.info(
-            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-        );
-        return Ok(());
+    // Handle interactive PROMPT.md creation
+    if let Some(result) = handle_interactive_prompt(&args, colors, &config, &mut logger) {
+        return result;
     }
 
     ensure_files(config.isolation_mode)?;
@@ -225,31 +163,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
 
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
-    // Handle --dry-run
-    if args.dry_run {
-        return handle_dry_run(
-            &logger,
-            colors,
-            &config,
-            &developer_display,
-            &reviewer_display,
-            &repo_root,
-        );
-    }
-
-    // Handle --generate-commit-msg
-    if args.generate_commit_msg {
-        return handle_generate_commit_msg(
-            &config,
-            &registry,
-            &logger,
-            colors,
-            &developer_agent,
-            &reviewer_agent,
-        );
-    }
-
-    // Run the full pipeline
+    // Create pipeline context early for handle_dry_run_or_gen_msg
     let ctx = PipelineContext {
         args,
         config,
@@ -262,6 +176,13 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         logger,
         colors,
     };
+
+    // Handle dry-run and commit msg generation
+    if let Some(result) = handle_dry_run_or_gen_msg(&ctx) {
+        return result;
+    }
+
+    // Run the full pipeline
     run_pipeline(&ctx)
 }
 
@@ -284,8 +205,174 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
     false
 }
 
+/// Handle special commands that exit early (--diagnose, --setup-security, --security-check, etc.)
+fn handle_special_commands(
+    args: &Args,
+    colors: Colors,
+    config: &Config,
+    registry: &AgentRegistry,
+    config_path: &std::path::Path,
+    config_sources: &[crate::agents::ConfigSource],
+    logger: &Logger,
+) -> Option<anyhow::Result<()>> {
+    if args.diagnose {
+        handle_diagnose(colors, config, registry, config_path, config_sources);
+        return Some(Ok(()));
+    }
+
+    if args.setup_security {
+        return Some(handle_setup_security(colors));
+    }
+
+    if args.security_check {
+        handle_security_check(colors, config, logger);
+        return Some(Ok(()));
+    }
+
+    #[cfg(feature = "build-image")]
+    if args.build_image.is_some() {
+        return Some(handle_build_image(args.build_image.clone(), colors));
+    }
+
+    None
+}
+
+/// Handle plumbing commands (--show-commit-msg, --apply-commit, --reset-start-commit)
+fn handle_plumbing_commands(
+    args: &Args,
+    logger: &Logger,
+    colors: Colors,
+) -> Option<anyhow::Result<()>> {
+    if args.show_commit_msg {
+        return Some(handle_show_commit_msg());
+    }
+    if args.apply_commit {
+        return Some(handle_apply_commit(logger, colors));
+    }
+    if args.reset_start_commit {
+        return Some(handle_reset_start_commit(logger));
+    }
+    None
+}
+
+/// Handle --reset-start-commit command
+fn handle_reset_start_commit(logger: &Logger) -> anyhow::Result<()> {
+    require_git_repo()?;
+    let repo_root = get_repo_root()?;
+    env::set_current_dir(&repo_root)?;
+
+    match reset_start_commit() {
+        Ok(()) => {
+            logger.success("Starting commit reference reset to current HEAD");
+            logger.info(".agent/start_commit has been updated");
+            Ok(())
+        }
+        Err(e) => {
+            logger.error(&format!("Failed to reset starting commit: {e}"));
+            anyhow::bail!("Failed to reset starting commit");
+        }
+    }
+}
+
+/// Setup and validate agents
+fn setup_and_validate_agents(
+    config: &Config,
+    registry: &AgentRegistry,
+    developer_agent: &str,
+    reviewer_agent: &str,
+    config_path: &std::path::Path,
+) -> anyhow::Result<std::path::PathBuf> {
+    // Validate agent commands exist
+    validate_agent_commands(
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        config_path,
+    )?;
+
+    // Validate agents are workflow-capable
+    validate_can_commit(
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        config_path,
+    )?;
+
+    // Set up git repo and working directory
+    require_git_repo()?;
+    let repo_root = get_repo_root()?;
+    env::set_current_dir(&repo_root)?;
+
+    Ok(repo_root)
+}
+
+/// Handle interactive PROMPT.md creation
+fn handle_interactive_prompt(
+    args: &Args,
+    colors: Colors,
+    config: &Config,
+    logger: &mut Logger,
+) -> Option<anyhow::Result<()>> {
+    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
+    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
+    if args.interactive && !PathBuf::from("PROMPT.md").exists() {
+        let result = (|| -> anyhow::Result<()> {
+            if let Some(template_name) = prompt_template_selection(colors) {
+                create_prompt_from_template(&template_name, colors)?;
+                println!();
+                logger.info(
+                    "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+                );
+                logger.info(&format!(
+                    "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                    config.commit_msg
+                ));
+            } else {
+                println!();
+                logger.info("PROMPT.md is required to run the pipeline.");
+                logger.info(
+                    "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+                );
+            }
+            Ok(())
+        })();
+        return Some(result);
+    }
+    None
+}
+
+/// Handle dry-run and commit msg generation
+fn handle_dry_run_or_gen_msg(ctx: &PipelineContext) -> Option<anyhow::Result<()>> {
+    // Handle --dry-run
+    if ctx.args.dry_run {
+        return Some(handle_dry_run(
+            &ctx.logger,
+            ctx.colors,
+            &ctx.config,
+            &ctx.developer_display,
+            &ctx.reviewer_display,
+            &ctx.repo_root,
+        ));
+    }
+
+    // Handle --generate-commit-msg
+    if ctx.args.generate_commit_msg {
+        return Some(handle_generate_commit_msg(
+            &ctx.config,
+            &ctx.registry,
+            &ctx.logger,
+            ctx.colors,
+            &ctx.developer_agent,
+            &ctx.reviewer_agent,
+        ));
+    }
+
+    None
+}
+
 /// Runs the full development/review/commit pipeline.
-#[allow(clippy::too_many_lines)]
 fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     // Handle --resume
     let resume_checkpoint = handle_resume(
@@ -356,18 +443,13 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Make PROMPT.md read-only to protect against accidental deletion.
     // This is a best-effort protection - it may not work on all filesystems.
-    // If PROMPT.md doesn't exist, make_prompt_read_only() returns Ok(None).
+    // If PROMPT.md doesn't exist, make_prompt_read_only() returns None.
     match make_prompt_read_only() {
-        Ok(None) => {
+        None => {
             // Read-only permissions set successfully
         }
-        Ok(Some(warning)) => {
+        Some(warning) => {
             ctx.logger.warn(&format!("{warning}. Continuing anyway."));
-        }
-        Err(e) => {
-            ctx.logger.warn(&format!(
-                "Failed to make PROMPT.md read-only: {e}. Continuing anyway."
-            ));
         }
     }
 

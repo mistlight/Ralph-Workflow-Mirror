@@ -286,7 +286,7 @@ impl UserAccountExecutor {
         let user_name = user_name.unwrap_or_else(|| DEFAULT_AGENT_USER.to_string());
 
         // Verify the user exists
-        if !Self::user_exists(&user_name)? {
+        if !Self::user_exists(&user_name) {
             return Err(ContainerError::Other(format!(
                 "User account '{user_name}' does not exist.\n\n\
                 To set up user-account security mode:\n\
@@ -367,7 +367,7 @@ impl UserAccountExecutor {
         );
 
         // Build the enhanced environment with platform-specific paths
-        let enhanced_env = self.build_enhanced_environment(env_vars, options)?;
+        let enhanced_env = Self::build_enhanced_environment(env_vars, options)?;
 
         // Build the sudo command
         let mut cmd = Command::new("sudo");
@@ -409,7 +409,6 @@ impl UserAccountExecutor {
 
     /// Build enhanced environment with platform-specific paths
     fn build_enhanced_environment(
-        &self,
         env_vars: &HashMap<String, String>,
         options: &ExecutionOptions,
     ) -> ContainerResult<HashMap<String, String>> {
@@ -470,12 +469,12 @@ impl UserAccountExecutor {
     }
 
     /// Check if a user account exists on the system
-    pub fn user_exists(user_name: &str) -> ContainerResult<bool> {
+    pub fn user_exists(user_name: &str) -> bool {
         let output = Command::new("id").arg(user_name).output();
 
         match output {
-            Ok(out) => Ok(out.status.success()),
-            Err(_) => Ok(false),
+            Ok(out) => out.status.success(),
+            Err(_) => false,
         }
     }
 
@@ -579,7 +578,7 @@ mod tests {
     #[test]
     fn test_user_exists_root() {
         // Root user should always exist
-        assert!(UserAccountExecutor::user_exists("root").unwrap());
+        assert!(UserAccountExecutor::user_exists("root"));
     }
 
     #[test]

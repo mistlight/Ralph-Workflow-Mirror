@@ -155,33 +155,33 @@ impl Logger {
         println!(
             "{}{}{}{}{}{}",
             color,
-            c.bold(),
+            self.colors.bold(),
             BOX_TL,
             BOX_H.to_string().repeat(width),
             BOX_TR,
-            c.reset()
+            self.colors.reset()
         );
         println!(
             "{}{}{}{}{}{}{}{}{}{}",
             color,
-            c.bold(),
+            self.colors.bold(),
             BOX_V,
             " ".repeat(padding),
-            c.white(),
+            self.colors.white(),
             title,
             color,
             " ".repeat(width - padding - title_len),
             BOX_V,
-            c.reset()
+            self.colors.reset()
         );
         println!(
             "{}{}{}{}{}{}",
             color,
-            c.bold(),
+            self.colors.bold(),
             BOX_BL,
             BOX_H.to_string().repeat(width),
             BOX_BR,
-            c.reset()
+            self.colors.reset()
         );
     }
 

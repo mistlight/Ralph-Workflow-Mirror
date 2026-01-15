@@ -21,14 +21,13 @@ impl EngineType {
     /// Get the binary name for this engine type
     pub const fn binary_name(&self) -> &str {
         match self {
-            Self::Docker => "docker",
             Self::Podman => "podman",
-            Self::Auto => "docker", // Default to docker for auto
+            Self::Docker | Self::Auto => "docker",
         }
     }
 
     /// Get all engine types to try (in order of preference)
-    pub fn detection_order(&self) -> Vec<Self> {
+    pub fn detection_order(self) -> Vec<Self> {
         match self {
             Self::Auto => vec![Self::Docker, Self::Podman],
             Self::Docker => vec![Self::Docker],
@@ -129,6 +128,9 @@ impl ContainerEngine {
         opts: &RunOptions,
         stdin: Option<&[u8]>,
     ) -> ContainerResult<(String, String, i32)> {
+        use std::io::Write;
+        use std::process::Stdio;
+
         let mut cmd = Command::new(&self.binary);
         cmd.arg("run");
         cmd.arg("--rm");
@@ -179,10 +181,6 @@ impl ContainerEngine {
 
         // Command and arguments
         cmd.args(&opts.command);
-
-        // Execute with stdin if provided
-        use std::io::Write;
-        use std::process::Stdio;
 
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());

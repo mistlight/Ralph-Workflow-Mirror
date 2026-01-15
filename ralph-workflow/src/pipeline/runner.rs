@@ -632,7 +632,7 @@ struct DirectExecutionConfig<'a> {
 /// This is the fallback path when container mode is disabled or unavailable.
 fn execute_command_direct(
     config: DirectExecutionConfig<'_>,
-    runtime: &mut PipelineRuntime<'_>,
+    runtime: &PipelineRuntime<'_>,
 ) -> io::Result<(i32, String)> {
     // Validate prompt for null bytes which are universally invalid in command arguments
     if config.prompt.contains('\0') {

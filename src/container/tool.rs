@@ -4,7 +4,6 @@
 //! by discovering and mounting language-specific tool directories.
 
 use crate::container::engine::Mount;
-use crate::container::error::ContainerResult;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -170,7 +169,7 @@ impl ToolManager {
     /// Discover all available tool mounts
     ///
     /// Returns a list of tool directories that should be mounted into the container.
-    pub fn discover_tool_mounts(&self) -> ContainerResult<Vec<ToolMount>> {
+    pub fn discover_tool_mounts(&self) -> Vec<ToolMount> {
         let mut mounts = Vec::new();
         let mut seen_targets = HashSet::new();
 
@@ -304,24 +303,23 @@ impl ToolManager {
         for tool_dir in &self.custom_tool_dirs {
             if tool_dir.exists() {
                 // Use the directory name as the target
-                let target = if let Some(file_name) = tool_dir.file_name() {
-                    format!("/usr/local/{}", file_name.to_string_lossy())
-                } else {
-                    "/usr/local/custom-tools".to_string()
-                };
+                let target = tool_dir.file_name().map_or_else(
+                    || "/usr/local/custom-tools".to_string(),
+                    |file_name| format!("/usr/local/{}", file_name.to_string_lossy()),
+                );
                 if seen_targets.insert(target.clone()) {
                     mounts.push(ToolMount::new(tool_dir.clone(), target));
                 }
             }
         }
 
-        Ok(mounts)
+        mounts
     }
 
     /// Get environment variables to pass to the container
     ///
     /// Returns environment variables that ensure tools work correctly in the container.
-    pub fn get_env_vars(&self) -> Vec<(String, String)> {
+    pub fn get_env_vars() -> Vec<(String, String)> {
         let mut env_vars = Vec::new();
 
         // Pass through the host PATH so npx and other tools work
@@ -733,8 +731,7 @@ mod tests {
 
     #[test]
     fn test_tool_manager_get_env_vars() {
-        let manager = ToolManager::new();
-        let env_vars = manager.get_env_vars();
+        let env_vars = ToolManager::get_env_vars();
         // Should at least return an empty vec, not panic
         assert!(env_vars.is_empty() || !env_vars.is_empty());
     }

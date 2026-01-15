@@ -75,10 +75,9 @@ fn load_unified_config(
     config_path: Option<&std::path::Path>,
     warnings: &mut Vec<String>,
 ) -> Option<UnifiedConfig> {
-    config_path.map_or_else(
-        || UnifiedConfig::load_default(),
-        |path| load_config_from_specified_path(path, warnings),
-    )
+    config_path.map_or_else(UnifiedConfig::load_default, |path| {
+        load_config_from_specified_path(path, warnings)
+    })
 }
 
 /// Load unified config from a specified path.
@@ -214,16 +213,12 @@ fn default_config() -> Config {
 
 /// Parse review depth from string, adding a warning if invalid.
 fn parse_review_depth(depth_str: &str, warnings: &mut Vec<String>) -> ReviewDepth {
-    match ReviewDepth::from_str(depth_str) {
-        Some(d) => d,
-        None => {
-            warnings.push(format!(
-                "Invalid review_depth '{}' in config; falling back to 'standard'.",
-                depth_str
-            ));
-            ReviewDepth::default()
-        }
-    }
+    ReviewDepth::from_str(depth_str).unwrap_or_else(|| {
+        warnings.push(format!(
+            "Invalid review_depth '{depth_str}' in config; falling back to 'standard'."
+        ));
+        ReviewDepth::default()
+    })
 }
 
 /// Apply environment variable overrides to config.

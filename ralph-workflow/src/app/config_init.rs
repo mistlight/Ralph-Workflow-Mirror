@@ -52,7 +52,7 @@ pub struct ConfigInitResult {
 pub fn initialize_config(
     args: &Args,
     colors: Colors,
-    logger: &mut Logger,
+    logger: &Logger,
 ) -> anyhow::Result<Option<ConfigInitResult>> {
     // Load configuration from unified config file (with env overrides)
     let (mut config, unified, warnings) = args

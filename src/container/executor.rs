@@ -149,7 +149,7 @@ impl ContainerExecutor {
         let mut seen_targets: HashSet<String> = mounts.iter().map(|m| m.target.clone()).collect();
 
         // Discover and add tool mounts
-        let tool_mounts = self.tool_manager.discover_tool_mounts()?;
+        let tool_mounts = self.tool_manager.discover_tool_mounts();
         for tool_mount in tool_mounts {
             if seen_targets.insert(tool_mount.target.clone()) {
                 mounts.push(tool_mount.to_mount());
@@ -199,7 +199,7 @@ impl ContainerExecutor {
         }
 
         // Add environment variables from tool manager
-        for (key, value) in self.tool_manager.get_env_vars() {
+        for (key, value) in crate::container::tool::ToolManager::get_env_vars() {
             // Tool manager variables are considered trusted, but still filter dangerous names
             if !is_dangerous_env_var_name(&key) {
                 container_env.push((key, value));
@@ -207,11 +207,10 @@ impl ContainerExecutor {
         }
 
         // Set working directory
-        let workdir = if let Some(ref wd) = options.working_dir {
-            format!("/workspace/{wd}")
-        } else {
-            "/workspace".to_string()
-        };
+        let workdir = options
+            .working_dir
+            .as_ref()
+            .map_or_else(|| "/workspace".to_string(), |wd| format!("/workspace/{wd}"));
 
         // Detect and publish ports that the command might use
         let detected_ports = detect_ports_from_command(&argv);
@@ -234,12 +233,7 @@ impl ContainerExecutor {
                 .map(|arg| shell_words::quote(arg).into_owned())
                 .collect::<Vec<_>>()
                 .join(" ");
-            let full_script = format!(
-                "{shell_init}\ncd {workdir}\n{quoted_command} \"$@\"",
-                shell_init = shell_init,
-                workdir = workdir,
-                quoted_command = quoted_command
-            );
+            let full_script = format!("{shell_init}\ncd {workdir}\n{quoted_command} \"$@\"");
             vec![
                 "bash".to_string(),
                 "-c".to_string(),

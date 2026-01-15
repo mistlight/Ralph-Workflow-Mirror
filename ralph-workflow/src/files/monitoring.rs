@@ -17,7 +17,6 @@
 //! - **macOS**: `FSEvents` via `notify` crate
 //! - **Windows**: `ReadDirectoryChangesW` via `notify` crate
 
-#![expect(clippy::needless_pass_by_value)]
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,8 +33,7 @@ use std::time::Duration;
 /// # Example
 ///
 /// ```no_run
-/// use crate::files::monitoring::PromptMonitor;
-///
+/// # use ralph_workflow::files::monitoring::PromptMonitor;
 /// let mut monitor = PromptMonitor::new().unwrap();
 /// monitor.start().unwrap();
 ///
@@ -122,7 +120,7 @@ impl PromptMonitor {
                 eprintln!("Warning: Failed to create file system watcher: {e}");
                 eprintln!("Falling back to periodic polling for PROMPT.md protection");
                 // Fallback to polling if watcher creation fails
-                Self::polling_monitor(&restoration_detected, &stop_signal);
+                Self::polling_monitor(restoration_detected, stop_signal);
                 return;
             }
         };
@@ -131,7 +129,7 @@ impl PromptMonitor {
         if let Err(e) = watcher.watch(Path::new("."), notify::RecursiveMode::NonRecursive) {
             eprintln!("Warning: Failed to watch current directory: {e}");
             eprintln!("Falling back to periodic polling for PROMPT.md protection");
-            Self::polling_monitor(&restoration_detected, &stop_signal);
+            Self::polling_monitor(restoration_detected, stop_signal);
             return;
         }
 
@@ -148,8 +146,11 @@ impl PromptMonitor {
                         &mut prompt_existed_last_check,
                     );
                 }
-                Ok(Err(_)) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Error in watcher or timeout - continue anyway
+                Ok(Err(_)) => {
+                    // Error in watcher - continue anyway
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Timeout is expected - check stop signal and continue
                 }
                 Err(_) => {
                     // Channel disconnected - stop monitoring
@@ -182,7 +183,7 @@ impl PromptMonitor {
     ///
     /// Some filesystems (NFS, network drives) don't support file system
     /// events. This fallback polls every 100ms to check if PROMPT.md exists.
-    fn polling_monitor(restoration_detected: &Arc<AtomicBool>, stop_signal: &Arc<AtomicBool>) {
+    fn polling_monitor(restoration_detected: Arc<AtomicBool>, stop_signal: Arc<AtomicBool>) {
         let mut prompt_existed = Path::new("PROMPT.md").exists();
 
         while !stop_signal.load(Ordering::Relaxed) {
@@ -243,41 +244,30 @@ impl PromptMonitor {
                 continue;
             }
 
-            // Restore from backup - ensure parent directory exists
-            let prompt_path = Path::new("PROMPT.md");
-            if let Some(parent) = prompt_path.parent() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    eprintln!("Failed to create parent directory for PROMPT.md: {e}");
-                    continue;
+            // Restore from backup
+            if fs::write("PROMPT.md", backup_content).is_ok() {
+                // Set read-only permissions
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = fs::metadata("PROMPT.md") {
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o444);
+                        let _ = fs::set_permissions("PROMPT.md", perms);
+                    }
                 }
-            }
 
-            if fs::write(prompt_path, backup_content).is_err() {
-                eprintln!("Failed to write PROMPT.md from backup");
-                continue;
-            }
-
-            // Set read-only permissions
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(metadata) = fs::metadata(prompt_path) {
-                    let mut perms = metadata.permissions();
-                    perms.set_mode(0o444);
-                    let _ = fs::set_permissions(prompt_path, perms);
+                #[cfg(windows)]
+                {
+                    if let Ok(metadata) = fs::metadata("PROMPT.md") {
+                        let mut perms = metadata.permissions();
+                        perms.set_readonly(true);
+                        let _ = fs::set_permissions("PROMPT.md", perms);
+                    }
                 }
-            }
 
-            #[cfg(windows)]
-            {
-                if let Ok(metadata) = fs::metadata(prompt_path) {
-                    let mut perms = metadata.permissions();
-                    perms.set_readonly(true);
-                    let _ = fs::set_permissions(prompt_path, perms);
-                }
+                return true;
             }
-
-            return true;
         }
 
         false
@@ -291,7 +281,7 @@ impl PromptMonitor {
     /// # Example
     ///
     /// ```no_run
-    /// # use crate::files::monitoring::PromptMonitor;
+    /// # use ralph_workflow::files::monitoring::PromptMonitor;
     /// # let mut monitor = PromptMonitor::new().unwrap();
     /// # monitor.start().unwrap();
     /// // After running some agent code
@@ -300,7 +290,7 @@ impl PromptMonitor {
     /// }
     /// ```
     pub fn check_and_restore(&self) -> bool {
-        self.restoration_detected.load(Ordering::Acquire)
+        self.restoration_detected.swap(false, Ordering::Acquire)
     }
 
     /// Stop monitoring and cleanup resources.
@@ -310,33 +300,9 @@ impl PromptMonitor {
         // Signal the thread to stop
         self.stop_signal.store(true, Ordering::Release);
 
-        // Wait for the thread to finish and check for panics
+        // Wait for the thread to finish
         if let Some(handle) = self.monitor_thread.take() {
-            if let Err(panic_payload) = handle.join() {
-                // Thread panicked - extract and log panic message for diagnostics
-                // Try common panic payload types
-                let panic_msg = panic_payload
-                    .downcast_ref::<String>()
-                    .cloned()
-                    .or_else(|| {
-                        panic_payload
-                            .downcast_ref::<&str>()
-                            .map(ToString::to_string)
-                    })
-                    .or_else(|| {
-                        panic_payload
-                            .downcast_ref::<&String>()
-                            .map(|s| (*s).clone())
-                    })
-                    .unwrap_or_else(|| {
-                        // Fallback: Try to get any available information
-                        format!(
-                            "<unknown panic type: {}>",
-                            std::any::type_name_of_val(&panic_payload)
-                        )
-                    });
-                eprintln!("Warning: File monitoring thread panicked: {panic_msg}");
-            }
+            let _ = handle.join();
         }
     }
 }

@@ -52,7 +52,7 @@ impl VolumeManager {
         let mut mounts = Vec::new();
 
         // Mount repository root to /workspace (read-write)
-        let repo_root = self.canonicalize(&self.repository_root)?;
+        let repo_root = Self::canonicalize(&self.repository_root)?;
         Self::validate_mount_source(&repo_root)?;
         mounts.push(Mount::new(
             repo_root.to_string_lossy().to_string(),
@@ -65,7 +65,7 @@ impl VolumeManager {
         } else {
             self.repository_root.join(&self.agent_dir)
         };
-        let agent_dir = self.canonicalize(&agent_dir)?;
+        let agent_dir = Self::canonicalize(&agent_dir)?;
         mounts.push(Mount::new(
             agent_dir.to_string_lossy().to_string(),
             "/workspace/.agent".to_string(),
@@ -73,7 +73,7 @@ impl VolumeManager {
 
         // Mount config directory read-only if available
         if let Some(ref config_dir) = self.config_dir {
-            if let Ok(config_path) = self.canonicalize(config_dir) {
+            if let Ok(config_path) = Self::canonicalize(config_dir) {
                 Self::validate_mount_source(&config_path)?;
                 mounts.push(Mount::read_only(
                     config_path.to_string_lossy().to_string(),
@@ -84,7 +84,7 @@ impl VolumeManager {
 
         // Mount Claude config directory read-only if available (for MCP/Skills)
         if let Some(ref claude_dir) = self.claude_dir {
-            if let Ok(claude_path) = self.canonicalize(claude_dir) {
+            if let Ok(claude_path) = Self::canonicalize(claude_dir) {
                 Self::validate_mount_source(&claude_path)?;
                 mounts.push(Mount::read_only(
                     claude_path.to_string_lossy().to_string(),
@@ -95,7 +95,7 @@ impl VolumeManager {
 
         // Mount Claude config directory in .config (for MCP servers/skills)
         if let Some(ref claude_config_dir) = self.claude_config_dir {
-            if let Ok(claude_config_path) = self.canonicalize(claude_config_dir) {
+            if let Ok(claude_config_path) = Self::canonicalize(claude_config_dir) {
                 Self::validate_mount_source(&claude_config_path)?;
                 mounts.push(Mount::read_only(
                     claude_config_path.to_string_lossy().to_string(),
@@ -108,16 +108,17 @@ impl VolumeManager {
     }
 
     /// Canonicalize a path, handling ~ expansion
-    fn canonicalize(&self, path: &Path) -> ContainerResult<PathBuf> {
+    fn canonicalize(path: &Path) -> ContainerResult<PathBuf> {
         let path = if path.starts_with("~") {
-            if let Some(home) = dirs::home_dir() {
-                let without_tilde = path.strip_prefix("~").unwrap_or(path);
-                let without_tilde_str = without_tilde.to_string_lossy();
-                let trimmed = without_tilde_str.trim_start_matches('/');
-                home.join(trimmed)
-            } else {
-                path.to_path_buf()
-            }
+            dirs::home_dir().map_or_else(
+                || path.to_path_buf(),
+                |home| {
+                    let without_tilde = path.strip_prefix("~").unwrap_or(path);
+                    let without_tilde_str = without_tilde.to_string_lossy();
+                    let trimmed = without_tilde_str.trim_start_matches('/');
+                    home.join(trimmed)
+                },
+            )
         } else {
             path.to_path_buf()
         };

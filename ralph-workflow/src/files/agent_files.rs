@@ -354,7 +354,7 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
                 if fs::set_permissions(path, perms).is_err() {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
-                        format!("Failed to set read-only on {path:?}"),
+                        format!("Failed to set read-only on {}", path.display()),
                     ));
                 }
             }
@@ -412,62 +412,58 @@ pub fn cleanup_generated_files() {
 ///
 /// # Behavior
 ///
-/// - If PROMPT.md doesn't exist, returns `Ok(None)` (nothing to protect)
+/// - If PROMPT.md doesn't exist, returns `None` (nothing to protect)
 /// - Uses platform-specific permission setting
 /// - Returns a warning string if setting permissions fails (best-effort)
 ///
 /// # Returns
 ///
-/// Returns `Ok(Option<String>)` where:
-/// - `Ok(None)` - permissions set successfully or file doesn't exist
-/// - `Ok(Some(warning))` - couldn't set read-only permissions
-pub fn make_prompt_read_only() -> io::Result<Option<String>> {
+/// Returns `Option<String>` where:
+/// - `None` - permissions set successfully or file doesn't exist
+/// - `Some(warning)` - couldn't set read-only permissions
+pub fn make_prompt_read_only() -> Option<String> {
     let prompt_path = Path::new("PROMPT.md");
 
     // If PROMPT.md doesn't exist, that's fine - nothing to protect
     if !prompt_path.exists() {
-        return Ok(None);
+        return None;
     }
 
     // Try to set read-only permissions and track any failure
-    let mut readonly_warning = None;
+    try_make_read_only(prompt_path)
+}
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        match fs::metadata(prompt_path) {
-            Ok(metadata) => {
-                let mut perms = metadata.permissions();
-                perms.set_mode(0o444); // Read-only for all
-                if fs::set_permissions(prompt_path, perms).is_err() {
-                    readonly_warning =
-                        Some("Failed to set read-only permissions on PROMPT.md".to_string());
-                }
+#[cfg(unix)]
+fn try_make_read_only(prompt_path: &Path) -> Option<String> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(prompt_path).map_or_else(
+        |_| Some("Failed to read metadata for PROMPT.md".to_string()),
+        |metadata| {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o444); // Read-only for all
+            if fs::set_permissions(prompt_path, perms).is_err() {
+                Some("Failed to set read-only permissions on PROMPT.md".to_string())
+            } else {
+                None
             }
-            Err(_) => {
-                readonly_warning = Some("Failed to read metadata for PROMPT.md".to_string());
-            }
-        }
-    }
+        },
+    )
+}
 
-    #[cfg(windows)]
-    {
-        match fs::metadata(prompt_path) {
-            Ok(metadata) => {
-                let mut perms = metadata.permissions();
-                perms.set_readonly(true);
-                if fs::set_permissions(prompt_path, perms).is_err() {
-                    readonly_warning =
-                        Some("Failed to set read-only permissions on PROMPT.md".to_string());
-                }
+#[cfg(windows)]
+fn try_make_read_only(prompt_path: &Path) -> Option<String> {
+    fs::metadata(prompt_path).map_or_else(
+        |_| Some("Failed to read metadata for PROMPT.md".to_string()),
+        |metadata| {
+            let mut perms = metadata.permissions();
+            perms.set_readonly(true);
+            if fs::set_permissions(prompt_path, perms).is_err() {
+                Some("Failed to set read-only permissions on PROMPT.md".to_string())
+            } else {
+                None
             }
-            Err(_) => {
-                readonly_warning = Some("Failed to read metadata for PROMPT.md".to_string());
-            }
-        }
-    }
-
-    Ok(readonly_warning)
+        },
+    )
 }
 
 #[cfg(test)]
@@ -806,7 +802,7 @@ mod tests {
             fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
 
             // Make it read-only
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
 
             // On Unix, verify permissions are read-only
             #[cfg(unix)]
@@ -836,7 +832,7 @@ mod tests {
             assert!(!Path::new("PROMPT.md").exists());
 
             // Should succeed without error
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
         });
     }
 
@@ -847,8 +843,8 @@ mod tests {
             fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
 
             // Make it read-only twice
-            make_prompt_read_only().unwrap();
-            make_prompt_read_only().unwrap();
+            make_prompt_read_only();
+            make_prompt_read_only();
 
             // File should still exist and be readable
             let content = fs::read_to_string("PROMPT.md").unwrap();

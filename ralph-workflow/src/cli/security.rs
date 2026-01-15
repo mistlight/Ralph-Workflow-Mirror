@@ -568,12 +568,7 @@ fn print_security_summary(colors: Colors, resolved_mode: SecurityMode, is_ready:
 /// Handle the --security-check command
 ///
 /// Checks and reports the status of security mode configuration.
-#[allow(clippy::unnecessary_wraps)]
-pub fn handle_security_check(
-    colors: Colors,
-    config: &Config,
-    _logger: &mut Logger,
-) -> anyhow::Result<()> {
+pub fn handle_security_check(colors: Colors, config: &Config, _logger: &Logger) {
     print_security_check_header(colors);
 
     // Determine effective security mode
@@ -585,7 +580,7 @@ pub fn handle_security_check(
             colors.reset()
         );
         println!("Valid options: auto, container, user-account, none");
-        return Ok(());
+        return;
     };
 
     let resolved_mode = match security_mode {
@@ -601,8 +596,6 @@ pub fn handle_security_check(
     // Summary
     let is_ready = is_security_mode_ready(resolved_mode, config, user_exists);
     print_security_summary(colors, resolved_mode, is_ready);
-
-    Ok(())
 }
 
 /// Handle the --build-image command

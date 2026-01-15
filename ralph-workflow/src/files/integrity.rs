@@ -9,9 +9,6 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 use tempfile::NamedTempFile;
 
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-
 /// Maximum reasonable file size for agent text files (10MB).
 pub const MAX_AGENT_FILE_SIZE: u64 = 10 * 1024 * 1024;
 
@@ -22,12 +19,6 @@ pub const MAX_AGENT_FILE_SIZE: u64 = 10 * 1024 * 1024;
 ///
 /// Uses `tempfile::NamedTempFile` which creates secure, unpredictable
 /// temporary file names to prevent symlink attacks.
-///
-/// # Security
-///
-/// On Unix systems, the temp file is created with mode 0600 (owner read/write
-/// only) to prevent other users from reading sensitive content before the
-/// atomic rename completes.
 pub fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -37,15 +28,6 @@ pub fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
     // This ensures atomic rename works (same filesystem).
     let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent_dir)?;
-
-    // Set restrictive permissions on temp file (0600 = owner read/write only)
-    // This prevents other users from reading the temp file before rename
-    #[cfg(unix)]
-    {
-        let mut perms = fs::metadata(temp_file.path())?.permissions();
-        perms.set_mode(0o600);
-        fs::set_permissions(temp_file.path(), perms)?;
-    }
 
     // Write content to the temp file
     temp_file.write_all(content.as_bytes())?;
@@ -99,7 +81,10 @@ pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
             let Some(name) = file_name.to_str() else {
                 continue;
             };
-            if !name.to_ascii_lowercase().ends_with(".lock") {
+            if !std::path::Path::new(name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
+            {
                 continue;
             }
 

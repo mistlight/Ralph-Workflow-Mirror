@@ -18,12 +18,12 @@ mod tests {
 
     impl NetworkMode {
         /// Check if network is enabled in this mode
-        const fn is_enabled(&self) -> bool {
+        const fn is_enabled(self) -> bool {
             !matches!(self, Self::Disabled)
         }
 
         /// Get the Docker/Podman network flag value
-        const fn as_flag(&self) -> Option<&'static str> {
+        const fn as_flag(self) -> Option<&'static str> {
             match self {
                 Self::Enabled => None, // Default, no flag needed
                 Self::Disabled => Some("none"),
