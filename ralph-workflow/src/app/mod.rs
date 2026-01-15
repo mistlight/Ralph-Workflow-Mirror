@@ -59,76 +59,6 @@ use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
 
-/// Handle plumbing commands that need git repo but not full validation.
-///
-/// Returns `Ok(Some(()))` if a plumbing command was handled, `Ok(None)` if not.
-fn handle_plumbing_commands(
-    args: &Args,
-    logger: &Logger,
-    colors: Colors,
-) -> anyhow::Result<Option<()>> {
-    if args.commit_display.show_commit_msg {
-        handle_show_commit_msg()?;
-        return Ok(Some(()));
-    }
-    if args.commit_plumbing.apply_commit {
-        handle_apply_commit(logger, colors)?;
-        return Ok(Some(()));
-    }
-    if args.commit_display.reset_start_commit {
-        require_git_repo()?;
-        let repo_root = get_repo_root()?;
-        env::set_current_dir(&repo_root)?;
-
-        match reset_start_commit() {
-            Ok(()) => {
-                logger.success("Starting commit reference reset to current HEAD");
-                logger.info(".agent/start_commit has been updated");
-                return Ok(Some(()));
-            }
-            Err(e) => {
-                logger.error(&format!("Failed to reset starting commit: {e}"));
-                anyhow::bail!("Failed to reset starting commit");
-            }
-        }
-    }
-    Ok(None)
-}
-
-/// Handle interactive mode prompt creation for missing PROMPT.md.
-///
-/// Returns `Ok(Some(()))` if prompt was created and we should exit, `Ok(None)` if not.
-fn handle_interactive_prompt_creation(
-    args: &Args,
-    config: &crate::config::types::Config,
-    logger: &Logger,
-    colors: Colors,
-) -> anyhow::Result<Option<()>> {
-    if !args.interactive || std::path::Path::new("PROMPT.md").exists() {
-        return Ok(None);
-    }
-
-    if let Some(template_name) = prompt_template_selection(colors) {
-        create_prompt_from_template(&template_name, colors)?;
-        println!();
-        logger.info(
-            "PROMPT.md created. Please edit it with your task details, then run ralph again.",
-        );
-        logger.info(&format!(
-            "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-            config.commit_msg
-        ));
-        return Ok(Some(()));
-    }
-
-    println!();
-    logger.info("PROMPT.md is required to run the pipeline.");
-    logger.info(
-        "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-    );
-    Ok(Some(()))
-}
-
 /// Main application entry point.
 ///
 /// Orchestrates the entire Ralph pipeline:
@@ -178,7 +108,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Handle --diagnose
-    if args.recovery.diagnose {
+    if args.diagnose {
         handle_diagnose(colors, &config, &registry, &config_path, &config_sources);
         return Ok(());
     }
@@ -186,9 +116,29 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // Validate agent chains
     validate_agent_chains(&registry, colors);
 
-    // Handle plumbing commands
-    if handle_plumbing_commands(&args, &logger, colors)?.is_some() {
-        return Ok(());
+    // Handle plumbing commands (these need git repo but not full validation)
+    if args.show_commit_msg {
+        return handle_show_commit_msg();
+    }
+    if args.apply_commit {
+        return handle_apply_commit(&logger, colors);
+    }
+    if args.reset_start_commit {
+        require_git_repo()?;
+        let repo_root = get_repo_root()?;
+        env::set_current_dir(&repo_root)?;
+
+        match reset_start_commit() {
+            Ok(()) => {
+                logger.success("Starting commit reference reset to current HEAD");
+                logger.info(".agent/start_commit has been updated");
+                return Ok(());
+            }
+            Err(e) => {
+                logger.error(&format!("Failed to reset starting commit: {e}"));
+                anyhow::bail!("Failed to reset starting commit");
+            }
+        }
     }
 
     // Validate agent commands exist
@@ -214,8 +164,26 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
 
-    // Handle interactive mode prompt creation
-    if handle_interactive_prompt_creation(&args, &config, &logger, colors)?.is_some() {
+    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
+    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
+    if args.interactive && !std::path::Path::new("PROMPT.md").exists() {
+        if let Some(template_name) = prompt_template_selection(colors) {
+            create_prompt_from_template(&template_name, colors)?;
+            println!();
+            logger.info(
+                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+            );
+            logger.info(&format!(
+                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                config.commit_msg
+            ));
+            return Ok(());
+        }
+        println!();
+        logger.info("PROMPT.md is required to run the pipeline.");
+        logger.info(
+            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+        );
         return Ok(());
     }
 
@@ -229,7 +197,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
     // Handle --dry-run
-    if args.recovery.dry_run {
+    if args.dry_run {
         return handle_dry_run(
             &logger,
             colors,
@@ -241,7 +209,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Handle --generate-commit-msg
-    if args.commit_plumbing.generate_commit_msg {
+    if args.generate_commit_msg {
         return handle_generate_commit_msg(
             &config,
             &registry,
@@ -272,168 +240,24 @@ pub fn run(args: Args) -> anyhow::Result<()> {
 ///
 /// Returns `true` if a listing command was handled and we should exit.
 fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors) -> bool {
-    if args.agent_list.list_agents {
+    if args.list_agents {
         handle_list_agents(registry);
         return true;
     }
-    if args.agent_list.list_available_agents {
+    if args.list_available_agents {
         handle_list_available_agents(registry);
         return true;
     }
-    if args.provider_list.list_providers {
+    if args.list_providers {
         handle_list_providers(colors);
         return true;
     }
     false
 }
 
-/// Validate and protect PROMPT.md file.
-fn setup_prompt_protection(
-    strict_validation: bool,
-    interactive: bool,
-    logger: &Logger,
-) -> anyhow::Result<()> {
-    let prompt_validation = validate_prompt_md(strict_validation, interactive);
-    for err in &prompt_validation.errors {
-        logger.error(err);
-    }
-    for warn in &prompt_validation.warnings {
-        logger.warn(warn);
-    }
-    if !prompt_validation.is_valid() {
-        anyhow::bail!("PROMPT.md validation errors");
-    }
-
-    match create_prompt_backup() {
-        Ok(None) => {}
-        Ok(Some(warning)) => {
-            logger.warn(&format!(
-                "PROMPT.md backup created but: {warning}. Continuing anyway."
-            ));
-        }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to create PROMPT.md backup: {e}. Continuing anyway."
-            ));
-        }
-    }
-
-    match make_prompt_read_only() {
-        None => {}
-        Some(warning) => {
-            logger.warn(&format!("{warning}. Continuing anyway."));
-        }
-    }
-
-    Ok(())
-}
-
-/// Set up PROMPT.md monitoring for real-time deletion detection.
-fn setup_prompt_monitor(
-    logger: &Logger,
-    verbosity: crate::config::types::Verbosity,
-) -> Option<PromptMonitor> {
-    match PromptMonitor::new() {
-        Ok(mut monitor) => {
-            if let Err(e) = monitor.start() {
-                logger.warn(&format!(
-                    "Failed to start PROMPT.md monitoring: {e}. Continuing anyway."
-                ));
-                None
-            } else {
-                if verbosity.is_debug() {
-                    logger.info("Started real-time PROMPT.md monitoring");
-                }
-                Some(monitor)
-            }
-        }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to create PROMPT.md monitor: {e}. Continuing anyway."
-            ));
-            None
-        }
-    }
-}
-
-/// Print welcome banner and project information.
-fn print_welcome_info(
-    colors: Colors,
-    developer_display: &str,
-    reviewer_display: &str,
-    repo_root: &std::path::Path,
-    commit_msg: &str,
-    logger: &Logger,
-) {
-    print_welcome_banner(colors, developer_display, reviewer_display);
-    logger.info(&format!(
-        "Working directory: {}{}{}",
-        colors.cyan(),
-        repo_root.display(),
-        colors.reset()
-    ));
-    logger.info(&format!(
-        "Commit message: {}{}{}",
-        colors.cyan(),
-        commit_msg,
-        colors.reset()
-    ));
-}
-
-/// Save the starting commit reference for incremental diff generation.
-fn save_starting_commit(logger: &Logger, verbosity: crate::config::types::Verbosity) {
-    match save_start_commit() {
-        Ok(()) => {
-            if verbosity.is_debug() {
-                logger.info("Saved starting commit for incremental diff generation");
-            }
-        }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to save starting commit: {e}. \
-                 Incremental diffs may be unavailable as a result."
-            ));
-            logger.info(
-                "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
-            );
-        }
-    }
-}
-
-/// Run pipeline phases with monitoring.
-fn run_pipeline_phases(
-    ctx: &PipelineContext,
-    phase_ctx: &mut PhaseContext,
-    prompt_monitor: &mut Option<PromptMonitor>,
-    resume_checkpoint: Option<&PipelineCheckpoint>,
-) -> anyhow::Result<()> {
-    run_development(phase_ctx, &ctx.args, resume_checkpoint)?;
-
-    if let Some(ref mut monitor) = prompt_monitor {
-        if monitor.check_and_restore() {
-            ctx.logger
-                .warn("PROMPT.md was deleted and restored during development phase");
-        }
-    }
-    update_status("In progress.", ctx.config.isolation_mode)?;
-
-    run_review_and_fix(phase_ctx, &ctx.args, resume_checkpoint)?;
-
-    if let Some(ref mut monitor) = prompt_monitor {
-        if monitor.check_and_restore() {
-            ctx.logger
-                .warn("PROMPT.md was deleted and restored during review phase");
-        }
-    }
-    update_status("In progress.", ctx.config.isolation_mode)?;
-
-    run_final_validation(phase_ctx, resume_checkpoint)?;
-
-    Ok(())
-}
-
 /// Runs the full development/review/commit pipeline.
 fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
+    // Handle --resume
     let resume_checkpoint = handle_resume(
         &ctx.args,
         &ctx.logger,
@@ -441,65 +265,44 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         &ctx.reviewer_display,
     );
 
+    // Set up git helpers and agent phase
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
     cleanup_orphaned_marker(&ctx.logger)?;
     start_agent_phase(&mut git_helpers)?;
     let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger);
 
-    print_welcome_info(
-        ctx.colors,
-        &ctx.developer_display,
-        &ctx.reviewer_display,
-        &ctx.repo_root,
-        &ctx.config.commit_msg,
-        &ctx.logger,
-    );
+    // Print welcome banner and validate PROMPT.md
+    print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
+    print_pipeline_info(ctx);
+    validate_prompt_and_setup_backup(ctx)?;
 
-    setup_prompt_protection(
-        ctx.config.behavior.strict_validation,
-        ctx.args.interactive,
-        &ctx.logger,
-    )?;
+    // Set up PROMPT.md monitoring
+    let mut prompt_monitor = setup_prompt_monitor(ctx)?;
 
-    let mut prompt_monitor = setup_prompt_monitor(&ctx.logger, ctx.config.verbosity);
-
+    // Detect project stack and review guidelines
     let (_project_stack, review_guidelines) =
         detect_project_stack(&ctx.config, &ctx.repo_root, &ctx.logger, ctx.colors);
 
-    if let Some(ref guidelines) = review_guidelines {
-        ctx.logger.info(&format!(
-            "Review guidelines: {}{}{}",
-            ctx.colors.dim(),
-            guidelines.summary(),
-            ctx.colors.reset()
-        ));
-    }
-
+    print_review_guidelines(ctx, &review_guidelines);
     println!();
 
-    let mut timer = Timer::new();
-    let mut stats = Stats::new();
-    let mut phase_ctx = PhaseContext {
-        config: &ctx.config,
-        registry: &ctx.registry,
-        logger: &ctx.logger,
-        colors: &ctx.colors,
-        timer: &mut timer,
-        stats: &mut stats,
-        developer_agent: &ctx.developer_agent,
-        reviewer_agent: &ctx.reviewer_agent,
-        review_guidelines: review_guidelines.as_ref(),
-    };
+    // Create phase context and save starting commit
+    let (mut timer, mut stats) = (Timer::new(), Stats::new());
+    let mut phase_ctx = create_phase_context(ctx, &mut timer, &mut stats, &review_guidelines);
+    save_start_commit_or_warn(ctx);
 
-    save_starting_commit(&ctx.logger, ctx.config.verbosity);
+    // Run pipeline phases
+    run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
+    check_prompt_restoration(ctx, &mut prompt_monitor, "development");
+    update_status("In progress.", ctx.config.isolation_mode)?;
 
-    run_pipeline_phases(
-        ctx,
-        &mut phase_ctx,
-        &mut prompt_monitor,
-        resume_checkpoint.as_ref(),
-    )?;
+    run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
+    check_prompt_restoration(ctx, &mut prompt_monitor, "review");
+    update_status("In progress.", ctx.config.isolation_mode)?;
 
+    run_final_validation(&phase_ctx, resume_checkpoint.as_ref())?;
+
+    // Commit phase
     finalize_pipeline(
         &mut agent_phase_guard,
         &ctx.logger,
@@ -510,6 +313,157 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         prompt_monitor,
     );
     Ok(())
+}
+
+/// Print pipeline information (working directory and commit message).
+fn print_pipeline_info(ctx: &PipelineContext) {
+    ctx.logger.info(&format!(
+        "Working directory: {}{}{}",
+        ctx.colors.cyan(),
+        ctx.repo_root.display(),
+        ctx.colors.reset()
+    ));
+    ctx.logger.info(&format!(
+        "Commit message: {}{}{}",
+        ctx.colors.cyan(),
+        ctx.config.commit_msg,
+        ctx.colors.reset()
+    ));
+}
+
+/// Validate PROMPT.md and set up backup/protection.
+fn validate_prompt_and_setup_backup(ctx: &PipelineContext) -> anyhow::Result<()> {
+    let prompt_validation = validate_prompt_md(ctx.config.strict_validation, ctx.args.interactive);
+    for err in &prompt_validation.errors {
+        ctx.logger.error(err);
+    }
+    for warn in &prompt_validation.warnings {
+        ctx.logger.warn(warn);
+    }
+    if !prompt_validation.is_valid() {
+        anyhow::bail!("PROMPT.md validation errors");
+    }
+
+    // Create a backup of PROMPT.md to protect against accidental deletion.
+    match create_prompt_backup() {
+        Ok(None) => {}
+        Ok(Some(warning)) => {
+            ctx.logger.warn(&format!(
+                "PROMPT.md backup created but: {warning}. Continuing anyway."
+            ));
+        }
+        Err(e) => {
+            ctx.logger.warn(&format!(
+                "Failed to create PROMPT.md backup: {e}. Continuing anyway."
+            ));
+        }
+    }
+
+    // Make PROMPT.md read-only to protect against accidental deletion.
+    match make_prompt_read_only() {
+        None => {}
+        Some(warning) => {
+            ctx.logger.warn(&format!("{warning}. Continuing anyway."));
+        }
+    }
+
+    Ok(())
+}
+
+/// Set up PROMPT.md monitoring for deletion detection.
+fn setup_prompt_monitor(ctx: &PipelineContext) -> anyhow::Result<Option<PromptMonitor>> {
+    match PromptMonitor::new() {
+        Ok(mut monitor) => {
+            if let Err(e) = monitor.start() {
+                ctx.logger.warn(&format!(
+                    "Failed to start PROMPT.md monitoring: {e}. Continuing anyway."
+                ));
+                Ok(None)
+            } else {
+                if ctx.config.verbosity.is_debug() {
+                    ctx.logger.info("Started real-time PROMPT.md monitoring");
+                }
+                Ok(Some(monitor))
+            }
+        }
+        Err(e) => {
+            ctx.logger.warn(&format!(
+                "Failed to create PROMPT.md monitor: {e}. Continuing anyway."
+            ));
+            Ok(None)
+        }
+    }
+}
+
+/// Print review guidelines if detected.
+fn print_review_guidelines(
+    ctx: &PipelineContext,
+    review_guidelines: &Option<crate::guidelines::ReviewGuidelines>,
+) {
+    if let Some(ref guidelines) = review_guidelines {
+        ctx.logger.info(&format!(
+            "Review guidelines: {}{}{}",
+            ctx.colors.dim(),
+            guidelines.summary(),
+            ctx.colors.reset()
+        ));
+    }
+}
+
+/// Create the phase context for running pipeline phases.
+fn create_phase_context<'ctx>(
+    ctx: &'ctx PipelineContext,
+    timer: &'ctx mut Timer,
+    stats: &'ctx mut Stats,
+    review_guidelines: &'ctx Option<crate::guidelines::ReviewGuidelines>,
+) -> PhaseContext<'ctx> {
+    PhaseContext {
+        config: &ctx.config,
+        registry: &ctx.registry,
+        logger: &ctx.logger,
+        colors: &ctx.colors,
+        timer,
+        stats,
+        developer_agent: &ctx.developer_agent,
+        reviewer_agent: &ctx.reviewer_agent,
+        review_guidelines: review_guidelines.as_ref(),
+    }
+}
+
+/// Save starting commit or warn if it fails.
+fn save_start_commit_or_warn(ctx: &PipelineContext) {
+    match save_start_commit() {
+        Ok(()) => {
+            if ctx.config.verbosity.is_debug() {
+                ctx.logger
+                    .info("Saved starting commit for incremental diff generation");
+            }
+        }
+        Err(e) => {
+            ctx.logger.warn(&format!(
+                "Failed to save starting commit: {e}. \
+                 Incremental diffs may be unavailable as a result."
+            ));
+            ctx.logger.info(
+                "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
+            );
+        }
+    }
+}
+
+/// Check for PROMPT.md restoration after a phase.
+fn check_prompt_restoration(
+    ctx: &PipelineContext,
+    prompt_monitor: &mut Option<PromptMonitor>,
+    phase: &str,
+) {
+    if let Some(ref mut monitor) = prompt_monitor {
+        if monitor.check_and_restore() {
+            ctx.logger.warn(&format!(
+                "PROMPT.md was deleted and restored during {phase} phase"
+            ));
+        }
+    }
 }
 
 /// Runs the development phase.
@@ -543,8 +497,7 @@ fn run_development(
         _ => 1,
     };
 
-    let resuming_from_development =
-        args.recovery.resume && resume_phase == Some(PipelinePhase::Development);
+    let resuming_from_development = args.resume && resume_phase == Some(PipelinePhase::Development);
     let development_result = run_development_phase(ctx, start_iter, resuming_from_development)?;
 
     if development_result.had_errors {
@@ -630,7 +583,7 @@ fn run_final_validation(
         return Ok(());
     }
 
-    if ctx.config.features.checkpoint_enabled {
+    if ctx.config.checkpoint_enabled {
         let _ = save_checkpoint(&PipelineCheckpoint::new(
             PipelinePhase::FinalValidation,
             ctx.config.developer_iters,

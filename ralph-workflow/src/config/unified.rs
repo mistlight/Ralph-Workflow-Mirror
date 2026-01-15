@@ -94,6 +94,9 @@ pub struct GeneralFeatureFlags {
 /// General configuration section.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
+#[allow(clippy::struct_excessive_bools)]
+// Configuration options naturally use many boolean flags. These represent
+// independent feature toggles, not a state machine, so bools are appropriate.
 pub struct GeneralConfig {
     /// Verbosity level (0-4).
     pub verbosity: u8,
