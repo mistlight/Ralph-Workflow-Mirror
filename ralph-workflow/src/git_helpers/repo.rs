@@ -285,7 +285,8 @@ pub fn git_add_all() -> io::Result<bool> {
     // Add all files (staged, unstaged, and untracked)
     // Note: add_all() is required here, not update_all(), to include untracked files
     let mut filter_cb = |path: &std::path::Path, _matched: &[u8]| -> i32 {
-        // Never stage Ralph internal artifacts, even if the user's repo doesn't ignore them.
+        // Return 0 to add the file, non-zero to skip.
+        // We skip (return 1) internal agent artifacts to avoid committing them.
         i32::from(is_internal_agent_artifact(path))
     };
     index

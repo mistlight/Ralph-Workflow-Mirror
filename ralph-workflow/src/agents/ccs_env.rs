@@ -792,10 +792,7 @@ profiles:
                 );
             }
             other => {
-                assert!(
-                    false,
-                    "Expected ProfileNotFound error with profile 'nonexistent', got: {other:?}"
-                );
+                panic!("Expected ProfileNotFound error with profile 'nonexistent', got: {other:?}");
             }
         }
     }
@@ -848,7 +845,7 @@ profiles:
         match result.unwrap_err() {
             CcsEnvVarsError::MissingEnv { .. } => {}
             other => {
-                assert!(false, "Expected MissingEnv error, got: {other:?}");
+                panic!("Expected MissingEnv error, got: {other:?}");
             }
         }
     }
@@ -864,10 +861,7 @@ profiles:
                 assert_eq!(profile, "", "Expected empty profile name");
             }
             other => {
-                assert!(
-                    false,
-                    "Expected InvalidProfile error with empty profile, got: {other:?}"
-                );
+                panic!("Expected InvalidProfile error with empty profile, got: {other:?}");
             }
         }
     }
