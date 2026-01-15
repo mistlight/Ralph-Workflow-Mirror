@@ -259,7 +259,7 @@ fn looks_like_ndjson(content: &str) -> bool {
     content.lines().count() > 1 && content.contains("{\"type\":")
 }
 
-/// File count pattern regex - compiled once using OnceLock for efficiency.
+/// File count pattern regex - compiled once using `OnceLock` for efficiency.
 /// Matches patterns like "chore: N file(s) changed" for any number N.
 fn file_count_pattern_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();

@@ -227,8 +227,8 @@ impl AgentErrorKind {
         // If we know this is a GLM-like agent and it failed with exit code 1
         // (and we haven't matched a specific error pattern above),
         // classify it as AgentSpecificQuirk to trigger fallback instead of retry.
-        let is_problematic_agent = agent_name.is_some_and(is_glm_like_agent)
-            || model_flag.is_some_and(is_glm_like_agent);
+        let is_problematic_agent =
+            agent_name.is_some_and(is_glm_like_agent) || model_flag.is_some_and(is_glm_like_agent);
 
         if is_problematic_agent && exit_code == 1 {
             // GLM and similar agents often exit with code 1 for various issues.

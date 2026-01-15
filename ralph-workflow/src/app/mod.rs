@@ -277,18 +277,19 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     validate_prompt_and_setup_backup(ctx)?;
 
     // Set up PROMPT.md monitoring
-    let mut prompt_monitor = setup_prompt_monitor(ctx)?;
+    let mut prompt_monitor = setup_prompt_monitor(ctx);
 
     // Detect project stack and review guidelines
     let (_project_stack, review_guidelines) =
         detect_project_stack(&ctx.config, &ctx.repo_root, &ctx.logger, ctx.colors);
 
-    print_review_guidelines(ctx, &review_guidelines);
+    print_review_guidelines(ctx, review_guidelines.as_ref());
     println!();
 
     // Create phase context and save starting commit
     let (mut timer, mut stats) = (Timer::new(), Stats::new());
-    let mut phase_ctx = create_phase_context(ctx, &mut timer, &mut stats, &review_guidelines);
+    let mut phase_ctx =
+        create_phase_context(ctx, &mut timer, &mut stats, review_guidelines.as_ref());
     save_start_commit_or_warn(ctx);
 
     // Run pipeline phases
@@ -371,26 +372,26 @@ fn validate_prompt_and_setup_backup(ctx: &PipelineContext) -> anyhow::Result<()>
 }
 
 /// Set up PROMPT.md monitoring for deletion detection.
-fn setup_prompt_monitor(ctx: &PipelineContext) -> anyhow::Result<Option<PromptMonitor>> {
+fn setup_prompt_monitor(ctx: &PipelineContext) -> Option<PromptMonitor> {
     match PromptMonitor::new() {
         Ok(mut monitor) => {
             if let Err(e) = monitor.start() {
                 ctx.logger.warn(&format!(
                     "Failed to start PROMPT.md monitoring: {e}. Continuing anyway."
                 ));
-                Ok(None)
+                None
             } else {
                 if ctx.config.verbosity.is_debug() {
                     ctx.logger.info("Started real-time PROMPT.md monitoring");
                 }
-                Ok(Some(monitor))
+                Some(monitor)
             }
         }
         Err(e) => {
             ctx.logger.warn(&format!(
                 "Failed to create PROMPT.md monitor: {e}. Continuing anyway."
             ));
-            Ok(None)
+            None
         }
     }
 }
@@ -398,9 +399,9 @@ fn setup_prompt_monitor(ctx: &PipelineContext) -> anyhow::Result<Option<PromptMo
 /// Print review guidelines if detected.
 fn print_review_guidelines(
     ctx: &PipelineContext,
-    review_guidelines: &Option<crate::guidelines::ReviewGuidelines>,
+    review_guidelines: Option<&crate::guidelines::ReviewGuidelines>,
 ) {
-    if let Some(ref guidelines) = review_guidelines {
+    if let Some(guidelines) = review_guidelines {
         ctx.logger.info(&format!(
             "Review guidelines: {}{}{}",
             ctx.colors.dim(),
@@ -415,7 +416,7 @@ fn create_phase_context<'ctx>(
     ctx: &'ctx PipelineContext,
     timer: &'ctx mut Timer,
     stats: &'ctx mut Stats,
-    review_guidelines: &'ctx Option<crate::guidelines::ReviewGuidelines>,
+    review_guidelines: Option<&'ctx crate::guidelines::ReviewGuidelines>,
 ) -> PhaseContext<'ctx> {
     PhaseContext {
         config: &ctx.config,
@@ -426,7 +427,7 @@ fn create_phase_context<'ctx>(
         stats,
         developer_agent: &ctx.developer_agent,
         reviewer_agent: &ctx.reviewer_agent,
-        review_guidelines: review_guidelines.as_ref(),
+        review_guidelines,
     }
 }
 

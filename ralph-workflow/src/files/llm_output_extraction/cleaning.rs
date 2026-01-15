@@ -408,7 +408,7 @@ pub fn looks_like_analysis_text(text: &str) -> bool {
     false
 }
 
-/// ANSI escape code regex - compiled once using OnceLock for efficiency.
+/// ANSI escape code regex - compiled once using `OnceLock` for efficiency.
 /// Matches patterns like \x1b[...m or \x1b[...K used for terminal formatting.
 fn ansi_escape_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();

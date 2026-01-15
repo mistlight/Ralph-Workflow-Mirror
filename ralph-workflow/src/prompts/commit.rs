@@ -368,6 +368,8 @@ pub fn prompt_emergency_commit(diff: &str) -> String {
 /// without any diff content. Used when all diff-including prompts fail due to
 /// extreme token limits.
 pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
+    use std::fmt::Write;
+
     let diff_content = diff.trim();
 
     // Extract file statistics from the diff
@@ -401,7 +403,6 @@ pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
     let total_files = files.len();
 
     // Build the summary
-    use std::fmt::Write;
     let mut summary = String::from("Changed files summary:\n");
     writeln!(summary, "Total files changed: {total_files}").unwrap();
 
