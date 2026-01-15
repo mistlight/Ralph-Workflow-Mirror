@@ -14,8 +14,8 @@ use super::context::PhaseContext;
 use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole};
 use crate::files::llm_output_extraction::{
     detect_agent_errors_in_output, extract_llm_output, generate_fallback_commit_message,
-    try_extract_structured_commit, try_salvage_commit_message, validate_commit_message,
-    CommitExtractionResult, OutputFormat,
+    preprocess_raw_content, try_extract_structured_commit, try_salvage_commit_message,
+    validate_commit_message, CommitExtractionResult, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
@@ -980,6 +980,10 @@ fn extract_commit_message_from_logs(
         logger.warn("Log file is empty");
         return Ok(None);
     }
+
+    // PRE-PROCESS: Apply aggressive escape sequence unescaping BEFORE any other processing
+    // This handles cases where agents output JSON with improperly escaped strings
+    content = preprocess_raw_content(&content);
 
     // FIRST: Detect agent errors in the output stream BEFORE attempting extraction
     // This handles cases where agents output errors in their result field instead of stderr
