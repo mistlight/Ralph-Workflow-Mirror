@@ -54,6 +54,8 @@
 //! The debouncer is opt-in; the default behavior shows prefix on every delta.
 
 use crate::logger::Colors;
+
+#[cfg(test)]
 use std::time::{Duration, Instant};
 
 /// ANSI escape sequence for clearing the entire line.
@@ -105,6 +107,7 @@ fn sanitize_for_display(content: &str) -> String {
 /// - `prefix_delta_threshold`: 0 (show prefix only on first delta)
 /// - `prefix_time_threshold`: None (no time-based debouncing)
 #[derive(Debug, Clone, Default)]
+#[cfg(test)]
 pub struct StreamingConfig {
     /// Minimum number of deltas between prefix displays (0 = show on every delta)
     pub prefix_delta_threshold: u32,
@@ -141,12 +144,14 @@ pub struct StreamingConfig {
 /// // ... after threshold reached or time elapsed, prefix shows again
 /// ```
 #[derive(Debug, Clone)]
+#[cfg(test)]
 pub struct PrefixDebouncer {
     config: StreamingConfig,
     delta_count: u32,
     last_prefix_time: Option<Instant>,
 }
 
+#[cfg(test)]
 impl PrefixDebouncer {
     /// Create a new prefix debouncer with the given configuration.
     pub const fn new(config: StreamingConfig) -> Self {
@@ -208,6 +213,7 @@ impl PrefixDebouncer {
     }
 }
 
+#[cfg(test)]
 impl Default for PrefixDebouncer {
     fn default() -> Self {
         Self::new(StreamingConfig::default())

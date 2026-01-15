@@ -137,12 +137,29 @@ impl FallbackConfig {
     ///
     /// Uses integer arithmetic to avoid floating-point casting issues.
     pub fn calculate_backoff(&self, cycle: u32) -> u64 {
-        // Convert multiplier to a fraction with hundredths precision
-        // e.g., 2.0 -> 200, 1.5 -> 150
-        // Multipliers are expected to be positive and small (e.g., 1.0-10.0)
-        // We use a helper function that avoids unsafe casts
-        let multiplier_hundredths: u64 = Self::f64_to_hundredths(self.backoff_multiplier);
-
+        // Convert multiplier to a fraction (e.g., 2.0 -> 200/100, 1.5 -> 150/100)
+        // Clamp multiplier to valid range [0.0, 1000.0] to prevent overflow
+        let clamped_multiplier = self.backoff_multiplier.clamp(0.0, 1000.0);
+        // Convert to integer representation (hundredths of the multiplier)
+        // Since clamped_multiplier is in [0.0, 1000.0], result is in [0.0, 100000.0]
+        // f64 can exactly represent integers up to 2^53 (~9e15), so 100000 is exact
+        let multiplied = clamped_multiplier * 100.0;
+        let rounded = multiplied.round();
+        // SAFETY: clamped is in [0.0, 1000.0], so rounded is in [0.0, 100000.0]
+        // This is well within u64 range and the sign bit is 0 (non-negative)
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "value is in [0.0, 100000.0] which fits in u64"
+        )]
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "value is guaranteed non-negative by clamp(0.0, ...)"
+        )]
+        let multiplier_hundredths = if rounded.is_finite() && rounded >= 0.0 {
+            rounded as u64
+        } else {
+            0
+        };
         let base_hundredths = self.retry_delay_ms.saturating_mul(100);
 
         // Calculate: base * (multiplier^cycle) / 100^cycle
@@ -155,24 +172,6 @@ impl FallbackConfig {
 
         // Convert back to milliseconds
         delay_hundredths.div_euclid(100).min(self.max_backoff_ms)
-    }
-
-    /// Convert a f64 multiplier to hundredths as u64.
-    ///
-    /// The value is clamped to [0.0, 655.0] to ensure the result fits in u32
-    /// without precision loss or sign issues. We convert through string parsing
-    /// to avoid unsafe float-to-int casts.
-    fn f64_to_hundredths(value: f64) -> u64 {
-        // Clamp to reasonable range (0.0 to 655.0)
-        let clamped = value.clamp(0.0, 655.0);
-        // Multiply by 100 and round to get hundredths (max 65500)
-        let rounded = (clamped * 100.0).round();
-        // Convert through string parsing to avoid direct float-to-int cast
-        // This is slightly inefficient but guarantees clippy compliance
-        format!("{rounded:.0}")
-            .parse::<u64>()
-            .unwrap_or(0)
-            .min(65500)
     }
 
     /// Get fallback agents for a role.
@@ -226,6 +225,7 @@ mod tests {
         assert!(config.commit.is_empty());
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.retry_delay_ms, 1000);
+        // Use approximate comparison for floating point
         assert!((config.backoff_multiplier - 2.0).abs() < f64::EPSILON);
         assert_eq!(config.max_backoff_ms, 60000);
         assert_eq!(config.max_cycles, 3);

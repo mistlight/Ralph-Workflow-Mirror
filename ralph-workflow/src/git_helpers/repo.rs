@@ -30,8 +30,8 @@ const DIFF_TRUNCATED_MARKER: &str =
 
 /// Convert git2 error to `io::Error`.
 fn git2_to_io_error(err: git2::Error) -> io::Error {
+    // Consume the error to extract its message
     let msg = err.to_string();
-    drop(err);
     io::Error::other(msg)
 }
 

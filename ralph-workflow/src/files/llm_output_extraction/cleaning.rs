@@ -500,6 +500,44 @@ fn remove_formatted_thinking_patterns(content: &str) -> String {
     }
 }
 
+/// Unescape common JSON escape sequences in text.
+///
+/// This handles cases where LLMs output content with JSON escapes (like `\n` for newline)
+/// that weren't properly decoded before being used as commit messages.
+///
+/// This is needed because some agents output JSON string values with escape sequences
+/// that leak through when the JSON is parsed but not fully unescaped.
+///
+/// # Examples
+///
+/// ```
+/// let input = "feat: add feature\\n\\nThis adds new functionality.";
+/// let result = unescape_json_strings(input);
+/// assert_eq!(result, "feat: add feature\n\nThis adds new functionality.");
+/// ```
+pub fn unescape_json_strings(content: &str) -> String {
+    let mut result = content.to_string();
+
+    // Common JSON escape sequences that might leak
+    // Note: We only replace literal backslash-n patterns, not actual newlines
+    // We need to be careful to only replace literal \n, \t, \r sequences
+    // that appear in the text (which indicates improper JSON unescaping)
+
+    // We use a more careful approach: replace literal backslash followed by n/t/r
+    // But we must be careful not to double-escape already correct content
+
+    // Check if we have literal escape sequences (backslash followed by n/t/r)
+    // This is indicated by the presence of "\n" (two characters: backslash, n)
+    // NOT a newline character
+    if result.contains("\\n") || result.contains("\\t") || result.contains("\\r") {
+        result = result.replace("\\n", "\n"); // newline
+        result = result.replace("\\t", "\t"); // tab
+        result = result.replace("\\r", "\r"); // carriage return
+    }
+
+    result
+}
+
 /// Clean plain text output by removing common artifacts.
 ///
 /// This handles:
@@ -508,6 +546,7 @@ fn remove_formatted_thinking_patterns(content: &str) -> String {
 /// - AI thought process patterns (e.g., "Looking at this diff...")
 /// - Common prefixes like "Commit message:", "Output:", etc.
 /// - Excessive whitespace
+/// - JSON escape sequences that weren't properly unescaped
 pub fn clean_plain_text(content: &str) -> String {
     let mut result = content.to_string();
 
@@ -556,6 +595,10 @@ pub fn clean_plain_text(content: &str) -> String {
     {
         result = trimmed[1..trimmed.len() - 1].to_string();
     }
+
+    // Unescape JSON escape sequences (final cleanup step)
+    // This handles cases where LLMs output literal \n instead of actual newlines
+    result = unescape_json_strings(&result);
 
     // Clean up whitespace
     result
@@ -634,5 +677,45 @@ mod tests {
         let input = "```text\nfeat: add feature\n```";
         let result = clean_plain_text(input);
         assert_eq!(result, "feat: add feature");
+    }
+
+    #[test]
+    fn test_unescape_json_strings_newlines() {
+        let input = "feat: add feature\\n\\nThis adds new functionality.";
+        let result = unescape_json_strings(input);
+        assert_eq!(result, "feat: add feature\n\nThis adds new functionality.");
+    }
+
+    #[test]
+    fn test_unescape_json_strings_tabs() {
+        let input = "feat: add feature\\n\\t- bullet point";
+        let result = unescape_json_strings(input);
+        assert_eq!(result, "feat: add feature\n\t- bullet point");
+    }
+
+    #[test]
+    fn test_unescape_json_strings_mixed() {
+        let input = "feat: add feature\\n\\nDetails:\\r\\n\\t- item 1\\n\\t- item 2";
+        let result = unescape_json_strings(input);
+        assert_eq!(
+            result,
+            "feat: add feature\n\nDetails:\r\n\t- item 1\n\t- item 2"
+        );
+    }
+
+    #[test]
+    fn test_unescape_json_strings_no_escape_sequences() {
+        let input = "feat: add feature\n\nThis is already correct.";
+        let result = unescape_json_strings(input);
+        // Should not modify content that doesn't have literal escape sequences
+        assert_eq!(result, "feat: add feature\n\nThis is already correct.");
+    }
+
+    #[test]
+    fn test_clean_plain_text_unescapes() {
+        let input = "```text\nfeat: add feature\\n\\nThis adds new functionality.\n```";
+        let result = clean_plain_text(input);
+        // Note: clean_plain_text removes empty lines, so double newlines become single
+        assert_eq!(result, "feat: add feature\nThis adds new functionality.");
     }
 }
