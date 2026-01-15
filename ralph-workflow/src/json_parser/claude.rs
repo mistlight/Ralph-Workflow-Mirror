@@ -33,13 +33,11 @@
 //! This pattern is consistent across all parsers (Claude, Codex, Gemini, `OpenCode`)
 //! with variations in when the prefix is shown based on each format's event structure.
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::items_after_statements)]
-
 use crate::common::truncate_text;
 use crate::config::Verbosity;
 use crate::logger::{Colors, CHECK, CROSS};
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -128,7 +126,6 @@ impl ClaudeParser {
                         c.reset()
                     );
                     if let Some(cwd) = cwd {
-                        use std::fmt::Write;
                         let _ = writeln!(
                             out,
                             "{}[{}]{} {}Working dir: {}{}",
@@ -181,7 +178,6 @@ impl ClaudeParser {
                                         if let Some(text) = text {
                                             let limit = self.verbosity.truncate_limit("text");
                                             let preview = truncate_text(&text, limit);
-                                            use std::fmt::Write;
                                             let _ = writeln!(
                                                 out,
                                                 "{}[{}]{} {}{}{}",
@@ -197,7 +193,6 @@ impl ClaudeParser {
                                     ContentBlock::ToolUse { name: tool, input } => {
                                         let tool_name =
                                             tool.unwrap_or_else(|| "unknown".to_string());
-                                        use std::fmt::Write;
                                         let _ = writeln!(
                                             out,
                                             "{}[{}]{} {}Tool{}: {}{}{}",
@@ -219,7 +214,6 @@ impl ClaudeParser {
                                                     self.verbosity.truncate_limit("tool_input");
                                                 let preview = truncate_text(&input_str, limit);
                                                 if !preview.is_empty() {
-                                                    use std::fmt::Write;
                                                     let _ = writeln!(
                                                         out,
                                                         "{}[{}]{} {}  └─ {}{}",
@@ -243,7 +237,6 @@ impl ClaudeParser {
                                             let limit =
                                                 self.verbosity.truncate_limit("tool_result");
                                             let preview = truncate_text(&content_str, limit);
-                                            use std::fmt::Write;
                                             let _ = writeln!(
                                                 out,
                                                 "{}[{}]{} {}Result:{} {}",
@@ -338,7 +331,6 @@ impl ClaudeParser {
                 if let Some(result) = result {
                     let limit = self.verbosity.truncate_limit("result");
                     let preview = truncate_text(&result, limit);
-                    use std::fmt::Write;
                     let _ = writeln!(
                         out,
                         "\n{}Result summary:{}\n{}{}{}",
@@ -359,7 +351,7 @@ impl ClaudeParser {
                 // Use the generic unknown event formatter for consistent handling
                 // In verbose mode, this will show the event type and key fields
                 // In normal mode, this returns empty string
-                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+                format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
             }
         };
 
@@ -500,8 +492,10 @@ impl ClaudeParser {
                 }
                 _ => String::new(),
             },
-            #[expect(clippy::match_same_arms)]
-            StreamInnerEvent::ContentBlockDelta { .. } | StreamInnerEvent::Ping => String::new(),
+            StreamInnerEvent::ContentBlockDelta { .. }
+            | StreamInnerEvent::Ping
+            | StreamInnerEvent::TextDelta { text: None }
+            | StreamInnerEvent::Error { error: None } => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Standalone text delta (not part of content block)
                 // Use default index "0" for standalone text
@@ -561,8 +555,6 @@ impl ClaudeParser {
                     c.reset()
                 )
             }
-            StreamInnerEvent::TextDelta { text: None }
-            | StreamInnerEvent::Error { error: None } => String::new(),
             StreamInnerEvent::Unknown => {
                 // Unknown stream event - in debug mode, log it
                 if self.verbosity.is_debug() {

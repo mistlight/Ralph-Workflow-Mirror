@@ -24,7 +24,6 @@
 //! reviewer = ["claude"]
 //! ```
 
-#![expect(clippy::redundant_pub_crate)]
 use crate::agents::fallback::FallbackConfig;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -34,8 +33,7 @@ use std::io;
 use std::path::PathBuf;
 
 /// Default unified config template embedded at compile time.
-pub(crate) const DEFAULT_UNIFIED_CONFIG: &str =
-    include_str!("../../../examples/ralph-workflow.toml");
+pub const DEFAULT_UNIFIED_CONFIG: &str = include_str!("../../../examples/ralph-workflow.toml");
 
 /// Result of config initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +45,7 @@ pub enum ConfigInitResult {
 }
 
 /// Default path for the unified configuration file.
-pub(crate) const DEFAULT_UNIFIED_CONFIG_NAME: &str = "ralph-workflow.toml";
+pub const DEFAULT_UNIFIED_CONFIG_NAME: &str = "ralph-workflow.toml";
 
 /// Get the path to the unified config file.
 ///
@@ -68,8 +66,7 @@ pub fn unified_config_path() -> Option<PathBuf> {
 /// General configuration section.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
-#[expect(clippy::struct_excessive_bools)]
-pub(crate) struct GeneralConfig {
+pub struct GeneralConfig {
     /// Verbosity level (0-4).
     pub verbosity: u8,
     /// Interactive mode (keep agent in foreground).
@@ -201,7 +198,7 @@ pub struct CcsAliasConfig {
 /// CCS alias entry supports both shorthand string and table form.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum CcsAliasToml {
+pub enum CcsAliasToml {
     Command(String),
     Config(CcsAliasConfig),
 }
@@ -223,7 +220,7 @@ impl CcsAliasToml {
 /// Fields are used via serde deserialization.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
-pub(crate) struct AgentConfigToml {
+pub struct AgentConfigToml {
     /// Base command to run the agent.
     ///
     /// When overriding a built-in agent, this may be omitted to keep the built-in command.
@@ -344,7 +341,7 @@ impl UnifiedConfig {
 
 /// Error type for unified config loading.
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum ConfigLoadError {
+pub enum ConfigLoadError {
     #[error("Failed to read config file: {0}")]
     Io(#[from] std::io::Error),
     #[error("Failed to parse TOML: {0}")]

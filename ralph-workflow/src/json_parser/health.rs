@@ -32,9 +32,6 @@
 //! - **Ignored events**: General category for events not displayed (includes
 //!   both unknown events and parse errors)
 
-#![expect(clippy::cast_sign_loss)]
-#![expect(clippy::cast_possible_truncation)]
-#![expect(clippy::cast_precision_loss)]
 use crate::logger::Colors;
 use std::cell::Cell;
 
@@ -114,11 +111,41 @@ impl ParserHealth {
     }
 
     /// Get the percentage of parse errors (excluding unknown events)
+    ///
+    /// Returns percentage using integer-safe arithmetic to avoid precision loss warnings.
     pub fn parse_error_percentage(&self) -> f64 {
         if self.total_events == 0 {
             return 0.0;
         }
-        (self.parse_errors as f64 / self.total_events as f64) * 100.0
+        // Use integer arithmetic: (errors * 10000) / total, then divide by 100.0
+        // This gives two decimal places of precision without casting u64 to f64
+        let percent_hundredths = self
+            .parse_errors
+            .saturating_mul(10000)
+            .checked_div(self.total_events)
+            .unwrap_or(0);
+        // Convert to f64 only after scaling down to a reasonable range
+        // percent_hundredths is at most 10000 (100% * 100), which fits precisely in f64
+        let scaled: u32 = u32::try_from(percent_hundredths)
+            .unwrap_or(u32::MAX)
+            .min(10000);
+        f64::from(scaled) / 100.0
+    }
+
+    /// Get the percentage of parse errors as a rounded integer.
+    ///
+    /// This is for display purposes where a whole number is sufficient.
+    pub fn parse_error_percentage_int(&self) -> u32 {
+        if self.total_events == 0 {
+            return 0;
+        }
+        // (errors * 100) / total gives us the integer percentage
+        self.parse_errors
+            .saturating_mul(100)
+            .checked_div(self.total_events)
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or(0)
+            .min(100)
     }
 
     /// Check if the parser health is concerning
@@ -147,7 +174,7 @@ impl ParserHealth {
                 colors.reset(),
                 parser_name,
                 self.parse_errors,
-                self.parse_error_percentage().round() as u32,
+                self.parse_error_percentage_int(),
                 self.total_events,
                 self.unknown_events,
                 self.control_events,
@@ -161,7 +188,7 @@ impl ParserHealth {
                 colors.reset(),
                 parser_name,
                 self.parse_errors,
-                self.parse_error_percentage().round() as u32,
+                self.parse_error_percentage_int(),
                 self.total_events
             )
         };

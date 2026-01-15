@@ -29,9 +29,10 @@ const DIFF_TRUNCATED_MARKER: &str =
     "\n\n[Diff truncated due to size. Showing first portion above.]";
 
 /// Convert git2 error to `io::Error`.
-#[expect(clippy::needless_pass_by_value)]
 fn git2_to_io_error(err: git2::Error) -> io::Error {
-    io::Error::other(err.to_string())
+    let msg = err.to_string();
+    drop(err);
+    io::Error::other(msg)
 }
 
 /// Check if we're in a git repository.

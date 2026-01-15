@@ -1,7 +1,5 @@
 //! Scoring utilities for content quality assessment.
 
-#![expect(clippy::cast_possible_truncation)]
-
 /// Calculate a score for a result to determine its quality.
 ///
 /// Higher scores indicate better results. Scoring considers:
@@ -67,7 +65,7 @@ pub fn score_result(content: &str) -> u32 {
 
     // Length bonus (slight preference for longer content with same structure)
     // Cap the bonus to avoid length overriding structure
-    let length_bonus = (content.len() as u32).min(500);
+    let length_bonus = u32::try_from(content.len()).unwrap_or(u32::MAX).min(500);
     score += length_bonus;
 
     score
@@ -135,7 +133,7 @@ pub fn score_text_plan(content: &str) -> u32 {
 
     // Length bonus (slight preference for longer content with same structure)
     // Cap the bonus to avoid length overriding structure
-    let length_bonus = (content.len() as u32).min(500);
+    let length_bonus = u32::try_from(content.len()).unwrap_or(u32::MAX).min(500);
     score += length_bonus;
 
     score

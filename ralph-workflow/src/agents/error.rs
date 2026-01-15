@@ -4,8 +4,6 @@
 //! recovery strategies when agents fail. Different error types warrant
 //! different responses: retry, fallback to another agent, or abort.
 
-#![expect(clippy::too_many_lines)]
-
 /// Check if an agent name or command string indicates a GLM-like agent.
 ///
 /// GLM-like agents include GLM, `ZhipuAI`, ZAI, Qwen, and `DeepSeek`.

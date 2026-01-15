@@ -32,7 +32,6 @@ fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
 ///
 /// Contains flags indicating what was found and any errors or warnings.
 #[derive(Debug, Clone)]
-#[expect(clippy::struct_excessive_bools)]
 pub struct PromptValidationResult {
     /// Whether PROMPT.md exists
     pub exists: bool,

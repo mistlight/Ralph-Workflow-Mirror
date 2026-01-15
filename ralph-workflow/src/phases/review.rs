@@ -11,7 +11,6 @@
 //! - [`prompt`] - Review prompt building logic
 //! - [`validation`] - Pre-flight and post-flight validation checks
 
-#![expect(clippy::too_many_lines)]
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::files::extract_issues;

@@ -7,7 +7,6 @@
 //! 3. Deletes PLAN.md
 //! 4. Optionally runs fast checks
 
-#![expect(clippy::too_many_lines)]
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::files::{delete_plan_file, update_status};

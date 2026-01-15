@@ -16,8 +16,6 @@
 //! - [`detection`]: Project stack detection
 //! - [`finalization`]: Pipeline cleanup and finalization
 
-#![expect(clippy::too_many_lines)]
-
 pub mod config_init;
 pub mod context;
 pub mod detection;

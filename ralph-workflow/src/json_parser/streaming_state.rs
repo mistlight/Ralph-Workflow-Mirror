@@ -701,7 +701,6 @@ impl StreamingSession {
     /// like prefixes, extra whitespace, or formatting changes.
     ///
     /// Returns true if text contains >85% of previous content as a subsequence.
-    #[expect(clippy::cast_precision_loss)]
     fn is_fuzzy_snapshot_match(text: &str, previous: &str) -> bool {
         // For very short previous content, skip fuzzy matching to avoid false positives
         if previous.len() < 20 {
@@ -710,11 +709,11 @@ impl StreamingSession {
 
         // Check if previous is contained within text
         if text.contains(previous) {
-            // Calculate overlap ratio
-            let overlap_ratio = previous.len() as f64 / text.len() as f64;
+            // Calculate overlap ratio using integer arithmetic
             // If >85% of the incoming text is the previous content, it's likely a snapshot
             // (High threshold to avoid false positives while catching true snapshots)
-            overlap_ratio > 0.85
+            // previous.len() / text.len() > 0.85 is equivalent to previous.len() * 100 > 85 * text.len()
+            previous.len().saturating_mul(100) > text.len().saturating_mul(85)
         } else {
             false
         }

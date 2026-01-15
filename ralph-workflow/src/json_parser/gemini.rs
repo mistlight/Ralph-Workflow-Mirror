@@ -30,13 +30,11 @@
 //! - Content updates in-place without visual artifacts
 //! - Terminal state is clean and predictable
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::items_after_statements)]
-
 use crate::common::truncate_text;
 use crate::config::Verbosity;
 use crate::logger::{Colors, CHECK, CROSS};
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -231,7 +229,6 @@ impl GeminiParser {
                         let limit = self.verbosity.truncate_limit("tool_input");
                         let preview = truncate_text(&params_str, limit);
                         if !preview.is_empty() {
-                            use std::fmt::Write;
                             let _ = writeln!(
                                 out,
                                 "{}[{}]{} {}  └─ {}{}",
@@ -267,7 +264,6 @@ impl GeminiParser {
                     if let Some(ref output_text) = output {
                         let limit = self.verbosity.truncate_limit("tool_result");
                         let preview = truncate_text(output_text, limit);
-                        use std::fmt::Write;
                         let _ = writeln!(
                             out,
                             "{}[{}]{} {}  └─ {}{}",
@@ -331,7 +327,7 @@ impl GeminiParser {
             }
             GeminiEvent::Unknown => {
                 // Use the generic unknown event formatter for consistent handling
-                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+                format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
             }
         };
 
