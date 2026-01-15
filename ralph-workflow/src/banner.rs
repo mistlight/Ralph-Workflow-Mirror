@@ -3,12 +3,12 @@
 //! This module contains presentation logic for the pipeline's visual output,
 //! including the welcome banner and the final summary display.
 
-use crate::logger::Colors;
 use crate::config::Config;
+use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::pipeline::Stats;
-use crate::review_metrics::ReviewMetrics;
 use crate::pipeline::Timer;
+use crate::review_metrics::ReviewMetrics;
 
 /// Print the welcome banner for the Ralph pipeline.
 ///

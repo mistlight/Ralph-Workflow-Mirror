@@ -30,8 +30,7 @@ pub use types::{ExtractionOutput, OutputFormat};
 
 // Re-export public functions from commit module
 pub use commit::{
-    generate_fallback_commit_message, try_extract_structured_commit, try_salvage_commit_message,
-    validate_commit_message, CommitExtractionResult,
+    validate_commit_message,
 };
 
 use cleaning::clean_plain_text;

@@ -21,9 +21,9 @@
 //! [Codex] Hello World\n     (item.completed shows final result with prefix)
 //! ```
 
-use crate::logger::{Colors, CHECK, CROSS};
-use crate::config::Verbosity;
 use crate::common::truncate_text;
+use crate::config::Verbosity;
+use crate::logger::{Colors, CHECK, CROSS};
 use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;

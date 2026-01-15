@@ -431,39 +431,39 @@ fn resolve_ccs_flags<'a>(
 /// leakage of sensitive credential values. Keys containing patterns like "token",
 /// "key", "secret", "password", "auth" are always filtered out regardless of
 /// their actual value, to protect against custom credential formats.
-fn log_ccs_env_vars_loaded(debug_mode: bool, alias_name: &str) -> AgentConfig {
-    let debug_mode = std::env::var("RALPH_CCS_DEBUG").is_ok();
+fn log_ccs_env_vars_loaded(
+    debug_mode: bool,
+    alias_name: &str,
+    profile_used_for_env: Option<&String>,
+    env_vars_loaded: bool,
+    env_vars: &HashMap<String, String>,
+) {
+    if !debug_mode {
+        return;
+    }
 
-    let (env_vars, env_vars_loaded, profile_used_for_env) =
-        load_ccs_env_vars_for_alias(alias_config, alias_name, debug_mode);
+    eprintln!("CCS DEBUG: Environment variables loading status:");
+    eprintln!("  Alias: {alias_name}");
 
-    let cmd = determine_ccs_command(
-        alias_config,
-        alias_name,
-        env_vars_loaded,
-        profile_used_for_env.as_deref(),
-        debug_mode,
-    );
+    if let Some(profile) = profile_used_for_env {
+        eprintln!("  Profile used: {profile}");
+    } else {
+        eprintln!("  Profile used: (none)");
+    }
 
-    let (output_flag, yolo_flag, verbose_flag, print_flag, can_commit, json_parser, streaming_flag) =
-        resolve_ccs_flags(alias_config, defaults);
+    eprintln!("  Loaded: {env_vars_loaded}");
 
-    AgentConfig {
-        cmd,
-        output_flag,
-        yolo_flag,
-        verbose_flag,
-        can_commit,
-        json_parser: JsonParserType::parse(json_parser),
-        model_flag: alias_config.model_flag.clone(),
-        print_flag,
-        streaming_flag,
-        env_vars,
-        display_name: Some(display_name),
+    if env_vars_loaded {
+        eprintln!("  Loaded env vars (safe keys only):");
+        for key in env_vars.keys().filter(|k| {
+            !k.contains("token") && !k.contains("key") && !k.contains("secret") && !k.contains("password") && !k.contains("auth")
+        }) {
+            eprintln!("    - {key}");
+        }
     }
 }
 
-/// CCS aliases to use their configured credentials without requiring manual environment variable
+/// Build an `AgentConfig` for CCS aliases to use their configured credentials without requiring manual environment variable
 /// configuration, while avoiding hard-coded assumptions about CCS' internal schema.
 fn build_ccs_agent_config(
     alias_config: &CcsAliasConfig,
@@ -514,16 +514,31 @@ fn build_ccs_agent_config(
     );
 
     // Determine the command to use
-    let cmd = resolve_ccs_command(
+    let cmd = determine_ccs_command(
         alias_config,
         alias_name,
         env_vars_loaded,
-        profile_used_for_env.as_ref(),
+        profile_used_for_env.as_deref(),
         debug_mode,
     );
 
     // Build the final AgentConfig
-    build_ccs_config_from_flags(alias_config, defaults, cmd, env_vars, display_name)
+    let (output_flag, yolo_flag, verbose_flag, print_flag, can_commit, json_parser, streaming_flag) =
+        resolve_ccs_flags(alias_config, defaults);
+
+    AgentConfig {
+        cmd,
+        output_flag,
+        yolo_flag,
+        verbose_flag,
+        can_commit,
+        json_parser: JsonParserType::parse(json_parser),
+        model_flag: alias_config.model_flag.clone(),
+        print_flag,
+        streaming_flag,
+        env_vars,
+        display_name: Some(display_name),
+    }
 }
 
 /// CCS alias resolver that can be used by the agent registry.

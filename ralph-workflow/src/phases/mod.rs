@@ -23,6 +23,6 @@ mod integrity;
 mod review;
 
 pub use commit::generate_commit_message;
-pub use context::{get_primary_commit_agent, PhaseContext};
+pub use context::PhaseContext;
 pub use development::run_development_phase;
 pub use review::run_review_phase;

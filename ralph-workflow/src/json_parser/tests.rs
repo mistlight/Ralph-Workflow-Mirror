@@ -1,8 +1,8 @@
 //! Tests for JSON parsers.
 
 use super::*;
-use crate::logger::Colors;
 use crate::config::Verbosity;
+use crate::logger::Colors;
 use std::cell::RefCell;
 use std::io::{self, Cursor, Write};
 

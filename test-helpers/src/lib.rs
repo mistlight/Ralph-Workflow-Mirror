@@ -102,7 +102,6 @@ pub fn stage_all(repo: &Repository) {
     index.write().expect("write index");
 }
 
-
 /// RAII guard to restore the working directory on drop.
 struct DirGuard(std::path::PathBuf);
 

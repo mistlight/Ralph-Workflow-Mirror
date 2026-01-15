@@ -24,9 +24,9 @@
 //! This pattern is consistent across all parsers (Claude, Codex, Gemini, `OpenCode`)
 //! with variations in when the prefix is shown based on each format's event structure.
 
-use crate::logger::{Colors, CHECK, CROSS};
-use crate::config::Verbosity;
 use crate::common::truncate_text;
+use crate::config::Verbosity;
+use crate::logger::{Colors, CHECK, CROSS};
 use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write as IoWrite};
 use std::rc::Rc;

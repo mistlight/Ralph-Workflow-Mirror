@@ -11,9 +11,9 @@ use crate::cli::{
     apply_args_to_config, handle_init_global, handle_init_legacy, handle_init_prompt,
     handle_list_templates, Args,
 };
-use crate::logger::Colors;
 use crate::config::{loader, unified_config_path, Config, UnifiedConfig};
 use crate::git_helpers::get_repo_root;
+use crate::logger::Colors;
 use crate::logger::Logger;
 use std::path::PathBuf;
 

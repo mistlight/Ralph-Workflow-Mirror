@@ -25,7 +25,7 @@
 mod output;
 mod progress;
 
-pub use output::{argv_requests_json, format_generic_json_for_display, Logger, strip_ansi_codes};
+pub use output::{argv_requests_json, format_generic_json_for_display, strip_ansi_codes, Logger};
 pub use progress::print_progress;
 
 // Re-export Colors at the module level

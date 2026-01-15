@@ -11,16 +11,16 @@
 //! 4. Returns the generated message for use by the caller
 
 use crate::agents::{AgentRegistry, AgentRole};
-use crate::logger::Colors;
 use crate::config::Config;
 use crate::files::llm_output_extraction::{
     extract_llm_output, validate_commit_message, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
+use crate::logger::Colors;
+use crate::logger::Logger;
+use crate::pipeline::Timer;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::prompt_generate_commit_message_with_diff;
-use crate::pipeline::Timer;
-use crate::logger::Logger;
 use std::fs::{self, File};
 use std::io::Read;
 

@@ -156,11 +156,12 @@ impl ReviewMetrics {
 
     /// Returns whether there are blocking (critical or high) unresolved issues
     pub(crate) fn has_blocking_issues(&self) -> bool {
-        let unresolved_critical = self.critical_issues.saturating_sub(
-            self.critical_issues.min(self.resolved_issues)
-        );
+        let unresolved_critical = self
+            .critical_issues
+            .saturating_sub(self.critical_issues.min(self.resolved_issues));
         let unresolved_high = self.high_issues.saturating_sub(
-            self.high_issues.min((self.resolved_issues.saturating_sub(self.critical_issues)))
+            self.high_issues
+                .min((self.resolved_issues.saturating_sub(self.critical_issues))),
         );
         unresolved_critical > 0 || unresolved_high > 0
     }

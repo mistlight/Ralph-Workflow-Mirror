@@ -20,9 +20,9 @@
 //! [OpenCode] ✓ Step finished... (step_finish shows prefix with newline)
 //! ```
 
-use crate::logger::{Colors, CHECK, CROSS};
-use crate::config::Verbosity;
 use crate::common::truncate_text;
+use crate::config::Verbosity;
+use crate::logger::{Colors, CHECK, CROSS};
 use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};

@@ -33,13 +33,12 @@ use crate::banner::print_welcome_banner;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
-    handle_list_available_agents, handle_security_check, handle_setup_security,
-    prompt_template_selection, Args,
+    handle_list_available_agents, handle_list_providers, handle_security_check,
+    handle_setup_security, prompt_template_selection, Args,
 };
 
 #[cfg(feature = "build-image")]
 use crate::cli::handle_build_image;
-use crate::logger::Colors;
 use crate::config::Config;
 use crate::files::monitoring::PromptMonitor;
 use crate::files::{
@@ -50,6 +49,7 @@ use crate::git_helpers::{
     cleanup_orphaned_marker, get_repo_root, require_git_repo, reset_start_commit,
     save_start_commit, start_agent_phase,
 };
+use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
@@ -567,8 +567,7 @@ fn run_development(
     args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 1: Development", Colors::blue);
+    ctx.logger.header("PHASE 1: Development", Colors::blue);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
     let resume_rank = resume_phase.map(phase_rank);
@@ -609,8 +608,7 @@ fn run_review_and_fix(
     _args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 2: Review & Fix", Colors::magenta);
+    ctx.logger.header("PHASE 2: Review & Fix", Colors::magenta);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
 
@@ -716,4 +714,3 @@ fn run_final_validation(
 
     Ok(())
 }
-

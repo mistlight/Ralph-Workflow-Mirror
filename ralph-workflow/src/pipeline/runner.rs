@@ -1,27 +1,24 @@
 //! Command execution helpers and fallback orchestration.
 
 use crate::agents::{
-    auth_failure_advice, is_glm_like_agent, validate_model_flag, AgentErrorKind, AgentRegistry,
+    is_glm_like_agent, validate_model_flag, AgentRegistry,
     AgentRole, JsonParserType,
 };
-use crate::logger::Colors;
+use crate::common::utils::{format_argv_for_log, split_command, truncate_text};
 use crate::config::Config;
 use crate::container::config::{ContainerConfig, ExecutionOptions};
 use crate::container::{
     ContainerEngine, ContainerExecutor, EngineType, SecurityMode, UserAccountExecutor,
 };
 use crate::git_helpers::get_repo_root;
-use crate::logger::{argv_requests_json, format_generic_json_for_display};
-use crate::pipeline::Timer;
-use crate::common::utils::{format_argv_for_log, split_command, truncate_text, Logger};
-use std::fs::{self, File, OpenOptions};
+use crate::logger::format_generic_json_for_display;
+use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use super::fallback::try_agent_with_retries;
 use super::model_flag::resolve_model_with_provider;
-use super::types::CommandResult;
 
 /// Container execution context
 struct ContainerContext<'a> {
@@ -236,10 +233,6 @@ enum SecurityModeContext<'a> {
     Container(Box<ContainerContext<'a>>),
     UserAccount(Box<UserAccountContext<'a>>),
 }
-
-
-// Re-export types and functions from prompt module
-pub use super::prompt::{PipelineRuntime, PromptCommand, run_with_prompt};
 
 /// Configuration for direct command execution
 struct DirectExecutionConfig<'a> {

@@ -2,9 +2,9 @@
 //!
 //! This module provides validation of Ralph setup without running any agents.
 
+use crate::common::utils::{checkpoint_exists, load_checkpoint, validate_prompt_md, Logger};
 use crate::config::Config;
 use crate::language_detector::detect_stack_summary;
-use crate::common::utils::{checkpoint_exists, load_checkpoint, validate_prompt_md, Logger};
 use crate::logger::Colors;
 use std::path::Path;
 
