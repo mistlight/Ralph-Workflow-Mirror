@@ -10,6 +10,15 @@
 //! - Error recovery and state repair
 //! - Real-time file system monitoring for PROMPT.md protection
 //!
+//! # Module Organization
+//!
+//! The files module is organized by domain concern:
+//!
+//! - [`io`] - File I/O operations (agent files, recovery)
+//! - [`protection`] - File protection and integrity (validation, integrity, monitoring)
+//! - [`llm_output_extraction`] - LLM output extraction (commit message, JSON extraction)
+//! - [`result_extraction`] - Plan and issue extraction from logs
+//!
 //! # Isolation Mode
 //!
 //! By default, Ralph operates in isolation mode where STATUS.md, NOTES.md,
@@ -22,20 +31,28 @@
 //! Agent JSON output is extracted and written by the orchestrator, ensuring
 //! consistent file handling regardless of agent behavior.
 
+// Domain-driven submodules
+pub mod io;
+pub mod protection;
+
+// Extraction modules (already domain-organized)
+pub mod llm_output_extraction;
+pub mod result_extraction;
+
+// Legacy flat modules (deprecated, use io::* and protection::* instead)
 mod agent_files;
 pub mod integrity;
-pub mod llm_output_extraction;
 pub mod monitoring;
 pub mod recovery;
-pub mod result_extraction;
 pub mod validation;
 
-pub use agent_files::{
+// Re-exports from new domain structure for backward compatibility
+pub use io::{
     clean_context_for_reviewer, cleanup_generated_files, create_prompt_backup,
     delete_commit_message_file, delete_issues_file_for_isolation, delete_plan_file, ensure_files,
     file_contains_marker, make_prompt_read_only, read_commit_message_file,
     reset_context_for_isolation, update_status, write_commit_message_file,
 };
 
+pub use protection::{restore_prompt_if_needed, validate_prompt_md};
 pub use result_extraction::{extract_issues, extract_plan, extract_plan_from_logs_text};
-pub use validation::{restore_prompt_if_needed, validate_prompt_md};
