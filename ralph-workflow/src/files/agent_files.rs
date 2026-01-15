@@ -4,7 +4,7 @@
 //! in the `.agent/` directory that are used during pipeline execution.
 
 #![expect(clippy::unnecessary_debug_formatting)]
-use crate::files::{integrity, recovery};
+use crate::files::io::{integrity, recovery};
 use crate::logger::Logger;
 use std::fs::{self, File};
 use std::io::{self, BufRead};
