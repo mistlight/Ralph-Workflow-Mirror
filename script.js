@@ -690,13 +690,17 @@
             const targetId = this.getAttribute('href');
             if (targetId === '#') return;
 
-            // Validate targetId is a valid ID selector before using with querySelector
+            // Validate targetId format and extract ID value
             if (!targetId || !targetId.startsWith('#') || targetId.length < 2) return;
             const idValue = targetId.substring(1);
-            // Basic validation: ID should not contain special characters that could break selector
-            if (!/^[a-zA-Z][\w:-]*$/.test(idValue)) return;
 
-            const target = document.querySelector(targetId);
+            // Strict ID validation: only alphanumeric, underscore, hyphen, and must start with letter
+            // This prevents injection attempts and ensures we only use valid HTML5 IDs
+            if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(idValue)) return;
+
+            // Use getElementById instead of querySelector for safer ID lookup
+            // getElementById only accepts a string ID (not a selector) and is more secure
+            const target = document.getElementById(idValue);
             if (target) {
                 e.preventDefault();
                 const navHeight = document.querySelector('.nav')?.offsetHeight || 0;
@@ -1095,7 +1099,7 @@
             try {
                 localStorage.setItem('ralph-theme', newTheme);
             } catch (e) {
-                console.warn('Could not save theme preference');
+                showStorageWarning();
             }
 
             // Add transition animation
@@ -1172,14 +1176,14 @@
                 try {
                     localStorage.removeItem('ralph-audience');
                 } catch (e) {
-                    console.warn('Could not remove audience preference');
+                    showStorageWarning();
                 }
             } else {
                 document.body.setAttribute('data-audience', audience);
                 try {
                     localStorage.setItem('ralph-audience', audience);
                 } catch (e) {
-                    console.warn('Could not save audience preference');
+                    showStorageWarning();
                 }
             }
 
@@ -1361,17 +1365,46 @@ impl AuthService {
 
                 // Update terminal
                 if (action.terminal && demoTerminal) {
-                    // Use DOM API instead of innerHTML for safer content insertion
+                    // Use DOM API to construct terminal content safely
                     demoTerminal.textContent = '';
                     const lines = action.terminal.split('\n');
                     lines.forEach(lineText => {
                         const div = document.createElement('div');
                         div.className = 'demo-terminal-line';
-                        // Safely parse known-safe HTML content using a temporary template
-                        // Since demoWorkflow is hardcoded data in this file, this is controlled content
-                        const temp = document.createElement('template');
-                        temp.innerHTML = lineText;
-                        div.appendChild(temp.content.cloneNode(true));
+
+                        // Parse known-safe span elements from the hardcoded demoWorkflow
+                        // We manually create spans for the known markup patterns
+                        let content = lineText;
+
+                        // Create document fragment to hold the parsed content
+                        const fragment = document.createDocumentFragment();
+
+                        // Process known span patterns in the terminal line
+                        let lastIndex = 0;
+                        const spanPattern = /<span class="(demo-success|demo-warning|demo-prompt|demo-time)">([^<]*)<\/span>/g;
+                        let match;
+
+                        while ((match = spanPattern.exec(content)) !== null) {
+                            // Add text before the span
+                            if (match.index > lastIndex) {
+                                fragment.appendChild(document.createTextNode(content.substring(lastIndex, match.index)));
+                            }
+
+                            // Create the span element
+                            const span = document.createElement('span');
+                            span.className = match[1];
+                            span.textContent = match[2];
+                            fragment.appendChild(span);
+
+                            lastIndex = spanPattern.lastIndex;
+                        }
+
+                        // Add remaining text after the last span
+                        if (lastIndex < content.length) {
+                            fragment.appendChild(document.createTextNode(content.substring(lastIndex)));
+                        }
+
+                        div.appendChild(fragment);
                         demoTerminal.appendChild(div);
                     });
                 }
@@ -1405,11 +1438,12 @@ impl AuthService {
                     if (activeStep) activeStep.classList.add('active');
                 }
 
-                // Reset on completion
+                // Reset on completion - track this timeout for cleanup
                 if (index === demoWorkflow.length - 1) {
-                    setTimeout(() => {
+                    const resetTimeout = setTimeout(() => {
                         clearDemo();
                     }, 3000);
+                    demoTimeouts.push(resetTimeout);
                 }
             }, action.delay);
 
@@ -1471,7 +1505,7 @@ impl AuthService {
         try {
             localStorage.setItem('ralph-tab-selected', 'true');
         } catch (e) {
-            // Silently fail - tab will just be re-selected on reload
+            showStorageWarning();
         }
     }
 
