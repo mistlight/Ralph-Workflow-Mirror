@@ -1418,3 +1418,132 @@ fn test_finalize_without_deltas_no_output() {
         "Should have no actual content when message has no deltas. Output: {output:?}"
     );
 }
+
+/// Test for repeated `ContentBlockStart` not causing duplicate prefix
+///
+/// This test simulates GLM sending `ContentBlockStart` repeatedly for the same
+/// index, which should NOT cause the next delta to show the prefix again.
+/// The fix ensures that accumulated content is only cleared when transitioning
+/// to a DIFFERENT block index, not the same index.
+#[test]
+fn test_repeated_content_block_start_no_duplicate_prefix() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Simulate GLM sending ContentBlockStart before each delta
+    let mut input_lines = Vec::new();
+
+    // Message start
+    input_lines.push(r#"{"type":"stream_event","event":{"type":"message_start"}}"#.to_string());
+
+    // ContentBlockStart, Delta, ContentBlockStart, Delta, ContentBlockStart, Delta
+    for i in 0..3 {
+        // ContentBlockStart for the SAME index (0) each time
+        input_lines.push(
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#
+                .to_string(),
+        );
+
+        // Delta for this chunk
+        let delta = format!("chunk{i} ");
+        input_lines.push(format!(
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{delta}"}}}}}}"#
+        ));
+    }
+
+    // Message stop
+    input_lines.push(r#"{"type":"stream_event","event":{"type":"message_stop"}}"#.to_string());
+
+    let input = input_lines.join("\n");
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should have exactly ONE prefix (not multiple duplicates from repeated ContentBlockStart)
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(
+        prefix_count, 1,
+        "Should have exactly 1 prefix even with repeated ContentBlockStart for same index. \
+        Got {prefix_count} prefixes. Output: {output:?}"
+    );
+
+    // Should contain the accumulated content
+    assert!(
+        output.contains("chunk0"),
+        "Should contain first chunk. Output: {output:?}"
+    );
+    assert!(
+        output.contains("chunk1"),
+        "Should contain second chunk. Output: {output:?}"
+    );
+    assert!(
+        output.contains("chunk2"),
+        "Should contain third chunk. Output: {output:?}"
+    );
+}
+
+/// Test for multi-message streaming with proper separation
+///
+/// This test verifies that multiple complete messages in sequence are rendered
+/// independently with proper newlines between them, no duplication, and each
+/// message has its own prefix.
+#[test]
+fn test_multiple_messages_with_proper_separation() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // Stream two complete messages in sequence
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"First"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" message"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Second"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" message"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should have exactly TWO prefixes (one per message)
+    let prefix_count = output.matches("[Claude]").count();
+    assert_eq!(
+        prefix_count, 2,
+        "Should have exactly 2 prefixes, one per message. Got {prefix_count}. Output: {output:?}"
+    );
+
+    // Should contain both messages
+    assert!(
+        output.contains("First message"),
+        "Should contain first message. Output: {output:?}"
+    );
+    assert!(
+        output.contains("Second message"),
+        "Should contain second message. Output: {output:?}"
+    );
+
+    // Should end with newline (from final message_stop)
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline after final message_stop. Output: {output:?}"
+    );
+
+    // Each message should appear only once (no duplication)
+    let first_count = output.matches("First message").count();
+    let second_count = output.matches("Second message").count();
+    assert_eq!(
+        first_count, 1,
+        "First message should appear exactly once. Found {first_count} times. Output: {output:?}"
+    );
+    assert_eq!(
+        second_count, 1,
+        "Second message should appear exactly once. Found {second_count} times. Output: {output:?}"
+    );
+}

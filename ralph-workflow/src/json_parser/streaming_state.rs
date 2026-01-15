@@ -163,6 +163,7 @@ pub enum ContentBlockState {
 /// - Accumulated content by content type and index
 /// - Whether prefix should be shown on next delta
 /// - Delta size patterns for detecting snapshot-as-delta violations
+/// - Persistent "output started" tracking independent of accumulated content
 ///
 /// # Lifecycle
 ///
@@ -195,6 +196,11 @@ pub struct StreamingSession {
     last_finalized_message_id: Option<String>,
     /// Track which messages have been displayed to prevent duplicate final output
     displayed_final_messages: HashSet<String>,
+    /// Track which (`content_type`, key) pairs have had output started.
+    /// This is independent of `accumulated` to handle cases where accumulated
+    /// content may be cleared (e.g., repeated `ContentBlockStart` for same index).
+    /// Cleared on `on_message_start` to ensure fresh state for each message.
+    output_started_for_key: HashSet<(ContentType, String)>,
 }
 
 impl StreamingSession {
@@ -223,6 +229,7 @@ impl StreamingSession {
         self.accumulated.clear();
         self.key_order.clear();
         self.delta_sizes.clear();
+        self.output_started_for_key.clear();
         // Note: We don't reset current_message_id here - it's set by a separate method
         // This allows for more flexible message ID handling
     }
@@ -287,19 +294,34 @@ impl StreamingSession {
     /// # Arguments
     /// * `index` - The content block index (for multi-block messages)
     pub fn on_content_block_start(&mut self, index: u64) {
+        let index_str = index.to_string();
+
+        // Check if we're transitioning to a different index BEFORE finalizing.
+        // This is important because some agents (e.g., GLM) may send ContentBlockStart
+        // repeatedly for the same index, and we should NOT clear accumulated content
+        // in that case (which would cause the next delta to show prefix again).
+        let is_same_index = match &self.current_block {
+            ContentBlockState::NotInBlock => false,
+            ContentBlockState::InBlock {
+                index: current_index,
+                ..
+            } => current_index == &index_str,
+        };
+
         // Finalize previous block if we're in one
         self.ensure_content_block_finalized();
 
-        // Clear accumulated content for this specific index
-        let index_str = index.to_string();
-        for content_type in [
-            ContentType::Text,
-            ContentType::Thinking,
-            ContentType::ToolInput,
-        ] {
-            let key = (content_type, index_str.clone());
-            self.accumulated.remove(&key);
-            self.key_order.retain(|k| k != &key);
+        // Only clear accumulated content if transitioning to a DIFFERENT index.
+        if !is_same_index {
+            for content_type in [
+                ContentType::Text,
+                ContentType::Thinking,
+                ContentType::ToolInput,
+            ] {
+                let key = (content_type, index_str.clone());
+                self.accumulated.remove(&key);
+                self.key_order.retain(|k| k != &key);
+            }
         }
     }
 
@@ -447,8 +469,13 @@ impl StreamingSession {
             started_output: true,
         };
 
-        // Check if this is the first delta for this key
-        let is_first = !self.accumulated.contains_key(&content_key);
+        // Check if this is the first delta for this key using output_started_for_key
+        // This is independent of accumulated content to handle cases where accumulated
+        // content may be cleared (e.g., repeated ContentBlockStart for same index)
+        let is_first = !self.output_started_for_key.contains(&content_key);
+
+        // Mark that output has started for this key
+        self.output_started_for_key.insert(content_key.clone());
 
         // Accumulate the delta (using auto-repaired delta if snapshot was detected)
         self.accumulated
@@ -497,8 +524,11 @@ impl StreamingSession {
         // Get the key for this content
         let content_key = (ContentType::Thinking, key.to_string());
 
-        // Check if this is the first delta for this key
-        let is_first = !self.accumulated.contains_key(&content_key);
+        // Check if this is the first delta for this key using output_started_for_key
+        let is_first = !self.output_started_for_key.contains(&content_key);
+
+        // Mark that output has started for this key
+        self.output_started_for_key.insert(content_key.clone());
 
         // Accumulate the delta
         self.accumulated
