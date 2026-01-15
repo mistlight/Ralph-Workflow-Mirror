@@ -174,6 +174,9 @@ pub struct FeatureFlags {
 /// environment variables and CLI arguments. Default values are applied
 /// via [`Default::default()`].
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
+// Configuration options naturally use many boolean flags. These represent
+// independent feature toggles, not a state machine, so bools are appropriate.
 pub struct Config {
     /// Developer (driver) agent (set via CLI, env, or `agent_chain`)
     pub(crate) developer_agent: Option<String>,

@@ -18,7 +18,6 @@
 //! [agent_chain]
 //! developer = ["ccs/work", "claude"]
 //! ```
-
 use super::ccs::CcsAliasResolver;
 use super::config::{AgentConfig, AgentConfigError, AgentsConfigFile, DEFAULT_AGENTS_TOML};
 use super::fallback::{AgentRole, FallbackConfig};
@@ -245,30 +244,8 @@ impl AgentRegistry {
     ///
     /// Returns the number of agents loaded from unified config, including CCS aliases.
     pub fn apply_unified_config(&mut self, unified: &crate::config::UnifiedConfig) -> usize {
-        let mut loaded = 0usize;
-
-        if !unified.ccs_aliases.is_empty() {
-            loaded += unified.ccs_aliases.len();
-            let aliases = unified
-                .ccs_aliases
-                .iter()
-                .map(|(name, v)| (name.clone(), v.as_config()))
-                .collect::<HashMap<_, _>>();
-            self.set_ccs_aliases(&aliases, unified.ccs.clone());
-        }
-
-        if !unified.agents.is_empty() {
-            for (name, overrides) in &unified.agents {
-                if let Some(existing) = self.agents.get(name).cloned() {
-                    let merged = Self::merge_agent_config(&existing, overrides);
-                    self.register(name, merged);
-                    loaded += 1;
-                } else if let Some(new_agent) = Self::create_new_agent(overrides) {
-                    self.register(name, new_agent);
-                    loaded += 1;
-                }
-            }
-        }
+        let mut loaded = self.apply_ccs_aliases(unified);
+        loaded += self.apply_agent_overrides(unified);
 
         if let Some(chain) = &unified.agent_chain {
             self.fallback = chain.clone();
@@ -277,9 +254,50 @@ impl AgentRegistry {
         loaded
     }
 
-    /// Create a new agent from TOML overrides.
-    /// Returns None if no valid command is specified.
-    fn create_new_agent(
+    /// Apply CCS aliases from the unified config.
+    fn apply_ccs_aliases(&mut self, unified: &crate::config::UnifiedConfig) -> usize {
+        if unified.ccs_aliases.is_empty() {
+            return 0;
+        }
+
+        let loaded = unified.ccs_aliases.len();
+        let aliases = unified
+            .ccs_aliases
+            .iter()
+            .map(|(name, v)| (name.clone(), v.as_config()))
+            .collect::<HashMap<_, _>>();
+        self.set_ccs_aliases(&aliases, unified.ccs.clone());
+        loaded
+    }
+
+    /// Apply agent overrides from the unified config.
+    fn apply_agent_overrides(&mut self, unified: &crate::config::UnifiedConfig) -> usize {
+        if unified.agents.is_empty() {
+            return 0;
+        }
+
+        let mut loaded = 0usize;
+        for (name, overrides) in &unified.agents {
+            if let Some(existing) = self.agents.get(name).cloned() {
+                // Merge with existing agent
+                let merged = self.merge_agent_config(existing, overrides);
+                self.register(name, merged);
+                loaded += 1;
+            } else {
+                // New agent definition: require a non-empty command.
+                if let Some(config) = self.create_new_agent_config(overrides) {
+                    self.register(name, config);
+                    loaded += 1;
+                }
+            }
+        }
+        loaded
+    }
+
+    /// Create a new agent config from unified config overrides.
+    #[allow(clippy::unused_self)]
+    fn create_new_agent_config(
+        &self,
         overrides: &crate::config::unified::AgentConfigToml,
     ) -> Option<AgentConfig> {
         let cmd = overrides
@@ -305,6 +323,7 @@ impl AgentRegistry {
             model_flag: overrides.model_flag.clone(),
             print_flag: overrides.print_flag.clone().unwrap_or_default(),
             streaming_flag: overrides.streaming_flag.clone().unwrap_or_else(|| {
+                // Default to "--include-partial-messages" for Claude/CCS agents
                 if cmd.starts_with("claude") || cmd.starts_with("ccs") {
                     "--include-partial-messages".to_string()
                 } else {
@@ -320,9 +339,11 @@ impl AgentRegistry {
         })
     }
 
-    /// Merge TOML overrides into an existing agent configuration.
+    /// Merge overrides with existing agent config.
+    #[allow(clippy::unused_self)]
     fn merge_agent_config(
-        existing: &AgentConfig,
+        &self,
+        existing: AgentConfig,
         overrides: &crate::config::unified::AgentConfigToml,
     ) -> AgentConfig {
         AgentConfig {
@@ -331,19 +352,17 @@ impl AgentRegistry {
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .map_or_else(|| existing.cmd.clone(), str::to_string),
+                .map(str::to_string)
+                .unwrap_or(existing.cmd),
             output_flag: overrides
                 .output_flag
                 .clone()
-                .unwrap_or_else(|| existing.output_flag.clone()),
-            yolo_flag: overrides
-                .yolo_flag
-                .clone()
-                .unwrap_or_else(|| existing.yolo_flag.clone()),
+                .unwrap_or(existing.output_flag),
+            yolo_flag: overrides.yolo_flag.clone().unwrap_or(existing.yolo_flag),
             verbose_flag: overrides
                 .verbose_flag
                 .clone()
-                .unwrap_or_else(|| existing.verbose_flag.clone()),
+                .unwrap_or(existing.verbose_flag),
             can_commit: overrides.can_commit.unwrap_or(existing.can_commit),
             json_parser: overrides
                 .json_parser
@@ -351,23 +370,23 @@ impl AgentRegistry {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map_or(existing.json_parser, JsonParserType::parse),
-            model_flag: overrides
-                .model_flag
-                .clone()
-                .or_else(|| existing.model_flag.clone()),
-            print_flag: overrides
-                .print_flag
-                .clone()
-                .unwrap_or_else(|| existing.print_flag.clone()),
+            model_flag: overrides.model_flag.clone().or(existing.model_flag),
+            print_flag: overrides.print_flag.clone().unwrap_or(existing.print_flag),
             streaming_flag: overrides
                 .streaming_flag
                 .clone()
-                .unwrap_or_else(|| existing.streaming_flag.clone()),
+                .unwrap_or(existing.streaming_flag),
+            // Do NOT inherit env_vars from the existing agent to prevent
+            // CCS env vars from one agent from leaking into another.
+            // The unified config (unified::AgentConfigToml) doesn't support
+            // ccs_profile or env_vars fields, so we always start fresh.
             env_vars: std::collections::HashMap::new(),
+            // Preserve existing display name unless explicitly overridden
+            // Empty string explicitly clears the display name
             display_name: match &overrides.display_name {
                 Some(s) if s.is_empty() => None,
                 Some(s) => Some(s.clone()),
-                None => existing.display_name.clone(),
+                None => existing.display_name,
             },
         }
     }

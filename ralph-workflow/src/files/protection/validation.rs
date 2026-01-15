@@ -43,6 +43,10 @@ pub enum FileState {
 ///
 /// Contains flags indicating what was found and any errors or warnings.
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
+// Each boolean represents a distinct aspect of PROMPT.md validation.
+// These are independent flags tracking different validation dimensions, not
+// a state machine, so bools are the appropriate type.
 pub struct PromptValidationResult {
     /// File existence and content state
     pub file_state: FileState,
