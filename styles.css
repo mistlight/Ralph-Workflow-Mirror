@@ -3686,7 +3686,7 @@ body[data-audience="newcomer"] .audience-newcomer-content {
     color: var(--color-accent);
 }
 
-.faq-category--magenta {
+.faq-category--developer {
     color: var(--color-rose);
 }
 
@@ -3736,7 +3736,7 @@ body[data-audience="newcomer"] .audience-newcomer-content {
     color: var(--color-accent);
 }
 
-.faq-summary--magenta {
+.faq-summary--developer {
     color: var(--color-rose);
 }
 
