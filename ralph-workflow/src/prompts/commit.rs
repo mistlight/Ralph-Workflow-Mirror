@@ -75,15 +75,44 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
             .to_string();
     }
 
+    build_commit_prompt(diff_content)
+}
+
+/// Builds the main commit prompt with all sections.
+fn build_commit_prompt(diff: &str) -> String {
     format!(
-        r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
+        r"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
 
 DIFF:
-{diff_content}
+{diff}
 
 ---
 
-## CRITICAL: DO NOT PRODUCE THESE BAD COMMIT MESSAGES
+{bad_examples_section}
+{multi_file_section}
+{format_section}
+{type_guidelines_section}
+{subject_rules_section}
+{examples_section}
+{task_section}
+{output_requirement_section}
+{json_rules_section}
+",
+        diff = diff,
+        bad_examples_section = bad_examples_section(),
+        multi_file_section = multi_file_section(),
+        format_section = format_section(),
+        type_guidelines_section = type_guidelines_section(),
+        subject_rules_section = subject_rules_section(),
+        examples_section = examples_section(),
+        task_section = task_section(),
+        output_requirement_section = output_requirement_section(),
+        json_rules_section = json_rules_section(),
+    )
+}
+
+const fn bad_examples_section() -> &'static str {
+    r#"## CRITICAL: DO NOT PRODUCE THESE BAD COMMIT MESSAGES
 
 These are WRONG - they are vague, meaningless, and unhelpful:
 ❌ chore: apply changes
@@ -95,9 +124,11 @@ These are WRONG - they are vague, meaningless, and unhelpful:
 ❌ feat: Add New Feature.
 
 NEVER say "apply changes", "update code", "update [filename]", "N files changed", or just list filenames.
-ALWAYS describe WHAT changed and WHY.
+ALWAYS describe WHAT changed and WHY."#
+}
 
-**When analyzing multi-file changes:**
+const fn multi_file_section() -> &'static str {
+    r#"**When analyzing multi-file changes:**
 - Look for the SEMANTIC RELATIONSHIP between files
 - Are they all part of one feature? Use a single message with the feature's purpose
 - Are they unrelated changes? Use the highest-priority type with a descriptive subject
@@ -105,19 +136,21 @@ ALWAYS describe WHAT changed and WHY.
   - ❌ "chore: update src/auth.rs, src/auth_test.rs, docs/auth.md"
   - ✅ "feat(auth): add OAuth2 login flow with tests and docs"
   - ❌ "chore: 3 file(s) changed"
-  - ✅ "refactor: extract validation logic into shared module"
+  - ✅ "refactor: extract validation logic into shared module""#
+}
 
----
-
-## COMMIT MESSAGE FORMAT
+const fn format_section() -> &'static str {
+    r"## COMMIT MESSAGE FORMAT
 
 <type>[optional scope][!]: <subject>
 
 [optional body]
 
-[optional footer]
+[optional footer]"
+}
 
-## TYPE GUIDELINES
+const fn type_guidelines_section() -> &'static str {
+    r"## TYPE GUIDELINES
 
 - **feat**: A new feature (user-visible change)
 - **fix**: A bug fix (correcting incorrect behavior)
@@ -128,18 +161,22 @@ ALWAYS describe WHAT changed and WHY.
 - **test**: Adding or updating tests
 - **build**: Build system or dependency changes
 - **ci**: CI/CD configuration changes
-- **chore**: Other changes that don't modify src/test files
+- **chore**: Other changes that don't modify src/test files"
+}
 
-## SUBJECT LINE RULES (CRITICAL)
+const fn subject_rules_section() -> &'static str {
+    r#"## SUBJECT LINE RULES (CRITICAL)
 
 - Use **imperative mood** ("add" not "added", "fix" not "fixed")
 - Use **lowercase** (except for proper nouns)
 - **No period** at the end
 - **Maximum 50 characters**
 - **Be specific**: describe WHAT changed, not THAT something changed
-- For multi-file changes: describe the OVERALL PURPOSE, not just "update files"
+- For multi-file changes: describe the OVERALL PURPOSE, not just "update files""#
+}
 
-## GOOD EXAMPLES
+const fn examples_section() -> &'static str {
+    r"## GOOD EXAMPLES
 
 feat(auth): add OAuth2 login flow
 fix: prevent null pointer in user lookup
@@ -156,11 +193,11 @@ feat: add CSV export for reports
 Add ability to export analytics reports as CSV files.
 Supports filtering by date range and custom column selection.
 
-Fixes #42
+Fixes #42"
+}
 
----
-
-## YOUR TASK
+const fn task_section() -> &'static str {
+    r"## YOUR TASK
 
 1. **Analyze the actual code changes** in the diff above
 2. **Identify the semantic type** (feat/fix/refactor/docs/etc.) based on what changed
@@ -171,9 +208,11 @@ Fixes #42
 **MULTI-FILE ANALYSIS**: When you see changes to multiple files, determine:
 - Are they all part of one cohesive change? → Single message describing the purpose
 - Are they semantically different? → Use the most significant type with a comprehensive subject
-- What is the COMMON THREAD that connects these changes?
+- What is the COMMON THREAD that connects these changes?"
+}
 
-**OUTPUT REQUIREMENT**: Return ONLY a JSON object with this exact schema:
+const fn output_requirement_section() -> &'static str {
+    r#"**OUTPUT REQUIREMENT**: Return ONLY a JSON object with this exact schema:
 {{"subject": "<type>[scope]: <description>", "body": "<optional body or null>"}}
 
 CRITICAL JSON RULES:
@@ -186,9 +225,11 @@ CRITICAL JSON RULES:
   - ✅ CORRECT: {{"subject": "feat: add feature", "body": "First line\\nSecond line"}}
   - ❌ WRONG: {{"subject": "feat: add feature", "body": "First line
 Second line"}}
-  - The body value must be a valid JSON string - use escape sequences, NOT literal newlines
+  - The body value must be a valid JSON string - use escape sequences, NOT literal newlines"#
+}
 
-WRONG (with preamble):
+const fn json_rules_section() -> &'static str {
+    r#"WRONG (with preamble):
 Here is the commit message:
 {{"subject": "feat: add feature", "body": null}}
 
@@ -215,7 +256,6 @@ CORRECT:
 
 CORRECT (with body using \\n for newline):
 {{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\\nAdd session management for OAuth tokens."}}"#
-    )
 }
 
 /// Generate strict JSON-only prompt for commit message retry.

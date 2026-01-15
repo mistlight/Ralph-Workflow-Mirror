@@ -482,7 +482,6 @@ pub fn generate_commit_message(
 
         // Try to extract the commit message from the agent output
         if exit_code != 0 {
-            // Agent failed - check if we can extract a partial result
             runtime
                 .logger
                 .warn("Commit agent failed, checking logs for partial output...");
@@ -497,7 +496,9 @@ pub fn generate_commit_message(
                     // Agent error detected - check if it's TokenExhausted
                     // For TokenExhausted, we should continue trying smaller prompt variants
                     // rather than immediately breaking to agent fallback
-                    if extraction.error_kind() == Some(AgentErrorKind::TokenExhausted) {
+                    // Get error kind first before moving extraction
+                    let error_kind = extraction.error_kind();
+                    if error_kind == Some(AgentErrorKind::TokenExhausted) {
                         runtime.logger.warn(&format!(
                             "TokenExhausted detected with {}. Trying smaller prompt variant.",
                             strategy.description()
@@ -519,9 +520,7 @@ pub fn generate_commit_message(
                         // Other agent errors - log and break to fallback
                         runtime.logger.warn(&format!(
                             "Agent error detected: {}. Skipping remaining prompt variants.",
-                            extraction
-                                .error_kind()
-                                .map_or("unknown", AgentErrorKind::description)
+                            error_kind.map_or("unknown", AgentErrorKind::description)
                         ));
                         last_extraction = Some(extraction);
                         // Break out of the strategy loop - we've hit a hard error
@@ -534,29 +533,24 @@ pub fn generate_commit_message(
                         "Extraction produced fallback message with {strategy}"
                     ));
                     last_extraction = Some(extraction);
-
-                    // Move to next strategy
                     if let Some(next) = strategy.next() {
                         strategy = next;
-                    } else {
-                        // No more strategies - use the last fallback we got
-                        runtime.logger.warn(&format!(
-                            "All {} prompt variants exhausted, using fallback message",
-                            CommitRetryStrategy::total_stages()
-                        ));
-                        break;
+                        continue;
                     }
-                } else {
-                    // Got a valid extraction (Extracted or Salvaged) - use it
-                    runtime.logger.info(&format!(
-                        "Successfully extracted commit message with {strategy}"
+                    runtime.logger.warn(&format!(
+                        "All {} prompt variants exhausted, using fallback message",
+                        CommitRetryStrategy::total_stages()
                     ));
-                    return Ok(CommitMessageResult {
-                        message: extraction.into_message(),
-                        success: true,
-                        _log_path: log_file,
-                    });
+                    break;
                 }
+                runtime.logger.info(&format!(
+                    "Successfully extracted commit message with {strategy}"
+                ));
+                return Ok(CommitMessageResult {
+                    message: extraction.into_message(),
+                    success: true,
+                    _log_path: log_file,
+                });
             }
             Ok(None) => {
                 // Extraction completely failed - generate fallback and continue
@@ -601,35 +595,6 @@ pub fn generate_commit_message(
                 }
             }
         }
-    }
-
-    // If we have a fallback from the last attempt, use it
-    if let Some(extraction) = last_extraction {
-        // If we have an AgentError, generate a deterministic fallback from diff
-        if extraction.is_agent_error() {
-            runtime.logger.warn(&format!(
-                "Agent error ({}) - generating fallback commit message from diff...",
-                extraction
-                    .error_kind()
-                    .map_or("unknown", AgentErrorKind::description)
-            ));
-            let fallback = generate_fallback_commit_message(diff);
-            return Ok(CommitMessageResult {
-                message: fallback,
-                success: true, // We have a valid (though generic) message
-                _log_path: log_file,
-            });
-        }
-
-        // Otherwise use the fallback message from the extraction
-        runtime
-            .logger
-            .warn("Using fallback commit message from final attempt");
-        return Ok(CommitMessageResult {
-            message: extraction.into_message(),
-            success: true, // We still have a valid (though generic) message
-            _log_path: log_file,
-        });
     }
 
     // If all strategies failed with TokenExhausted error, try with progressively truncated diff
