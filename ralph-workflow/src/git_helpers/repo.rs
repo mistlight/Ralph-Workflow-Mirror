@@ -66,7 +66,9 @@ pub fn git_snapshot() -> io::Result<String> {
 
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
-    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| git2_to_io_error(&e))?;
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .map_err(|e| git2_to_io_error(&e))?;
 
     let mut result = String::new();
     for entry in statuses.iter() {

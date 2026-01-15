@@ -792,9 +792,7 @@ profiles:
                 );
             }
             other => {
-                panic!(
-                    "Expected ProfileNotFound error with profile 'nonexistent', got: {other:?}"
-                );
+                panic!("Expected ProfileNotFound error with profile 'nonexistent', got: {other:?}");
             }
         }
     }
@@ -863,9 +861,7 @@ profiles:
                 assert_eq!(profile, "", "Expected empty profile name");
             }
             other => {
-                panic!(
-                    "Expected InvalidProfile error with empty profile, got: {other:?}"
-                );
+                panic!("Expected InvalidProfile error with empty profile, got: {other:?}");
             }
         }
     }
