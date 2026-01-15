@@ -1350,6 +1350,9 @@ fn test_ccs_glm_complete_message_deduplication() {
 /// Note: This is a unit test that directly tests the `StreamingSession` state
 /// tracking, not the end-to-end parser behavior (which would require additional
 /// parser-layer changes to actually emit newlines on block transitions).
+///
+/// When transitioning to a different content block index, the old block's content
+/// is cleared to prevent memory buildup and to ensure proper isolation between blocks.
 #[test]
 fn test_content_block_state_tracking() {
     use crate::json_parser::streaming_state::StreamingSession;
@@ -1366,17 +1369,18 @@ fn test_content_block_state_tracking() {
     assert!(session.has_any_streamed_content());
 
     // Transition to block 1 via on_content_block_start
-    // This should finalize block 0 and return true (had output)
+    // This should finalize block 0 and clear its accumulated content
     session.on_content_block_start(1);
 
     // Stream content in block 1
     let show_prefix = session.on_text_delta(1, "Second");
     assert!(show_prefix, "First delta in new block should show prefix");
 
-    // Verify both blocks have separate accumulated content
+    // Verify block 0 content was cleared and block 1 content is present
     assert_eq!(
         session.get_accumulated(crate::json_parser::types::ContentType::Text, "0"),
-        Some("First")
+        None,
+        "Block 0 content should be cleared after transitioning to block 1"
     );
     assert_eq!(
         session.get_accumulated(crate::json_parser::types::ContentType::Text, "1"),
