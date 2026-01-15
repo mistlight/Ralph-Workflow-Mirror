@@ -1449,5 +1449,4 @@ mod tests {
             "Accumulated content should be preserved across repeated ContentBlockStart"
         );
     }
-
 }
