@@ -962,14 +962,14 @@ pub fn run_with_fallback(
 
                 if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
                     let cmd_argv = split_command(&cmd_str).ok();
-                    let full_cmd_log = cmd_argv
-                        .as_ref()
-                        .map(|argv| {
+                    let full_cmd_log = match cmd_argv.as_ref() {
+                        Some(argv) => {
                             let mut argv_for_log = argv.clone();
                             argv_for_log.push("<PROMPT>".to_string());
                             truncate_text(&format_argv_for_log(&argv_for_log), 160)
-                        })
-                        .unwrap_or_else(|| "<unparseable command>".to_string());
+                        }
+                        None => "<unparseable command>".to_string(),
+                    };
 
                     if runtime.config.verbosity.is_debug() {
                         runtime

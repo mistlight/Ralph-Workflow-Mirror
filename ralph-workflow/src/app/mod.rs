@@ -150,7 +150,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     )?;
 
     // Handle interactive PROMPT.md creation
-    if let Some(result) = handle_interactive_prompt(&args, colors, &config, &mut logger) {
+    if let Some(result) = handle_interactive_prompt(&args, colors, &config, &logger) {
         return result;
     }
 
@@ -313,7 +313,7 @@ fn handle_interactive_prompt(
     args: &Args,
     colors: Colors,
     config: &Config,
-    logger: &mut Logger,
+    logger: &Logger,
 ) -> Option<anyhow::Result<()>> {
     // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
     // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
@@ -839,7 +839,7 @@ fn finalize_pipeline(
     }
 
     // End agent phase and clean up
-    crate::git_helpers::end_agent_phase()?;
+    crate::git_helpers::end_agent_phase();
     crate::git_helpers::disable_git_wrapper(agent_phase_guard.git_helpers);
     if let Err(err) = crate::git_helpers::uninstall_hooks(logger) {
         logger.warn(&format!("Failed to uninstall Ralph hooks: {err}"));

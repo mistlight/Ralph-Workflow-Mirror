@@ -193,9 +193,9 @@ fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
     // Log diagnostic info when multiple results were found
     if result_count > 1 {
         eprintln!(
-            "[result_extraction] Found {} result events in {:?}, selected result with score {} (length: {})",
+            "[result_extraction] Found {} result events in {}, selected result with score {} (length: {})",
             result_count,
-            path,
+            path.display(),
             best_score,
             best_result.as_ref().map_or(0, std::string::String::len)
         );

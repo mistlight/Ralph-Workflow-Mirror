@@ -44,7 +44,7 @@ fn validate_agent_state(agent_dir: &Path) -> io::Result<StateValidation> {
                 continue;
             }
             if fs::read_to_string(&path).is_err() {
-                issues.push(format!("Corrupted file: {path:?}"));
+                issues.push(format!("Corrupted file: {}", path.display()));
             }
         }
     }

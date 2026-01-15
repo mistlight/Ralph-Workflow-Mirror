@@ -161,9 +161,8 @@ pub fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
 }
 
 /// End agent phase (removes marker file).
-pub fn end_agent_phase() -> io::Result<()> {
+pub fn end_agent_phase() {
     let _ = fs::remove_file(".no_agent_commit");
-    Ok(())
 }
 
 fn cleanup_git_wrapper_dir_silent() {
@@ -180,7 +179,7 @@ fn cleanup_git_wrapper_dir_silent() {
 
 /// Best-effort cleanup for unexpected exits (Ctrl+C, early-return, panics).
 pub fn cleanup_agent_phase_silent() {
-    let _ = end_agent_phase();
+    end_agent_phase();
     cleanup_git_wrapper_dir_silent();
     uninstall_hooks_silent();
     crate::utils::cleanup_generated_files();

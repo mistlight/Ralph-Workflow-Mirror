@@ -28,8 +28,10 @@ use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
 use crate::utils::truncate_text;
 use std::cell::{Cell, RefCell};
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Write as IoWrite};
 use std::rc::Rc;
+
+use std::fmt::Write;
 
 use super::delta_display::DeltaDisplayFormatter;
 use super::health::HealthMonitor;
@@ -113,15 +115,16 @@ impl ClaudeParser {
                         c.reset()
                     );
                     if let Some(cwd) = cwd {
-                        out.push_str(&format!(
-                            "{}[{}]{} {}Working dir: {}{}\n",
+                        let _ = writeln!(
+                            out,
+                            "{}[{}]{} {}Working dir: {}{}",
                             c.dim(),
                             prefix,
                             c.reset(),
                             c.dim(),
                             cwd,
                             c.reset()
-                        ));
+                        );
                     }
                     out
                 } else {
@@ -146,21 +149,23 @@ impl ClaudeParser {
                                     if let Some(text) = text {
                                         let limit = self.verbosity.truncate_limit("text");
                                         let preview = truncate_text(&text, limit);
-                                        out.push_str(&format!(
-                                            "{}[{}]{} {}{}{}\n",
+                                        let _ = writeln!(
+                                            out,
+                                            "{}[{}]{} {}{}{}",
                                             c.dim(),
                                             prefix,
                                             c.reset(),
                                             c.white(),
                                             preview,
                                             c.reset()
-                                        ));
+                                        );
                                     }
                                 }
                                 ContentBlock::ToolUse { name: tool, input } => {
                                     let tool_name = tool.unwrap_or_else(|| "unknown".to_string());
-                                    out.push_str(&format!(
-                                        "{}[{}]{} {}Tool{}: {}{}{}\n",
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}Tool{}: {}{}{}",
                                         c.dim(),
                                         prefix,
                                         c.reset(),
@@ -169,7 +174,7 @@ impl ClaudeParser {
                                         c.bold(),
                                         tool_name,
                                         c.reset(),
-                                    ));
+                                    );
                                     // Show tool input details at Normal and above (not just Verbose)
                                     // Tool inputs provide crucial context for understanding agent actions
                                     if self.verbosity.show_tool_input() {
@@ -178,15 +183,16 @@ impl ClaudeParser {
                                             let limit = self.verbosity.truncate_limit("tool_input");
                                             let preview = truncate_text(&input_str, limit);
                                             if !preview.is_empty() {
-                                                out.push_str(&format!(
-                                                    "{}[{}]{} {}  └─ {}{}\n",
+                                                let _ = writeln!(
+                                                    out,
+                                                    "{}[{}]{} {}  └─ {}{}",
                                                     c.dim(),
                                                     prefix,
                                                     c.reset(),
                                                     c.dim(),
                                                     preview,
                                                     c.reset()
-                                                ));
+                                                );
                                             }
                                         }
                                     }
@@ -199,15 +205,16 @@ impl ClaudeParser {
                                         };
                                         let limit = self.verbosity.truncate_limit("tool_result");
                                         let preview = truncate_text(&content_str, limit);
-                                        out.push_str(&format!(
-                                            "{}[{}]{} {}Result:{} {}\n",
+                                        let _ = writeln!(
+                                            out,
+                                            "{}[{}]{} {}Result:{} {}",
                                             c.dim(),
                                             prefix,
                                             c.reset(),
                                             c.dim(),
                                             c.reset(),
                                             preview
-                                        ));
+                                        );
                                     }
                                 }
                                 ContentBlock::Unknown => {}
@@ -291,14 +298,20 @@ impl ClaudeParser {
                 if let Some(result) = result {
                     let limit = self.verbosity.truncate_limit("result");
                     let preview = truncate_text(&result, limit);
-                    out.push_str(&format!(
-                        "\n{}Result summary:{}\n{}{}{}\n",
+                    out.push('\n');
+                    let _ = writeln!(
+                        out,
+                        "{}Result summary:{}",
                         c.bold(),
-                        c.reset(),
+                        c.reset()
+                    );
+                    let _ = writeln!(
+                        out,
+                        "{}{}{}",
                         c.dim(),
                         preview,
                         c.reset()
-                    ));
+                    );
                 }
                 out
             }
@@ -578,7 +591,7 @@ impl ClaudeParser {
     }
 
     /// Parse a stream of Claude NDJSON events
-    pub(crate) fn parse_stream<R: BufRead, W: Write>(
+    pub(crate) fn parse_stream<R: BufRead, W: IoWrite>(
         &self,
         reader: R,
         mut writer: W,
