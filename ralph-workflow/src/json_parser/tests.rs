@@ -615,18 +615,16 @@ fn test_delta_with_embedded_newline_displays_inline() {
     let out = output.unwrap();
 
     // The newline should be replaced with a space to prevent artificial line breaks
-    // NEW BEHAVIOR: Multi-line pattern with prefix and content on one line, then cursor up
-    // Output format: "[Claude] Now I understand 1. In src/\n\x1b[2K\x1b[1A"
+    // Single-line pattern: prefix and content on same line with carriage return
+    // Output format: "[Claude] Now I understand 1. In src/\r"
     assert!(out.contains("Now I understand"));
     assert!(out.contains("1. In src/"));
 
-    // NEW BEHAVIOR: Output should have 2 lines due to multi-line pattern
-    // The embedded newline in the delta text is replaced with a space
-    // But the multi-line pattern adds \n before cursor up, so lines().count() returns 2
+    // Single-line pattern: output should have 1 line (the embedded newline is replaced with space)
     assert_eq!(
         out.lines().count(),
-        2,
-        "Delta with embedded newline should produce 2 output lines with multi-line pattern"
+        1,
+        "Delta with embedded newline should produce 1 output line with single-line pattern"
     );
 }
 
