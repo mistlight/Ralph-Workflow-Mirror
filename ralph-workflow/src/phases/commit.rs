@@ -392,6 +392,7 @@ fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
 /// # Returns
 ///
 /// Returns `Ok(CommitMessageResult)` with the generated message and metadata.
+#[allow(clippy::too_many_lines)]
 pub fn generate_commit_message(
     diff: &str,
     registry: &AgentRegistry,

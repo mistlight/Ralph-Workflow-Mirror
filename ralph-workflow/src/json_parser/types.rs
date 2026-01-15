@@ -483,6 +483,7 @@ fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
 /// # Returns
 /// A formatted string showing the event type and key fields, or an empty string
 /// if the JSON couldn't be parsed or verbosity should suppress it.
+#[allow(clippy::too_many_lines)]
 pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,

@@ -160,7 +160,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     )?;
 
     // Set up git repo, working directory, and handle interactive mode
-    let repo_root = setup_git_repo_and_working_dir(&config, colors, &mut logger)?;
+    let repo_root = setup_git_repo_and_working_dir(&config, colors, &logger)?;
 
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
@@ -177,7 +177,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         developer_agent: &developer_agent,
         reviewer_agent: &reviewer_agent,
     };
-    if handle_plumbing_and_dry_run(plumbing_ctx)? {
+    if handle_plumbing_and_dry_run(&plumbing_ctx)? {
         return Ok(());
     }
 
@@ -528,7 +528,7 @@ fn run_review_and_fix(
 fn setup_git_repo_and_working_dir(
     config: &crate::config::Config,
     colors: Colors,
-    logger: &mut Logger,
+    logger: &Logger,
 ) -> anyhow::Result<std::path::PathBuf> {
     // Set up git repo and working directory
     require_git_repo()?;
@@ -586,7 +586,7 @@ struct PlumbingContext<'a> {
 ///
 /// Returns `Ok(true)` if one of these commands was handled (and we should exit),
 /// `Ok(false)` if neither was triggered (and we should continue to the main pipeline).
-fn handle_plumbing_and_dry_run(ctx: PlumbingContext) -> anyhow::Result<bool> {
+fn handle_plumbing_and_dry_run(ctx: &PlumbingContext) -> anyhow::Result<bool> {
     // Handle --dry-run
     if ctx.args.recovery.dry_run {
         handle_dry_run(

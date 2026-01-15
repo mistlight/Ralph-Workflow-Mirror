@@ -91,6 +91,7 @@ impl ClaudeParser {
     /// - Malformed JSON (logged at debug level)
     /// - Unknown event types
     /// - Empty or whitespace-only output
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: ClaudeEvent = if let Ok(e) = serde_json::from_str(line) {
             e
@@ -374,6 +375,7 @@ impl ClaudeParser {
     /// - Error: Display appropriately
     ///
     /// Returns String for display content, empty String for control events.
+    #[allow(clippy::too_many_lines)]
     fn parse_stream_event(&self, event: StreamInnerEvent) -> String {
         let c = &self.colors;
         let prefix = &self.display_name;

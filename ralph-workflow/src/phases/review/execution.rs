@@ -47,6 +47,7 @@ pub struct ReviewResult {
 /// # Returns
 ///
 /// Returns `Ok(ReviewResult)` on success, or an error if a critical failure occurs.
+#[allow(clippy::too_many_lines)]
 pub fn run_review_phase(
     ctx: &mut PhaseContext<'_>,
     start_pass: u32,

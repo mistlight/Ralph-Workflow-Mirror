@@ -52,6 +52,7 @@ pub struct AgentAttemptConfig<'a> {
 /// Try a single agent/model configuration with retries.
 ///
 /// Returns the result of the attempt: success, unrecoverable error, or should-fallback.
+#[allow(clippy::too_many_lines)]
 pub fn try_agent_with_retries(
     config: &AgentAttemptConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,

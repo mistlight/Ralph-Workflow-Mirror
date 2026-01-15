@@ -9,6 +9,7 @@ use super::model_flag::resolve_model_with_provider;
 use super::prompt::PipelineRuntime;
 
 /// Run a command with automatic fallback to alternative agents on failure.
+#[allow(clippy::too_many_lines)]
 pub fn run_with_fallback(
     role: AgentRole,
     base_label: &str,

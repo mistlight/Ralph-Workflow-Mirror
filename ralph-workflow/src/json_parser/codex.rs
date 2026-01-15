@@ -90,6 +90,7 @@ impl CodexParser {
     /// - Malformed JSON (non-JSON text passed through if meaningful)
     /// - Unknown event types
     /// - Empty or whitespace-only output
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: CodexEvent = if let Ok(e) = serde_json::from_str(line) {
             e

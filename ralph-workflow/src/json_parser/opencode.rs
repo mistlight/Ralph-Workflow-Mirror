@@ -162,6 +162,7 @@ impl OpenCodeParser {
     /// - `step_finish`: Step completion with reason, cost, tokens
     /// - `tool_use`: Tool invocation with tool name, callID, and state (status, input, output)
     /// - `text`: Streaming text content
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: OpenCodeEvent = if let Ok(e) = serde_json::from_str(line) {
             e

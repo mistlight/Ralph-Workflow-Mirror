@@ -274,6 +274,7 @@ fn file_count_pattern_regex() -> &'static Regex {
 /// # Returns
 ///
 /// `Ok(())` if valid, `Err(reason)` if invalid
+#[allow(clippy::too_many_lines)]
 pub fn validate_commit_message(content: &str) -> Result<(), String> {
     let content = content.trim();
 
