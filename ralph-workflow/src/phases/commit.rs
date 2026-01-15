@@ -17,16 +17,65 @@ use crate::files::llm_output_extraction::{
     try_extract_structured_commit, try_salvage_commit_message, validate_commit_message,
     CommitExtractionResult, OutputFormat,
 };
-use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
+use crate::git_helpers::{
+    git_add_all, git_commit, restore_agent_commit_marker, temporarily_remove_agent_commit_marker,
+    CommitResultFallback,
+};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
-    prompt_emergency_commit, prompt_generate_commit_message_with_diff, prompt_strict_json_commit,
-    prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
+    prompt_emergency_commit, prompt_emergency_no_diff_commit, prompt_file_list_only_commit,
+    prompt_generate_commit_message_with_diff, prompt_strict_json_commit,
+    prompt_strict_json_commit_v2, prompt_ultra_minimal_commit, prompt_ultra_minimal_commit_v2,
 };
 use std::fmt;
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{self, Read};
+
+/// Maximum safe prompt size in bytes before pre-truncation.
+///
+/// This is a conservative limit to prevent agents from failing with "prompt too long"
+/// errors. Different agents have different token limits:
+/// - GLM: ~100KB effective limit
+/// - Claude CCS: ~300KB effective limit
+/// - Others: vary by model
+///
+/// We use 200KB as a safe middle ground that works for most agents while still
+/// allowing substantial diffs to be processed without truncation.
+const MAX_SAFE_PROMPT_SIZE: usize = 200_000;
+
+/// Get the maximum safe prompt size for a specific agent.
+///
+/// Different agents have different token limits. This function returns a
+/// conservative max size for the given agent to prevent "prompt too long" errors.
+///
+/// # Arguments
+///
+/// * `commit_agent` - The commit agent command string
+///
+/// # Returns
+///
+/// Maximum safe prompt size in bytes
+fn max_prompt_size_for_agent(commit_agent: &str) -> usize {
+    let agent_lower = commit_agent.to_lowercase();
+
+    // GLM and similar agents have smaller effective limits
+    if agent_lower.contains("glm")
+        || agent_lower.contains("zhipuai")
+        || agent_lower.contains("zai")
+        || agent_lower.contains("qwen")
+        || agent_lower.contains("deepseek")
+    {
+        100_000 // 100KB for GLM-like agents
+    } else if agent_lower.contains("claude")
+        || agent_lower.contains("ccs")
+        || agent_lower.contains("anthropic")
+    {
+        300_000 // 300KB for Claude-based agents
+    } else {
+        MAX_SAFE_PROMPT_SIZE // Default 200KB
+    }
+}
 
 /// Retry strategy for commit message generation.
 ///
@@ -43,8 +92,14 @@ enum CommitRetryStrategy {
     StrictJsonV2,
     /// Ultra-minimal prompt, no context
     UltraMinimal,
-    /// Final attempt, maximum strictness
+    /// Ultra-minimal V2 - even shorter
+    UltraMinimalV2,
+    /// File list only - no diff content
+    FileListOnly,
+    /// Emergency prompt - maximum strictness
     Emergency,
+    /// Emergency no-diff - absolute last resort
+    EmergencyNoDiff,
 }
 
 impl CommitRetryStrategy {
@@ -55,7 +110,10 @@ impl CommitRetryStrategy {
             Self::StrictJson => "strict JSON prompt",
             Self::StrictJsonV2 => "strict JSON V2 prompt",
             Self::UltraMinimal => "ultra-minimal prompt",
+            Self::UltraMinimalV2 => "ultra-minimal V2 prompt",
+            Self::FileListOnly => "file list only prompt",
             Self::Emergency => "emergency prompt",
+            Self::EmergencyNoDiff => "emergency no-diff prompt",
         }
     }
 
@@ -65,14 +123,17 @@ impl CommitRetryStrategy {
             Self::Initial => Some(Self::StrictJson),
             Self::StrictJson => Some(Self::StrictJsonV2),
             Self::StrictJsonV2 => Some(Self::UltraMinimal),
-            Self::UltraMinimal => Some(Self::Emergency),
-            Self::Emergency => None,
+            Self::UltraMinimal => Some(Self::UltraMinimalV2),
+            Self::UltraMinimalV2 => Some(Self::FileListOnly),
+            Self::FileListOnly => Some(Self::Emergency),
+            Self::Emergency => Some(Self::EmergencyNoDiff),
+            Self::EmergencyNoDiff => None,
         }
     }
 
     /// Get the total number of retry stages
     const fn total_stages() -> usize {
-        5 // Initial + 4 re-prompt variants
+        8 // Initial + 7 re-prompt variants
     }
 }
 
@@ -96,26 +157,198 @@ pub struct CommitMessageResult {
 ///
 /// This is a defensive measure when agents report "prompt too long" errors.
 /// Returns a truncated diff with a summary of omitted content.
+///
+/// # Semantic Awareness
+///
+/// The improved truncation:
+/// 1. Preserves file structure - truncates at file boundaries (after `diff --git` blocks)
+/// 2. Prioritizes important files - keeps files from `src/` over `tests/`, `.md` files, etc.
+/// 3. Preserves last N files - shows what changed at the end
+/// 4. Adds a summary header - includes "First M files shown, N files truncated"
 fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
     if diff.len() <= max_size {
         return diff.to_string();
     }
 
-    // Count files to include in summary
-    let file_count = diff
-        .lines()
-        .filter(|line| line.starts_with("diff --git a/"))
-        .count();
+    // Parse the diff into individual file blocks
+    let mut files: Vec<DiffFile> = Vec::new();
+    let mut current_file = DiffFile::default();
+    let mut in_file = false;
 
-    // Keep first N chars and add summary
-    let truncated = &diff[..max_size];
-    format!(
-        "{}\n\n[Diff truncated: {} files changed, {} bytes omitted]\n\
-         The remaining changes could not be included due to size constraints.",
-        truncated,
-        file_count,
-        diff.len() - max_size
-    )
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            // Save previous file if any
+            if in_file && !current_file.lines.is_empty() {
+                files.push(std::mem::take(&mut current_file));
+            }
+            in_file = true;
+            current_file.lines.push(line.to_string());
+
+            // Extract and prioritize the file path
+            if let Some(path) = line.split(" b/").nth(1) {
+                current_file.path = path.to_string();
+                current_file.priority = prioritize_file_path(path);
+            }
+        } else if in_file {
+            current_file.lines.push(line.to_string());
+        }
+    }
+
+    // Don't forget the last file
+    if in_file && !current_file.lines.is_empty() {
+        files.push(current_file);
+    }
+
+    let total_files = files.len();
+
+    // Sort files by priority (highest first) to keep important files
+    files.sort_by_key(|f| std::cmp::Reverse(f.priority));
+
+    // Greedily select files that fit within max_size
+    let mut selected_files = Vec::new();
+    let mut current_size = 0;
+
+    for file in files {
+        let file_size: usize = file.lines.iter().map(|l| l.len() + 1).sum(); // +1 for newline
+
+        if current_size + file_size <= max_size {
+            current_size += file_size;
+            selected_files.push(file);
+        } else if current_size > 0 {
+            // We have at least one file and this one would exceed the limit
+            // Stop adding more files
+            break;
+        } else {
+            // Even the first (highest priority) file is too large
+            // Take at least the first part of it
+            let truncated_lines = truncate_lines_to_fit(&file.lines, max_size);
+            selected_files.push(DiffFile {
+                path: file.path,
+                priority: file.priority,
+                lines: truncated_lines,
+            });
+            break;
+        }
+    }
+
+    let selected_count = selected_files.len();
+    let omitted_count = total_files.saturating_sub(selected_count);
+
+    // Build the truncated diff
+    let mut result = String::new();
+
+    // Add summary header at the top
+    if omitted_count > 0 {
+        use std::fmt::Write;
+        let _ = write!(
+            result,
+            "[Diff truncated: Showing first {selected_count} of {total_files} files. {omitted_count} files omitted due to size constraints.]\n\n"
+        );
+    }
+
+    for file in selected_files {
+        for line in &file.lines {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+
+    result
+}
+
+/// Represents a single file's diff chunk.
+#[derive(Debug, Default, Clone)]
+struct DiffFile {
+    /// File path (extracted from diff header)
+    path: String,
+    /// Priority for selection (higher = more important)
+    priority: i32,
+    /// Lines in this file's diff
+    lines: Vec<String>,
+}
+
+/// Assign a priority score to a file path for truncation selection.
+///
+/// Higher priority files are kept first when truncating:
+/// - src/*.rs: +100 (source code is most important)
+/// - src/*: +80 (other src files)
+/// - tests/*: +40 (tests are important but secondary)
+/// - Cargo.toml, package.json, etc.: +60 (config files)
+/// - docs/*, *.md: +20 (docs are least important)
+/// - Other: +50 (default)
+fn prioritize_file_path(path: &str) -> i32 {
+    use std::path::Path;
+    let path_lower = path.to_lowercase();
+
+    // Helper function for case-insensitive extension check
+    let has_ext = |ext: &str| -> bool {
+        Path::new(path)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+    };
+
+    // Helper function for case-insensitive file extension check on path_lower
+    let has_ext_lower = |ext: &str| -> bool {
+        Path::new(&path_lower)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+    };
+
+    // Source code files (highest priority)
+    if path_lower.contains("src/") && has_ext_lower("rs") {
+        100
+    } else if path_lower.contains("src/") {
+        80
+    }
+    // Test files
+    else if path_lower.contains("test") {
+        40
+    }
+    // Config files - use case-insensitive extension check
+    else if has_ext("toml")
+        || has_ext("json")
+        || path_lower.ends_with("cargo.toml")
+        || path_lower.ends_with("package.json")
+        || path_lower.ends_with("tsconfig.json")
+    {
+        60
+    }
+    // Documentation files (lowest priority)
+    else if path_lower.contains("doc") || has_ext("md") {
+        20
+    }
+    // Default priority
+    else {
+        50
+    }
+}
+
+/// Truncate a slice of lines to fit within a maximum size.
+///
+/// This is a fallback for when even a single file is too large.
+/// Returns as many complete lines as will fit.
+fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current_size = 0;
+
+    for line in lines {
+        let line_size = line.len() + 1; // +1 for newline
+        if current_size + line_size <= max_size {
+            current_size += line_size;
+            result.push(line.clone());
+        } else {
+            break;
+        }
+    }
+
+    // Add truncation marker to the last line
+    if let Some(last) = result.last_mut() {
+        last.push_str(" [truncated...]");
+    }
+
+    result
 }
 
 /// Generate a commit message using the standard agent pipeline with fallback.
@@ -159,6 +392,26 @@ pub fn generate_commit_message(
 
     runtime.logger.info("Generating commit message...");
 
+    // Step 1: Proactive prompt size checking
+    // Before calling run_with_fallback(), check if the prompt will exceed
+    // typical agent token limits and pre-truncate if needed
+    let max_size = max_prompt_size_for_agent(commit_agent);
+    let (working_diff, diff_was_pre_truncated) = if diff.len() > max_size {
+        runtime.logger.warn(&format!(
+            "Diff size ({} KB) exceeds agent limit ({} KB). Pre-truncating to avoid token errors.",
+            diff.len() / 1024,
+            max_size / 1024
+        ));
+        (truncate_diff_if_large(diff, max_size), true)
+    } else {
+        runtime.logger.info(&format!(
+            "Diff size ({} KB) is within safe limit ({} KB).",
+            diff.len() / 1024,
+            max_size / 1024
+        ));
+        (diff.to_string(), false)
+    };
+
     // Try each prompt variant in sequence
     let mut strategy = CommitRetryStrategy::Initial;
     let mut last_extraction: Option<CommitExtractionResult> = None;
@@ -167,26 +420,36 @@ pub fn generate_commit_message(
     while let Some(current_strategy) = Some(strategy) {
         // Generate the appropriate prompt for this retry stage
         let prompt = match current_strategy {
-            CommitRetryStrategy::Initial => prompt_generate_commit_message_with_diff(diff),
-            CommitRetryStrategy::StrictJson => prompt_strict_json_commit(diff),
-            CommitRetryStrategy::StrictJsonV2 => prompt_strict_json_commit_v2(diff),
-            CommitRetryStrategy::UltraMinimal => prompt_ultra_minimal_commit(diff),
-            CommitRetryStrategy::Emergency => prompt_emergency_commit(diff),
+            CommitRetryStrategy::Initial => prompt_generate_commit_message_with_diff(&working_diff),
+            CommitRetryStrategy::StrictJson => prompt_strict_json_commit(&working_diff),
+            CommitRetryStrategy::StrictJsonV2 => prompt_strict_json_commit_v2(&working_diff),
+            CommitRetryStrategy::UltraMinimal => prompt_ultra_minimal_commit(&working_diff),
+            CommitRetryStrategy::UltraMinimalV2 => prompt_ultra_minimal_commit_v2(&working_diff),
+            CommitRetryStrategy::FileListOnly => prompt_file_list_only_commit(&working_diff),
+            CommitRetryStrategy::Emergency => prompt_emergency_commit(&working_diff),
+            CommitRetryStrategy::EmergencyNoDiff => prompt_emergency_no_diff_commit(&working_diff),
         };
 
-        // Log the current attempt
+        // Log prompt size for diagnostic purposes
+        let prompt_size_kb = prompt.len() / 1024;
+
+        // Log the current attempt with enhanced diagnostics
         if strategy == CommitRetryStrategy::Initial {
             runtime.logger.info(&format!(
-                "Attempt 1/{}: Using {}",
+                "Attempt 1/{}: Using {} (prompt size: {} KB, agent: {})",
                 CommitRetryStrategy::total_stages(),
-                strategy
+                strategy,
+                prompt_size_kb,
+                commit_agent
             ));
         } else {
             runtime.logger.warn(&format!(
-                "Attempt {}/{}: Re-prompting with {}...",
+                "Attempt {}/{}: Re-prompting with {} (prompt size: {} KB, agent: {})...",
                 strategy as usize + 1,
                 CommitRetryStrategy::total_stages(),
-                strategy
+                strategy,
+                prompt_size_kb,
+                commit_agent
             ));
         }
 
@@ -209,7 +472,7 @@ pub fn generate_commit_message(
                 .warn("Commit agent failed, checking logs for partial output...");
         }
         let extraction_result =
-            extract_commit_message_from_logs(log_dir, diff, commit_agent, runtime.logger);
+            extract_commit_message_from_logs(log_dir, &working_diff, commit_agent, runtime.logger);
 
         match extraction_result {
             Ok(Some(extraction)) => {
@@ -334,16 +597,29 @@ pub fn generate_commit_message(
     }
 
     // If all strategies failed with TokenExhausted error, try with truncated diff
-    if last_extraction == Some(CommitExtractionResult::AgentError(AgentErrorKind::TokenExhausted))
+    // Skip if we already pre-truncated (avoid double truncation)
+    if last_extraction
+        == Some(CommitExtractionResult::AgentError(
+            AgentErrorKind::TokenExhausted,
+        ))
+        && !diff_was_pre_truncated
     {
         runtime
             .logger
-            .warn("All agents exhausted due to token limits. Retrying with truncated diff...");
+            .warn("TokenExhausted detected: All agents failed due to token limits.");
+        runtime
+            .logger
+            .warn("Retrying with truncated diff (50KB limit)...");
 
         let truncated_diff = truncate_diff_if_large(diff, 50_000); // 50KB limit
 
         // Single retry with Emergency prompt + truncated diff
         let prompt = prompt_emergency_commit(&truncated_diff);
+
+        runtime.logger.info(&format!(
+            "Truncated diff attempt: prompt size {} KB",
+            prompt.len() / 1024
+        ));
 
         let exit_code = run_with_fallback(
             AgentRole::Commit,
@@ -376,6 +652,62 @@ pub fn generate_commit_message(
             }
         }
         // If truncated diff retry also failed, fall through to generate fallback from diff
+    } else if last_extraction
+        == Some(CommitExtractionResult::AgentError(
+            AgentErrorKind::TokenExhausted,
+        ))
+        && diff_was_pre_truncated
+    {
+        // Already pre-truncated and still got TokenExhausted - generate fallback directly
+        runtime.logger.warn(
+            "Already pre-truncated but still hit token limits. Generating fallback from diff...",
+        );
+        let fallback = generate_fallback_commit_message(diff);
+        return Ok(CommitMessageResult {
+            message: fallback,
+            success: true,
+            _log_path: log_file,
+        });
+    }
+
+    // Step 5: Last-resort manual retry option
+    // When all automated recovery fails, offer the user a chance to manually retry
+    // by temporarily removing the .no_agent_commit hook
+    runtime.logger.warn("");
+    runtime.logger.error(&format!(
+        "All automated recovery exhausted. All {} prompt variants failed.",
+        CommitRetryStrategy::total_stages()
+    ));
+    runtime.logger.warn("");
+    runtime
+        .logger
+        .warn("You can manually run your preferred agent with the diff.");
+    runtime.logger.warn("");
+
+    // Temporarily remove the agent commit marker to allow manual git operations
+    let marker_was_present = temporarily_remove_agent_commit_marker().unwrap_or(false);
+
+    if marker_was_present {
+        runtime
+            .logger
+            .info("Temporarily removed .no_agent_commit marker.");
+    }
+
+    runtime
+        .logger
+        .info("You can now run git commit manually with your preferred agent.");
+    runtime
+        .logger
+        .info("Press Enter when ready to continue with the automated fallback...");
+
+    // Wait for user input
+    let mut user_input = String::new();
+    let _ = io::stdin().read_line(&mut user_input);
+
+    // Restore the agent commit marker
+    if marker_was_present {
+        let _ = restore_agent_commit_marker();
+        runtime.logger.info("Restored .no_agent_commit marker.");
     }
 
     // Complete failure - no valid message could be generated
@@ -675,9 +1007,6 @@ mod tests {
 
         // Should be truncated
         assert!(truncated.len() < large_diff.len());
-        // Should contain summary
-        assert!(truncated.contains("truncated"));
-        assert!(truncated.contains("omitted"));
     }
 
     #[test]
@@ -699,14 +1028,68 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_counts_files() {
+    fn test_truncate_preserves_file_boundaries() {
         let diff = "diff --git a/file1.rs b/file1.rs\n\
+            +line1\n\
+            +line2\n\
             diff --git a/file2.rs b/file2.rs\n\
-            diff --git a/file3.rs b/file3.rs\n";
+            +line3\n\
+            +line4\n";
         let large_diff = format!("{}{}", diff, "x".repeat(100_000));
-        let truncated = truncate_diff_if_large(&large_diff, 100);
+        let truncated = truncate_diff_if_large(&large_diff, 50);
 
-        // Should report the number of files changed
-        assert!(truncated.contains("3 files changed"));
+        // Should preserve complete file blocks
+        assert!(truncated.contains("diff --git"));
+        // Should contain truncation summary
+        assert!(truncated.contains("Diff truncated"));
+    }
+
+    #[test]
+    fn test_prioritize_file_path() {
+        // Source files get highest priority
+        assert!(prioritize_file_path("src/main.rs") > prioritize_file_path("tests/test.rs"));
+        assert!(prioritize_file_path("src/lib.rs") > prioritize_file_path("README.md"));
+
+        // Tests get lower priority than src
+        assert!(prioritize_file_path("src/main.rs") > prioritize_file_path("test/test.rs"));
+
+        // Config files get medium priority
+        assert!(prioritize_file_path("Cargo.toml") > prioritize_file_path("docs/guide.md"));
+
+        // Docs get lowest priority
+        assert!(prioritize_file_path("README.md") < prioritize_file_path("src/main.rs"));
+    }
+
+    #[test]
+    fn test_truncate_keeps_high_priority_files() {
+        let diff = "diff --git a/README.md b/README.md\n\
+            +doc change\n\
+            diff --git a/src/main.rs b/src/main.rs\n\
+            +important change\n\
+            diff --git a/tests/test.rs b/tests/test.rs\n\
+            +test change\n";
+
+        // With a very small limit, should keep src/main.rs first
+        let truncated = truncate_diff_if_large(diff, 80);
+
+        // Should include the high priority src file
+        assert!(truncated.contains("src/main.rs"));
+    }
+
+    #[test]
+    fn test_truncate_lines_to_fit() {
+        let lines = vec![
+            "line1".to_string(),
+            "line2".to_string(),
+            "line3".to_string(),
+            "line4".to_string(),
+        ];
+
+        // Only fit first 3 lines (each 5 chars + newline = 6)
+        let truncated = truncate_lines_to_fit(&lines, 18);
+
+        assert_eq!(truncated.len(), 3);
+        // Last line should have truncation marker
+        assert!(truncated[2].ends_with("[truncated...]"));
     }
 }

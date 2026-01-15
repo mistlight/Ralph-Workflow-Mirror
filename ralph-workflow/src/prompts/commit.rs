@@ -301,6 +301,54 @@ Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"#
     )
 }
 
+/// Generate ultra-minimal V2 commit prompt.
+///
+/// This is an even shorter variant that only provides the subject line template.
+/// Used when `UltraMinimal` still produces too much output.
+pub fn prompt_ultra_minimal_commit_v2(diff: &str) -> String {
+    let diff_content = diff.trim();
+    format!(
+        r#"{diff_content}
+
+{{"subject": "fix: ", "body": null}}"#
+    )
+}
+
+/// Generate file-list-only commit prompt.
+///
+/// This variant asks for a commit based on just file paths (no diff content).
+/// Used when all diff-including prompts fail due to token limits.
+/// The diff is still provided but the prompt focuses on file paths.
+pub fn prompt_file_list_only_commit(diff: &str) -> String {
+    let diff_content = diff.trim();
+
+    // Extract just the file paths from the diff
+    let files: Vec<&str> = diff_content
+        .lines()
+        .filter(|line| line.starts_with("diff --git a/"))
+        .collect();
+
+    let file_list = if files.is_empty() {
+        String::from("(no files detected)")
+    } else {
+        // Format file list concisely
+        let mut result = String::from("Files changed:\n");
+        for file in &files {
+            if let Some(path) = file.split(" b/").nth(1) {
+                result.push_str("- ");
+                result.push_str(path);
+                result.push('\n');
+            }
+        }
+        result
+    };
+
+    format!(
+        r#"{file_list}
+{{"subject": "chore: update files", "body": null}}"#
+    )
+}
+
 /// Generate emergency commit prompt with maximum constraints.
 ///
 /// This is the final re-prompt attempt before falling back to the next agent.
@@ -312,6 +360,14 @@ pub fn prompt_emergency_commit(diff: &str) -> String {
 
 {{"subject": "fix: ", "body": null}}"#
     )
+}
+
+/// Generate emergency no-diff commit prompt.
+///
+/// This is the absolute last resort that doesn't include any diff at all.
+/// Just asks for a generic commit when everything else fails.
+pub fn prompt_emergency_no_diff_commit(_diff: &str) -> String {
+    r#"{{"subject": "chore: changes", "body": null}}"#.to_string()
 }
 
 #[cfg(test)]
