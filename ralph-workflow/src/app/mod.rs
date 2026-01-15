@@ -59,6 +59,76 @@ use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
 
+/// Handle plumbing commands that need git repo but not full validation.
+///
+/// Returns `Ok(Some(()))` if a plumbing command was handled, `Ok(None)` if not.
+fn handle_plumbing_commands(
+    args: &Args,
+    logger: &mut Logger,
+    colors: Colors,
+) -> anyhow::Result<Option<()>> {
+    if args.show_commit_msg {
+        handle_show_commit_msg()?;
+        return Ok(Some(()));
+    }
+    if args.apply_commit {
+        handle_apply_commit(logger, colors)?;
+        return Ok(Some(()));
+    }
+    if args.reset_start_commit {
+        require_git_repo()?;
+        let repo_root = get_repo_root()?;
+        env::set_current_dir(&repo_root)?;
+
+        match reset_start_commit() {
+            Ok(()) => {
+                logger.success("Starting commit reference reset to current HEAD");
+                logger.info(".agent/start_commit has been updated");
+                return Ok(Some(()));
+            }
+            Err(e) => {
+                logger.error(&format!("Failed to reset starting commit: {e}"));
+                anyhow::bail!("Failed to reset starting commit");
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Handle interactive mode prompt creation for missing PROMPT.md.
+///
+/// Returns `Ok(Some(()))` if prompt was created and we should exit, `Ok(None)` if not.
+fn handle_interactive_prompt_creation(
+    args: &Args,
+    config: &crate::config::types::Config,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<Option<()>> {
+    if !args.interactive || std::path::Path::new("PROMPT.md").exists() {
+        return Ok(None);
+    }
+
+    if let Some(template_name) = prompt_template_selection(colors) {
+        create_prompt_from_template(&template_name, colors)?;
+        println!();
+        logger.info(
+            "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+        );
+        logger.info(&format!(
+            "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+            config.commit_msg
+        ));
+        return Ok(Some(()));
+    }
+
+    println!();
+    logger.info("PROMPT.md is required to run the pipeline.");
+    logger.info(
+        "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+    );
+    Ok(Some(()))
+}
+
 /// Main application entry point.
 ///
 /// Orchestrates the entire Ralph pipeline:
@@ -116,29 +186,9 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // Validate agent chains
     validate_agent_chains(&registry, colors);
 
-    // Handle plumbing commands (these need git repo but not full validation)
-    if args.show_commit_msg {
-        return handle_show_commit_msg();
-    }
-    if args.apply_commit {
-        return handle_apply_commit(&logger, colors);
-    }
-    if args.reset_start_commit {
-        require_git_repo()?;
-        let repo_root = get_repo_root()?;
-        env::set_current_dir(&repo_root)?;
-
-        match reset_start_commit() {
-            Ok(()) => {
-                logger.success("Starting commit reference reset to current HEAD");
-                logger.info(".agent/start_commit has been updated");
-                return Ok(());
-            }
-            Err(e) => {
-                logger.error(&format!("Failed to reset starting commit: {e}"));
-                anyhow::bail!("Failed to reset starting commit");
-            }
-        }
+    // Handle plumbing commands
+    if handle_plumbing_commands(&args, &mut logger, colors)?.is_some() {
+        return Ok(());
     }
 
     // Validate agent commands exist
@@ -164,26 +214,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
 
-    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
-    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
-    if args.interactive && !std::path::Path::new("PROMPT.md").exists() {
-        if let Some(template_name) = prompt_template_selection(colors) {
-            create_prompt_from_template(&template_name, colors)?;
-            println!();
-            logger.info(
-                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
-            );
-            logger.info(&format!(
-                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-                config.commit_msg
-            ));
-            return Ok(());
-        }
-        println!();
-        logger.info("PROMPT.md is required to run the pipeline.");
-        logger.info(
-            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-        );
+    // Handle interactive mode prompt creation
+    if handle_interactive_prompt_creation(&args, &config, &logger, colors)?.is_some() {
         return Ok(());
     }
 
@@ -461,7 +493,7 @@ fn run_development(
     let resume_phase = resume_checkpoint.map(|c| c.phase);
     let resume_rank = resume_phase.map(phase_rank);
 
-    if resume_rank.is_some_and(|rank| rank >= phase_rank(PipelinePhase::Review)) {
+    if resume_rank.map_or(false, |rank| rank >= phase_rank(PipelinePhase::Review)) {
         ctx.logger
             .info("Skipping development phase (checkpoint indicates it already completed)");
         return Ok(());
