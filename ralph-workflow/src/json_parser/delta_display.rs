@@ -55,6 +55,40 @@ use crate::logger::Colors;
 /// Using `\x1b[2K` ensures the entire line is cleared during in-place updates.
 pub const CLEAR_LINE: &str = "\x1b[2K";
 
+/// Sanitize content for single-line display.
+///
+/// This function prepares streamed content for in-place terminal display by:
+/// - Replacing newlines with spaces (to prevent artificial line breaks)
+/// - Collapsing multiple consecutive whitespace characters into single spaces
+/// - Trimming leading and trailing whitespace
+///
+/// # Arguments
+/// * `content` - The raw content to sanitize
+///
+/// # Returns
+/// A sanitized string suitable for single-line display.
+fn sanitize_for_display(content: &str) -> String {
+    // Replace all whitespace (including \n, \r, \t) with spaces, then collapse multiple spaces
+    let mut result = String::with_capacity(content.len());
+    let mut prev_was_whitespace = false;
+
+    for ch in content.chars() {
+        if ch.is_whitespace() {
+            if !prev_was_whitespace {
+                result.push(' ');
+                prev_was_whitespace = true;
+            }
+            // Skip consecutive whitespace characters
+        } else {
+            result.push(ch);
+            prev_was_whitespace = false;
+        }
+    }
+
+    // Trim leading and trailing whitespace
+    result.trim().to_string()
+}
+
 /// Renderer for streaming delta content.
 ///
 /// This trait defines the contract for rendering streaming deltas consistently
@@ -141,6 +175,18 @@ pub trait DeltaRenderer {
     /// Render the completion of streaming.
     ///
     /// This is called when streaming completes to move cursor down and add newline.
+    /// This method ONLY handles cursor state cleanup - it does NOT render content.
+    ///
+    /// The streamed content is already visible on the terminal from previous deltas.
+    /// This method simply positions the cursor correctly for subsequent output.
+    ///
+    /// # Future Enhancement
+    ///
+    /// A `render_final_line()` method could be added to render clean output without
+    /// cursor control sequences, useful for:
+    /// - Log files or non-terminal destinations
+    /// - Re-rendering a clean final line after streaming
+    /// - Creating output suitable for capture or storage
     ///
     /// # Returns
     /// A string with cursor down + newline (`\x1b[1B\n`).
@@ -172,8 +218,8 @@ pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {
     fn render_first_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
-        // Sanitize embedded newlines to spaces to prevent artificial line breaks
-        let sanitized = accumulated.replace('\n', " ");
+        // Sanitize content: replace newlines with spaces and collapse multiple whitespace
+        let sanitized = sanitize_for_display(accumulated);
 
         // Multi-line pattern: end with newline + cursor up for in-place updates
         // This forces terminal output flush and positions cursor for rewrite
@@ -189,8 +235,8 @@ impl DeltaRenderer for TextDeltaRenderer {
     }
 
     fn render_subsequent_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
-        // Sanitize embedded newlines to spaces
-        let sanitized = accumulated.replace('\n', " ");
+        // Sanitize content: replace newlines with spaces and collapse multiple whitespace
+        let sanitized = sanitize_for_display(accumulated);
 
         // Clear line, rewrite with prefix and accumulated content, end with newline + cursor up
         // This creates in-place update using multi-line pattern
@@ -252,6 +298,21 @@ impl DeltaDisplayFormatter {
     /// Format tool input specifically
     ///
     /// Tool input is shown with appropriate styling.
+    ///
+    /// # Current Behavior
+    ///
+    /// Every call renders the full `[prefix]   └─ content` pattern.
+    /// This provides clarity about which agent's tool is being invoked.
+    ///
+    /// # Future Enhancement
+    ///
+    /// For streaming tool inputs with multiple deltas, consider suppressing
+    /// the `[prefix]` on continuation lines to reduce visual noise:
+    /// - First tool input line: `[prefix] Tool: name`
+    /// - Continuation: `           └─ more input` (aligned, no prefix)
+    ///
+    /// This would require tracking whether the prefix has been displayed
+    /// for the current tool block, likely via the streaming session state.
     pub fn format_tool_input(&self, content: &str, prefix: &str, colors: Colors) -> String {
         if self.mark_partial {
             format!(
@@ -421,5 +482,66 @@ mod tests {
         // Subsequent delta also shows prefix (design decision: prefix on every delta)
         let subsequent = TextDeltaRenderer::render_subsequent_delta("AB", prefix, colors);
         assert!(subsequent.contains(&format!("[{prefix}]")));
+    }
+
+    // Tests for sanitize_for_display helper function
+
+    #[test]
+    fn test_sanitize_collapses_multiple_newlines() {
+        let result = sanitize_for_display("Hello\n\nWorld");
+        // Multiple newlines should become a single space
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_sanitize_collapses_multiple_spaces() {
+        let result = sanitize_for_display("Hello   World");
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_sanitize_mixed_whitespace() {
+        let result = sanitize_for_display("Hello\n\n  \t\t  World");
+        // All whitespace (newlines, spaces, tabs) collapsed to single space
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_sanitize_trims_leading_trailing_whitespace() {
+        let result = sanitize_for_display("  Hello World  ");
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_sanitize_only_whitespace() {
+        let result = sanitize_for_display("   \n\n   ");
+        // Only whitespace content becomes empty string
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_sanitize_preserves_single_spaces() {
+        let result = sanitize_for_display("Hello World Test");
+        assert_eq!(result, "Hello World Test");
+    }
+
+    #[test]
+    fn test_delta_renderer_multiple_newlines_render_cleanly() {
+        let colors = test_colors();
+        let output = TextDeltaRenderer::render_first_delta("Hello\n\n\nWorld", "agent", colors);
+        // Multiple newlines should render as single space
+        assert!(output.contains("Hello World"));
+        // Should NOT have multiple spaces
+        assert!(!output.contains("  "));
+    }
+
+    #[test]
+    fn test_delta_renderer_trailing_whitespace_trimmed() {
+        let colors = test_colors();
+        let output = TextDeltaRenderer::render_first_delta("Hello World   ", "agent", colors);
+        // Trailing spaces should be trimmed
+        assert!(output.contains("Hello World"));
+        // Content should not end with space before escape sequences
+        // (it ends with reset color then \n\x1b[1A)
     }
 }

@@ -140,6 +140,22 @@ pub enum StreamingState {
 /// which block is active and whether output has started for that block.
 /// This prevents "glued text" bugs where block boundaries are crossed
 /// without proper finalization.
+///
+/// # Block Transition Behavior
+///
+/// When transitioning between blocks:
+/// - Same index (e.g., repeated `ContentBlockStart` for index 0): No separator emitted
+/// - Different index: Separator emitted if previous block had output
+///
+/// # Future Enhancement
+///
+/// Track `ContentType` in the block state to enable type-aware separators:
+/// - `thinking → text`: May want a visual separator (different semantic content)
+/// - `text → text` (same index): No separator (continuation)
+/// - `text → tool_input`: May want different visual treatment
+///
+/// This would enable a `should_emit_separator_line(previous_type, new_type)` helper
+/// for cleaner transition logic.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ContentBlockState {
     /// Not currently inside a content block
@@ -365,6 +381,16 @@ impl StreamingSession {
     /// If we're in a block and output has started, this returns true to indicate
     /// that a newline should be emitted. This prevents "glued text" bugs where
     /// content from different blocks is concatenated without separation.
+    ///
+    /// # Block Finalization
+    ///
+    /// Called by:
+    /// - `on_content_block_start()` - when transitioning to a new block
+    /// - `on_message_stop()` - when the message completes
+    ///
+    /// The return value indicates whether a visual separator (newline) should
+    /// be emitted. Currently, this is a simple boolean based on `started_output`.
+    /// See [`ContentBlockState`] for future enhancement notes on type-aware separators.
     ///
     /// # Returns
     /// * `true` - A newline should be emitted (output had started)
@@ -1414,6 +1440,272 @@ mod tests {
             session.get_accumulated(ContentType::Text, "0"),
             Some("Hello World"),
             "Accumulated content should be preserved across repeated ContentBlockStart"
+        );
+    }
+
+    // ================================================================
+    // Edge case tests for streaming scenarios
+    // ================================================================
+
+    #[test]
+    fn test_token_by_token_streaming() {
+        // Test very small deltas (single characters) to ensure proper accumulation
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First character shows prefix
+        let show_prefix = session.on_text_delta(0, "H");
+        assert!(show_prefix, "First token should show prefix");
+
+        // Subsequent single characters don't show prefix
+        for ch in "ello".chars() {
+            let show_prefix = session.on_text_delta(0, &ch.to_string());
+            assert!(!show_prefix, "Subsequent tokens should not show prefix");
+        }
+
+        // Verify full accumulation
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello"),
+            "Token-by-token streaming should accumulate correctly"
+        );
+    }
+
+    #[test]
+    fn test_mixed_content_type_transitions() {
+        // Test transitions between different content types
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Text content
+        let show_prefix = session.on_text_delta(0, "Hello");
+        assert!(show_prefix, "First text delta should show prefix");
+
+        // Thinking content (different type)
+        let show_prefix = session.on_thinking_delta(0, "Let me think...");
+        assert!(show_prefix, "First thinking delta should show prefix");
+
+        // More text (back to text type)
+        let show_prefix = session.on_text_delta(0, " World");
+        assert!(
+            !show_prefix,
+            "Continuation of text delta should not show prefix"
+        );
+
+        // Verify both types accumulated independently
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello World")
+        );
+        assert_eq!(
+            session.get_accumulated(ContentType::Thinking, "0"),
+            Some("Let me think...")
+        );
+    }
+
+    #[test]
+    fn test_empty_delta_handling() {
+        // Empty deltas should not affect state
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First real content
+        let show_prefix = session.on_text_delta(0, "Hello");
+        assert!(show_prefix);
+
+        // Empty delta should not change prefix state
+        let show_prefix = session.on_text_delta(0, "");
+        assert!(!show_prefix, "Empty delta should not require prefix");
+
+        // Next real content should continue without prefix
+        let show_prefix = session.on_text_delta(0, " World");
+        assert!(!show_prefix, "Delta after empty should not show prefix");
+
+        // Verify accumulation is correct (empty string doesn't affect content)
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello World")
+        );
+    }
+
+    #[test]
+    fn test_very_long_single_delta() {
+        // Test handling of a very long single delta
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Create a long string
+        let long_content = "x".repeat(10000);
+
+        // Should handle long content without issues
+        let show_prefix = session.on_text_delta(0, &long_content);
+        assert!(
+            show_prefix,
+            "First delta should show prefix regardless of length"
+        );
+
+        // Verify accumulation
+        assert_eq!(
+            session
+                .get_accumulated(ContentType::Text, "0")
+                .map(str::len),
+            Some(10000)
+        );
+    }
+
+    #[test]
+    fn test_rapid_successive_deltas_same_index() {
+        // Test many rapid successive deltas to same index
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First delta shows prefix
+        let show_prefix = session.on_text_delta(0, "Start");
+        assert!(show_prefix);
+
+        // Many rapid deltas should all continue without prefix
+        for i in 0..100 {
+            let delta = format!(" word{i}");
+            let show_prefix = session.on_text_delta(0, &delta);
+            assert!(!show_prefix, "Rapid delta {i} should not show prefix");
+        }
+
+        // Verify state is consistent
+        assert!(session.has_any_streamed_content());
+        let accumulated = session.get_accumulated(ContentType::Text, "0").unwrap();
+        assert!(accumulated.starts_with("Start"));
+        assert!(accumulated.ends_with(" word99"));
+    }
+
+    #[test]
+    fn test_multi_block_index_transitions() {
+        // Test transitions between different block indices
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Block 0
+        session.on_content_block_start(0);
+        let show_prefix = session.on_text_delta(0, "Block0");
+        assert!(show_prefix, "First delta in block 0 should show prefix");
+
+        // Block 1 - different index
+        session.on_content_block_start(1);
+        let show_prefix = session.on_text_delta(1, "Block1");
+        assert!(show_prefix, "First delta in block 1 should show prefix");
+
+        // Block 0 again (different scenario - going back)
+        session.on_content_block_start(0);
+        // Note: output_started_for_key still remembers we output to block 0,
+        // so prefix is not shown again. This prevents prefix spam.
+        let show_prefix = session.on_text_delta(0, "NewBlock0");
+        assert!(
+            !show_prefix,
+            "Delta after returning to block 0 should not show prefix (output already started)"
+        );
+
+        // Verify accumulated content was cleared for the new block 0 content
+        // (old content "Block0" was cleared when transitioning to block 1)
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("NewBlock0"),
+            "Accumulated content should only have new block 0 content"
+        );
+    }
+
+    #[test]
+    fn test_message_deduplication_after_streaming() {
+        // Test that messages are properly marked as displayed
+        let mut session = StreamingSession::new();
+
+        // First message
+        session.set_current_message_id(Some("msg-123".to_string()));
+        session.on_message_start();
+        session.on_text_delta(0, "Content");
+        session.on_message_stop();
+
+        // Same message ID should be detected as duplicate
+        assert!(
+            session.is_duplicate_final_message("msg-123"),
+            "Same message ID should be duplicate after streaming"
+        );
+
+        // Different message ID should not be duplicate
+        assert!(
+            !session.is_duplicate_final_message("msg-different"),
+            "Different message ID should not be duplicate"
+        );
+    }
+
+    #[test]
+    fn test_whitespace_only_deltas() {
+        // Test handling of whitespace-only deltas
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Initial content
+        let show_prefix = session.on_text_delta(0, "Hello");
+        assert!(show_prefix);
+
+        // Whitespace-only delta
+        let show_prefix = session.on_text_delta(0, "   ");
+        assert!(!show_prefix, "Whitespace delta should not show prefix");
+
+        // More content
+        let show_prefix = session.on_text_delta(0, "World");
+        assert!(!show_prefix);
+
+        // Verify accumulation preserves whitespace
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello   World")
+        );
+    }
+
+    #[test]
+    fn test_newline_deltas() {
+        // Test handling of deltas containing newlines
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Delta with embedded newlines
+        let show_prefix = session.on_text_delta(0, "Line1\nLine2\nLine3");
+        assert!(show_prefix);
+
+        // Verify accumulation preserves newlines
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Line1\nLine2\nLine3"),
+            "Newlines should be preserved in accumulated content"
+        );
+    }
+
+    #[test]
+    fn test_completion_state_after_message_stop() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_text_delta(0, "Content");
+
+        // Message stop should return true (had output)
+        let had_output = session.on_message_stop();
+        assert!(
+            had_output,
+            "Message with content should report had_output=true"
+        );
+
+        // State should be finalized
+        assert_eq!(session.state, StreamingState::Finalized);
+    }
+
+    #[test]
+    fn test_completion_state_without_content() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Message stop without any deltas
+        let had_output = session.on_message_stop();
+        assert!(
+            !had_output,
+            "Message without content should report had_output=false"
         );
     }
 }
