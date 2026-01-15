@@ -313,7 +313,14 @@ mod tests {
         }
 
         // Execute the command and check that GLM variables are NOT present
-        let output = cmd.output().expect("Failed to execute printenv");
+        let output = match cmd.output() {
+            Ok(o) => o,
+            Err(e) => {
+                // printenv might not be available on all systems
+                eprintln!("Skipping test: printenv not available ({e})");
+                return;
+            }
+        };
         let stdout = String::from_utf8_lossy(&output.stdout);
 
         // The GLM-set variables should NOT be in the subprocess environment
@@ -343,7 +350,14 @@ mod tests {
             cmd.env(key, value);
         }
 
-        let output = cmd.output().expect("Failed to execute printenv");
+        let output = match cmd.output() {
+            Ok(o) => o,
+            Err(e) => {
+                // printenv might not be available on all systems
+                eprintln!("Skipping test: printenv not available ({e})");
+                return;
+            }
+        };
         let stdout = String::from_utf8_lossy(&output.stdout);
 
         // The agent-specific key should be present
