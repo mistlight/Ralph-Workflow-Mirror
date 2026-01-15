@@ -16,7 +16,7 @@ pub use container::{
 
 // Re-export specific container types for testing
 pub use container::config::ContainerConfig;
-pub use container::port::PortMapping;
+pub use container::port::{detect_ports_from_command, PortMapping};
 pub use container::tool::ToolMount;
 pub use container::user_executor::ExecutionResult;
 

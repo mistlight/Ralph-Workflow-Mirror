@@ -58,6 +58,11 @@ const VERSION_MANAGER_DIRS: &[&str] = &[
     ".chruby",   // Ruby version manager
     ".fnm",      // Fast Node Manager
     ".volta",    // JavaScript tool manager
+    ".jbang",    // Java shell scripting tool
+    ".dart",     // Dart SDK (Flutter/Dart development)
+    ".flutter",  // Flutter SDK
+    ".lein",     // Leiningen (Clojure build tool)
+    ".maven",    // Maven wrapper directory
 ];
 
 /// Tool mount configuration
@@ -402,6 +407,11 @@ impl ToolManager {
                 || key_upper.contains("PNPM")
                 || key_upper.contains("YARN")
                 || key_upper.contains("BUN")
+                || key_upper.contains("FLUTTER")
+                || key_upper.contains("DART")
+                || key_upper.contains("JBANG")
+                || key_upper.contains("LEIN")
+                || key_upper.contains("CLOJURE")
             {
                 let value = env::var(&key).unwrap_or_default();
                 env_vars.push((key, value));
@@ -503,6 +513,36 @@ fi
 if command -v fnm &> /dev/null; then
     export FNM_DIR="/home/ralph/.fnm"
     eval "$(fnm env --use-on-cd 2>/dev/null || true)"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add Dart/Flutter initialization
+        init_lines.push(
+            r#"
+# Initialize Flutter if available
+if [ -d "/home/ralph/.flutter" ]; then
+    export FLUTTER_ROOT="/home/ralph/.flutter"
+    export PATH="$FLUTTER_ROOT/bin:$PATH"
+fi
+
+# Initialize Dart SDK if available
+if [ -d "/home/ralph/.dart" ]; then
+    export DART_ROOT="/home/ralph/.dart"
+    export PATH="$DART_ROOT/bin:$PATH"
+fi
+"#
+            .to_string(),
+        );
+
+        // Add jbang initialization
+        init_lines.push(
+            r#"
+# Initialize jbang if available
+if [ -d "/home/ralph/.jbang" ]; then
+    export JBANG_HOME="/home/ralph/.jbang"
+    export PATH="$JBANG_HOME/bin:$PATH"
 fi
 "#
             .to_string(),

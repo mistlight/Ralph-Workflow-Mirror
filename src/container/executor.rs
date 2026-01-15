@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 /// - Dynamic linker configuration (`LD_*`, `DYLD_*`)
 /// - Shell configuration (`IFS`, `SHELLOPTS`, etc.)
 /// - Library search paths (`LIBRARY_PATH`, `LD_LIBRARY_PATH`)
+/// - Container configuration (`DOCKER_HOST`, `CONTAINER_*`)
 fn is_dangerous_env_var_name(name: &str) -> bool {
     let name_upper = name.to_uppercase();
 
@@ -59,6 +60,15 @@ fn is_dangerous_env_var_name(name: &str) -> bool {
     // Block PYTHONPATH specifically (allows arbitrary module loading)
     // but allow other PYTHON* variables like PYTHON_VERSION
     if name_upper == "PYTHONPATH" || name_upper == "PYTHONHOME" {
+        return true;
+    }
+
+    // Block container-related variables that could be used for escape
+    if name_upper == "DOCKER_HOST"
+        || name_upper.starts_with("CONTAINER_")
+        || name_upper.starts_with("DOCKER_")
+        || name_upper.starts_with("PODMAN_")
+    {
         return true;
     }
 
