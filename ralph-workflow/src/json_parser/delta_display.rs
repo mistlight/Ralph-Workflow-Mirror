@@ -36,6 +36,16 @@
 //! - Newline forces immediate terminal output buffer flush
 //! - Cursor positioning provides reliable in-place updates
 //! - Production-quality rendering used by major CLI libraries
+//!
+//! # Prefix Display Strategy
+//!
+//! Currently, the prefix (e.g., `[ccs-glm]`) is displayed on every delta update.
+//! This provides clear visual feedback about which agent is currently streaming.
+//!
+//! **Design decision**: Keep prefix on every delta for now. The visual clarity
+//! outweighs the minor redundancy. Future optimization could reduce prefix
+//! display frequency (e.g., only on first delta per block) if terminal bandwidth
+//! becomes a concern.
 
 use crate::logger::Colors;
 
@@ -374,5 +384,42 @@ mod tests {
         let out3 = TextDeltaRenderer::render_completion();
         assert!(out3.contains("\x1b[1B"));
         assert_eq!(out3, "\x1b[1B\n");
+    }
+
+    #[test]
+    fn test_full_streaming_sequence_no_extra_blank_lines() {
+        let colors = test_colors();
+
+        // Simulate a full streaming sequence and verify no extra blank lines
+        let first = TextDeltaRenderer::render_first_delta("Hello", "agent", colors);
+        let second = TextDeltaRenderer::render_subsequent_delta("Hello World", "agent", colors);
+        let complete = TextDeltaRenderer::render_completion();
+
+        // First delta: ends with exactly one \n followed by cursor up
+        assert!(first.ends_with("\n\x1b[1A"));
+        assert_eq!(first.matches('\n').count(), 1);
+
+        // Subsequent delta: starts with clear+return, ends with \n + cursor up
+        assert!(second.starts_with("\x1b[2K\r"));
+        assert!(second.ends_with("\n\x1b[1A"));
+        assert_eq!(second.matches('\n').count(), 1);
+
+        // Completion: exactly cursor down + one newline
+        assert_eq!(complete, "\x1b[1B\n");
+        assert_eq!(complete.matches('\n').count(), 1);
+    }
+
+    #[test]
+    fn test_prefix_displayed_on_all_deltas() {
+        let colors = test_colors();
+        let prefix = "my-agent";
+
+        // First delta shows prefix
+        let first = TextDeltaRenderer::render_first_delta("A", prefix, colors);
+        assert!(first.contains(&format!("[{prefix}]")));
+
+        // Subsequent delta also shows prefix (design decision: prefix on every delta)
+        let subsequent = TextDeltaRenderer::render_subsequent_delta("AB", prefix, colors);
+        assert!(subsequent.contains(&format!("[{prefix}]")));
     }
 }

@@ -87,16 +87,6 @@ impl ClaudeParser {
         self
     }
 
-    /// Check if this parser is handling a GLM agent.
-    ///
-    /// GLM agents are known to send snapshot-style content when deltas are expected,
-    /// so we apply stricter validation and automatic conversion for them.
-    fn is_glm_agent(&self) -> bool {
-        // GLM agents are identified by display names containing "glm" or "ccs-glm"
-        let name = self.display_name.to_lowercase();
-        name.contains("glm") || name.contains("ccs")
-    }
-
     /// Parse and display a single Claude JSON event
     ///
     /// Returns `Some(formatted_output)` for valid events, or None for:
@@ -451,38 +441,11 @@ impl ClaudeParser {
                     // Check for snapshot-as-delta bug (GLM sending full accumulated content)
                     // If detected, extract only the delta portion
                     let index_str = index.to_string();
-                    let is_glm = self.is_glm_agent();
                     let text_to_process = if session.is_likely_snapshot(&text, &index_str) {
-                        // Snapshot detected - log warning and extract delta
-                        let previous = session.get_accumulated(ContentType::Text, &index_str);
-                        if is_glm {
-                            eprintln!(
-                                "GLM streaming bug detected: Agent sent full accumulated content instead of delta (index={index}). \
-                                This is a known GLM/CCS issue. Auto-correcting to prevent duplication. \
-                                Previous length: {}, Received length: {len}",
-                                previous.map_or(0, str::len),
-                                len = text.len()
-                            );
-                        } else {
-                            eprintln!(
-                                "Warning: Detected snapshot-as-delta for index {index}. \
-                                Converting to delta. Previous: {previous:?}, Received: {text:?}"
-                            );
-                        }
-                        match session.get_delta_from_snapshot(&text, &index_str) {
-                            Ok(delta) => delta,
-                            Err(e) => {
-                                // Snapshot extraction failed - fall back to original text.
-                                // This preserves content on false positives, though it may cause
-                                // some duplication. Better to duplicate than to lose data.
-                                eprintln!(
-                                    "Warning: Snapshot extraction failed: {e}. \
-                                     Falling back to original text to prevent data loss. \
-                                     May cause some duplication.",
-                                );
-                                &text
-                            }
-                        }
+                        // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
+                        session
+                            .get_delta_from_snapshot(&text, &index_str)
+                            .unwrap_or(&text)
                     } else {
                         // Genuine delta - use as-is
                         &text
@@ -516,13 +479,13 @@ impl ClaudeParser {
                 } => {
                     // Handle tool input streaming
                     // Extract the tool input from the delta
-                    let input_str =
-                        tool_delta
-                            .get("input")
-                            .map_or_else(String::new, |input| match input {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => format_tool_input(other),
-                            });
+                    let input_str = tool_delta
+                        .get("input")
+                        .map(|input| match input {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => format_tool_input(other),
+                        })
+                        .unwrap_or_default();
 
                     if input_str.is_empty() {
                         String::new()
@@ -547,23 +510,10 @@ impl ClaudeParser {
 
                 // Check for snapshot-as-delta bug
                 let text_to_process = if session.is_likely_snapshot(&text, default_index_str) {
-                    eprintln!(
-                        "Warning: Detected snapshot-as-delta for standalone text. Converting to delta."
-                    );
-                    match session.get_delta_from_snapshot(&text, default_index_str) {
-                        Ok(delta) => delta,
-                        Err(e) => {
-                            // Snapshot extraction failed - fall back to original text.
-                            // This preserves content on false positives, though it may cause
-                            // some duplication. Better to duplicate than to lose data.
-                            eprintln!(
-                                "Warning: Snapshot extraction failed: {e}. \
-                                 Falling back to original text to prevent data loss. \
-                                 May cause some duplication.",
-                            );
-                            &text
-                        }
-                    }
+                    // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
+                    session
+                        .get_delta_from_snapshot(&text, default_index_str)
+                        .unwrap_or(&text)
                 } else {
                     &text
                 };
