@@ -1,14 +1,19 @@
 //! Container configuration types
 
+#[cfg(feature = "security-mode")]
 use crate::container::error::{ContainerError, ContainerResult};
+#[cfg(feature = "security-mode")]
 use crate::container::EngineType;
+#[cfg(feature = "security-mode")]
 use std::path::PathBuf;
+#[cfg(feature = "security-mode")]
 use std::str::FromStr;
 
 /// Check if a relative path component is safe for use as a working directory.
 ///
 /// This validates that a path string (intended to be relative to /workspace)
 /// doesn't contain dangerous patterns like path traversal.
+#[cfg(feature = "security-mode")]
 fn is_safe_working_dir(path: &str) -> bool {
     // Reject absolute paths
     if path.starts_with('/') {
@@ -39,6 +44,7 @@ fn is_safe_working_dir(path: &str) -> bool {
 /// Validate a working directory path for use in container execution.
 ///
 /// Returns an error if the path is not safe.
+#[cfg(feature = "security-mode")]
 pub fn validate_working_dir(path: &str) -> ContainerResult<()> {
     if is_safe_working_dir(path) {
         Ok(())
@@ -52,6 +58,7 @@ pub fn validate_working_dir(path: &str) -> ContainerResult<()> {
 /// Security mode for agent isolation
 ///
 /// Defines how the agent is isolated from the host system.
+#[cfg(feature = "security-mode")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecurityMode {
     /// Run agent in a container (Docker/Podman)
@@ -64,6 +71,7 @@ pub enum SecurityMode {
     Auto,
 }
 
+#[cfg(feature = "security-mode")]
 impl SecurityMode {
     /// Get the default security mode for the current platform
     pub const fn default_for_platform() -> Self {
@@ -82,6 +90,7 @@ impl SecurityMode {
     }
 }
 
+#[cfg(feature = "security-mode")]
 impl FromStr for SecurityMode {
     type Err = String;
 
@@ -98,6 +107,7 @@ impl FromStr for SecurityMode {
     }
 }
 
+#[cfg(feature = "security-mode")]
 impl std::fmt::Display for SecurityMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -110,6 +120,7 @@ impl std::fmt::Display for SecurityMode {
 }
 
 /// Container mode configuration
+#[cfg(feature = "security-mode")]
 #[derive(Debug, Clone)]
 pub struct ContainerConfig {
     /// Whether container mode is enabled
@@ -128,6 +139,7 @@ pub struct ContainerConfig {
     pub config_dir: Option<PathBuf>,
 }
 
+#[cfg(feature = "security-mode")]
 impl ContainerConfig {
     /// Create a new container configuration
     pub fn new(repository_root: PathBuf, agent_dir: PathBuf, image: String) -> Self {
@@ -161,6 +173,7 @@ impl ContainerConfig {
     }
 }
 
+#[cfg(feature = "security-mode")]
 impl Default for ContainerConfig {
     fn default() -> Self {
         Self {
@@ -176,6 +189,7 @@ impl Default for ContainerConfig {
 }
 
 /// Container execution options
+#[cfg(feature = "security-mode")]
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionOptions {
     /// Environment variables to pass to the container

@@ -1,11 +1,14 @@
 //! Error types for container operations
 
+#[cfg(feature = "security-mode")]
 use std::io;
 
 /// Result type for container operations
+#[cfg(feature = "security-mode")]
 pub type ContainerResult<T> = Result<T, ContainerError>;
 
 /// Errors that can occur during container operations
+#[cfg(feature = "security-mode")]
 #[derive(Debug, thiserror::Error)]
 pub enum ContainerError {
     /// Container runtime not found

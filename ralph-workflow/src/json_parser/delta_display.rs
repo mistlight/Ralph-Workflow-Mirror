@@ -43,7 +43,8 @@ use crate::logger::Colors;
 ///
 /// This is more complete than `\x1b[0K` which only clears to the end of line.
 /// Using `\x1b[2K` ensures the entire line is cleared during in-place updates.
-pub const CLEAR_LINE: &str = "\x1b[2K";
+#[cfg(test)]
+const CLEAR_LINE: &str = "\x1b[2K";
 
 /// Renderer for streaming delta content.
 ///
@@ -98,7 +99,8 @@ pub const CLEAR_LINE: &str = "\x1b[2K";
 /// let output = DeltaRenderer::render_completion();
 /// // Output: "\x1b[1B\n" (cursor down + newline)
 /// ```
-pub trait DeltaRenderer {
+#[cfg(test)]
+trait DeltaRenderer {
     /// Render the first delta of a content block.
     ///
     /// This is called when streaming begins for a new content block.
@@ -158,8 +160,10 @@ pub trait DeltaRenderer {
 ///
 /// The multi-line pattern is the industry standard used by Rich, Ink, Bubble Tea
 /// and other production CLI libraries for clean streaming output.
-pub struct TextDeltaRenderer;
+#[cfg(test)]
+struct TextDeltaRenderer;
 
+#[cfg(test)]
 impl DeltaRenderer for TextDeltaRenderer {
     fn render_first_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
         // Sanitize embedded newlines to spaces to prevent artificial line breaks

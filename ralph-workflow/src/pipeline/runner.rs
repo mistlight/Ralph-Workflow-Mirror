@@ -1,26 +1,41 @@
 //! Command execution helpers and fallback orchestration.
 
+#![cfg_attr(feature = "security-mode", expect(dead_code))]
+
 use crate::agents::{
-    is_glm_like_agent, validate_model_flag, AgentRegistry,
-    AgentRole, JsonParserType,
+    is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType,
 };
 use crate::common::utils::{format_argv_for_log, split_command, truncate_text};
-use crate::config::Config;
-use crate::container::config::{ContainerConfig, ExecutionOptions};
-use crate::container::{
-    ContainerEngine, ContainerExecutor, EngineType, SecurityMode, UserAccountExecutor,
-};
-use crate::git_helpers::get_repo_root;
-use crate::logger::format_generic_json_for_display;
-use std::fs::OpenOptions;
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::io;
+
+#[cfg(feature = "security-mode")]
 use std::process::{Command, Stdio};
 
 use super::fallback::try_agent_with_retries;
 use super::model_flag::resolve_model_with_provider;
+use super::PipelineRuntime;
+
+#[cfg(feature = "security-mode")]
+use crate::config::Config;
+#[cfg(feature = "security-mode")]
+use crate::container::config::{ContainerConfig, ExecutionOptions};
+#[cfg(feature = "security-mode")]
+use crate::container::{
+    ContainerEngine, ContainerExecutor, EngineType, SecurityMode, UserAccountExecutor,
+};
+#[cfg(feature = "security-mode")]
+use crate::git_helpers::get_repo_root;
+#[cfg(feature = "security-mode")]
+use crate::logger::format_generic_json_for_display;
+#[cfg(feature = "security-mode")]
+use std::fs::OpenOptions;
+#[cfg(feature = "security-mode")]
+use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(feature = "security-mode")]
+use std::path::PathBuf;
 
 /// Container execution context
+#[cfg(feature = "security-mode")]
 struct ContainerContext<'a> {
     engine: ContainerEngine,
     executor: ContainerExecutor,
@@ -29,6 +44,7 @@ struct ContainerContext<'a> {
 }
 
 /// User account execution context
+#[cfg(feature = "security-mode")]
 struct UserAccountContext<'a> {
     executor: UserAccountExecutor,
     options: ExecutionOptions,
@@ -39,6 +55,7 @@ struct UserAccountContext<'a> {
 ///
 /// Returns None if security mode is disabled or initialization fails,
 /// allowing graceful fallback to direct execution.
+#[cfg(feature = "security-mode")]
 fn try_init_security_mode(config: &Config) -> Option<SecurityModeContext<'static>> {
     // Determine security mode
     let security_mode_str = config.security_mode.as_deref().unwrap_or("auto");
@@ -197,6 +214,7 @@ fn try_init_security_mode(config: &Config) -> Option<SecurityModeContext<'static
 ///
 /// This is called when container execution fails, providing a graceful fallback
 /// to user account mode before finally falling back to direct execution.
+#[cfg(feature = "security-mode")]
 fn fallback_to_user_account_mode(_config: &Config) -> Option<UserAccountContext<'static>> {
     // Get repository root
     let workspace_path = match get_repo_root() {
@@ -229,12 +247,14 @@ fn fallback_to_user_account_mode(_config: &Config) -> Option<UserAccountContext<
 }
 
 /// Security mode execution context (enum for different modes)
+#[cfg(feature = "security-mode")]
 enum SecurityModeContext<'a> {
     Container(Box<ContainerContext<'a>>),
     UserAccount(Box<UserAccountContext<'a>>),
 }
 
 /// Configuration for direct command execution
+#[cfg(feature = "security-mode")]
 struct DirectExecutionConfig<'a> {
     argv: &'a [String],
     prompt: &'a str,
@@ -248,6 +268,7 @@ struct DirectExecutionConfig<'a> {
 /// Execute a command directly (not in a container)
 ///
 /// This is the fallback path when container mode is disabled or unavailable.
+#[cfg(feature = "security-mode")]
 fn execute_command_direct(
     config: DirectExecutionConfig<'_>,
     runtime: &PipelineRuntime<'_>,
@@ -346,29 +367,35 @@ fn execute_command_direct(
 
         match config.parser_type {
             JsonParserType::Claude => {
-                let p =
-                    crate::json_parser::ClaudeParser::new(runtime.colors, runtime.config.verbosity)
-                        .with_display_name(config.display_name)
-                        .with_log_file(config.logfile);
+                let p = crate::json_parser::ClaudeParser::new(
+                    (*runtime.colors).clone(),
+                    runtime.config.verbosity,
+                )
+                .with_display_name(config.display_name)
+                .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Codex => {
-                let p =
-                    crate::json_parser::CodexParser::new(runtime.colors, runtime.config.verbosity)
-                        .with_display_name(config.display_name)
-                        .with_log_file(config.logfile);
+                let p = crate::json_parser::CodexParser::new(
+                    (*runtime.colors).clone(),
+                    runtime.config.verbosity,
+                )
+                .with_display_name(config.display_name)
+                .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Gemini => {
-                let p =
-                    crate::json_parser::GeminiParser::new(runtime.colors, runtime.config.verbosity)
-                        .with_display_name(config.display_name)
-                        .with_log_file(config.logfile);
+                let p = crate::json_parser::GeminiParser::new(
+                    (*runtime.colors).clone(),
+                    runtime.config.verbosity,
+                )
+                .with_display_name(config.display_name)
+                .with_log_file(config.logfile);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::OpenCode => {
                 let p = crate::json_parser::OpenCodeParser::new(
-                    runtime.colors,
+                    (*runtime.colors).clone(),
                     runtime.config.verbosity,
                 )
                 .with_display_name(config.display_name)
@@ -441,7 +468,7 @@ pub fn run_with_fallback(
     }
 
     // Track the last error for final reporting
-    let mut last_exit_code = 1;
+    let last_exit_code = 1;
 
     // Get the CLI model and provider overrides based on role (if any)
     let (cli_model_override, cli_provider_override) = match role {
@@ -657,7 +684,7 @@ pub fn run_with_fallback(
                     &env_vars,
                     model_index,
                     agent_index,
-                    cycle,
+                    cycle as usize,
                     runtime,
                     fallback_config,
                 )?;

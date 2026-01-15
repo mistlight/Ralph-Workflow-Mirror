@@ -223,6 +223,8 @@ pub struct Config {
     pub(crate) container_image: Option<String>,
     /// Container network enabled (needed for API calls)
     pub(crate) container_network: bool,
+    /// Auto-pull container image if not present locally
+    pub(crate) container_auto_pull: Option<bool>,
 }
 
 impl Config {

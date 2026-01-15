@@ -141,7 +141,7 @@ pub fn run_development_phase(
             let mut runtime = PipelineRuntime {
                 timer: ctx.timer,
                 logger: ctx.logger,
-                colors: ctx.colors,
+                colors: &ctx.colors,
                 config: ctx.config,
             };
             run_with_fallback(
@@ -294,7 +294,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         let mut runtime = PipelineRuntime {
             timer: ctx.timer,
             logger: ctx.logger,
-            colors: ctx.colors,
+            colors: &ctx.colors,
             config: ctx.config,
         };
         run_with_fallback(

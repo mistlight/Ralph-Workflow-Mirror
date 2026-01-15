@@ -1,18 +1,23 @@
 //! Commit Message Validation and Recovery Functions
+#![expect(dead_code)]
 //!
 //! This module provides utilities for validating commit messages, salvaging
 //! valid messages from mixed output, and generating fallback messages from
 //! git diff metadata.
 
 use regex::Regex;
+
+#[cfg(feature = "commit-salvage")]
 use serde::Deserialize;
 
+#[cfg(feature = "commit-salvage")]
 use super::cleaning::{find_conventional_commit_start, looks_like_analysis_text};
 
 /// Result of commit message extraction with detail about the extraction method.
 ///
 /// This enum allows callers to distinguish between different extraction outcomes
 /// and take appropriate action (e.g., re-prompt when receiving a Fallback result).
+#[cfg(feature = "commit-salvage")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommitExtractionResult {
     /// Successfully extracted from structured agent output (JSON schema or pattern-based)
@@ -23,6 +28,7 @@ pub enum CommitExtractionResult {
     Fallback(String),
 }
 
+#[cfg(feature = "commit-salvage")]
 impl CommitExtractionResult {
     /// Convert into the inner message string.
     pub fn into_message(self) -> String {
@@ -38,6 +44,7 @@ impl CommitExtractionResult {
 }
 
 /// Structured commit message schema for JSON parsing.
+#[cfg(feature = "commit-salvage")]
 #[derive(Debug, Deserialize)]
 struct StructuredCommitMessage {
     subject: String,
@@ -58,6 +65,7 @@ struct StructuredCommitMessage {
 ///
 /// * `Some(message)` if valid JSON with a valid conventional commit subject was found
 /// * `None` if parsing fails or subject is invalid
+#[cfg(feature = "commit-salvage")]
 pub fn try_extract_structured_commit(content: &str) -> Option<String> {
     let trimmed = content.trim();
 
@@ -91,6 +99,7 @@ pub fn try_extract_structured_commit(content: &str) -> Option<String> {
 /// - Direct JSON parsing
 /// - JSON inside markdown code fences
 /// - JSON embedded within other text
+#[cfg(feature = "commit-salvage")]
 fn try_extract_from_text(content: &str) -> Option<String> {
     let trimmed = content.trim();
 
@@ -122,6 +131,7 @@ fn try_extract_from_text(content: &str) -> Option<String> {
 }
 
 /// Format a structured commit message into the final string format.
+#[cfg(feature = "commit-salvage")]
 fn format_structured_commit(msg: &StructuredCommitMessage) -> Option<String> {
     let subject = msg.subject.trim();
 
@@ -138,6 +148,7 @@ fn format_structured_commit(msg: &StructuredCommitMessage) -> Option<String> {
 }
 
 /// Check if a string is a valid conventional commit subject line.
+#[cfg(feature = "commit-salvage")]
 fn is_conventional_commit_subject(subject: &str) -> bool {
     let valid_types = [
         "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore",
@@ -162,6 +173,7 @@ fn is_conventional_commit_subject(subject: &str) -> bool {
 /// Extract JSON content from markdown code fences.
 ///
 /// Handles both regular code fences and nested fences (e.g., within NDJSON streams).
+#[cfg(feature = "commit-salvage")]
 fn extract_json_from_code_fence(content: &str) -> Option<String> {
     // Look for ```json code fence
     let fence_start = content.find("```json")?;
@@ -179,6 +191,7 @@ fn extract_json_from_code_fence(content: &str) -> Option<String> {
 }
 
 /// Check if content looks like NDJSON stream.
+#[cfg(feature = "commit-salvage")]
 fn looks_like_ndjson(content: &str) -> bool {
     content.lines().count() > 1 && content.contains("{\"type\":")
 }
@@ -430,6 +443,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
 /// # Returns
 ///
 /// `Some(message)` if a valid commit message was salvaged, `None` otherwise.
+#[cfg(feature = "commit-salvage")]
 pub fn try_salvage_commit_message(content: &str) -> Option<String> {
     // Look for conventional commit pattern anywhere in the content
     let commit_pos = find_conventional_commit_start(content)?;
@@ -517,6 +531,7 @@ pub fn try_salvage_commit_message(content: &str) -> Option<String> {
 /// - Use "chore" type with an appropriate scope
 /// - Describe the change semantically (not just file names)
 /// - Pass validation (avoids bad patterns like file lists)
+#[cfg(feature = "commit-salvage")]
 pub fn generate_fallback_commit_message(diff: &str) -> String {
     let files = extract_files_from_diff(diff);
 
@@ -573,6 +588,7 @@ pub fn generate_fallback_commit_message(diff: &str) -> String {
 /// Extract changed file paths from a git diff.
 ///
 /// Parses "diff --git a/<path> b/<path>" lines to get file paths.
+#[cfg(feature = "commit-salvage")]
 fn extract_files_from_diff(diff: &str) -> Vec<String> {
     let mut files = Vec::new();
 
@@ -595,6 +611,7 @@ fn extract_files_from_diff(diff: &str) -> Vec<String> {
 /// Find the common directory prefix for a set of file paths.
 ///
 /// Returns the longest common directory path shared by all files.
+#[cfg(feature = "commit-salvage")]
 fn find_common_directory(paths: &[String]) -> Option<String> {
     if paths.is_empty() {
         return None;
@@ -643,6 +660,7 @@ fn find_common_directory(paths: &[String]) -> Option<String> {
 /// Extracts a meaningful component name from the path, preferring:
 /// - Last directory name for nested paths (e.g., "files" from "src/files/extraction.rs")
 /// - First directory for shallow paths (e.g., "src" from "src/lib.rs")
+#[cfg(feature = "commit-salvage")]
 fn derive_scope_from_path(path: &str) -> Option<String> {
     let components: Vec<&str> = path.split('/').collect();
 
@@ -741,6 +759,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_try_salvage_commit_message() {
         let content = "Looking at this diff...\n\nfeat: add feature";
         let salvaged = try_salvage_commit_message(content);
@@ -749,6 +768,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_try_salvage_with_body() {
         let content = "Analysis text\n\nfix(parser): resolve bug\n\nAdd proper error handling.";
         let salvaged = try_salvage_commit_message(content);
@@ -759,12 +779,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_generate_fallback_empty_diff() {
         let fallback = generate_fallback_commit_message("");
         assert_eq!(fallback, "chore: apply automated changes");
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_generate_fallback_single_file() {
         let diff = r"diff --git a/src/files/extraction.rs b/src/files/extraction.rs";
         let fallback = generate_fallback_commit_message(diff);
@@ -773,6 +795,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_generate_fallback_multiple_files_same_dir() {
         let diff = r"diff --git a/src/files/a.rs b/src/files/a.rs
 diff --git a/src/files/b.rs b/src/files/b.rs";
@@ -782,6 +805,7 @@ diff --git a/src/files/b.rs b/src/files/b.rs";
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_generate_fallback_multiple_dirs() {
         let diff = r"diff --git a/src/a.rs b/src/a.rs
 diff --git a/lib/b.rs b/lib/b.rs
@@ -792,6 +816,7 @@ diff --git a/tests/c.rs b/tests/c.rs";
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_regression_thinking_leakage_recovery() {
         // The exact scenario from the bug report
         let log_content = r"[Claude] Thinking: Looking at this diff, I need to analyze...
@@ -809,6 +834,7 @@ When commit validation fails, attempt to salvage valid message.";
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_extract_files_from_diff() {
         let diff = r"diff --git a/src/files/extraction.rs b/src/files/extraction.rs
 --- a/src/files/extraction.rs
@@ -824,6 +850,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_find_common_directory_same_dir() {
         let paths = vec![
             "src/files/a.rs".to_string(),
@@ -835,6 +862,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_find_common_directory_partial_overlap() {
         let paths = vec![
             "src/files/extraction.rs".to_string(),
@@ -845,6 +873,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_find_common_directory_no_overlap() {
         let paths = vec!["src/a.rs".to_string(), "lib/b.rs".to_string()];
         let common = find_common_directory(&paths);
@@ -852,6 +881,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_derive_scope_from_path() {
         // Should extract "files" from nested path
         assert_eq!(
@@ -873,6 +903,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     }
 
     #[test]
+    #[cfg(feature = "commit-salvage")]
     fn test_derive_scope_from_shallow_path() {
         // For shallow paths like "foo.rs" or "src/lib.rs", should return None or meaningful component
         let scope = derive_scope_from_path("lib.rs");

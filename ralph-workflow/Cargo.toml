@@ -13,6 +13,8 @@ categories = ["command-line-utilities", "development-tools"]
 
 [features]
 build-image = []
+commit-salvage = []
+security-mode = []
 
 [[bin]]
 name = "ralph"

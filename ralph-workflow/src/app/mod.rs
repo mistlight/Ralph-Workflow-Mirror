@@ -33,12 +33,15 @@ use crate::banner::print_welcome_banner;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
-    handle_list_available_agents, handle_list_providers, handle_security_check,
-    handle_setup_security, prompt_template_selection, Args,
+    handle_list_available_agents, handle_list_providers, handle_setup_security,
+    prompt_template_selection, Args,
 };
 
 #[cfg(feature = "build-image")]
 use crate::cli::handle_build_image;
+
+#[cfg(feature = "security-mode")]
+use crate::cli::handle_security_check;
 use crate::config::Config;
 use crate::files::monitoring::PromptMonitor;
 use crate::files::{
@@ -208,7 +211,7 @@ fn handle_special_commands(
     registry: &AgentRegistry,
     config_path: &std::path::Path,
     config_sources: &[crate::agents::ConfigSource],
-    logger: &Logger,
+    _logger: &Logger,
 ) -> Option<anyhow::Result<()>> {
     if args.diagnose {
         handle_diagnose(colors, config, registry, config_path, config_sources);
@@ -219,8 +222,9 @@ fn handle_special_commands(
         return Some(handle_setup_security(colors));
     }
 
+    #[cfg(feature = "security-mode")]
     if args.security_check {
-        handle_security_check(colors, config, logger);
+        handle_security_check(colors, config, _logger);
         return Some(Ok(()));
     }
 
@@ -558,7 +562,8 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         &timer,
         &stats,
         prompt_monitor,
-    )
+    );
+    Ok(())
 }
 
 /// Runs the development phase.

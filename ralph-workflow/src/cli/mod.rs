@@ -32,7 +32,10 @@ pub use handlers::{
 pub use init::{handle_init_global, handle_init_legacy, handle_init_prompt, handle_list_templates};
 pub use presets::apply_args_to_config;
 pub use providers::handle_list_providers;
-pub use security::{handle_security_check, handle_setup_security};
+pub use security::handle_setup_security;
+
+#[cfg(feature = "security-mode")]
+pub use security::handle_security_check;
 
 #[cfg(feature = "build-image")]
 pub use security::handle_build_image;

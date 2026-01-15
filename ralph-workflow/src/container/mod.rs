@@ -33,21 +33,33 @@
 //! let result = ContainerExecutor::run(&engine, &cmd, &config)?;
 //! ```
 
+#[cfg(feature = "security-mode")]
 pub mod codex;
+#[cfg(feature = "security-mode")]
 pub mod config;
+#[cfg(feature = "security-mode")]
 pub mod engine;
 pub mod error;
+#[cfg(feature = "security-mode")]
 pub mod executor;
 #[cfg(feature = "build-image")]
 pub mod image;
 pub mod network;
+#[cfg(feature = "security-mode")]
 pub mod port;
+#[cfg(feature = "security-mode")]
 pub mod tool;
+#[cfg(feature = "security-mode")]
 pub mod user_executor;
+#[cfg(feature = "security-mode")]
 pub mod volume;
 
 // Re-export main types for convenience
+#[cfg(feature = "security-mode")]
 pub use config::SecurityMode;
+#[cfg(feature = "security-mode")]
 pub use engine::{ContainerEngine, EngineType};
+#[cfg(feature = "security-mode")]
 pub use executor::ContainerExecutor;
+#[cfg(feature = "security-mode")]
 pub use user_executor::UserAccountExecutor;

@@ -9,17 +9,21 @@
 //! inside Ralph's container mode, this would create VM-in-VM which is problematic.
 //! This module detects Codex and provides appropriate handling.
 
+#[cfg(feature = "security-mode")]
 use std::path::PathBuf;
 
 /// Common Codex installation directories
+#[cfg(feature = "security-mode")]
 const CODEX_HOME_DIRS: &[&str] = &[".codex", ".config/codex"];
 
 /// Command patterns that indicate Codex agent execution
+#[cfg(feature = "security-mode")]
 const CODEX_COMMAND_PATTERNS: &[&str] = &["codex", "codex-run", "codex-agent"];
 
 /// Detect if a command appears to be a Codex agent command
 ///
 /// Analyzes the command string for Codex-specific patterns.
+#[cfg(feature = "security-mode")]
 pub fn is_codex_command(command: &str) -> bool {
     let command_lower = command.to_lowercase();
 
@@ -36,6 +40,7 @@ pub fn is_codex_command(command: &str) -> bool {
 /// Get the Codex VM directory path if it exists
 ///
 /// Returns the path to Codex's installation directory if present.
+#[cfg(feature = "security-mode")]
 pub fn get_codex_vm_directory() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
 
@@ -53,6 +58,7 @@ pub fn get_codex_vm_directory() -> Option<PathBuf> {
 ///
 /// Returns environment variables that signal to Codex that it's running
 /// inside a container, so it can skip its own VM initialization.
+#[cfg(feature = "security-mode")]
 pub fn get_codex_container_env() -> Vec<(String, String)> {
     vec![
         ("CODEX_CONTAINER".to_string(), "1".to_string()),
@@ -64,6 +70,7 @@ pub fn get_codex_container_env() -> Vec<(String, String)> {
 ///
 /// Returns volume mounts needed for Codex to work properly inside a container.
 /// These are mounted read-only to prevent escape.
+#[cfg(feature = "security-mode")]
 pub fn get_codex_volume_mounts() -> Vec<(PathBuf, String)> {
     let mut mounts = Vec::new();
 
@@ -81,7 +88,7 @@ pub fn get_codex_volume_mounts() -> Vec<(PathBuf, String)> {
     mounts
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "security-mode"))]
 mod tests {
     use super::*;
 

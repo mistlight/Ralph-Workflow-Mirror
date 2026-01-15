@@ -1,4 +1,6 @@
 //! Container command executor
+#![expect(dead_code)]
+
 //!
 //! Translates agent commands into container execution.
 

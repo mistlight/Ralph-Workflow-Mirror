@@ -1,4 +1,5 @@
 //! Host tool discovery and injection for container execution
+
 //!
 //! This module ensures that all commands available on the host work in the container
 //! by discovering and mounting language-specific tool directories.

@@ -202,57 +202,6 @@ fn resolve_ccs_agent(
     Some(build_ccs_agent_config(&cmd, defaults, display_name, alias))
 }
 
-/// Load environment variables for a CCS alias.
-fn load_ccs_env_vars_for_alias(
-    alias_config: &CcsAliasConfig,
-    alias_name: &str,
-    debug_mode: bool,
-) -> (HashMap<String, String>, bool, Option<String>) {
-    if alias_name.is_empty() {
-        return (HashMap::new(), false, None);
-    }
-
-    let original_cmd = alias_config.cmd.as_str();
-    let profile = ccs_profile_from_command(original_cmd).unwrap_or_else(|| alias_name.to_string());
-    let profile_clone = profile.clone();
-
-    let result = match load_ccs_env_vars_with_guess(&profile) {
-        Ok((vars, guessed)) => {
-            if let Some(guessed) = guessed {
-                eprintln!("Info: CCS profile '{profile}' not found; using '{guessed}'");
-            }
-            let loaded = !vars.is_empty();
-            if debug_mode && loaded {
-                eprintln!(
-                    "CCS DEBUG: Loaded {} environment variable(s) for profile '{profile}'",
-                    vars.len()
-                );
-                for key in vars.keys() {
-                    eprintln!("CCS DEBUG:   - {key}");
-                }
-            } else if debug_mode {
-                eprintln!(
-                    "CCS DEBUG: Failed to load environment variables for profile '{profile}'"
-                );
-            }
-            (vars, loaded, Some(profile))
-        }
-        Err(err) => {
-            let suggestions = find_ccs_profile_suggestions(&profile);
-            eprintln!("Warning: failed to load CCS env vars for profile '{profile}': {err}");
-            if !suggestions.is_empty() {
-                eprintln!("Tip: available/nearby CCS profiles:");
-                for s in suggestions {
-                    eprintln!("  - {s}");
-                }
-            }
-            (HashMap::new(), false, Some(profile_clone))
-        }
-    };
-
-    result
-}
-
 /// Determine whether to bypass the CCS wrapper and use claude directly.
 fn determine_ccs_command(
     alias_config: &CcsAliasConfig,
@@ -456,7 +405,11 @@ fn log_ccs_env_vars_loaded(
     if env_vars_loaded {
         eprintln!("  Loaded env vars (safe keys only):");
         for key in env_vars.keys().filter(|k| {
-            !k.contains("token") && !k.contains("key") && !k.contains("secret") && !k.contains("password") && !k.contains("auth")
+            !k.contains("token")
+                && !k.contains("key")
+                && !k.contains("secret")
+                && !k.contains("password")
+                && !k.contains("auth")
         }) {
             eprintln!("    - {key}");
         }

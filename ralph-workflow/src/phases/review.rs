@@ -492,7 +492,7 @@ pub fn run_review_phase(
             let mut runtime = PipelineRuntime {
                 timer: ctx.timer,
                 logger: ctx.logger,
-                colors: ctx.colors,
+                colors: &ctx.colors,
                 config: ctx.config,
             };
             run_with_fallback(
@@ -634,7 +634,7 @@ pub fn run_review_phase(
             let mut runtime = PipelineRuntime {
                 timer: ctx.timer,
                 logger: ctx.logger,
-                colors: ctx.colors,
+                colors: &ctx.colors,
                 config: ctx.config,
             };
             run_with_fallback(

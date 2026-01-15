@@ -120,6 +120,9 @@ pub(crate) struct GeneralConfig {
     /// Container network enabled (needed for API calls).
     #[serde(default)]
     pub container_network: bool,
+    /// Auto-pull container image if not present locally.
+    #[serde(default)]
+    pub container_auto_pull: bool,
 }
 
 impl Default for GeneralConfig {
@@ -145,6 +148,7 @@ impl Default for GeneralConfig {
             container_engine: "auto".to_string(),
             container_image: "ralph-agent:latest".to_string(),
             container_network: true,
+            container_auto_pull: true,
         }
     }
 }

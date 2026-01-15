@@ -1,4 +1,6 @@
 //! User account security mode executor
+#![expect(dead_code)]
+
 //!
 //! Runs agent commands as a dedicated user account for isolation.
 //!

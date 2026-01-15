@@ -148,7 +148,7 @@ impl ReviewMetrics {
     }
 
     /// Returns summaries of unresolved issues
-    pub(crate) fn unresolved_issue_summaries(&self, limit: usize) -> Vec<String> {
+    pub(crate) fn unresolved_issue_summaries(&self, _limit: usize) -> Vec<String> {
         // This is a simplified version - in a full implementation, this would
         // read the actual issues from the ISSUES.md file and extract summaries
         Vec::new()
@@ -161,7 +161,7 @@ impl ReviewMetrics {
             .saturating_sub(self.critical_issues.min(self.resolved_issues));
         let unresolved_high = self.high_issues.saturating_sub(
             self.high_issues
-                .min((self.resolved_issues.saturating_sub(self.critical_issues))),
+                .min(self.resolved_issues.saturating_sub(self.critical_issues)),
         );
         unresolved_critical > 0 || unresolved_high > 0
     }

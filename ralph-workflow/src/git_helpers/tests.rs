@@ -6,7 +6,7 @@
 use super::hooks::HOOK_MARKER;
 use super::repo::get_hooks_dir;
 use super::*;
-use crate::logger::Logger;
+use crate::logger::{Colors, Logger};
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -95,7 +95,7 @@ fn test_git_helpers_new() {
 
 #[test]
 fn test_uninstall_hook_restores_original() {
-    let logger = Logger::new(crate::colors::Colors { enabled: false });
+    let logger = Logger::new(Colors { enabled: false });
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -150,7 +150,7 @@ fn test_install_hook_uses_absolute_path() {
 #[test]
 fn test_cleanup_orphaned_marker() {
     with_temp_cwd(|dir| {
-        let logger = Logger::new(crate::colors::Colors { enabled: false });
+        let logger = Logger::new(Colors { enabled: false });
         let dir_path = dir.path();
 
         git2::Repository::init(dir_path).unwrap();

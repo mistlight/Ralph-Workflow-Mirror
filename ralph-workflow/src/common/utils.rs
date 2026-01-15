@@ -22,8 +22,7 @@ use regex::Regex;
 
 // Re-exports from checkpoint module
 pub use crate::checkpoint::{
-    checkpoint_exists, load_checkpoint, save_checkpoint, PipelineCheckpoint,
-    PipelinePhase,
+    checkpoint_exists, load_checkpoint, save_checkpoint, PipelineCheckpoint, PipelinePhase,
 };
 
 // Re-export timestamp from checkpoint
@@ -35,10 +34,8 @@ pub use crate::logger::{print_progress, Logger};
 
 // Re-exports from files module
 pub use crate::files::{
-    clean_context_for_reviewer, cleanup_generated_files,
-    delete_issues_file_for_isolation, delete_plan_file,
-    update_status, validate_prompt_md,
-    PromptValidationResult, GENERATED_FILES,
+    clean_context_for_reviewer, cleanup_generated_files, delete_issues_file_for_isolation,
+    delete_plan_file, update_status, validate_prompt_md, PromptValidationResult, GENERATED_FILES,
 };
 
 // Keep backward-compatibility re-exports "used" without suppressing lints.

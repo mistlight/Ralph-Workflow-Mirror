@@ -5,12 +5,14 @@
 
 use super::*;
 use crate::agents::{AgentRegistry, JsonParserType};
-use crate::common::utils::{self, split_command};
+use crate::common::utils::split_command;
 use crate::config::Config;
 use crate::config::Verbosity;
 use crate::logger::argv_requests_json;
 use crate::logger::Colors;
 use crate::logger::Logger;
+use crate::pipeline::model_flag::resolve_model_with_provider;
+use crate::pipeline::prompt::{run_with_prompt, PromptCommand};
 use crate::pipeline::Timer;
 use std::collections::HashMap;
 
@@ -62,12 +64,12 @@ fn run_with_prompt_returns_command_result_for_missing_binary() {
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
-        colors,
+        colors: &colors,
         config: &config,
     };
 
     let result = run_with_prompt(
-        PromptCommand {
+        &PromptCommand {
             label: "test",
             display_name: "test",
             cmd_str: "definitely-not-a-real-binary-ralph",
@@ -165,7 +167,7 @@ exit 0
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
-        colors,
+        colors: &colors,
         config: &config,
     };
 
@@ -404,7 +406,7 @@ exit 0
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
-        colors,
+        colors: &colors,
         config: &config,
     };
 

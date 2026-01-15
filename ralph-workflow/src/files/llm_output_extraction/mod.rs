@@ -29,9 +29,7 @@ mod types;
 pub use types::{ExtractionOutput, OutputFormat};
 
 // Re-export public functions from commit module
-pub use commit::{
-    validate_commit_message,
-};
+pub use commit::validate_commit_message;
 
 use cleaning::clean_plain_text;
 use parsers::{detect_output_format, extract_by_format};

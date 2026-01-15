@@ -2,10 +2,15 @@
 //!
 //! This module handles commands for setting up and checking security modes.
 
-use crate::config::Config;
-use crate::container::{ContainerEngine, EngineType, SecurityMode};
-use crate::git_helpers::get_repo_root;
 use crate::logger::Colors;
+
+#[cfg(feature = "security-mode")]
+use crate::config::Config;
+#[cfg(feature = "security-mode")]
+use crate::container::{ContainerEngine, EngineType, SecurityMode};
+#[cfg(feature = "security-mode")]
+use crate::git_helpers::get_repo_root;
+#[cfg(feature = "security-mode")]
 use crate::logger::Logger;
 
 /// Shell script for setting up the ralph-agent user account
@@ -362,6 +367,7 @@ pub fn handle_setup_security(colors: Colors) -> anyhow::Result<()> {
 }
 
 /// Print security check header
+#[cfg(feature = "security-mode")]
 fn print_security_check_header(colors: Colors) {
     println!("{}", colors.bold());
     println!("╔══════════════════════════════════════════════════════════════════════════╗");
@@ -371,12 +377,14 @@ fn print_security_check_header(colors: Colors) {
 }
 
 /// Parse security mode from config
+#[cfg(feature = "security-mode")]
 fn parse_security_mode(config: &Config) -> Result<SecurityMode, ()> {
     let security_mode_str = config.security_mode.as_deref().unwrap_or("auto");
     security_mode_str.parse().map_err(|_| ())
 }
 
 /// Format security mode for display
+#[cfg(feature = "security-mode")]
 const fn format_security_mode(mode: SecurityMode) -> &'static str {
     match mode {
         SecurityMode::Auto => "auto",
@@ -387,6 +395,7 @@ const fn format_security_mode(mode: SecurityMode) -> &'static str {
 }
 
 /// Print security configuration section
+#[cfg(feature = "security-mode")]
 fn print_security_config(colors: Colors, config: &Config, resolved_mode: SecurityMode) {
     println!("\n{}Configuration:{}", colors.bold(), colors.reset());
     println!(
@@ -424,6 +433,7 @@ fn print_security_config(colors: Colors, config: &Config, resolved_mode: Securit
 }
 
 /// Check and display container mode status
+#[cfg(feature = "security-mode")]
 fn check_container_mode_status(colors: Colors, config: &Config, resolved_mode: SecurityMode) {
     println!(
         "\n{}Container Mode Status:{}",
@@ -488,6 +498,7 @@ fn check_container_mode_status(colors: Colors, config: &Config, resolved_mode: S
 }
 
 /// Check and display user account mode status
+#[cfg(feature = "security-mode")]
 fn check_user_account_status(colors: Colors) -> bool {
     println!(
         "\n{}User Account Mode Status:{}",
@@ -555,12 +566,14 @@ fn check_user_account_status(colors: Colors) -> bool {
 }
 
 /// Tool availability check result
+#[cfg(feature = "security-mode")]
 struct ToolCheckResult {
     name: &'static str,
     found: bool,
 }
 
 /// Check availability of common development tools
+#[cfg(feature = "security-mode")]
 fn check_tool_availability() -> Vec<ToolCheckResult> {
     let tools = vec![
         ("git", "git"),
@@ -622,6 +635,7 @@ fn check_tool_availability() -> Vec<ToolCheckResult> {
 }
 
 /// Display tool availability section
+#[cfg(feature = "security-mode")]
 fn print_tool_availability(colors: Colors) {
     println!("\n{}Tool Availability:{}", colors.bold(), colors.reset());
 
@@ -688,6 +702,7 @@ fn print_tool_availability(colors: Colors) {
 }
 
 /// Display environment variables section
+#[cfg(feature = "security-mode")]
 fn print_env_variables(colors: Colors) {
     println!(
         "\n{}Environment Variables:{}",
@@ -719,6 +734,7 @@ fn print_env_variables(colors: Colors) {
 }
 
 /// Check if security mode is ready
+#[cfg(feature = "security-mode")]
 fn is_security_mode_ready(resolved_mode: SecurityMode, config: &Config, user_exists: bool) -> bool {
     match resolved_mode {
         SecurityMode::Container => {
@@ -741,6 +757,7 @@ fn is_security_mode_ready(resolved_mode: SecurityMode, config: &Config, user_exi
 }
 
 /// Print security check summary and recommendations
+#[cfg(feature = "security-mode")]
 fn print_security_summary(colors: Colors, resolved_mode: SecurityMode, is_ready: bool) {
     println!("\n{}Summary:{}", colors.bold(), colors.reset());
 
@@ -782,6 +799,7 @@ fn print_security_summary(colors: Colors, resolved_mode: SecurityMode, is_ready:
 /// Handle the --security-check command
 ///
 /// Checks and reports the status of security mode configuration.
+#[cfg(feature = "security-mode")]
 pub fn handle_security_check(colors: Colors, config: &Config, _logger: &Logger) {
     print_security_check_header(colors);
 

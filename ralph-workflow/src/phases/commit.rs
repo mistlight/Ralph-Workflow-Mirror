@@ -188,7 +188,7 @@ pub fn commit_with_generated_message(
     let mut runtime = PipelineRuntime {
         timer,
         logger,
-        colors,
+        colors: &colors,
         config,
     };
 
