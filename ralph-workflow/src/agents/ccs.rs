@@ -63,10 +63,10 @@
 //! gemini = { cmd = "ccs gemini", output_flag = "", verbose_flag = "", json_parser = "generic" }
 //! ```
 
-use super::config::{
-    find_ccs_profile_suggestions, find_claude_binary, load_ccs_env_vars, AgentConfig,
-    CcsEnvVarsError,
+use super::ccs_env::{
+    find_ccs_profile_suggestions, find_claude_binary, load_ccs_env_vars, CcsEnvVarsError,
 };
+use super::config::AgentConfig;
 use super::parser::JsonParserType;
 use crate::common::split_command;
 use crate::config::{CcsAliasConfig, CcsConfig};
