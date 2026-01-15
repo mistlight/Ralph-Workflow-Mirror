@@ -4,6 +4,11 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
+/// Global mutex for tests that modify the current working directory.
+/// All tests that change CWD must use this lock to ensure they don't
+/// interfere with each other when run in parallel.
+pub static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
 pub fn init_git_repo(dir: &TempDir) -> Repository {
     let repo = Repository::init(dir.path()).expect("init git repo");
 

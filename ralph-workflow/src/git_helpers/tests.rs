@@ -9,14 +9,12 @@ use super::*;
 use crate::utils::Logger;
 use std::fs::{self, File};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use tempfile::TempDir;
 
-// Note: Tests that change working directory need to run serially.
-// Run with: cargo test -- --test-threads=1
-
-/// Global mutex for tests that modify the current working directory.
-static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+// Use the shared CWD lock from test-helpers to ensure CWD-modifying tests
+// from different modules don't interfere with each other.
+use test_helpers::CWD_LOCK;
 
 /// RAII guard to restore the working directory on drop.
 struct DirGuard(PathBuf);
