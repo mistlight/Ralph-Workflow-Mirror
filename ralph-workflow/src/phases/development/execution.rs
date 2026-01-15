@@ -53,12 +53,7 @@ pub fn run_development_phase(
         let resuming_into_development = resuming_from_development && i == start_iter;
 
         // Step 1: Create PLAN from PROMPT (skip if resuming into development)
-        if resuming_into_development {
-            ctx.logger
-                .info("Resuming at development step; skipping plan generation");
-        } else {
-            run_planning_step(ctx, i)?;
-        }
+        run_planning_if_needed(ctx, i, resuming_into_development)?;
 
         // Verify PLAN.md was created (required)
         let plan_ok = verify_plan_exists(ctx, i, resuming_into_development)?;
@@ -68,49 +63,10 @@ pub fn run_development_phase(
         ctx.logger.success("PLAN.md created");
 
         // Save checkpoint at start of development phase (if enabled)
-        if ctx.config.features.checkpoint_enabled {
-            let _ = save_checkpoint(&PipelineCheckpoint::new(
-                PipelinePhase::Development,
-                i,
-                ctx.config.developer_iters,
-                0,
-                ctx.config.reviewer_reviews,
-                ctx.developer_agent,
-                ctx.reviewer_agent,
-            ));
-        }
+        save_development_checkpoint_if_enabled(ctx, i);
 
         // Step 2: Execute the PLAN
-        ctx.logger.info("Executing plan...");
-        update_status("Starting development iteration", ctx.config.isolation_mode)?;
-
-        let prompt = prompt_for_agent(
-            Role::Developer,
-            Action::Iterate,
-            developer_context,
-            Some(i),
-            Some(ctx.config.developer_iters),
-            None, // No guidelines needed for development iteration
-            None, // No PROMPT.md content needed for iteration
-        );
-
-        let exit_code = {
-            let mut runtime = PipelineRuntime {
-                timer: ctx.timer,
-                logger: ctx.logger,
-                colors: ctx.colors,
-                config: ctx.config,
-            };
-            run_with_fallback(
-                AgentRole::Developer,
-                &format!("run #{i}"),
-                &prompt,
-                &format!(".agent/logs/developer_{i}"),
-                &mut runtime,
-                ctx.registry,
-                ctx.developer_agent,
-            )?
-        };
+        let exit_code = run_development_iteration(ctx, i, developer_context)?;
 
         if exit_code != 0 {
             ctx.logger.error(&format!(
@@ -122,63 +78,8 @@ pub fn run_development_phase(
         ctx.stats.developer_runs_completed += 1;
         update_status("Completed progress step", ctx.config.isolation_mode)?;
 
-        let snap = git_snapshot()?;
-        if snap == prev_snap {
-            ctx.logger.warn("No git-status change detected");
-        } else {
-            ctx.logger.success("Repository modified");
-            ctx.stats.changes_detected += 1;
-
-            // Create a commit with auto-generated message
-            // This is done by the orchestrator, not the agent
-            // Note: We use fallback-aware commit generation which tries multiple agents
-            // Get the primary commit agent from the registry
-            let commit_agent = get_primary_commit_agent(ctx);
-
-            if let Some(agent) = commit_agent {
-                ctx.logger.info(&format!(
-                    "Creating commit with auto-generated message (agent: {agent})..."
-                ));
-
-                // Get the diff for commit message generation
-                let diff = match git_diff() {
-                    Ok(d) => d,
-                    Err(e) => {
-                        ctx.logger
-                            .error(&format!("Failed to get diff for commit: {e}"));
-                        return Err(anyhow::anyhow!(e));
-                    }
-                };
-
-                // Get git identity from config
-                let git_name = ctx.config.git_user_name.as_deref();
-                let git_email = ctx.config.git_user_email.as_deref();
-
-                match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
-                    CommitResultFallback::Success(oid) => {
-                        ctx.logger
-                            .success(&format!("Commit created successfully: {oid}"));
-                        ctx.stats.commits_created += 1;
-                    }
-                    CommitResultFallback::NoChanges => {
-                        // No meaningful changes to commit (already handled by has_meaningful_changes)
-                        ctx.logger.info("No commit created (no meaningful changes)");
-                    }
-                    CommitResultFallback::Failed(err) => {
-                        // Actual git operation failed - this is critical
-                        ctx.logger.error(&format!(
-                            "Failed to create commit (git operation failed): {err}"
-                        ));
-                        // Don't continue - this is a real error that needs attention
-                        return Err(anyhow::anyhow!(err));
-                    }
-                }
-            } else {
-                ctx.logger
-                    .warn("Unable to get primary commit agent for commit");
-            }
-        }
-        prev_snap = snap;
+        // Handle commit if changes detected
+        prev_snap = handle_git_changes_and_commit(ctx, i, &prev_snap)?;
 
         // Run fast check if configured
         if let Some(ref fast_cmd) = ctx.config.fast_check_cmd {
@@ -186,16 +87,140 @@ pub fn run_development_phase(
         }
 
         // Periodic restoration check - ensure PROMPT.md still exists
-        // This catches agent deletions and restores from backup
         ensure_prompt_integrity(ctx.logger, "development", i);
 
         // Step 3: Delete the PLAN
-        ctx.logger.info("Deleting PLAN.md...");
-        if let Err(err) = delete_plan_file() {
-            ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
-        }
-        ctx.logger.success("PLAN.md deleted");
+        delete_plan_file_with_logging(ctx);
     }
 
     Ok(DevelopmentResult { had_errors })
+}
+
+fn run_planning_if_needed(
+    ctx: &mut PhaseContext<'_>,
+    i: u32,
+    resuming_into_development: bool,
+) -> anyhow::Result<()> {
+    if resuming_into_development {
+        ctx.logger
+            .info("Resuming at development step; skipping plan generation");
+    } else {
+        run_planning_step(ctx, i)?;
+    }
+    Ok(())
+}
+
+fn save_development_checkpoint_if_enabled(ctx: &PhaseContext<'_>, i: u32) {
+    if ctx.config.features.checkpoint_enabled {
+        let _ = save_checkpoint(&PipelineCheckpoint::new(
+            PipelinePhase::Development,
+            i,
+            ctx.config.developer_iters,
+            0,
+            ctx.config.reviewer_reviews,
+            ctx.developer_agent,
+            ctx.reviewer_agent,
+        ));
+    }
+}
+
+fn run_development_iteration(
+    ctx: &mut PhaseContext<'_>,
+    i: u32,
+    developer_context: ContextLevel,
+) -> anyhow::Result<i32> {
+    ctx.logger.info("Executing plan...");
+    update_status("Starting development iteration", ctx.config.isolation_mode)?;
+
+    let prompt = prompt_for_agent(
+        Role::Developer,
+        Action::Iterate,
+        developer_context,
+        Some(i),
+        Some(ctx.config.developer_iters),
+        None, // No guidelines needed for development iteration
+        None, // No PROMPT.md content needed for iteration
+    );
+
+    let mut runtime = PipelineRuntime {
+        timer: ctx.timer,
+        logger: ctx.logger,
+        colors: ctx.colors,
+        config: ctx.config,
+    };
+    Ok(run_with_fallback(
+        AgentRole::Developer,
+        &format!("run #{i}"),
+        &prompt,
+        &format!(".agent/logs/developer_{i}"),
+        &mut runtime,
+        ctx.registry,
+        ctx.developer_agent,
+    )?)
+}
+
+fn handle_git_changes_and_commit(
+    ctx: &mut PhaseContext<'_>,
+    i: u32,
+    prev_snap: &str,
+) -> anyhow::Result<String> {
+    let snap = git_snapshot()?;
+    if snap != prev_snap {
+        ctx.logger.success("Repository modified");
+        ctx.stats.changes_detected += 1;
+        create_commit_if_agent_available(ctx, i)?;
+    } else {
+        ctx.logger.warn("No git-status change detected");
+    }
+    Ok(snap)
+}
+
+fn create_commit_if_agent_available(ctx: &mut PhaseContext<'_>, _i: u32) -> anyhow::Result<()> {
+    let commit_agent = get_primary_commit_agent(ctx);
+
+    if let Some(agent) = commit_agent {
+        ctx.logger.info(&format!(
+            "Creating commit with auto-generated message (agent: {agent})..."
+        ));
+
+        // Get the diff for commit message generation
+        let diff = git_diff().map_err(|e| {
+            ctx.logger
+                .error(&format!("Failed to get diff for commit: {e}"));
+            anyhow::anyhow!(e)
+        })?;
+
+        // Get git identity from config
+        let git_name = ctx.config.git_user_name.as_deref();
+        let git_email = ctx.config.git_user_email.as_deref();
+
+        match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
+            CommitResultFallback::Success(oid) => {
+                ctx.logger
+                    .success(&format!("Commit created successfully: {oid}"));
+                ctx.stats.commits_created += 1;
+            }
+            CommitResultFallback::NoChanges => {
+                ctx.logger.info("No commit created (no meaningful changes)");
+            }
+            CommitResultFallback::Failed(err) => {
+                ctx.logger.error(&format!(
+                    "Failed to create commit (git operation failed): {err}"
+                ));
+                return Err(anyhow::anyhow!(err));
+            }
+        }
+    } else {
+        ctx.logger
+            .warn("Unable to get primary commit agent for commit");
+    }
+    Ok(())
+}
+
+fn delete_plan_file_with_logging(ctx: &PhaseContext<'_>) {
+    ctx.logger.info("Deleting PLAN.md...");
+    if let Err(err) = delete_plan_file() {
+        ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
+    }
+    ctx.logger.success("PLAN.md deleted");
 }
