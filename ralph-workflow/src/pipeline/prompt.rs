@@ -37,7 +37,6 @@ pub struct PipelineRuntime<'a> {
 /// Run a command with a prompt argument.
 ///
 /// This is an internal helper for `run_with_fallback`.
-#[expect(clippy::too_many_lines)]
 pub fn run_with_prompt(
     cmd: &PromptCommand<'_>,
     runtime: &mut PipelineRuntime<'_>,

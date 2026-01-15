@@ -3,8 +3,6 @@
 //! This module contains event types and utility functions used by
 //! all the CLI parsers (Claude, Codex, Gemini).
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::redundant_pub_crate)]
 use crate::common::truncate_text;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -145,7 +143,7 @@ pub struct StreamError {
 ///
 /// Distinguishes between different types of content that may be streamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ContentType {
+pub enum ContentType {
     /// Regular text content
     Text,
     /// Thinking/reasoning content
@@ -172,7 +170,7 @@ const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB per key
 /// in long-running sessions. When a buffer exceeds this limit, new deltas
 /// are ignored for that key.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct DeltaAccumulator {
+pub struct DeltaAccumulator {
     /// Accumulated content by (`content_type`, key) composite key
     /// Using a String key to support both numeric and string-based identifiers
     buffers: std::collections::HashMap<(ContentType, String), String>,
@@ -330,24 +328,24 @@ pub struct CodexUsage {
 /// - `web_search`: Web search operations
 /// - `plan_update`: Changes to execution plan
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct CodexItem {
+pub struct CodexItem {
     /// Item type (`command_execution`, `agent_message`, reasoning, `file_read`, etc.)
     #[serde(rename = "type")]
-    pub(crate) item_type: Option<String>,
+    pub item_type: Option<String>,
     /// Command text (for `command_execution`)
-    pub(crate) command: Option<String>,
+    pub command: Option<String>,
     /// Message/reasoning text (for `agent_message`, reasoning)
-    pub(crate) text: Option<String>,
+    pub text: Option<String>,
     /// File path (for file operations)
-    pub(crate) path: Option<String>,
+    pub path: Option<String>,
     /// Tool name (for `mcp_tool_call`)
-    pub(crate) tool: Option<String>,
+    pub tool: Option<String>,
     /// Tool arguments (for `mcp_tool_call`)
-    pub(crate) arguments: Option<serde_json::Value>,
+    pub arguments: Option<serde_json::Value>,
     /// Search query (for `web_search`)
-    pub(crate) query: Option<String>,
+    pub query: Option<String>,
     /// Plan content (for `plan_update`)
-    pub(crate) plan: Option<String>,
+    pub plan: Option<String>,
 }
 
 /// Gemini event types
@@ -485,11 +483,10 @@ fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
 /// # Returns
 /// A formatted string showing the event type and key fields, or an empty string
 /// if the JSON couldn't be parsed or verbosity should suppress it.
-#[expect(clippy::trivially_copy_pass_by_ref)]
 pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,
-    colors: &crate::logger::Colors,
+    colors: crate::logger::Colors,
     is_verbose: bool,
 ) -> String {
     // Try to parse as generic JSON to extract type and key fields

@@ -34,11 +34,7 @@ pub(super) fn should_skip_dir_name(name: &str) -> bool {
 
 /// Scan directory recursively and count file extensions
 pub(super) fn count_extensions(root: &Path) -> io::Result<HashMap<String, usize>> {
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    let mut files_scanned = 0;
-
-    // Use a simple recursive approach with early termination
-    #[expect(clippy::items_after_statements)]
+    // Define inner function first to satisfy clippy::items_after_statements
     fn scan_dir(
         dir: &Path,
         counts: &mut HashMap<String, usize>,
@@ -81,12 +77,51 @@ pub(super) fn count_extensions(root: &Path) -> io::Result<HashMap<String, usize>
         Ok(())
     }
 
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut files_scanned = 0;
     scan_dir(root, &mut counts, &mut files_scanned)?;
     Ok(counts)
 }
 
+/// Check if a file name matches test file patterns for a given language
+fn is_test_file(file_name: &str, primary_lang: &str, path_components: &[String]) -> bool {
+    match primary_lang {
+        "Rust" => {
+            if file_name == "tests.rs" || file_name.ends_with("_test.rs") {
+                return true;
+            }
+            std::path::Path::new(file_name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+                && path_components.windows(1).any(|w| w[0] == "tests")
+        }
+        "Python" => {
+            let has_py_ext = std::path::Path::new(file_name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("py"));
+            (file_name.starts_with("test_") && has_py_ext) || file_name.ends_with("_test.py")
+        }
+        "JavaScript" | "TypeScript" => {
+            file_name.ends_with(".test.js")
+                || file_name.ends_with(".spec.js")
+                || file_name.ends_with(".test.ts")
+                || file_name.ends_with(".spec.ts")
+                || file_name.ends_with(".test.tsx")
+                || file_name.ends_with(".spec.tsx")
+        }
+        "Go" => file_name.ends_with("_test.go"),
+        "Java" => {
+            path_components
+                .windows(2)
+                .any(|w| w[0] == "src" && w[1] == "test")
+                || file_name.ends_with("test.java")
+        }
+        "Ruby" => file_name.ends_with("_spec.rb") || file_name.ends_with("_test.rb"),
+        _ => file_name.contains("test") || file_name.contains("spec"),
+    }
+}
+
 /// Detect if tests exist in common test directories
-#[expect(clippy::too_many_lines)]
 pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
     use std::collections::VecDeque;
     use std::path::PathBuf;
@@ -136,70 +171,8 @@ pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
                 .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
                 .collect();
 
-            let file_name = name_lower.as_str();
-            match primary_lang {
-                "Rust" => {
-                    if file_name == "tests.rs" || file_name.ends_with("_test.rs") {
-                        return true;
-                    }
-                    // Note: file_name is already lowercase, so ends_with is case-insensitive
-                    #[expect(clippy::case_sensitive_file_extension_comparisons)]
-                    if file_name.ends_with(".rs")
-                        && path_components.windows(1).any(|w| w[0] == "tests")
-                    {
-                        return true;
-                    }
-                }
-                "Python" => {
-                    // Note: file_name is already lowercase
-                    if (file_name.starts_with("test_")
-                        && std::path::Path::new(file_name)
-                            .extension()
-                            .is_some_and(|ext| ext.eq_ignore_ascii_case("py")))
-                        || file_name.ends_with("_test.py")
-                        || (file_name.starts_with("test_") && {
-                            #[expect(clippy::case_sensitive_file_extension_comparisons)]
-                            file_name.ends_with(".py")
-                        })
-                    {
-                        return true;
-                    }
-                }
-                "JavaScript" | "TypeScript" => {
-                    if file_name.ends_with(".test.js")
-                        || file_name.ends_with(".spec.js")
-                        || file_name.ends_with(".test.ts")
-                        || file_name.ends_with(".spec.ts")
-                        || file_name.ends_with(".test.tsx")
-                        || file_name.ends_with(".spec.tsx")
-                    {
-                        return true;
-                    }
-                }
-                "Go" => {
-                    if file_name.ends_with("_test.go") {
-                        return true;
-                    }
-                }
-                "Java" => {
-                    if path_components
-                        .windows(2)
-                        .any(|w| w[0] == "src" && w[1] == "test")
-                        || file_name.ends_with("test.java")
-                    {
-                        return true;
-                    }
-                }
-                "Ruby" => {
-                    if file_name.ends_with("_spec.rb") || file_name.ends_with("_test.rb") {
-                        return true;
-                    }
-                }
-                _ => {
-                    if file_name.contains("test") || file_name.contains("spec") {
-                        return true;
-                    }
-                }
+            if is_test_file(&name_lower, primary_lang, &path_components) {
+                return true;
             }
         }
     }

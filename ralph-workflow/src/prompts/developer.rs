@@ -2,6 +2,8 @@
 //!
 //! Prompts for developer agent actions including iteration and planning.
 
+use std::fmt::Write as _;
+
 use super::types::ContextLevel;
 
 /// Generate developer iteration prompt.
@@ -73,7 +75,6 @@ PHASE 1: UNDERSTANDING
     // without naming the source file. This prevents agents from discovering
     // the file through exploration, reducing the risk of accidental deletion.
     if let Some(content) = prompt_content {
-        use std::fmt::Write;
         let _ = write!(
             prompt,
             r"

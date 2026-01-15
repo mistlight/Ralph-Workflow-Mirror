@@ -52,7 +52,6 @@ QUICK EXAMPLES:\n\
     ralph --list-templates            See all prompt templates\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
-#[expect(clippy::struct_excessive_bools)]
 pub struct Args {
     /// Commit message for the final commit
     #[arg(

@@ -10,7 +10,6 @@
 //! 3. Extracts the commit message from agent output
 //! 4. Returns the generated message for use by the caller
 
-#![expect(clippy::too_many_lines)]
 use super::context::PhaseContext;
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::files::llm_output_extraction::{

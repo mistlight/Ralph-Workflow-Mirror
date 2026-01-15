@@ -15,7 +15,6 @@
 //! (`~/.config/ralph/agents.toml` and `.agent/agents.toml`) and emits
 //! deprecation warnings when they are used.
 
-#![expect(clippy::too_many_lines)]
 use super::parser::parse_env_bool;
 use super::types::{Config, ReviewDepth, Verbosity};
 use super::unified::{unified_config_path, UnifiedConfig};

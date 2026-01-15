@@ -2,8 +2,6 @@
 //!
 //! Contains the fundamental structures used across all language-specific guideline modules.
 
-#![expect(clippy::items_after_statements)]
-
 /// Severity level for code review checks
 ///
 /// Used to prioritize review feedback and help developers focus on
@@ -254,8 +252,7 @@ impl ReviewGuidelines {
     /// This produces a more detailed prompt section that groups checks by priority,
     /// helping agents focus on the most critical issues first.
     pub(crate) fn format_for_prompt_with_priorities(&self) -> String {
-        let mut sections = Vec::new();
-
+        // Define inner function first to satisfy clippy::items_after_statements
         fn push_section(
             sections: &mut Vec<String>,
             header: &str,
@@ -275,6 +272,8 @@ impl ReviewGuidelines {
             }
             sections.push(format!("{}\n{}", header, items.join("\n")));
         }
+
+        let mut sections = Vec::new();
 
         // Critical: Security and secrets.
         let critical_checks: Vec<SeverityCheck> = self

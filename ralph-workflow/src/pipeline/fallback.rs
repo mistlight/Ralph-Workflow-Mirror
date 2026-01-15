@@ -22,8 +22,6 @@ pub enum TryAgentResult {
 /// Try a single agent/model configuration with retries.
 ///
 /// Returns the result of the attempt: success, unrecoverable error, or should-fallback.
-#[expect(clippy::too_many_arguments)]
-#[expect(clippy::too_many_lines)]
 pub fn try_agent_with_retries(
     agent_name: &str,
     model_flag: Option<&str>,

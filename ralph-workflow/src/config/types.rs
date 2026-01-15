@@ -149,7 +149,6 @@ impl Verbosity {
 /// environment variables and CLI arguments. Default values are applied
 /// via [`Default::default()`].
 #[derive(Debug, Clone)]
-#[expect(clippy::struct_excessive_bools)]
 pub struct Config {
     /// Developer (driver) agent (set via CLI, env, or `agent_chain`)
     pub(crate) developer_agent: Option<String>,

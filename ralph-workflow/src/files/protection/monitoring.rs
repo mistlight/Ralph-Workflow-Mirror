@@ -17,7 +17,6 @@
 //! - **macOS**: `FSEvents` via `notify` crate
 //! - **Windows**: `ReadDirectoryChangesW` via `notify` crate
 
-#![expect(clippy::needless_pass_by_value)]
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -98,7 +97,7 @@ impl PromptMonitor {
         let stop_signal = Arc::clone(&self.stop_signal);
 
         let handle = thread::spawn(move || {
-            Self::monitor_thread_main(restoration_flag, stop_signal);
+            Self::monitor_thread_main(&restoration_flag, &stop_signal);
         });
 
         self.monitor_thread = Some(handle);
@@ -109,7 +108,7 @@ impl PromptMonitor {
     ///
     /// This thread watches the current directory for deletion events on
     /// PROMPT.md and restores from backup when detected.
-    fn monitor_thread_main(restoration_detected: Arc<AtomicBool>, stop_signal: Arc<AtomicBool>) {
+    fn monitor_thread_main(restoration_detected: &Arc<AtomicBool>, stop_signal: &Arc<AtomicBool>) {
         use notify::Watcher;
 
         // Create a channel to receive file system events
@@ -122,7 +121,7 @@ impl PromptMonitor {
                 eprintln!("Warning: Failed to create file system watcher: {e}");
                 eprintln!("Falling back to periodic polling for PROMPT.md protection");
                 // Fallback to polling if watcher creation fails
-                Self::polling_monitor(&restoration_detected, &stop_signal);
+                Self::polling_monitor(restoration_detected, stop_signal);
                 return;
             }
         };
@@ -131,7 +130,7 @@ impl PromptMonitor {
         if let Err(e) = watcher.watch(Path::new("."), notify::RecursiveMode::NonRecursive) {
             eprintln!("Warning: Failed to watch current directory: {e}");
             eprintln!("Falling back to periodic polling for PROMPT.md protection");
-            Self::polling_monitor(&restoration_detected, &stop_signal);
+            Self::polling_monitor(restoration_detected, stop_signal);
             return;
         }
 
@@ -144,7 +143,7 @@ impl PromptMonitor {
                 Ok(Ok(event)) => {
                     Self::handle_fs_event(
                         &event,
-                        &restoration_detected,
+                        restoration_detected,
                         &mut prompt_existed_last_check,
                     );
                 }
