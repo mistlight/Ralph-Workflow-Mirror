@@ -68,7 +68,7 @@ pub fn run_development_phase(
         ctx.logger.success("PLAN.md created");
 
         // Save checkpoint at start of development phase (if enabled)
-        if ctx.config.checkpoint_enabled {
+        if ctx.config.features.checkpoint_enabled {
             let _ = save_checkpoint(&PipelineCheckpoint::new(
                 PipelinePhase::Development,
                 i,

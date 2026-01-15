@@ -19,7 +19,7 @@ use crate::phases::context::PhaseContext;
 /// Agent file writes are ignored - the orchestrator is the sole writer.
 pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
     // Save checkpoint at start of planning phase (if enabled)
-    if ctx.config.checkpoint_enabled {
+    if ctx.config.features.checkpoint_enabled {
         let _ = save_checkpoint(&PipelineCheckpoint::new(
             PipelinePhase::Planning,
             iteration,
