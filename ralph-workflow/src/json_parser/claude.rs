@@ -288,6 +288,8 @@ impl ClaudeParser {
                 result,
                 error,
             } => {
+                use std::fmt::Write;
+
                 let duration_s = duration_ms.unwrap_or(0) / 1000;
                 let duration_m = duration_s / 60;
                 let duration_s_rem = duration_s % 60;
