@@ -17,11 +17,30 @@ use std::sync::OnceLock;
 /// - Numbered/bullet lists without proper separation
 /// - Multi-line analysis that ends with conventional commit format
 pub fn remove_thought_process_patterns(content: &str) -> String {
-    let mut result = content;
+    let mut result = content.to_string();
 
     // Remove AI thought process prefixes
-    // These are patterns that AI agents commonly use when starting their response
-    // We remove everything from the start up to and including the first blank line
+    result = try_strip_thought_prefixes(&result);
+
+    // Remove numbered analysis patterns
+    result = try_strip_numbered_analysis(&result);
+
+    // Remove markdown bold analysis patterns
+    result = try_strip_markdown_bold_analysis(&result);
+
+    // Handle multi-line analysis ending with conventional commit
+    result = try_strip_multiline_analysis(&result);
+
+    // Final check for analysis with embedded type mentions
+    result = check_and_filter_analysis_with_embedded_types(&result);
+
+    result
+}
+
+/// Try to strip AI thought process prefixes from content.
+///
+/// Returns the content with thought prefixes removed, or the original if no patterns matched.
+fn try_strip_thought_prefixes(content: &str) -> String {
     let thought_patterns = [
         "Looking at this diff, I can see",
         "Looking at this diff",
@@ -37,7 +56,6 @@ pub fn remove_thought_process_patterns(content: &str) -> String {
         "Looking at the changes",
         "I've analyzed",
         "After reviewing",
-        // Additional patterns to catch more variations
         "Based on the git diff",
         "Based on the git diff, here are the changes",
         "Based on the git diff, here's what changed",
@@ -58,64 +76,57 @@ pub fn remove_thought_process_patterns(content: &str) -> String {
         "Key changes include",
         "Several changes include",
         "This diff shows the following",
-        // Additional patterns for GLM agent output
         "The most substantive change is",
         "The most substantive changes are",
         "The most substantive user-facing change is",
     ];
 
     for pattern in &thought_patterns {
-        if let Some(rest) = result.strip_prefix(pattern) {
-            // Find the first blank line after the pattern
-            if let Some(blank_line_pos) = rest.find("\n\n") {
-                // Don't return immediately - there might be more analysis after the blank line
-                // Instead, update result to continue processing
-                let remaining = rest[blank_line_pos + 2..].trim();
-                if !remaining.is_empty() {
-                    // Continue processing with the remaining content
-                    // Check if it still starts with analysis patterns (numbered lists, etc.)
-                    // If it looks like a clean commit message, return it
-                    if looks_like_commit_message_start(remaining) {
-                        return remaining.to_string();
-                    }
-                    // Otherwise, update result to continue with aggressive filtering below
-                    result = remaining;
-                    break; // Continue to numbered/bold analysis pattern checks
-                }
-            } else if let Some(single_newline) = rest.find('\n') {
-                // If no double newline, try to skip to after the first single newline
-                let after_newline = &rest[single_newline + 1..];
-                // Check if what follows looks like a commit message (starts with conventional commit type)
-                if looks_like_commit_message_start(after_newline.trim()) {
-                    return after_newline.to_string();
-                }
-                // If not, check if the rest starts with numbered analysis
-                if after_newline.trim().starts_with("1. ")
-                    || after_newline.trim().starts_with("1. **")
-                    || after_newline.trim().starts_with("- ")
-                {
-                    // Skip to after numbered analysis - continue processing
-                    // but don't return yet, let the numbered pattern handler deal with it
-                    result = after_newline.trim();
-                    break;
-                }
-            }
-            // If we found and stripped a pattern but couldn't find a clean commit message
-            // or numbered analysis to continue from, check if rest looks like pure analysis
-            // If the remaining content after the pattern is all analysis (no valid commit),
-            // return empty
-            let rest_trimmed = rest.trim();
-            if looks_like_analysis_text(rest_trimmed)
-                && find_conventional_commit_start(rest_trimmed).is_none()
-            {
-                return String::new();
-            }
+        if let Some(rest) = content.strip_prefix(pattern) {
+            return handle_stripped_pattern(rest);
         }
     }
 
-    // Remove numbered analysis patterns (e.g., "1. First change\n2. Second change\n\nfix: actual")
-    // These are common when AI agents provide numbered analysis before the actual commit message
-    let result_lower = result.to_lowercase();
+    content.to_string()
+}
+
+/// Handle content after stripping a thought pattern prefix.
+fn handle_stripped_pattern(rest: &str) -> String {
+    // Find the first blank line after the pattern
+    if let Some(blank_line_pos) = rest.find("\n\n") {
+        let remaining = rest[blank_line_pos + 2..].trim();
+        if !remaining.is_empty() {
+            if looks_like_commit_message_start(remaining) {
+                return remaining.to_string();
+            }
+            return remaining.to_string();
+        }
+    } else if let Some(single_newline) = rest.find('\n') {
+        let after_newline = &rest[single_newline + 1..];
+        if looks_like_commit_message_start(after_newline.trim()) {
+            return after_newline.to_string();
+        }
+        if after_newline.trim().starts_with("1. ")
+            || after_newline.trim().starts_with("1. **")
+            || after_newline.trim().starts_with("- ")
+        {
+            return after_newline.trim().to_string();
+        }
+    }
+
+    let rest_trimmed = rest.trim();
+    if looks_like_analysis_text(rest_trimmed)
+        && find_conventional_commit_start(rest_trimmed).is_none()
+    {
+        return String::new();
+    }
+
+    rest.to_string()
+}
+
+/// Try to strip numbered analysis patterns from content.
+fn try_strip_numbered_analysis(content: &str) -> String {
+    let result_lower = content.to_lowercase();
     let numbered_start_patterns = [
         "1. ",
         "1)\n",
@@ -124,16 +135,14 @@ pub fn remove_thought_process_patterns(content: &str) -> String {
         "* first",
         "* the first",
     ];
+
     for pattern in &numbered_start_patterns {
-        if result_lower.starts_with(pattern) || result.starts_with(pattern) {
-            // Try to find the commit message by looking for conventional commit format
-            if let Some(commit_start) = find_conventional_commit_start(result) {
-                return result[commit_start..].to_string();
+        if result_lower.starts_with(pattern) || content.starts_with(pattern) {
+            if let Some(commit_start) = find_conventional_commit_start(content) {
+                return content[commit_start..].to_string();
             }
-            // Fallback: look for a blank line after the analysis
-            if let Some(blank_pos) = result.find("\n\n") {
-                let after_analysis = &result[blank_pos + 2..];
-                // Check if the content after looks like a real commit message
+            if let Some(blank_pos) = content.find("\n\n") {
+                let after_analysis = &content[blank_pos + 2..];
                 if after_analysis.trim().starts_with(char::is_alphanumeric) {
                     return after_analysis.to_string();
                 }
@@ -142,29 +151,29 @@ pub fn remove_thought_process_patterns(content: &str) -> String {
         }
     }
 
-    // Remove markdown bold analysis patterns (e.g., "1. **Test assertion style** (file.rs): Description")
-    // These patterns use markdown bold formatting for category headers in numbered lists
-    if starts_with_markdown_bold_analysis(result) {
-        if let Some(commit_start) = find_conventional_commit_start(result) {
-            return result[commit_start..].to_string();
+    content.to_string()
+}
+
+/// Try to strip markdown bold analysis patterns from content.
+fn try_strip_markdown_bold_analysis(content: &str) -> String {
+    if starts_with_markdown_bold_analysis(content) {
+        if let Some(commit_start) = find_conventional_commit_start(content) {
+            return content[commit_start..].to_string();
         }
-        // Fallback: look for double newline after the analysis
-        if let Some(blank_pos) = result.find("\n\n") {
-            let after_analysis = &result[blank_pos + 2..];
+        if let Some(blank_pos) = content.find("\n\n") {
+            let after_analysis = &content[blank_pos + 2..];
             if after_analysis.trim().starts_with(char::is_alphanumeric) {
                 return after_analysis.to_string();
             }
         }
     }
+    content.to_string()
+}
 
-    // Additional aggressive filtering: detect if the content starts with
-    // multi-line analysis and ends with a conventional commit format
-    if let Some(commit_start) = find_conventional_commit_start(result) {
-        // Verify that the content before the commit looks like analysis
-        let before_commit = &result[..commit_start];
-        // Check multiple conditions to identify analysis:
-        // 1. Contains multiple lines (analysis is typically multi-line)
-        // 2. Either looks like analysis text OR contains common analysis patterns
+/// Try to strip multi-line analysis ending with conventional commit.
+fn try_strip_multiline_analysis(content: &str) -> String {
+    if let Some(commit_start) = find_conventional_commit_start(content) {
+        let before_commit = &content[..commit_start];
         let is_analysis = before_commit.contains('\n')
             && (looks_like_analysis_text(before_commit)
                 || before_commit.to_lowercase().contains("changes")
@@ -173,50 +182,60 @@ pub fn remove_thought_process_patterns(content: &str) -> String {
                 || before_commit.contains("- "));
 
         if is_analysis {
-            return result[commit_start..].to_string();
+            return content[commit_start..].to_string();
         }
     }
+    content.to_string()
+}
 
-    // Final check: if the entire content looks like analysis without a valid commit,
-    // return empty string. This catches cases like "The main changes I see are:\n1. **Analysis**"
-    // followed by more analysis paragraphs but no proper commit message.
-    if looks_like_analysis_text(result) {
-        // Check if there's markdown-bold type mention embedded in analysis text
-        // like "This is a **refactor**..." which indicates analysis, not a commit
-        let result_lower = result.to_lowercase();
-        if result_lower.contains("**feat**")
-            || result_lower.contains("**fix**")
-            || result_lower.contains("**refactor**")
-            || result_lower.contains("**chore**")
-            || result_lower.contains("**test**")
-            || result_lower.contains("**docs**")
-            || result_lower.contains("**perf**")
-            || result_lower.contains("**style**")
-        {
-            // Look for the pattern "**type**:" (with colon) which indicates
-            // it might be an actual commit message in markdown format
-            if result_lower.contains("**feat**:")
-                || result_lower.contains("**fix**:")
-                || result_lower.contains("**refactor**:")
-                || result_lower.contains("**chore**:")
-                || result_lower.contains("**test**:")
-                || result_lower.contains("**docs**:")
-                || result_lower.contains("**perf**:")
-                || result_lower.contains("**style**:")
-            {
-                // This might be a valid commit message in markdown, keep it
-                return result.to_string();
-            }
-            // Otherwise, it's analysis with embedded type mentions, filter it out
-            return String::new();
-        }
-        // If no conventional commit was found and it looks like analysis, return empty
-        if find_conventional_commit_start(result).is_none() {
-            return String::new();
-        }
+/// Check and filter analysis with embedded type mentions.
+fn check_and_filter_analysis_with_embedded_types(content: &str) -> String {
+    if !looks_like_analysis_text(content) {
+        return content.to_string();
     }
 
-    result.to_string()
+    let result_lower = content.to_lowercase();
+    let type_patterns = [
+        "**feat**",
+        "**fix**",
+        "**refactor**",
+        "**chore**",
+        "**test**",
+        "**docs**",
+        "**perf**",
+        "**style**",
+    ];
+
+    let has_type_mention = type_patterns.iter().any(|p| result_lower.contains(p));
+
+    if !has_type_mention {
+        if find_conventional_commit_start(content).is_none() {
+            return String::new();
+        }
+        return content.to_string();
+    }
+
+    // Check if it has the pattern "**type**:" (with colon)
+    let type_patterns_with_colon = [
+        "**feat**:",
+        "**fix**:",
+        "**refactor**:",
+        "**chore**:",
+        "**test**:",
+        "**docs**:",
+        "**perf**:",
+        "**style**:",
+    ];
+
+    let has_colon_pattern = type_patterns_with_colon
+        .iter()
+        .any(|p| result_lower.contains(p));
+
+    if has_colon_pattern {
+        return content.to_string();
+    }
+
+    String::new()
 }
 
 /// Check if text starts with markdown bold analysis patterns.

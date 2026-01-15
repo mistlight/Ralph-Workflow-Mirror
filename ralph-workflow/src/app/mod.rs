@@ -159,65 +159,26 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         &config_path,
     )?;
 
-    // Set up git repo and working directory
-    require_git_repo()?;
-    let repo_root = get_repo_root()?;
-    env::set_current_dir(&repo_root)?;
-
-    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
-    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
-    if config.behavior.interactive && !std::path::Path::new("PROMPT.md").exists() {
-        if let Some(template_name) = prompt_template_selection(colors) {
-            create_prompt_from_template(&template_name, colors)?;
-            println!();
-            logger.info(
-                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
-            );
-            logger.info(&format!(
-                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-                config.commit_msg
-            ));
-            return Ok(());
-        }
-        println!();
-        logger.info("PROMPT.md is required to run the pipeline.");
-        logger.info(
-            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-        );
-        return Ok(());
-    }
-
-    ensure_files(config.isolation_mode)?;
-
-    // Reset context for isolation mode
-    if config.isolation_mode {
-        reset_context_for_isolation(&logger)?;
-    }
+    // Set up git repo, working directory, and handle interactive mode
+    let repo_root = setup_git_repo_and_working_dir(&config, colors, &mut logger)?;
 
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
-    // Handle --dry-run
-    if args.recovery.dry_run {
-        return handle_dry_run(
-            &logger,
-            colors,
-            &config,
-            &developer_display,
-            &reviewer_display,
-            &repo_root,
-        );
-    }
-
-    // Handle --generate-commit-msg
-    if args.commit_plumbing.generate_commit_msg {
-        return handle_generate_commit_msg(
-            &config,
-            &registry,
-            &logger,
-            colors,
-            &developer_agent,
-            &reviewer_agent,
-        );
+    // Handle --dry-run and --generate-commit-msg
+    let plumbing_ctx = PlumbingContext {
+        args: &args,
+        logger: &logger,
+        colors,
+        config: &config,
+        registry: &registry,
+        developer_display: &developer_display,
+        reviewer_display: &reviewer_display,
+        repo_root: &repo_root,
+        developer_agent: &developer_agent,
+        reviewer_agent: &reviewer_agent,
+    };
+    if handle_plumbing_and_dry_run(plumbing_ctx)? {
+        return Ok(());
     }
 
     // Run the full pipeline
@@ -559,6 +520,100 @@ fn run_review_and_fix(
     // Commits now happen automatically per-iteration during development and per-cycle during review.
 
     Ok(())
+}
+
+/// Set up git repo, working directory, and handle interactive mode.
+///
+/// Returns the repo root path if successful, or an error if setup fails.
+fn setup_git_repo_and_working_dir(
+    config: &crate::config::Config,
+    colors: Colors,
+    logger: &mut Logger,
+) -> anyhow::Result<std::path::PathBuf> {
+    // Set up git repo and working directory
+    require_git_repo()?;
+    let repo_root = get_repo_root()?;
+    env::set_current_dir(&repo_root)?;
+
+    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
+    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
+    if config.behavior.interactive && !std::path::Path::new("PROMPT.md").exists() {
+        if let Some(template_name) = prompt_template_selection(colors) {
+            create_prompt_from_template(&template_name, colors)?;
+            println!();
+            logger.info(
+                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+            );
+            logger.info(&format!(
+                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                config.commit_msg
+            ));
+            anyhow::bail!("PROMPT.md created; please edit and rerun");
+        }
+        println!();
+        logger.info("PROMPT.md is required to run the pipeline.");
+        logger.info(
+            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+        );
+        anyhow::bail!("PROMPT.md not found");
+    }
+
+    ensure_files(config.isolation_mode)?;
+
+    // Reset context for isolation mode
+    if config.isolation_mode {
+        reset_context_for_isolation(logger)?;
+    }
+
+    Ok(repo_root)
+}
+
+/// Context for plumbing and dry-run operations.
+struct PlumbingContext<'a> {
+    args: &'a Args,
+    logger: &'a Logger,
+    colors: Colors,
+    config: &'a crate::config::Config,
+    registry: &'a AgentRegistry,
+    developer_display: &'a str,
+    reviewer_display: &'a str,
+    repo_root: &'a std::path::Path,
+    developer_agent: &'a str,
+    reviewer_agent: &'a str,
+}
+
+/// Handle --dry-run and --generate-commit-msg commands.
+///
+/// Returns `Ok(true)` if one of these commands was handled (and we should exit),
+/// `Ok(false)` if neither was triggered (and we should continue to the main pipeline).
+fn handle_plumbing_and_dry_run(ctx: PlumbingContext) -> anyhow::Result<bool> {
+    // Handle --dry-run
+    if ctx.args.recovery.dry_run {
+        handle_dry_run(
+            ctx.logger,
+            ctx.colors,
+            ctx.config,
+            ctx.developer_display,
+            ctx.reviewer_display,
+            ctx.repo_root,
+        )?;
+        return Ok(true);
+    }
+
+    // Handle --generate-commit-msg
+    if ctx.args.commit_plumbing.generate_commit_msg {
+        handle_generate_commit_msg(
+            ctx.config,
+            ctx.registry,
+            ctx.logger,
+            ctx.colors,
+            ctx.developer_agent,
+            ctx.reviewer_agent,
+        )?;
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 /// Runs final validation if configured.
