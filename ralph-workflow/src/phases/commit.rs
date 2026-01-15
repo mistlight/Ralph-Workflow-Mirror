@@ -41,6 +41,18 @@ use std::io::Read;
 /// allowing substantial diffs to be processed without truncation.
 const MAX_SAFE_PROMPT_SIZE: usize = 200_000;
 
+/// Absolute last resort fallback commit message.
+///
+/// This is used ONLY when all other methods fail:
+/// - All 8 prompt variants exhausted
+/// - All agents in fallback chain exhausted
+/// - All truncation stages failed
+/// - Emergency no-diff prompt failed
+/// - Deterministic fallback from diff failed
+///
+/// This ensures the commit process NEVER fails completely.
+const HARDCODED_FALLBACK_COMMIT: &str = "chore: automated commit";
+
 /// Get the maximum safe prompt size for a specific agent.
 ///
 /// Different agents have different token limits. This function returns a
@@ -412,7 +424,6 @@ pub fn generate_commit_message(
     // Try each prompt variant in sequence
     let mut strategy = CommitRetryStrategy::Initial;
     let mut last_extraction: Option<CommitExtractionResult> = None;
-    let mut last_error: Option<anyhow::Error> = None;
 
     while let Some(current_strategy) = Some(strategy) {
         // Generate the appropriate prompt for this retry stage
@@ -517,46 +528,43 @@ pub fn generate_commit_message(
                 }
             }
             Ok(None) => {
-                // Extraction completely failed - log and continue
+                // Extraction completely failed - generate fallback and continue
                 runtime.logger.warn(&format!(
-                    "No valid commit message extracted with {strategy}"
+                    "No valid commit message extracted with {strategy}, will use fallback"
                 ));
-
-                // Move to next strategy
+                // Move to next strategy (they all generate fallbacks, so last one will be used)
                 if let Some(next) = strategy.next() {
                     strategy = next;
                 } else {
-                    // No more strategies - return failure
-                    runtime.logger.error(&format!(
-                        "All {} prompt variants failed",
-                        CommitRetryStrategy::total_stages()
-                    ));
+                    // All strategies exhausted - generate final fallback
+                    runtime
+                        .logger
+                        .warn("All prompt variants exhausted, generating fallback from diff...");
+                    let fallback = generate_fallback_commit_message(diff);
                     return Ok(CommitMessageResult {
-                        message: String::new(),
-                        success: false,
+                        message: fallback,
+                        success: true,
                         _log_path: log_file,
                     });
                 }
             }
             Err(e) => {
-                // Extraction error - log and continue
+                // Extraction error - log and continue to next strategy
                 runtime.logger.error(&format!(
                     "Failed to extract commit message with {strategy}: {e}"
                 ));
-                last_error = Some(e);
 
-                // Move to next strategy
                 if let Some(next) = strategy.next() {
                     strategy = next;
                 } else {
-                    // No more strategies - return failure
-                    runtime.logger.error(&format!(
-                        "All {} prompt variants failed with errors",
-                        CommitRetryStrategy::total_stages()
-                    ));
+                    // All strategies failed with error - generate fallback
+                    runtime
+                        .logger
+                        .warn("All prompt variants failed with error, generating fallback...");
+                    let fallback = generate_fallback_commit_message(diff);
                     return Ok(CommitMessageResult {
-                        message: String::new(),
-                        success: false,
+                        message: fallback,
+                        success: true,
                         _log_path: log_file,
                     });
                 }
@@ -711,10 +719,16 @@ pub fn generate_commit_message(
                 }
             }
         }
-        // If even emergency no-diff failed, fall through to generate fallback from diff
+        // Emergency no-diff failed - generate fallback from diff metadata
         runtime
             .logger
-            .warn("Emergency no-diff retry failed. Generating fallback from diff...");
+            .warn("Emergency no-diff failed. Generating fallback from diff metadata...");
+        let fallback = generate_fallback_commit_message(diff);
+        return Ok(CommitMessageResult {
+            message: fallback,
+            success: true,
+            _log_path: log_file,
+        });
     } else if last_extraction
         == Some(CommitExtractionResult::AgentError(
             AgentErrorKind::TokenExhausted,
@@ -745,7 +759,7 @@ pub fn generate_commit_message(
 
             let exit_code = run_with_fallback(
                 AgentRole::Commit,
-                &format!("generate commit message (further truncated {})", label),
+                &format!("generate commit message (further truncated {label})"),
                 &prompt,
                 log_dir,
                 runtime,
@@ -791,46 +805,27 @@ pub fn generate_commit_message(
         });
     }
 
-    // Step 5: Last-resort - save prompt for manual commit and provide clear instructions
-    // When all automated recovery fails, provide helpful guidance for manual retry
+    // All automated recovery exhausted - use hardcoded fallback as last resort
     runtime.logger.warn("");
-    runtime.logger.error(&format!(
-        "All automated recovery exhausted. All {} prompt variants and truncation stages failed.",
-        CommitRetryStrategy::total_stages()
-    ));
+    runtime.logger.warn("All recovery methods failed:");
+    runtime.logger.warn("  - All 8 prompt variants exhausted");
+    runtime
+        .logger
+        .warn("  - All agents in fallback chain exhausted");
+    runtime.logger.warn("  - All truncation stages failed");
+    runtime.logger.warn("  - Emergency prompts failed");
     runtime.logger.warn("");
     runtime
         .logger
-        .warn("To manually commit with your preferred agent:");
-
-    // Save the last prompt to a file for manual use
-    let last_prompt_path = ".agent/last_prompt.txt";
-    let last_prompt = prompt_emergency_no_diff_commit(diff);
-    if fs::write(last_prompt_path, &last_prompt).is_ok() {
-        runtime
-            .logger
-            .warn(&format!("  1. Review the prompt: {}", last_prompt_path));
-    }
-    runtime.logger.warn("  2. Run your preferred agent:");
-    runtime.logger.warn(&format!(
-        "     cat {} | your-agent --output json",
-        last_prompt_path
-    ));
+        .warn("Using hardcoded fallback commit message as last resort.");
     runtime
         .logger
-        .warn("  3. Extract the commit message and run:");
-    runtime.logger.warn("     git commit -m \"<your message>\"");
+        .warn(&format!("Fallback message: \"{HARDCODED_FALLBACK_COMMIT}\""));
     runtime.logger.warn("");
 
-    // Return failure but with helpful context
-    let error_msg = last_error.as_ref().map_or_else(
-        || "Failed to generate commit message".to_string(),
-        std::string::ToString::to_string,
-    );
-    runtime.logger.error(&error_msg);
     Ok(CommitMessageResult {
-        message: String::new(),
-        success: false,
+        message: HARDCODED_FALLBACK_COMMIT.to_string(),
+        success: true,
         _log_path: log_file,
     })
 }
@@ -888,14 +883,22 @@ pub fn commit_with_generated_message(
 
     // Check if generation succeeded
     if !result.success || result.message.trim().is_empty() {
-        return CommitResultFallback::Failed("Commit message generation failed".to_string());
-    }
-
-    // Create the commit
-    match git_commit(&result.message, git_user_name, git_user_email) {
-        Ok(Some(oid)) => CommitResultFallback::Success(oid),
-        Ok(None) => CommitResultFallback::NoChanges,
-        Err(e) => CommitResultFallback::Failed(format!("Failed to create commit: {e}")),
+        // This should never happen after our fixes, but add defensive fallback
+        ctx.logger
+            .warn("Commit generation returned empty message, using hardcoded fallback...");
+        let fallback_message = HARDCODED_FALLBACK_COMMIT.to_string();
+        match git_commit(&fallback_message, git_user_name, git_user_email) {
+            Ok(Some(oid)) => CommitResultFallback::Success(oid),
+            Ok(None) => CommitResultFallback::NoChanges,
+            Err(e) => CommitResultFallback::Failed(format!("Failed to create commit: {e}")),
+        }
+    } else {
+        // Create the commit with the generated message
+        match git_commit(&result.message, git_user_name, git_user_email) {
+            Ok(Some(oid)) => CommitResultFallback::Success(oid),
+            Ok(None) => CommitResultFallback::NoChanges,
+            Err(e) => CommitResultFallback::Failed(format!("Failed to create commit: {e}")),
+        }
     }
 }
 
@@ -1203,5 +1206,14 @@ mod tests {
         assert_eq!(truncated.len(), 3);
         // Last line should have truncation marker
         assert!(truncated[2].ends_with("[truncated...]"));
+    }
+
+    #[test]
+    fn test_hardcoded_fallback_commit() {
+        // The hardcoded fallback should always be valid
+        let result = validate_commit_message(HARDCODED_FALLBACK_COMMIT);
+        assert!(result.is_ok(), "Hardcoded fallback must pass validation");
+        assert!(!HARDCODED_FALLBACK_COMMIT.is_empty());
+        assert!(HARDCODED_FALLBACK_COMMIT.len() >= 5);
     }
 }
