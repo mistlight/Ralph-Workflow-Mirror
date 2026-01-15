@@ -76,9 +76,10 @@ pub fn try_agent_with_retries(
         );
 
         if runtime.config.verbosity.is_debug() {
-            runtime
-                .logger
-                .info(&format!("GLM agent '{}' command configuration:", config.agent_name));
+            runtime.logger.info(&format!(
+                "GLM agent '{}' command configuration:",
+                config.agent_name
+            ));
             runtime
                 .logger
                 .info(&format!("  Full command: {full_cmd_log}"));

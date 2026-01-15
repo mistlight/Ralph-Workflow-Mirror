@@ -27,11 +27,11 @@ pub enum Preset {
 pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Colors) {
     // Handle verbosity shorthand flags (--quiet, --full, --debug take precedence)
     let base_verbosity = config.verbosity;
-    config.verbosity = if args.quiet {
+    config.verbosity = if args.verbosity_shorthand.quiet {
         crate::config::Verbosity::Quiet
-    } else if args.debug {
+    } else if args.debug_verbosity.debug {
         crate::config::Verbosity::Debug
-    } else if args.full {
+    } else if args.verbosity_shorthand.full {
         crate::config::Verbosity::Full
     } else if let Some(v) = args.verbosity {
         v.into()
@@ -54,7 +54,7 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
     }
 
     // Quick mode: 1 developer iteration, 1 review pass (explicit flags override)
-    if args.quick {
+    if args.quick_presets.quick {
         if args.developer_iters.is_none() {
             config.developer_iters = 1;
         }
@@ -64,7 +64,7 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
     }
 
     // Rapid mode: 2 developer iterations, 1 review pass (explicit flags override)
-    if args.rapid {
+    if args.quick_presets.rapid {
         if args.developer_iters.is_none() {
             config.developer_iters = 2;
         }

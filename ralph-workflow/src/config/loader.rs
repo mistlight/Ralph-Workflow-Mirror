@@ -109,12 +109,19 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         developer_provider: None,
         reviewer_provider: None,
         reviewer_json_parser: None, // Set from env var or CLI
-        force_universal_prompt: general.force_universal_prompt,
+        features: crate::config::types::FeatureFlags {
+            checkpoint_enabled: general.features.checkpoint_enabled,
+            force_universal_prompt: general.features.force_universal_prompt,
+        },
         developer_iters: general.developer_iters,
         reviewer_reviews: general.reviewer_reviews,
         fast_check_cmd: None,
         full_check_cmd: None,
-        interactive: general.interactive,
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: general.behavior.interactive,
+            auto_detect_stack: general.behavior.auto_detect_stack,
+            strict_validation: general.behavior.strict_validation,
+        },
         prompt_path: general
             .prompt_path
             .as_ref()
@@ -123,11 +130,8 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         reviewer_context: general.reviewer_context,
         verbosity: Verbosity::from(general.verbosity),
         commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
-        auto_detect_stack: general.auto_detect_stack,
-        checkpoint_enabled: general.checkpoint_enabled,
-        strict_validation: general.strict_validation,
         review_depth,
-        isolation_mode: general.isolation_mode,
+        isolation_mode: general.features.isolation_mode,
         git_user_name: general.git_user_name.clone(),
         git_user_email: general.git_user_email.clone(),
     }
@@ -145,20 +149,24 @@ fn default_config() -> Config {
         developer_provider: None,
         reviewer_provider: None,
         reviewer_json_parser: None,
-        force_universal_prompt: false,
+        features: crate::config::types::FeatureFlags {
+            checkpoint_enabled: true,
+            force_universal_prompt: false,
+        },
         developer_iters: 5,
         reviewer_reviews: 2,
         fast_check_cmd: None,
         full_check_cmd: None,
-        interactive: true,
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: true,
+            auto_detect_stack: true,
+            strict_validation: false,
+        },
         prompt_path: PathBuf::from(".agent/last_prompt.txt"),
         developer_context: 1,
         reviewer_context: 0,
         verbosity: Verbosity::Verbose,
         commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
-        auto_detect_stack: true,
-        checkpoint_enabled: true,
-        strict_validation: false,
         review_depth: ReviewDepth::default(),
         isolation_mode: true,
         git_user_name: None,
@@ -299,12 +307,21 @@ fn apply_bool_vars(config: &mut Config) {
     };
     apply_bool(
         "RALPH_REVIEWER_UNIVERSAL_PROMPT",
-        &mut config.force_universal_prompt,
+        &mut config.features.force_universal_prompt,
     );
-    apply_bool("RALPH_INTERACTIVE", &mut config.interactive);
-    apply_bool("RALPH_AUTO_DETECT_STACK", &mut config.auto_detect_stack);
-    apply_bool("RALPH_CHECKPOINT_ENABLED", &mut config.checkpoint_enabled);
-    apply_bool("RALPH_STRICT_VALIDATION", &mut config.strict_validation);
+    apply_bool("RALPH_INTERACTIVE", &mut config.behavior.interactive);
+    apply_bool(
+        "RALPH_AUTO_DETECT_STACK",
+        &mut config.behavior.auto_detect_stack,
+    );
+    apply_bool(
+        "RALPH_CHECKPOINT_ENABLED",
+        &mut config.features.checkpoint_enabled,
+    );
+    apply_bool(
+        "RALPH_STRICT_VALIDATION",
+        &mut config.behavior.strict_validation,
+    );
     apply_bool("RALPH_ISOLATION_MODE", &mut config.isolation_mode);
 }
 
@@ -445,7 +462,7 @@ mod tests {
         assert!(config.reviewer_agent.is_none());
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
-        assert!(config.interactive);
+        assert!(config.behavior.interactive);
         assert!(config.isolation_mode);
         assert_eq!(config.verbosity, Verbosity::Verbose);
     }

@@ -67,15 +67,15 @@ fn handle_plumbing_commands(
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<Option<()>> {
-    if args.show_commit_msg {
+    if args.commit_display.show_commit_msg {
         handle_show_commit_msg()?;
         return Ok(Some(()));
     }
-    if args.apply_commit {
+    if args.commit_plumbing.apply_commit {
         handle_apply_commit(logger, colors)?;
         return Ok(Some(()));
     }
-    if args.reset_start_commit {
+    if args.commit_display.reset_start_commit {
         require_git_repo()?;
         let repo_root = get_repo_root()?;
         env::set_current_dir(&repo_root)?;
@@ -178,7 +178,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Handle --diagnose
-    if args.diagnose {
+    if args.recovery.diagnose {
         handle_diagnose(colors, &config, &registry, &config_path, &config_sources);
         return Ok(());
     }
@@ -229,7 +229,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     logger = logger.with_log_file(".agent/logs/pipeline.log");
 
     // Handle --dry-run
-    if args.dry_run {
+    if args.recovery.dry_run {
         return handle_dry_run(
             &logger,
             colors,
@@ -241,7 +241,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     }
 
     // Handle --generate-commit-msg
-    if args.generate_commit_msg {
+    if args.commit_plumbing.generate_commit_msg {
         return handle_generate_commit_msg(
             &config,
             &registry,
@@ -272,15 +272,15 @@ pub fn run(args: Args) -> anyhow::Result<()> {
 ///
 /// Returns `true` if a listing command was handled and we should exit.
 fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors) -> bool {
-    if args.list_agents {
+    if args.agent_list.list_agents {
         handle_list_agents(registry);
         return true;
     }
-    if args.list_available_agents {
+    if args.agent_list.list_available_agents {
         handle_list_available_agents(registry);
         return true;
     }
-    if args.list_providers {
+    if args.provider_list.list_providers {
         handle_list_providers(colors);
         return true;
     }
@@ -456,7 +456,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     );
 
     setup_prompt_protection(
-        ctx.config.strict_validation,
+        ctx.config.behavior.strict_validation,
         ctx.args.interactive,
         &ctx.logger,
     )?;
@@ -543,7 +543,8 @@ fn run_development(
         _ => 1,
     };
 
-    let resuming_from_development = args.resume && resume_phase == Some(PipelinePhase::Development);
+    let resuming_from_development =
+        args.recovery.resume && resume_phase == Some(PipelinePhase::Development);
     let development_result = run_development_phase(ctx, start_iter, resuming_from_development)?;
 
     if development_result.had_errors {
@@ -629,7 +630,7 @@ fn run_final_validation(
         return Ok(());
     }
 
-    if ctx.config.checkpoint_enabled {
+    if ctx.config.features.checkpoint_enabled {
         let _ = save_checkpoint(&PipelineCheckpoint::new(
             PipelinePhase::FinalValidation,
             ctx.config.developer_iters,

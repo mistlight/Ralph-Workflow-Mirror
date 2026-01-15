@@ -89,7 +89,11 @@ exit 0
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
     let config = Config {
-        interactive: false,
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
         verbosity: Verbosity::Quiet,
         prompt_path: dir.path().join("prompt.txt"),
         ..Config::default()
@@ -331,7 +335,11 @@ exit 0
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
     let config = Config {
-        interactive: false,
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
         verbosity: Verbosity::Quiet,
         prompt_path: dir.path().join("prompt.txt"),
         ..Config::default()

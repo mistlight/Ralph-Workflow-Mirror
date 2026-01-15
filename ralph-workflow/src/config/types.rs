@@ -143,6 +143,31 @@ impl Verbosity {
     }
 }
 
+/// Behavioral flags for Ralph configuration.
+///
+/// Groups user interaction and validation-related boolean settings.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BehavioralFlags {
+    /// Interactive mode (keep agent in foreground)
+    pub(crate) interactive: bool,
+    /// Whether to auto-detect project stack for review guidelines
+    pub(crate) auto_detect_stack: bool,
+    /// Whether to run strict PROMPT.md validation
+    pub(crate) strict_validation: bool,
+}
+
+/// Feature flags for Ralph configuration.
+///
+/// Groups optional feature toggle settings.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FeatureFlags {
+    /// Whether to enable checkpoint/resume functionality
+    pub(crate) checkpoint_enabled: bool,
+    /// Force universal review prompt for all agents (default: auto-detect)
+    /// When true, the universal/simplified prompt is always used for review
+    pub(crate) force_universal_prompt: bool,
+}
+
 /// Ralph configuration.
 ///
 /// This struct holds all configuration options for Ralph, populated from
@@ -173,9 +198,8 @@ pub struct Config {
     /// JSON parser override for the reviewer agent (claude, codex, gemini, opencode, generic)
     /// When set, overrides the agent's configured `json_parser` setting
     pub(crate) reviewer_json_parser: Option<String>,
-    /// Force universal review prompt for all agents (default: auto-detect)
-    /// When true, the universal/simplified prompt is always used for review
-    pub(crate) force_universal_prompt: bool,
+    /// Feature flags (checkpoint, universal prompt)
+    pub(crate) features: FeatureFlags,
     /// Number of developer iterations
     pub(crate) developer_iters: u32,
     /// Number of reviewer re-review passes after fix
@@ -184,8 +208,8 @@ pub struct Config {
     pub(crate) fast_check_cmd: Option<String>,
     /// Full check command (optional)
     pub(crate) full_check_cmd: Option<String>,
-    /// Interactive mode (keep agent in foreground)
-    pub(crate) interactive: bool,
+    /// Behavioral flags (interactive, auto-detect, strict validation)
+    pub(crate) behavior: BehavioralFlags,
     /// Path to save last prompt
     pub(crate) prompt_path: PathBuf,
     /// Developer context level (0=minimal, 1=normal)
@@ -196,12 +220,6 @@ pub struct Config {
     pub(crate) verbosity: Verbosity,
     /// Commit message
     pub(crate) commit_msg: String,
-    /// Whether to auto-detect project stack for review guidelines
-    pub(crate) auto_detect_stack: bool,
-    /// Whether to enable checkpoint/resume functionality
-    pub(crate) checkpoint_enabled: bool,
-    /// Whether to run strict PROMPT.md validation
-    pub(crate) strict_validation: bool,
     /// Review depth level (standard, comprehensive, security, incremental)
     pub(crate) review_depth: ReviewDepth,
     /// Isolation mode: when true, NOTES.md and ISSUES.md are not generated and
