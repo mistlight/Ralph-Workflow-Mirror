@@ -218,184 +218,192 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
         }
     }
 
-    // Agent selection
-    if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT") {
+    /// Parse a non-empty string environment variable with warnings.
+    fn parse_string_env(name: &str, warnings: &mut Vec<String>) -> Option<String> {
+        let val = env::var(name).ok()?;
         let trimmed = val.trim();
         if trimmed.is_empty() {
-            warnings.push("Env var RALPH_DEVELOPER_AGENT is empty; ignoring.".to_string());
+            warnings.push(format!("Env var {name} is empty; ignoring."));
+            None
         } else {
-            config.developer_agent = Some(trimmed.to_string());
+            Some(trimmed.to_string())
         }
-    } else if let Ok(val) = env::var("RALPH_DRIVER_AGENT") {
+    }
+
+    /// Parse an optional string environment variable (no warning if empty).
+    fn parse_optional_string_env(name: &str) -> Option<String> {
+        let val = env::var(name).ok()?;
         let trimmed = val.trim();
         if trimmed.is_empty() {
-            warnings.push("Env var RALPH_DRIVER_AGENT is empty; ignoring.".to_string());
+            None
         } else {
-            config.developer_agent = Some(trimmed.to_string());
-        }
-    }
-    if let Ok(val) = env::var("RALPH_REVIEWER_AGENT") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_REVIEWER_AGENT is empty; ignoring.".to_string());
-        } else {
-            config.reviewer_agent = Some(trimmed.to_string());
+            Some(trimmed.to_string())
         }
     }
 
-    // Command overrides
-    if let Ok(val) = env::var("RALPH_DEVELOPER_CMD") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_DEVELOPER_CMD is empty; ignoring.".to_string());
-        } else {
-            config.developer_cmd = Some(trimmed.to_string());
-        }
+    /// Parse a string environment variable into a PathBuf.
+    fn parse_path_env(name: &str) -> Option<PathBuf> {
+        env::var(name).ok().map(PathBuf::from)
     }
-    if let Ok(val) = env::var("RALPH_REVIEWER_CMD") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_REVIEWER_CMD is empty; ignoring.".to_string());
-        } else {
-            config.reviewer_cmd = Some(trimmed.to_string());
+
+    /// Apply agent selection environment variables.
+    fn apply_agent_vars(config: &mut Config, warnings: &mut Vec<String>) {
+        // Developer agent (supports both legacy and modern names)
+        if let Some(agent) = parse_string_env("RALPH_DEVELOPER_AGENT", warnings) {
+            config.developer_agent = Some(agent);
+        } else if let Some(agent) = parse_string_env("RALPH_DRIVER_AGENT", warnings) {
+            config.developer_agent = Some(agent);
+        }
+        if let Some(agent) = parse_string_env("RALPH_REVIEWER_AGENT", warnings) {
+            config.reviewer_agent = Some(agent);
         }
     }
 
-    // Model overrides
-    if let Ok(val) = env::var("RALPH_DEVELOPER_MODEL") {
-        config.developer_model = Some(val);
-    }
-    if let Ok(val) = env::var("RALPH_REVIEWER_MODEL") {
-        config.reviewer_model = Some(val);
-    }
-
-    // Provider overrides
-    if let Ok(val) = env::var("RALPH_DEVELOPER_PROVIDER") {
-        config.developer_provider = Some(val);
-    }
-    if let Ok(val) = env::var("RALPH_REVIEWER_PROVIDER") {
-        config.reviewer_provider = Some(val);
-    }
-
-    // JSON parser override for reviewer (useful for testing different parsers)
-    if let Ok(val) = env::var("RALPH_REVIEWER_JSON_PARSER") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.reviewer_json_parser = Some(trimmed.to_string());
+    /// Apply command override environment variables.
+    fn apply_command_vars(config: &mut Config, warnings: &mut Vec<String>) {
+        if let Some(cmd) = parse_string_env("RALPH_DEVELOPER_CMD", warnings) {
+            config.developer_cmd = Some(cmd);
+        }
+        if let Some(cmd) = parse_string_env("RALPH_REVIEWER_CMD", warnings) {
+            config.reviewer_cmd = Some(cmd);
         }
     }
 
-    // Force universal review prompt (useful for problematic agents)
-    if let Ok(val) = env::var("RALPH_REVIEWER_UNIVERSAL_PROMPT") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.force_universal_prompt = b;
+    /// Apply model override environment variables.
+    fn apply_model_vars(config: &mut Config) {
+        if let Some(model) = parse_optional_string_env("RALPH_DEVELOPER_MODEL") {
+            config.developer_model = Some(model);
+        }
+        if let Some(model) = parse_optional_string_env("RALPH_REVIEWER_MODEL") {
+            config.reviewer_model = Some(model);
         }
     }
 
-    // Iteration counts
-    if let Some(n) = parse_u32_env("RALPH_DEVELOPER_ITERS", warnings, MAX_ITERS) {
-        config.developer_iters = n;
-    }
-    if let Some(n) = parse_u32_env("RALPH_REVIEWER_REVIEWS", warnings, MAX_REVIEWS) {
-        config.reviewer_reviews = n;
-    }
-
-    // Check commands
-    if let Ok(val) = env::var("FAST_CHECK_CMD") {
-        if !val.is_empty() {
-            config.fast_check_cmd = Some(val);
+    /// Apply provider override environment variables.
+    fn apply_provider_vars(config: &mut Config) {
+        if let Some(provider) = parse_optional_string_env("RALPH_DEVELOPER_PROVIDER") {
+            config.developer_provider = Some(provider);
         }
-    }
-    if let Ok(val) = env::var("FULL_CHECK_CMD") {
-        if !val.is_empty() {
-            config.full_check_cmd = Some(val);
+        if let Some(provider) = parse_optional_string_env("RALPH_REVIEWER_PROVIDER") {
+            config.reviewer_provider = Some(provider);
         }
     }
 
-    // Boolean flags
-    if let Ok(val) = env::var("RALPH_INTERACTIVE") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.interactive = b;
+    /// Apply check command environment variables.
+    fn apply_check_vars(config: &mut Config) {
+        if let Some(cmd) = parse_optional_string_env("FAST_CHECK_CMD") {
+            config.fast_check_cmd = Some(cmd);
         }
-    }
-    if let Ok(val) = env::var("RALPH_AUTO_DETECT_STACK") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.auto_detect_stack = b;
-        }
-    }
-    if let Ok(val) = env::var("RALPH_CHECKPOINT_ENABLED") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.checkpoint_enabled = b;
-        }
-    }
-    if let Ok(val) = env::var("RALPH_STRICT_VALIDATION") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.strict_validation = b;
-        }
-    }
-    if let Ok(val) = env::var("RALPH_ISOLATION_MODE") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.isolation_mode = b;
+        if let Some(cmd) = parse_optional_string_env("FULL_CHECK_CMD") {
+            config.full_check_cmd = Some(cmd);
         }
     }
 
-    // Verbosity
-    if let Ok(val) = env::var("RALPH_VERBOSITY") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            // ignore
-        } else if let Ok(n) = trimmed.parse::<u8>() {
-            if n > 4 {
+    /// Apply boolean flag environment variables.
+    fn apply_bool_vars(config: &mut Config, _warnings: &mut Vec<String>) {
+        let apply_bool = |name: &str, target: &mut bool| {
+            if let Ok(val) = env::var(name) {
+                if let Some(b) = parse_env_bool(&val) {
+                    *target = b;
+                }
+            }
+        };
+
+        apply_bool("RALPH_REVIEWER_UNIVERSAL_PROMPT", &mut config.force_universal_prompt);
+        apply_bool("RALPH_INTERACTIVE", &mut config.interactive);
+        apply_bool("RALPH_AUTO_DETECT_STACK", &mut config.auto_detect_stack);
+        apply_bool("RALPH_CHECKPOINT_ENABLED", &mut config.checkpoint_enabled);
+        apply_bool("RALPH_STRICT_VALIDATION", &mut config.strict_validation);
+        apply_bool("RALPH_ISOLATION_MODE", &mut config.isolation_mode);
+    }
+
+    /// Apply iteration count environment variables.
+    fn apply_iter_vars(config: &mut Config, warnings: &mut Vec<String>) {
+        if let Some(n) = parse_u32_env("RALPH_DEVELOPER_ITERS", warnings, MAX_ITERS) {
+            config.developer_iters = n;
+        }
+        if let Some(n) = parse_u32_env("RALPH_REVIEWER_REVIEWS", warnings, MAX_REVIEWS) {
+            config.reviewer_reviews = n;
+        }
+    }
+
+    /// Apply verbosity environment variable.
+    fn apply_verbosity_var(config: &mut Config, warnings: &mut Vec<String>) {
+        if let Ok(val) = env::var("RALPH_VERBOSITY") {
+            let trimmed = val.trim();
+            if !trimmed.is_empty() {
+                if let Ok(n) = trimmed.parse::<u8>() {
+                    if n > 4 {
+                        warnings.push(format!(
+                            "Env var RALPH_VERBOSITY={n} is out of range; clamping to 4 (debug)."
+                        ));
+                    }
+                    config.verbosity = Verbosity::from(n.min(4));
+                } else {
+                    warnings.push(format!(
+                        "Env var RALPH_VERBOSITY='{trimmed}' is not a valid number; ignoring."
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Apply review depth environment variable.
+    fn apply_review_depth_var(config: &mut Config, warnings: &mut Vec<String>) {
+        if let Ok(val) = env::var("RALPH_REVIEW_DEPTH") {
+            if let Some(depth) = ReviewDepth::from_str(&val) {
+                config.review_depth = depth;
+            } else if !val.trim().is_empty() {
                 warnings.push(format!(
-                    "Env var RALPH_VERBOSITY={n} is out of range; clamping to 4 (debug)."
+                    "Env var RALPH_REVIEW_DEPTH='{}' is invalid; ignoring.",
+                    val.trim()
                 ));
             }
-            config.verbosity = Verbosity::from(n.min(4));
-        } else {
-            warnings.push(format!(
-                "Env var RALPH_VERBOSITY='{trimmed}' is not a valid number; ignoring."
-            ));
         }
     }
 
-    // Review depth
-    if let Ok(val) = env::var("RALPH_REVIEW_DEPTH") {
-        if let Some(depth) = ReviewDepth::from_str(&val) {
-            config.review_depth = depth;
-        } else if !val.trim().is_empty() {
-            warnings.push(format!(
-                "Env var RALPH_REVIEW_DEPTH='{}' is invalid; ignoring.",
-                val.trim()
-            ));
+    /// Apply context level environment variables.
+    fn apply_context_vars(config: &mut Config, warnings: &mut Vec<String>) {
+        if let Some(n) = parse_u8_env("RALPH_DEVELOPER_CONTEXT", warnings, MAX_CONTEXT) {
+            config.developer_context = n;
+        }
+        if let Some(n) = parse_u8_env("RALPH_REVIEWER_CONTEXT", warnings, MAX_CONTEXT) {
+            config.reviewer_context = n;
         }
     }
 
-    // Paths
-    if let Ok(val) = env::var("RALPH_PROMPT_PATH") {
-        config.prompt_path = PathBuf::from(val);
-    }
-
-    // Context levels
-    if let Some(n) = parse_u8_env("RALPH_DEVELOPER_CONTEXT", warnings, MAX_CONTEXT) {
-        config.developer_context = n;
-    }
-    if let Some(n) = parse_u8_env("RALPH_REVIEWER_CONTEXT", warnings, MAX_CONTEXT) {
-        config.reviewer_context = n;
-    }
-
-    // Git user identity
-    if let Ok(val) = env::var("RALPH_GIT_USER_NAME") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.git_user_name = Some(trimmed.to_string());
+    /// Apply git user identity environment variables.
+    fn apply_git_vars(config: &mut Config) {
+        if let Some(name) = parse_optional_string_env("RALPH_GIT_USER_NAME") {
+            config.git_user_name = Some(name);
+        }
+        if let Some(email) = parse_optional_string_env("RALPH_GIT_USER_EMAIL") {
+            config.git_user_email = Some(email);
         }
     }
-    if let Ok(val) = env::var("RALPH_GIT_USER_EMAIL") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.git_user_email = Some(trimmed.to_string());
-        }
+
+    // Apply all environment variable groups
+    apply_agent_vars(&mut config, warnings);
+    apply_command_vars(&mut config, warnings);
+    apply_model_vars(&mut config);
+    apply_provider_vars(&mut config);
+
+    if let Some(parser) = parse_optional_string_env("RALPH_REVIEWER_JSON_PARSER") {
+        config.reviewer_json_parser = Some(parser);
     }
+
+    apply_bool_vars(&mut config, warnings);
+    apply_iter_vars(&mut config, warnings);
+    apply_check_vars(&mut config);
+    apply_verbosity_var(&mut config, warnings);
+    apply_review_depth_var(&mut config, warnings);
+
+    if let Some(path) = parse_path_env("RALPH_PROMPT_PATH") {
+        config.prompt_path = path;
+    }
+
+    apply_context_vars(&mut config, warnings);
+    apply_git_vars(&mut config);
 
     config
 }
@@ -427,7 +435,7 @@ fn check_legacy_configs(warnings: &mut Vec<String>) {
 
 /// Check if the unified config file exists.
 pub fn unified_config_exists() -> bool {
-    unified_config_path().is_some_and(|p| p.exists())
+    unified_config_path().map_or(false, |p| p.exists())
 }
 
 #[cfg(test)]
