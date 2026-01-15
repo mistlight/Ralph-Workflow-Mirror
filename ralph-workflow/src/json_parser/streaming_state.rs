@@ -92,6 +92,8 @@
 //! session.on_message_stop();
 //! ```
 
+use crate::json_parser::delta_display::{PrefixDebouncer, StreamingConfig};
+use crate::json_parser::health::StreamingQualityMetrics;
 use crate::json_parser::types::ContentType;
 use std::collections::{HashMap, HashSet};
 
@@ -217,13 +219,25 @@ pub struct StreamingSession {
     /// content may be cleared (e.g., repeated `ContentBlockStart` for same index).
     /// Cleared on `on_message_start` to ensure fresh state for each message.
     output_started_for_key: HashSet<(ContentType, String)>,
+    /// Prefix debouncer for controlling prefix display frequency during streaming.
+    prefix_debouncer: PrefixDebouncer,
 }
 
 impl StreamingSession {
     /// Create a new streaming session.
     pub fn new() -> Self {
+        Self::with_config(StreamingConfig::default())
+    }
+
+    /// Create a new streaming session with custom configuration.
+    ///
+    /// # Arguments
+    /// * `config` - Configuration for streaming display behavior
+    pub fn with_config(config: StreamingConfig) -> Self {
+        let prefix_debouncer = PrefixDebouncer::new(config);
         Self {
             max_delta_history: 10,
+            prefix_debouncer,
             ..Default::default()
         }
     }
@@ -256,7 +270,7 @@ impl StreamingSession {
             // This is a known protocol quirk, not an error. We preserve
             // output_started_for_key to prevent prefix spam on subsequent deltas.
 
-            // Preserve output_started_for_key to prevent prefix spam
+            // Preserve output_started_for_key to maintain state
             let preserved_output_started = self.output_started_for_key.clone();
 
             self.state = StreamingState::Idle;
@@ -265,6 +279,8 @@ impl StreamingSession {
             self.accumulated.clear();
             self.key_order.clear();
             self.delta_sizes.clear();
+            // Note: We don't reset prefix_debouncer for mid-stream restarts to maintain
+            // consistent prefix display behavior
 
             // Restore preserved state
             self.output_started_for_key = preserved_output_started;
@@ -277,6 +293,8 @@ impl StreamingSession {
             self.key_order.clear();
             self.delta_sizes.clear();
             self.output_started_for_key.clear();
+            // Reset prefix debouncer for fresh message
+            self.prefix_debouncer.reset();
         }
         // Note: We don't reset current_message_id here - it's set by a separate method
         // This allows for more flexible message ID handling
@@ -527,8 +545,10 @@ impl StreamingSession {
             self.key_order.push(content_key);
         }
 
-        // Show prefix only on the very first delta
-        is_first
+        // Determine whether to show prefix using the debouncer.
+        // The debouncer respects the "first delta" logic and adds optional
+        // count-based or time-based debouncing for subsequent deltas.
+        self.prefix_debouncer.should_show_prefix(is_first)
     }
 
     /// Process a thinking delta and return whether prefix should be shown.
@@ -580,7 +600,10 @@ impl StreamingSession {
             self.key_order.push(content_key);
         }
 
-        is_first
+        // Determine whether to show prefix using the debouncer.
+        // The debouncer respects the "first delta" logic and adds optional
+        // count-based or time-based debouncing for subsequent deltas.
+        self.prefix_debouncer.should_show_prefix(is_first)
     }
 
     /// Process a tool input delta.
@@ -772,6 +795,20 @@ impl StreamingSession {
     pub fn get_delta_from_snapshot<'a>(&self, text: &'a str, key: &str) -> Result<&'a str, String> {
         let delta_len = self.extract_delta_from_snapshot(text, key)?;
         Ok(&text[delta_len..])
+    }
+
+    /// Get streaming quality metrics for this session.
+    ///
+    /// Returns metrics about delta sizes and streaming patterns collected
+    /// during the session. This is useful for debugging and analyzing
+    /// streaming behavior.
+    ///
+    /// # Returns
+    /// Aggregated metrics across all content types and keys.
+    pub fn get_streaming_quality_metrics(&self) -> StreamingQualityMetrics {
+        // Flatten all delta sizes across all content types and keys
+        let all_sizes = self.delta_sizes.values().flat_map(|v| v.iter().copied());
+        StreamingQualityMetrics::from_sizes(all_sizes)
     }
 }
 
@@ -1705,6 +1742,65 @@ mod tests {
         assert!(
             !had_output,
             "Message without content should report had_output=false"
+        );
+    }
+
+    // Tests for streaming quality metrics
+
+    #[test]
+    fn test_get_streaming_quality_metrics_empty() {
+        let session = StreamingSession::new();
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(metrics.total_deltas, 0);
+    }
+
+    #[test]
+    fn test_get_streaming_quality_metrics_with_deltas() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Add some deltas of different sizes
+        session.on_text_delta(0, "Hello"); // 5 bytes
+        session.on_text_delta(0, " World!"); // 7 bytes
+        session.on_text_delta(0, "!"); // 1 byte
+
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(metrics.total_deltas, 3);
+        assert_eq!(metrics.min_delta_size, 1);
+        assert_eq!(metrics.max_delta_size, 7);
+    }
+
+    #[test]
+    fn test_get_streaming_quality_metrics_multiple_indices() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Add deltas to different indices (text content only, as that's what is tracked)
+        session.on_text_delta(0, "Hello"); // 5 bytes
+        session.on_text_delta(1, "World!"); // 6 bytes
+
+        let metrics = session.get_streaming_quality_metrics();
+        // Should aggregate across all indices
+        assert_eq!(metrics.total_deltas, 2);
+    }
+
+    #[test]
+    fn test_get_streaming_quality_metrics_reset_on_message_start() {
+        let mut session = StreamingSession::new();
+
+        // First message
+        session.on_message_start();
+        session.on_text_delta(0, "First");
+        session.on_message_stop();
+
+        // Reset for second message
+        session.on_message_start();
+
+        // Metrics should be cleared
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(
+            metrics.total_deltas, 0,
+            "Metrics should reset on new message"
         );
     }
 }
