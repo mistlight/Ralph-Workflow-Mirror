@@ -17,10 +17,7 @@ use crate::files::llm_output_extraction::{
     try_extract_structured_commit, try_salvage_commit_message, validate_commit_message,
     CommitExtractionResult, OutputFormat,
 };
-use crate::git_helpers::{
-    git_add_all, git_commit, restore_agent_commit_marker, temporarily_remove_agent_commit_marker,
-    CommitResultFallback,
-};
+use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
@@ -30,7 +27,7 @@ use crate::prompts::{
 };
 use std::fmt;
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::Read;
 
 /// Maximum safe prompt size in bytes before pre-truncation.
 ///
@@ -596,7 +593,7 @@ pub fn generate_commit_message(
         });
     }
 
-    // If all strategies failed with TokenExhausted error, try with truncated diff
+    // If all strategies failed with TokenExhausted error, try with progressively truncated diff
     // Skip if we already pre-truncated (avoid double truncation)
     if last_extraction
         == Some(CommitExtractionResult::AgentError(
@@ -609,22 +606,86 @@ pub fn generate_commit_message(
             .warn("TokenExhausted detected: All agents failed due to token limits.");
         runtime
             .logger
-            .warn("Retrying with truncated diff (50KB limit)...");
+            .warn("Attempting progressive diff truncation...");
 
-        let truncated_diff = truncate_diff_if_large(diff, 50_000); // 50KB limit
+        // Progressive truncation stages: 50KB -> 25KB -> 10KB -> file-list-only -> emergency
+        let truncation_stages = [
+            (50_000, "50KB"),
+            (25_000, "25KB"),
+            (10_000, "10KB"),
+            (1_000, "file-list-only"),
+        ];
 
-        // Single retry with Emergency prompt + truncated diff
-        let prompt = prompt_emergency_commit(&truncated_diff);
+        for (size_kb, label) in truncation_stages {
+            runtime.logger.warn(&format!(
+                "Truncation retry: Trying {} limit ({})...",
+                label,
+                size_kb / 1024
+            ));
 
-        runtime.logger.info(&format!(
-            "Truncated diff attempt: prompt size {} KB",
-            prompt.len() / 1024
-        ));
+            let truncated_diff = truncate_diff_if_large(diff, size_kb);
+            let prompt = prompt_emergency_commit(&truncated_diff);
+
+            runtime.logger.info(&format!(
+                "Truncated diff attempt ({}): prompt size {} KB",
+                label,
+                prompt.len() / 1024
+            ));
+
+            let exit_code = run_with_fallback(
+                AgentRole::Commit,
+                &format!("generate commit message (truncated {label})"),
+                &prompt,
+                log_dir,
+                runtime,
+                registry,
+                commit_agent,
+            )?;
+
+            if exit_code == 0 {
+                if let Ok(Some(extraction)) = extract_commit_message_from_logs(
+                    log_dir,
+                    &truncated_diff,
+                    commit_agent,
+                    runtime.logger,
+                ) {
+                    // Check if we got a valid result (not an agent error)
+                    if extraction.is_agent_error() {
+                        // TokenExhausted - continue to next truncation stage
+                        runtime.logger.warn(&format!(
+                            "{label} truncation still hit token limits, trying smaller size..."
+                        ));
+                        continue;
+                    }
+
+                    // Not an agent error - try to use the message
+                    let message = extraction.into_message();
+                    if !message.is_empty() {
+                        runtime.logger.info(&format!(
+                            "Successfully generated commit message with {label} truncation"
+                        ));
+                        return Ok(CommitMessageResult {
+                            message,
+                            success: true,
+                            _log_path: log_file,
+                        });
+                    }
+                    // Empty message - break out and try fallback
+                    break;
+                }
+            }
+        }
+
+        // All truncation stages failed - try emergency no-diff as last resort
+        runtime
+            .logger
+            .warn("All truncation stages failed. Trying emergency no-diff prompt...");
+        let no_diff_prompt = prompt_emergency_no_diff_commit(&working_diff);
 
         let exit_code = run_with_fallback(
             AgentRole::Commit,
-            "generate commit message (truncated diff)",
-            &prompt,
+            "generate commit message (emergency no-diff)",
+            &no_diff_prompt,
             log_dir,
             runtime,
             registry,
@@ -634,11 +695,10 @@ pub fn generate_commit_message(
         if exit_code == 0 {
             if let Ok(Some(extraction)) = extract_commit_message_from_logs(
                 log_dir,
-                &truncated_diff,
+                &working_diff,
                 commit_agent,
                 runtime.logger,
             ) {
-                // Check if we got a valid result (not an agent error)
                 if !extraction.is_agent_error() {
                     let message = extraction.into_message();
                     if !message.is_empty() {
@@ -651,17 +711,78 @@ pub fn generate_commit_message(
                 }
             }
         }
-        // If truncated diff retry also failed, fall through to generate fallback from diff
+        // If even emergency no-diff failed, fall through to generate fallback from diff
+        runtime
+            .logger
+            .warn("Emergency no-diff retry failed. Generating fallback from diff...");
     } else if last_extraction
         == Some(CommitExtractionResult::AgentError(
             AgentErrorKind::TokenExhausted,
         ))
         && diff_was_pre_truncated
     {
-        // Already pre-truncated and still got TokenExhausted - generate fallback directly
-        runtime.logger.warn(
-            "Already pre-truncated but still hit token limits. Generating fallback from diff...",
-        );
+        // Already pre-truncated and still got TokenExhausted - try progressive truncation
+        runtime
+            .logger
+            .warn("Already pre-truncated but still hit token limits. Trying further truncation...");
+
+        // Start with smaller sizes since we already pre-truncated
+        let further_truncation_stages = [
+            (25_000, "25KB"),
+            (10_000, "10KB"),
+            (1_000, "file-list-only"),
+        ];
+
+        for (size_kb, label) in further_truncation_stages {
+            runtime.logger.warn(&format!(
+                "Further truncation: Trying {} limit ({})...",
+                label,
+                size_kb / 1024
+            ));
+
+            let truncated_diff = truncate_diff_if_large(diff, size_kb);
+            let prompt = prompt_emergency_commit(&truncated_diff);
+
+            let exit_code = run_with_fallback(
+                AgentRole::Commit,
+                &format!("generate commit message (further truncated {})", label),
+                &prompt,
+                log_dir,
+                runtime,
+                registry,
+                commit_agent,
+            )?;
+
+            if exit_code == 0 {
+                if let Ok(Some(extraction)) = extract_commit_message_from_logs(
+                    log_dir,
+                    &truncated_diff,
+                    commit_agent,
+                    runtime.logger,
+                ) {
+                    if extraction.is_agent_error() {
+                        // Still TokenExhausted - continue to next stage
+                        continue;
+                    }
+                    // Not an agent error - try to use the message
+                    let message = extraction.into_message();
+                    if !message.is_empty() {
+                        return Ok(CommitMessageResult {
+                            message,
+                            success: true,
+                            _log_path: log_file,
+                        });
+                    }
+                    // Empty message - break out
+                    break;
+                }
+            }
+        }
+
+        // All further truncation failed - generate fallback directly
+        runtime
+            .logger
+            .warn("All further truncation stages failed. Generating fallback from diff...");
         let fallback = generate_fallback_commit_message(diff);
         return Ok(CommitMessageResult {
             message: fallback,
@@ -670,47 +791,38 @@ pub fn generate_commit_message(
         });
     }
 
-    // Step 5: Last-resort manual retry option
-    // When all automated recovery fails, offer the user a chance to manually retry
-    // by temporarily removing the .no_agent_commit hook
+    // Step 5: Last-resort - save prompt for manual commit and provide clear instructions
+    // When all automated recovery fails, provide helpful guidance for manual retry
     runtime.logger.warn("");
     runtime.logger.error(&format!(
-        "All automated recovery exhausted. All {} prompt variants failed.",
+        "All automated recovery exhausted. All {} prompt variants and truncation stages failed.",
         CommitRetryStrategy::total_stages()
     ));
     runtime.logger.warn("");
     runtime
         .logger
-        .warn("You can manually run your preferred agent with the diff.");
-    runtime.logger.warn("");
+        .warn("To manually commit with your preferred agent:");
 
-    // Temporarily remove the agent commit marker to allow manual git operations
-    let marker_was_present = temporarily_remove_agent_commit_marker().unwrap_or(false);
-
-    if marker_was_present {
+    // Save the last prompt to a file for manual use
+    let last_prompt_path = ".agent/last_prompt.txt";
+    let last_prompt = prompt_emergency_no_diff_commit(diff);
+    if fs::write(last_prompt_path, &last_prompt).is_ok() {
         runtime
             .logger
-            .info("Temporarily removed .no_agent_commit marker.");
+            .warn(&format!("  1. Review the prompt: {}", last_prompt_path));
     }
-
+    runtime.logger.warn("  2. Run your preferred agent:");
+    runtime.logger.warn(&format!(
+        "     cat {} | your-agent --output json",
+        last_prompt_path
+    ));
     runtime
         .logger
-        .info("You can now run git commit manually with your preferred agent.");
-    runtime
-        .logger
-        .info("Press Enter when ready to continue with the automated fallback...");
+        .warn("  3. Extract the commit message and run:");
+    runtime.logger.warn("     git commit -m \"<your message>\"");
+    runtime.logger.warn("");
 
-    // Wait for user input
-    let mut user_input = String::new();
-    let _ = io::stdin().read_line(&mut user_input);
-
-    // Restore the agent commit marker
-    if marker_was_present {
-        let _ = restore_agent_commit_marker();
-        runtime.logger.info("Restored .no_agent_commit marker.");
-    }
-
-    // Complete failure - no valid message could be generated
+    // Return failure but with helpful context
     let error_msg = last_error.as_ref().map_or_else(
         || "Failed to generate commit message".to_string(),
         std::string::ToString::to_string,

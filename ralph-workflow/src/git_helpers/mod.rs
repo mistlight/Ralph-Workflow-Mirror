@@ -27,8 +27,7 @@ pub use repo::{
 pub use start_commit::{reset_start_commit, save_start_commit};
 pub use wrapper::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
-    restore_agent_commit_marker, start_agent_phase, temporarily_remove_agent_commit_marker,
-    GitHelpers,
+    start_agent_phase, GitHelpers,
 };
 
 #[cfg(test)]
