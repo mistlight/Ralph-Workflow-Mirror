@@ -10,16 +10,26 @@
 //!
 //! 1. **Accumulates** text deltas from each chunk into a buffer
 //! 2. **Displays** the accumulated text after each chunk
-//! 3. **Uses carriage return (`\r`)** to overwrite the previous line, creating an
-//!    updating effect that shows the content building up in real-time
-//! 4. **Shows prefix** on the first `item.started` event and again on `item.completed`
+//! 3. **Uses carriage return (`\r`) and line clearing (`\x1b[2K`)** to rewrite the entire line,
+//!    creating an updating effect that shows the content building up in real-time
+//! 4. **Shows prefix on every delta**, rewriting the entire line each time (industry standard)
 //!
 //! Example output sequence for streaming "Hello World" in two chunks:
 //! ```text
 //! [Codex] Hello\r          (first chunk with prefix, no newline)
-//! Hello World\r              (second chunk overwrites with accumulated text)
+//! \x1b[2K\r[Codex] Hello World\r  (second chunk clears line, rewrites with accumulated)
 //! [Codex] Hello World\n     (item.completed shows final result with prefix)
 //! ```
+//!
+//! # Single-Line Pattern
+//!
+//! The renderer uses a single-line pattern with carriage return for in-place updates.
+//! This is the industry standard for streaming CLIs (used by Rich, Ink, Bubble Tea).
+//!
+//! Each delta rewrites the entire line with prefix, ensuring that:
+//! - The user always sees the prefix
+//! - Content updates in-place without visual artifacts
+//! - Terminal state is clean and predictable
 
 #![expect(clippy::too_many_lines)]
 use crate::common::truncate_text;
