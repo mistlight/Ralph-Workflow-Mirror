@@ -68,8 +68,8 @@ use super::config::{
     CcsEnvVarsError,
 };
 use super::parser::JsonParserType;
+use crate::common::split_command;
 use crate::config::{CcsAliasConfig, CcsConfig};
-use crate::utils::split_command;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -425,14 +425,13 @@ fn resolve_ccs_flags<'a>(
 /// This function automatically loads environment variables for the resolved CCS profile using
 /// CCS config mappings (`~/.ccs/config.json` / `~/.ccs/config.yaml`) and common settings file
 /// naming (`~/.ccs/{profile}.settings.json` / `~/.ccs/{profile}.setting.json`). This allows
-/// CCS aliases to use their configured credentials without requiring manual environment variable
-/// configuration, while avoiding hard-coded assumptions about CCS' internal schema.
-fn build_ccs_agent_config(
-    alias_config: &CcsAliasConfig,
-    defaults: &CcsConfig,
-    display_name: String,
-    alias_name: &str,
-) -> AgentConfig {
+/// Log CCS environment variables loading status (debug mode only).
+///
+/// Only logs whitelisted "safe" environment variable keys to prevent accidental
+/// leakage of sensitive credential values. Keys containing patterns like "token",
+/// "key", "secret", "password", "auth" are always filtered out regardless of
+/// their actual value, to protect against custom credential formats.
+fn log_ccs_env_vars_loaded(debug_mode: bool, alias_name: &str) -> AgentConfig {
     let debug_mode = std::env::var("RALPH_CCS_DEBUG").is_ok();
 
     let (env_vars, env_vars_loaded, profile_used_for_env) =
@@ -462,6 +461,69 @@ fn build_ccs_agent_config(
         env_vars,
         display_name: Some(display_name),
     }
+}
+
+/// CCS aliases to use their configured credentials without requiring manual environment variable
+/// configuration, while avoiding hard-coded assumptions about CCS' internal schema.
+fn build_ccs_agent_config(
+    alias_config: &CcsAliasConfig,
+    defaults: &CcsConfig,
+    display_name: String,
+    alias_name: &str,
+) -> AgentConfig {
+    // Check for CCS_DEBUG env var to enable detailed logging
+    let debug_mode = std::env::var("RALPH_CCS_DEBUG").is_ok();
+
+    let mut profile_used_for_env: Option<String> = None;
+    let (env_vars, env_vars_loaded) = if alias_name.is_empty() {
+        (HashMap::new(), false)
+    } else {
+        let original_cmd = alias_config.cmd.as_str();
+        let profile =
+            ccs_profile_from_command(original_cmd).unwrap_or_else(|| alias_name.to_string());
+        profile_used_for_env = Some(profile.clone());
+        match load_ccs_env_vars_with_guess(&profile) {
+            Ok((vars, guessed)) => {
+                if let Some(guessed) = guessed {
+                    eprintln!("Info: CCS profile '{profile}' not found; using '{guessed}'");
+                }
+                let loaded = !vars.is_empty();
+                (vars, loaded)
+            }
+            Err(err) => {
+                let suggestions = find_ccs_profile_suggestions(&profile);
+                eprintln!("Warning: failed to load CCS env vars for profile '{profile}': {err}");
+                if !suggestions.is_empty() {
+                    eprintln!("Tip: available/nearby CCS profiles:");
+                    for s in suggestions {
+                        eprintln!("  - {s}");
+                    }
+                }
+                (HashMap::new(), false)
+            }
+        }
+    };
+
+    // Debug logging: Show env vars loaded
+    log_ccs_env_vars_loaded(
+        debug_mode,
+        alias_name,
+        profile_used_for_env.as_ref(),
+        env_vars_loaded,
+        &env_vars,
+    );
+
+    // Determine the command to use
+    let cmd = resolve_ccs_command(
+        alias_config,
+        alias_name,
+        env_vars_loaded,
+        profile_used_for_env.as_ref(),
+        debug_mode,
+    );
+
+    // Build the final AgentConfig
+    build_ccs_config_from_flags(alias_config, defaults, cmd, env_vars, display_name)
 }
 
 /// CCS alias resolver that can be used by the agent registry.

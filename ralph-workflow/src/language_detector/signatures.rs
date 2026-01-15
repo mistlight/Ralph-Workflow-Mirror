@@ -131,7 +131,7 @@ fn collect_signature_files(root: &Path) -> SignatureFiles {
     result
 }
 
-/// Detection results accumulator
+/// Results container for framework detection.
 struct DetectionResults {
     frameworks: Vec<String>,
     test_frameworks: Vec<String>,
@@ -167,6 +167,27 @@ impl DetectionResults {
             combine_unique(&self.package_managers),
         )
     }
+}
+
+/// Detect signature files that indicate specific frameworks or package managers.
+///
+/// Returns a tuple of (frameworks, `test_framework`, `package_manager`).
+pub(super) fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String>, Option<String>) {
+    let signatures = collect_signature_files(root);
+    let mut results = DetectionResults::new();
+
+    detect_rust(&signatures, &mut results);
+    detect_python(&signatures, &mut results);
+    detect_javascript(&signatures, root, &mut results);
+    detect_go(&signatures, &mut results);
+    detect_ruby(&signatures, &mut results);
+    detect_java(&signatures, &mut results);
+    detect_php(&signatures, &mut results);
+    detect_dotnet(&signatures, &mut results);
+    detect_elixir(&signatures, &mut results);
+    detect_dart(&signatures, &mut results);
+
+    results.finish()
 }
 
 /// Detect Rust-specific frameworks and tools
@@ -461,25 +482,4 @@ fn detect_dart(signatures: &SignatureFiles, results: &mut DetectionResults) {
             results.push_test_framework("dart test");
         }
     }
-}
-
-/// Detect signature files that indicate specific frameworks or package managers.
-///
-/// Returns a tuple of (frameworks, `test_framework`, `package_manager`).
-pub(super) fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String>, Option<String>) {
-    let signatures = collect_signature_files(root);
-    let mut results = DetectionResults::new();
-
-    detect_rust(&signatures, &mut results);
-    detect_python(&signatures, &mut results);
-    detect_javascript(&signatures, root, &mut results);
-    detect_go(&signatures, &mut results);
-    detect_ruby(&signatures, &mut results);
-    detect_java(&signatures, &mut results);
-    detect_php(&signatures, &mut results);
-    detect_dotnet(&signatures, &mut results);
-    detect_elixir(&signatures, &mut results);
-    detect_dart(&signatures, &mut results);
-
-    results.finish()
 }

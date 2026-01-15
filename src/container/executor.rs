@@ -85,10 +85,7 @@ fn is_macho_binary(path: &Path) -> bool {
     };
 
     // Mach-O magic numbers (32-bit and 64-bit, both byte orders)
-    matches!(
-        magic,
-        0xFEED_FACE | 0xFEED_FACF | 0xCEFA_EDFE | 0xCFFA_EDFE
-    )
+    matches!(magic, 0xFEED_FACE | 0xFEED_FACF | 0xCEFA_EDFE | 0xCFFA_EDFE)
 }
 
 /// Check if an environment variable name is dangerous and should be filtered.
