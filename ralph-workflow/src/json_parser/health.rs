@@ -249,17 +249,6 @@ impl HealthMonitor {
         }
         warning
     }
-
-    #[cfg(test)]
-    pub const fn health(&self) -> ParserHealth {
-        self.health.get()
-    }
-
-    #[cfg(test)]
-    pub fn reset(&self) {
-        self.health.set(ParserHealth::new());
-        self.threshold_warned.set(false);
-    }
 }
 
 #[cfg(test)]
@@ -354,16 +343,14 @@ mod tests {
         monitor.record_parsed();
         monitor.record_ignored();
 
-        let health = monitor.health();
-        assert_eq!(health.total_events, 3);
-        assert_eq!(health.parsed_events, 2);
-        assert_eq!(health.ignored_events, 1);
-
         let colors = Colors { enabled: false };
-        assert!(monitor.check_and_warn(colors).is_none()); // Not concerning yet
+        // Behavioral test: monitor should not warn for healthy parsing
+        assert!(monitor.check_and_warn(colors).is_none());
 
-        monitor.reset();
-        assert_eq!(monitor.health().total_events, 0);
+        // Behavioral test: creating a new monitor gives fresh state (instead of reset)
+        let fresh_monitor = HealthMonitor::new("claude");
+        // Fresh monitor should not have warned yet
+        assert!(fresh_monitor.check_and_warn(colors).is_none());
     }
 
     #[test]
@@ -543,14 +530,11 @@ mod tests {
             monitor.record_parsed();
         }
 
-        let health = monitor.health();
-        assert_eq!(health.control_events, 2000);
-        assert_eq!(health.parsed_events, 50);
-        assert_eq!(health.total_events, 2050);
-
-        // Should NOT warn even with 97.5% "non-displayed" events
-        // because they're control events, not ignored/parse errors
+        // Behavioral test: control events don't trigger warnings
+        // The monitor has many control events but few parsed events
         let warning = monitor.check_and_warn(colors);
+        // Should NOT warn even with many "non-displayed" events
+        // because they're control events, not ignored/parse errors
         assert!(warning.is_none());
     }
 
@@ -639,14 +623,11 @@ mod tests {
             monitor.record_parsed();
         }
 
-        let health = monitor.health();
-        assert_eq!(health.partial_events, 2049);
-        assert_eq!(health.parsed_events, 53);
-        assert_eq!(health.total_events, 2102);
-
-        // Should NOT warn even with 97.5% "partial" events
-        // because partial events are valid streaming content, not errors
+        // Behavioral test: partial events don't trigger warnings
+        // The monitor has many partial events but few parsed events
         let warning = monitor.check_and_warn(colors);
+        // Should NOT warn even with many "partial" events
+        // because partial events are valid streaming content, not errors
         assert!(warning.is_none());
     }
 

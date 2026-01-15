@@ -572,7 +572,7 @@ pub fn generate_fallback_commit_message(diff: &str) -> String {
 
 /// Extract changed file paths from a git diff.
 ///
-/// Parses "diff --git a/<path> b/<path>" lines to get file paths.
+/// Parses diff headers like `diff --git a/path/to/file b/path/to/file` to get file paths.
 fn extract_files_from_diff(diff: &str) -> Vec<String> {
     let mut files = Vec::new();
 

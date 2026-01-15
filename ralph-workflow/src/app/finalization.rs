@@ -6,7 +6,7 @@
 use crate::banner::{print_final_summary, PipelineSummary};
 use crate::checkpoint::clear_checkpoint;
 use crate::config::Config;
-use crate::files::monitoring::PromptMonitor;
+use crate::files::protection::monitoring::PromptMonitor;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::pipeline::Timer;

@@ -509,8 +509,8 @@ fn test_health_monitor_warning_only_for_parse_errors() {
         "Should not warn with mix of partial, control, and parsed events"
     );
 
-    // Reset and test with actual parse errors
-    monitor.reset();
+    // Create a new monitor and test with actual parse errors
+    let monitor = HealthMonitor::new("claude");
 
     // Add parse errors exceeding 50% threshold
     for _ in 0..60 {
