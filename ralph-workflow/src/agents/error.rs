@@ -368,23 +368,25 @@ impl AgentErrorKind {
     ) -> Self {
         let stderr_lower = stderr.to_lowercase();
 
-        // If we know this is a GLM-like agent and it failed with exit code 1,
-        // classify it as AgentSpecificQuirk to trigger fallback instead of retry
-        let is_problematic_agent = agent_name.is_some_and(|name| {
-            let name_lower = name.to_lowercase();
-            name_lower.contains("glm")
-                || name_lower.contains("zhipuai")
-                || name_lower.contains("zai")
-                || name_lower.contains("qwen")
-                || name_lower.contains("deepseek")
-        }) || model_flag.is_some_and(|flag| {
-            let flag_lower = flag.to_lowercase();
-            flag_lower.contains("glm")
-                || flag_lower.contains("zhipuai")
-                || flag_lower.contains("zai")
-                || flag_lower.contains("qwen")
-                || flag_lower.contains("deepseek")
-        });
+        // Check for specific error patterns FIRST, before applying agent-specific heuristics.
+        // This ensures that token exhaustion is detected even for GLM-like agents.
+
+        // Check error patterns in priority order
+        if Self::check_rate_limit(&stderr_lower) {
+            return Self::RateLimited;
+        }
+
+        // Token/context exhaustion (API-side)
+        // Check this BEFORE GLM agent-specific fallback to ensure TokenExhausted is detected
+        if Self::check_token_exhausted(&stderr_lower) {
+            return Self::TokenExhausted;
+        }
+
+        // If we know this is a GLM-like agent and it failed with exit code 1
+        // (and we haven't matched a specific error pattern above),
+        // classify it as AgentSpecificQuirk to trigger fallback instead of retry.
+        let is_problematic_agent =
+            agent_name.is_some_and(is_glm_like_agent) || model_flag.is_some_and(is_glm_like_agent);
 
         if is_problematic_agent && exit_code == 1 {
             // GLM and similar agents often exit with code 1 for various issues.
@@ -392,13 +394,7 @@ impl AgentErrorKind {
             return Self::AgentSpecificQuirk;
         }
 
-        // Check error patterns in priority order
-        if Self::check_rate_limit(&stderr_lower) {
-            return Self::RateLimited;
-        }
-        if Self::check_token_exhausted(&stderr_lower) {
-            return Self::TokenExhausted;
-        }
+        // Network errors (client-side connectivity issues)
         if Self::check_network_error(&stderr_lower) {
             return Self::NetworkError;
         }

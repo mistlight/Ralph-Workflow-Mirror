@@ -270,33 +270,3 @@ pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
 
     Ok(())
 }
-
-/// Temporarily remove the agent commit marker to allow manual git commit.
-///
-/// This is used as a last resort when all automated commit message generation
-/// fails. The caller is responsible for calling `restore_agent_commit_marker()`
-/// after the manual operation completes.
-///
-/// # Returns
-///
-/// * `Ok(true)` - Marker was removed (was present)
-/// * `Ok(false)` - Marker was not present (nothing to do)
-/// * `Err(e)` - Error removing the marker
-pub fn temporarily_remove_agent_commit_marker() -> io::Result<bool> {
-    let marker_path = PathBuf::from(".no_agent_commit");
-    if marker_path.exists() {
-        fs::remove_file(&marker_path)?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-/// Restore the agent commit marker after a temporary removal.
-///
-/// This should be called after `temporarily_remove_agent_commit_marker()` to
-/// re-enable the commit protection during agent phases.
-pub fn restore_agent_commit_marker() -> io::Result<()> {
-    File::create(".no_agent_commit")?;
-    Ok(())
-}
