@@ -5,6 +5,7 @@
 use crate::config::Config;
 use crate::language_detector::detect_stack_summary;
 use crate::common::utils::{checkpoint_exists, load_checkpoint, validate_prompt_md, Logger};
+use crate::logger::Colors;
 use std::path::Path;
 
 /// Handle --dry-run command.
@@ -29,13 +30,13 @@ use std::path::Path;
 /// Returns `Ok(())` if validation passes, or an error if PROMPT.md validation fails.
 pub fn handle_dry_run(
     logger: &Logger,
-    _colors: crate::colors::Colors,
+    _colors: Colors,
     config: &Config,
     developer_agent: &str,
     reviewer_agent: &str,
     repo_root: &Path,
 ) -> anyhow::Result<()> {
-    logger.header("DRY RUN: Validation", crate::colors::Colors::cyan);
+    logger.header("DRY RUN: Validation", Colors::cyan);
 
     // Validate PROMPT.md using the utility function
     // Dry run is non-interactive by definition

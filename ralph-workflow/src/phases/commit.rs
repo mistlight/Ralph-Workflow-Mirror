@@ -20,7 +20,7 @@ use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::prompt_generate_commit_message_with_diff;
 use crate::pipeline::Timer;
-use crate::common::utils as utils;Logger;
+use crate::logger::Logger;
 use std::fs::{self, File};
 use std::io::Read;
 

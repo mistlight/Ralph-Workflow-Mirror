@@ -13,7 +13,7 @@
 
 use super::hooks::{install_hooks, uninstall_hooks_silent};
 use super::repo::get_repo_root;
-use crate::common::utils as utils;Logger;
+use crate::logger::Logger;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};

@@ -1,7 +1,7 @@
 //! Prompt-based command execution.
 
 use crate::agents::{is_glm_like_agent, JsonParserType};
-use crate::cli::{format_argv_for_log, split_command, truncate_text};
+use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::config::Config;
 use crate::logger::Colors;
 use crate::logger::Logger;

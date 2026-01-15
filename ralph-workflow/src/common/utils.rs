@@ -26,9 +26,12 @@ pub use crate::checkpoint::{
     PipelinePhase,
 };
 
+// Re-export timestamp from checkpoint
+pub use crate::checkpoint::timestamp;
+
 // Re-exports from logger module
 pub use crate::logger::{print_progress, Logger};
-pub use crate::logger::{strip_ansi_codes, timestamp};
+pub use crate::logger::strip_ansi_codes;
 
 // Re-exports from files module
 pub use crate::files::{
@@ -36,8 +39,8 @@ pub use crate::files::{
     delete_commit_message_file, delete_issues_file_for_isolation, delete_plan_file, ensure_files,
     file_contains_marker, make_prompt_read_only, read_commit_message_file,
     reset_context_for_isolation, update_status, validate_prompt_md, write_commit_message_file,
+    GENERATED_FILES, PromptValidationResult,
 };
-pub use crate::files::{PromptValidationResult, GENERATED_FILES};
 
 // Keep backward-compatibility re-exports "used" without suppressing lints.
 const _: () = {

@@ -6,7 +6,7 @@ use crate::logger::Colors;
 use crate::config::Config;
 use crate::container::{ContainerEngine, EngineType, SecurityMode};
 use crate::git_helpers::get_repo_root;
-use crate::common::utils as utils;Logger;
+use crate::logger::Logger;
 
 /// Shell script for setting up the ralph-agent user account
 const SETUP_SCRIPT: &str = r#"# Create user if doesn't exist

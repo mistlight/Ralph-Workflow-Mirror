@@ -3,7 +3,8 @@
 //! This module contains event types and utility functions used by
 //! all the CLI parsers (Claude, Codex, Gemini).
 
-use crate::common::utils as utils;truncate_text;
+use crate::common::truncate_text;
+use crate::logger::Colors;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -476,7 +477,7 @@ fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
 pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,
-    colors: crate::colors::Colors,
+    colors: Colors,
     is_verbose: bool,
 ) -> String {
     // Try to parse as generic JSON to extract type and key fields

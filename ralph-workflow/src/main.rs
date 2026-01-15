@@ -20,6 +20,7 @@ mod app;
 mod banner;
 mod checkpoint;
 mod cli;
+mod common;
 mod config;
 mod container;
 mod diagnostics;
