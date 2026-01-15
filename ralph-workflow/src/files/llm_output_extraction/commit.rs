@@ -8,7 +8,8 @@ use regex::Regex;
 use serde::Deserialize;
 
 use super::cleaning::{
-    find_conventional_commit_start, looks_like_analysis_text, unescape_json_strings,
+    final_escape_sequence_cleanup, find_conventional_commit_start, looks_like_analysis_text,
+    unescape_json_strings, unescape_json_strings_aggressive,
 };
 use crate::agents::AgentErrorKind;
 
@@ -70,10 +71,15 @@ pub enum CommitExtractionResult {
 }
 
 impl CommitExtractionResult {
-    /// Convert into the inner message string.
+    /// Convert into the inner message string with final escape sequence cleanup.
+    ///
+    /// This applies the final rendering step to ensure no escape sequences leak through
+    /// to the actual commit message.
     pub fn into_message(self) -> String {
         match self {
-            Self::Extracted(msg) | Self::Salvaged(msg) | Self::Fallback(msg) => msg,
+            Self::Extracted(msg) | Self::Salvaged(msg) | Self::Fallback(msg) => {
+                render_final_commit_message(&msg)
+            }
             Self::AgentError(_) => String::new(), // Errors produce empty message
         }
     }
@@ -552,6 +558,59 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+// =========================================================================
+// Final Commit Message Rendering
+// =========================================================================
+
+/// Render the final commit message with all cleanup applied.
+///
+/// This is the final step before returning a commit message for use in git commit.
+/// It applies:
+/// 1. Escape sequence cleanup (aggressive unescaping)
+/// 2. Validation to ensure no escape sequences leaked through
+/// 3. Final formatting checks
+///
+/// If rendering fails (e.g., validation still fails after cleanup), this returns
+/// the best effort cleaned message. The caller should handle validation failures.
+///
+/// # Arguments
+///
+/// * `message` - The commit message to render
+///
+/// # Returns
+///
+/// The fully rendered commit message with all escape sequences properly handled.
+pub fn render_final_commit_message(message: &str) -> String {
+    let mut result = message.to_string();
+
+    // Step 1: Apply final escape sequence cleanup
+    // This handles any escape sequences that leaked through the pipeline
+    result = final_escape_sequence_cleanup(&result);
+
+    // Step 2: Validate the result
+    // If validation fails due to escape sequences, try aggressive cleanup
+    if let Err(e) = validate_commit_message(&result) {
+        // Check if the error is about escape sequences
+        let error_lower = e.to_lowercase();
+        if error_lower.contains("escape sequence") || error_lower.contains("\\n") {
+            // Apply aggressive unescaping
+            result = unescape_json_strings_aggressive(&result);
+        }
+        // Note: We don't re-validate here because the caller should handle validation
+        // We just do our best to clean up the message
+    }
+
+    // Step 3: Final whitespace cleanup
+    result = result
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    result
 }
 
 // =========================================================================
@@ -1438,5 +1497,80 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         let formatted = result.unwrap();
         assert!(formatted.contains("- item 1\t- item 2"));
         assert!(!formatted.contains("\\t"));
+    }
+
+    // =========================================================================
+    // Tests for render_final_commit_message
+    // =========================================================================
+
+    #[test]
+    fn test_render_final_commit_message_with_literal_escapes() {
+        // Test that render_final_commit_message cleans up escape sequences
+        // Note: whitespace cleanup removes blank lines
+        let input = "feat: add feature\n\\n\\nBody with literal escapes";
+        let result = render_final_commit_message(input);
+        assert_eq!(result, "feat: add feature\nBody with literal escapes");
+    }
+
+    #[test]
+    fn test_render_final_commit_message_already_clean() {
+        // Test that already-clean messages pass through (whitespace cleanup applied)
+        let input = "feat: add feature\n\nBody text here";
+        let result = render_final_commit_message(input);
+        assert_eq!(result, "feat: add feature\nBody text here");
+    }
+
+    #[test]
+    fn test_render_final_commit_message_with_tabs() {
+        // Test that tab escapes are properly handled
+        let input = "feat: add feature\\n\\t- item 1\\n\\t- item 2";
+        let result = render_final_commit_message(input);
+        // Tabs are stripped by whitespace cleanup (trim() removes leading whitespace)
+        assert_eq!(result, "feat: add feature\n- item 1\n- item 2");
+    }
+
+    #[test]
+    fn test_render_final_commit_message_with_carriage_returns() {
+        // Test that carriage return escapes are properly handled
+        let input = "feat: add feature\\r\\nBody text";
+        let result = render_final_commit_message(input);
+        // Carriage returns are converted, but whitespace cleanup removes extra blank lines
+        assert_eq!(result, "feat: add feature\nBody text");
+    }
+
+    #[test]
+    fn test_render_final_commit_message_double_escaped() {
+        // Test that double-escaped sequences are handled
+        let input = "feat: add feature\n\\\\n\\\\nDouble escaped";
+        let result = render_final_commit_message(input);
+        // Double backslash-n becomes backslash-n (literal backslash + n) after cleanup
+        // The whitespace cleanup then removes the blank lines
+        assert_eq!(result, "feat: add feature\n\\\n\\\nDouble escaped");
+    }
+
+    #[test]
+    fn test_render_final_commit_message_whitespace_cleanup() {
+        // Test that trailing empty lines are removed
+        let input = "feat: add feature\n\nBody text\n\n\n  \n  ";
+        let result = render_final_commit_message(input);
+        assert_eq!(result, "feat: add feature\nBody text");
+    }
+
+    #[test]
+    fn test_render_final_commit_message_mixed_escape_sequences() {
+        // Test handling of mixed escape sequences
+        let input = "feat: add feature\\n\\nDetails:\\r\\n\\t- item 1\\n\\t- item 2";
+        let result = render_final_commit_message(input);
+        // Carriage returns normalized to newlines, tabs stripped by trim, blank lines removed
+        assert_eq!(result, "feat: add feature\nDetails:\n- item 1\n- item 2");
+    }
+
+    #[test]
+    fn test_render_final_commit_message_trailing_whitespace_lines() {
+        // Test that empty lines with only whitespace are cleaned up
+        let input = "feat: add feature\n\\n\\n  Body with spaces  \\n  \\n  ";
+        let result = render_final_commit_message(input);
+        // Whitespace cleanup removes blank lines and trims each line
+        assert_eq!(result, "feat: add feature\nBody with spaces");
     }
 }

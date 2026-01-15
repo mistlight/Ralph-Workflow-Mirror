@@ -22,8 +22,9 @@ use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
     prompt_emergency_commit, prompt_emergency_no_diff_commit, prompt_file_list_only_commit,
-    prompt_generate_commit_message_with_diff, prompt_strict_json_commit,
-    prompt_strict_json_commit_v2, prompt_ultra_minimal_commit, prompt_ultra_minimal_commit_v2,
+    prompt_file_list_summary_only_commit, prompt_generate_commit_message_with_diff,
+    prompt_strict_json_commit, prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
+    prompt_ultra_minimal_commit_v2,
 };
 use std::fmt;
 use std::fs::{self, File};
@@ -105,6 +106,8 @@ enum CommitRetryStrategy {
     UltraMinimalV2,
     /// File list only - no diff content
     FileListOnly,
+    /// File list summary only - just file counts and categories
+    FileListSummaryOnly,
     /// Emergency prompt - maximum strictness
     Emergency,
     /// Emergency no-diff - absolute last resort
@@ -121,6 +124,7 @@ impl CommitRetryStrategy {
             Self::UltraMinimal => "ultra-minimal prompt",
             Self::UltraMinimalV2 => "ultra-minimal V2 prompt",
             Self::FileListOnly => "file list only prompt",
+            Self::FileListSummaryOnly => "file list summary only prompt",
             Self::Emergency => "emergency prompt",
             Self::EmergencyNoDiff => "emergency no-diff prompt",
         }
@@ -134,7 +138,8 @@ impl CommitRetryStrategy {
             Self::StrictJsonV2 => Some(Self::UltraMinimal),
             Self::UltraMinimal => Some(Self::UltraMinimalV2),
             Self::UltraMinimalV2 => Some(Self::FileListOnly),
-            Self::FileListOnly => Some(Self::Emergency),
+            Self::FileListOnly => Some(Self::FileListSummaryOnly),
+            Self::FileListSummaryOnly => Some(Self::Emergency),
             Self::Emergency => Some(Self::EmergencyNoDiff),
             Self::EmergencyNoDiff => None,
         }
@@ -142,7 +147,7 @@ impl CommitRetryStrategy {
 
     /// Get the total number of retry stages
     const fn total_stages() -> usize {
-        8 // Initial + 7 re-prompt variants
+        9 // Initial + 8 re-prompt variants
     }
 }
 
@@ -434,6 +439,9 @@ pub fn generate_commit_message(
             CommitRetryStrategy::UltraMinimal => prompt_ultra_minimal_commit(&working_diff),
             CommitRetryStrategy::UltraMinimalV2 => prompt_ultra_minimal_commit_v2(&working_diff),
             CommitRetryStrategy::FileListOnly => prompt_file_list_only_commit(&working_diff),
+            CommitRetryStrategy::FileListSummaryOnly => {
+                prompt_file_list_summary_only_commit(&working_diff)
+            }
             CommitRetryStrategy::Emergency => prompt_emergency_commit(&working_diff),
             CommitRetryStrategy::EmergencyNoDiff => prompt_emergency_no_diff_commit(&working_diff),
         };
