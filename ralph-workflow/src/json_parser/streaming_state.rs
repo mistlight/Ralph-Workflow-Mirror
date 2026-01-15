@@ -94,7 +94,6 @@
 
 use crate::json_parser::types::ContentType;
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
 
 /// Ralph enforces a **delta contract** for all streaming content.
 ///
@@ -202,10 +201,6 @@ pub struct StreamingSession {
     /// content may be cleared (e.g., repeated `ContentBlockStart` for same index).
     /// Cleared on `on_message_start` to ensure fresh state for each message.
     output_started_for_key: HashSet<(ContentType, String)>,
-    /// Track the time of the last message stop event.
-    /// Used to detect rapid MessageStart/MessageStop cycles from agents like GLM
-    /// that send multiple complete message lifecycles within a single logical message.
-    last_message_stop_time: Option<Instant>,
 }
 
 impl StreamingSession {
