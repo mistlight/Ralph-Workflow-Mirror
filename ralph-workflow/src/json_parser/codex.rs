@@ -237,6 +237,7 @@ impl CodexParser {
                                 // Subsequent deltas: use renderer for in-place update
                                 return Some(TextDeltaRenderer::render_subsequent_delta(
                                     &accumulated_text,
+                                    name,
                                     *c,
                                 ));
                             }

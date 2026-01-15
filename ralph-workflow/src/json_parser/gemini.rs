@@ -145,6 +145,7 @@ impl GeminiParser {
                         // Subsequent deltas: use renderer for in-place update
                         return Some(TextDeltaRenderer::render_subsequent_delta(
                             &accumulated_text,
+                            prefix,
                             *c,
                         ));
                     } else if !is_delta && role_str == "assistant" {

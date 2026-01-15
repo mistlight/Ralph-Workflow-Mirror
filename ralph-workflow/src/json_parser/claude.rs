@@ -491,7 +491,7 @@ impl ClaudeParser {
                     if show_prefix {
                         TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
                     } else {
-                        TextDeltaRenderer::render_subsequent_delta(accumulated_text, *c)
+                        TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
                     }
                 }
                 ContentBlockDelta::ThinkingDelta {
@@ -570,7 +570,7 @@ impl ClaudeParser {
                     TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
                 } else {
                     // Subsequent delta - use renderer for in-place update
-                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, *c)
+                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
                 }
             }
             StreamInnerEvent::MessageStop => {
