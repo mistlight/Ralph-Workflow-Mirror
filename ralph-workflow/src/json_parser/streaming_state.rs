@@ -236,14 +236,9 @@ impl StreamingSession {
         let is_mid_stream_restart = self.state == StreamingState::Streaming;
 
         if is_mid_stream_restart {
-            // Log the contract violation for debugging
-            eprintln!(
-                "Warning: Received MessageStart while state is Streaming. \
-                This indicates a non-standard agent protocol (e.g., GLM sending \
-                repeated MessageStart events). Preserving output_started_for_key \
-                to prevent prefix spam. File: streaming_state.rs, Line: {}",
-                line!()
-            );
+            // GLM/CCS agents send repeated MessageStart events during streaming.
+            // This is a known protocol quirk, not an error. We preserve
+            // output_started_for_key to prevent prefix spam on subsequent deltas.
 
             // Preserve output_started_for_key to prevent prefix spam
             let preserved_output_started = self.output_started_for_key.clone();
@@ -452,27 +447,16 @@ impl StreamingSession {
         let is_snapshot = self.is_likely_snapshot(delta, key);
         let actual_delta = if is_snapshot {
             // Extract only the new portion to prevent exponential duplication
-            match self.get_delta_from_snapshot(delta, key) {
-                Ok(extracted) => extracted.to_string(),
-                Err(e) => {
-                    // Snapshot detection had a false positive - use the original delta
-                    eprintln!("Warning: Snapshot extraction failed: {e}. Using original delta.");
-                    delta.to_string()
-                }
-            }
+            self.get_delta_from_snapshot(delta, key)
+                .map_or_else(|_| delta.to_string(), str::to_string)
         } else {
             // Genuine delta - use as-is
             delta.to_string()
         };
 
-        // Warn on large deltas BEFORE modification to detect snapshot-as-delta issues
-        // Use the original delta size since that's what we actually received
-        if delta_size > SNAPSHOT_THRESHOLD {
-            eprintln!(
-                "Warning: Large delta ({delta_size} chars) for key '{key}'. \
-                This may indicate unusual streaming behavior or a snapshot being sent as a delta."
-            );
-        }
+        // Large deltas (> SNAPSHOT_THRESHOLD) may indicate unusual streaming behavior.
+        // The snapshot detection above handles these cases automatically.
+        let _ = SNAPSHOT_THRESHOLD; // Used for threshold comparison in is_likely_snapshot
 
         // Track delta size for pattern detection (use original delta size for detection)
         let content_key = (ContentType::Text, key.to_string());
@@ -484,20 +468,9 @@ impl StreamingSession {
             sizes.remove(0);
         }
 
-        // Pattern detection: Check if we're seeing repeated large deltas
-        // This indicates the same content is being sent repeatedly (snapshot-as-delta)
-        if sizes.len() >= 3 {
-            // Check if at least 3 of the last N deltas were large
-            let large_count = sizes.iter().filter(|&&s| s > SNAPSHOT_THRESHOLD).count();
-            if large_count >= 3 {
-                eprintln!(
-                    "Warning: Detected pattern of {large_count} large deltas for key '{key}'. \
-                    This strongly suggests a snapshot-as-delta bug where the same \
-                    large content is being sent repeatedly. File: streaming_state.rs, Line: {}",
-                    line!()
-                );
-            }
-        }
+        // Pattern detection: Track repeated large deltas for internal metrics.
+        // The snapshot detection logic above handles these cases automatically,
+        // so no warnings are needed here.
 
         // Mark that we're streaming text content
         self.streamed_types.insert(ContentType::Text, true);
