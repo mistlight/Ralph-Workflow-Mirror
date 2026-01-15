@@ -100,7 +100,7 @@
     <!-- Navigation -->
     <nav class="nav" role="navigation" aria-label="Main navigation">
         <div class="nav-container">
-            <a href="#" class="nav-logo" aria-label="Ralph Workflow - Home">
+            <a href="index.html" class="nav-logo" aria-label="Ralph Workflow - Home">
                 <div class="logo-mark">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M6 4h6c1.5 0 2.5.5 2.5 2v3c0 1-.5 1.5-1.5 2S11 12.5 10 15H8l1.5-5c-.75 0-1.75-.25-2.25-1V4z"/>
@@ -116,11 +116,24 @@
             </button>
 
             <ul class="nav-menu">
-                <li><a href="#what-is-ralph" class="nav-link">What is Ralph</a></li>
-                <li><a href="#how-it-works" class="nav-link">How it works</a></li>
-                <li><a href="#install" class="nav-link">Install</a></li>
-                <li><a href="#features" class="nav-link">Features</a></li>
-                <li class="audience-newcomer-content"><a href="#glossary" class="nav-link">Glossary</a></li>
+                <li><a href="index.html" class="nav-link nav-link--active" aria-current="page">Home</a></li>
+                <li><a href="how-it-works.html" class="nav-link">How it Works</a></li>
+                <li><a href="getting-started.html" class="nav-link">Getting Started</a></li>
+                <li class="nav-dropdown">
+                    <button class="nav-link nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">
+                        Docs
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                    <ul class="nav-dropdown-menu">
+                        <li><a href="docs/writing-specs.html" class="nav-link">Writing Specs</a></li>
+                        <li><a href="docs/overnight-runs.html" class="nav-link">Overnight Runs</a></li>
+                        <li><a href="docs/workflows.html" class="nav-link">Workflows</a></li>
+                    </ul>
+                </li>
+                <li><a href="open-source.html" class="nav-link">Open Source</a></li>
+                <li><a href="faq.html" class="nav-link">FAQ</a></li>
                 <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="nav-link nav-link-external">Codeberg <span class="external-icon" aria-hidden="true">→</span></a></li>
             </ul>
 
@@ -1515,19 +1528,20 @@ max_iterations = 10</code></pre>
             </div>
 
             <div class="footer-links">
-                <h4>Resources</h4>
+                <h4>Documentation</h4>
                 <ul>
-                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/README.md" target="_blank" rel="noopener">Documentation</a></li>
-                    <li><a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Original Concept</a></li>
+                    <li><a href="getting-started.html">Getting Started</a></li>
+                    <li><a href="docs/writing-specs.html">Writing Specs</a></li>
+                    <li><a href="docs/workflows.html">Workflows</a></li>
+                    <li><a href="faq.html">FAQ</a></li>
                 </ul>
             </div>
 
             <div class="footer-links">
-                <h4>Quick Links</h4>
+                <h4>Community</h4>
                 <ul>
-                    <li><a href="#install">Installation</a></li>
-                    <li><a href="#features">Features</a></li>
-                    <li><a href="https://crates.io/crates/ralph-workflow" target="_blank" rel="noopener">crates.io</a></li>
+                    <li><a href="open-source.html">Open Source</a></li>
+                    <li><a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Original Concept</a></li>
                 </ul>
             </div>
         </div>

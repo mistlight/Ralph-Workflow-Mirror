@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Common workflow patterns for Ralph Workflow. Examples for adding features, fixing bugs, and refactoring code.">
+    <meta name="keywords" content="Ralph, workflow, patterns, feature development, bug fix, refactoring">
+    <meta name="author" content="Ralph Workflow Contributors">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Workflows - Ralph Workflow Documentation">
+    <meta property="og:description" content="Learn common workflow patterns for features, bug fixes, and refactoring with Ralph.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://mistlight.codeberg.page/ralph/docs/workflows.html">
+    <meta property="og:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
+    <meta property="og:site_name" content="Ralph Workflow">
+
+    <link rel="canonical" href="https://mistlight.codeberg.page/ralph/docs/workflows.html">
+    <meta name="theme-color" content="#0d1f18">
+
+    <title>Workflows - Ralph Workflow Documentation</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+    <link rel="apple-touch-icon" href="../assets/logo-icon.svg">
+
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <!-- Skip Link -->
+    <a href="#main" class="skip-link">Skip to content</a>
+
+    <!-- Navigation -->
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+        <div class="nav-container">
+            <a href="../index.html" class="nav-logo" aria-label="Ralph Workflow - Home">
+                <div class="logo-mark">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4h6c1.5 0 2.5.5 2.5 2v3c0 1-.5 1.5-1.5 2S11 12.5 10 15H8l1.5-5c-.75 0-1.75-.25-2.25-1V4z"/>
+                        <path d="M8 7.5h3c.4 0 .5.1.5.5v1.5c0 .3-.1.5-.5.5H8" fill="currentColor"/>
+                    </svg>
+                </div>
+                <span class="logo-text">ralph</span>
+            </a>
+
+            <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+                <span></span>
+                <span></span>
+            </button>
+
+            <ul class="nav-menu">
+                <li><a href="../index.html" class="nav-link">Home</a></li>
+                <li><a href="../how-it-works.html" class="nav-link">How it Works</a></li>
+                <li><a href="../getting-started.html" class="nav-link">Getting Started</a></li>
+                <li class="nav-dropdown">
+                    <button class="nav-link nav-dropdown-toggle nav-link--active" aria-expanded="false" aria-haspopup="true" aria-current="true">
+                        Docs
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                    <ul class="nav-dropdown-menu">
+                        <li><a href="writing-specs.html" class="nav-link">Writing Specs</a></li>
+                        <li><a href="overnight-runs.html" class="nav-link">Overnight Runs</a></li>
+                        <li><a href="workflows.html" class="nav-link nav-link--active" aria-current="page">Workflows</a></li>
+                    </ul>
+                </li>
+                <li><a href="../open-source.html" class="nav-link">Open Source</a></li>
+                <li><a href="../faq.html" class="nav-link">FAQ</a></li>
+                <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="nav-link nav-link-external">Codeberg <span class="external-icon" aria-hidden="true">→</span></a></li>
+            </ul>
+
+            <!-- Dark Mode Toggle -->
+            <button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
+                <svg class="sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <svg class="moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <main id="main" role="main">
+        <!-- Page Header -->
+        <section class="page-header">
+            <div class="page-header-content">
+                <nav class="breadcrumb" aria-label="Breadcrumb">
+                    <ol>
+                        <li><a href="../index.html">Home</a></li>
+                        <li><a href="workflows.html" aria-current="page">Workflows</a></li>
+                    </ol>
+                </nav>
+                <h1 class="page-title">Common Workflows</h1>
+                <p class="page-subtitle">Practical examples of how to use Ralph for different development tasks</p>
+            </div>
+        </section>
+
+        <!-- New Feature Workflow -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">01</span>
+                    <h2 class="section-title">Adding a New Feature</h2>
+                    <p class="section-subtitle">The most common use case for Ralph</p>
+                </div>
+
+                <div class="workflow-example">
+                    <div class="workflow-intro">
+                        <p>When adding new functionality, Ralph excels at implementing features from scratch based on your specifications. Here's the recommended workflow:</p>
+                    </div>
+
+                    <div class="workflow-steps-detailed">
+                        <div class="workflow-step-detailed">
+                            <div class="workflow-step-header">
+                                <span class="step-badge">Step 1</span>
+                                <h4>Create a Feature Branch</h4>
+                            </div>
+                            <div class="code-block">
+                                <div class="code-block-header">
+                                    <span class="code-lang">bash</span>
+                                </div>
+                                <pre><code>git checkout -b feature/user-notifications</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="workflow-step-detailed">
+                            <div class="workflow-step-header">
+                                <span class="step-badge">Step 2</span>
+                                <h4>Write Your PROMPT.md</h4>
+                            </div>
+                            <div class="code-block">
+                                <div class="code-block-header">
+                                    <span class="code-lang">markdown</span>
+                                    <span class="code-filename">PROMPT.md</span>
+                                    <button class="copy-btn" aria-label="Copy to clipboard">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <pre><code># Add User Notification System
+
+## Goal
+Implement a notification system that alerts users about important events.
+
+## Requirements
+- Create a notifications table in the database
+- Add API endpoints: GET /notifications, POST /notifications/mark-read
+- Display notification count in the header
+- Show notification dropdown with recent items
+- Mark notifications as read when clicked
+
+## Technical Details
+- Use existing Prisma schema patterns
+- Follow the UserController pattern for NotificationController
+- Store in PostgreSQL with created_at timestamp
+
+## Constraints
+- No email notifications yet (future task)
+- No real-time updates (polling is fine for now)
+- Max 50 notifications shown in dropdown
+
+## Acceptance Criteria
+- [ ] Notifications appear in the header
+- [ ] Clicking marks as read
+- [ ] Count badge updates correctly</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="workflow-step-detailed">
+                            <div class="workflow-step-header">
+                                <span class="step-badge">Step 3</span>
+                                <h4>Run Ralph</h4>
+                            </div>
+                            <div class="code-block">
+                                <div class="code-block-header">
+                                    <span class="code-lang">bash</span>
+                                </div>
+                                <pre><code># Use Standard mode for typical features
+ralph -S</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="workflow-step-detailed">
+                            <div class="workflow-step-header">
+                                <span class="step-badge">Step 4</span>
+                                <h4>Review and Test</h4>
+                            </div>
+                            <div class="code-block">
+                                <div class="code-block-header">
+                                    <span class="code-lang">bash</span>
+                                </div>
+                                <pre><code># See what Ralph did
+git diff HEAD~1
+
+# Run your tests
+npm test
+
+# Try it manually
+npm run dev</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="workflow-step-detailed">
+                            <div class="workflow-step-header">
+                                <span class="step-badge">Step 5</span>
+                                <h4>Merge When Ready</h4>
+                            </div>
+                            <div class="code-block">
+                                <div class="code-block-header">
+                                    <span class="code-lang">bash</span>
+                                </div>
+                                <pre><code>git checkout main
+git merge feature/user-notifications
+git push</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="workflow-tips">
+                        <h4>Tips for Feature Development</h4>
+                        <ul>
+                            <li>Break large features into smaller specs</li>
+                            <li>Reference existing patterns in your codebase</li>
+                            <li>Include acceptance criteria Ralph can verify</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bug Fix Workflow -->
+        <section class="section section--alt">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">02</span>
+                    <h2 class="section-title">Fixing a Bug</h2>
+                    <p class="section-subtitle">Quick iterations to squash issues</p>
+                </div>
+
+                <div class="workflow-example">
+                    <div class="workflow-intro">
+                        <p>For bug fixes, you want Ralph to understand the current (broken) behavior and the expected behavior. Be specific about reproduction steps.</p>
+                    </div>
+
+                    <div class="code-block code-block--large">
+                        <div class="code-block-header">
+                            <span class="code-lang">markdown</span>
+                            <span class="code-filename">PROMPT.md</span>
+                            <button class="copy-btn" aria-label="Copy to clipboard">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <pre><code># Fix: Login form doesn't show validation errors
+
+## Problem
+When a user submits the login form with invalid credentials,
+no error message is shown. The form just clears and nothing happens.
+
+## Current Behavior
+1. User enters wrong password
+2. Clicks "Login"
+3. Form clears, no feedback shown
+4. User doesn't know what went wrong
+
+## Expected Behavior
+1. User enters wrong password
+2. Clicks "Login"
+3. Error message appears: "Invalid email or password"
+4. Form keeps the email field populated
+
+## Location
+- src/components/LoginForm.tsx
+- src/api/auth.ts (error handling)
+
+## Acceptance Criteria
+- [ ] Error message displays on invalid credentials
+- [ ] Email field is preserved after error
+- [ ] Success still redirects to dashboard</code></pre>
+                    </div>
+
+                    <div class="workflow-command">
+                        <p>For quick bug fixes, use Quick mode:</p>
+                        <div class="code-block code-block--small">
+                            <pre><code>ralph -Q</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="workflow-tips">
+                        <h4>Tips for Bug Fixes</h4>
+                        <ul>
+                            <li>Include exact reproduction steps</li>
+                            <li>Specify which files are likely involved</li>
+                            <li>Describe both current and expected behavior</li>
+                            <li>Quick mode (<code>-Q</code>) is usually enough for bugs</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Refactoring Workflow -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">03</span>
+                    <h2 class="section-title">Refactoring Code</h2>
+                    <p class="section-subtitle">Improve structure without changing behavior</p>
+                </div>
+
+                <div class="workflow-example">
+                    <div class="workflow-intro">
+                        <p>Refactoring with Ralph requires clear boundaries. You're changing <em>how</em> code works, not <em>what</em> it does. Be explicit about preserving behavior.</p>
+                    </div>
+
+                    <div class="code-block code-block--large">
+                        <div class="code-block-header">
+                            <span class="code-lang">markdown</span>
+                            <span class="code-filename">PROMPT.md</span>
+                            <button class="copy-btn" aria-label="Copy to clipboard">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <pre><code># Refactor: Extract payment processing into service
+
+## Goal
+Move payment logic from OrderController into a dedicated PaymentService
+for better separation of concerns and testability.
+
+## Current State
+- Payment logic is in src/controllers/OrderController.ts (lines 150-280)
+- Stripe API calls are inline with order logic
+- Hard to test payment logic in isolation
+
+## Desired State
+- New file: src/services/PaymentService.ts
+- PaymentService handles all Stripe interactions
+- OrderController calls PaymentService methods
+- Existing tests still pass
+
+## What to Move
+- processPayment() function
+- refundPayment() function
+- validatePaymentMethod() function
+- Stripe API initialization
+
+## Constraints
+- DO NOT change any public API endpoints
+- DO NOT modify database schema
+- All existing tests must pass
+- Keep the same error handling behavior
+
+## Acceptance Criteria
+- [ ] New PaymentService file exists
+- [ ] OrderController uses PaymentService
+- [ ] All existing order tests pass
+- [ ] No change to API responses</code></pre>
+                    </div>
+
+                    <div class="workflow-command">
+                        <p>Use Thorough mode for refactoring to ensure nothing breaks:</p>
+                        <div class="code-block code-block--small">
+                            <pre><code>ralph -T</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="workflow-tips">
+                        <h4>Tips for Refactoring</h4>
+                        <ul>
+                            <li>Be very explicit about what should NOT change</li>
+                            <li>Reference existing tests that must pass</li>
+                            <li>Use Thorough mode (<code>-T</code>) for more validation</li>
+                            <li>Review changes carefully before merging</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Test Writing Workflow -->
+        <section class="section section--alt">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">04</span>
+                    <h2 class="section-title">Writing Tests</h2>
+                    <p class="section-subtitle">Let Ralph write your test cases</p>
+                </div>
+
+                <div class="workflow-example">
+                    <div class="workflow-intro">
+                        <p>Ralph can analyze your code and write comprehensive tests. Just point it at the code and describe what kind of coverage you want.</p>
+                    </div>
+
+                    <div class="code-block code-block--large">
+                        <div class="code-block-header">
+                            <span class="code-lang">markdown</span>
+                            <span class="code-filename">PROMPT.md</span>
+                            <button class="copy-btn" aria-label="Copy to clipboard">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <pre><code># Add unit tests for UserService
+
+## Goal
+Write comprehensive unit tests for src/services/UserService.ts
+
+## Target File
+src/services/UserService.ts
+
+## Test File Location
+src/services/__tests__/UserService.test.ts
+
+## Methods to Test
+- createUser()
+- updateUser()
+- deleteUser()
+- findUserByEmail()
+- validatePassword()
+
+## Test Coverage Requirements
+- Happy path for each method
+- Error cases (invalid input, not found, etc.)
+- Edge cases (empty strings, special characters)
+- Mock external dependencies (database, email service)
+
+## Constraints
+- Use Jest and existing test patterns
+- Mock Prisma client, don't hit real database
+- Follow AAA pattern (Arrange, Act, Assert)
+
+## Acceptance Criteria
+- [ ] All methods have at least 2 tests each
+- [ ] Error handling is tested
+- [ ] Mocks are properly set up
+- [ ] Tests pass: npm test</code></pre>
+                    </div>
+
+                    <div class="workflow-tips">
+                        <h4>Tips for Test Writing</h4>
+                        <ul>
+                            <li>Specify your testing framework (Jest, Mocha, etc.)</li>
+                            <li>Mention existing test patterns in your codebase</li>
+                            <li>List specific scenarios you want covered</li>
+                            <li>Include edge cases explicitly</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Reference Section -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">05</span>
+                    <h2 class="section-title">Quick Reference</h2>
+                    <p class="section-subtitle">Which mode to use for each task type</p>
+                </div>
+
+                <div class="mode-reference">
+                    <table class="mode-table">
+                        <thead>
+                            <tr>
+                                <th>Task Type</th>
+                                <th>Recommended Mode</th>
+                                <th>Why</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Quick bug fix</td>
+                                <td><code>-Q</code> (Quick)</td>
+                                <td>Simple changes, fast iteration</td>
+                            </tr>
+                            <tr>
+                                <td>New feature</td>
+                                <td><code>-S</code> (Standard)</td>
+                                <td>Balanced quality and speed</td>
+                            </tr>
+                            <tr>
+                                <td>Refactoring</td>
+                                <td><code>-T</code> (Thorough)</td>
+                                <td>Extra validation to avoid breaking changes</td>
+                            </tr>
+                            <tr>
+                                <td>Complex architecture</td>
+                                <td><code>-L</code> (Long)</td>
+                                <td>Maximum iterations for difficult problems</td>
+                            </tr>
+                            <tr>
+                                <td>Writing tests</td>
+                                <td><code>-S</code> (Standard)</td>
+                                <td>Enough cycles to cover edge cases</td>
+                            </tr>
+                            <tr>
+                                <td>Overnight run</td>
+                                <td><code>-T</code> (Thorough)</td>
+                                <td>Quality matters more than speed</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="section section--alt cta-section">
+            <div class="content-container">
+                <div class="cta-content">
+                    <h2>Ready to streamline your workflow?</h2>
+                    <p>Pick a task, write a spec, and let Ralph handle the implementation.</p>
+                    <div class="cta-buttons">
+                        <a href="writing-specs.html" class="btn btn-primary">
+                            Write Your Spec
+                            <span class="btn-arrow" aria-hidden="true">→</span>
+                        </a>
+                        <a href="../getting-started.html" class="btn btn-secondary">
+                            Get Started
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h3>Ralph Workflow</h3>
+                <p>Multi-agent AI orchestration for automated code development. Ship your ideas with autonomous agents that collaborate until quality is achieved.</p>
+            </div>
+
+            <div class="footer-links">
+                <h4>Project</h4>
+                <ul>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener">Repository</a></li>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/issues" target="_blank" rel="noopener">Issues</a></li>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h4>Documentation</h4>
+                <ul>
+                    <li><a href="../getting-started.html">Getting Started</a></li>
+                    <li><a href="writing-specs.html">Writing Specs</a></li>
+                    <li><a href="workflows.html">Workflows</a></li>
+                    <li><a href="../faq.html">FAQ</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h4>Community</h4>
+                <ul>
+                    <li><a href="../open-source.html">Open Source</a></li>
+                    <li><a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Original Concept</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <div class="footer-copy">
+                <p>&copy; 2025 Ralph Workflow Contributors. Licensed under <a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>.</p>
+            </div>
+            <a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="footer-cta">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                Star on Codeberg
+            </a>
+        </div>
+    </footer>
+
+    <script src="../script.js" defer></script>
+</body>
+</html>
