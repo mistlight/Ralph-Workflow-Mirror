@@ -20,7 +20,13 @@ pub fn run_with_fallback(
 ) -> std::io::Result<i32> {
     let fallback_config = registry.fallback_config();
     let fallbacks = registry.available_fallbacks(role);
-    if !fallback_config.has_fallbacks(role) {
+    if fallback_config.has_fallbacks(role) {
+        // Log the configured agent chain for visibility
+        runtime.logger.info(&format!(
+            "Agent fallback chain for {role}: {}",
+            fallbacks.join(", ")
+        ));
+    } else {
         runtime.logger.info(&format!(
             "No configured fallbacks for {role}, using primary only"
         ));

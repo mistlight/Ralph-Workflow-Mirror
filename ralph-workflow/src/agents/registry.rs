@@ -280,12 +280,12 @@ impl AgentRegistry {
         for (name, overrides) in &unified.agents {
             if let Some(existing) = self.agents.get(name).cloned() {
                 // Merge with existing agent
-                let merged = self.merge_agent_config(existing, overrides);
+                let merged = Self::merge_agent_config(existing, overrides);
                 self.register(name, merged);
                 loaded += 1;
             } else {
                 // New agent definition: require a non-empty command.
-                if let Some(config) = self.create_new_agent_config(overrides) {
+                if let Some(config) = Self::create_new_agent_config(overrides) {
                     self.register(name, config);
                     loaded += 1;
                 }
@@ -296,7 +296,6 @@ impl AgentRegistry {
 
     /// Create a new agent config from unified config overrides.
     fn create_new_agent_config(
-        &self,
         overrides: &crate::config::unified::AgentConfigToml,
     ) -> Option<AgentConfig> {
         let cmd = overrides
@@ -340,7 +339,6 @@ impl AgentRegistry {
 
     /// Merge overrides with existing agent config.
     fn merge_agent_config(
-        &self,
         existing: AgentConfig,
         overrides: &crate::config::unified::AgentConfigToml,
     ) -> AgentConfig {

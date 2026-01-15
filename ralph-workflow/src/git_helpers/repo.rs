@@ -14,7 +14,7 @@
 use std::io;
 use std::path::PathBuf;
 
-use super::identity::{resolve_git_identity, GitIdentity};
+use super::identity::GitIdentity;
 
 /// Maximum diff size (in bytes) before showing a warning.
 /// 100KB is a reasonable threshold - most meaningful diffs are smaller.
@@ -29,21 +29,19 @@ const DIFF_TRUNCATED_MARKER: &str =
     "\n\n[Diff truncated due to size. Showing first portion above.]";
 
 /// Convert git2 error to `io::Error`.
-fn git2_to_io_error(err: git2::Error) -> io::Error {
-    // Consume the error to extract its message
-    let msg = err.to_string();
-    io::Error::other(msg)
+fn git2_to_io_error(err: &git2::Error) -> io::Error {
+    io::Error::other(err.to_string())
 }
 
 /// Check if we're in a git repository.
 pub fn require_git_repo() -> io::Result<()> {
-    git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     Ok(())
 }
 
 /// Get the git repository root.
 pub fn get_repo_root() -> io::Result<PathBuf> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     repo.workdir()
         .map(PathBuf::from)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No workdir for repository"))
@@ -54,7 +52,7 @@ pub fn get_repo_root() -> io::Result<PathBuf> {
 /// Returns the path to the hooks directory inside .git (or the equivalent
 /// for worktrees and other configurations).
 pub fn get_hooks_dir() -> io::Result<PathBuf> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     Ok(repo.path().join("hooks"))
 }
 
@@ -62,11 +60,13 @@ pub fn get_hooks_dir() -> io::Result<PathBuf> {
 ///
 /// Returns status in porcelain format (similar to `git status --porcelain=v1`).
 pub fn git_snapshot() -> io::Result<String> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
-    let statuses = repo.statuses(Some(&mut opts)).map_err(git2_to_io_error)?;
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .map_err(|e| git2_to_io_error(&e))?;
 
     let mut result = String::new();
     for entry in statuses.iter() {
@@ -130,11 +130,11 @@ pub fn git_snapshot() -> io::Result<String> {
 /// Handles the case of an empty repository (no commits yet) by
 /// diffing against an empty tree using a read-only approach.
 pub fn git_diff() -> io::Result<String> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // Try to get HEAD tree
     let head_tree = match repo.head() {
-        Ok(head) => Some(head.peel_to_tree().map_err(git2_to_io_error)?),
+        Ok(head) => Some(head.peel_to_tree().map_err(|e| git2_to_io_error(&e))?),
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => {
             // No commits yet - we need to show all untracked files as new files
             // Since there's no HEAD, we diff an empty tree against the workdir
@@ -147,18 +147,18 @@ pub fn git_diff() -> io::Result<String> {
 
             let diff = repo
                 .diff_tree_to_workdir_with_index(None, Some(&mut diff_opts))
-                .map_err(git2_to_io_error)?;
+                .map_err(|e| git2_to_io_error(&e))?;
 
             let mut result = Vec::new();
             diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
                 result.extend_from_slice(line.content());
                 true
             })
-            .map_err(git2_to_io_error)?;
+            .map_err(|e| git2_to_io_error(&e))?;
 
             return Ok(String::from_utf8_lossy(&result).to_string());
         }
-        Err(e) => return Err(git2_to_io_error(e)),
+        Err(e) => return Err(git2_to_io_error(&e)),
     };
 
     // For repos with commits, diff HEAD against working tree
@@ -169,7 +169,7 @@ pub fn git_diff() -> io::Result<String> {
 
     let diff = repo
         .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
 
     // Generate diff text
     let mut result = Vec::new();
@@ -177,7 +177,7 @@ pub fn git_diff() -> io::Result<String> {
         result.extend_from_slice(line.content());
         true
     })
-    .map_err(git2_to_io_error)?;
+    .map_err(|e| git2_to_io_error(&e))?;
 
     Ok(String::from_utf8_lossy(&result).to_string())
 }
@@ -229,14 +229,14 @@ pub fn validate_and_truncate_diff(diff: String) -> (String, bool) {
 fn index_has_changes_to_commit(repo: &git2::Repository, index: &git2::Index) -> io::Result<bool> {
     match repo.head() {
         Ok(head) => {
-            let head_tree = head.peel_to_tree().map_err(git2_to_io_error)?;
+            let head_tree = head.peel_to_tree().map_err(|e| git2_to_io_error(&e))?;
             let diff = repo
                 .diff_tree_to_index(Some(&head_tree), Some(index), None)
-                .map_err(git2_to_io_error)?;
+                .map_err(|e| git2_to_io_error(&e))?;
             Ok(diff.deltas().len() > 0)
         }
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => Ok(!index.is_empty()),
-        Err(e) => Err(git2_to_io_error(e)),
+        Err(e) => Err(git2_to_io_error(&e)),
     }
 }
 
@@ -258,9 +258,9 @@ fn is_internal_agent_artifact(path: &std::path::Path) -> bool {
 /// Returns `Ok(true)` if files were successfully staged, `Ok(false)` if there
 /// were no files to stage, or an error if staging failed.
 pub fn git_add_all() -> io::Result<bool> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
-    let mut index = repo.index().map_err(git2_to_io_error)?;
+    let mut index = repo.index().map_err(|e| git2_to_io_error(&e))?;
 
     // Stage deletions (equivalent to `git add -A` behavior).
     // libgit2's `add_all` doesn't automatically remove deleted paths.
@@ -271,13 +271,13 @@ pub fn git_add_all() -> io::Result<bool> {
         .include_ignored(false);
     let statuses = repo
         .statuses(Some(&mut status_opts))
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
     for entry in statuses.iter() {
         if entry.status().contains(git2::Status::WT_DELETED) {
             if let Some(path) = entry.path() {
                 index
                     .remove_path(std::path::Path::new(path))
-                    .map_err(git2_to_io_error)?;
+                    .map_err(|e| git2_to_io_error(&e))?;
             }
         }
     }
@@ -294,9 +294,9 @@ pub fn git_add_all() -> io::Result<bool> {
             git2::IndexAddOption::DEFAULT,
             Some(&mut filter_cb),
         )
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
 
-    index.write().map_err(git2_to_io_error)?;
+    index.write().map_err(|e| git2_to_io_error(&e))?;
 
     // Return true if staging produced something commit-worthy.
     index_has_changes_to_commit(&repo, &index)
@@ -305,91 +305,105 @@ pub fn git_add_all() -> io::Result<bool> {
 /// Resolve git commit identity with the full priority chain.
 ///
 /// This function implements the identity resolution priority chain:
-/// 1. Provided name/email parameters (from Ralph config)
-/// 2. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
-/// 3. Ralph config file values (passed through)
-/// 4. Git config (via libgit2's `repo.signature()`)
+/// 1. Git config (via libgit2's `repo.signature()`) - primary source
+/// 2. Provided name/email parameters (from Ralph config, CLI args, or env vars)
+/// 3. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
+/// 4. Ralph config file values (passed through)
 /// 5. System username + derived email
 /// 6. Default values ("Ralph Workflow", "ralph@localhost")
 ///
-/// Partial overrides are supported: if only name is provided, email will
-/// fall back through git config, system fallback, or defaults.
+/// Partial overrides are supported: CLI args/env vars/config can override
+/// individual fields (name or email) from git config.
 ///
 /// # Arguments
 ///
-/// * `repo` - The git repository (for git config fallback)
+/// * `repo` - The git repository (for git config)
 /// * `provided_name` - Optional name from Ralph config or CLI
 /// * `provided_email` - Optional email from Ralph config or CLI
 ///
 /// # Returns
 ///
-/// Returns `Ok(GitIdentity)` with the resolved name and email.
+/// Returns `GitIdentity` with the resolved name and email.
 fn resolve_commit_identity(
     repo: &git2::Repository,
     provided_name: Option<&str>,
     provided_email: Option<&str>,
-) -> io::Result<GitIdentity> {
+) -> GitIdentity {
     use super::identity::{default_identity, fallback_email, fallback_username};
 
-    // First try the identity resolution system for CLI/env/config sources
-    // This handles priorities 1-3 (CLI args, env vars, Ralph config)
-    if let Ok((identity, _source)) = resolve_git_identity(provided_name, provided_email, None, None)
-    {
-        // Identity resolved from CLI, env, or config - validate and return
-        if let Err(e) = identity.validate() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("Invalid git identity from config: {e}"),
-            ));
-        }
-        return Ok(identity);
-    }
-    // Identity resolution fell through - continue to git config fallback
+    // Priority 1: Git config (via libgit2) - primary source
+    let mut name = String::new();
+    let mut email = String::new();
+    let mut has_git_config = false;
 
-    // Priority 4: Git config (via libgit2)
-    // This handles the case where neither CLI/env nor Ralph config provided
-    // both name and email. We now try git config, and support partial overrides.
     if let Ok(sig) = repo.signature() {
-        // Git config provided a signature
-        let git_name = sig.name().unwrap_or("").to_string();
-        let git_email = sig.email().unwrap_or("").to_string();
-
-        // If git config has both name and email, use them
+        let git_name = sig.name().unwrap_or("");
+        let git_email = sig.email().unwrap_or("");
         if !git_name.is_empty() && !git_email.is_empty() {
-            // Check if we have a partial override (name provided but not email, or vice versa)
-            let name = provided_name
-                .filter(|s| !s.is_empty())
-                .unwrap_or(&git_name)
-                .to_string();
-            let email = provided_email
-                .filter(|s| !s.is_empty())
-                .unwrap_or(&git_email)
-                .to_string();
-
-            let identity = GitIdentity::new(name, email);
-            if identity.validate().is_err() {
-                // Git config identity is invalid - fall through to system fallback
-            } else {
-                return Ok(identity);
-            }
+            name = git_name.to_string();
+            email = git_email.to_string();
+            has_git_config = true;
         }
-    } else {
-        // Git config failed - fall through to system fallback
+    }
+
+    // Priority 2-4: CLI args, env vars, Ralph config (as overrides to git config)
+    // These can override individual fields from git config (partial override support)
+    let cli_name = std::env::var("RALPH_GIT_USER_NAME").ok();
+    let cli_email = std::env::var("RALPH_GIT_USER_EMAIL").ok();
+
+    // Apply overrides in priority order: CLI args > env vars > provided params > git config
+    let final_name = provided_name
+        .filter(|s| !s.is_empty())
+        .or(cli_name.as_deref())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            has_git_config
+                .then_some(name.as_str())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or("");
+
+    let final_email = provided_email
+        .filter(|s| !s.is_empty())
+        .or(cli_email.as_deref())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            has_git_config
+                .then_some(email.as_str())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or("");
+
+    // If we have both name and email from git config + overrides, use them
+    if !final_name.is_empty() && !final_email.is_empty() {
+        let identity = GitIdentity::new(final_name.to_string(), final_email.to_string());
+        if identity.validate().is_ok() {
+            return identity;
+        }
     }
 
     // Priority 5: System username + derived email
     let username = fallback_username();
-    let email = fallback_email(&username);
-    let identity = GitIdentity::new(username, email);
+    let system_email = fallback_email(&username);
+    let identity = GitIdentity::new(
+        if final_name.is_empty() {
+            username
+        } else {
+            final_name.to_string()
+        },
+        if final_email.is_empty() {
+            system_email
+        } else {
+            final_email.to_string()
+        },
+    );
 
-    if identity.validate().is_err() {
-        // Shouldn't happen with our fallbacks, but handle it by falling through to defaults
-    } else {
-        return Ok(identity);
+    if identity.validate().is_ok() {
+        return identity;
     }
 
     // Priority 6: Default values (last resort)
-    Ok(default_identity())
+    default_identity()
 }
 
 /// Create a commit.
@@ -401,15 +415,15 @@ fn resolve_commit_identity(
 /// # Identity Resolution
 ///
 /// The git commit identity (name and email) is resolved using the following priority:
-/// 1. Provided `git_user_name` and `git_user_email` parameters (highest priority)
-/// 2. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
-/// 3. Ralph config file (read by caller, passed as parameters)
-/// 4. Git config (via libgit2)
+/// 1. Git config (via libgit2) - primary source
+/// 2. Provided `git_user_name` and `git_user_email` parameters (overrides)
+/// 3. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
+/// 4. Ralph config file (read by caller, passed as parameters)
 /// 5. System username + derived email (sane fallback)
 /// 6. Default values ("Ralph Workflow", "ralph@localhost") - last resort
 ///
-/// Partial overrides are supported: if only name is provided, email will fall back
-/// through the remaining priority levels.
+/// Partial overrides are supported: CLI args/env vars/config can override individual
+/// fields (name or email) from git config.
 ///
 /// # Arguments
 ///
@@ -426,10 +440,10 @@ pub fn git_commit(
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
 ) -> io::Result<Option<git2::Oid>> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // Get the index
-    let mut index = repo.index().map_err(git2_to_io_error)?;
+    let mut index = repo.index().map_err(|e| git2_to_io_error(&e))?;
 
     // Don't create empty commits: if the index matches HEAD (or is empty on an unborn branch),
     // there's nothing to commit.
@@ -438,22 +452,35 @@ pub fn git_commit(
     }
 
     // Get the tree from the index
-    let tree_oid = index.write_tree().map_err(git2_to_io_error)?;
+    let tree_oid = index.write_tree().map_err(|e| git2_to_io_error(&e))?;
 
-    let tree = repo.find_tree(tree_oid).map_err(git2_to_io_error)?;
+    let tree = repo.find_tree(tree_oid).map_err(|e| git2_to_io_error(&e))?;
 
     // Resolve git identity using the identity resolution system.
     // This implements the full priority chain with proper fallbacks.
-    let GitIdentity { name, email } =
-        resolve_commit_identity(&repo, git_user_name, git_user_email)?;
+    let GitIdentity { name, email } = resolve_commit_identity(&repo, git_user_name, git_user_email);
+
+    // Log the resolved identity source for visibility
+    let identity_source = if git_user_name.is_some() || git_user_email.is_some() {
+        "CLI/config override"
+    } else if std::env::var("RALPH_GIT_USER_NAME").is_ok()
+        || std::env::var("RALPH_GIT_USER_EMAIL").is_ok()
+    {
+        "environment variable"
+    } else if repo.signature().is_ok() {
+        "git config"
+    } else {
+        "system/default"
+    };
+    eprintln!("Git identity: {name} <{email}> (source: {identity_source})");
 
     // Create the signature with the resolved identity
-    let sig = git2::Signature::now(&name, &email).map_err(git2_to_io_error)?;
+    let sig = git2::Signature::now(&name, &email).map_err(|e| git2_to_io_error(&e))?;
 
     let oid = match repo.head() {
         Ok(head) => {
             // Normal commit: has a parent
-            let head_commit = head.peel_to_commit().map_err(git2_to_io_error)?;
+            let head_commit = head.peel_to_commit().map_err(|e| git2_to_io_error(&e))?;
             repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head_commit])
         }
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => {
@@ -472,9 +499,9 @@ pub fn git_commit(
             }
             repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[])
         }
-        Err(e) => return Err(git2_to_io_error(e)),
+        Err(e) => return Err(git2_to_io_error(&e)),
     }
-    .map_err(git2_to_io_error)?;
+    .map_err(|e| git2_to_io_error(&e))?;
 
     Ok(Some(oid))
 }
@@ -496,7 +523,7 @@ pub fn git_commit(
 /// - The starting commit cannot be found
 /// - The diff cannot be generated
 pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // Parse the starting OID
     let oid = git2::Oid::from_str(start_oid).map_err(|_| {
@@ -507,8 +534,8 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     })?;
 
     // Find the starting commit
-    let start_commit = repo.find_commit(oid).map_err(git2_to_io_error)?;
-    let start_tree = start_commit.tree().map_err(git2_to_io_error)?;
+    let start_commit = repo.find_commit(oid).map_err(|e| git2_to_io_error(&e))?;
+    let start_tree = start_commit.tree().map_err(|e| git2_to_io_error(&e))?;
 
     // Diff between start commit and current working tree, including staged + unstaged
     // changes and untracked files.
@@ -518,7 +545,7 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
 
     let diff = repo
         .diff_tree_to_workdir_with_index(Some(&start_tree), Some(&mut diff_opts))
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
 
     // Generate diff text
     let mut result = Vec::new();
@@ -526,7 +553,7 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
         result.extend_from_slice(line.content());
         true
     })
-    .map_err(git2_to_io_error)?;
+    .map_err(|e| git2_to_io_error(&e))?;
 
     Ok(String::from_utf8_lossy(&result).to_string())
 }
@@ -538,14 +565,14 @@ fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
 
     let diff = repo
         .diff_tree_to_workdir_with_index(None, Some(&mut diff_opts))
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
 
     let mut result = Vec::new();
     diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
         result.extend_from_slice(line.content());
         true
     })
-    .map_err(git2_to_io_error)?;
+    .map_err(|e| git2_to_io_error(&e))?;
 
     Ok(String::from_utf8_lossy(&result).to_string())
 }
@@ -568,7 +595,7 @@ pub fn get_git_diff_from_start() -> io::Result<String> {
     // but we also repair missing/corrupt files opportunistically for robustness.
     save_start_commit()?;
 
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     match load_start_point()? {
         StartPoint::Commit(oid) => git_diff_from(&oid.to_string()),
