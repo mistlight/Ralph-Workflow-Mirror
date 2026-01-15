@@ -1,300 +1,434 @@
-# Implementation Plan: Fix Streaming Partials Rendering Issues
+# Auto Rebase for Ralph - Implementation Plan
 
 ## Summary
 
-This plan addresses the architectural root causes of streaming display bugs that manifest as prefix spam, line breaks within streaming output, glued text, and duplicate final messages. The fix enforces a strict streaming contract with explicit message lifecycle management, ensuring each streaming delta is processed exactly once and final messages are never duplicated. The implementation will modify the unified `StreamingSession` state machine to guarantee these invariants and update all parsers (Claude, Codex, Gemini, OpenCode) to consistently follow the contract.
+This document outlines the implementation of automatic git rebase functionality for Ralph. The goal is to automatically rebase feature branches onto the main branch before and after the development/review cycle, reducing merge conflicts when multiple AI agents work on separate worktrees that get merged at different times.
 
----
+The implementation will:
+1. Detect if we're on a feature branch (not main/master)
+2. Automatically rebase to main before development starts
+3. Automatically rebase to main after review/fix completes
+4. Handle conflicts by delegating resolution to AI agents with proper context
+5. Provide `--skip-rebase` and `--rebase-only` flags for user control
 
 ## Implementation Steps
 
-### Step 1: Add Message Lifecycle State Enforcement to StreamingSession
+### Step 1: Add Branch Detection Infrastructure
 
-**File:** `ralph-workflow/src/json_parser/streaming_state.rs`
+**File**: `ralph-workflow/src/git_helpers/branch.rs` (new file)
 
-**Changes:**
-1. Convert the soft `assert_lifecycle_state` debug assertion into a hard runtime guard that returns early or logs warnings in release mode
-2. Add an explicit `ContentBlockState` enum to track whether we're in a content block:
-   ```rust
-   pub enum ContentBlockState {
-       NotInBlock,
-       InBlock { index: String, started_output: bool },
-   }
-   ```
-3. Replace the boolean `in_content_block` with this richer state that tracks the current block's index
-4. Add a method `ensure_content_block_finalized(&mut self)` that:
-   - Emits a newline if `started_output` is true
-   - Transitions to `NotInBlock`
-   - Clears the current block index
-5. Update `on_message_stop()` to call this method
+Create a new module for branch-related operations:
+- `get_current_branch_name()` - Get the current branch name using libgit2
+- `is_main_or_master_branch()` - Check if current branch is "main" or "master"
+- `get_default_branch()` - Detect the default branch (refs/remotes/origin/HEAD)
+- `ensure_on_feature_branch()` - Validate we're not on main/master when needed
 
-**Rationale:** The current `in_content_block: bool` doesn't track which block is active, leading to edge cases where block boundaries are crossed without proper finalization.
+**Rationale**: This provides the foundational branch detection logic that the rest of the rebase feature will depend on. Using libgit2 ensures consistency with existing git operations.
 
----
+### Step 2: Add Rebase Operations Module
 
-### Step 2: Fix Missing Message ID Propagation in Codex and OpenCode Parsers
+**File**: `ralph-workflow/src/git_helpers/rebase.rs` (new file)
 
-**Files:**
-- `ralph-workflow/src/json_parser/codex.rs`
-- `ralph-workflow/src/json_parser/opencode.rs`
+Implement core rebase functionality using libgit2:
+- `rebase_onto(upstream_branch)` - Perform rebase using libgit2's Rebase API
+- `get_rebase_conflicts()` - Detect if rebase has conflicts
+- `abort_rebase()` - Abort a conflicted rebase
+- `continue_rebase()` - Continue after conflict resolution
+- `get_conflicted_files()` - Get list of files with conflicts
 
-**Changes:**
-1. In **Codex parser**:
-   - The `TurnStarted` event currently calls `on_message_start()` but doesn't generate a unique turn ID
-   - Generate a synthetic turn ID (e.g., using a counter or timestamp)
-   - Call `session.set_current_message_id(Some(turn_id))` after `on_message_start()`
-   - On `TurnCompleted`, ensure `on_message_stop()` is called to mark the message as displayed
+**Edge Cases to Handle**:
+- Empty repository (no commits)
+- Unborn branch
+- Detached HEAD state
+- Upstream branch doesn't exist
+- Conflicts during rebase
 
-2. In **OpenCode parser**:
-   - Use the `sessionID` from events as the message ID
-   - Call `session.set_current_message_id(Some(session_id))` when a new session/step begins
-   - On `step_finish` events, call `on_message_stop()` to mark completion
+**Rationale**: This encapsulates all rebase operations in one module, providing a clean API for the orchestrator to call. Using libgit2 directly (not git CLI) maintains consistency with the project's approach.
 
-**Rationale:** Without message IDs, the `is_duplicate_final_message()` check falls back to `has_any_streamed_content()` which is fragile and can fail if state is accidentally reset.
+### Step 3: Add Conflict Resolution Prompt
 
----
+**File**: `ralph-workflow/src/prompts/rebase.rs` (new file)
 
-### Step 3: Enforce Single Content Block Per Streaming Region
+Create prompts for AI-assisted conflict resolution:
+- `conflict_resolution_prompt(conflict_file, our_commit, their_commit)` - Generate prompt for fixing merge conflicts
+- Include context about the original PROMPT.md if available
+- Include context about the PLAN if it exists
+- Show both sides of the conflict clearly
 
-**File:** `ralph-workflow/src/json_parser/streaming_state.rs`
+**Rationale**: When rebase conflicts occur, the AI agent needs proper context to resolve conflicts intelligently. This prompt provides the necessary context.
 
-**Changes:**
-1. When `on_content_block_start(index)` is called while `ContentBlockState::InBlock` is active:
-   - First finalize the previous block (emit newline if needed)
-   - Then start the new block
-2. Add a warning log when consecutive `on_content_block_start` calls occur without an intervening delta, as this may indicate malformed event streams
+### Step 4: Add CLI Arguments
 
-**Rationale:** The "glued text" bug occurs when a new content block starts before the previous one is finalized, causing missing newlines between outputs.
+**File**: `ralph-workflow/src/cli/args.rs` (modify)
 
----
+Add new CLI argument structures:
+```rust
+#[derive(Parser, Debug, Default)]
+pub struct RebaseFlags {
+    /// Skip automatic rebase before/after pipeline
+    #[arg(long, help = "Skip automatic rebase to main branch")]
+    pub skip_rebase: bool,
 
-### Step 4: Add Comprehensive Integration Tests for Streaming Contract
+    /// Only perform rebase and exit
+    #[arg(long, help = "Only rebase to main branch, then exit")]
+    pub rebase_only: bool,
+}
+```
 
-**File:** `ralph-workflow/src/json_parser/tests.rs` (expand existing)
+**Rationale**: Provides user control over rebase behavior. `--skip-rebase` is useful when conflicts are expected or handled manually. `--rebase-only` allows updating the feature branch without running the full pipeline.
 
-**Add the following tests:**
+### Step 5: Add Configuration Options
 
-1. **Test: Many tiny deltas produce exactly one prefix**
-   ```rust
-   #[test]
-   fn test_streaming_many_tiny_deltas_single_prefix() {
-       // Feed 100+ single-character deltas
-       // Assert prefix count == 1
-       // Assert final message appears once
-       // Assert carriage returns used for in-place updates
-   }
-   ```
+**File**: `ralph-workflow/src/config/types.rs` (modify)
 
-2. **Test: Final message not duplicated after streaming**
-   ```rust
-   #[test]
-   fn test_streaming_deduplicates_final_message() {
-       // Stream deltas → message_stop → Assistant event with same content
-       // Assert content appears exactly once
-   }
-   ```
+Add to `FeatureFlags`:
+```rust
+pub struct FeatureFlags {
+    pub(crate) checkpoint_enabled: bool,
+    pub(crate) force_universal_prompt: bool,
+    pub(crate) auto_rebase_enabled: bool,  // NEW
+}
+```
 
-3. **Test: Content block transitions emit proper newlines**
-   ```rust
-   #[test]
-   fn test_streaming_multiple_content_blocks_separated() {
-       // Stream block 0, then block 1
-       // Assert newline between blocks
-       // Assert no glued text
-   }
-   ```
+**File**: `ralph-workflow/src/config/unified.rs` or `loader.rs` (modify)
 
-4. **Test: Snapshot-as-delta is auto-repaired**
-   ```rust
-   #[test]
-   fn test_streaming_snapshot_as_delta_extracted() {
-       // Feed deltas where second "delta" is actually full accumulated content
-       // Assert extracted delta is only the new portion
-       // Assert no duplication
-   }
-   ```
+Add configuration loading for `auto_rebase` setting.
 
-5. **Test: Finalize without streaming produces no output**
-   ```rust
-   #[test]
-   fn test_streaming_finalize_without_deltas_no_output() {
-       // message_start → message_stop (no deltas)
-       // Assert empty output
-   }
-   ```
+**Rationale**: Allows users to enable/disable auto-rebase via config file, providing a default behavior that can be overridden.
 
----
+### Step 6: Integrate Pre-Development Rebase
 
-### Step 5: Add Streaming Contract Validation Module
+**File**: `ralph-workflow/src/app/mod.rs` (modify)
 
-**New File:** `ralph-workflow/src/json_parser/delta_contract.rs`
+In `run_pipeline()` function, before development phase starts:
+1. Check if auto-rebase is enabled and not skipped
+2. Check if we're on a feature branch
+3. If yes, perform rebase to default branch
+4. Handle conflicts if they arise
 
-**Contents:**
-1. Define `DeltaContract` trait that parsers must implement:
-   ```rust
-   pub trait DeltaContract {
-       /// Validate that incoming text is a genuine delta, not a snapshot
-       fn validate_delta(&self, text: &str, accumulated: Option<&str>) -> DeltaValidation;
-   }
+Add new function `run_initial_rebase()` that:
+- Detects default branch
+- Performs rebase
+- If conflicts occur, invokes AI agent with conflict resolution prompt
+- Continues rebase after resolution
+- Reports success/failure
 
-   pub enum DeltaValidation {
-       GenuineDelta,
-       SnapshotDetected { extracted_delta: String },
-       InvalidInput(String),
-   }
-   ```
+**Rationale**: Rebasing before development ensures the feature branch starts from the latest main, reducing the likelihood of conflicts during later merges.
 
-2. Move the `is_likely_snapshot` and `get_delta_from_snapshot` logic from `StreamingSession` into this module for cleaner separation
-3. Add `#[cfg(test)]` helper functions to generate test fixtures for streaming scenarios
+### Step 7: Integrate Post-Review Rebase
 
-**Rationale:** Centralizing delta validation logic makes it easier to enforce the contract consistently and add new validation rules.
+**File**: `ralph-workflow/src/app/mod.rs` (modify)
 
----
+In `run_pipeline()` function, after review phase completes:
+1. Check if auto-rebase is enabled and not skipped
+2. Check if we're still on a feature branch
+3. If yes, perform rebase to default branch
+4. Handle conflicts if they arise
 
-### Step 6: Fix Prefix Spam in Edge Cases
+**Rationale**: Rebasing after development/review ensures the feature branch is up-to-date with main before final commit, making the eventual merge cleaner.
 
-**Files:**
-- `ralph-workflow/src/json_parser/claude.rs`
-- `ralph-workflow/src/json_parser/streaming_state.rs`
+### Step 8: Handle `--rebase-only` Flag
 
-**Changes:**
+**File**: `ralph-workflow/src/app/mod.rs` (modify)
 
-1. In `StreamingSession::on_text_delta_key()`:
-   - The `is_first` check currently uses `!self.accumulated.contains_key(&content_key)`
-   - This can return `true` if the key is different (e.g., Codex using dynamic item IDs)
-   - Add normalization: for certain parsers, map all text content to a canonical key like `"text:0"`
+Add handler in `run()` function:
+1. Check if `--rebase-only` is set
+2. If yes, skip all pipeline phases
+3. Only run the rebase operation
+4. Exit with appropriate status
 
-2. In Claude parser:
-   - Ensure `content_block_start` always uses the same index passed to subsequent `content_block_delta` events
-   - The current code already does this, but add validation to catch mismatches
+**Rationale**: Provides a quick way to update a feature branch without running the full AI development cycle.
 
-**Rationale:** The prefix spam bug can occur when different delta events use inconsistent keys, causing each to be treated as "first".
+### Step 9: Add Rebase Phase to Checkpoint System
 
----
+**File**: `ralph-workflow/src/checkpoint/state.rs` (modify)
 
-### Step 7: Ensure Proper Newline Emission on MessageStop
+Add new checkpoint phases:
+- `PreRebase` - Before initial rebase
+- `PostDevelopmentRebase` - After development, before review
+- `PostReviewRebase` - After review
 
-**File:** `ralph-workflow/src/json_parser/claude.rs` (and other parsers)
+**Rationale**: Allows resuming from rebase operations if interrupted.
 
-**Changes:**
-1. In `parse_stream_event` for `MessageStop`:
-   ```rust
-   StreamInnerEvent::MessageStop => {
-       let was_in_block = session.on_message_stop();
-       if was_in_block || session.has_any_streamed_content() {
-           format!("{}{}", c.reset(), TextDeltaRenderer::render_completion())
-       } else {
-           String::new()
-       }
-   }
-   ```
-   - Currently only emits newline if `was_in_block` is true
-   - Should also emit if any content was streamed (to handle edge cases where `in_content_block` was never set)
+### Step 10: Update Module Exports
 
-2. Apply similar fix to Codex, Gemini, and OpenCode parsers
+**File**: `ralph-workflow/src/git_helpers/mod.rs` (modify)
 
-**Rationale:** The "glued text" bug can occur when `in_content_block` is false but content was still streamed through other code paths.
+Export new modules:
+```rust
+pub mod branch;
+pub mod rebase;
 
----
+pub use branch::{get_current_branch_name, is_main_or_master_branch};
+pub use rebase::{rebase_onto, abort_rebase, continue_rebase};
+```
 
-### Step 8: Update Documentation
+**Rationale**: Makes the new functionality available to the rest of the application.
 
-**File:** `ralph-workflow/src/json_parser/streaming_state.rs` (module docs)
+### Step 11: Add Comprehensive Tests
 
-**Changes:**
-1. Add detailed documentation about the streaming contract:
-   - Delta vs Snapshot definitions
-   - Message lifecycle (Start → ContentBlockStart → Deltas → ContentBlockStop → MessageStop)
-   - When and how deduplication occurs
-   - How to add support for a new parser
+**File**: `tests/rebase_workflow.rs` (new file)
 
-2. Add examples showing correct and incorrect streaming sequences
+Add integration tests for:
+- Branch detection on main/master
+- Branch detection on feature branch
+- Successful rebase without conflicts
+- Rebase with conflicts (mock conflict)
+- `--skip-rebase` flag behavior
+- `--rebase-only` flag behavior
+- Empty repository handling
+- Detached HEAD handling
 
----
+**Rationale**: Comprehensive tests ensure the rebase functionality works correctly across various scenarios.
+
+### Step 12: Update Documentation
+
+**Files**:
+- `docs/git-workflow.md` - Add rebase section
+- `CLAUDE.md` - Add rebase-related rules if needed
+- `README.md` - Document new flags
+
+Document:
+- How auto-rebase works
+- When it runs (before/after phases)
+- How to control it (--skip-rebase, --rebase-only)
+- How conflicts are handled
+
+**Rationale**: Clear documentation helps users understand and use the new feature effectively.
 
 ## Critical Files for Implementation
 
-1. **`ralph-workflow/src/json_parser/streaming_state.rs`** - Core state machine that needs lifecycle enforcement and content block state tracking
+1. **`ralph-workflow/src/git_helpers/branch.rs`** (new) - Branch detection logic
+   - Determines if we're on main/master or a feature branch
+   - Finds the default branch for rebasing
 
-2. **`ralph-workflow/src/json_parser/claude.rs`** - Primary parser that handles most streaming scenarios; needs newline emission fix and serves as reference implementation
+2. **`ralph-workflow/src/git_helpers/rebase.rs`** (new) - Core rebase operations
+   - Wraps libgit2 rebase API
+   - Handles conflict detection
+   - Provides abort/continue operations
 
-3. **`ralph-workflow/src/json_parser/codex.rs`** - Needs message ID generation for proper deduplication
+3. **`ralph-workflow/src/app/mod.rs`** (modify) - Pipeline orchestration
+   - Integrate pre and post rebase calls
+   - Handle --rebase-only flag
+   - Manage conflict resolution flow
 
-4. **`ralph-workflow/src/json_parser/tests.rs`** - Comprehensive integration tests to lock behavior
+4. **`ralph-workflow/src/cli/args.rs`** (modify) - CLI interface
+   - Add --skip-rebase flag
+   - Add --rebase-only flag
 
-5. **`ralph-workflow/src/json_parser/delta_display.rs`** - Already correct, but may need minor updates to support new ContentBlockState
-
----
+5. **`ralph-workflow/src/prompts/rebase.rs`** (new) - Conflict resolution prompts
+   - Generate prompts for AI agents to resolve merge conflicts
+   - Include context from PROMPT.md and PLAN.md
 
 ## Risks & Mitigations
 
-### Risk 1: Breaking existing streaming behavior
-**Mitigation:** The existing comprehensive test suite (1700+ lines in tests.rs) will catch regressions. Run full test suite after each change. Key tests to monitor:
-- `test_ccs_glm_streaming_no_duplicate_prefix`
-- `test_streaming_accumulation_behavior`
-- `test_streaming_consistency_across_parsers`
+### Risk 1: Rebase Conflicts Causing Pipeline Failures
 
-### Risk 2: Performance impact from additional state tracking
-**Mitigation:** The changes are O(1) state machine operations with minimal allocation. The `ContentBlockState` enum is small (32 bytes max). No measurable performance impact expected.
+**Challenge**: When main has advanced significantly, rebasing a feature branch may cause numerous conflicts that AI agents cannot resolve automatically.
 
-### Risk 3: New `expect` attributes violating CLAUDE.md
-**Mitigation:** All new code will be written to pass clippy without suppressions. The existing `#[expect(clippy::cast_precision_loss)]` on line 552 of streaming_state.rs is justified and documented.
+**Mitigation**: 
+- Provide clear error messages when conflicts occur
+- Allow manual intervention with --skip-rebase
+- Consider adding `--continue-rebase` flag for resuming after manual conflict resolution
+- Log all conflicted files for user reference
 
-### Risk 4: Codex/OpenCode message ID changes affecting deduplication
-**Mitigation:** The changes are additive - we're adding IDs where none existed. The fallback `has_any_streamed_content()` check remains as a safety net.
+### Risk 2: libgit2 Rebase API Complexity
 
----
+**Challenge**: libgit2's rebase API is complex and has edge cases that may be difficult to handle correctly.
+
+**Mitigation**:
+- Start with simple linear rebases (no cherry-pick complexity)
+- Extensive testing in various scenarios
+- Consider falling back to git CLI for complex cases if needed (document this decision)
+- Handle all error cases gracefully with informative messages
+
+### Risk 3: Breaking Agent Isolation During Conflict Resolution
+
+**Challenge**: The requirement states "AI Agents should not know that we are in a middle of a rebase" but conflict resolution requires showing conflicts.
+
+**Mitigation**:
+- Frame conflicts as "merge conflicts between two versions" without mentioning rebase
+- Only show the two conflicting commits and the file content
+- Don't expose git metadata that reveals rebase state
+- Use the existing conflict resolution prompt pattern
+
+### Risk 4: Default Branch Detection Issues
+
+**Challenge**: Different repos use "main", "master", or other default branch names. Detection may fail in repos without origin configured.
+
+**Mitigation**:
+- Try multiple detection methods (origin/HEAD, common names)
+- Allow configuration of default branch name
+- Fall back to "main" as default with warning
+- Document how to configure for non-standard setups
+
+### Risk 5: Empty Repository or No Upstream
+
+**Challenge**: Rebasing fails in empty repos or when there's no upstream branch.
+
+**Mitigation**:
+- Gracefully skip rebase with informative message
+- Don't fail the pipeline for these expected cases
+- Log at appropriate verbosity level
 
 ## Verification Strategy
 
-### Pre-Implementation Checks
-```bash
-# Ensure clean starting state
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-```
+### Unit Tests
 
-### Post-Implementation Verification
-```bash
-# 1. Check for forbidden allow/expect attributes
-rg -n --pcre2 '(?x)
-  \#\s*!?\[\s*
-  (allow|expect)
-  \s*\(
-    [^()\]]*
-    (?:\([^()\]]*\)[^()\]]*)*
-  \)
-  \s*\]
-' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
-# Must produce no NEW output (existing expect attributes are pre-approved)
+1. **Branch Detection Tests**
+   - Test `is_main_or_master_branch()` returns true for "main" and "master"
+   - Test it returns false for feature branches
+   - Test `get_default_branch()` with various repo configurations
 
-# 2. Full verification suite
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
+2. **Rebase Operation Tests**
+   - Test successful rebase on clean branch
+   - Test rebase with simulated conflicts
+   - Test abort and continue operations
+   - Test error handling for invalid states
 
-# 3. Run the specific streaming tests
-cargo test --all-features streaming
-cargo test --all-features ccs_glm
-cargo test --all-features deduplication
-```
+3. **Conflict Detection Tests**
+   - Test `get_conflicted_files()` returns correct file list
+   - Test `get_rebase_conflicts()` detects conflict state
 
-### Manual Testing
-1. Run ralph with ccs-glm agent on a sample task
-2. Observe terminal output during streaming:
-   - Should see single `[ccs-glm]` prefix
-   - Text should update in-place (single line growing)
-   - No duplicate output after completion
-3. Verify with `ralph --verbose` to see debug output
+### Integration Tests
+
+1. **Full Pipeline Test with Rebase**
+   - Create feature branch with commits
+   - Update main with new commits
+   - Run Ralph with auto-rebase
+   - Verify feature branch was rebased onto main
+   - Verify commits from feature branch are preserved
+
+2. **Conflict Resolution Test**
+   - Set up conflicting changes on main and feature
+   - Trigger rebase
+   - Run AI agent conflict resolution
+   - Verify conflicts were resolved
+   - Verify rebase completed
+
+3. **Flag Behavior Tests**
+   - Test `--skip-rebase` skips rebase operations
+   - Test `--rebase-only` only does rebase and exits
+   - Test config file setting overrides defaults
+
+4. **Edge Case Tests**
+   - Empty repository (no commits yet)
+   - Detached HEAD state
+   - No origin configured
+   - Feature branch is already up-to-date
+
+### Manual Verification Steps
+
+1. **Basic Rebase Verification**
+   ```bash
+   # Create feature branch
+   git checkout -b feature/test-rebase
+   echo "feature change" > test.txt
+   git add test.txt
+   git commit -m "feature commit"
+
+   # Update main
+   git checkout main
+   echo "main change" > main.txt
+   git add main.txt
+   git commit -m "main commit"
+
+   # Go back to feature and run Ralph
+   git checkout feature/test-rebase
+   ralph "add feature"
+   # Verify feature was rebased onto main
+   ```
+
+2. **Conflict Resolution Verification**
+   ```bash
+   # Setup conflicting changes
+   git checkout -b feature/conflict-test
+   echo "version 1" > shared.txt
+   git add shared.txt
+   git commit -m "feature version"
+
+   git checkout main
+   echo "version 2" > shared.txt
+   git add shared.txt
+   git commit -m "main version"
+
+   # Trigger conflict and resolution
+   git checkout feature/conflict-test
+   ralph "resolve conflict"
+   # Verify AI agent resolved the conflict
+   ```
+
+3. **Flag Verification**
+   ```bash
+   # Test skip flag
+   ralph --skip-rebase "test feature"
+   # Verify no rebase occurred
+
+   # Test rebase-only
+   ralph --rebase-only
+   # Verify only rebase ran, no AI agents
+   ```
 
 ### Success Criteria
-- [ ] All existing tests pass
-- [ ] New streaming contract tests pass
-- [ ] No new `#[allow(dead_code)]` attributes
-- [ ] `cargo clippy` produces no warnings
-- [ ] Manual testing shows:
-  - Exactly 1 prefix per streaming message
-  - In-place updates (carriage returns visible in raw output)
-  - No duplicate final message
-  - Proper newlines between content blocks
+
+1. **Acceptance Check**: After running Ralph on a feature branch, the branch should be rebased onto main automatically (unless --skip-rebase is used)
+2. **Acceptance Check**: Rebase happens BEFORE development starts
+3. **Acceptance Check**: Rebase happens AFTER review/fix completes
+4. **Acceptance Check**: AI agents resolve conflicts without knowing they're in a rebase
+5. **Acceptance Check**: `--rebase-only` flag works correctly
+
+### Testing Commands
+
+```bash
+# Run all tests
+cargo test --all-features
+
+# Run only rebase-related tests
+cargo test --test rebase_workflow
+
+# Run with verbose output
+cargo test --all-features -- --nocapture
+
+# Check for dead code (must produce no output)
+rg -n -U --pcre2 '(?x)\#\s*!?\[\s*(allow|expect)\s*\(' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+
+# Run clippy (must pass)
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Format check
+cargo fmt --all -- --check
+```
+
+## Notes
+
+### libgit2 Rebase API Considerations
+
+The libgit2 rebase API works as follows:
+1. `repo.rebase(...)` starts a rebase operation
+2. Iterate through rebase operations with `rebase.next()`
+3. For each operation, apply it
+4. If conflicts occur, they appear as unmerged files in the index
+5. After resolving conflicts, mark as resolved and continue
+6. Finally, `rebase.finish()` completes the rebase
+
+### Conflict Resolution Flow
+
+When conflicts occur during rebase:
+1. Detect conflicts (check for unmerged files in index)
+2. For each conflicted file, generate a conflict resolution prompt
+3. Invoke the AI agent (likely the developer agent) with:
+   - The conflict file content (showing both sides)
+   - Context from PROMPT.md (original task)
+   - Context from PLAN.md (if available)
+   - The two commit OIDs that are conflicting
+4. Agent produces resolved file content
+5. Orchestrator writes resolved content and stages it
+6. Continue rebase
+
+### Deterministic Rebase Operations
+
+Per the requirements, rebase operations must be deterministic:
+- The orchestrator controls all rebase operations via libgit2
+- AI agents only resolve conflicts (file content merges)
+- Agents don't run git commands or know about rebase state
+- This maintains the existing pattern of agent isolation from git operations

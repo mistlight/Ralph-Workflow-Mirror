@@ -229,6 +229,24 @@ pub struct RecoveryFlags {
     pub diagnose: bool,
 }
 
+/// Rebase control flags.
+#[derive(Parser, Debug, Default)]
+pub struct RebaseFlags {
+    /// Skip automatic rebase before/after pipeline
+    #[arg(
+        long,
+        help = "Skip automatic rebase to main branch before and after pipeline"
+    )]
+    pub skip_rebase: bool,
+
+    /// Only perform rebase and exit
+    #[arg(
+        long,
+        help = "Only rebase to main branch, then exit (no pipeline execution)"
+    )]
+    pub rebase_only: bool,
+}
+
 /// Ralph: PROMPT-driven agent orchestrator for git repos
 #[derive(Parser, Debug)]
 #[command(name = "ralph")]
@@ -327,6 +345,10 @@ pub struct Args {
     /// Recovery command flags
     #[command(flatten)]
     pub recovery: RecoveryFlags,
+
+    /// Rebase control flags
+    #[command(flatten)]
+    pub rebase_flags: RebaseFlags,
 
     /// Commit message for the final commit
     #[arg(

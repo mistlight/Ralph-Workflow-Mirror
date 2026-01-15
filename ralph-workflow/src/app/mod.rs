@@ -40,8 +40,9 @@ use crate::files::{
     update_status, validate_prompt_md,
 };
 use crate::git_helpers::{
-    cleanup_orphaned_marker, get_repo_root, require_git_repo, reset_start_commit,
-    save_start_commit, start_agent_phase,
+    abort_rebase, cleanup_orphaned_marker, get_default_branch, get_repo_root,
+    is_main_or_master_branch, rebase_onto, require_git_repo, reset_start_commit, save_start_commit,
+    start_agent_phase, RebaseResult,
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -163,6 +164,11 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     require_git_repo()?;
     let repo_root = get_repo_root()?;
     env::set_current_dir(&repo_root)?;
+
+    // Handle --rebase-only
+    if args.rebase_flags.rebase_only {
+        return handle_rebase_only(&args, &config, &logger, colors);
+    }
 
     // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
     // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
@@ -292,6 +298,9 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         create_phase_context(ctx, &mut timer, &mut stats, review_guidelines.as_ref());
     save_start_commit_or_warn(ctx);
 
+    // Run pre-development rebase
+    run_initial_rebase(&ctx.args, &ctx.config, &ctx.logger, ctx.colors)?;
+
     // Run pipeline phases
     run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
     check_prompt_restoration(ctx, &mut prompt_monitor, "development");
@@ -299,6 +308,10 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
     check_prompt_restoration(ctx, &mut prompt_monitor, "review");
+
+    // Run post-review rebase
+    run_post_review_rebase(&ctx.args, &ctx.config, &ctx.logger, ctx.colors)?;
+
     update_status("In progress.", ctx.config.isolation_mode)?;
 
     run_final_validation(&phase_ctx, resume_checkpoint.as_ref())?;
@@ -623,4 +636,171 @@ fn run_final_validation(
     }
 
     Ok(())
+}
+
+/// Handle --rebase-only flag.
+///
+/// This function performs a rebase to the default branch and exits,
+/// without running the full pipeline.
+fn handle_rebase_only(
+    args: &Args,
+    config: &crate::config::Config,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<()> {
+    // Check if rebase is enabled
+    if !args.rebase_flags.skip_rebase && !config.features.auto_rebase_enabled {
+        logger.info("Auto-rebase is disabled in configuration");
+        return Ok(());
+    }
+
+    if args.rebase_flags.skip_rebase {
+        logger.info("--skip-rebase flag set, skipping rebase");
+        return Ok(());
+    }
+
+    logger.header("Rebase to default branch", Colors::cyan);
+
+    match run_rebase_to_default(logger, colors) {
+        Ok(RebaseResult::Success) => {
+            logger.success("Rebase completed successfully");
+            Ok(())
+        }
+        Ok(RebaseResult::NoOp) => {
+            logger.info("No rebase needed (already up-to-date or on main branch)");
+            Ok(())
+        }
+        Ok(RebaseResult::Conflicts(conflicts)) => {
+            logger.warn("Rebase resulted in conflicts:");
+            for conflict in conflicts {
+                logger.error(&format!("  - {conflict}"));
+            }
+            logger.info("Please resolve conflicts manually and run 'ralph --rebase-only' again");
+            anyhow::bail!("Rebase conflicts need manual resolution")
+        }
+        Err(e) => {
+            logger.error(&format!("Rebase failed: {e}"));
+            anyhow::bail!("Rebase failed: {e}")
+        }
+    }
+}
+
+/// Run rebase to the default branch.
+///
+/// This function performs a rebase from the current feature branch to the
+/// default branch (main/master). It handles all edge cases including:
+/// - Already on main/master (skips rebase)
+/// - Empty repository (skips rebase)
+/// - Upstream branch not found (error)
+/// - Conflicts during rebase (returns Conflicts result)
+///
+/// # Returns
+///
+/// Returns `RebaseResult` indicating the outcome.
+fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<RebaseResult> {
+    // Check if we're on main/master
+    if is_main_or_master_branch()? {
+        logger.info("Already on default branch, skipping rebase");
+        return Ok(RebaseResult::NoOp);
+    }
+
+    // Get the default branch
+    let default_branch = get_default_branch()?;
+    logger.info(&format!(
+        "Rebasing onto {}{}{}",
+        colors.cyan(),
+        default_branch,
+        colors.reset()
+    ));
+
+    // Perform the rebase
+    rebase_onto(&default_branch)
+}
+
+/// Run initial rebase before development phase.
+///
+/// This function is called before the development phase starts to ensure
+/// the feature branch is up-to-date with the default branch.
+fn run_initial_rebase(
+    args: &Args,
+    config: &crate::config::Config,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<()> {
+    // Check if auto-rebase is enabled and not skipped
+    if args.rebase_flags.skip_rebase || !config.features.auto_rebase_enabled {
+        return Ok(());
+    }
+
+    logger.header("Pre-development rebase", Colors::cyan);
+
+    match run_rebase_to_default(logger, colors) {
+        Ok(RebaseResult::Success) => {
+            logger.success("Rebase completed successfully");
+            Ok(())
+        }
+        Ok(RebaseResult::NoOp) => {
+            logger.info("No rebase needed (already up-to-date or on main branch)");
+            Ok(())
+        }
+        Ok(RebaseResult::Conflicts(conflicts)) => {
+            logger.warn("Rebase resulted in conflicts:");
+            for conflict in conflicts {
+                logger.error(&format!("  - {conflict}"));
+            }
+            logger.info("Aborting rebase to allow manual resolution");
+            let _ = abort_rebase();
+            anyhow::bail!(
+                "Rebase conflicts detected. Please resolve conflicts manually and run again with --skip-rebase"
+            )
+        }
+        Err(e) => {
+            logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            Ok(())
+        }
+    }
+}
+
+/// Run post-review rebase after review phase.
+///
+/// This function is called after the review phase completes to ensure
+/// the feature branch is still up-to-date with the default branch.
+fn run_post_review_rebase(
+    args: &Args,
+    config: &crate::config::Config,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<()> {
+    // Check if auto-rebase is enabled and not skipped
+    if args.rebase_flags.skip_rebase || !config.features.auto_rebase_enabled {
+        return Ok(());
+    }
+
+    logger.header("Post-review rebase", Colors::cyan);
+
+    match run_rebase_to_default(logger, colors) {
+        Ok(RebaseResult::Success) => {
+            logger.success("Rebase completed successfully");
+            Ok(())
+        }
+        Ok(RebaseResult::NoOp) => {
+            logger.info("No rebase needed (already up-to-date or on main branch)");
+            Ok(())
+        }
+        Ok(RebaseResult::Conflicts(conflicts)) => {
+            logger.warn("Rebase resulted in conflicts:");
+            for conflict in conflicts {
+                logger.error(&format!("  - {conflict}"));
+            }
+            logger.info("Aborting rebase to allow manual resolution");
+            let _ = abort_rebase();
+            anyhow::bail!(
+                "Rebase conflicts detected. Please resolve conflicts manually and run again with --skip-rebase"
+            )
+        }
+        Err(e) => {
+            logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            Ok(())
+        }
+    }
 }

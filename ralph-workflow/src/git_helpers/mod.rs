@@ -10,16 +10,22 @@
 //! - [`repo`] - Basic git repository operations (add, commit, snapshot)
 //! - [`start_commit`] - Starting commit tracking for incremental diffs
 //! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
+//! - [`branch`] - Branch detection and default branch resolution
+//! - Rebase operations are provided via the `rebase` module functions
 
 #![deny(unsafe_code)]
 
+pub mod branch;
 mod hooks;
 pub mod identity;
+mod rebase;
 mod repo;
 mod start_commit;
 mod wrapper;
 
+pub use branch::{get_default_branch, is_main_or_master_branch};
 pub use hooks::uninstall_hooks;
+pub use rebase::{abort_rebase, rebase_onto, RebaseResult};
 pub use repo::{
     get_git_diff_from_start, get_repo_root, git_add_all, git_commit, git_diff, git_snapshot,
     require_git_repo, validate_and_truncate_diff, CommitResultFallback,

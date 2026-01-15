@@ -31,6 +31,13 @@ auto_detect_stack = true
 # Enable checkpoint/resume functionality for interrupted runs
 checkpoint_enabled = true
 
+# Enable automatic rebase before and after pipeline
+# When enabled, Ralph will automatically rebase the current feature branch
+# onto the default branch (main/master) before development starts and after
+# review completes. This helps reduce merge conflicts when multiple AI agents
+# work on separate branches.
+auto_rebase_enabled = true
+
 # Number of developer iterations (how many times the developer agent runs)
 developer_iters = 5
 

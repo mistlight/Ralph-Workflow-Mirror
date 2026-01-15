@@ -113,6 +113,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         features: FeatureFlags {
             checkpoint_enabled: general.features.checkpoint_enabled,
             force_universal_prompt: general.features.force_universal_prompt,
+            auto_rebase_enabled: general.features.auto_rebase_enabled,
         },
         developer_iters: general.developer_iters,
         reviewer_reviews: general.reviewer_reviews,
@@ -155,6 +156,7 @@ fn default_config() -> Config {
         features: FeatureFlags {
             checkpoint_enabled: true,
             force_universal_prompt: false,
+            auto_rebase_enabled: true,
         },
         developer_iters: 5,
         reviewer_reviews: 2,
@@ -303,6 +305,7 @@ fn apply_boolean_flags_env(config: &mut Config) {
         "RALPH_CHECKPOINT_ENABLED",
         "RALPH_STRICT_VALIDATION",
         "RALPH_ISOLATION_MODE",
+        "RALPH_AUTO_REBASE_ENABLED",
     ]
     .iter()
     .filter_map(|&name| env::var(name).ok().map(|v| (name, v)))
@@ -317,6 +320,7 @@ fn apply_boolean_flags_env(config: &mut Config) {
             "RALPH_CHECKPOINT_ENABLED" => config.features.checkpoint_enabled = value,
             "RALPH_STRICT_VALIDATION" => config.behavior.strict_validation = value,
             "RALPH_ISOLATION_MODE" => config.isolation_mode = value,
+            "RALPH_AUTO_REBASE_ENABLED" => config.features.auto_rebase_enabled = value,
             _ => {}
         }
     }

@@ -89,6 +89,8 @@ pub struct GeneralFeatureFlags {
     pub force_universal_prompt: bool,
     /// Isolation mode (prevent context contamination).
     pub isolation_mode: bool,
+    /// Enable automatic rebase before and after pipeline.
+    pub auto_rebase_enabled: bool,
 }
 
 /// General configuration section.
@@ -140,6 +142,7 @@ impl Default for GeneralConfig {
                 checkpoint_enabled: true,
                 force_universal_prompt: false,
                 isolation_mode: true,
+                auto_rebase_enabled: true,
             },
             developer_iters: 5,
             reviewer_reviews: 2,
