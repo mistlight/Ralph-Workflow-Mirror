@@ -31,9 +31,148 @@
 //!
 //! - **Ignored events**: General category for events not displayed (includes
 //!   both unknown events and parse errors)
+//!
+//! # Streaming Quality Metrics
+//!
+//! The [`StreamingQualityMetrics`] struct provides insights into streaming behavior:
+//!
+//! - **Delta sizes**: Average, min, max delta sizes to understand streaming granularity
+//! - **Total deltas**: Count of deltas per content block
+//! - **Streaming pattern**: Classification as smooth, bursty, or chunked based on size variance
 
 use crate::logger::Colors;
 use std::cell::Cell;
+
+/// Streaming quality metrics for analyzing streaming behavior.
+///
+/// These metrics help diagnose issues with streaming performance and
+/// inform future improvements to the streaming infrastructure.
+///
+/// # Metrics Tracked
+///
+/// - **Delta sizes**: Average, min, max sizes to understand streaming granularity
+/// - **Total deltas**: Count of deltas processed
+/// - **Streaming pattern**: Classification based on size variance
+#[derive(Debug, Clone, Default)]
+pub struct StreamingQualityMetrics {
+    /// Total number of deltas processed
+    pub total_deltas: usize,
+    /// Average delta size in bytes
+    pub avg_delta_size: usize,
+    /// Minimum delta size in bytes
+    pub min_delta_size: usize,
+    /// Maximum delta size in bytes
+    pub max_delta_size: usize,
+    /// Classification of streaming pattern
+    pub pattern: StreamingPattern,
+}
+
+/// Classification of streaming patterns based on delta size variance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StreamingPattern {
+    /// No deltas to classify
+    #[default]
+    Empty,
+    /// Uniform delta sizes (low variance) - smooth streaming
+    Smooth,
+    /// Mixed delta sizes (medium variance) - normal streaming
+    Normal,
+    /// Highly variable delta sizes (high variance) - bursty/chunked streaming
+    Bursty,
+}
+
+impl StreamingQualityMetrics {
+    /// Create metrics from a collection of delta sizes.
+    ///
+    /// # Arguments
+    /// * `sizes` - Iterator of delta sizes in bytes
+    pub fn from_sizes<I: Iterator<Item = usize>>(sizes: I) -> Self {
+        let sizes_vec: Vec<_> = sizes.collect();
+
+        if sizes_vec.is_empty() {
+            return Self::default();
+        }
+
+        let total_deltas = sizes_vec.len();
+        let min_delta_size = sizes_vec.iter().copied().min().unwrap_or(0);
+        let max_delta_size = sizes_vec.iter().copied().max().unwrap_or(0);
+        let sum: usize = sizes_vec.iter().sum();
+        let avg_delta_size = sum / total_deltas;
+
+        // Calculate variance to determine pattern
+        // Use coefficient of variation: std_dev / mean
+        let pattern = if total_deltas < 2 {
+            StreamingPattern::Normal
+        } else {
+            // Convert to u32 for safe f64 conversion (delta sizes are typically small)
+            let mean_u32 = u32::try_from(avg_delta_size).unwrap_or(u32::MAX);
+            let mean = f64::from(mean_u32);
+            if mean < 0.001 {
+                StreamingPattern::Empty
+            } else {
+                // Calculate variance using integer-safe arithmetic
+                let variance_sum: usize = sizes_vec
+                    .iter()
+                    .map(|&size| {
+                        let diff = size.abs_diff(avg_delta_size);
+                        diff.saturating_mul(diff)
+                    })
+                    .sum();
+                let variance = variance_sum / total_deltas;
+                // Convert to u32 for safe f64 conversion
+                let variance_u32 = u32::try_from(variance).unwrap_or(u32::MAX);
+                let std_dev = f64::from(variance_u32).sqrt();
+                let cv = std_dev / mean;
+
+                // Thresholds based on coefficient of variation
+                if cv < 0.3 {
+                    StreamingPattern::Smooth
+                } else if cv < 1.0 {
+                    StreamingPattern::Normal
+                } else {
+                    StreamingPattern::Bursty
+                }
+            }
+        };
+
+        Self {
+            total_deltas,
+            avg_delta_size,
+            min_delta_size,
+            max_delta_size,
+            pattern,
+        }
+    }
+
+    /// Format metrics for display.
+    pub fn format(&self, colors: Colors) -> String {
+        if self.total_deltas == 0 {
+            return format!(
+                "{}[Streaming]{} No deltas recorded",
+                colors.dim(),
+                colors.reset()
+            );
+        }
+
+        let pattern_str = match self.pattern {
+            StreamingPattern::Empty => "empty",
+            StreamingPattern::Smooth => "smooth",
+            StreamingPattern::Normal => "normal",
+            StreamingPattern::Bursty => "bursty",
+        };
+
+        format!(
+            "{}[Streaming]{} {} deltas, avg {} bytes (min {}, max {}), pattern: {}",
+            colors.dim(),
+            colors.reset(),
+            self.total_deltas,
+            self.avg_delta_size,
+            self.min_delta_size,
+            self.max_delta_size,
+            pattern_str
+        )
+    }
+}
 
 /// Parser health statistics
 #[derive(Debug, Default, Clone, Copy)]
@@ -683,5 +822,86 @@ mod tests {
         // Warning should mention both control and partial events
         assert!(warning_text.contains("2 control events"));
         assert!(warning_text.contains("10 partial events"));
+    }
+
+    // Tests for StreamingQualityMetrics
+
+    #[test]
+    fn test_streaming_quality_metrics_empty() {
+        let metrics = StreamingQualityMetrics::from_sizes(std::iter::empty());
+        assert_eq!(metrics.total_deltas, 0);
+        assert_eq!(metrics.avg_delta_size, 0);
+        assert_eq!(metrics.min_delta_size, 0);
+        assert_eq!(metrics.max_delta_size, 0);
+        assert_eq!(metrics.pattern, StreamingPattern::Empty);
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_single_delta() {
+        let metrics = StreamingQualityMetrics::from_sizes([42].into_iter());
+        assert_eq!(metrics.total_deltas, 1);
+        assert_eq!(metrics.avg_delta_size, 42);
+        assert_eq!(metrics.min_delta_size, 42);
+        assert_eq!(metrics.max_delta_size, 42);
+        // Single delta defaults to Normal pattern
+        assert_eq!(metrics.pattern, StreamingPattern::Normal);
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_uniform_sizes() {
+        // All deltas same size - should be Smooth pattern
+        let sizes = vec![10, 10, 10, 10, 10];
+        let metrics = StreamingQualityMetrics::from_sizes(sizes.into_iter());
+        assert_eq!(metrics.total_deltas, 5);
+        assert_eq!(metrics.avg_delta_size, 10);
+        assert_eq!(metrics.min_delta_size, 10);
+        assert_eq!(metrics.max_delta_size, 10);
+        assert_eq!(metrics.pattern, StreamingPattern::Smooth);
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_varied_sizes() {
+        // Moderately varied sizes - should be Normal pattern
+        let sizes = vec![8, 10, 12, 9, 11];
+        let metrics = StreamingQualityMetrics::from_sizes(sizes.into_iter());
+        assert_eq!(metrics.total_deltas, 5);
+        assert_eq!(metrics.avg_delta_size, 10);
+        assert_eq!(metrics.min_delta_size, 8);
+        assert_eq!(metrics.max_delta_size, 12);
+        // Low variance, should be Smooth
+        assert_eq!(metrics.pattern, StreamingPattern::Smooth);
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_bursty() {
+        // Highly varied sizes - should be Bursty pattern
+        let sizes = vec![1, 100, 2, 200, 5];
+        let metrics = StreamingQualityMetrics::from_sizes(sizes.into_iter());
+        assert_eq!(metrics.total_deltas, 5);
+        assert_eq!(metrics.min_delta_size, 1);
+        assert_eq!(metrics.max_delta_size, 200);
+        assert_eq!(metrics.pattern, StreamingPattern::Bursty);
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format() {
+        let sizes = vec![10, 20, 15];
+        let metrics = StreamingQualityMetrics::from_sizes(sizes.into_iter());
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        assert!(formatted.contains("3 deltas"));
+        assert!(formatted.contains("avg 15 bytes"));
+        assert!(formatted.contains("min 10"));
+        assert!(formatted.contains("max 20"));
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format_empty() {
+        let metrics = StreamingQualityMetrics::from_sizes(std::iter::empty());
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        assert!(formatted.contains("No deltas recorded"));
     }
 }

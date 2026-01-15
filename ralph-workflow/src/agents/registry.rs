@@ -279,8 +279,14 @@ impl AgentRegistry {
 
     /// Create a new agent from TOML overrides.
     /// Returns None if no valid command is specified.
-    fn create_new_agent(overrides: &crate::config::unified::AgentConfigToml) -> Option<AgentConfig> {
-        let cmd = overrides.cmd.as_deref().map(str::trim).filter(|s| !s.is_empty())?;
+    fn create_new_agent(
+        overrides: &crate::config::unified::AgentConfigToml,
+    ) -> Option<AgentConfig> {
+        let cmd = overrides
+            .cmd
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())?;
 
         let json_parser = overrides
             .json_parser
@@ -306,7 +312,11 @@ impl AgentRegistry {
                 }
             }),
             env_vars: std::collections::HashMap::new(),
-            display_name: overrides.display_name.as_ref().filter(|s| !s.is_empty()).cloned(),
+            display_name: overrides
+                .display_name
+                .as_ref()
+                .filter(|s| !s.is_empty())
+                .cloned(),
         })
     }
 
@@ -322,9 +332,18 @@ impl AgentRegistry {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map_or_else(|| existing.cmd.clone(), str::to_string),
-            output_flag: overrides.output_flag.clone().unwrap_or_else(|| existing.output_flag.clone()),
-            yolo_flag: overrides.yolo_flag.clone().unwrap_or_else(|| existing.yolo_flag.clone()),
-            verbose_flag: overrides.verbose_flag.clone().unwrap_or_else(|| existing.verbose_flag.clone()),
+            output_flag: overrides
+                .output_flag
+                .clone()
+                .unwrap_or_else(|| existing.output_flag.clone()),
+            yolo_flag: overrides
+                .yolo_flag
+                .clone()
+                .unwrap_or_else(|| existing.yolo_flag.clone()),
+            verbose_flag: overrides
+                .verbose_flag
+                .clone()
+                .unwrap_or_else(|| existing.verbose_flag.clone()),
             can_commit: overrides.can_commit.unwrap_or(existing.can_commit),
             json_parser: overrides
                 .json_parser
@@ -332,8 +351,14 @@ impl AgentRegistry {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map_or(existing.json_parser, JsonParserType::parse),
-            model_flag: overrides.model_flag.clone().or_else(|| existing.model_flag.clone()),
-            print_flag: overrides.print_flag.clone().unwrap_or_else(|| existing.print_flag.clone()),
+            model_flag: overrides
+                .model_flag
+                .clone()
+                .or_else(|| existing.model_flag.clone()),
+            print_flag: overrides
+                .print_flag
+                .clone()
+                .unwrap_or_else(|| existing.print_flag.clone()),
             streaming_flag: overrides
                 .streaming_flag
                 .clone()

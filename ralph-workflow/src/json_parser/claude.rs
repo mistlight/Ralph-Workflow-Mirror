@@ -530,11 +530,19 @@ impl ClaudeParser {
                 // Message complete - add final newline if we were in a content block
                 // OR if any content was streamed (handles edge cases where block state
                 // may not have been set but content was still streamed)
+                let metrics = session.get_streaming_quality_metrics();
                 let was_in_block = session.on_message_stop();
                 let had_content = session.has_any_streamed_content();
                 if was_in_block || had_content {
                     // Use TextDeltaRenderer for completion - adds final newline
-                    format!("{}{}", c.reset(), TextDeltaRenderer::render_completion())
+                    let completion =
+                        format!("{}{}", c.reset(), TextDeltaRenderer::render_completion());
+                    // In debug mode, also show streaming quality metrics
+                    if self.verbosity.is_debug() && metrics.total_deltas > 0 {
+                        format!("{}\n{}", completion, metrics.format(*c))
+                    } else {
+                        completion
+                    }
                 } else {
                     String::new()
                 }

@@ -39,15 +39,22 @@
 //!
 //! # Prefix Display Strategy
 //!
-//! Currently, the prefix (e.g., `[ccs-glm]`) is displayed on every delta update.
+//! The prefix (e.g., `[ccs-glm]`) is displayed on every delta update by default.
 //! This provides clear visual feedback about which agent is currently streaming.
 //!
-//! **Design decision**: Keep prefix on every delta for now. The visual clarity
-//! outweighs the minor redundancy. Future optimization could reduce prefix
-//! display frequency (e.g., only on first delta per block) if terminal bandwidth
-//! becomes a concern.
+//! ## Prefix Debouncing
+//!
+//! For scenarios where prefix repetition creates visual noise (e.g., character-by-character
+//! streaming), the [`PrefixDebouncer`] can be used to control prefix display frequency.
+//! It supports both delta-count-based and time-based strategies:
+//!
+//! - **Count-based**: Show prefix every N deltas (default: every delta)
+//! - **Time-based**: Show prefix after M milliseconds since last prefix
+//!
+//! The debouncer is opt-in; the default behavior shows prefix on every delta.
 
 use crate::logger::Colors;
+use std::time::{Duration, Instant};
 
 /// ANSI escape sequence for clearing the entire line.
 ///
@@ -87,6 +94,124 @@ fn sanitize_for_display(content: &str) -> String {
 
     // Trim leading and trailing whitespace
     result.trim().to_string()
+}
+
+/// Configuration for streaming display behavior.
+///
+/// This struct allows customization of streaming output features like
+/// prefix debouncing and multi-line handling.
+///
+/// Default values:
+/// - `prefix_delta_threshold`: 0 (show prefix only on first delta)
+/// - `prefix_time_threshold`: None (no time-based debouncing)
+#[derive(Debug, Clone, Default)]
+pub struct StreamingConfig {
+    /// Minimum number of deltas between prefix displays (0 = show on every delta)
+    pub prefix_delta_threshold: u32,
+    /// Minimum time between prefix displays (None = no time-based debouncing)
+    pub prefix_time_threshold: Option<Duration>,
+}
+
+/// Controls prefix display frequency during streaming.
+///
+/// This debouncer reduces visual noise from frequent prefix redisplay during
+/// rapid streaming (e.g., character-by-character output). It supports two
+/// debouncing strategies:
+///
+/// 1. **Count-based**: Show prefix every N deltas
+/// 2. **Time-based**: Show prefix after M milliseconds since last prefix
+///
+/// # Example
+///
+/// ```ignore
+/// use std::time::Duration;
+///
+/// let config = StreamingConfig {
+///     prefix_delta_threshold: 5,
+///     prefix_time_threshold: Some(Duration::from_millis(100)),
+/// };
+/// let mut debouncer = PrefixDebouncer::new(config);
+///
+/// // First delta always shows prefix
+/// assert!(debouncer.should_show_prefix(true));
+///
+/// // Subsequent deltas may skip prefix based on thresholds
+/// assert!(!debouncer.should_show_prefix(false)); // Delta 2: skip
+/// assert!(!debouncer.should_show_prefix(false)); // Delta 3: skip
+/// // ... after threshold reached or time elapsed, prefix shows again
+/// ```
+#[derive(Debug, Clone)]
+pub struct PrefixDebouncer {
+    config: StreamingConfig,
+    delta_count: u32,
+    last_prefix_time: Option<Instant>,
+}
+
+impl PrefixDebouncer {
+    /// Create a new prefix debouncer with the given configuration.
+    pub const fn new(config: StreamingConfig) -> Self {
+        Self {
+            config,
+            delta_count: 0,
+            last_prefix_time: None,
+        }
+    }
+
+    /// Reset the debouncer state (e.g., at the start of a new content block).
+    pub const fn reset(&mut self) {
+        self.delta_count = 0;
+        self.last_prefix_time = None;
+    }
+
+    /// Determine if the prefix should be shown for the current delta.
+    ///
+    /// # Arguments
+    /// * `is_first_delta` - Whether this is the first delta of a content block
+    ///
+    /// # Returns
+    /// * `true` - Show the prefix
+    /// * `false` - Skip the prefix (still perform line clearing)
+    pub fn should_show_prefix(&mut self, is_first_delta: bool) -> bool {
+        // Always show prefix on first delta
+        if is_first_delta {
+            self.delta_count = 0;
+            self.last_prefix_time = Some(Instant::now());
+            return true;
+        }
+
+        self.delta_count += 1;
+
+        // Check time-based threshold
+        if let Some(threshold) = self.config.prefix_time_threshold {
+            if let Some(last_time) = self.last_prefix_time {
+                if last_time.elapsed() >= threshold {
+                    self.delta_count = 0;
+                    self.last_prefix_time = Some(Instant::now());
+                    return true;
+                }
+            }
+        }
+
+        // Check count-based threshold
+        if self.config.prefix_delta_threshold > 0
+            && self.delta_count >= self.config.prefix_delta_threshold
+        {
+            self.delta_count = 0;
+            self.last_prefix_time = Some(Instant::now());
+            return true;
+        }
+
+        // Default behavior: only first delta shows prefix.
+        // With no thresholds configured, subsequent deltas don't show prefix.
+        // This preserves the original behavior while allowing opt-in debouncing.
+        false
+    }
+}
+
+impl Default for PrefixDebouncer {
+    fn default() -> Self {
+        Self::new(StreamingConfig::default())
+    }
 }
 
 /// Renderer for streaming delta content.
@@ -543,5 +668,113 @@ mod tests {
         assert!(output.contains("Hello World"));
         // Content should not end with space before escape sequences
         // (it ends with reset color then \n\x1b[1A)
+    }
+
+    // Tests for StreamingConfig
+
+    #[test]
+    fn test_streaming_config_defaults() {
+        let config = StreamingConfig::default();
+        assert_eq!(config.prefix_delta_threshold, 0);
+        assert!(config.prefix_time_threshold.is_none());
+    }
+
+    // Tests for PrefixDebouncer
+
+    #[test]
+    fn test_prefix_debouncer_default_first_only() {
+        let mut debouncer = PrefixDebouncer::default();
+
+        // First delta always shows prefix
+        assert!(debouncer.should_show_prefix(true));
+
+        // With default config (no thresholds), only first delta shows prefix
+        // This preserves the original behavior
+        assert!(!debouncer.should_show_prefix(false));
+        assert!(!debouncer.should_show_prefix(false));
+        assert!(!debouncer.should_show_prefix(false));
+    }
+
+    #[test]
+    fn test_prefix_debouncer_count_threshold() {
+        let config = StreamingConfig {
+            prefix_delta_threshold: 3,
+            prefix_time_threshold: None,
+        };
+        let mut debouncer = PrefixDebouncer::new(config);
+
+        // First delta always shows prefix
+        assert!(debouncer.should_show_prefix(true));
+
+        // Next 2 deltas should skip prefix
+        assert!(!debouncer.should_show_prefix(false)); // delta 1
+        assert!(!debouncer.should_show_prefix(false)); // delta 2
+
+        // 3rd delta hits threshold, shows prefix
+        assert!(debouncer.should_show_prefix(false)); // delta 3
+
+        // Cycle resets
+        assert!(!debouncer.should_show_prefix(false)); // delta 1
+        assert!(!debouncer.should_show_prefix(false)); // delta 2
+        assert!(debouncer.should_show_prefix(false)); // delta 3
+    }
+
+    #[test]
+    fn test_prefix_debouncer_reset() {
+        let config = StreamingConfig {
+            prefix_delta_threshold: 3,
+            prefix_time_threshold: None,
+        };
+        let mut debouncer = PrefixDebouncer::new(config);
+
+        // Build up delta count
+        debouncer.should_show_prefix(true);
+        debouncer.should_show_prefix(false);
+        debouncer.should_show_prefix(false);
+
+        // Reset clears state
+        debouncer.reset();
+
+        // After reset, next delta is treated as fresh
+        // (but not "first delta" unless caller says so)
+        assert!(!debouncer.should_show_prefix(false)); // delta 1 after reset
+        assert!(!debouncer.should_show_prefix(false)); // delta 2
+        assert!(debouncer.should_show_prefix(false)); // delta 3 hits threshold
+    }
+
+    #[test]
+    fn test_prefix_debouncer_first_delta_always_shows() {
+        let config = StreamingConfig {
+            prefix_delta_threshold: 100,
+            prefix_time_threshold: None,
+        };
+        let mut debouncer = PrefixDebouncer::new(config);
+
+        // First delta always shows prefix regardless of threshold
+        assert!(debouncer.should_show_prefix(true));
+
+        // Even after many skips, marking as first shows prefix
+        for _ in 0..10 {
+            debouncer.should_show_prefix(false);
+        }
+        assert!(debouncer.should_show_prefix(true)); // First delta again
+    }
+
+    #[test]
+    fn test_prefix_debouncer_time_threshold() {
+        // Note: This test uses Duration::ZERO for immediate threshold.
+        // In practice, time-based debouncing uses longer durations like 100ms.
+        let config = StreamingConfig {
+            prefix_delta_threshold: 0,
+            prefix_time_threshold: Some(Duration::ZERO),
+        };
+        let mut debouncer = PrefixDebouncer::new(config);
+
+        // First delta shows prefix
+        assert!(debouncer.should_show_prefix(true));
+
+        // Since threshold is ZERO, any elapsed time triggers prefix
+        // In practice, Instant::now() moves forward, so this should show
+        assert!(debouncer.should_show_prefix(false));
     }
 }
