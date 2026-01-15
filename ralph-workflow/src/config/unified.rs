@@ -24,7 +24,6 @@
 //! reviewer = ["claude"]
 //! ```
 
-#![expect(clippy::redundant_pub_crate)]
 use crate::agents::fallback::FallbackConfig;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -34,8 +33,7 @@ use std::io;
 use std::path::PathBuf;
 
 /// Default unified config template embedded at compile time.
-pub(crate) const DEFAULT_UNIFIED_CONFIG: &str =
-    include_str!("../../../examples/ralph-workflow.toml");
+pub const DEFAULT_UNIFIED_CONFIG: &str = include_str!("../../../examples/ralph-workflow.toml");
 
 /// Result of config initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +45,7 @@ pub enum ConfigInitResult {
 }
 
 /// Default path for the unified configuration file.
-pub(crate) const DEFAULT_UNIFIED_CONFIG_NAME: &str = "ralph-workflow.toml";
+pub const DEFAULT_UNIFIED_CONFIG_NAME: &str = "ralph-workflow.toml";
 
 /// Get the path to the unified config file.
 ///
@@ -65,21 +63,46 @@ pub fn unified_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|d| d.join(".config").join(DEFAULT_UNIFIED_CONFIG_NAME))
 }
 
+/// General configuration behavioral flags.
+///
+/// Groups user interaction and validation-related boolean settings for `GeneralConfig`.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct GeneralBehaviorFlags {
+    /// Interactive mode (keep agent in foreground).
+    pub interactive: bool,
+    /// Auto-detect project stack for review guidelines.
+    pub auto_detect_stack: bool,
+    /// Strict PROMPT.md validation.
+    pub strict_validation: bool,
+}
+
+/// General configuration feature flags.
+///
+/// Groups optional feature toggle settings for `GeneralConfig`.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct GeneralFeatureFlags {
+    /// Enable checkpoint/resume functionality.
+    pub checkpoint_enabled: bool,
+    /// Force universal review prompt for all agents.
+    pub force_universal_prompt: bool,
+    /// Isolation mode (prevent context contamination).
+    pub isolation_mode: bool,
+}
+
 /// General configuration section.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
-#[expect(clippy::struct_excessive_bools)]
-pub(crate) struct GeneralConfig {
+pub struct GeneralConfig {
     /// Verbosity level (0-4).
     pub verbosity: u8,
-    /// Interactive mode (keep agent in foreground).
-    pub interactive: bool,
-    /// Isolation mode (prevent context contamination).
-    pub isolation_mode: bool,
-    /// Auto-detect project stack for review guidelines.
-    pub auto_detect_stack: bool,
-    /// Enable checkpoint/resume functionality.
-    pub checkpoint_enabled: bool,
+    /// Behavioral flags (interactive, auto-detect, strict validation)
+    #[serde(default)]
+    pub behavior: GeneralBehaviorFlags,
+    /// Feature flags (checkpoint, universal prompt, isolation mode)
+    #[serde(default)]
+    pub features: GeneralFeatureFlags,
     /// Number of developer iterations.
     pub developer_iters: u32,
     /// Number of reviewer re-review passes.
@@ -91,11 +114,6 @@ pub(crate) struct GeneralConfig {
     /// Review depth level.
     #[serde(default)]
     pub review_depth: String,
-    /// Strict PROMPT.md validation.
-    pub strict_validation: bool,
-    /// Force universal review prompt for all agents.
-    #[serde(default)]
-    pub force_universal_prompt: bool,
     /// Path to save last prompt.
     #[serde(default)]
     pub prompt_path: Option<String>,
@@ -111,17 +129,21 @@ impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
             verbosity: 2, // Verbose
-            interactive: true,
-            isolation_mode: true,
-            auto_detect_stack: true,
-            checkpoint_enabled: true,
+            behavior: GeneralBehaviorFlags {
+                interactive: true,
+                auto_detect_stack: true,
+                strict_validation: false,
+            },
+            features: GeneralFeatureFlags {
+                checkpoint_enabled: true,
+                force_universal_prompt: false,
+                isolation_mode: true,
+            },
             developer_iters: 5,
             reviewer_reviews: 2,
             developer_context: 1,
             reviewer_context: 0,
             review_depth: "standard".to_string(),
-            strict_validation: false,
-            force_universal_prompt: false,
             prompt_path: None,
             git_user_name: None,
             git_user_email: None,
@@ -201,7 +223,7 @@ pub struct CcsAliasConfig {
 /// CCS alias entry supports both shorthand string and table form.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum CcsAliasToml {
+pub enum CcsAliasToml {
     Command(String),
     Config(CcsAliasConfig),
 }
@@ -223,7 +245,7 @@ impl CcsAliasToml {
 /// Fields are used via serde deserialization.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
-pub(crate) struct AgentConfigToml {
+pub struct AgentConfigToml {
     /// Base command to run the agent.
     ///
     /// When overriding a built-in agent, this may be omitted to keep the built-in command.
@@ -344,7 +366,7 @@ impl UnifiedConfig {
 
 /// Error type for unified config loading.
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum ConfigLoadError {
+pub enum ConfigLoadError {
     #[error("Failed to read config file: {0}")]
     Io(#[from] std::io::Error),
     #[error("Failed to parse TOML: {0}")]
@@ -364,10 +386,10 @@ mod tests {
     fn test_general_config_defaults() {
         let config = GeneralConfig::default();
         assert_eq!(config.verbosity, 2);
-        assert!(config.interactive);
-        assert!(config.isolation_mode);
-        assert!(config.auto_detect_stack);
-        assert!(config.checkpoint_enabled);
+        assert!(config.behavior.interactive);
+        assert!(config.features.isolation_mode);
+        assert!(config.behavior.auto_detect_stack);
+        assert!(config.features.checkpoint_enabled);
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
     }
@@ -405,7 +427,7 @@ reviewer = ["claude"]
 "#;
         let config: UnifiedConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.general.verbosity, 3);
-        assert!(!config.general.interactive);
+        assert!(!config.general.behavior.interactive);
         assert_eq!(config.general.developer_iters, 10);
         assert!(config.agents.contains_key("claude"));
         assert_eq!(

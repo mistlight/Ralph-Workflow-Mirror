@@ -92,6 +92,8 @@
 //! session.on_message_stop();
 //! ```
 
+use crate::json_parser::delta_display::{PrefixDebouncer, StreamingConfig};
+use crate::json_parser::health::StreamingQualityMetrics;
 use crate::json_parser::types::ContentType;
 use std::collections::{HashMap, HashSet};
 
@@ -140,6 +142,22 @@ pub enum StreamingState {
 /// which block is active and whether output has started for that block.
 /// This prevents "glued text" bugs where block boundaries are crossed
 /// without proper finalization.
+///
+/// # Block Transition Behavior
+///
+/// When transitioning between blocks:
+/// - Same index (e.g., repeated `ContentBlockStart` for index 0): No separator emitted
+/// - Different index: Separator emitted if previous block had output
+///
+/// # Future Enhancement
+///
+/// Track `ContentType` in the block state to enable type-aware separators:
+/// - `thinking → text`: May want a visual separator (different semantic content)
+/// - `text → text` (same index): No separator (continuation)
+/// - `text → tool_input`: May want different visual treatment
+///
+/// This would enable a `should_emit_separator_line(previous_type, new_type)` helper
+/// for cleaner transition logic.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ContentBlockState {
     /// Not currently inside a content block
@@ -201,13 +219,25 @@ pub struct StreamingSession {
     /// content may be cleared (e.g., repeated `ContentBlockStart` for same index).
     /// Cleared on `on_message_start` to ensure fresh state for each message.
     output_started_for_key: HashSet<(ContentType, String)>,
+    /// Prefix debouncer for controlling prefix display frequency during streaming.
+    prefix_debouncer: PrefixDebouncer,
 }
 
 impl StreamingSession {
     /// Create a new streaming session.
     pub fn new() -> Self {
+        Self::with_config(StreamingConfig::default())
+    }
+
+    /// Create a new streaming session with custom configuration.
+    ///
+    /// # Arguments
+    /// * `config` - Configuration for streaming display behavior
+    pub fn with_config(config: StreamingConfig) -> Self {
+        let prefix_debouncer = PrefixDebouncer::new(config);
         Self {
             max_delta_history: 10,
+            prefix_debouncer,
             ..Default::default()
         }
     }
@@ -236,16 +266,11 @@ impl StreamingSession {
         let is_mid_stream_restart = self.state == StreamingState::Streaming;
 
         if is_mid_stream_restart {
-            // Log the contract violation for debugging
-            eprintln!(
-                "Warning: Received MessageStart while state is Streaming. \
-                This indicates a non-standard agent protocol (e.g., GLM sending \
-                repeated MessageStart events). Preserving output_started_for_key \
-                to prevent prefix spam. File: streaming_state.rs, Line: {}",
-                line!()
-            );
+            // GLM/CCS agents send repeated MessageStart events during streaming.
+            // This is a known protocol quirk, not an error. We preserve
+            // output_started_for_key to prevent prefix spam on subsequent deltas.
 
-            // Preserve output_started_for_key to prevent prefix spam
+            // Preserve output_started_for_key to maintain state
             let preserved_output_started = self.output_started_for_key.clone();
 
             self.state = StreamingState::Idle;
@@ -254,6 +279,8 @@ impl StreamingSession {
             self.accumulated.clear();
             self.key_order.clear();
             self.delta_sizes.clear();
+            // Note: We don't reset prefix_debouncer for mid-stream restarts to maintain
+            // consistent prefix display behavior
 
             // Restore preserved state
             self.output_started_for_key = preserved_output_started;
@@ -266,6 +293,8 @@ impl StreamingSession {
             self.key_order.clear();
             self.delta_sizes.clear();
             self.output_started_for_key.clear();
+            // Reset prefix debouncer for fresh message
+            self.prefix_debouncer.reset();
         }
         // Note: We don't reset current_message_id here - it's set by a separate method
         // This allows for more flexible message ID handling
@@ -371,6 +400,16 @@ impl StreamingSession {
     /// that a newline should be emitted. This prevents "glued text" bugs where
     /// content from different blocks is concatenated without separation.
     ///
+    /// # Block Finalization
+    ///
+    /// Called by:
+    /// - `on_content_block_start()` - when transitioning to a new block
+    /// - `on_message_stop()` - when the message completes
+    ///
+    /// The return value indicates whether a visual separator (newline) should
+    /// be emitted. Currently, this is a simple boolean based on `started_output`.
+    /// See [`ContentBlockState`] for future enhancement notes on type-aware separators.
+    ///
     /// # Returns
     /// * `true` - A newline should be emitted (output had started)
     /// * `false` - No newline needed (no output or not in a block)
@@ -452,27 +491,16 @@ impl StreamingSession {
         let is_snapshot = self.is_likely_snapshot(delta, key);
         let actual_delta = if is_snapshot {
             // Extract only the new portion to prevent exponential duplication
-            match self.get_delta_from_snapshot(delta, key) {
-                Ok(extracted) => extracted.to_string(),
-                Err(e) => {
-                    // Snapshot detection had a false positive - use the original delta
-                    eprintln!("Warning: Snapshot extraction failed: {e}. Using original delta.");
-                    delta.to_string()
-                }
-            }
+            self.get_delta_from_snapshot(delta, key)
+                .map_or_else(|_| delta.to_string(), str::to_string)
         } else {
             // Genuine delta - use as-is
             delta.to_string()
         };
 
-        // Warn on large deltas BEFORE modification to detect snapshot-as-delta issues
-        // Use the original delta size since that's what we actually received
-        if delta_size > SNAPSHOT_THRESHOLD {
-            eprintln!(
-                "Warning: Large delta ({delta_size} chars) for key '{key}'. \
-                This may indicate unusual streaming behavior or a snapshot being sent as a delta."
-            );
-        }
+        // Large deltas (> SNAPSHOT_THRESHOLD) may indicate unusual streaming behavior.
+        // The snapshot detection above handles these cases automatically.
+        let _ = SNAPSHOT_THRESHOLD; // Used for threshold comparison in is_likely_snapshot
 
         // Track delta size for pattern detection (use original delta size for detection)
         let content_key = (ContentType::Text, key.to_string());
@@ -484,20 +512,9 @@ impl StreamingSession {
             sizes.remove(0);
         }
 
-        // Pattern detection: Check if we're seeing repeated large deltas
-        // This indicates the same content is being sent repeatedly (snapshot-as-delta)
-        if sizes.len() >= 3 {
-            // Check if at least 3 of the last N deltas were large
-            let large_count = sizes.iter().filter(|&&s| s > SNAPSHOT_THRESHOLD).count();
-            if large_count >= 3 {
-                eprintln!(
-                    "Warning: Detected pattern of {large_count} large deltas for key '{key}'. \
-                    This strongly suggests a snapshot-as-delta bug where the same \
-                    large content is being sent repeatedly. File: streaming_state.rs, Line: {}",
-                    line!()
-                );
-            }
-        }
+        // Pattern detection: Track repeated large deltas for internal metrics.
+        // The snapshot detection logic above handles these cases automatically,
+        // so no warnings are needed here.
 
         // Mark that we're streaming text content
         self.streamed_types.insert(ContentType::Text, true);
@@ -528,8 +545,10 @@ impl StreamingSession {
             self.key_order.push(content_key);
         }
 
-        // Show prefix only on the very first delta
-        is_first
+        // Determine whether to show prefix using the debouncer.
+        // The debouncer respects the "first delta" logic and adds optional
+        // count-based or time-based debouncing for subsequent deltas.
+        self.prefix_debouncer.should_show_prefix(is_first)
     }
 
     /// Process a thinking delta and return whether prefix should be shown.
@@ -581,7 +600,10 @@ impl StreamingSession {
             self.key_order.push(content_key);
         }
 
-        is_first
+        // Determine whether to show prefix using the debouncer.
+        // The debouncer respects the "first delta" logic and adds optional
+        // count-based or time-based debouncing for subsequent deltas.
+        self.prefix_debouncer.should_show_prefix(is_first)
     }
 
     /// Process a tool input delta.
@@ -702,7 +724,6 @@ impl StreamingSession {
     /// like prefixes, extra whitespace, or formatting changes.
     ///
     /// Returns true if text contains >85% of previous content as a subsequence.
-    #[expect(clippy::cast_precision_loss)]
     fn is_fuzzy_snapshot_match(text: &str, previous: &str) -> bool {
         // For very short previous content, skip fuzzy matching to avoid false positives
         if previous.len() < 20 {
@@ -711,11 +732,11 @@ impl StreamingSession {
 
         // Check if previous is contained within text
         if text.contains(previous) {
-            // Calculate overlap ratio
-            let overlap_ratio = previous.len() as f64 / text.len() as f64;
+            // Calculate overlap ratio using integer arithmetic
             // If >85% of the incoming text is the previous content, it's likely a snapshot
             // (High threshold to avoid false positives while catching true snapshots)
-            overlap_ratio > 0.85
+            // previous.len() / text.len() > 0.85 is equivalent to previous.len() * 100 > 85 * text.len()
+            previous.len().saturating_mul(100) > text.len().saturating_mul(85)
         } else {
             false
         }
@@ -774,6 +795,20 @@ impl StreamingSession {
     pub fn get_delta_from_snapshot<'a>(&self, text: &'a str, key: &str) -> Result<&'a str, String> {
         let delta_len = self.extract_delta_from_snapshot(text, key)?;
         Ok(&text[delta_len..])
+    }
+
+    /// Get streaming quality metrics for this session.
+    ///
+    /// Returns metrics about delta sizes and streaming patterns collected
+    /// during the session. This is useful for debugging and analyzing
+    /// streaming behavior.
+    ///
+    /// # Returns
+    /// Aggregated metrics across all content types and keys.
+    pub fn get_streaming_quality_metrics(&self) -> StreamingQualityMetrics {
+        // Flatten all delta sizes across all content types and keys
+        let all_sizes = self.delta_sizes.values().flat_map(|v| v.iter().copied());
+        StreamingQualityMetrics::from_sizes(all_sizes)
     }
 }
 
@@ -1441,6 +1476,331 @@ mod tests {
             session.get_accumulated(ContentType::Text, "0"),
             Some("Hello World"),
             "Accumulated content should be preserved across repeated ContentBlockStart"
+        );
+    }
+
+    // ================================================================
+    // Edge case tests for streaming scenarios
+    // ================================================================
+
+    #[test]
+    fn test_token_by_token_streaming() {
+        // Test very small deltas (single characters) to ensure proper accumulation
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First character shows prefix
+        let show_prefix = session.on_text_delta(0, "H");
+        assert!(show_prefix, "First token should show prefix");
+
+        // Subsequent single characters don't show prefix
+        for ch in "ello".chars() {
+            let show_prefix = session.on_text_delta(0, &ch.to_string());
+            assert!(!show_prefix, "Subsequent tokens should not show prefix");
+        }
+
+        // Verify full accumulation
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello"),
+            "Token-by-token streaming should accumulate correctly"
+        );
+    }
+
+    #[test]
+    fn test_mixed_content_type_transitions() {
+        // Test transitions between different content types
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Text content
+        let show_prefix = session.on_text_delta(0, "Hello");
+        assert!(show_prefix, "First text delta should show prefix");
+
+        // Thinking content (different type)
+        let show_prefix = session.on_thinking_delta(0, "Let me think...");
+        assert!(show_prefix, "First thinking delta should show prefix");
+
+        // More text (back to text type)
+        let show_prefix = session.on_text_delta(0, " World");
+        assert!(
+            !show_prefix,
+            "Continuation of text delta should not show prefix"
+        );
+
+        // Verify both types accumulated independently
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello World")
+        );
+        assert_eq!(
+            session.get_accumulated(ContentType::Thinking, "0"),
+            Some("Let me think...")
+        );
+    }
+
+    #[test]
+    fn test_empty_delta_handling() {
+        // Empty deltas should not affect state
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First real content
+        let show_prefix = session.on_text_delta(0, "Hello");
+        assert!(show_prefix);
+
+        // Empty delta should not change prefix state
+        let show_prefix = session.on_text_delta(0, "");
+        assert!(!show_prefix, "Empty delta should not require prefix");
+
+        // Next real content should continue without prefix
+        let show_prefix = session.on_text_delta(0, " World");
+        assert!(!show_prefix, "Delta after empty should not show prefix");
+
+        // Verify accumulation is correct (empty string doesn't affect content)
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello World")
+        );
+    }
+
+    #[test]
+    fn test_very_long_single_delta() {
+        // Test handling of a very long single delta
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Create a long string
+        let long_content = "x".repeat(10000);
+
+        // Should handle long content without issues
+        let show_prefix = session.on_text_delta(0, &long_content);
+        assert!(
+            show_prefix,
+            "First delta should show prefix regardless of length"
+        );
+
+        // Verify accumulation
+        assert_eq!(
+            session
+                .get_accumulated(ContentType::Text, "0")
+                .map(str::len),
+            Some(10000)
+        );
+    }
+
+    #[test]
+    fn test_rapid_successive_deltas_same_index() {
+        // Test many rapid successive deltas to same index
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // First delta shows prefix
+        let show_prefix = session.on_text_delta(0, "Start");
+        assert!(show_prefix);
+
+        // Many rapid deltas should all continue without prefix
+        for i in 0..100 {
+            let delta = format!(" word{i}");
+            let show_prefix = session.on_text_delta(0, &delta);
+            assert!(!show_prefix, "Rapid delta {i} should not show prefix");
+        }
+
+        // Verify state is consistent
+        assert!(session.has_any_streamed_content());
+        let accumulated = session.get_accumulated(ContentType::Text, "0").unwrap();
+        assert!(accumulated.starts_with("Start"));
+        assert!(accumulated.ends_with(" word99"));
+    }
+
+    #[test]
+    fn test_multi_block_index_transitions() {
+        // Test transitions between different block indices
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Block 0
+        session.on_content_block_start(0);
+        let show_prefix = session.on_text_delta(0, "Block0");
+        assert!(show_prefix, "First delta in block 0 should show prefix");
+
+        // Block 1 - different index
+        session.on_content_block_start(1);
+        let show_prefix = session.on_text_delta(1, "Block1");
+        assert!(show_prefix, "First delta in block 1 should show prefix");
+
+        // Block 0 again (different scenario - going back)
+        session.on_content_block_start(0);
+        // Note: output_started_for_key still remembers we output to block 0,
+        // so prefix is not shown again. This prevents prefix spam.
+        let show_prefix = session.on_text_delta(0, "NewBlock0");
+        assert!(
+            !show_prefix,
+            "Delta after returning to block 0 should not show prefix (output already started)"
+        );
+
+        // Verify accumulated content was cleared for the new block 0 content
+        // (old content "Block0" was cleared when transitioning to block 1)
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("NewBlock0"),
+            "Accumulated content should only have new block 0 content"
+        );
+    }
+
+    #[test]
+    fn test_message_deduplication_after_streaming() {
+        // Test that messages are properly marked as displayed
+        let mut session = StreamingSession::new();
+
+        // First message
+        session.set_current_message_id(Some("msg-123".to_string()));
+        session.on_message_start();
+        session.on_text_delta(0, "Content");
+        session.on_message_stop();
+
+        // Same message ID should be detected as duplicate
+        assert!(
+            session.is_duplicate_final_message("msg-123"),
+            "Same message ID should be duplicate after streaming"
+        );
+
+        // Different message ID should not be duplicate
+        assert!(
+            !session.is_duplicate_final_message("msg-different"),
+            "Different message ID should not be duplicate"
+        );
+    }
+
+    #[test]
+    fn test_whitespace_only_deltas() {
+        // Test handling of whitespace-only deltas
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Initial content
+        let show_prefix = session.on_text_delta(0, "Hello");
+        assert!(show_prefix);
+
+        // Whitespace-only delta
+        let show_prefix = session.on_text_delta(0, "   ");
+        assert!(!show_prefix, "Whitespace delta should not show prefix");
+
+        // More content
+        let show_prefix = session.on_text_delta(0, "World");
+        assert!(!show_prefix);
+
+        // Verify accumulation preserves whitespace
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello   World")
+        );
+    }
+
+    #[test]
+    fn test_newline_deltas() {
+        // Test handling of deltas containing newlines
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Delta with embedded newlines
+        let show_prefix = session.on_text_delta(0, "Line1\nLine2\nLine3");
+        assert!(show_prefix);
+
+        // Verify accumulation preserves newlines
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Line1\nLine2\nLine3"),
+            "Newlines should be preserved in accumulated content"
+        );
+    }
+
+    #[test]
+    fn test_completion_state_after_message_stop() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_text_delta(0, "Content");
+
+        // Message stop should return true (had output)
+        let had_output = session.on_message_stop();
+        assert!(
+            had_output,
+            "Message with content should report had_output=true"
+        );
+
+        // State should be finalized
+        assert_eq!(session.state, StreamingState::Finalized);
+    }
+
+    #[test]
+    fn test_completion_state_without_content() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Message stop without any deltas
+        let had_output = session.on_message_stop();
+        assert!(
+            !had_output,
+            "Message without content should report had_output=false"
+        );
+    }
+
+    // Tests for streaming quality metrics
+
+    #[test]
+    fn test_get_streaming_quality_metrics_empty() {
+        let session = StreamingSession::new();
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(metrics.total_deltas, 0);
+    }
+
+    #[test]
+    fn test_get_streaming_quality_metrics_with_deltas() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Add some deltas of different sizes
+        session.on_text_delta(0, "Hello"); // 5 bytes
+        session.on_text_delta(0, " World!"); // 7 bytes
+        session.on_text_delta(0, "!"); // 1 byte
+
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(metrics.total_deltas, 3);
+        assert_eq!(metrics.min_delta_size, 1);
+        assert_eq!(metrics.max_delta_size, 7);
+    }
+
+    #[test]
+    fn test_get_streaming_quality_metrics_multiple_indices() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Add deltas to different indices (text content only, as that's what is tracked)
+        session.on_text_delta(0, "Hello"); // 5 bytes
+        session.on_text_delta(1, "World!"); // 6 bytes
+
+        let metrics = session.get_streaming_quality_metrics();
+        // Should aggregate across all indices
+        assert_eq!(metrics.total_deltas, 2);
+    }
+
+    #[test]
+    fn test_get_streaming_quality_metrics_reset_on_message_start() {
+        let mut session = StreamingSession::new();
+
+        // First message
+        session.on_message_start();
+        session.on_text_delta(0, "First");
+        session.on_message_stop();
+
+        // Reset for second message
+        session.on_message_start();
+
+        // Metrics should be cleared
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(
+            metrics.total_deltas, 0,
+            "Metrics should reset on new message"
         );
     }
 }

@@ -80,7 +80,7 @@ pub fn initialize_config(
     apply_args_to_config(args, &mut config, colors);
 
     // Handle --list-templates flag: display available templates and exit
-    if args.list_templates && handle_list_templates(colors) {
+    if args.template_list.list_templates && handle_list_templates(colors) {
         return Ok(None);
     }
 
@@ -92,12 +92,12 @@ pub fn initialize_config(
     }
 
     // Handle unified init flags: create unified config if it doesn't exist and exit
-    if (args.init_global || args.init) && handle_init_global(colors)? {
+    if (args.unified_init.init_global || args.unified_init.init) && handle_init_global(colors)? {
         return Ok(None);
     }
 
     // Handle --init-legacy flag: legacy per-repo agents.toml creation and exit
-    if args.init_legacy {
+    if args.legacy_init.init_legacy {
         let repo_root = get_repo_root().ok();
         let legacy_path = repo_root.map_or_else(
             || PathBuf::from(".agent/agents.toml"),

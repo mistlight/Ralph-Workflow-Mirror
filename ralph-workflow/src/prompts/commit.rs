@@ -61,7 +61,6 @@ GUIDELINES:
 /// is passed, it returns an error prompt that will fail validation in the caller
 /// and trigger fallback commit message generation. Callers should still check for
 /// meaningful changes before calling this function for efficiency.
-#[expect(clippy::too_many_lines)]
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();

@@ -9,7 +9,6 @@ use super::model_flag::resolve_model_with_provider;
 use super::prompt::PipelineRuntime;
 
 /// Run a command with automatic fallback to alternative agents on failure.
-#[expect(clippy::too_many_lines)]
 pub fn run_with_fallback(
     role: AgentRole,
     base_label: &str,
@@ -202,22 +201,22 @@ pub fn run_with_fallback(
                 let logfile = format!("{logfile_prefix}_{safe_agent_name}_{model_index}.log");
 
                 // Try this agent/model configuration with retries
-                let result = try_agent_with_retries(
+                let attempt_config = crate::pipeline::fallback::AgentAttemptConfig {
                     agent_name,
-                    model_flag.as_deref(),
-                    &label,
-                    &display_name,
-                    &cmd_str,
+                    model_flag: model_flag.as_deref(),
+                    label: &label,
+                    display_name: &display_name,
+                    cmd_str: &cmd_str,
                     prompt,
-                    &logfile,
+                    logfile: &logfile,
                     parser_type,
-                    &agent_config.env_vars,
+                    env_vars: &agent_config.env_vars,
                     model_index,
                     agent_index,
-                    cycle as usize,
-                    runtime,
+                    cycle: cycle as usize,
                     fallback_config,
-                )?;
+                };
+                let result = try_agent_with_retries(&attempt_config, runtime)?;
 
                 match result {
                     TryAgentResult::Success => return Ok(0),

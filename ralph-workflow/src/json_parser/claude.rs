@@ -33,13 +33,11 @@
 //! This pattern is consistent across all parsers (Claude, Codex, Gemini, `OpenCode`)
 //! with variations in when the prefix is shown based on each format's event structure.
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::items_after_statements)]
-
 use crate::common::truncate_text;
 use crate::config::Verbosity;
 use crate::logger::{Colors, CHECK, CROSS};
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -87,16 +85,6 @@ impl ClaudeParser {
         self
     }
 
-    /// Check if this parser is handling a GLM agent.
-    ///
-    /// GLM agents are known to send snapshot-style content when deltas are expected,
-    /// so we apply stricter validation and automatic conversion for them.
-    fn is_glm_agent(&self) -> bool {
-        // GLM agents are identified by display names containing "glm" or "ccs-glm"
-        let name = self.display_name.to_lowercase();
-        name.contains("glm") || name.contains("ccs")
-    }
-
     /// Parse and display a single Claude JSON event
     ///
     /// Returns `Some(formatted_output)` for valid events, or None for:
@@ -138,7 +126,6 @@ impl ClaudeParser {
                         c.reset()
                     );
                     if let Some(cwd) = cwd {
-                        use std::fmt::Write;
                         let _ = writeln!(
                             out,
                             "{}[{}]{} {}Working dir: {}{}",
@@ -191,7 +178,6 @@ impl ClaudeParser {
                                         if let Some(text) = text {
                                             let limit = self.verbosity.truncate_limit("text");
                                             let preview = truncate_text(&text, limit);
-                                            use std::fmt::Write;
                                             let _ = writeln!(
                                                 out,
                                                 "{}[{}]{} {}{}{}",
@@ -207,7 +193,6 @@ impl ClaudeParser {
                                     ContentBlock::ToolUse { name: tool, input } => {
                                         let tool_name =
                                             tool.unwrap_or_else(|| "unknown".to_string());
-                                        use std::fmt::Write;
                                         let _ = writeln!(
                                             out,
                                             "{}[{}]{} {}Tool{}: {}{}{}",
@@ -229,7 +214,6 @@ impl ClaudeParser {
                                                     self.verbosity.truncate_limit("tool_input");
                                                 let preview = truncate_text(&input_str, limit);
                                                 if !preview.is_empty() {
-                                                    use std::fmt::Write;
                                                     let _ = writeln!(
                                                         out,
                                                         "{}[{}]{} {}  └─ {}{}",
@@ -253,7 +237,6 @@ impl ClaudeParser {
                                             let limit =
                                                 self.verbosity.truncate_limit("tool_result");
                                             let preview = truncate_text(&content_str, limit);
-                                            use std::fmt::Write;
                                             let _ = writeln!(
                                                 out,
                                                 "{}[{}]{} {}Result:{} {}",
@@ -348,7 +331,6 @@ impl ClaudeParser {
                 if let Some(result) = result {
                     let limit = self.verbosity.truncate_limit("result");
                     let preview = truncate_text(&result, limit);
-                    use std::fmt::Write;
                     let _ = writeln!(
                         out,
                         "\n{}Result summary:{}\n{}{}{}",
@@ -369,7 +351,7 @@ impl ClaudeParser {
                 // Use the generic unknown event formatter for consistent handling
                 // In verbose mode, this will show the event type and key fields
                 // In normal mode, this returns empty string
-                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+                format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
             }
         };
 
@@ -451,38 +433,11 @@ impl ClaudeParser {
                     // Check for snapshot-as-delta bug (GLM sending full accumulated content)
                     // If detected, extract only the delta portion
                     let index_str = index.to_string();
-                    let is_glm = self.is_glm_agent();
                     let text_to_process = if session.is_likely_snapshot(&text, &index_str) {
-                        // Snapshot detected - log warning and extract delta
-                        let previous = session.get_accumulated(ContentType::Text, &index_str);
-                        if is_glm {
-                            eprintln!(
-                                "GLM streaming bug detected: Agent sent full accumulated content instead of delta (index={index}). \
-                                This is a known GLM/CCS issue. Auto-correcting to prevent duplication. \
-                                Previous length: {}, Received length: {len}",
-                                previous.map_or(0, str::len),
-                                len = text.len()
-                            );
-                        } else {
-                            eprintln!(
-                                "Warning: Detected snapshot-as-delta for index {index}. \
-                                Converting to delta. Previous: {previous:?}, Received: {text:?}"
-                            );
-                        }
-                        match session.get_delta_from_snapshot(&text, &index_str) {
-                            Ok(delta) => delta,
-                            Err(e) => {
-                                // Snapshot extraction failed - fall back to original text.
-                                // This preserves content on false positives, though it may cause
-                                // some duplication. Better to duplicate than to lose data.
-                                eprintln!(
-                                    "Warning: Snapshot extraction failed: {e}. \
-                                     Falling back to original text to prevent data loss. \
-                                     May cause some duplication.",
-                                );
-                                &text
-                            }
-                        }
+                        // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
+                        session
+                            .get_delta_from_snapshot(&text, &index_str)
+                            .unwrap_or(&text)
                     } else {
                         // Genuine delta - use as-is
                         &text
@@ -516,13 +471,13 @@ impl ClaudeParser {
                 } => {
                     // Handle tool input streaming
                     // Extract the tool input from the delta
-                    let input_str =
-                        tool_delta
-                            .get("input")
-                            .map_or_else(String::new, |input| match input {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => format_tool_input(other),
-                            });
+                    let input_str = tool_delta
+                        .get("input")
+                        .map(|input| match input {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => format_tool_input(other),
+                        })
+                        .unwrap_or_default();
 
                     if input_str.is_empty() {
                         String::new()
@@ -537,8 +492,10 @@ impl ClaudeParser {
                 }
                 _ => String::new(),
             },
-            #[expect(clippy::match_same_arms)]
-            StreamInnerEvent::ContentBlockDelta { .. } | StreamInnerEvent::Ping => String::new(),
+            StreamInnerEvent::ContentBlockDelta { .. }
+            | StreamInnerEvent::Ping
+            | StreamInnerEvent::TextDelta { text: None }
+            | StreamInnerEvent::Error { error: None } => String::new(),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 // Standalone text delta (not part of content block)
                 // Use default index "0" for standalone text
@@ -547,23 +504,10 @@ impl ClaudeParser {
 
                 // Check for snapshot-as-delta bug
                 let text_to_process = if session.is_likely_snapshot(&text, default_index_str) {
-                    eprintln!(
-                        "Warning: Detected snapshot-as-delta for standalone text. Converting to delta."
-                    );
-                    match session.get_delta_from_snapshot(&text, default_index_str) {
-                        Ok(delta) => delta,
-                        Err(e) => {
-                            // Snapshot extraction failed - fall back to original text.
-                            // This preserves content on false positives, though it may cause
-                            // some duplication. Better to duplicate than to lose data.
-                            eprintln!(
-                                "Warning: Snapshot extraction failed: {e}. \
-                                 Falling back to original text to prevent data loss. \
-                                 May cause some duplication.",
-                            );
-                            &text
-                        }
-                    }
+                    // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
+                    session
+                        .get_delta_from_snapshot(&text, default_index_str)
+                        .unwrap_or(&text)
                 } else {
                     &text
                 };
@@ -586,11 +530,19 @@ impl ClaudeParser {
                 // Message complete - add final newline if we were in a content block
                 // OR if any content was streamed (handles edge cases where block state
                 // may not have been set but content was still streamed)
+                let metrics = session.get_streaming_quality_metrics();
                 let was_in_block = session.on_message_stop();
                 let had_content = session.has_any_streamed_content();
                 if was_in_block || had_content {
                     // Use TextDeltaRenderer for completion - adds final newline
-                    format!("{}{}", c.reset(), TextDeltaRenderer::render_completion())
+                    let completion =
+                        format!("{}{}", c.reset(), TextDeltaRenderer::render_completion());
+                    // In debug mode, also show streaming quality metrics
+                    if self.verbosity.is_debug() && metrics.total_deltas > 0 {
+                        format!("{}\n{}", completion, metrics.format(*c))
+                    } else {
+                        completion
+                    }
                 } else {
                     String::new()
                 }
@@ -611,8 +563,6 @@ impl ClaudeParser {
                     c.reset()
                 )
             }
-            StreamInnerEvent::TextDelta { text: None }
-            | StreamInnerEvent::Error { error: None } => String::new(),
             StreamInnerEvent::Unknown => {
                 // Unknown stream event - in debug mode, log it
                 if self.verbosity.is_debug() {

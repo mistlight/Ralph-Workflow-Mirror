@@ -2,8 +2,6 @@
 //!
 //! Provides visual progress feedback for long-running operations.
 
-#![expect(clippy::cast_possible_truncation)]
-
 use super::Colors;
 
 /// Print a progress bar with percentage and counts.
@@ -31,14 +29,22 @@ pub fn print_progress(current: u32, total: u32, label: &str) {
     }
 
     let bar_width: usize = 20;
-    let pct = (u64::from(current))
-        .saturating_mul(100)
-        .saturating_div(u64::from(total))
-        .min(100) as u32;
-    let filled = (u64::from(current))
-        .saturating_mul(bar_width as u64)
-        .saturating_div(u64::from(total))
-        .min(bar_width as u64) as usize;
+    // Safe: result is bounded to 0..=100 by .min(100)
+    let pct = u32::try_from(
+        (u64::from(current))
+            .saturating_mul(100)
+            .saturating_div(u64::from(total))
+            .min(100),
+    )
+    .unwrap_or(0);
+    // Safe: result is bounded to 0..=bar_width by .min(bar_width)
+    let filled = usize::try_from(
+        (u64::from(current))
+            .saturating_mul(bar_width as u64)
+            .saturating_div(u64::from(total))
+            .min(bar_width as u64),
+    )
+    .unwrap_or(0);
     let empty = bar_width - filled;
 
     let bar: String = "█".repeat(filled) + &"░".repeat(empty);
@@ -67,14 +73,20 @@ mod tests {
             return (0, String::new());
         }
         let bar_width: usize = 20;
-        let pct = (u64::from(current))
-            .saturating_mul(100)
-            .saturating_div(u64::from(total))
-            .min(100) as u32;
-        let filled = (u64::from(current))
-            .saturating_mul(bar_width as u64)
-            .saturating_div(u64::from(total))
-            .min(bar_width as u64) as usize;
+        let pct = u32::try_from(
+            (u64::from(current))
+                .saturating_mul(100)
+                .saturating_div(u64::from(total))
+                .min(100),
+        )
+        .unwrap_or(0);
+        let filled = usize::try_from(
+            (u64::from(current))
+                .saturating_mul(bar_width as u64)
+                .saturating_div(u64::from(total))
+                .min(bar_width as u64),
+        )
+        .unwrap_or(0);
         let empty = bar_width - filled;
         let bar: String = "█".repeat(filled) + &"░".repeat(empty);
         (pct, bar)

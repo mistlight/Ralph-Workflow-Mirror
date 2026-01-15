@@ -53,7 +53,7 @@ pub fn finalize_pipeline(
     };
     print_final_summary(colors, &summary, logger);
 
-    if config.checkpoint_enabled {
+    if config.features.checkpoint_enabled {
         if let Err(err) = clear_checkpoint() {
             logger.warn(&format!("Failed to clear checkpoint: {err}"));
         }
