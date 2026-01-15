@@ -49,10 +49,103 @@ pub struct AgentAttemptConfig<'a> {
     pub fallback_config: &'a crate::agents::fallback::FallbackConfig,
 }
 
+/// Print GLM-specific diagnostic output (only on first try to avoid spam).
+fn print_glm_diagnostics(
+    config: &AgentAttemptConfig<'_>,
+    runtime: &PipelineRuntime<'_>,
+) {
+    let cmd_argv = split_command(config.cmd_str).ok();
+    let full_cmd_log = cmd_argv.as_ref().map_or_else(
+        || "<unparseable command>".to_string(),
+        |argv| {
+            let mut argv_for_log = argv.clone();
+            argv_for_log.push("<PROMPT>".to_string());
+            truncate_text(&format_argv_for_log(&argv_for_log), 160)
+        },
+    );
+
+    if runtime.config.verbosity.is_debug() {
+        runtime.logger.info(&format!(
+            "GLM agent '{}' command configuration:",
+            config.agent_name
+        ));
+        runtime
+            .logger
+            .info(&format!("  Full command: {full_cmd_log}"));
+    }
+}
+
+/// Print error-specific diagnostics and guidance.
+fn print_error_diagnostics(
+    error_kind: crate::agents::AgentErrorKind,
+    config: &AgentAttemptConfig<'_>,
+    runtime: &PipelineRuntime<'_>,
+    is_glm_agent: bool,
+) {
+    // GLM-specific diagnostics
+    if is_glm_agent
+        && matches!(
+            error_kind,
+            crate::agents::AgentErrorKind::AgentSpecificQuirk
+                | crate::agents::AgentErrorKind::ToolExecutionFailed
+        )
+    {
+        runtime.logger.warn(&format!(
+            "{}GLM Agent Issue Detected:{} GLM has known compatibility issues with Ralph.",
+            runtime.colors.yellow(),
+            runtime.colors.reset()
+        ));
+        runtime.logger.info("Suggested workarounds:");
+        runtime
+            .logger
+            .info("  1. Try: ralph --reviewer-agent codex");
+        runtime
+            .logger
+            .info("  2. Try: ralph --reviewer-json-parser generic");
+        runtime
+            .logger
+            .info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
+        runtime
+            .logger
+            .info("See docs/agent-compatibility.md for details.");
+    }
+
+    // Provide provider-specific auth advice for auth failures
+    if matches!(error_kind, crate::agents::AgentErrorKind::AuthFailure) {
+        runtime
+            .logger
+            .info(&crate::agents::auth_failure_advice(config.model_flag));
+    } else {
+        runtime.logger.info(error_kind.recovery_advice());
+    }
+
+    // Provide installation guidance for command not found errors
+    if error_kind.is_command_not_found() {
+        let binary = config
+            .cmd_str
+            .split_whitespace()
+            .next()
+            .unwrap_or(config.agent_name);
+        let guidance = crate::platform::InstallGuidance::for_binary(binary);
+        runtime.logger.info(&guidance.format());
+    }
+
+    // Provide network-specific guidance
+    if error_kind.is_network_error() {
+        runtime
+            .logger
+            .info("Tip: Check your internet connection, firewall, or VPN settings.");
+    }
+
+    // Provide context reduction hint for memory-related errors
+    if error_kind.suggests_smaller_context() {
+        runtime.logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
+    }
+}
+
 /// Try a single agent/model configuration with retries.
 ///
 /// Returns the result of the attempt: success, unrecoverable error, or should-fallback.
-#[allow(clippy::too_many_lines)]
 pub fn try_agent_with_retries(
     config: &AgentAttemptConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
@@ -66,25 +159,7 @@ pub fn try_agent_with_retries(
 
     // GLM-specific diagnostic output (only on first try to avoid spam)
     if is_glm_agent && config.agent_index == 0 && config.cycle == 0 && config.model_index == 0 {
-        let cmd_argv = split_command(config.cmd_str).ok();
-        let full_cmd_log = cmd_argv.as_ref().map_or_else(
-            || "<unparseable command>".to_string(),
-            |argv| {
-                let mut argv_for_log = argv.clone();
-                argv_for_log.push("<PROMPT>".to_string());
-                truncate_text(&format_argv_for_log(&argv_for_log), 160)
-            },
-        );
-
-        if runtime.config.verbosity.is_debug() {
-            runtime.logger.info(&format!(
-                "GLM agent '{}' command configuration:",
-                config.agent_name
-            ));
-            runtime
-                .logger
-                .info(&format!("  Full command: {full_cmd_log}"));
-        }
+        print_glm_diagnostics(config, runtime);
     }
 
     // Try with retries
@@ -129,65 +204,7 @@ pub fn try_agent_with_retries(
             result.exit_code
         ));
 
-        // GLM-specific diagnostics
-        if is_glm_agent
-            && matches!(
-                error_kind,
-                crate::agents::AgentErrorKind::AgentSpecificQuirk
-                    | crate::agents::AgentErrorKind::ToolExecutionFailed
-            )
-        {
-            runtime.logger.warn(&format!(
-                "{}GLM Agent Issue Detected:{} GLM has known compatibility issues with Ralph.",
-                runtime.colors.yellow(),
-                runtime.colors.reset()
-            ));
-            runtime.logger.info("Suggested workarounds:");
-            runtime
-                .logger
-                .info("  1. Try: ralph --reviewer-agent codex");
-            runtime
-                .logger
-                .info("  2. Try: ralph --reviewer-json-parser generic");
-            runtime
-                .logger
-                .info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
-            runtime
-                .logger
-                .info("See docs/agent-compatibility.md for details.");
-        }
-
-        // Provide provider-specific auth advice for auth failures
-        if matches!(error_kind, crate::agents::AgentErrorKind::AuthFailure) {
-            runtime
-                .logger
-                .info(&crate::agents::auth_failure_advice(config.model_flag));
-        } else {
-            runtime.logger.info(error_kind.recovery_advice());
-        }
-
-        // Provide installation guidance for command not found errors
-        if error_kind.is_command_not_found() {
-            let binary = config
-                .cmd_str
-                .split_whitespace()
-                .next()
-                .unwrap_or(config.agent_name);
-            let guidance = crate::platform::InstallGuidance::for_binary(binary);
-            runtime.logger.info(&guidance.format());
-        }
-
-        // Provide network-specific guidance
-        if error_kind.is_network_error() {
-            runtime
-                .logger
-                .info("Tip: Check your internet connection, firewall, or VPN settings.");
-        }
-
-        // Provide context reduction hint for memory-related errors
-        if error_kind.suggests_smaller_context() {
-            runtime.logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
-        }
+        print_error_diagnostics(error_kind, config, runtime, is_glm_agent);
 
         // Check for unrecoverable errors - abort immediately
         if error_kind.is_unrecoverable() {
