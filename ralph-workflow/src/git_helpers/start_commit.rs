@@ -50,7 +50,7 @@ pub enum StartPoint {
 /// - HEAD cannot be resolved (e.g., unborn branch)
 /// - HEAD is not a commit (e.g., symbolic ref to tag)
 pub fn get_current_head_oid() -> io::Result<String> {
-    let repo = git2::Repository::discover(".").map_err(to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
 
     let head = repo.head().map_err(|e| {
         // Handle UnbornBranch error consistently with git_diff()
@@ -58,26 +58,26 @@ pub fn get_current_head_oid() -> io::Result<String> {
         if e.code() == git2::ErrorCode::UnbornBranch {
             io::Error::new(io::ErrorKind::NotFound, "No commits yet (unborn branch)")
         } else {
-            to_io_error(e)
+            to_io_error(&e)
         }
     })?;
 
     // Get the commit OID
-    let head_commit = head.peel_to_commit().map_err(to_io_error)?;
+    let head_commit = head.peel_to_commit().map_err(|e| to_io_error(&e))?;
 
     Ok(head_commit.id().to_string())
 }
 
 fn get_current_start_point() -> io::Result<StartPoint> {
-    let repo = git2::Repository::discover(".").map_err(to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     let head = repo.head();
     let start_point = match head {
         Ok(head) => {
-            let head_commit = head.peel_to_commit().map_err(to_io_error)?;
+            let head_commit = head.peel_to_commit().map_err(|e| to_io_error(&e))?;
             StartPoint::Commit(head_commit.id())
         }
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => StartPoint::EmptyRepo,
-        Err(e) => return Err(to_io_error(e)),
+        Err(e) => return Err(to_io_error(&e)),
     };
     Ok(start_point)
 }
@@ -169,8 +169,8 @@ pub fn load_start_point() -> io::Result<StartPoint> {
     })?;
 
     // Ensure the commit still exists in this repository (history may have been rewritten).
-    let repo = git2::Repository::discover(".").map_err(to_io_error)?;
-    repo.find_commit(oid).map_err(to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
+    repo.find_commit(oid).map_err(|e| to_io_error(&e))?;
 
     Ok(StartPoint::Commit(oid))
 }
@@ -199,7 +199,7 @@ fn has_start_commit() -> bool {
 }
 
 /// Convert git2 error to `io::Error`.
-fn to_io_error(err: git2::Error) -> io::Error {
+fn to_io_error(err: &git2::Error) -> io::Error {
     // Consume the error to extract its message
     let msg = err.to_string();
     io::Error::other(msg)

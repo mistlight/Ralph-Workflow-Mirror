@@ -29,7 +29,7 @@ const DIFF_TRUNCATED_MARKER: &str =
     "\n\n[Diff truncated due to size. Showing first portion above.]";
 
 /// Convert git2 error to `io::Error`.
-fn git2_to_io_error(err: git2::Error) -> io::Error {
+fn git2_to_io_error(err: &git2::Error) -> io::Error {
     // Consume the error to extract its message
     let msg = err.to_string();
     io::Error::other(msg)
@@ -37,13 +37,13 @@ fn git2_to_io_error(err: git2::Error) -> io::Error {
 
 /// Check if we're in a git repository.
 pub fn require_git_repo() -> io::Result<()> {
-    git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     Ok(())
 }
 
 /// Get the git repository root.
 pub fn get_repo_root() -> io::Result<PathBuf> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     repo.workdir()
         .map(PathBuf::from)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No workdir for repository"))
@@ -54,7 +54,7 @@ pub fn get_repo_root() -> io::Result<PathBuf> {
 /// Returns the path to the hooks directory inside .git (or the equivalent
 /// for worktrees and other configurations).
 pub fn get_hooks_dir() -> io::Result<PathBuf> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     Ok(repo.path().join("hooks"))
 }
 
@@ -62,11 +62,11 @@ pub fn get_hooks_dir() -> io::Result<PathBuf> {
 ///
 /// Returns status in porcelain format (similar to `git status --porcelain=v1`).
 pub fn git_snapshot() -> io::Result<String> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
-    let statuses = repo.statuses(Some(&mut opts)).map_err(git2_to_io_error)?;
+    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| git2_to_io_error(&e))?;
 
     let mut result = String::new();
     for entry in statuses.iter() {
@@ -130,11 +130,11 @@ pub fn git_snapshot() -> io::Result<String> {
 /// Handles the case of an empty repository (no commits yet) by
 /// diffing against an empty tree using a read-only approach.
 pub fn git_diff() -> io::Result<String> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // Try to get HEAD tree
     let head_tree = match repo.head() {
-        Ok(head) => Some(head.peel_to_tree().map_err(git2_to_io_error)?),
+        Ok(head) => Some(head.peel_to_tree().map_err(|e| git2_to_io_error(&e))?),
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => {
             // No commits yet - we need to show all untracked files as new files
             // Since there's no HEAD, we diff an empty tree against the workdir
@@ -147,18 +147,18 @@ pub fn git_diff() -> io::Result<String> {
 
             let diff = repo
                 .diff_tree_to_workdir_with_index(None, Some(&mut diff_opts))
-                .map_err(git2_to_io_error)?;
+                .map_err(|e| git2_to_io_error(&e))?;
 
             let mut result = Vec::new();
             diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
                 result.extend_from_slice(line.content());
                 true
             })
-            .map_err(git2_to_io_error)?;
+            .map_err(|e| git2_to_io_error(&e))?;
 
             return Ok(String::from_utf8_lossy(&result).to_string());
         }
-        Err(e) => return Err(git2_to_io_error(e)),
+        Err(e) => return Err(git2_to_io_error(&e)),
     };
 
     // For repos with commits, diff HEAD against working tree
@@ -169,7 +169,7 @@ pub fn git_diff() -> io::Result<String> {
 
     let diff = repo
         .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
 
     // Generate diff text
     let mut result = Vec::new();
@@ -177,7 +177,7 @@ pub fn git_diff() -> io::Result<String> {
         result.extend_from_slice(line.content());
         true
     })
-    .map_err(git2_to_io_error)?;
+    .map_err(|e| git2_to_io_error(&e))?;
 
     Ok(String::from_utf8_lossy(&result).to_string())
 }
@@ -229,14 +229,14 @@ pub fn validate_and_truncate_diff(diff: String) -> (String, bool) {
 fn index_has_changes_to_commit(repo: &git2::Repository, index: &git2::Index) -> io::Result<bool> {
     match repo.head() {
         Ok(head) => {
-            let head_tree = head.peel_to_tree().map_err(git2_to_io_error)?;
+            let head_tree = head.peel_to_tree().map_err(|e| git2_to_io_error(&e))?;
             let diff = repo
                 .diff_tree_to_index(Some(&head_tree), Some(index), None)
-                .map_err(git2_to_io_error)?;
+                .map_err(|e| git2_to_io_error(&e))?;
             Ok(diff.deltas().len() > 0)
         }
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => Ok(!index.is_empty()),
-        Err(e) => Err(git2_to_io_error(e)),
+        Err(e) => Err(git2_to_io_error(&e)),
     }
 }
 
@@ -258,9 +258,9 @@ fn is_internal_agent_artifact(path: &std::path::Path) -> bool {
 /// Returns `Ok(true)` if files were successfully staged, `Ok(false)` if there
 /// were no files to stage, or an error if staging failed.
 pub fn git_add_all() -> io::Result<bool> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
-    let mut index = repo.index().map_err(git2_to_io_error)?;
+    let mut index = repo.index().map_err(|e| git2_to_io_error(&e))?;
 
     // Stage deletions (equivalent to `git add -A` behavior).
     // libgit2's `add_all` doesn't automatically remove deleted paths.
@@ -271,13 +271,13 @@ pub fn git_add_all() -> io::Result<bool> {
         .include_ignored(false);
     let statuses = repo
         .statuses(Some(&mut status_opts))
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
     for entry in statuses.iter() {
         if entry.status().contains(git2::Status::WT_DELETED) {
             if let Some(path) = entry.path() {
                 index
                     .remove_path(std::path::Path::new(path))
-                    .map_err(git2_to_io_error)?;
+                    .map_err(|e| git2_to_io_error(&e))?;
             }
         }
     }
@@ -294,9 +294,9 @@ pub fn git_add_all() -> io::Result<bool> {
             git2::IndexAddOption::DEFAULT,
             Some(&mut filter_cb),
         )
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
 
-    index.write().map_err(git2_to_io_error)?;
+    index.write().map_err(|e| git2_to_io_error(&e))?;
 
     // Return true if staging produced something commit-worthy.
     index_has_changes_to_commit(&repo, &index)
@@ -426,10 +426,10 @@ pub fn git_commit(
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
 ) -> io::Result<Option<git2::Oid>> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // Get the index
-    let mut index = repo.index().map_err(git2_to_io_error)?;
+    let mut index = repo.index().map_err(|e| git2_to_io_error(&e))?;
 
     // Don't create empty commits: if the index matches HEAD (or is empty on an unborn branch),
     // there's nothing to commit.
@@ -438,9 +438,9 @@ pub fn git_commit(
     }
 
     // Get the tree from the index
-    let tree_oid = index.write_tree().map_err(git2_to_io_error)?;
+    let tree_oid = index.write_tree().map_err(|e| git2_to_io_error(&e))?;
 
-    let tree = repo.find_tree(tree_oid).map_err(git2_to_io_error)?;
+    let tree = repo.find_tree(tree_oid).map_err(|e| git2_to_io_error(&e))?;
 
     // Resolve git identity using the identity resolution system.
     // This implements the full priority chain with proper fallbacks.
@@ -448,12 +448,12 @@ pub fn git_commit(
         resolve_commit_identity(&repo, git_user_name, git_user_email)?;
 
     // Create the signature with the resolved identity
-    let sig = git2::Signature::now(&name, &email).map_err(git2_to_io_error)?;
+    let sig = git2::Signature::now(&name, &email).map_err(|e| git2_to_io_error(&e))?;
 
     let oid = match repo.head() {
         Ok(head) => {
             // Normal commit: has a parent
-            let head_commit = head.peel_to_commit().map_err(git2_to_io_error)?;
+            let head_commit = head.peel_to_commit().map_err(|e| git2_to_io_error(&e))?;
             repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head_commit])
         }
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => {
@@ -472,9 +472,9 @@ pub fn git_commit(
             }
             repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[])
         }
-        Err(e) => return Err(git2_to_io_error(e)),
+        Err(e) => return Err(git2_to_io_error(&e)),
     }
-    .map_err(git2_to_io_error)?;
+    .map_err(|e| git2_to_io_error(&e))?;
 
     Ok(Some(oid))
 }
@@ -496,7 +496,7 @@ pub fn git_commit(
 /// - The starting commit cannot be found
 /// - The diff cannot be generated
 pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // Parse the starting OID
     let oid = git2::Oid::from_str(start_oid).map_err(|_| {
@@ -507,8 +507,8 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     })?;
 
     // Find the starting commit
-    let start_commit = repo.find_commit(oid).map_err(git2_to_io_error)?;
-    let start_tree = start_commit.tree().map_err(git2_to_io_error)?;
+    let start_commit = repo.find_commit(oid).map_err(|e| git2_to_io_error(&e))?;
+    let start_tree = start_commit.tree().map_err(|e| git2_to_io_error(&e))?;
 
     // Diff between start commit and current working tree, including staged + unstaged
     // changes and untracked files.
@@ -518,7 +518,7 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
 
     let diff = repo
         .diff_tree_to_workdir_with_index(Some(&start_tree), Some(&mut diff_opts))
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
 
     // Generate diff text
     let mut result = Vec::new();
@@ -526,7 +526,7 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
         result.extend_from_slice(line.content());
         true
     })
-    .map_err(git2_to_io_error)?;
+    .map_err(|e| git2_to_io_error(&e))?;
 
     Ok(String::from_utf8_lossy(&result).to_string())
 }
@@ -538,14 +538,14 @@ fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
 
     let diff = repo
         .diff_tree_to_workdir_with_index(None, Some(&mut diff_opts))
-        .map_err(git2_to_io_error)?;
+        .map_err(|e| git2_to_io_error(&e))?;
 
     let mut result = Vec::new();
     diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
         result.extend_from_slice(line.content());
         true
     })
-    .map_err(git2_to_io_error)?;
+    .map_err(|e| git2_to_io_error(&e))?;
 
     Ok(String::from_utf8_lossy(&result).to_string())
 }
@@ -568,7 +568,7 @@ pub fn get_git_diff_from_start() -> io::Result<String> {
     // but we also repair missing/corrupt files opportunistically for robustness.
     save_start_commit()?;
 
-    let repo = git2::Repository::discover(".").map_err(git2_to_io_error)?;
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     match load_start_point()? {
         StartPoint::Commit(oid) => git_diff_from(&oid.to_string()),
