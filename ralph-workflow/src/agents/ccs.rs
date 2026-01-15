@@ -559,7 +559,6 @@ impl CcsAliasResolver {
         Self::default()
     }
 
-
     /// Try to resolve an agent name as a CCS reference.
     ///
     /// Returns `Some(AgentConfig)` if the name is a valid CCS reference.
