@@ -222,14 +222,51 @@ impl StreamingSession {
     ///
     /// # Arguments
     /// * `message_id` - Optional unique identifier for this message (for deduplication)
+    ///
+    /// # Note on Repeated `MessageStart` Events
+    ///
+    /// Some agents (notably GLM/ccs-glm) send repeated `MessageStart` events during
+    /// a single logical streaming session. When this happens while state is `Streaming`,
+    /// we preserve `output_started_for_key` to prevent prefix spam on each delta that
+    /// follows the repeated `MessageStart`. This is a defensive measure to handle
+    /// non-standard agent protocols while maintaining correct behavior for legitimate
+    /// multi-message scenarios.
     pub fn on_message_start(&mut self) {
-        self.state = StreamingState::Idle;
-        self.streamed_types.clear();
-        self.current_block = ContentBlockState::NotInBlock;
-        self.accumulated.clear();
-        self.key_order.clear();
-        self.delta_sizes.clear();
-        self.output_started_for_key.clear();
+        // Detect repeated MessageStart during active streaming
+        let is_mid_stream_restart = self.state == StreamingState::Streaming;
+
+        if is_mid_stream_restart {
+            // Log the contract violation for debugging
+            eprintln!(
+                "Warning: Received MessageStart while state is Streaming. \
+                This indicates a non-standard agent protocol (e.g., GLM sending \
+                repeated MessageStart events). Preserving output_started_for_key \
+                to prevent prefix spam. File: streaming_state.rs, Line: {}",
+                line!()
+            );
+
+            // Preserve output_started_for_key to prevent prefix spam
+            let preserved_output_started = self.output_started_for_key.clone();
+
+            self.state = StreamingState::Idle;
+            self.streamed_types.clear();
+            self.current_block = ContentBlockState::NotInBlock;
+            self.accumulated.clear();
+            self.key_order.clear();
+            self.delta_sizes.clear();
+
+            // Restore preserved state
+            self.output_started_for_key = preserved_output_started;
+        } else {
+            // Normal reset for new message
+            self.state = StreamingState::Idle;
+            self.streamed_types.clear();
+            self.current_block = ContentBlockState::NotInBlock;
+            self.accumulated.clear();
+            self.key_order.clear();
+            self.delta_sizes.clear();
+            self.output_started_for_key.clear();
+        }
         // Note: We don't reset current_message_id here - it's set by a separate method
         // This allows for more flexible message ID handling
     }
@@ -300,27 +337,30 @@ impl StreamingSession {
         // This is important because some agents (e.g., GLM) may send ContentBlockStart
         // repeatedly for the same index, and we should NOT clear accumulated content
         // in that case (which would cause the next delta to show prefix again).
-        let is_same_index = match &self.current_block {
-            ContentBlockState::NotInBlock => false,
+        let (is_same_index, old_index) = match &self.current_block {
+            ContentBlockState::NotInBlock => (false, None),
             ContentBlockState::InBlock {
                 index: current_index,
                 ..
-            } => current_index == &index_str,
+            } => (current_index == &index_str, Some(current_index.clone())),
         };
 
         // Finalize previous block if we're in one
         self.ensure_content_block_finalized();
 
         // Only clear accumulated content if transitioning to a DIFFERENT index.
+        // We clear the OLD index's content, not the new one.
         if !is_same_index {
-            for content_type in [
-                ContentType::Text,
-                ContentType::Thinking,
-                ContentType::ToolInput,
-            ] {
-                let key = (content_type, index_str.clone());
-                self.accumulated.remove(&key);
-                self.key_order.retain(|k| k != &key);
+            if let Some(old) = old_index {
+                for content_type in [
+                    ContentType::Text,
+                    ContentType::Thinking,
+                    ContentType::ToolInput,
+                ] {
+                    let key = (content_type, old.clone());
+                    self.accumulated.remove(&key);
+                    self.key_order.retain(|k| k != &key);
+                }
             }
         }
     }
@@ -1244,5 +1284,194 @@ mod tests {
         session.on_message_stop();
         assert!(session.is_duplicate_final_message("msg-1"));
         assert!(session.is_duplicate_final_message("msg-2"));
+    }
+
+    // Tests for repeated MessageStart handling (GLM/ccs-glm protocol quirk)
+
+    #[test]
+    fn test_repeated_message_start_preserves_output_started() {
+        let mut session = StreamingSession::new();
+
+        // First message start
+        session.on_message_start();
+
+        // First delta should show prefix
+        let show_prefix = session.on_text_delta(0, "Hello");
+        assert!(show_prefix, "First delta should show prefix");
+
+        // Second delta should NOT show prefix
+        let show_prefix = session.on_text_delta(0, " World");
+        assert!(!show_prefix, "Second delta should not show prefix");
+
+        // Simulate GLM sending repeated MessageStart during streaming
+        // This should preserve output_started_for_key to prevent prefix spam
+        session.on_message_start();
+
+        // After repeated MessageStart, delta should NOT show prefix
+        // because output_started_for_key was preserved
+        let show_prefix = session.on_text_delta(0, "!");
+        assert!(
+            !show_prefix,
+            "After repeated MessageStart, delta should not show prefix"
+        );
+
+        // Verify accumulated content was cleared (as expected for mid-stream restart)
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("!"),
+            "Accumulated content should start fresh after repeated MessageStart"
+        );
+    }
+
+    #[test]
+    fn test_repeated_message_start_with_normal_reset_between_messages() {
+        let mut session = StreamingSession::new();
+
+        // First message
+        session.on_message_start();
+        session.on_text_delta(0, "First");
+        session.on_message_stop();
+
+        // Second message - normal reset should clear output_started_for_key
+        session.on_message_start();
+
+        // First delta of second message SHOULD show prefix
+        let show_prefix = session.on_text_delta(0, "Second");
+        assert!(
+            show_prefix,
+            "First delta of new message should show prefix after normal reset"
+        );
+    }
+
+    #[test]
+    fn test_repeated_message_start_with_multiple_indices() {
+        let mut session = StreamingSession::new();
+
+        // First message start
+        session.on_message_start();
+
+        // First delta for index 0
+        let show_prefix = session.on_text_delta(0, "Index0");
+        assert!(show_prefix, "First delta for index 0 should show prefix");
+
+        // First delta for index 1
+        let show_prefix = session.on_text_delta(1, "Index1");
+        assert!(show_prefix, "First delta for index 1 should show prefix");
+
+        // Simulate repeated MessageStart
+        session.on_message_start();
+
+        // After repeated MessageStart, deltas should NOT show prefix
+        // because output_started_for_key was preserved for both indices
+        let show_prefix = session.on_text_delta(0, " more");
+        assert!(
+            !show_prefix,
+            "Delta for index 0 should not show prefix after repeated MessageStart"
+        );
+
+        let show_prefix = session.on_text_delta(1, " more");
+        assert!(
+            !show_prefix,
+            "Delta for index 1 should not show prefix after repeated MessageStart"
+        );
+    }
+
+    #[test]
+    fn test_repeated_message_start_during_thinking_stream() {
+        let mut session = StreamingSession::new();
+
+        // First message start
+        session.on_message_start();
+
+        // First thinking delta should show prefix
+        let show_prefix = session.on_thinking_delta(0, "Thinking...");
+        assert!(show_prefix, "First thinking delta should show prefix");
+
+        // Simulate repeated MessageStart
+        session.on_message_start();
+
+        // After repeated MessageStart, thinking delta should NOT show prefix
+        let show_prefix = session.on_thinking_delta(0, " more");
+        assert!(
+            !show_prefix,
+            "Thinking delta after repeated MessageStart should not show prefix"
+        );
+    }
+
+    #[test]
+    fn test_message_stop_then_message_start_resets_normally() {
+        let mut session = StreamingSession::new();
+
+        // First message
+        session.on_message_start();
+        session.on_text_delta(0, "First");
+
+        // Message stop finalizes the message
+        session.on_message_stop();
+
+        // New message start should reset normally (not preserve output_started)
+        session.on_message_start();
+
+        // First delta of new message SHOULD show prefix
+        let show_prefix = session.on_text_delta(0, "Second");
+        assert!(
+            show_prefix,
+            "First delta after MessageStop should show prefix (normal reset)"
+        );
+    }
+
+    #[test]
+    fn test_repeated_content_block_start_same_index() {
+        let mut session = StreamingSession::new();
+
+        // Message start
+        session.on_message_start();
+
+        // First delta for index 0
+        let show_prefix = session.on_text_delta(0, "Hello");
+        assert!(show_prefix, "First delta should show prefix");
+
+        // Simulate repeated ContentBlockStart for same index
+        // (Some agents send this, and we should NOT clear accumulated content)
+        session.on_content_block_start(0);
+
+        // Delta after repeated ContentBlockStart should NOT show prefix
+        let show_prefix = session.on_text_delta(0, " World");
+        assert!(
+            !show_prefix,
+            "Delta after repeated ContentBlockStart should not show prefix"
+        );
+
+        // Verify accumulated content was preserved
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Hello World"),
+            "Accumulated content should be preserved across repeated ContentBlockStart"
+        );
+    }
+
+    #[test]
+    fn test_content_block_start_different_index_clears_content() {
+        let mut session = StreamingSession::new();
+
+        // Message start
+        session.on_message_start();
+
+        // First delta for index 0
+        session.on_text_delta(0, "Index0 content");
+
+        // Transition to index 1
+        session.on_content_block_start(1);
+
+        // First delta for index 1 SHOULD show prefix (different index)
+        let show_prefix = session.on_text_delta(1, "Index1 content");
+        assert!(show_prefix, "First delta for new index should show prefix");
+
+        // Index 0 content should be cleared
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            None,
+            "Content for index 0 should be cleared after transition to index 1"
+        );
     }
 }
