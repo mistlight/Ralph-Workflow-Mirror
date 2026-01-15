@@ -2,11 +2,11 @@
 //!
 //! This module handles commands for setting up and checking security modes.
 
-use crate::colors::Colors;
+use crate::logger::Colors;
 use crate::config::Config;
 use crate::container::{ContainerEngine, EngineType, SecurityMode};
 use crate::git_helpers::get_repo_root;
-use crate::utils::Logger;
+use crate::common::utils as utils;Logger;
 
 /// Shell script for setting up the ralph-agent user account
 const SETUP_SCRIPT: &str = r#"# Create user if doesn't exist

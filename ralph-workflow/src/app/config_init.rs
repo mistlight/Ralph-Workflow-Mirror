@@ -11,10 +11,10 @@ use crate::cli::{
     apply_args_to_config, handle_init_global, handle_init_legacy, handle_init_prompt,
     handle_list_templates, Args,
 };
-use crate::colors::Colors;
+use crate::logger::Colors;
 use crate::config::{loader, unified_config_path, Config, UnifiedConfig};
 use crate::git_helpers::get_repo_root;
-use crate::utils::Logger;
+use crate::common::utils as utils;Logger;
 use std::path::PathBuf;
 
 /// Result of configuration initialization.

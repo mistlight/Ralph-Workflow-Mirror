@@ -469,7 +469,7 @@ fn try_make_read_only(prompt_path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::colors::Colors;
+    use crate::logger::Colors;
     use std::path::PathBuf;
     use std::sync::Mutex;
     use tempfile::TempDir;

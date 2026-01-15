@@ -22,7 +22,7 @@
 
 use crate::colors::{Colors, CHECK, CROSS};
 use crate::config::Verbosity;
-use crate::utils::truncate_text;
+use crate::common::utils as utils;truncate_text;
 use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, Write};

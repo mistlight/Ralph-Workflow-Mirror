@@ -3,7 +3,7 @@
 //! This module contains event types and utility functions used by
 //! all the CLI parsers (Claude, Codex, Gemini).
 
-use crate::utils::truncate_text;
+use crate::common::utils as utils;truncate_text;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 

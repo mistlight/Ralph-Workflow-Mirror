@@ -39,7 +39,7 @@ use crate::cli::{
 
 #[cfg(feature = "build-image")]
 use crate::cli::handle_build_image;
-use crate::colors::Colors;
+use crate::logger::Colors;
 use crate::config::Config;
 use crate::files::monitoring::PromptMonitor;
 use crate::files::{

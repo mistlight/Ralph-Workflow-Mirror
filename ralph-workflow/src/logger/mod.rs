@@ -28,6 +28,8 @@ mod progress;
 pub use output::{argv_requests_json, format_generic_json_for_display, Logger};
 pub use progress::print_progress;
 
+// Re-export Colors at the module level
+
 // ===== Colors & Formatting =====
 
 use std::io::IsTerminal;

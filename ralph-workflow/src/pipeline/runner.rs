@@ -4,21 +4,22 @@ use crate::agents::{
     auth_failure_advice, is_glm_like_agent, validate_model_flag, AgentErrorKind, AgentRegistry,
     AgentRole, JsonParserType,
 };
-use crate::colors::Colors;
+use crate::logger::Colors;
 use crate::config::Config;
 use crate::container::config::{ContainerConfig, ExecutionOptions};
 use crate::container::{
     ContainerEngine, ContainerExecutor, EngineType, SecurityMode, UserAccountExecutor,
 };
 use crate::git_helpers::get_repo_root;
-use crate::output::{argv_requests_json, format_generic_json_for_display};
-use crate::timer::Timer;
-use crate::utils::{format_argv_for_log, split_command, truncate_text, Logger};
+use crate::logger::{argv_requests_json, format_generic_json_for_display};
+use crate::pipeline::Timer;
+use crate::common::utils::{format_argv_for_log, split_command, truncate_text, Logger};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use super::fallback::try_agent_with_retries;
 use super::model_flag::resolve_model_with_provider;
 use super::types::CommandResult;
 
@@ -236,550 +237,9 @@ enum SecurityModeContext<'a> {
     UserAccount(Box<UserAccountContext<'a>>),
 }
 
-/// Runtime services required for running agent commands.
-pub struct PipelineRuntime<'a> {
-    pub(crate) timer: &'a mut Timer,
-    pub(crate) logger: &'a Logger,
-    pub(crate) colors: Colors,
-    pub(crate) config: &'a Config,
-}
 
-/// A single prompt-based agent invocation.
-pub struct PromptCommand<'a> {
-    pub(crate) label: &'a str,
-    pub(crate) display_name: &'a str,
-    pub(crate) cmd_str: &'a str,
-    pub(crate) prompt: &'a str,
-    pub(crate) logfile: &'a str,
-    pub(crate) parser_type: JsonParserType,
-    pub(crate) env_vars: &'a std::collections::HashMap<String, String>,
-}
-
-/// Run a command with a prompt argument.
-///
-/// This is an internal helper for `run_with_fallback`.
-pub fn run_with_prompt(
-    cmd: PromptCommand<'_>,
-    runtime: &mut PipelineRuntime<'_>,
-) -> io::Result<CommandResult> {
-    runtime.timer.start_phase();
-    runtime.logger.step(&format!(
-        "{}{}{}",
-        runtime.colors.bold(),
-        cmd.label,
-        runtime.colors.reset()
-    ));
-
-    // Save prompt to file
-    if let Some(parent) = Path::new(&runtime.config.prompt_path).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&runtime.config.prompt_path, cmd.prompt)?;
-    runtime.logger.info(&format!(
-        "Prompt saved to {}{}{}",
-        runtime.colors.cyan(),
-        runtime.config.prompt_path.display(),
-        runtime.colors.reset()
-    ));
-
-    // Copy to clipboard if interactive and pbcopy available
-    if runtime.config.interactive {
-        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(cmd.prompt.as_bytes());
-            }
-            let _ = child.wait();
-            runtime.logger.info(&format!(
-                "Prompt copied to clipboard {}(pbpaste to view){}",
-                runtime.colors.dim(),
-                runtime.colors.reset()
-            ));
-        }
-    }
-
-    // Build full command
-    let argv = split_command(cmd.cmd_str)?;
-    if argv.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Agent command is empty",
-        ));
-    }
-
-    let mut argv_for_log = argv.clone();
-    argv_for_log.push("<PROMPT>".to_string());
-    let display_cmd = truncate_text(&format_argv_for_log(&argv_for_log), 160);
-    runtime.logger.info(&format!(
-        "Executing: {}{}{}",
-        runtime.colors.dim(),
-        display_cmd,
-        runtime.colors.reset()
-    ));
-
-    // GLM-specific debug logging
-    // Check for GLM-like agents using the shared detection function
-    let is_glm_cmd = is_glm_like_agent(cmd.cmd_str);
-
-    if is_glm_cmd && runtime.config.verbosity.is_debug() {
-        runtime
-            .logger
-            .info(&format!("GLM command details: {display_cmd}"));
-        // Verify -p flag is present
-        if argv.iter().any(|arg| arg == "-p") {
-            runtime
-                .logger
-                .info("GLM command includes '-p' flag (correct)");
-        } else {
-            runtime.logger.warn("GLM command may be missing '-p' flag");
-        }
-    }
-
-    // Determine if JSON parsing is needed (based on parser type and command flags)
-    let uses_json = cmd.parser_type != JsonParserType::Generic || argv_requests_json(&argv);
-
-    runtime
-        .logger
-        .info(&format!("Using {} parser...", cmd.parser_type));
-    if let Some(parent) = Path::new(cmd.logfile).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    File::create(cmd.logfile)?;
-
-    // Try to initialize security mode
-    let security_ctx = try_init_security_mode(runtime.config);
-
-    // Build environment variables map
-    let mut env_vars_map = std::collections::HashMap::new();
-    for (key, value) in cmd.env_vars {
-        env_vars_map.insert(key.clone(), value.clone());
-    }
-
-    // Execute command (either in security mode or directly)
-    let (exit_code, stderr_output) = if let Some(ctx) = security_ctx {
-        match ctx {
-            SecurityModeContext::Container(container_ctx) => {
-                // Container mode execution
-                runtime.logger.info(&format!(
-                    "{}Running agent in container (engine: {}, image: {}){}",
-                    runtime.colors.dim(),
-                    container_ctx.engine.binary(),
-                    container_ctx.executor.config().image,
-                    runtime.colors.reset()
-                ));
-
-                // Build execution options with env vars
-                let mut options = container_ctx.options;
-                for (key, value) in &env_vars_map {
-                    options.env_vars.push((key.clone(), value.clone()));
-                }
-
-                // Execute in container
-                match container_ctx.executor.execute(
-                    &container_ctx.engine,
-                    cmd.cmd_str,
-                    cmd.prompt,
-                    &env_vars_map,
-                    &options,
-                ) {
-                    Ok(result) => {
-                        // Write captured stdout to log file
-                        if let Ok(mut f) = OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(cmd.logfile)
-                        {
-                            let _ = f.write_all(result.stdout.as_bytes());
-                        }
-
-                        // Parse and display the captured output
-                        if uses_json {
-                            let stdout = io::stdout();
-                            let mut out = stdout.lock();
-
-                            // Create a cursor from the captured output for parsing
-                            let mut cursor = std::io::Cursor::new(result.stdout.as_bytes());
-                            let reader = BufReader::new(&mut cursor);
-
-                            match cmd.parser_type {
-                                JsonParserType::Claude => {
-                                    let p = crate::json_parser::ClaudeParser::new(
-                                        runtime.colors,
-                                        runtime.config.verbosity,
-                                    )
-                                    .with_display_name(cmd.display_name)
-                                    .with_log_file(cmd.logfile);
-                                    p.parse_stream(reader, &mut out)?;
-                                }
-                                JsonParserType::Codex => {
-                                    let p = crate::json_parser::CodexParser::new(
-                                        runtime.colors,
-                                        runtime.config.verbosity,
-                                    )
-                                    .with_display_name(cmd.display_name)
-                                    .with_log_file(cmd.logfile);
-                                    p.parse_stream(reader, &mut out)?;
-                                }
-                                JsonParserType::Gemini => {
-                                    let p = crate::json_parser::GeminiParser::new(
-                                        runtime.colors,
-                                        runtime.config.verbosity,
-                                    )
-                                    .with_display_name(cmd.display_name)
-                                    .with_log_file(cmd.logfile);
-                                    p.parse_stream(reader, &mut out)?;
-                                }
-                                JsonParserType::OpenCode => {
-                                    let p = crate::json_parser::OpenCodeParser::new(
-                                        runtime.colors,
-                                        runtime.config.verbosity,
-                                    )
-                                    .with_display_name(cmd.display_name)
-                                    .with_log_file(cmd.logfile);
-                                    p.parse_stream(reader, &mut out)?;
-                                }
-                                JsonParserType::Generic => {
-                                    let mut buf = String::new();
-                                    for line in reader.lines() {
-                                        buf.push_str(&line?);
-                                        buf.push('\n');
-                                    }
-                                    let formatted = format_generic_json_for_display(
-                                        &buf,
-                                        runtime.config.verbosity,
-                                    );
-                                    out.write_all(formatted.as_bytes())?;
-                                }
-                            }
-                        } else {
-                            // Plain-text mode: just output the captured stdout
-                            let stdout = io::stdout();
-                            let mut out = stdout.lock();
-                            out.write_all(result.stdout.as_bytes())?;
-                        }
-
-                        (result.exit_code, result.stderr)
-                    }
-                    Err(e) => {
-                        // Container execution failed - try user account mode before direct execution
-                        runtime.logger.warn(&format!(
-                            "{}Container execution failed: {}. Attempting user account mode fallback.{}",
-                            runtime.colors.yellow(),
-                            e,
-                            runtime.colors.reset()
-                        ));
-
-                        // Try to initialize user account mode as fallback
-                        match fallback_to_user_account_mode(runtime.config) {
-                            Some(user_ctx) => {
-                                runtime.logger.info(&format!(
-                                    "{}Successfully initialized user account mode as fallback.{}",
-                                    runtime.colors.green(),
-                                    runtime.colors.reset()
-                                ));
-
-                                // Build execution options with env vars
-                                let mut options = user_ctx.options;
-                                for (key, value) in &env_vars_map {
-                                    options.env_vars.push((key.clone(), value.clone()));
-                                }
-
-                                match user_ctx.executor.execute(
-                                    cmd.cmd_str,
-                                    cmd.prompt,
-                                    &env_vars_map,
-                                    &options,
-                                ) {
-                                    Ok(result) => {
-                                        // Write captured stdout to log file
-                                        if let Ok(mut f) = OpenOptions::new()
-                                            .create(true)
-                                            .append(true)
-                                            .open(cmd.logfile)
-                                        {
-                                            let _ = f.write_all(result.stdout.as_bytes());
-                                        }
-
-                                        // Parse and display the captured output
-                                        if uses_json {
-                                            let stdout = io::stdout();
-                                            let mut out = stdout.lock();
-                                            let mut cursor =
-                                                std::io::Cursor::new(result.stdout.as_bytes());
-                                            let reader = BufReader::new(&mut cursor);
-
-                                            match cmd.parser_type {
-                                                JsonParserType::Claude => {
-                                                    let p = crate::json_parser::ClaudeParser::new(
-                                                        runtime.colors,
-                                                        runtime.config.verbosity,
-                                                    )
-                                                    .with_display_name(cmd.display_name)
-                                                    .with_log_file(cmd.logfile);
-                                                    p.parse_stream(reader, &mut out)?;
-                                                }
-                                                JsonParserType::Codex => {
-                                                    let p = crate::json_parser::CodexParser::new(
-                                                        runtime.colors,
-                                                        runtime.config.verbosity,
-                                                    )
-                                                    .with_display_name(cmd.display_name)
-                                                    .with_log_file(cmd.logfile);
-                                                    p.parse_stream(reader, &mut out)?;
-                                                }
-                                                JsonParserType::Gemini => {
-                                                    let p = crate::json_parser::GeminiParser::new(
-                                                        runtime.colors,
-                                                        runtime.config.verbosity,
-                                                    )
-                                                    .with_display_name(cmd.display_name)
-                                                    .with_log_file(cmd.logfile);
-                                                    p.parse_stream(reader, &mut out)?;
-                                                }
-                                                JsonParserType::OpenCode => {
-                                                    let p =
-                                                        crate::json_parser::OpenCodeParser::new(
-                                                            runtime.colors,
-                                                            runtime.config.verbosity,
-                                                        )
-                                                        .with_display_name(cmd.display_name)
-                                                        .with_log_file(cmd.logfile);
-                                                    p.parse_stream(reader, &mut out)?;
-                                                }
-                                                JsonParserType::Generic => {
-                                                    let mut buf = String::new();
-                                                    for line in reader.lines() {
-                                                        buf.push_str(&line?);
-                                                        buf.push('\n');
-                                                    }
-                                                    let formatted = format_generic_json_for_display(
-                                                        &buf,
-                                                        runtime.config.verbosity,
-                                                    );
-                                                    out.write_all(formatted.as_bytes())?;
-                                                }
-                                            }
-                                        } else {
-                                            let stdout = io::stdout();
-                                            let mut out = stdout.lock();
-                                            out.write_all(result.stdout.as_bytes())?;
-                                        }
-                                        (result.exit_code, result.stderr)
-                                    }
-                                    Err(e2) => {
-                                        // User account mode also failed - fall back to direct execution
-                                        runtime.logger.warn(&format!(
-                                            "{}User account mode fallback also failed: {}. Falling back to direct execution.{}",
-                                            runtime.colors.yellow(),
-                                            e2,
-                                            runtime.colors.reset()
-                                        ));
-                                        execute_command_direct(
-                                            DirectExecutionConfig {
-                                                argv: &argv,
-                                                prompt: cmd.prompt,
-                                                env_vars: &env_vars_map,
-                                                logfile: cmd.logfile,
-                                                parser_type: cmd.parser_type,
-                                                display_name: cmd.display_name,
-                                                uses_json,
-                                            },
-                                            runtime,
-                                        )?
-                                    }
-                                }
-                            }
-                            None => {
-                                // User account mode not available - fall back to direct execution
-                                runtime.logger.warn(&format!(
-                                    "{}User account mode not available. Falling back to direct execution.{}",
-                                    runtime.colors.yellow(),
-                                    runtime.colors.reset()
-                                ));
-                                execute_command_direct(
-                                    DirectExecutionConfig {
-                                        argv: &argv,
-                                        prompt: cmd.prompt,
-                                        env_vars: &env_vars_map,
-                                        logfile: cmd.logfile,
-                                        parser_type: cmd.parser_type,
-                                        display_name: cmd.display_name,
-                                        uses_json,
-                                    },
-                                    runtime,
-                                )?
-                            }
-                        }
-                    }
-                }
-            }
-            SecurityModeContext::UserAccount(user_ctx) => {
-                // User account mode execution
-                runtime.logger.info(&format!(
-                    "{}Running agent as user '{}' (user account mode){}",
-                    runtime.colors.dim(),
-                    user_ctx.executor.user_name(),
-                    runtime.colors.reset()
-                ));
-
-                // Build execution options with env vars
-                let mut options = user_ctx.options;
-                for (key, value) in &env_vars_map {
-                    options.env_vars.push((key.clone(), value.clone()));
-                }
-
-                // Execute as user
-                match user_ctx
-                    .executor
-                    .execute(cmd.cmd_str, cmd.prompt, &env_vars_map, &options)
-                {
-                    Ok(result) => {
-                        // Write captured stdout to log file
-                        if let Ok(mut f) = OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(cmd.logfile)
-                        {
-                            let _ = f.write_all(result.stdout.as_bytes());
-                        }
-
-                        // Parse and display the captured output
-                        if uses_json {
-                            let stdout = io::stdout();
-                            let mut out = stdout.lock();
-
-                            // Create a cursor from the captured output for parsing
-                            let mut cursor = std::io::Cursor::new(result.stdout.as_bytes());
-                            let reader = BufReader::new(&mut cursor);
-
-                            match cmd.parser_type {
-                                JsonParserType::Claude => {
-                                    let p = crate::json_parser::ClaudeParser::new(
-                                        runtime.colors,
-                                        runtime.config.verbosity,
-                                    )
-                                    .with_display_name(cmd.display_name)
-                                    .with_log_file(cmd.logfile);
-                                    p.parse_stream(reader, &mut out)?;
-                                }
-                                JsonParserType::Codex => {
-                                    let p = crate::json_parser::CodexParser::new(
-                                        runtime.colors,
-                                        runtime.config.verbosity,
-                                    )
-                                    .with_display_name(cmd.display_name)
-                                    .with_log_file(cmd.logfile);
-                                    p.parse_stream(reader, &mut out)?;
-                                }
-                                JsonParserType::Gemini => {
-                                    let p = crate::json_parser::GeminiParser::new(
-                                        runtime.colors,
-                                        runtime.config.verbosity,
-                                    )
-                                    .with_display_name(cmd.display_name)
-                                    .with_log_file(cmd.logfile);
-                                    p.parse_stream(reader, &mut out)?;
-                                }
-                                JsonParserType::OpenCode => {
-                                    let p = crate::json_parser::OpenCodeParser::new(
-                                        runtime.colors,
-                                        runtime.config.verbosity,
-                                    )
-                                    .with_display_name(cmd.display_name)
-                                    .with_log_file(cmd.logfile);
-                                    p.parse_stream(reader, &mut out)?;
-                                }
-                                JsonParserType::Generic => {
-                                    let mut buf = String::new();
-                                    for line in reader.lines() {
-                                        buf.push_str(&line?);
-                                        buf.push('\n');
-                                    }
-                                    let formatted = format_generic_json_for_display(
-                                        &buf,
-                                        runtime.config.verbosity,
-                                    );
-                                    out.write_all(formatted.as_bytes())?;
-                                }
-                            }
-                        } else {
-                            // Plain-text mode: just output the captured stdout
-                            let stdout = io::stdout();
-                            let mut out = stdout.lock();
-                            out.write_all(result.stdout.as_bytes())?;
-                        }
-
-                        (result.exit_code, result.stderr)
-                    }
-                    Err(e) => {
-                        // User account execution failed - fall back to direct execution
-                        runtime.logger.warn(&format!(
-                            "{}User account execution failed: {}. Falling back to direct execution.{}",
-                            runtime.colors.yellow(),
-                            e,
-                            runtime.colors.reset()
-                        ));
-                        execute_command_direct(
-                            DirectExecutionConfig {
-                                argv: &argv,
-                                prompt: cmd.prompt,
-                                env_vars: &env_vars_map,
-                                logfile: cmd.logfile,
-                                parser_type: cmd.parser_type,
-                                display_name: cmd.display_name,
-                                uses_json,
-                            },
-                            runtime,
-                        )?
-                    }
-                }
-            }
-        }
-    } else {
-        // Direct execution (no security mode or security mode not available)
-        execute_command_direct(
-            DirectExecutionConfig {
-                argv: &argv,
-                prompt: cmd.prompt,
-                env_vars: &env_vars_map,
-                logfile: cmd.logfile,
-                parser_type: cmd.parser_type,
-                display_name: cmd.display_name,
-                uses_json,
-            },
-            runtime,
-        )?
-    };
-
-    // Debug logging for stderr output to help diagnose agent issues
-    if !stderr_output.is_empty() && runtime.config.verbosity.is_debug() {
-        runtime.logger.warn(&format!(
-            "Agent stderr output detected ({} bytes):",
-            stderr_output.len()
-        ));
-        // Show first few lines of stderr for debugging
-        for (i, line) in stderr_output.lines().take(5).enumerate() {
-            runtime.logger.info(&format!("  stderr[{i}]: {line}"));
-        }
-        if stderr_output.lines().count() > 5 {
-            runtime.logger.info(&format!(
-                "  ... ({} more lines, see log file for full output)",
-                stderr_output.lines().count() - 5
-            ));
-        }
-    }
-
-    if runtime.config.verbosity.is_verbose() {
-        runtime.logger.info(&format!(
-            "Phase elapsed: {}",
-            runtime.timer.phase_elapsed_formatted()
-        ));
-    }
-
-    Ok(CommandResult {
-        exit_code,
-        stderr: stderr_output,
-    })
-}
+// Re-export types and functions from prompt module
+pub use super::prompt::{PipelineRuntime, PromptCommand, run_with_prompt};
 
 /// Configuration for direct command execution
 struct DirectExecutionConfig<'a> {
@@ -1188,36 +648,39 @@ pub fn run_with_fallback(
                 let safe_agent_name = agent_name.replace('/', "-");
                 let logfile = format!("{logfile_prefix}_{safe_agent_name}_{model_index}.log");
 
-                // Try with retries
-                for retry in 0..fallback_config.max_retries {
-                    if retry > 0 {
-                        runtime.logger.info(&format!(
-                            "Retry {}/{} for {}{}...",
-                            retry, fallback_config.max_retries, display_name, model_suffix,
-                        ));
-                    }
+                // Prepare environment variables for the agent
+                let env_vars = std::collections::HashMap::new();
+
+                // Try agent with retries
+                let result = try_agent_with_retries(
+                    agent_name,
+                    model_ref,
+                    &label,
+                    &display_name,
+                    &cmd_str,
+                    prompt,
+                    &logfile,
+                    parser_type,
+                    &env_vars,
+                    model_index,
+                    agent_index,
+                    cycle,
+                    runtime,
+                    fallback_config,
+                )?;
 
                 match result {
-                    TryAgentResult::Success => return Ok(0),
-                    TryAgentResult::Unrecoverable(exit_code) => return Ok(exit_code),
-                    TryAgentResult::Fallback => {
-                        // Break to next model/agent
-                        break;
+                    super::fallback::TryAgentResult::Success => return Ok(0),
+                    super::fallback::TryAgentResult::Unrecoverable(exit_code) => {
+                        return Ok(exit_code)
                     }
-
-                    // Otherwise, continue retrying the same model/agent
-                    if retry + 1 < fallback_config.max_retries {
-                        runtime.logger.info(&format!(
-                            "Retrying '{}'{} (attempt {}/{})",
-                            display_name,
-                            model_suffix,
-                            retry + 2,
-                            fallback_config.max_retries
-                        ));
-                        let wait_ms = error_kind
-                            .suggested_wait_ms()
-                            .max(fallback_config.retry_delay_ms);
-                        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+                    super::fallback::TryAgentResult::Fallback => {
+                        // Continue to next model/agent
+                        continue;
+                    }
+                    super::fallback::TryAgentResult::NoRetry => {
+                        // Continue to next model/agent
+                        continue;
                     }
                 }
             }

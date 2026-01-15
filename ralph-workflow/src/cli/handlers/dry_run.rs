@@ -4,7 +4,7 @@
 
 use crate::config::Config;
 use crate::language_detector::detect_stack_summary;
-use crate::utils::{checkpoint_exists, load_checkpoint, validate_prompt_md, Logger};
+use crate::common::utils::{checkpoint_exists, load_checkpoint, validate_prompt_md, Logger};
 use std::path::Path;
 
 /// Handle --dry-run command.

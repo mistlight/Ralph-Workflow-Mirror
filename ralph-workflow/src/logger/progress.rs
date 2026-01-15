@@ -2,7 +2,7 @@
 //!
 //! Provides visual progress feedback for long-running operations.
 
-use crate::colors::Colors;
+use crate::logger::Colors;
 
 /// Print a progress bar with percentage and counts.
 ///

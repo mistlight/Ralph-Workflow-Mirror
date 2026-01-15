@@ -74,7 +74,7 @@ pub const CLEAR_LINE: &str = "\x1b[2K";
 ///
 /// ```ignore
 /// use crate::json_parser::delta_display::DeltaRenderer;
-/// use crate::colors::Colors;
+/// use crate::logger::Colors;
 ///
 /// let colors = Colors { enabled: true };
 ///

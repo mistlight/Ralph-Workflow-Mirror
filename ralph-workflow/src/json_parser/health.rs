@@ -32,7 +32,7 @@
 //! - **Ignored events**: General category for events not displayed (includes
 //!   both unknown events and parse errors)
 
-use crate::colors::Colors;
+use crate::logger::Colors;
 use std::cell::Cell;
 
 /// Parser health statistics

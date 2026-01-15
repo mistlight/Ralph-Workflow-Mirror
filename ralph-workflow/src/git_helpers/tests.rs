@@ -6,7 +6,7 @@
 use super::hooks::HOOK_MARKER;
 use super::repo::get_hooks_dir;
 use super::*;
-use crate::utils::Logger;
+use crate::common::utils as utils;Logger;
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::sync::Mutex;
