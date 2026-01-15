@@ -277,7 +277,6 @@ QUICK EXAMPLES:\n\
     ralph --list-templates            See all prompt templates\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
-#[allow(clippy::struct_excessive_bools)]
 // CLI arguments naturally use many boolean flags. These represent independent
 // user choices, not a state machine, so bools are the appropriate type.
 pub struct Args {

@@ -88,6 +88,8 @@ pub fn load_config_from_path(
 
 /// Create a Config from `UnifiedConfig`.
 fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> Config {
+    use super::types::{BehavioralFlags, FeatureFlags};
+
     let general = &unified.general;
 
     let review_depth = ReviewDepth::from_str(&general.review_depth).unwrap_or_else(|| {
@@ -108,12 +110,19 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         developer_provider: None,
         reviewer_provider: None,
         reviewer_json_parser: None, // Set from env var or CLI
-        force_universal_prompt: general.force_universal_prompt,
+        features: FeatureFlags {
+            checkpoint_enabled: general.features.checkpoint_enabled,
+            force_universal_prompt: general.features.force_universal_prompt,
+        },
         developer_iters: general.developer_iters,
         reviewer_reviews: general.reviewer_reviews,
         fast_check_cmd: None,
         full_check_cmd: None,
-        interactive: general.interactive,
+        behavior: BehavioralFlags {
+            interactive: general.behavior.interactive,
+            auto_detect_stack: general.behavior.auto_detect_stack,
+            strict_validation: general.behavior.strict_validation,
+        },
         prompt_path: general
             .prompt_path
             .as_ref()
@@ -122,11 +131,8 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         reviewer_context: general.reviewer_context,
         verbosity: Verbosity::from(general.verbosity),
         commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
-        auto_detect_stack: general.auto_detect_stack,
-        checkpoint_enabled: general.checkpoint_enabled,
-        strict_validation: general.strict_validation,
         review_depth,
-        isolation_mode: general.isolation_mode,
+        isolation_mode: general.features.isolation_mode,
         git_user_name: general.git_user_name.clone(),
         git_user_email: general.git_user_email.clone(),
     }
@@ -134,6 +140,8 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
 
 /// Default configuration when no config file is found.
 fn default_config() -> Config {
+    use super::types::{BehavioralFlags, FeatureFlags};
+
     Config {
         developer_agent: None,
         reviewer_agent: None,
@@ -144,20 +152,24 @@ fn default_config() -> Config {
         developer_provider: None,
         reviewer_provider: None,
         reviewer_json_parser: None,
-        force_universal_prompt: false,
+        features: FeatureFlags {
+            checkpoint_enabled: true,
+            force_universal_prompt: false,
+        },
         developer_iters: 5,
         reviewer_reviews: 2,
         fast_check_cmd: None,
         full_check_cmd: None,
-        interactive: true,
+        behavior: BehavioralFlags {
+            interactive: true,
+            auto_detect_stack: true,
+            strict_validation: false,
+        },
         prompt_path: PathBuf::from(".agent/last_prompt.txt"),
         developer_context: 1,
         reviewer_context: 0,
         verbosity: Verbosity::Verbose,
         commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
-        auto_detect_stack: true,
-        checkpoint_enabled: true,
-        strict_validation: false,
         review_depth: ReviewDepth::default(),
         isolation_mode: true,
         git_user_name: None,
@@ -262,7 +274,7 @@ fn apply_model_provider_env(config: &mut Config) {
     // Force universal review prompt (useful for problematic agents)
     if let Ok(val) = env::var("RALPH_REVIEWER_UNIVERSAL_PROMPT") {
         if let Some(b) = parse_env_bool(&val) {
-            config.force_universal_prompt = b;
+            config.features.force_universal_prompt = b;
         }
     }
 }
@@ -300,10 +312,10 @@ fn apply_boolean_flags_env(config: &mut Config) {
     // Apply each boolean flag
     for (name, value) in vars {
         match name {
-            "RALPH_INTERACTIVE" => config.interactive = value,
-            "RALPH_AUTO_DETECT_STACK" => config.auto_detect_stack = value,
-            "RALPH_CHECKPOINT_ENABLED" => config.checkpoint_enabled = value,
-            "RALPH_STRICT_VALIDATION" => config.strict_validation = value,
+            "RALPH_INTERACTIVE" => config.behavior.interactive = value,
+            "RALPH_AUTO_DETECT_STACK" => config.behavior.auto_detect_stack = value,
+            "RALPH_CHECKPOINT_ENABLED" => config.features.checkpoint_enabled = value,
+            "RALPH_STRICT_VALIDATION" => config.behavior.strict_validation = value,
             "RALPH_ISOLATION_MODE" => config.isolation_mode = value,
             _ => {}
         }
@@ -474,7 +486,7 @@ mod tests {
         assert!(config.reviewer_agent.is_none());
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
-        assert!(config.interactive);
+        assert!(config.behavior.interactive);
         assert!(config.isolation_mode);
         assert_eq!(config.verbosity, Verbosity::Verbose);
     }

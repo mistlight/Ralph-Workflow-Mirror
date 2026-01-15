@@ -295,7 +295,6 @@ impl AgentRegistry {
     }
 
     /// Create a new agent config from unified config overrides.
-    #[allow(clippy::unused_self)]
     fn create_new_agent_config(
         &self,
         overrides: &crate::config::unified::AgentConfigToml,
@@ -340,7 +339,6 @@ impl AgentRegistry {
     }
 
     /// Merge overrides with existing agent config.
-    #[allow(clippy::unused_self)]
     fn merge_agent_config(
         &self,
         existing: AgentConfig,
