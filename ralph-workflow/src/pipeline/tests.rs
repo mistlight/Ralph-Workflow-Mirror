@@ -251,14 +251,15 @@ fn test_glm_reviewer_command_includes_print_flag() {
 
     // Verify flag ordering: -p must come after the command name
     let parts: Vec<&str> = cmd.split_whitespace().collect();
-    if let Some(p_index) = parts.iter().position(|&s| s == "-p") {
-        assert!(
-            p_index > 0,
-            "-p flag must come after command name. Command was: {cmd}"
-        );
-    } else {
-        panic!("GLM command must contain -p flag. Command was: {cmd}");
-    }
+    let p_index = parts.iter().position(|&s| s == "-p");
+    assert!(
+        p_index.is_some(),
+        "GLM command must contain -p flag. Command was: {cmd}"
+    );
+    assert!(
+        p_index.unwrap() > 0,
+        "-p flag must come after command name. Command was: {cmd}"
+    );
 }
 
 #[test]
