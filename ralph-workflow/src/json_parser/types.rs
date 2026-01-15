@@ -2,6 +2,7 @@
 //!
 //! This module contains event types and utility functions used by
 //! all the CLI parsers (Claude, Codex, Gemini).
+#![expect(clippy::option_if_let_else)]
 
 use crate::common::truncate_text;
 use crate::logger::Colors;
@@ -474,6 +475,8 @@ fn extract_nested_text(value: &serde_json::Value) -> Option<String> {
 /// # Returns
 /// A formatted string showing the event type and key fields, or an empty string
 /// if the JSON couldn't be parsed or verbosity should suppress it.
+#[expect(clippy::too_many_lines)]
+#[expect(clippy::manual_let_else)]
 pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,

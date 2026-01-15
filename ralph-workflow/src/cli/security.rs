@@ -330,7 +330,7 @@ fn prompt_version_manager_links(colors: Colors) -> anyhow::Result<bool> {
         colors.reset()
     );
     for manager in &detected {
-        println!("  • {}", manager);
+        println!("  • {manager}");
     }
 
     println!("\nThese will be linked to the ralph-agent user's home directory,",);
@@ -687,6 +687,24 @@ fn print_tool_availability(colors: Colors) {
     if !found_build.is_empty() {
         println!("  {}Build Tools:{}", colors.dim(), colors.reset());
         for tool in found_build {
+            println!("    {}✓{} {}", colors.green(), colors.reset(), tool.name);
+        }
+    }
+
+    // Display container tools
+    let found_container: Vec<_> = container_tools.iter().filter(|t| t.found).collect();
+    if !found_container.is_empty() {
+        println!("  {}Container Tools:{}", colors.dim(), colors.reset());
+        for tool in found_container {
+            println!("    {}✓{} {}", colors.green(), colors.reset(), tool.name);
+        }
+    }
+
+    // Display cloud tools
+    let found_cloud: Vec<_> = cloud_tools.iter().filter(|t| t.found).collect();
+    if !found_cloud.is_empty() {
+        println!("  {}Cloud Tools:{}", colors.dim(), colors.reset());
+        for tool in found_cloud {
             println!("    {}✓{} {}", colors.green(), colors.reset(), tool.name);
         }
     }

@@ -6,6 +6,7 @@
 //! 2. Executes the plan
 //! 3. Deletes PLAN.md
 //! 4. Optionally runs fast checks
+#![expect(clippy::too_many_lines)]
 
 use crate::agents::AgentRole;
 use crate::common::utils::{

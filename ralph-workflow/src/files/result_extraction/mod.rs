@@ -19,6 +19,12 @@
 //!
 //! This dual-mode support handles both legacy directory-based logs and the current
 //! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
+#![expect(clippy::cast_possible_truncation)]
+#![expect(clippy::items_after_statements)]
+#![expect(clippy::manual_let_else)]
+#![expect(clippy::case_sensitive_file_extension_comparisons)]
+#![expect(clippy::or_fun_call)]
+#![expect(clippy::option_if_let_else)]
 
 use serde_json::Value as JsonValue;
 use std::fs::{self, File};

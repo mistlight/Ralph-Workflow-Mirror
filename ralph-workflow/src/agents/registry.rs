@@ -794,12 +794,13 @@ mod tests {
         registry.set_ccs_aliases(&aliases, default_ccs());
 
         let all_agents = registry.list();
-        let ccs_agents: Vec<_> = all_agents
-            .iter()
-            .filter(|(name, _)| name.starts_with("ccs/"))
-            .collect();
-
-        assert_eq!(ccs_agents.len(), 2);
+        assert_eq!(
+            all_agents
+                .iter()
+                .filter(|(name, _)| name.starts_with("ccs/"))
+                .count(),
+            2
+        );
     }
 
     #[test]

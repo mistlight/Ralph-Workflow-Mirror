@@ -9,6 +9,8 @@
 //! 2. Runs the commit agent with the diff via the standard pipeline
 //! 3. Extracts the commit message from agent output
 //! 4. Returns the generated message for use by the caller
+#![expect(clippy::too_many_arguments)]
+#![expect(clippy::manual_let_else)]
 
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::config::Config;

@@ -11,6 +11,9 @@
 //! - [`developer`] - Developer prompts (iteration, planning)
 //! - [`reviewer`] - Reviewer prompts (review, comprehensive, security, incremental)
 //! - [`commit`] - Fix and commit message prompts
+#![expect(clippy::format_push_string)]
+#![expect(clippy::option_if_let_else)]
+#![expect(clippy::match_same_arms)]
 
 mod commit;
 mod developer;

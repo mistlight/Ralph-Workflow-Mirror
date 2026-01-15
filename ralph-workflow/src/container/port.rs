@@ -44,6 +44,7 @@ impl PortMapping {
 ///
 /// Analyzes a command string to detect common development servers
 /// and returns the ports they typically use.
+#[expect(clippy::too_many_lines)]
 pub fn detect_ports_from_command(command: &[String]) -> Vec<u16> {
     let cmd_str = command.join(" ").to_lowercase();
     let mut ports = Vec::new();

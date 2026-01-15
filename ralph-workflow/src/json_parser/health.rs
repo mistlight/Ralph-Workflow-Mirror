@@ -31,6 +31,10 @@
 //!
 //! - **Ignored events**: General category for events not displayed (includes
 //!   both unknown events and parse errors)
+#![expect(clippy::cast_precision_loss)]
+#![expect(clippy::cast_possible_truncation)]
+#![expect(clippy::cast_sign_loss)]
+#![expect(clippy::option_if_let_else)]
 
 use crate::logger::Colors;
 use std::cell::Cell;

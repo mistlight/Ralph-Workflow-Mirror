@@ -26,9 +26,9 @@ pub fn is_glm_like_agent(s: &str) -> bool {
         || s_lower.contains("deepseek")
 }
 
-/// Check if an agent name indicates OpenAI `Codex`.
+/// Check if an agent name indicates `OpenAI` `Codex`.
 ///
-/// Codex is OpenAI's coding assistant that may have special compatibility
+/// `Codex` is `OpenAI`'s coding assistant that may have special compatibility
 /// considerations with container security modes.
 ///
 /// # Arguments

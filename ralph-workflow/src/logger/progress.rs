@@ -1,6 +1,7 @@
 //! Progress bar display utilities.
 //!
 //! Provides visual progress feedback for long-running operations.
+#![expect(clippy::cast_possible_truncation)]
 
 use crate::logger::Colors;
 

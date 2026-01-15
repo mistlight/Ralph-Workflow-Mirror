@@ -1,6 +1,13 @@
 //! Command execution helpers and fallback orchestration.
 
 #![cfg_attr(feature = "security-mode", expect(dead_code))]
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::needless_pass_by_value)]
+#![expect(clippy::items_after_statements)]
+#![expect(clippy::clone_on_copy)]
+#![expect(clippy::needless_continue)]
+#![expect(clippy::option_if_let_else)]
+#![expect(clippy::match_same_arms)]
 
 use crate::agents::{
     is_glm_like_agent, validate_model_flag, AgentRegistry, AgentRole, JsonParserType,

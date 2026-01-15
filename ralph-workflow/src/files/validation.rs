@@ -2,6 +2,8 @@
 //!
 //! Validates the structure and content of PROMPT.md files to ensure
 //! they have the required sections for the pipeline to work effectively.
+#![expect(clippy::manual_let_else)]
+#![expect(clippy::needless_continue)]
 
 use std::fs;
 use std::io::IsTerminal;
@@ -32,6 +34,7 @@ fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
 ///
 /// Contains flags indicating what was found and any errors or warnings.
 #[derive(Debug, Clone)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct PromptValidationResult {
     /// Whether PROMPT.md exists
     pub exists: bool,

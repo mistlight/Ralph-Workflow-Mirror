@@ -209,6 +209,7 @@ impl ContainerExecutor {
     ///
     /// Takes the agent command and executes it inside a container with proper
     /// volume mounts, environment variables, and working directory.
+    #[expect(clippy::too_many_lines)]
     pub fn execute(
         &self,
         engine: &ContainerEngine,
@@ -247,9 +248,8 @@ impl ContainerExecutor {
                 let binary_path = Path::new(first_arg.as_str());
                 if binary_path.is_file() && is_macho_binary(binary_path) {
                     return Err(ContainerError::Other(format!(
-                        "The binary '{}' appears to be a macOS Mach-O executable and won't work in a Linux container. \
-                        Consider using --security-mode user-account instead.",
-                        first_arg
+                        "The binary '{first_arg}' appears to be a macOS Mach-O executable and won't work in a Linux container. \
+                        Consider using --security-mode user-account instead."
                     )));
                 }
             }

@@ -175,6 +175,7 @@ impl ToolManager {
     /// Discover all available tool mounts
     ///
     /// Returns a list of tool directories that should be mounted into the container.
+    #[expect(clippy::too_many_lines)]
     pub fn discover_tool_mounts(&self) -> Vec<ToolMount> {
         let mut mounts = Vec::new();
         let mut seen_targets = HashSet::new();
@@ -460,6 +461,7 @@ impl ToolManager {
     /// Get shell initialization script content for container startup
     ///
     /// Returns a bash script fragment that initializes all detected version managers.
+    #[expect(clippy::too_many_lines)]
     pub fn get_shell_init_script(&self) -> String {
         let mut init_lines = Vec::new();
         let Some(ref _home) = self.home_dir else {

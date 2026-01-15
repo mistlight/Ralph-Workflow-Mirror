@@ -5,6 +5,8 @@
 //! 1. Reviews the code and creates ISSUES.md
 //! 2. Fixes the issues found
 //! 3. Cleans up ISSUES.md (in isolation mode)
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::option_if_let_else)]
 
 use crate::agents::{is_glm_like_agent, AgentRole};
 use crate::common::utils::{

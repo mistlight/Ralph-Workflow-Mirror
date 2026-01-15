@@ -107,6 +107,7 @@ impl PromptMonitor {
     ///
     /// This thread watches the current directory for deletion events on
     /// PROMPT.md and restores from backup when detected.
+    #[expect(clippy::needless_pass_by_value)]
     fn monitor_thread_main(restoration_detected: Arc<AtomicBool>, stop_signal: Arc<AtomicBool>) {
         use notify::Watcher;
 
@@ -120,7 +121,7 @@ impl PromptMonitor {
                 eprintln!("Warning: Failed to create file system watcher: {e}");
                 eprintln!("Falling back to periodic polling for PROMPT.md protection");
                 // Fallback to polling if watcher creation fails
-                Self::polling_monitor(restoration_detected, stop_signal);
+                Self::polling_monitor(&restoration_detected, &stop_signal);
                 return;
             }
         };
@@ -129,7 +130,7 @@ impl PromptMonitor {
         if let Err(e) = watcher.watch(Path::new("."), notify::RecursiveMode::NonRecursive) {
             eprintln!("Warning: Failed to watch current directory: {e}");
             eprintln!("Falling back to periodic polling for PROMPT.md protection");
-            Self::polling_monitor(restoration_detected, stop_signal);
+            Self::polling_monitor(&restoration_detected, &stop_signal);
             return;
         }
 
@@ -146,11 +147,8 @@ impl PromptMonitor {
                         &mut prompt_existed_last_check,
                     );
                 }
-                Ok(Err(_)) => {
-                    // Error in watcher - continue anyway
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Timeout is expected - check stop signal and continue
+                Ok(Err(_)) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Error in watcher or timeout - continue anyway
                 }
                 Err(_) => {
                     // Channel disconnected - stop monitoring
@@ -183,7 +181,7 @@ impl PromptMonitor {
     ///
     /// Some filesystems (NFS, network drives) don't support file system
     /// events. This fallback polls every 100ms to check if PROMPT.md exists.
-    fn polling_monitor(restoration_detected: Arc<AtomicBool>, stop_signal: Arc<AtomicBool>) {
+    fn polling_monitor(restoration_detected: &Arc<AtomicBool>, stop_signal: &Arc<AtomicBool>) {
         let mut prompt_existed = Path::new("PROMPT.md").exists();
 
         while !stop_signal.load(Ordering::Relaxed) {

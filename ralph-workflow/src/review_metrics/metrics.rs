@@ -2,6 +2,8 @@
 //!
 //! Core `ReviewMetrics` struct and parsing logic for extracting
 //! issue counts and resolution rates from ISSUES.md.
+#![expect(clippy::missing_const_for_fn)]
+#![expect(clippy::unused_self)]
 
 use std::fs;
 use std::io;

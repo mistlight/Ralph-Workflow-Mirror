@@ -19,6 +19,9 @@
 //! Hello World\r             (second delta overwrites with accumulated text)
 //! [Gemini] Hello World\n   (final non-delta message shows complete result)
 //! ```
+#![expect(clippy::format_push_string)]
+#![expect(clippy::option_if_let_else)]
+#![expect(clippy::match_same_arms)]
 
 use crate::common::truncate_text;
 use crate::config::Verbosity;
@@ -72,6 +75,7 @@ impl GeminiParser {
     /// - Malformed JSON (non-JSON text passed through if meaningful)
     /// - Unknown event types
     /// - Empty or whitespace-only output
+    #[expect(clippy::too_many_lines)]
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: GeminiEvent = if let Ok(e) = serde_json::from_str(line) {
             e

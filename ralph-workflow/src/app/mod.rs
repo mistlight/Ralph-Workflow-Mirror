@@ -211,7 +211,7 @@ fn handle_special_commands(
     registry: &AgentRegistry,
     config_path: &std::path::Path,
     config_sources: &[crate::agents::ConfigSource],
-    _logger: &Logger,
+    logger: &Logger,
 ) -> Option<anyhow::Result<()>> {
     if args.diagnose {
         handle_diagnose(colors, config, registry, config_path, config_sources);
@@ -224,7 +224,7 @@ fn handle_special_commands(
 
     #[cfg(feature = "security-mode")]
     if args.security_check {
-        handle_security_check(colors, config, _logger);
+        handle_security_check(colors, config, logger);
         return Some(Ok(()));
     }
 

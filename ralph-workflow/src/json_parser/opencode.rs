@@ -19,6 +19,9 @@
 //! Hello World\r             (second text event overwrites with accumulated text)
 //! [OpenCode] ✓ Step finished... (step_finish shows prefix with newline)
 //! ```
+#![expect(clippy::too_many_lines)]
+#![expect(clippy::option_if_let_else)]
+#![expect(clippy::format_push_string)]
 
 use crate::common::truncate_text;
 use crate::config::Verbosity;
