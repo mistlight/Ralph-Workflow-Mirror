@@ -39,6 +39,9 @@ pub fn try_agent_with_retries(
     cycle: usize,
     runtime: &mut PipelineRuntime<'_>,
     fallback_config: &crate::agents::fallback::FallbackConfig,
+    #[cfg(feature = "security-mode")] security_context: Option<
+        &crate::pipeline::runner::SecurityModeContext<'_>,
+    >,
 ) -> io::Result<TryAgentResult> {
     let model_suffix = model_flag
         .as_ref()
@@ -88,6 +91,8 @@ pub fn try_agent_with_retries(
                 env_vars,
             },
             runtime,
+            #[cfg(feature = "security-mode")]
+            security_context,
         )?;
 
         if result.exit_code == 0 {

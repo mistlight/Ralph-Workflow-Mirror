@@ -8,12 +8,15 @@ use crate::logger::Logger;
 use crate::logger::{argv_requests_json, format_generic_json_for_display};
 use crate::pipeline::Timer;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Cursor, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use super::clipboard::get_platform_clipboard_command;
 use super::types::CommandResult;
+
+#[cfg(feature = "security-mode")]
+use crate::pipeline::runner::SecurityModeContext;
 
 /// A single prompt-based agent invocation.
 pub struct PromptCommand<'a> {
@@ -41,6 +44,9 @@ pub struct PipelineRuntime<'a> {
 pub fn run_with_prompt(
     cmd: &PromptCommand<'_>,
     runtime: &mut PipelineRuntime<'_>,
+    #[cfg(feature = "security-mode")] security_context: Option<
+        &crate::pipeline::runner::SecurityModeContext<'_>,
+    >,
 ) -> io::Result<CommandResult> {
     // Anthropic environment variables to sanitize before spawning agent subprocesses.
     // This prevents GLM/CCS env vars from the parent shell from leaking into agents
@@ -145,7 +151,28 @@ pub fn run_with_prompt(
     }
     File::create(cmd.logfile)?;
 
-    // Execute command
+    // Try security mode execution first if enabled
+    #[cfg(feature = "security-mode")]
+    let security_result = if let &Some(security_context) = &security_context {
+        match execute_with_security_mode(cmd, runtime, security_context, uses_json) {
+            Ok(result) => Some(result),
+            Err(e) => {
+                runtime.logger.warn(&format!(
+                    "Security mode execution failed: {e}. Falling back to direct execution."
+                ));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    #[cfg(feature = "security-mode")]
+    if let Some(result) = security_result {
+        return Ok(result);
+    }
+
+    // Execute command (direct execution fallback)
     let mut command = Command::new(&argv[0]);
     command.args(&argv[1..]);
     command.arg(cmd.prompt);
@@ -380,4 +407,128 @@ pub fn run_with_prompt(
         exit_code,
         stderr: stderr_output,
     })
+}
+
+/// Execute a command using security mode (container or user-account)
+#[cfg(feature = "security-mode")]
+fn execute_with_security_mode(
+    cmd: &PromptCommand<'_>,
+    runtime: &PipelineRuntime<'_>,
+    security_context: &SecurityModeContext<'_>,
+    uses_json: bool,
+) -> io::Result<CommandResult> {
+    match security_context {
+        SecurityModeContext::Container(ctx) => {
+            let result = ctx
+                .executor
+                .execute(
+                    &ctx.engine,
+                    cmd.cmd_str,
+                    cmd.prompt,
+                    cmd.env_vars,
+                    &ctx.options,
+                )
+                .map_err(|e| io::Error::other(format!("Container execution failed: {e}")))?;
+
+            // Parse and output the result similar to direct execution
+            output_execution_result(&result.stdout, uses_json, cmd, runtime)?;
+
+            Ok(CommandResult {
+                exit_code: result.exit_code,
+                stderr: result.stderr,
+            })
+        }
+        SecurityModeContext::UserAccount(ctx) => {
+            let result = ctx
+                .executor
+                .execute(cmd.cmd_str, cmd.prompt, cmd.env_vars, &ctx.options)
+                .map_err(|e| io::Error::other(format!("User account execution failed: {e}")))?;
+
+            // Parse and output the result similar to direct execution
+            output_execution_result(&result.stdout, uses_json, cmd, runtime)?;
+
+            Ok(CommandResult {
+                exit_code: result.exit_code,
+                stderr: result.stderr,
+            })
+        }
+    }
+}
+
+/// Output execution result using JSON parser or plain text
+#[cfg(feature = "security-mode")]
+fn output_execution_result(
+    stdout: &str,
+    uses_json: bool,
+    cmd: &PromptCommand<'_>,
+    runtime: &PipelineRuntime<'_>,
+) -> io::Result<()> {
+    if uses_json {
+        let stdout_io = io::stdout();
+        let mut out = stdout_io.lock();
+        let cursor = Cursor::new(stdout.as_bytes());
+        let reader = BufReader::new(cursor);
+
+        match cmd.parser_type {
+            JsonParserType::Claude => {
+                let p = crate::json_parser::ClaudeParser::new(
+                    *runtime.colors,
+                    runtime.config.verbosity,
+                )
+                .with_display_name(cmd.display_name)
+                .with_log_file(cmd.logfile);
+                p.parse_stream(reader, &mut out)?;
+            }
+            JsonParserType::Codex => {
+                let p =
+                    crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
+                        .with_display_name(cmd.display_name)
+                        .with_log_file(cmd.logfile);
+                p.parse_stream(reader, &mut out)?;
+            }
+            JsonParserType::Gemini => {
+                let p = crate::json_parser::GeminiParser::new(
+                    *runtime.colors,
+                    runtime.config.verbosity,
+                )
+                .with_display_name(cmd.display_name)
+                .with_log_file(cmd.logfile);
+                p.parse_stream(reader, &mut out)?;
+            }
+            JsonParserType::OpenCode => {
+                let p = crate::json_parser::OpenCodeParser::new(
+                    *runtime.colors,
+                    runtime.config.verbosity,
+                )
+                .with_display_name(cmd.display_name)
+                .with_log_file(cmd.logfile);
+                p.parse_stream(reader, &mut out)?;
+            }
+            JsonParserType::Generic => {
+                let mut buf = String::new();
+                for line in stdout.lines() {
+                    buf.push_str(line);
+                    buf.push('\n');
+                }
+                let formatted = format_generic_json_for_display(&buf, runtime.config.verbosity);
+                out.write_all(formatted.as_bytes())?;
+            }
+        }
+    } else {
+        // Plain-text mode: stream output and log it.
+        let mut logfile_handle = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(cmd.logfile)?;
+
+        let stdout_io = io::stdout();
+        let mut out = stdout_io.lock();
+
+        for line in stdout.lines() {
+            writeln!(out, "{line}")?;
+            writeln!(logfile_handle, "{line}")?;
+        }
+    }
+
+    Ok(())
 }

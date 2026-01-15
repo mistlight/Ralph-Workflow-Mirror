@@ -79,6 +79,8 @@ fn run_with_prompt_returns_command_result_for_missing_binary() {
             env_vars: &std::collections::HashMap::new(),
         },
         &mut runtime,
+        #[cfg(feature = "security-mode")]
+        None,
     )
     .unwrap();
 

@@ -43,18 +43,18 @@ use std::path::PathBuf;
 
 /// Container execution context
 #[cfg(feature = "security-mode")]
-struct ContainerContext<'a> {
-    engine: ContainerEngine,
-    executor: ContainerExecutor,
-    options: ExecutionOptions,
+pub struct ContainerContext<'a> {
+    pub engine: ContainerEngine,
+    pub executor: ContainerExecutor,
+    pub options: ExecutionOptions,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 /// User account execution context
 #[cfg(feature = "security-mode")]
-struct UserAccountContext<'a> {
-    executor: UserAccountExecutor,
-    options: ExecutionOptions,
+pub struct UserAccountContext<'a> {
+    pub executor: UserAccountExecutor,
+    pub options: ExecutionOptions,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
@@ -255,7 +255,7 @@ fn fallback_to_user_account_mode(_config: &Config) -> Option<UserAccountContext<
 
 /// Security mode execution context (enum for different modes)
 #[cfg(feature = "security-mode")]
-enum SecurityModeContext<'a> {
+pub enum SecurityModeContext<'a> {
     Container(Box<ContainerContext<'a>>),
     UserAccount(Box<UserAccountContext<'a>>),
 }
@@ -449,6 +449,7 @@ fn execute_command_direct(
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
+#[cfg(feature = "security-mode")]
 pub fn run_with_fallback(
     role: AgentRole,
     base_label: &str,
@@ -457,6 +458,36 @@ pub fn run_with_fallback(
     runtime: &mut PipelineRuntime<'_>,
     registry: &AgentRegistry,
     primary_agent: &str,
+) -> io::Result<i32> {
+    // Try to initialize security mode
+    let security_context = try_init_security_mode(runtime.config);
+
+    run_with_fallback_with_security(
+        role,
+        base_label,
+        prompt,
+        logfile_prefix,
+        runtime,
+        registry,
+        primary_agent,
+        security_context,
+    )
+}
+
+/// Run a command with automatic fallback to alternative agents on failure.
+///
+/// This version accepts a security context for container/user-account mode execution.
+#[cfg(feature = "security-mode")]
+#[expect(clippy::too_many_arguments)]
+fn run_with_fallback_with_security(
+    role: AgentRole,
+    base_label: &str,
+    prompt: &str,
+    logfile_prefix: &str,
+    runtime: &mut PipelineRuntime<'_>,
+    registry: &AgentRegistry,
+    primary_agent: &str,
+    security_context: Option<SecurityModeContext<'_>>,
 ) -> io::Result<i32> {
     let fallback_config = registry.fallback_config();
     let fallbacks = registry.available_fallbacks(role);
@@ -694,6 +725,7 @@ pub fn run_with_fallback(
                     cycle as usize,
                     runtime,
                     fallback_config,
+                    security_context.as_ref(),
                 )?;
 
                 match result {
