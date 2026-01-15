@@ -3,8 +3,8 @@
  * Creates a 1200x630px social sharing image with Forest Editorial aesthetic
  */
 
-const fs = require('fs');
-const { createCanvas } = require('canvas');
+import fs from 'fs';
+import { createCanvas } from 'canvas';
 
 // Dimensions
 const WIDTH = 1200;
@@ -172,7 +172,7 @@ function createOGImage() {
 }
 
 // Generate the image
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
     try {
         createOGImage();
     } catch (error) {
@@ -181,4 +181,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { createOGImage, colors };
+export { createOGImage, colors };

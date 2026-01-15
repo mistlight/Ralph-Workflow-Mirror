@@ -4,9 +4,11 @@
   "description": "Ralph Workflow - Multi-Agent AI Orchestration Website",
   "type": "module",
   "scripts": {
-    "screenshots": "node capture-screenshots.js"
+    "screenshots": "node capture-screenshots.js",
+    "screenshots:baseline": "node capture-screenshots.js baseline",
+    "screenshots:final": "node capture-screenshots.js final"
   },
   "devDependencies": {
-    "playwright": "^1.40.0"
+    "playwright": "^1.48.0"
   }
 }

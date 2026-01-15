@@ -32,11 +32,19 @@ const outputDir = process.argv[2] || 'baseline';
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await page.goto(baseUrl);
 
-        // Wait for animations to complete
-        await page.waitForTimeout(2000);
+        // Wait for animations to complete - wait for hero animation to finish
+        await page.waitForSelector('#hero h1', { state: 'attached', timeout: 5000 });
+        // Wait for character animation to complete (the longest animation)
+        await page.waitForFunction(() => {
+            const heroTitle = document.querySelector('#hero h1');
+            return heroTitle && heroTitle.textContent.length > 0;
+        }, { timeout: 5000 });
+        // Additional wait for any CSS transitions to finish
+        await page.waitForTimeout(500);
 
         // Scroll to capture full page
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        // Wait for any scroll-triggered animations
         await page.waitForTimeout(500);
 
         // Capture full page screenshot
@@ -47,7 +55,8 @@ const outputDir = process.argv[2] || 'baseline';
 
         // Go back to top and capture hero section
         await page.evaluate(() => window.scrollTo(0, 0));
-        await page.waitForTimeout(500);
+        // Wait for scroll to complete
+        await page.waitForTimeout(300);
 
         await page.screenshot({
             path: `.screenshots/${outputDir}/${viewport.name}-hero.png`

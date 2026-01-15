@@ -76,16 +76,7 @@
     }
 
     // Throttled scroll handler for parallax
-    let parallaxTicking = false;
-    window.addEventListener('scroll', () => {
-        if (!parallaxTicking) {
-            window.requestAnimationFrame(() => {
-                updateParallax();
-                parallaxTicking = false;
-            });
-            parallaxTicking = true;
-        }
-    });
+    // (Moved to Scroll Event Listener Cleanup section below)
 
     // === Navigation Scroll Effect ===
     const nav = document.querySelector('.nav');
@@ -104,16 +95,7 @@
     }
 
     // Throttled scroll handler for nav
-    let navTicking = false;
-    window.addEventListener('scroll', () => {
-        if (!navTicking) {
-            window.requestAnimationFrame(() => {
-                updateNav();
-                navTicking = false;
-            });
-            navTicking = true;
-        }
-    });
+    // (Registered in Scroll Event Listener Cleanup section below)
 
     // Initial call
     updateNav();
@@ -186,8 +168,26 @@
     let animationSpeed = 1;
     let animationTimeouts = [];
 
+    // Terminal animation timing constants (in milliseconds)
+    // Represents the delay for each terminal line to appear
+    const TERMINAL_TIMING_FIRST_LINE = 600;      // First command appears
+    const TERMINAL_TIMING_SECOND_LINE = 1200;    // Second command appears
+    const TERMINAL_TIMING_THIRD_LINE = 1500;     // Third command appears
+    const TERMINAL_TIMING_FOURTH_LINE = 1800;    // Fourth command appears
+    const TERMINAL_TIMING_FIFTH_LINE = 2200;     // Fifth command appears
+    const TERMINAL_TIMING_SIXTH_LINE = 2800;     // Sixth command appears
+    const TERMINAL_TIMING_SEVENTH_LINE = 3500;   // Seventh command appears
+
     // Store original timeouts for speed control
-    const originalTiming = [600, 1200, 1500, 1800, 2200, 2800, 3500];
+    const originalTiming = [
+        TERMINAL_TIMING_FIRST_LINE,
+        TERMINAL_TIMING_SECOND_LINE,
+        TERMINAL_TIMING_THIRD_LINE,
+        TERMINAL_TIMING_FOURTH_LINE,
+        TERMINAL_TIMING_FIFTH_LINE,
+        TERMINAL_TIMING_SIXTH_LINE,
+        TERMINAL_TIMING_SEVENTH_LINE
+    ];
 
     function clearTerminalAnimations() {
         animationTimeouts.forEach(timeout => clearTimeout(timeout));
@@ -519,7 +519,28 @@
         savedMode = localStorage.getItem('ralph-install-mode') || 'simple';
     } catch (e) {
         // localStorage unavailable (private browsing, storage disabled)
-        console.warn('localStorage unavailable, using default mode');
+        // Show user-visible notification that settings won't persist
+        showStorageWarning();
+    }
+
+    function showStorageWarning() {
+        // Add a small, dismissible warning banner
+        const warning = document.createElement('div');
+        warning.setAttribute('role', 'alert');
+        warning.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#f59e0b;color:#000;padding:12px 16px;border-radius:8px;font-size:14px;font-weight:500;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:10000;animation:slideUp 0.3s ease-out;max-width:300px;';
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = '⚠️ Settings won\'t save—storage disabled. ';
+        warning.appendChild(textSpan);
+
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '✕';
+        closeButton.style.cssText = 'background:none;border:none;padding:0;margin-left:8px;cursor:pointer;font-weight:600;';
+        closeButton.addEventListener('click', () => warning.remove());
+        warning.appendChild(closeButton);
+
+        document.body.appendChild(warning);
+        setTimeout(() => warning.remove(), 8000);
     }
 
     if (savedMode === 'advanced') {
@@ -628,42 +649,18 @@
             // Store original content to restore later
             const originalContent = this.cloneNode(true);
 
-            // Fallback for non-secure contexts (HTTP) or when clipboard API fails
-            function fallbackCopy() {
-                const textArea = document.createElement('textarea');
-                textArea.value = code;
-                textArea.style.position = 'fixed';
-                textArea.style.left = '-999999px';
-                textArea.style.top = '-999999px';
-                document.body.appendChild(textArea);
-                textArea.focus();
-                textArea.select();
-
-                try {
-                    const successful = document.execCommand('copy');
-                    textArea.remove();
-                    return successful;
-                } catch (err) {
-                    textArea.remove();
-                    console.error('Fallback copy failed:', err);
-                    return false;
-                }
-            }
-
             let success = false;
 
-            // Try modern clipboard API first
+            // Use Clipboard API (requires secure context)
             if (navigator.clipboard && window.isSecureContext) {
                 try {
                     await navigator.clipboard.writeText(code);
                     success = true;
                 } catch (err) {
-                    console.warn('Clipboard API failed, trying fallback:', err);
-                    success = fallbackCopy();
+                    console.error('Copy failed:', err);
                 }
             } else {
-                // Use fallback for non-secure contexts
-                success = fallbackCopy();
+                console.warn('Clipboard API unavailable. Copying requires a secure context (HTTPS or localhost).');
             }
 
             if (success) {
@@ -817,14 +814,50 @@
     window.addEventListener('beforeunload', cleanupObservers);
 
     // === Scroll Event Listener Cleanup ===
-    // The scroll event listeners are throttled with requestAnimationFrame for efficiency
-    // For a single-page website, these listeners are needed throughout the page lifecycle
-    // They will be automatically cleaned up when the page unloads, but we can add explicit cleanup
-    function cleanupScrollListeners() {
-        // Note: We don't store references to scroll handlers for removal since they're
-        // needed throughout the page lifecycle. The browser will clean them up on unload.
-        // If explicit cleanup is needed, we would need to store handler references.
+    // Store scroll handler references for proper cleanup
+    const scrollHandlers = [];
+
+    function addScrollListener(handler) {
+        scrollHandlers.push(handler);
+        window.addEventListener('scroll', handler);
     }
+
+    function cleanupScrollListeners() {
+        scrollHandlers.forEach(handler => {
+            window.removeEventListener('scroll', handler);
+        });
+        scrollHandlers.length = 0;
+    }
+
+    // Register scroll listeners that need cleanup
+    // Parallax scroll handler
+    let parallaxTicking = false;
+    const parallaxHandler = () => {
+        if (!parallaxTicking) {
+            window.requestAnimationFrame(() => {
+                updateParallax();
+                parallaxTicking = false;
+            });
+            parallaxTicking = true;
+        }
+    };
+    addScrollListener(parallaxHandler);
+
+    // Nav scroll handler
+    let navTicking = false;
+    const navHandler = () => {
+        if (!navTicking) {
+            window.requestAnimationFrame(() => {
+                updateNav();
+                navTicking = false;
+            });
+            navTicking = true;
+        }
+    };
+    addScrollListener(navHandler);
+
+    // Register cleanup on page unload
+    window.addEventListener('beforeunload', cleanupScrollListeners);
 
     // === Mousemove Listener Cleanup ===
     // The mousemove listener for cursor spotlight is throttled with requestAnimationFrame
@@ -1029,7 +1062,7 @@
     try {
         savedTheme = localStorage.getItem('ralph-theme');
     } catch (e) {
-        console.warn('localStorage unavailable, using system theme preference');
+        showStorageWarning();
     }
 
     // Function to set theme
@@ -1110,7 +1143,7 @@
     try {
         savedAudience = localStorage.getItem('ralph-audience') || null;
     } catch (e) {
-        console.warn('localStorage unavailable, audience preference not restored');
+        showStorageWarning();
     }
 
     if (savedAudience && audienceSelector) {
@@ -1158,7 +1191,7 @@
             };
 
             // Validate audience is a valid key before accessing sectionMap
-            if (!Object.prototype.hasOwnProperty.call(sectionMap, audience)) return;
+            if (!Object.hasOwn(sectionMap, audience)) return;
 
             const targetSection = sectionMap[audience];
             if (targetSection && document.body.getAttribute('data-audience')) {
@@ -1430,7 +1463,7 @@ impl AuthService {
     try {
         tabSelected = localStorage.getItem('ralph-tab-selected') === 'true';
     } catch (e) {
-        console.warn('localStorage unavailable, will always auto-select tab');
+        showStorageWarning();
     }
 
     if (!tabSelected) {
@@ -1439,7 +1472,6 @@ impl AuthService {
             localStorage.setItem('ralph-tab-selected', 'true');
         } catch (e) {
             // Silently fail - tab will just be re-selected on reload
-            console.warn('Could not save tab selection state');
         }
     }
 
