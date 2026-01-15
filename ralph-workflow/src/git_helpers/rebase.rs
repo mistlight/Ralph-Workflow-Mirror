@@ -13,6 +13,7 @@
 #![deny(unsafe_code)]
 
 use std::io;
+use std::path::Path;
 
 /// Convert git2 error to `io::Error`.
 fn git2_to_io_error(err: &git2::Error) -> io::Error {
@@ -188,6 +189,175 @@ pub fn abort_rebase() -> io::Result<()> {
     }
 }
 
+/// Get a list of files that have merge conflicts.
+///
+/// This function queries libgit2's index to find all files that are
+/// currently in a conflicted state.
+///
+/// # Returns
+///
+/// Returns `Ok(Vec<String>)` containing the paths of conflicted files,
+/// or an error if the repository cannot be accessed.
+pub fn get_conflicted_files() -> io::Result<Vec<String>> {
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    let index = repo.index().map_err(|e| git2_to_io_error(&e))?;
+
+    let mut conflicted_files = Vec::new();
+
+    // Check if there are any conflicts
+    if !index.has_conflicts() {
+        return Ok(conflicted_files);
+    }
+
+    // Get the list of conflicted files
+    let conflicts = index.conflicts().map_err(|e| git2_to_io_error(&e))?;
+
+    for conflict in conflicts {
+        let conflict = conflict.map_err(|e| git2_to_io_error(&e))?;
+        // The conflict's `our` entry (stage 2) will have the path
+        if let Some(our_entry) = conflict.our {
+            if let Ok(path) = std::str::from_utf8(&our_entry.path) {
+                let path_str = path.to_string();
+                if !conflicted_files.contains(&path_str) {
+                    conflicted_files.push(path_str);
+                }
+            }
+        }
+    }
+
+    Ok(conflicted_files)
+}
+
+/// Extract conflict markers from a file.
+///
+/// This function reads a file and returns the conflict sections,
+/// including both versions of the conflicted content.
+///
+/// # Arguments
+///
+/// * `path` - Path to the conflicted file (relative to repo root)
+///
+/// # Returns
+///
+/// Returns `Ok(String)` containing the conflict sections, or an error
+/// if the file cannot be read.
+pub fn get_conflict_markers_for_file(path: &Path) -> io::Result<String> {
+    use std::fs;
+    use std::io::Read;
+
+    let mut file = fs::File::open(path)?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    // Extract conflict markers and their content
+    let mut conflict_sections = Vec::new();
+    let lines: Vec<&str> = content.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        if lines[i].trim_start().starts_with("<<<<<<<") {
+            // Found conflict start
+            let mut section = Vec::new();
+            section.push(lines[i]);
+
+            i += 1;
+            // Collect "ours" version
+            while i < lines.len() && !lines[i].trim_start().starts_with("=======") {
+                section.push(lines[i]);
+                i += 1;
+            }
+
+            if i < lines.len() {
+                section.push(lines[i]); // Add the ======= line
+                i += 1;
+            }
+
+            // Collect "theirs" version
+            while i < lines.len() && !lines[i].trim_start().starts_with(">>>>>>>") {
+                section.push(lines[i]);
+                i += 1;
+            }
+
+            if i < lines.len() {
+                section.push(lines[i]); // Add the >>>>>>> line
+                i += 1;
+            }
+
+            conflict_sections.push(section.join("\n"));
+        } else {
+            i += 1;
+        }
+    }
+
+    if conflict_sections.is_empty() {
+        // No conflict markers found, return empty string
+        Ok(String::new())
+    } else {
+        Ok(conflict_sections.join("\n\n"))
+    }
+}
+
+/// Continue a rebase after conflict resolution.
+///
+/// This function continues a rebase that was paused due to conflicts.
+/// It should be called after all conflicts have been resolved and
+/// the resolved files have been staged with `git add`.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if successful, or an error if:
+/// - No rebase is in progress
+/// - Conflicts remain unresolved
+/// - The continue operation fails
+pub fn continue_rebase() -> io::Result<()> {
+    use std::process::Command;
+
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+
+    // Check if a rebase is in progress
+    let state = repo.state();
+    if state != git2::RepositoryState::Rebase
+        && state != git2::RepositoryState::RebaseMerge
+        && state != git2::RepositoryState::RebaseInteractive
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "No rebase in progress",
+        ));
+    }
+
+    // Check if there are still conflicts
+    let conflicted = get_conflicted_files()?;
+    if !conflicted.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Cannot continue rebase: {} file(s) still have conflicts",
+                conflicted.len()
+            ),
+        ));
+    }
+
+    // Use git CLI for continue
+    let output = Command::new("git").args(["rebase", "--continue"]).output();
+
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                Ok(())
+            } else {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                Err(io::Error::other(format!(
+                    "Failed to continue rebase: {stderr}"
+                )))
+            }
+        }
+        Err(e) => Err(io::Error::other(format!(
+            "Failed to execute git rebase --continue: {e}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +377,13 @@ mod tests {
         let result = rebase_onto("nonexistent_branch_that_does_not_exist");
         // Should fail because the branch doesn't exist
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_conflicted_files_returns_result() {
+        // Test that get_conflicted_files returns a Result
+        let result = get_conflicted_files();
+        // Should succeed (returns Vec, not error)
+        assert!(result.is_ok());
     }
 }

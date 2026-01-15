@@ -40,9 +40,9 @@ use crate::files::{
     update_status, validate_prompt_md,
 };
 use crate::git_helpers::{
-    abort_rebase, cleanup_orphaned_marker, get_default_branch, get_repo_root,
-    is_main_or_master_branch, rebase_onto, require_git_repo, reset_start_commit, save_start_commit,
-    start_agent_phase, RebaseResult,
+    abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
+    get_default_branch, get_repo_root, is_main_or_master_branch, rebase_onto, require_git_repo,
+    reset_start_commit, save_start_commit, start_agent_phase, RebaseResult,
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -743,16 +743,49 @@ fn run_initial_rebase(
             logger.info("No rebase needed (already up-to-date or on main branch)");
             Ok(())
         }
-        Ok(RebaseResult::Conflicts(conflicts)) => {
-            logger.warn("Rebase resulted in conflicts:");
-            for conflict in conflicts {
-                logger.error(&format!("  - {conflict}"));
+        Ok(RebaseResult::Conflicts(_conflicts)) => {
+            // Get the actual conflicted files
+            let conflicted_files = get_conflicted_files()?;
+            if conflicted_files.is_empty() {
+                logger.warn("Rebase reported conflicts but no conflicted files found");
+                let _ = abort_rebase();
+                return Ok(());
             }
-            logger.info("Aborting rebase to allow manual resolution");
-            let _ = abort_rebase();
-            anyhow::bail!(
-                "Rebase conflicts detected. Please resolve conflicts manually and run again with --skip-rebase"
-            )
+
+            logger.warn(&format!(
+                "Rebase resulted in {} conflict(s), attempting AI resolution",
+                conflicted_files.len()
+            ));
+
+            // Attempt to resolve conflicts with AI
+            match try_resolve_conflicts_with_fallback(&conflicted_files, config, logger, colors) {
+                Ok(true) => {
+                    // Conflicts resolved, continue the rebase
+                    logger.info("Continuing rebase after conflict resolution");
+                    match continue_rebase() {
+                        Ok(()) => {
+                            logger.success("Rebase completed successfully after AI resolution");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            logger.warn(&format!("Failed to continue rebase: {e}"));
+                            let _ = abort_rebase();
+                            Ok(()) // Continue anyway - conflicts were resolved
+                        }
+                    }
+                }
+                Ok(false) => {
+                    // AI resolution failed
+                    logger.warn("AI conflict resolution failed, aborting rebase");
+                    let _ = abort_rebase();
+                    Ok(()) // Continue pipeline - don't block on rebase failure
+                }
+                Err(e) => {
+                    logger.error(&format!("Conflict resolution error: {e}"));
+                    let _ = abort_rebase();
+                    Ok(()) // Continue pipeline
+                }
+            }
         }
         Err(e) => {
             logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
@@ -787,20 +820,209 @@ fn run_post_review_rebase(
             logger.info("No rebase needed (already up-to-date or on main branch)");
             Ok(())
         }
-        Ok(RebaseResult::Conflicts(conflicts)) => {
-            logger.warn("Rebase resulted in conflicts:");
-            for conflict in conflicts {
-                logger.error(&format!("  - {conflict}"));
+        Ok(RebaseResult::Conflicts(_conflicts)) => {
+            // Get the actual conflicted files
+            let conflicted_files = get_conflicted_files()?;
+            if conflicted_files.is_empty() {
+                logger.warn("Rebase reported conflicts but no conflicted files found");
+                let _ = abort_rebase();
+                return Ok(());
             }
-            logger.info("Aborting rebase to allow manual resolution");
-            let _ = abort_rebase();
-            anyhow::bail!(
-                "Rebase conflicts detected. Please resolve conflicts manually and run again with --skip-rebase"
-            )
+
+            logger.warn(&format!(
+                "Rebase resulted in {} conflict(s), attempting AI resolution",
+                conflicted_files.len()
+            ));
+
+            // Attempt to resolve conflicts with AI
+            match try_resolve_conflicts_with_fallback(&conflicted_files, config, logger, colors) {
+                Ok(true) => {
+                    // Conflicts resolved, continue the rebase
+                    logger.info("Continuing rebase after conflict resolution");
+                    match continue_rebase() {
+                        Ok(()) => {
+                            logger.success("Rebase completed successfully after AI resolution");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            logger.warn(&format!("Failed to continue rebase: {e}"));
+                            let _ = abort_rebase();
+                            Ok(()) // Continue anyway - conflicts were resolved
+                        }
+                    }
+                }
+                Ok(false) => {
+                    // AI resolution failed
+                    logger.warn("AI conflict resolution failed, aborting rebase");
+                    let _ = abort_rebase();
+                    Ok(()) // Continue pipeline - don't block on rebase failure
+                }
+                Err(e) => {
+                    logger.error(&format!("Conflict resolution error: {e}"));
+                    let _ = abort_rebase();
+                    Ok(()) // Continue pipeline
+                }
+            }
         }
         Err(e) => {
             logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
             Ok(())
         }
+    }
+}
+
+/// Attempt to resolve rebase conflicts with AI fallback.
+///
+/// This is a helper function that creates a minimal `PhaseContext`
+/// for conflict resolution without requiring full pipeline state.
+fn try_resolve_conflicts_with_fallback(
+    conflicted_files: &[String],
+    config: &crate::config::Config,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<bool> {
+    use crate::agents::AgentRegistry;
+    use crate::files::result_extraction::extract_last_result;
+    use crate::pipeline::{run_with_fallback, PipelineRuntime};
+    use crate::prompts::{build_conflict_resolution_prompt, collect_conflict_info};
+    use std::fs;
+    use std::path::Path;
+
+    if conflicted_files.is_empty() {
+        return Ok(false);
+    }
+
+    logger.info(&format!(
+        "Attempting AI conflict resolution for {} file(s)",
+        conflicted_files.len()
+    ));
+
+    // Collect conflict information
+    let conflicts = match collect_conflict_info(conflicted_files) {
+        Ok(c) => c,
+        Err(e) => {
+            logger.error(&format!("Failed to collect conflict info: {e}"));
+            return Ok(false);
+        }
+    };
+
+    // Read PROMPT.md and PLAN.md for context
+    let prompt_md_content = fs::read_to_string("PROMPT.md").ok();
+    let plan_content = fs::read_to_string(".agent/PLAN.md").ok();
+
+    // Build the conflict resolution prompt
+    let resolution_prompt = build_conflict_resolution_prompt(
+        &conflicts,
+        prompt_md_content.as_deref(),
+        plan_content.as_deref(),
+    );
+
+    // Create log directory for conflict resolution
+    let log_dir = ".agent/logs/rebase_conflict_resolution";
+    let _ = fs::create_dir_all(log_dir);
+
+    // Get the registry - we need to construct a minimal one
+    let registry = AgentRegistry::new()?;
+
+    // Get the reviewer agent
+    let reviewer_agent = config
+        .reviewer_agent
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or("codex");
+
+    // Create a minimal runtime
+    let mut runtime = PipelineRuntime {
+        timer: &mut crate::pipeline::Timer::new(),
+        logger,
+        colors: &colors,
+        config,
+    };
+
+    // Run the reviewer agent with fallback
+    let exit_code = run_with_fallback(
+        crate::agents::AgentRole::Reviewer,
+        "conflict resolution",
+        &resolution_prompt,
+        log_dir,
+        &mut runtime,
+        &registry,
+        reviewer_agent,
+    )?;
+
+    if exit_code != 0 {
+        logger.error("Agent failed to resolve conflicts");
+        return Ok(false);
+    }
+
+    // Extract the resolved files from the agent output
+    let resolved_content = match extract_last_result(Path::new(log_dir)) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            logger.error("No output found from agent");
+            return Ok(false);
+        }
+        Err(e) => {
+            logger.error(&format!("Failed to extract agent output: {e}"));
+            return Ok(false);
+        }
+    };
+
+    // Parse JSON output
+    let json: serde_json::Value = match serde_json::from_str(&resolved_content) {
+        Ok(j) => j,
+        Err(e) => {
+            logger.error(&format!("Failed to parse agent output as JSON: {e}"));
+            return Ok(false);
+        }
+    };
+
+    // Extract resolved_files object
+    let resolved_files = match json.get("resolved_files") {
+        Some(v) if v.is_object() => v.as_object().unwrap(),
+        _ => {
+            logger.error("Agent output missing 'resolved_files' object");
+            return Ok(false);
+        }
+    };
+
+    if resolved_files.is_empty() {
+        logger.error("No files were resolved by the agent");
+        return Ok(false);
+    }
+
+    // Write each resolved file and stage it
+    let mut files_written = 0;
+    for (path, content) in resolved_files {
+        if let Some(content_str) = content.as_str() {
+            match fs::write(path, content_str) {
+                Ok(()) => {
+                    logger.info(&format!("Resolved and wrote: {path}"));
+                    files_written += 1;
+                    // Stage the resolved file
+                    if let Err(e) = crate::git_helpers::git_add_all() {
+                        logger.warn(&format!("Failed to stage {path}: {e}"));
+                    }
+                }
+                Err(e) => {
+                    logger.error(&format!("Failed to write {path}: {e}"));
+                    return Ok(false);
+                }
+            }
+        }
+    }
+
+    logger.success(&format!("Successfully resolved {} file(s)", files_written));
+
+    // Verify all conflicts are resolved
+    let remaining_conflicts = get_conflicted_files()?;
+    if !remaining_conflicts.is_empty() {
+        logger.warn(&format!(
+            "{} conflicts remain after AI resolution",
+            remaining_conflicts.len()
+        ));
+        Ok(false)
+    } else {
+        Ok(true)
     }
 }
