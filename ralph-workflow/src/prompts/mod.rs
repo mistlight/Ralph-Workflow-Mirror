@@ -20,8 +20,9 @@ mod types;
 // Re-export all public items for backward compatibility
 pub use commit::{
     prompt_emergency_commit, prompt_emergency_no_diff_commit, prompt_file_list_only_commit,
-    prompt_fix, prompt_generate_commit_message_with_diff, prompt_strict_json_commit,
-    prompt_strict_json_commit_v2, prompt_ultra_minimal_commit, prompt_ultra_minimal_commit_v2,
+    prompt_file_list_summary_only_commit, prompt_fix, prompt_generate_commit_message_with_diff,
+    prompt_strict_json_commit, prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
+    prompt_ultra_minimal_commit_v2,
 };
 pub use developer::{prompt_developer_iteration, prompt_plan};
 pub use reviewer::{

@@ -362,6 +362,72 @@ pub fn prompt_emergency_commit(diff: &str) -> String {
     )
 }
 
+/// Generate file-list-summary-only commit prompt.
+///
+/// This variant provides only a summary of changed files with counts and categories,
+/// without any diff content. Used when all diff-including prompts fail due to
+/// extreme token limits.
+pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
+    let diff_content = diff.trim();
+
+    // Extract file statistics from the diff
+    let files: Vec<&str> = diff_content
+        .lines()
+        .filter(|line| line.starts_with("diff --git a/"))
+        .collect();
+
+    // Categorize files
+    let mut src_files = 0;
+    let mut test_files = 0;
+    let mut doc_files = 0;
+    let mut config_files = 0;
+    let mut other_files = 0;
+
+    for file in &files {
+        let path_lower = file.to_lowercase();
+        if path_lower.contains("/src/") || path_lower.contains("src/") {
+            src_files += 1;
+        } else if path_lower.contains("/test/") || path_lower.contains("test_") {
+            test_files += 1;
+        } else if path_lower.contains(".md") || path_lower.contains("/doc") {
+            doc_files += 1;
+        } else if path_lower.contains("cargo.toml") || path_lower.contains("package.json") {
+            config_files += 1;
+        } else {
+            other_files += 1;
+        }
+    }
+
+    let total_files = files.len();
+
+    // Build the summary
+    use std::fmt::Write;
+    let mut summary = String::from("Changed files summary:\n");
+    writeln!(summary, "Total files changed: {total_files}").unwrap();
+
+    if src_files > 0 {
+        writeln!(summary, "- Source files: {src_files}").unwrap();
+    }
+    if test_files > 0 {
+        writeln!(summary, "- Test files: {test_files}").unwrap();
+    }
+    if doc_files > 0 {
+        writeln!(summary, "- Documentation: {doc_files}").unwrap();
+    }
+    if config_files > 0 {
+        writeln!(summary, "- Configuration: {config_files}").unwrap();
+    }
+    if other_files > 0 {
+        writeln!(summary, "- Other files: {other_files}").unwrap();
+    }
+
+    format!(
+        r#"{summary}
+Generate a conventional commit message for these changes.
+{{"subject": "chore: update files", "body": null}}"#
+    )
+}
+
 /// Generate emergency no-diff commit prompt.
 ///
 /// This is the absolute last resort that doesn't include any diff at all.
