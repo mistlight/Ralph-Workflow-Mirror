@@ -11,10 +11,11 @@
 //! 4. Returns the generated message for use by the caller
 
 use super::context::PhaseContext;
-use crate::agents::{AgentRegistry, AgentRole};
+use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole};
 use crate::files::llm_output_extraction::{
-    extract_llm_output, generate_fallback_commit_message, try_extract_structured_commit,
-    try_salvage_commit_message, validate_commit_message, CommitExtractionResult, OutputFormat,
+    detect_agent_errors_in_output, extract_llm_output, generate_fallback_commit_message,
+    try_extract_structured_commit, try_salvage_commit_message, validate_commit_message,
+    CommitExtractionResult, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
@@ -89,6 +90,32 @@ pub struct CommitMessageResult {
     pub success: bool,
     /// Path to the agent log file for debugging (currently unused but kept for API compatibility)
     pub _log_path: String,
+}
+
+/// Truncate diff if it's too large for agents with small context windows.
+///
+/// This is a defensive measure when agents report "prompt too long" errors.
+/// Returns a truncated diff with a summary of omitted content.
+fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
+    if diff.len() <= max_size {
+        return diff.to_string();
+    }
+
+    // Count files to include in summary
+    let file_count = diff
+        .lines()
+        .filter(|line| line.starts_with("diff --git a/"))
+        .count();
+
+    // Keep first N chars and add summary
+    let truncated = &diff[..max_size];
+    format!(
+        "{}\n\n[Diff truncated: {} files changed, {} bytes omitted]\n\
+         The remaining changes could not be included due to size constraints.",
+        truncated,
+        file_count,
+        diff.len() - max_size
+    )
 }
 
 /// Generate a commit message using the standard agent pipeline with fallback.
@@ -187,7 +214,19 @@ pub fn generate_commit_message(
         match extraction_result {
             Ok(Some(extraction)) => {
                 // Check if we got a valid extraction or a fallback
-                if extraction.is_fallback() {
+                if extraction.is_agent_error() {
+                    // Agent error detected - log and break to fallback
+                    runtime.logger.warn(&format!(
+                        "Agent error detected: {}. Skipping remaining prompt variants.",
+                        extraction
+                            .error_kind()
+                            .map_or("unknown", AgentErrorKind::description)
+                    ));
+                    last_extraction = Some(extraction);
+                    // Break out of the strategy loop - we've hit a hard error
+                    // that requires switching agents or using fallback
+                    break;
+                } else if extraction.is_fallback() {
                     // Fallback was generated - log and continue to next prompt variant
                     runtime.logger.warn(&format!(
                         "Extraction produced fallback message with {strategy}"
@@ -267,6 +306,23 @@ pub fn generate_commit_message(
 
     // If we have a fallback from the last attempt, use it
     if let Some(extraction) = last_extraction {
+        // If we have an AgentError, generate a deterministic fallback from diff
+        if extraction.is_agent_error() {
+            runtime.logger.warn(&format!(
+                "Agent error ({}) - generating fallback commit message from diff...",
+                extraction
+                    .error_kind()
+                    .map_or("unknown", AgentErrorKind::description)
+            ));
+            let fallback = generate_fallback_commit_message(diff);
+            return Ok(CommitMessageResult {
+                message: fallback,
+                success: true, // We have a valid (though generic) message
+                _log_path: log_file,
+            });
+        }
+
+        // Otherwise use the fallback message from the extraction
         runtime
             .logger
             .warn("Using fallback commit message from final attempt");
@@ -275,6 +331,51 @@ pub fn generate_commit_message(
             success: true, // We still have a valid (though generic) message
             _log_path: log_file,
         });
+    }
+
+    // If all strategies failed with TokenExhausted error, try with truncated diff
+    if last_extraction == Some(CommitExtractionResult::AgentError(AgentErrorKind::TokenExhausted))
+    {
+        runtime
+            .logger
+            .warn("All agents exhausted due to token limits. Retrying with truncated diff...");
+
+        let truncated_diff = truncate_diff_if_large(diff, 50_000); // 50KB limit
+
+        // Single retry with Emergency prompt + truncated diff
+        let prompt = prompt_emergency_commit(&truncated_diff);
+
+        let exit_code = run_with_fallback(
+            AgentRole::Commit,
+            "generate commit message (truncated diff)",
+            &prompt,
+            log_dir,
+            runtime,
+            registry,
+            commit_agent,
+        )?;
+
+        if exit_code == 0 {
+            if let Ok(Some(extraction)) = extract_commit_message_from_logs(
+                log_dir,
+                &truncated_diff,
+                commit_agent,
+                runtime.logger,
+            ) {
+                // Check if we got a valid result (not an agent error)
+                if !extraction.is_agent_error() {
+                    let message = extraction.into_message();
+                    if !message.is_empty() {
+                        return Ok(CommitMessageResult {
+                            message,
+                            success: true,
+                            _log_path: log_file,
+                        });
+                    }
+                }
+            }
+        }
+        // If truncated diff retry also failed, fall through to generate fallback from diff
     }
 
     // Complete failure - no valid message could be generated
@@ -402,7 +503,17 @@ fn extract_commit_message_from_logs(
         return Ok(None);
     }
 
-    // FIRST: Try structured JSON extraction (new primary method)
+    // FIRST: Detect agent errors in the output stream BEFORE attempting extraction
+    // This handles cases where agents output errors in their result field instead of stderr
+    if let Some(error_kind) = detect_agent_errors_in_output(&content) {
+        logger.warn(&format!(
+            "Detected agent error in output: {}. This should trigger fallback.",
+            error_kind.description()
+        ));
+        return Ok(Some(CommitExtractionResult::AgentError(error_kind)));
+    }
+
+    // SECOND: Try structured JSON extraction (new primary method)
     // This is the preferred method when the agent outputs JSON schema format
     if let Some(message) = try_extract_structured_commit(&content) {
         logger.info("Successfully extracted commit message from JSON schema");
@@ -555,5 +666,47 @@ mod tests {
         let result = find_most_recent_log("/nonexistent/path");
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_truncate_diff_if_large() {
+        let large_diff = "a".repeat(100_000);
+        let truncated = truncate_diff_if_large(&large_diff, 10_000);
+
+        // Should be truncated
+        assert!(truncated.len() < large_diff.len());
+        // Should contain summary
+        assert!(truncated.contains("truncated"));
+        assert!(truncated.contains("omitted"));
+    }
+
+    #[test]
+    fn test_truncate_preserves_small_diffs() {
+        let small_diff = "a".repeat(100);
+        let truncated = truncate_diff_if_large(&small_diff, 10_000);
+
+        // Should not be modified
+        assert_eq!(truncated, small_diff);
+    }
+
+    #[test]
+    fn test_truncate_exactly_at_limit() {
+        let diff = "a".repeat(10_000);
+        let truncated = truncate_diff_if_large(&diff, 10_000);
+
+        // Should not be modified when at exact limit
+        assert_eq!(truncated, diff);
+    }
+
+    #[test]
+    fn test_truncate_counts_files() {
+        let diff = "diff --git a/file1.rs b/file1.rs\n\
+            diff --git a/file2.rs b/file2.rs\n\
+            diff --git a/file3.rs b/file3.rs\n";
+        let large_diff = format!("{}{}", diff, "x".repeat(100_000));
+        let truncated = truncate_diff_if_large(&large_diff, 100);
+
+        // Should report the number of files changed
+        assert!(truncated.contains("3 files changed"));
     }
 }

@@ -8,6 +8,32 @@ use regex::Regex;
 use serde::Deserialize;
 
 use super::cleaning::{find_conventional_commit_start, looks_like_analysis_text};
+use crate::agents::AgentErrorKind;
+
+/// Detect if agent output contains unrecoverable errors that should trigger fallback.
+///
+/// This handles cases where agents output errors in their result field instead of stderr.
+/// Patterns include: "Prompt is too long", "token limit exceeded", etc.
+pub fn detect_agent_errors_in_output(content: &str) -> Option<AgentErrorKind> {
+    let content_lower = content.to_lowercase();
+
+    // Check for token/context exhaustion patterns in output
+    if content_lower.contains("prompt is too long")
+        || content_lower.contains("token limit exceeded")
+        || content_lower.contains("context length exceeded")
+        || content_lower.contains("maximum context")
+        || content_lower.contains("input too large")
+    {
+        return Some(AgentErrorKind::TokenExhausted);
+    }
+
+    // Check for agent failure patterns
+    if content_lower.contains("invalid request") || content_lower.contains("request failed") {
+        return Some(AgentErrorKind::InvalidResponse);
+    }
+
+    None
+}
 
 /// Result of commit message extraction with detail about the extraction method.
 ///
@@ -21,6 +47,8 @@ pub enum CommitExtractionResult {
     Salvaged(String),
     /// Using deterministic fallback generated from diff metadata
     Fallback(String),
+    /// Agent error detected in output (should trigger fallback)
+    AgentError(AgentErrorKind),
 }
 
 impl CommitExtractionResult {
@@ -28,12 +56,26 @@ impl CommitExtractionResult {
     pub fn into_message(self) -> String {
         match self {
             Self::Extracted(msg) | Self::Salvaged(msg) | Self::Fallback(msg) => msg,
+            Self::AgentError(_) => String::new(), // Errors produce empty message
         }
     }
 
     /// Check if this was a fallback result (should trigger re-prompt).
     pub const fn is_fallback(&self) -> bool {
         matches!(self, Self::Fallback(_))
+    }
+
+    /// Check if this was an agent error (should trigger fallback immediately).
+    pub const fn is_agent_error(&self) -> bool {
+        matches!(self, Self::AgentError(_))
+    }
+
+    /// Get the error kind if this is an agent error.
+    pub const fn error_kind(&self) -> Option<AgentErrorKind> {
+        match self {
+            Self::AgentError(kind) => Some(*kind),
+            _ => None,
+        }
     }
 }
 
@@ -246,6 +288,26 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
     for marker in error_markers {
         if content_lower.starts_with(marker) {
             return Err(format!("Commit message starts with error marker: {marker}"));
+        }
+    }
+
+    // Check for agent error messages that leaked into output
+    // This handles cases where agents output errors in their result field
+    // that bypassed the normal stderr error detection
+    let agent_error_patterns = [
+        "prompt is too long",
+        "token limit exceeded",
+        "context length exceeded",
+        "maximum context",
+        "input too large",
+        "invalid request",
+        "request failed",
+    ];
+    for pattern in &agent_error_patterns {
+        if content_lower.contains(pattern) {
+            return Err(format!(
+                "Output contains agent error message ({pattern}). Cannot use as commit message."
+            ));
         }
     }
 
@@ -878,5 +940,156 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         let scope = derive_scope_from_path("lib.rs");
         // lib.rs has no meaningful directory scope
         assert!(scope.is_none());
+    }
+
+    // =========================================================================
+    // Tests for agent error detection in output
+    // =========================================================================
+
+    #[test]
+    fn test_detect_agent_errors_in_output_prompt_too_long() {
+        // "Prompt is too long" should be detected as TokenExhausted
+        let content = r#"{"type":"result","result":"Prompt is too long"}"#;
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_in_output_token_limit() {
+        // "token limit exceeded" should be detected as TokenExhausted
+        let content = r#"{"type":"result","result":"token limit exceeded"}"#;
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_in_output_context_length() {
+        // "context length exceeded" should be detected as TokenExhausted
+        let content = "error: context length exceeded for this model";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_in_output_maximum_context() {
+        // "maximum context" should be detected as TokenExhausted
+        let content = "maximum context size reached";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_in_output_input_too_large() {
+        // "input too large" should be detected as TokenExhausted
+        let content = "input too large for this model";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_in_output_invalid_request() {
+        // "invalid request" should be detected as InvalidResponse
+        let content = "invalid request to the API";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::InvalidResponse)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_in_output_request_failed() {
+        // "request failed" should be detected as InvalidResponse
+        let content = "request failed due to server error";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::InvalidResponse)
+        );
+    }
+
+    #[test]
+    fn test_detect_agent_errors_in_output_valid_commit_message() {
+        // Normal commit message should return None
+        let content = r#"{"type":"result","result":"feat: add feature"}"#;
+        assert_eq!(detect_agent_errors_in_output(content), None);
+    }
+
+    #[test]
+    fn test_detect_agent_errors_in_output_case_insensitive() {
+        // Detection should be case-insensitive
+        let content = "PROMPT IS TOO LONG";
+        assert_eq!(
+            detect_agent_errors_in_output(content),
+            Some(AgentErrorKind::TokenExhausted)
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_prompt_too_long() {
+        // Validation should reject "Prompt is too long" messages
+        let result = validate_commit_message("Prompt is too long");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("agent error"));
+    }
+
+    #[test]
+    fn test_validate_rejects_token_limit_exceeded() {
+        // Validation should reject "token limit exceeded" messages
+        let result = validate_commit_message("token limit exceeded");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("agent error"));
+    }
+
+    #[test]
+    fn test_validate_rejects_context_length() {
+        // Validation should reject "context length exceeded" messages
+        // Note: "error: context length exceeded" starts with "error:" which is caught by error_markers first
+        // So we use a message that doesn't start with "error:" to test agent_error_patterns
+        let result = validate_commit_message("The context length exceeded for this model");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("agent error"));
+    }
+
+    #[test]
+    fn test_validate_accepts_valid_message_with_error_words() {
+        // Valid commit message containing words like "error" in a different context should pass
+        // For example, "fix: resolve parsing error" is valid
+        let result = validate_commit_message("fix(parser): resolve parsing error");
+        assert!(result.is_ok());
+    }
+
+    // =========================================================================
+    // Tests for CommitExtractionResult::AgentError variant
+    // =========================================================================
+
+    #[test]
+    fn test_commit_extraction_result_agent_error() {
+        // Test AgentError variant methods
+        let result = CommitExtractionResult::AgentError(AgentErrorKind::TokenExhausted);
+
+        assert!(result.is_agent_error());
+        assert!(!result.is_fallback());
+        assert_eq!(result.error_kind(), Some(AgentErrorKind::TokenExhausted));
+        assert_eq!(result.into_message(), String::new());
+    }
+
+    #[test]
+    fn test_commit_extraction_result_extracted_not_agent_error() {
+        // Test that Extracted variant is not an agent error
+        let result = CommitExtractionResult::Extracted("feat: add feature".to_string());
+
+        assert!(!result.is_agent_error());
+        assert!(!result.is_fallback());
+        assert_eq!(result.error_kind(), None);
+        assert_eq!(result.into_message(), "feat: add feature");
     }
 }
