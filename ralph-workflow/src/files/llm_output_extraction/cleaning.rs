@@ -629,6 +629,47 @@ pub fn final_escape_sequence_cleanup(message: &str) -> String {
     result
 }
 
+/// Pre-process raw log content by applying aggressive escape sequence unescaping.
+///
+/// This is the FIRST transformation applied to raw log content to handle cases where
+/// agents output JSON with improperly escaped strings. This handles:
+/// - Single-escaped: \n -> newline
+/// - Double-escaped: \\n -> newline
+/// - Triple-escaped: \\\n -> backslash + newline
+///
+/// The function is idempotent - calling it multiple times produces the same result.
+pub fn preprocess_raw_content(content: &str) -> String {
+    let mut result = content.to_string();
+    let mut previous_len: usize;
+
+    // Multiple passes to handle nested escaping
+    loop {
+        previous_len = result.len();
+
+        // Handle all escape sequence variations using placeholder tokens
+        // This allows us to distinguish between single and double escaped sequences
+        result = result.replace("\\\\n", "\x00NEWLINE\x00"); // Mark double-escaped
+        result = result.replace("\\n", "\n"); // Single to actual
+        result = result.replace("\x00NEWLINE\x00", "\n"); // Double to actual
+
+        // Same for tabs and carriage returns
+        result = result.replace("\\\\t", "\x00TAB\x00");
+        result = result.replace("\\t", "\t");
+        result = result.replace("\x00TAB\x00", "\t");
+
+        result = result.replace("\\\\r", "\x00CR\x00");
+        result = result.replace("\\r", "\r");
+        result = result.replace("\x00CR\x00", "\r");
+
+        // If no changes, we're done
+        if result.len() == previous_len {
+            break;
+        }
+    }
+
+    result
+}
+
 /// Clean plain text output by removing common artifacts.
 ///
 /// This handles:
@@ -968,5 +1009,87 @@ mod tests {
         let twice = unescape_json_strings(&once);
         assert_eq!(once, input);
         assert_eq!(once, twice);
+    }
+
+    // =========================================================================
+    // Tests for preprocess_raw_content
+    // =========================================================================
+
+    #[test]
+    fn test_preprocess_raw_content_single_escaped() {
+        // Single-escaped \n should become actual newline
+        let input = "feat: add feature\\n\\nThis adds new functionality.";
+        let result = preprocess_raw_content(input);
+        assert_eq!(result, "feat: add feature\n\nThis adds new functionality.");
+    }
+
+    #[test]
+    fn test_preprocess_raw_content_double_escaped() {
+        // Double-escaped \\n should also become actual newline
+        let input = "feat: add feature\\\\n\\\\nDouble escaped";
+        let result = preprocess_raw_content(input);
+        assert_eq!(result, "feat: add feature\n\nDouble escaped");
+    }
+
+    #[test]
+    fn test_preprocess_raw_content_triple_escaped() {
+        // Triple-escaped \\\n should become backslash + newline
+        let input = "feat: add feature\\\\\\n\\\\\\nTriple escaped";
+        let result = preprocess_raw_content(input);
+        // Triple backslash-n after first pass: \\n becomes \n (placeholder)
+        // After full processing: backslash-newline-backslash-newline
+        assert_eq!(result, "feat: add feature\\\n\\\nTriple escaped");
+    }
+
+    #[test]
+    fn test_preprocess_raw_content_mixed_escapes() {
+        // Mixed escape sequences
+        let input = "feat: add\\n\\t\\n\\rMixed";
+        let result = preprocess_raw_content(input);
+        assert_eq!(result, "feat: add\n\t\n\rMixed");
+    }
+
+    #[test]
+    fn test_preprocess_raw_content_idempotent() {
+        // Calling preprocess_raw_content twice should produce the same result
+        let input = "feat: add feature\\n\\nThis adds new functionality.";
+        let once = preprocess_raw_content(input);
+        let twice = preprocess_raw_content(&once);
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn test_preprocess_raw_content_no_escape_sequences() {
+        // Content without escape sequences should pass through unchanged
+        let input = "feat: add feature\n\nThis is already correct.";
+        let result = preprocess_raw_content(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_preprocess_raw_content_with_tabs() {
+        // Tab escapes should be handled
+        let input = "feat: add feature\\n\\t- bullet 1\\n\\t- bullet 2";
+        let result = preprocess_raw_content(input);
+        assert_eq!(result, "feat: add feature\n\t- bullet 1\n\t- bullet 2");
+    }
+
+    #[test]
+    fn test_preprocess_raw_content_with_carriage_returns() {
+        // Carriage return escapes should be handled
+        let input = "feat: add feature\\r\\nBody text";
+        let result = preprocess_raw_content(input);
+        assert_eq!(result, "feat: add feature\r\nBody text");
+    }
+
+    #[test]
+    fn test_preprocess_raw_content_complex_json_like() {
+        // Complex case: JSON with embedded escapes
+        // Note: The function unescapes \\n to actual newlines, not literal \n
+        let input = r#"{"subject":"feat: add feature\\n","body":"Line 1\\nLine 2"}"#;
+        let result = preprocess_raw_content(input);
+        // After preprocessing, double-escaped sequences become actual newlines
+        assert!(result.contains("feat: add feature\n"));
+        assert!(result.contains("Line 1\nLine 2"));
     }
 }

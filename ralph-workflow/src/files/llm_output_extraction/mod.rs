@@ -18,13 +18,16 @@
 //! 3. **Auto-detection**: Can detect format from content if not specified
 //! 4. **Validation**: Optional validation for extracted content
 
-mod cleaning;
+pub mod cleaning;
 mod commit;
 mod parsers;
 mod types;
 
 // Re-export public types
 pub use types::{ExtractionOutput, OutputFormat};
+
+// Re-export public functions from cleaning module
+pub use cleaning::preprocess_raw_content;
 
 // Re-export public functions from commit module
 pub use commit::{
