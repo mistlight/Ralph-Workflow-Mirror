@@ -63,20 +63,46 @@ pub fn unified_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|d| d.join(".config").join(DEFAULT_UNIFIED_CONFIG_NAME))
 }
 
+/// General configuration behavioral flags.
+///
+/// Groups user interaction and validation-related boolean settings for `GeneralConfig`.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct GeneralBehaviorFlags {
+    /// Interactive mode (keep agent in foreground).
+    pub interactive: bool,
+    /// Auto-detect project stack for review guidelines.
+    pub auto_detect_stack: bool,
+    /// Strict PROMPT.md validation.
+    pub strict_validation: bool,
+}
+
+/// General configuration feature flags.
+///
+/// Groups optional feature toggle settings for `GeneralConfig`.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct GeneralFeatureFlags {
+    /// Enable checkpoint/resume functionality.
+    pub checkpoint_enabled: bool,
+    /// Force universal review prompt for all agents.
+    pub force_universal_prompt: bool,
+    /// Isolation mode (prevent context contamination).
+    pub isolation_mode: bool,
+}
+
 /// General configuration section.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct GeneralConfig {
     /// Verbosity level (0-4).
     pub verbosity: u8,
-    /// Interactive mode (keep agent in foreground).
-    pub interactive: bool,
-    /// Isolation mode (prevent context contamination).
-    pub isolation_mode: bool,
-    /// Auto-detect project stack for review guidelines.
-    pub auto_detect_stack: bool,
-    /// Enable checkpoint/resume functionality.
-    pub checkpoint_enabled: bool,
+    /// Behavioral flags (interactive, auto-detect, strict validation)
+    #[serde(default)]
+    pub behavior: GeneralBehaviorFlags,
+    /// Feature flags (checkpoint, universal prompt, isolation mode)
+    #[serde(default)]
+    pub features: GeneralFeatureFlags,
     /// Number of developer iterations.
     pub developer_iters: u32,
     /// Number of reviewer re-review passes.
@@ -88,11 +114,6 @@ pub struct GeneralConfig {
     /// Review depth level.
     #[serde(default)]
     pub review_depth: String,
-    /// Strict PROMPT.md validation.
-    pub strict_validation: bool,
-    /// Force universal review prompt for all agents.
-    #[serde(default)]
-    pub force_universal_prompt: bool,
     /// Path to save last prompt.
     #[serde(default)]
     pub prompt_path: Option<String>,
@@ -108,17 +129,21 @@ impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
             verbosity: 2, // Verbose
-            interactive: true,
-            isolation_mode: true,
-            auto_detect_stack: true,
-            checkpoint_enabled: true,
+            behavior: GeneralBehaviorFlags {
+                interactive: true,
+                auto_detect_stack: true,
+                strict_validation: false,
+            },
+            features: GeneralFeatureFlags {
+                checkpoint_enabled: true,
+                force_universal_prompt: false,
+                isolation_mode: true,
+            },
             developer_iters: 5,
             reviewer_reviews: 2,
             developer_context: 1,
             reviewer_context: 0,
             review_depth: "standard".to_string(),
-            strict_validation: false,
-            force_universal_prompt: false,
             prompt_path: None,
             git_user_name: None,
             git_user_email: None,
@@ -361,10 +386,10 @@ mod tests {
     fn test_general_config_defaults() {
         let config = GeneralConfig::default();
         assert_eq!(config.verbosity, 2);
-        assert!(config.interactive);
-        assert!(config.isolation_mode);
-        assert!(config.auto_detect_stack);
-        assert!(config.checkpoint_enabled);
+        assert!(config.behavior.interactive);
+        assert!(config.features.isolation_mode);
+        assert!(config.behavior.auto_detect_stack);
+        assert!(config.features.checkpoint_enabled);
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
     }
@@ -402,7 +427,7 @@ reviewer = ["claude"]
 "#;
         let config: UnifiedConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.general.verbosity, 3);
-        assert!(!config.general.interactive);
+        assert!(!config.general.behavior.interactive);
         assert_eq!(config.general.developer_iters, 10);
         assert!(config.agents.contains_key("claude"));
         assert_eq!(

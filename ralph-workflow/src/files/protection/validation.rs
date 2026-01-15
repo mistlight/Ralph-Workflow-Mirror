@@ -177,9 +177,18 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
 /// `Some(String)` with the backup source name if restored, `None` otherwise.
 fn try_restore_from_backup(prompt_path: &Path) -> Option<String> {
     let backup_paths = [
-        (Path::new(".agent/PROMPT.md.backup"), ".agent/PROMPT.md.backup"),
-        (Path::new(".agent/PROMPT.md.backup.1"), ".agent/PROMPT.md.backup.1"),
-        (Path::new(".agent/PROMPT.md.backup.2"), ".agent/PROMPT.md.backup.2"),
+        (
+            Path::new(".agent/PROMPT.md.backup"),
+            ".agent/PROMPT.md.backup",
+        ),
+        (
+            Path::new(".agent/PROMPT.md.backup.1"),
+            ".agent/PROMPT.md.backup.1",
+        ),
+        (
+            Path::new(".agent/PROMPT.md.backup.2"),
+            ".agent/PROMPT.md.backup.2",
+        ),
     ];
 
     for (backup_path, name) in backup_paths {
@@ -254,9 +263,9 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
         // Try to restore from backup
         if let Some(source) = try_restore_from_backup(prompt_path) {
             result.file_state = FileState::Empty;
-            result
-                .warnings
-                .push(format!("PROMPT.md was missing and was automatically restored from {source}"));
+            result.warnings.push(format!(
+                "PROMPT.md was missing and was automatically restored from {source}"
+            ));
         } else {
             // No backup available
             if interactive && std::io::stdout().is_terminal() {

@@ -75,7 +75,7 @@ pub fn run_with_prompt(
     ));
 
     // Copy to clipboard if interactive
-    if runtime.config.interactive {
+    if runtime.config.behavior.interactive {
         if let Some(clipboard_cmd) = get_platform_clipboard_command() {
             if let Ok(mut child) = Command::new(clipboard_cmd.binary)
                 .args(clipboard_cmd.args)

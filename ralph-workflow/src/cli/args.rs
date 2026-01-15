@@ -4,6 +4,231 @@
 
 use clap::Parser;
 
+/// Verbosity level shorthand flags (--quiet, --full).
+#[derive(Parser, Debug, Default)]
+pub struct VerbosityShorthand {
+    /// Shorthand for --verbosity=0 (minimal output)
+    #[arg(
+        short,
+        long,
+        conflicts_with = "verbosity",
+        help = "Quiet mode (same as -v0)"
+    )]
+    pub quiet: bool,
+
+    /// Shorthand for --verbosity=3 (no truncation)
+    #[arg(
+        long,
+        short,
+        conflicts_with = "verbosity",
+        help = "Full output mode, no truncation (same as -v3)"
+    )]
+    pub full: bool,
+}
+
+/// Debug verbosity flag.
+#[derive(Parser, Debug, Default)]
+pub struct DebugVerbosity {
+    /// Shorthand for --verbosity=4 (maximum verbosity with raw JSON)
+    #[arg(
+        long,
+        conflicts_with = "verbosity",
+        help = "Debug mode (same as -v4)",
+        hide = true
+    )]
+    pub debug: bool,
+}
+
+/// Quick preset mode flags.
+#[derive(Parser, Debug, Default)]
+pub struct QuickPresets {
+    /// Quick mode: 1 developer iteration, 1 review pass (fast turnaround)
+    #[arg(
+        long,
+        short = 'Q',
+        help = "Quick mode: 1 dev iteration + 1 review (for rapid prototyping)"
+    )]
+    pub quick: bool,
+
+    /// Rapid mode: 2 developer iterations, 1 review pass (between quick and standard)
+    #[arg(
+        long,
+        short = 'U',
+        help = "Rapid mode: 2 dev iterations + 1 review (fast but more thorough than quick)"
+    )]
+    pub rapid: bool,
+
+    /// Long mode: 15 developer iterations, 10 review passes (for thorough development)
+    #[arg(
+        long,
+        short = 'L',
+        help = "Long mode: 15 dev iterations + 10 reviews (for thorough development)"
+    )]
+    pub long: bool,
+}
+
+/// Standard preset mode flags.
+#[derive(Parser, Debug, Default)]
+pub struct StandardPresets {
+    /// Standard mode: 5 developer iterations, 2 review passes (default workflow)
+    #[arg(
+        long,
+        short = 'S',
+        help = "Standard mode: 5 dev iterations + 2 reviews (default workflow)"
+    )]
+    pub standard: bool,
+
+    /// Thorough mode: 10 developer iterations, 5 review passes (balanced but more than default)
+    #[arg(
+        long,
+        short = 'T',
+        help = "Thorough mode: 10 dev iterations + 5 reviews (balanced but thorough)"
+    )]
+    pub thorough: bool,
+}
+
+/// Unified config initialization flags.
+#[derive(Parser, Debug, Default)]
+pub struct UnifiedInitFlags {
+    /// Initialize unified config file and exit (alias for --init-global)
+    #[arg(
+        long,
+        conflicts_with_all = ["init_global", "init_legacy", "init_prompt"],
+        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
+        hide = true
+    )]
+    pub init: bool,
+
+    /// Initialize unified config file and exit
+    #[arg(
+        long,
+        conflicts_with_all = ["init", "init_legacy", "init_prompt"],
+        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
+        hide = true
+    )]
+    pub init_global: bool,
+}
+
+/// Legacy initialization flag.
+#[derive(Parser, Debug, Default)]
+pub struct LegacyInitFlag {
+    /// Initialize legacy per-repo agents.toml and exit
+    #[arg(
+        long,
+        conflicts_with_all = ["init", "init_global", "init_prompt"],
+        help = "(Legacy) Create .agent/agents.toml with default settings (not recommended)",
+        hide = true
+    )]
+    pub init_legacy: bool,
+}
+
+/// Agent listing flags.
+#[derive(Parser, Debug, Default)]
+pub struct AgentListFlags {
+    /// List all configured agents and exit
+    #[arg(
+        long,
+        help = "Show all agents from registry and config file",
+        hide = true
+    )]
+    pub list_agents: bool,
+
+    /// List only agents found in PATH and exit
+    #[arg(
+        long,
+        help = "Show only agents that are installed and available",
+        hide = true
+    )]
+    pub list_available_agents: bool,
+}
+
+/// Provider listing flag.
+#[derive(Parser, Debug, Default)]
+pub struct ProviderListFlag {
+    /// List `OpenCode` provider types and their configuration
+    #[arg(
+        long,
+        help = "Show OpenCode provider types with model prefixes and auth commands",
+        hide = true
+    )]
+    pub list_providers: bool,
+}
+
+/// Template listing flag.
+#[derive(Parser, Debug, Default)]
+pub struct TemplateListFlag {
+    /// List available PROMPT.md templates and exit
+    #[arg(
+        long,
+        help = "Show all available PROMPT.md templates with descriptions"
+    )]
+    pub list_templates: bool,
+}
+
+/// Commit message plumbing flags.
+#[derive(Parser, Debug, Default)]
+pub struct CommitPlumbingFlags {
+    /// Generate commit message only (writes to .agent/commit-message.txt)
+    #[arg(
+        long,
+        help = "Run only the commit message generation phase, then exit",
+        hide = true
+    )]
+    pub generate_commit_msg: bool,
+
+    /// Apply commit using existing .agent/commit-message.txt
+    #[arg(
+        long,
+        help = "Stage all changes and commit using .agent/commit-message.txt",
+        hide = true
+    )]
+    pub apply_commit: bool,
+}
+
+/// Commit display plumbing flags.
+#[derive(Parser, Debug, Default)]
+pub struct CommitDisplayFlags {
+    /// Show the generated commit message and exit
+    #[arg(long, help = "Read and display .agent/commit-message.txt", hide = true)]
+    pub show_commit_msg: bool,
+
+    /// Reset the starting commit reference to current HEAD
+    #[arg(
+        long,
+        help = "Reset .agent/start_commit to current HEAD (for incremental diff generation)",
+        hide = true
+    )]
+    pub reset_start_commit: bool,
+}
+
+/// Recovery command flags.
+#[derive(Parser, Debug, Default)]
+pub struct RecoveryFlags {
+    /// Resume from last checkpoint after an interruption
+    #[arg(
+        long,
+        help = "Resume from last checkpoint (if one exists from a previous interrupted run)",
+        hide = true
+    )]
+    pub resume: bool,
+
+    /// Validate setup without running agents (dry run)
+    #[arg(
+        long,
+        help = "Validate configuration and PROMPT.md without running agents",
+        hide = true
+    )]
+    pub dry_run: bool,
+
+    /// Output comprehensive diagnostic information
+    #[arg(
+        long,
+        short = 'd',
+        help = "Show system info, agent status, and config for troubleshooting"
+    )]
+    pub diagnose: bool,
+}
+
 /// Ralph: PROMPT-driven agent orchestrator for git repos
 #[derive(Parser, Debug)]
 #[command(name = "ralph")]
@@ -53,6 +278,54 @@ QUICK EXAMPLES:\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
 pub struct Args {
+    /// Verbosity shorthand flags (--quiet, --full)
+    #[command(flatten)]
+    pub verbosity_shorthand: VerbosityShorthand,
+
+    /// Debug verbosity flag
+    #[command(flatten)]
+    pub debug_verbosity: DebugVerbosity,
+
+    /// Quick preset mode flags
+    #[command(flatten)]
+    pub quick_presets: QuickPresets,
+
+    /// Standard preset mode flags
+    #[command(flatten)]
+    pub standard_presets: StandardPresets,
+
+    /// Unified config initialization flags
+    #[command(flatten)]
+    pub unified_init: UnifiedInitFlags,
+
+    /// Legacy initialization flag
+    #[command(flatten)]
+    pub legacy_init: LegacyInitFlag,
+
+    /// Agent listing flags
+    #[command(flatten)]
+    pub agent_list: AgentListFlags,
+
+    /// Provider listing flag
+    #[command(flatten)]
+    pub provider_list: ProviderListFlag,
+
+    /// Template listing flag
+    #[command(flatten)]
+    pub template_list: TemplateListFlag,
+
+    /// Commit message plumbing flags
+    #[command(flatten)]
+    pub commit_plumbing: CommitPlumbingFlags,
+
+    /// Commit display plumbing flags
+    #[command(flatten)]
+    pub commit_display: CommitDisplayFlags,
+
+    /// Recovery command flags
+    #[command(flatten)]
+    pub recovery: RecoveryFlags,
+
     /// Commit message for the final commit
     #[arg(
         default_value = "chore: apply PROMPT loop + review/fix/review",
@@ -181,73 +454,6 @@ pub struct Args {
     )]
     pub verbosity: Option<u8>,
 
-    /// Shorthand for --verbosity=0 (minimal output)
-    #[arg(
-        short,
-        long,
-        conflicts_with = "verbosity",
-        help = "Quiet mode (same as -v0)"
-    )]
-    pub quiet: bool,
-
-    /// Shorthand for --verbosity=3 (no truncation)
-    #[arg(
-        long,
-        short,
-        conflicts_with = "verbosity",
-        help = "Full output mode, no truncation (same as -v3)"
-    )]
-    pub full: bool,
-
-    /// Shorthand for --verbosity=4 (maximum verbosity with raw JSON)
-    #[arg(
-        long,
-        conflicts_with = "verbosity",
-        help = "Debug mode (same as -v4)",
-        hide = true
-    )]
-    pub debug: bool,
-
-    /// Quick mode: 1 developer iteration, 1 review pass (fast turnaround)
-    #[arg(
-        long,
-        short = 'Q',
-        help = "Quick mode: 1 dev iteration + 1 review (for rapid prototyping)"
-    )]
-    pub quick: bool,
-
-    /// Rapid mode: 2 developer iterations, 1 review pass (between quick and standard)
-    #[arg(
-        long,
-        short = 'U',
-        help = "Rapid mode: 2 dev iterations + 1 review (fast but more thorough than quick)"
-    )]
-    pub rapid: bool,
-
-    /// Long mode: 15 developer iterations, 10 review passes (for thorough development)
-    #[arg(
-        long,
-        short = 'L',
-        help = "Long mode: 15 dev iterations + 10 reviews (for thorough development)"
-    )]
-    pub long: bool,
-
-    /// Standard mode: 5 developer iterations, 2 review passes (default workflow)
-    #[arg(
-        long,
-        short = 'S',
-        help = "Standard mode: 5 dev iterations + 2 reviews (default workflow)"
-    )]
-    pub standard: bool,
-
-    /// Thorough mode: 10 developer iterations, 5 review passes (balanced but more than default)
-    #[arg(
-        long,
-        short = 'T',
-        help = "Thorough mode: 10 dev iterations + 5 reviews (balanced but thorough)"
-    )]
-    pub thorough: bool,
-
     /// Disable isolation mode (allow NOTES.md and ISSUES.md to persist)
     #[arg(
         long,
@@ -255,112 +461,6 @@ pub struct Args {
         hide = true
     )]
     pub no_isolation: bool,
-
-    /// List all configured agents and exit
-    #[arg(
-        long,
-        help = "Show all agents from registry and config file",
-        hide = true
-    )]
-    pub list_agents: bool,
-
-    /// List only agents found in PATH and exit
-    #[arg(
-        long,
-        help = "Show only agents that are installed and available",
-        hide = true
-    )]
-    pub list_available_agents: bool,
-
-    /// List `OpenCode` provider types and their configuration
-    #[arg(
-        long,
-        help = "Show OpenCode provider types with model prefixes and auth commands",
-        hide = true
-    )]
-    pub list_providers: bool,
-
-    /// Initialize unified config file and exit (alias for --init-global)
-    #[arg(
-        long,
-        conflicts_with_all = ["init_global", "init_legacy", "init_prompt"],
-        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
-        hide = true
-    )]
-    pub init: bool,
-
-    /// Initialize unified config file and exit
-    #[arg(
-        long,
-        conflicts_with_all = ["init", "init_legacy", "init_prompt"],
-        help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
-        hide = true
-    )]
-    pub init_global: bool,
-
-    /// Initialize legacy per-repo agents.toml and exit
-    #[arg(
-        long,
-        conflicts_with_all = ["init", "init_global", "init_prompt"],
-        help = "(Legacy) Create .agent/agents.toml with default settings (not recommended)",
-        hide = true
-    )]
-    pub init_legacy: bool,
-
-    // === Plumbing Commands ===
-    // These are low-level operations for scripting and automation
-    /// Generate commit message only (writes to .agent/commit-message.txt)
-    #[arg(
-        long,
-        help = "Run only the commit message generation phase, then exit",
-        hide = true
-    )]
-    pub generate_commit_msg: bool,
-
-    /// Apply commit using existing .agent/commit-message.txt
-    #[arg(
-        long,
-        help = "Stage all changes and commit using .agent/commit-message.txt",
-        hide = true
-    )]
-    pub apply_commit: bool,
-
-    /// Show the generated commit message and exit
-    #[arg(long, help = "Read and display .agent/commit-message.txt", hide = true)]
-    pub show_commit_msg: bool,
-
-    /// Reset the starting commit reference to current HEAD
-    #[arg(
-        long,
-        help = "Reset .agent/start_commit to current HEAD (for incremental diff generation)",
-        hide = true
-    )]
-    pub reset_start_commit: bool,
-
-    // === Recovery Commands ===
-    /// Resume from last checkpoint after an interruption
-    #[arg(
-        long,
-        help = "Resume from last checkpoint (if one exists from a previous interrupted run)",
-        hide = true
-    )]
-    pub resume: bool,
-
-    /// Validate setup without running agents (dry run)
-    #[arg(
-        long,
-        help = "Validate configuration and PROMPT.md without running agents",
-        hide = true
-    )]
-    pub dry_run: bool,
-
-    /// Output comprehensive diagnostic information
-    #[arg(
-        long,
-        short = 'd',
-        help = "Show system info, agent status, and config for troubleshooting"
-    )]
-    pub diagnose: bool,
 
     /// Review depth level (standard, comprehensive, security, incremental)
     #[arg(
@@ -388,13 +488,6 @@ pub struct Args {
         help = "Create PROMPT.md from a template (use --list-templates to see options)"
     )]
     pub init_prompt: Option<String>,
-
-    /// List available PROMPT.md templates and exit
-    #[arg(
-        long,
-        help = "Show all available PROMPT.md templates with descriptions"
-    )]
-    pub list_templates: bool,
 
     /// Interactive mode: prompt to create PROMPT.md from template when missing
     #[arg(

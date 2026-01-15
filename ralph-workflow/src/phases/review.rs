@@ -95,7 +95,7 @@ pub fn run_review_phase(
     // Review-Fix iterations
     for j in start_pass..=ctx.config.reviewer_reviews {
         // Save checkpoint at start of each iteration
-        if ctx.config.checkpoint_enabled {
+        if ctx.config.features.checkpoint_enabled {
             let _ = save_checkpoint(&PipelineCheckpoint::new(
                 PipelinePhase::Review,
                 ctx.config.developer_iters,
@@ -298,7 +298,7 @@ pub fn run_review_phase(
                 if should_use_universal_prompt(
                     ctx.reviewer_agent,
                     ctx.config.reviewer_model.as_deref(),
-                    ctx.config.force_universal_prompt,
+                    ctx.config.features.force_universal_prompt,
                 ) {
                     ctx.logger.info(&format!(
                         "{}Tip:{} Review with this agent may be unreliable. Consider:",

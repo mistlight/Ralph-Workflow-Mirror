@@ -12,7 +12,7 @@ pub fn handle_resume(
     developer_agent: &str,
     reviewer_agent: &str,
 ) -> Option<PipelineCheckpoint> {
-    if !args.resume {
+    if !args.recovery.resume {
         return None;
     }
 
