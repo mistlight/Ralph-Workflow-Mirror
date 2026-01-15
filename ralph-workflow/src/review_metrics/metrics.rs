@@ -6,6 +6,7 @@
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::vec::Vec;
 
 use super::severity::IssueSeverity;
 
@@ -103,5 +104,70 @@ impl ReviewMetrics {
 
         let content = fs::read_to_string(path)?;
         Ok(Self::from_issues_content(&content))
+    }
+
+    /// Returns a summary string of the review metrics
+    pub(crate) fn summary(&self) -> String {
+        if self.no_issues_declared && self.total_issues == 0 {
+            "No issues found".to_string()
+        } else if self.resolved_issues == self.total_issues {
+            format!("All {} issues resolved", self.total_issues)
+        } else {
+            format!(
+                "{}/{} issues resolved",
+                self.resolved_issues, self.total_issues
+            )
+        }
+    }
+
+    /// Returns the number of unresolved issues
+    pub(crate) fn unresolved_issues(&self) -> u32 {
+        self.total_issues.saturating_sub(self.resolved_issues)
+    }
+
+    /// Returns a detailed summary of issues by severity
+    pub(crate) fn detailed_summary(&self) -> String {
+        let mut parts = Vec::new();
+        if self.critical_issues > 0 {
+            parts.push(format!("{} critical", self.critical_issues));
+        }
+        if self.high_issues > 0 {
+            parts.push(format!("{} high", self.high_issues));
+        }
+        if self.medium_issues > 0 {
+            parts.push(format!("{} medium", self.medium_issues));
+        }
+        if self.low_issues > 0 {
+            parts.push(format!("{} low", self.low_issues));
+        }
+        if parts.is_empty() {
+            "No issues".to_string()
+        } else {
+            parts.join(", ")
+        }
+    }
+
+    /// Returns summaries of unresolved issues
+    pub(crate) fn unresolved_issue_summaries(&self, limit: usize) -> Vec<String> {
+        // This is a simplified version - in a full implementation, this would
+        // read the actual issues from the ISSUES.md file and extract summaries
+        Vec::new()
+    }
+
+    /// Returns whether there are blocking (critical or high) unresolved issues
+    pub(crate) fn has_blocking_issues(&self) -> bool {
+        let unresolved_critical = self.critical_issues.saturating_sub(
+            self.critical_issues.min(self.resolved_issues)
+        );
+        let unresolved_high = self.high_issues.saturating_sub(
+            self.high_issues.min((self.resolved_issues.saturating_sub(self.critical_issues)))
+        );
+        unresolved_critical > 0 || unresolved_high > 0
+    }
+
+    /// Returns the number of unresolved blocking issues
+    pub(crate) fn unresolved_blocking_issues(&self) -> u32 {
+        // Simplified: count all critical and high as blocking
+        self.critical_issues + self.high_issues
     }
 }

@@ -411,7 +411,7 @@ fn verify_plan_exists(
 
 /// Run fast check command.
 fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> anyhow::Result<()> {
-    let argv = crate::utils::split_command(fast_cmd)
+    let argv = crate::common::utils::split_command(fast_cmd)
         .map_err(|e| anyhow::anyhow!("FAST_CHECK_CMD parse error (iteration {iteration}): {e}"))?;
     if argv.is_empty() {
         ctx.logger
@@ -419,7 +419,7 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
         return Ok(());
     }
 
-    let display_cmd = crate::utils::format_argv_for_log(&argv);
+    let display_cmd = crate::common::utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running fast check: {}{}{}",
         ctx.colors.dim(),

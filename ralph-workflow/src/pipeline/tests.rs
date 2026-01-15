@@ -10,8 +10,8 @@ use crate::config::Config;
 use crate::config::Verbosity;
 use crate::logger::argv_requests_json;
 use crate::pipeline::Timer;
-use crate::common::utils as utils;split_command;
-use crate::common::utils as utils;Logger;
+use crate::common::utils::{self, split_command};
+use crate::logger::Logger;
 use std::collections::HashMap;
 
 #[test]

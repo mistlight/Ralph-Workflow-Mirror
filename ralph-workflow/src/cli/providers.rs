@@ -153,6 +153,24 @@ fn print_provider_category(colors: Colors, category: &ProviderCategory) {
     println!();
 }
 
+/// Handle --list-providers flag: display all available providers
+pub fn handle_list_providers(colors: Colors) {
+    for category in PROVIDER_CATEGORIES {
+        print_provider_category(colors, category);
+    }
+}
+    println!(
+        "{}═══ {} ═══{}",
+        colors.bold(),
+        category.name,
+        colors.reset()
+    );
+    for (provider, alias) in category.providers {
+        print_provider_info(colors, *provider, alias);
+    }
+    println!();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

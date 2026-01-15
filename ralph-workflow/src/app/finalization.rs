@@ -3,7 +3,7 @@
 //! This module handles the final phase of the pipeline including cleanup,
 //! final summary, and checkpoint clearing.
 
-use crate::banner::{print_final_summary, PipelineSummary};
+use crate::banner::print_final_summary;
 use crate::checkpoint::clear_checkpoint;
 use crate::config::Config;
 use crate::files::monitoring::PromptMonitor;
@@ -41,17 +41,7 @@ pub fn finalize_pipeline(
     // and per-cycle during review. The final commit phase has been removed.
 
     // Final summary
-    let summary = PipelineSummary {
-        total_time: timer.elapsed_formatted(),
-        dev_runs_completed: stats.developer_runs_completed as usize,
-        dev_runs_total: config.developer_iters as usize,
-        review_runs: stats.reviewer_runs_completed as usize,
-        changes_detected: stats.changes_detected as usize,
-        isolation_mode: config.isolation_mode,
-        verbose: config.verbosity.is_verbose(),
-        review_summary: None,
-    };
-    print_final_summary(colors, &summary, logger);
+    print_final_summary(colors, config, timer, stats, logger);
 
     if config.checkpoint_enabled {
         if let Err(err) = clear_checkpoint() {

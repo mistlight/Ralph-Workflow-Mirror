@@ -33,8 +33,8 @@ use crate::banner::print_welcome_banner;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
-    handle_list_available_agents, handle_list_providers, handle_security_check,
-    handle_setup_security, prompt_template_selection, Args,
+    handle_list_available_agents, handle_security_check, handle_setup_security,
+    prompt_template_selection, Args,
 };
 
 #[cfg(feature = "build-image")]
@@ -568,7 +568,7 @@ fn run_development(
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
     ctx.logger
-        .header("PHASE 1: Development", super::colors::Colors::blue);
+        .header("PHASE 1: Development", Colors::blue);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
     let resume_rank = resume_phase.map(phase_rank);
@@ -610,7 +610,7 @@ fn run_review_and_fix(
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
     ctx.logger
-        .header("PHASE 2: Review & Fix", super::colors::Colors::magenta);
+        .header("PHASE 2: Review & Fix", Colors::magenta);
 
     let resume_phase = resume_checkpoint.map(|c| c.phase);
 
@@ -664,13 +664,13 @@ fn run_final_validation(
 
     if !should_run_from(PipelinePhase::FinalValidation, resume_checkpoint) {
         ctx.logger
-            .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
+            .header("PHASE 3: Final Validation", Colors::yellow);
         ctx.logger
             .info("Skipping final validation (resuming from a later checkpoint phase)");
         return Ok(());
     }
 
-    let argv = crate::utils::split_command(full_cmd)
+    let argv = crate::common::utils::split_command(full_cmd)
         .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {e}"))?;
     if argv.is_empty() {
         ctx.logger
@@ -691,8 +691,8 @@ fn run_final_validation(
     }
 
     ctx.logger
-        .header("PHASE 3: Final Validation", super::colors::Colors::yellow);
-    let display_cmd = crate::utils::format_argv_for_log(&argv);
+        .header("PHASE 3: Final Validation", Colors::yellow);
+    let display_cmd = crate::common::utils::format_argv_for_log(&argv);
     ctx.logger.info(&format!(
         "Running full check: {}{}{}",
         ctx.colors.dim(),
