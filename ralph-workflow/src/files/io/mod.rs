@@ -5,11 +5,15 @@
 //! - Commit message file operations
 //! - Context cleanup and file operations
 //! - Error recovery for file operations
+//! - File integrity and atomic writes
 //!
 //! # Submodules
 //!
-//! - [`agent_files`](super::agent_files) - Core agent file operations
-//! - [`recovery`](super::recovery) - Error recovery and state repair
+//! - [`integrity`] - File integrity and atomic writes
+//! - [`recovery`] - Error recovery and state repair
+
+pub(in crate::files) mod integrity;
+pub(in crate::files) mod recovery;
 
 pub use super::agent_files::{
     clean_context_for_reviewer, cleanup_generated_files, create_prompt_backup,

@@ -41,10 +41,6 @@ pub mod result_extraction;
 
 // Legacy flat modules (deprecated, use io::* and protection::* instead)
 mod agent_files;
-pub mod integrity;
-pub mod monitoring;
-pub mod recovery;
-pub mod validation;
 
 // Re-exports from new domain structure for backward compatibility
 pub use io::{

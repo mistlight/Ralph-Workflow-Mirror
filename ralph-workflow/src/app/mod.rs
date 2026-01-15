@@ -36,7 +36,7 @@ use crate::cli::{
     handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
 };
 use crate::common::utils;
-use crate::files::monitoring::PromptMonitor;
+use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
     create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
     update_status, validate_prompt_md,
