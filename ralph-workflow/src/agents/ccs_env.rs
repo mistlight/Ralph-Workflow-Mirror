@@ -376,7 +376,6 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
 
 /// Check if a path string is absolute (starts with / or is a Windows drive/UNC path).
 /// Returns true if the path is absolute.
-#[expect(clippy::match_same_arms)]
 fn is_absolute_path(path: &str) -> bool {
     if path.starts_with('/') {
         return true;
@@ -384,10 +383,8 @@ fn is_absolute_path(path: &str) -> bool {
     if cfg!(windows) {
         let mut chars = path.chars();
         match (chars.next(), chars.next()) {
-            // UNC paths: \\server\share or \\?\device
-            (Some('\\'), Some('\\')) => return true,
-            // Drive letter paths: C:\
-            (Some(_), Some(':')) => return true,
+            // UNC paths: \\server\share or \\?\device, or Drive letter paths: C:\
+            (Some('\\'), Some('\\')) | (Some(_), Some(':')) => return true,
             _ => {}
         }
     }

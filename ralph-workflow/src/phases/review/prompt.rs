@@ -46,11 +46,11 @@ pub fn build_review_prompt(
     let use_universal = should_use_universal_prompt(
         ctx.reviewer_agent,
         ctx.config.reviewer_model.as_deref(),
-        ctx.config.force_universal_prompt,
+        ctx.config.features.force_universal_prompt,
     );
 
     if use_universal {
-        let reason = if ctx.config.force_universal_prompt {
+        let reason = if ctx.config.features.force_universal_prompt {
             "forced via config/env"
         } else {
             "better compatibility"

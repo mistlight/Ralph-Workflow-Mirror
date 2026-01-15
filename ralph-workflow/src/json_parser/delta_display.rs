@@ -36,14 +36,183 @@
 //! - Newline forces immediate terminal output buffer flush
 //! - Cursor positioning provides reliable in-place updates
 //! - Production-quality rendering used by major CLI libraries
+//!
+//! # Prefix Display Strategy
+//!
+//! The prefix (e.g., `[ccs-glm]`) is displayed on every delta update by default.
+//! This provides clear visual feedback about which agent is currently streaming.
+//!
+//! ## Prefix Debouncing
+//!
+//! For scenarios where prefix repetition creates visual noise (e.g., character-by-character
+//! streaming), the [`PrefixDebouncer`] can be used to control prefix display frequency.
+//! It supports both delta-count-based and time-based strategies:
+//!
+//! - **Count-based**: Show prefix every N deltas (default: every delta)
+//! - **Time-based**: Show prefix after M milliseconds since last prefix
+//!
+//! The debouncer is opt-in; the default behavior shows prefix on every delta.
 
 use crate::logger::Colors;
+use std::time::{Duration, Instant};
 
 /// ANSI escape sequence for clearing the entire line.
 ///
 /// This is more complete than `\x1b[0K` which only clears to the end of line.
 /// Using `\x1b[2K` ensures the entire line is cleared during in-place updates.
 pub const CLEAR_LINE: &str = "\x1b[2K";
+
+/// Sanitize content for single-line display.
+///
+/// This function prepares streamed content for in-place terminal display by:
+/// - Replacing newlines with spaces (to prevent artificial line breaks)
+/// - Collapsing multiple consecutive whitespace characters into single spaces
+/// - Trimming leading and trailing whitespace
+///
+/// # Arguments
+/// * `content` - The raw content to sanitize
+///
+/// # Returns
+/// A sanitized string suitable for single-line display.
+fn sanitize_for_display(content: &str) -> String {
+    // Replace all whitespace (including \n, \r, \t) with spaces, then collapse multiple spaces
+    let mut result = String::with_capacity(content.len());
+    let mut prev_was_whitespace = false;
+
+    for ch in content.chars() {
+        if ch.is_whitespace() {
+            if !prev_was_whitespace {
+                result.push(' ');
+                prev_was_whitespace = true;
+            }
+            // Skip consecutive whitespace characters
+        } else {
+            result.push(ch);
+            prev_was_whitespace = false;
+        }
+    }
+
+    // Trim leading and trailing whitespace
+    result.trim().to_string()
+}
+
+/// Configuration for streaming display behavior.
+///
+/// This struct allows customization of streaming output features like
+/// prefix debouncing and multi-line handling.
+///
+/// Default values:
+/// - `prefix_delta_threshold`: 0 (show prefix only on first delta)
+/// - `prefix_time_threshold`: None (no time-based debouncing)
+#[derive(Debug, Clone, Default)]
+pub struct StreamingConfig {
+    /// Minimum number of deltas between prefix displays (0 = show on every delta)
+    pub prefix_delta_threshold: u32,
+    /// Minimum time between prefix displays (None = no time-based debouncing)
+    pub prefix_time_threshold: Option<Duration>,
+}
+
+/// Controls prefix display frequency during streaming.
+///
+/// This debouncer reduces visual noise from frequent prefix redisplay during
+/// rapid streaming (e.g., character-by-character output). It supports two
+/// debouncing strategies:
+///
+/// 1. **Count-based**: Show prefix every N deltas
+/// 2. **Time-based**: Show prefix after M milliseconds since last prefix
+///
+/// # Example
+///
+/// ```ignore
+/// use std::time::Duration;
+///
+/// let config = StreamingConfig {
+///     prefix_delta_threshold: 5,
+///     prefix_time_threshold: Some(Duration::from_millis(100)),
+/// };
+/// let mut debouncer = PrefixDebouncer::new(config);
+///
+/// // First delta always shows prefix
+/// assert!(debouncer.should_show_prefix(true));
+///
+/// // Subsequent deltas may skip prefix based on thresholds
+/// assert!(!debouncer.should_show_prefix(false)); // Delta 2: skip
+/// assert!(!debouncer.should_show_prefix(false)); // Delta 3: skip
+/// // ... after threshold reached or time elapsed, prefix shows again
+/// ```
+#[derive(Debug, Clone)]
+pub struct PrefixDebouncer {
+    config: StreamingConfig,
+    delta_count: u32,
+    last_prefix_time: Option<Instant>,
+}
+
+impl PrefixDebouncer {
+    /// Create a new prefix debouncer with the given configuration.
+    pub const fn new(config: StreamingConfig) -> Self {
+        Self {
+            config,
+            delta_count: 0,
+            last_prefix_time: None,
+        }
+    }
+
+    /// Reset the debouncer state (e.g., at the start of a new content block).
+    pub const fn reset(&mut self) {
+        self.delta_count = 0;
+        self.last_prefix_time = None;
+    }
+
+    /// Determine if the prefix should be shown for the current delta.
+    ///
+    /// # Arguments
+    /// * `is_first_delta` - Whether this is the first delta of a content block
+    ///
+    /// # Returns
+    /// * `true` - Show the prefix
+    /// * `false` - Skip the prefix (still perform line clearing)
+    pub fn should_show_prefix(&mut self, is_first_delta: bool) -> bool {
+        // Always show prefix on first delta
+        if is_first_delta {
+            self.delta_count = 0;
+            self.last_prefix_time = Some(Instant::now());
+            return true;
+        }
+
+        self.delta_count += 1;
+
+        // Check time-based threshold
+        if let Some(threshold) = self.config.prefix_time_threshold {
+            if let Some(last_time) = self.last_prefix_time {
+                if last_time.elapsed() >= threshold {
+                    self.delta_count = 0;
+                    self.last_prefix_time = Some(Instant::now());
+                    return true;
+                }
+            }
+        }
+
+        // Check count-based threshold
+        if self.config.prefix_delta_threshold > 0
+            && self.delta_count >= self.config.prefix_delta_threshold
+        {
+            self.delta_count = 0;
+            self.last_prefix_time = Some(Instant::now());
+            return true;
+        }
+
+        // Default behavior: only first delta shows prefix.
+        // With no thresholds configured, subsequent deltas don't show prefix.
+        // This preserves the original behavior while allowing opt-in debouncing.
+        false
+    }
+}
+
+impl Default for PrefixDebouncer {
+    fn default() -> Self {
+        Self::new(StreamingConfig::default())
+    }
+}
 
 /// Renderer for streaming delta content.
 ///
@@ -131,6 +300,18 @@ pub trait DeltaRenderer {
     /// Render the completion of streaming.
     ///
     /// This is called when streaming completes to move cursor down and add newline.
+    /// This method ONLY handles cursor state cleanup - it does NOT render content.
+    ///
+    /// The streamed content is already visible on the terminal from previous deltas.
+    /// This method simply positions the cursor correctly for subsequent output.
+    ///
+    /// # Future Enhancement
+    ///
+    /// A `render_final_line()` method could be added to render clean output without
+    /// cursor control sequences, useful for:
+    /// - Log files or non-terminal destinations
+    /// - Re-rendering a clean final line after streaming
+    /// - Creating output suitable for capture or storage
     ///
     /// # Returns
     /// A string with cursor down + newline (`\x1b[1B\n`).
@@ -162,8 +343,8 @@ pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {
     fn render_first_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
-        // Sanitize embedded newlines to spaces to prevent artificial line breaks
-        let sanitized = accumulated.replace('\n', " ");
+        // Sanitize content: replace newlines with spaces and collapse multiple whitespace
+        let sanitized = sanitize_for_display(accumulated);
 
         // Multi-line pattern: end with newline + cursor up for in-place updates
         // This forces terminal output flush and positions cursor for rewrite
@@ -179,8 +360,8 @@ impl DeltaRenderer for TextDeltaRenderer {
     }
 
     fn render_subsequent_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
-        // Sanitize embedded newlines to spaces
-        let sanitized = accumulated.replace('\n', " ");
+        // Sanitize content: replace newlines with spaces and collapse multiple whitespace
+        let sanitized = sanitize_for_display(accumulated);
 
         // Clear line, rewrite with prefix and accumulated content, end with newline + cursor up
         // This creates in-place update using multi-line pattern
@@ -242,6 +423,21 @@ impl DeltaDisplayFormatter {
     /// Format tool input specifically
     ///
     /// Tool input is shown with appropriate styling.
+    ///
+    /// # Current Behavior
+    ///
+    /// Every call renders the full `[prefix]   └─ content` pattern.
+    /// This provides clarity about which agent's tool is being invoked.
+    ///
+    /// # Future Enhancement
+    ///
+    /// For streaming tool inputs with multiple deltas, consider suppressing
+    /// the `[prefix]` on continuation lines to reduce visual noise:
+    /// - First tool input line: `[prefix] Tool: name`
+    /// - Continuation: `           └─ more input` (aligned, no prefix)
+    ///
+    /// This would require tracking whether the prefix has been displayed
+    /// for the current tool block, likely via the streaming session state.
     pub fn format_tool_input(&self, content: &str, prefix: &str, colors: Colors) -> String {
         if self.mark_partial {
             format!(
@@ -374,5 +570,211 @@ mod tests {
         let out3 = TextDeltaRenderer::render_completion();
         assert!(out3.contains("\x1b[1B"));
         assert_eq!(out3, "\x1b[1B\n");
+    }
+
+    #[test]
+    fn test_full_streaming_sequence_no_extra_blank_lines() {
+        let colors = test_colors();
+
+        // Simulate a full streaming sequence and verify no extra blank lines
+        let first = TextDeltaRenderer::render_first_delta("Hello", "agent", colors);
+        let second = TextDeltaRenderer::render_subsequent_delta("Hello World", "agent", colors);
+        let complete = TextDeltaRenderer::render_completion();
+
+        // First delta: ends with exactly one \n followed by cursor up
+        assert!(first.ends_with("\n\x1b[1A"));
+        assert_eq!(first.matches('\n').count(), 1);
+
+        // Subsequent delta: starts with clear+return, ends with \n + cursor up
+        assert!(second.starts_with("\x1b[2K\r"));
+        assert!(second.ends_with("\n\x1b[1A"));
+        assert_eq!(second.matches('\n').count(), 1);
+
+        // Completion: exactly cursor down + one newline
+        assert_eq!(complete, "\x1b[1B\n");
+        assert_eq!(complete.matches('\n').count(), 1);
+    }
+
+    #[test]
+    fn test_prefix_displayed_on_all_deltas() {
+        let colors = test_colors();
+        let prefix = "my-agent";
+
+        // First delta shows prefix
+        let first = TextDeltaRenderer::render_first_delta("A", prefix, colors);
+        assert!(first.contains(&format!("[{prefix}]")));
+
+        // Subsequent delta also shows prefix (design decision: prefix on every delta)
+        let subsequent = TextDeltaRenderer::render_subsequent_delta("AB", prefix, colors);
+        assert!(subsequent.contains(&format!("[{prefix}]")));
+    }
+
+    // Tests for sanitize_for_display helper function
+
+    #[test]
+    fn test_sanitize_collapses_multiple_newlines() {
+        let result = sanitize_for_display("Hello\n\nWorld");
+        // Multiple newlines should become a single space
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_sanitize_collapses_multiple_spaces() {
+        let result = sanitize_for_display("Hello   World");
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_sanitize_mixed_whitespace() {
+        let result = sanitize_for_display("Hello\n\n  \t\t  World");
+        // All whitespace (newlines, spaces, tabs) collapsed to single space
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_sanitize_trims_leading_trailing_whitespace() {
+        let result = sanitize_for_display("  Hello World  ");
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_sanitize_only_whitespace() {
+        let result = sanitize_for_display("   \n\n   ");
+        // Only whitespace content becomes empty string
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_sanitize_preserves_single_spaces() {
+        let result = sanitize_for_display("Hello World Test");
+        assert_eq!(result, "Hello World Test");
+    }
+
+    #[test]
+    fn test_delta_renderer_multiple_newlines_render_cleanly() {
+        let colors = test_colors();
+        let output = TextDeltaRenderer::render_first_delta("Hello\n\n\nWorld", "agent", colors);
+        // Multiple newlines should render as single space
+        assert!(output.contains("Hello World"));
+        // Should NOT have multiple spaces
+        assert!(!output.contains("  "));
+    }
+
+    #[test]
+    fn test_delta_renderer_trailing_whitespace_trimmed() {
+        let colors = test_colors();
+        let output = TextDeltaRenderer::render_first_delta("Hello World   ", "agent", colors);
+        // Trailing spaces should be trimmed
+        assert!(output.contains("Hello World"));
+        // Content should not end with space before escape sequences
+        // (it ends with reset color then \n\x1b[1A)
+    }
+
+    // Tests for StreamingConfig
+
+    #[test]
+    fn test_streaming_config_defaults() {
+        let config = StreamingConfig::default();
+        assert_eq!(config.prefix_delta_threshold, 0);
+        assert!(config.prefix_time_threshold.is_none());
+    }
+
+    // Tests for PrefixDebouncer
+
+    #[test]
+    fn test_prefix_debouncer_default_first_only() {
+        let mut debouncer = PrefixDebouncer::default();
+
+        // First delta always shows prefix
+        assert!(debouncer.should_show_prefix(true));
+
+        // With default config (no thresholds), only first delta shows prefix
+        // This preserves the original behavior
+        assert!(!debouncer.should_show_prefix(false));
+        assert!(!debouncer.should_show_prefix(false));
+        assert!(!debouncer.should_show_prefix(false));
+    }
+
+    #[test]
+    fn test_prefix_debouncer_count_threshold() {
+        let config = StreamingConfig {
+            prefix_delta_threshold: 3,
+            prefix_time_threshold: None,
+        };
+        let mut debouncer = PrefixDebouncer::new(config);
+
+        // First delta always shows prefix
+        assert!(debouncer.should_show_prefix(true));
+
+        // Next 2 deltas should skip prefix
+        assert!(!debouncer.should_show_prefix(false)); // delta 1
+        assert!(!debouncer.should_show_prefix(false)); // delta 2
+
+        // 3rd delta hits threshold, shows prefix
+        assert!(debouncer.should_show_prefix(false)); // delta 3
+
+        // Cycle resets
+        assert!(!debouncer.should_show_prefix(false)); // delta 1
+        assert!(!debouncer.should_show_prefix(false)); // delta 2
+        assert!(debouncer.should_show_prefix(false)); // delta 3
+    }
+
+    #[test]
+    fn test_prefix_debouncer_reset() {
+        let config = StreamingConfig {
+            prefix_delta_threshold: 3,
+            prefix_time_threshold: None,
+        };
+        let mut debouncer = PrefixDebouncer::new(config);
+
+        // Build up delta count
+        debouncer.should_show_prefix(true);
+        debouncer.should_show_prefix(false);
+        debouncer.should_show_prefix(false);
+
+        // Reset clears state
+        debouncer.reset();
+
+        // After reset, next delta is treated as fresh
+        // (but not "first delta" unless caller says so)
+        assert!(!debouncer.should_show_prefix(false)); // delta 1 after reset
+        assert!(!debouncer.should_show_prefix(false)); // delta 2
+        assert!(debouncer.should_show_prefix(false)); // delta 3 hits threshold
+    }
+
+    #[test]
+    fn test_prefix_debouncer_first_delta_always_shows() {
+        let config = StreamingConfig {
+            prefix_delta_threshold: 100,
+            prefix_time_threshold: None,
+        };
+        let mut debouncer = PrefixDebouncer::new(config);
+
+        // First delta always shows prefix regardless of threshold
+        assert!(debouncer.should_show_prefix(true));
+
+        // Even after many skips, marking as first shows prefix
+        for _ in 0..10 {
+            debouncer.should_show_prefix(false);
+        }
+        assert!(debouncer.should_show_prefix(true)); // First delta again
+    }
+
+    #[test]
+    fn test_prefix_debouncer_time_threshold() {
+        // Note: This test uses Duration::ZERO for immediate threshold.
+        // In practice, time-based debouncing uses longer durations like 100ms.
+        let config = StreamingConfig {
+            prefix_delta_threshold: 0,
+            prefix_time_threshold: Some(Duration::ZERO),
+        };
+        let mut debouncer = PrefixDebouncer::new(config);
+
+        // First delta shows prefix
+        assert!(debouncer.should_show_prefix(true));
+
+        // Since threshold is ZERO, any elapsed time triggers prefix
+        // In practice, Instant::now() moves forward, so this should show
+        assert!(debouncer.should_show_prefix(false));
     }
 }

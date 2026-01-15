@@ -18,8 +18,6 @@
 //! 3. **Auto-detection**: Can detect format from content if not specified
 //! 4. **Validation**: Optional validation for extracted content
 
-#![expect(clippy::too_many_lines)]
-
 mod cleaning;
 mod commit;
 mod parsers;

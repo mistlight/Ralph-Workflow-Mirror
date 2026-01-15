@@ -41,7 +41,7 @@ pub fn handle_dry_run(
 
     // Validate PROMPT.md using the utility function
     // Dry run is non-interactive by definition
-    let validation = validate_prompt_md(config.strict_validation, false);
+    let validation = validate_prompt_md(config.behavior.strict_validation, false);
 
     // Report errors first
     for err in &validation.errors {

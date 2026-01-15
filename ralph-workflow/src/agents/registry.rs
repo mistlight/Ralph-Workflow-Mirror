@@ -19,7 +19,6 @@
 //! developer = ["ccs/work", "claude"]
 //! ```
 
-#![expect(clippy::too_many_lines)]
 use super::ccs::CcsAliasResolver;
 use super::config::{AgentConfig, AgentConfigError, AgentsConfigFile, DEFAULT_AGENTS_TOML};
 use super::fallback::{AgentRole, FallbackConfig};
@@ -260,105 +259,14 @@ impl AgentRegistry {
 
         if !unified.agents.is_empty() {
             for (name, overrides) in &unified.agents {
-                let Some(existing) = self.agents.get(name).cloned() else {
-                    // New agent definition: require a non-empty command.
-                    let Some(cmd) = overrides
-                        .cmd
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                    else {
-                        continue;
-                    };
-
-                    let json_parser = overrides
-                        .json_parser
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or("generic");
-
-                    self.register(
-                        name,
-                        AgentConfig {
-                            cmd: cmd.to_string(),
-                            output_flag: overrides.output_flag.clone().unwrap_or_default(),
-                            yolo_flag: overrides.yolo_flag.clone().unwrap_or_default(),
-                            verbose_flag: overrides.verbose_flag.clone().unwrap_or_default(),
-                            can_commit: overrides.can_commit.unwrap_or(true),
-                            json_parser: JsonParserType::parse(json_parser),
-                            model_flag: overrides.model_flag.clone(),
-                            print_flag: overrides.print_flag.clone().unwrap_or_default(),
-                            streaming_flag: overrides.streaming_flag.clone().unwrap_or_else(|| {
-                                // Default to "--include-partial-messages" for Claude/CCS agents
-                                if cmd.starts_with("claude") || cmd.starts_with("ccs") {
-                                    "--include-partial-messages".to_string()
-                                } else {
-                                    String::new()
-                                }
-                            }),
-                            env_vars: std::collections::HashMap::new(),
-                            display_name: overrides
-                                .display_name
-                                .as_ref()
-                                .filter(|s| !s.is_empty())
-                                .cloned(),
-                        },
-                    );
+                if let Some(existing) = self.agents.get(name).cloned() {
+                    let merged = Self::merge_agent_config(&existing, overrides);
+                    self.register(name, merged);
                     loaded += 1;
-                    continue;
-                };
-
-                let merged = AgentConfig {
-                    cmd: overrides
-                        .cmd
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_string)
-                        .unwrap_or(existing.cmd),
-                    output_flag: overrides
-                        .output_flag
-                        .clone()
-                        .unwrap_or(existing.output_flag),
-                    yolo_flag: overrides.yolo_flag.clone().unwrap_or(existing.yolo_flag),
-                    verbose_flag: overrides
-                        .verbose_flag
-                        .clone()
-                        .unwrap_or(existing.verbose_flag),
-                    can_commit: overrides.can_commit.unwrap_or(existing.can_commit),
-                    json_parser: overrides
-                        .json_parser
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map_or(existing.json_parser, JsonParserType::parse),
-                    model_flag: if overrides.model_flag.is_some() {
-                        overrides.model_flag.clone()
-                    } else {
-                        existing.model_flag
-                    },
-                    print_flag: overrides.print_flag.clone().unwrap_or(existing.print_flag),
-                    streaming_flag: overrides
-                        .streaming_flag
-                        .clone()
-                        .unwrap_or(existing.streaming_flag),
-                    // Do NOT inherit env_vars from the existing agent to prevent
-                    // CCS env vars from one agent from leaking into another.
-                    // The unified config (unified::AgentConfigToml) doesn't support
-                    // ccs_profile or env_vars fields, so we always start fresh.
-                    env_vars: std::collections::HashMap::new(),
-                    // Preserve existing display name unless explicitly overridden
-                    // Empty string explicitly clears the display name
-                    display_name: match &overrides.display_name {
-                        Some(s) if s.is_empty() => None,
-                        Some(s) => Some(s.clone()),
-                        None => existing.display_name,
-                    },
-                };
-
-                self.register(name, merged);
-                loaded += 1;
+                } else if let Some(new_agent) = Self::create_new_agent(overrides) {
+                    self.register(name, new_agent);
+                    loaded += 1;
+                }
             }
         }
 
@@ -367,6 +275,101 @@ impl AgentRegistry {
         }
 
         loaded
+    }
+
+    /// Create a new agent from TOML overrides.
+    /// Returns None if no valid command is specified.
+    fn create_new_agent(
+        overrides: &crate::config::unified::AgentConfigToml,
+    ) -> Option<AgentConfig> {
+        let cmd = overrides
+            .cmd
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())?;
+
+        let json_parser = overrides
+            .json_parser
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("generic");
+
+        Some(AgentConfig {
+            cmd: cmd.to_string(),
+            output_flag: overrides.output_flag.clone().unwrap_or_default(),
+            yolo_flag: overrides.yolo_flag.clone().unwrap_or_default(),
+            verbose_flag: overrides.verbose_flag.clone().unwrap_or_default(),
+            can_commit: overrides.can_commit.unwrap_or(true),
+            json_parser: JsonParserType::parse(json_parser),
+            model_flag: overrides.model_flag.clone(),
+            print_flag: overrides.print_flag.clone().unwrap_or_default(),
+            streaming_flag: overrides.streaming_flag.clone().unwrap_or_else(|| {
+                if cmd.starts_with("claude") || cmd.starts_with("ccs") {
+                    "--include-partial-messages".to_string()
+                } else {
+                    String::new()
+                }
+            }),
+            env_vars: std::collections::HashMap::new(),
+            display_name: overrides
+                .display_name
+                .as_ref()
+                .filter(|s| !s.is_empty())
+                .cloned(),
+        })
+    }
+
+    /// Merge TOML overrides into an existing agent configuration.
+    fn merge_agent_config(
+        existing: &AgentConfig,
+        overrides: &crate::config::unified::AgentConfigToml,
+    ) -> AgentConfig {
+        AgentConfig {
+            cmd: overrides
+                .cmd
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map_or_else(|| existing.cmd.clone(), str::to_string),
+            output_flag: overrides
+                .output_flag
+                .clone()
+                .unwrap_or_else(|| existing.output_flag.clone()),
+            yolo_flag: overrides
+                .yolo_flag
+                .clone()
+                .unwrap_or_else(|| existing.yolo_flag.clone()),
+            verbose_flag: overrides
+                .verbose_flag
+                .clone()
+                .unwrap_or_else(|| existing.verbose_flag.clone()),
+            can_commit: overrides.can_commit.unwrap_or(existing.can_commit),
+            json_parser: overrides
+                .json_parser
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map_or(existing.json_parser, JsonParserType::parse),
+            model_flag: overrides
+                .model_flag
+                .clone()
+                .or_else(|| existing.model_flag.clone()),
+            print_flag: overrides
+                .print_flag
+                .clone()
+                .unwrap_or_else(|| existing.print_flag.clone()),
+            streaming_flag: overrides
+                .streaming_flag
+                .clone()
+                .unwrap_or_else(|| existing.streaming_flag.clone()),
+            env_vars: std::collections::HashMap::new(),
+            display_name: match &overrides.display_name {
+                Some(s) if s.is_empty() => None,
+                Some(s) => Some(s.clone()),
+                None => existing.display_name.clone(),
+            },
+        }
     }
 
     /// Get the fallback configuration.

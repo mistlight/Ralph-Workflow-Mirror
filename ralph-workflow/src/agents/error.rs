@@ -4,8 +4,6 @@
 //! recovery strategies when agents fail. Different error types warrant
 //! different responses: retry, fallback to another agent, or abort.
 
-#![expect(clippy::too_many_lines)]
-
 /// Check if an agent name or command string indicates a GLM-like agent.
 ///
 /// GLM-like agents include GLM, `ZhipuAI`, ZAI, Qwen, and `DeepSeek`.
@@ -19,7 +17,10 @@
 /// # Returns
 ///
 /// `true` if the string indicates a GLM-like agent, `false` otherwise
-pub fn is_glm_like_agent(s: &str) -> bool {
+pub fn is_glm_like_agent(s: impl AsRef<str>) -> bool {
+    let s = s.as_ref();
+    // Check for each keyword case-insensitively.
+    // We lowercase once and reuse the result for all keyword checks.
     let s_lower = s.to_lowercase();
     s_lower.contains("glm")
         || s_lower.contains("zhipuai")
@@ -189,6 +190,164 @@ impl AgentErrorKind {
         }
     }
 
+    /// Check if stderr indicates rate limiting.
+    fn check_rate_limit(stderr_lower: &str) -> bool {
+        stderr_lower.contains("rate limit")
+            || stderr_lower.contains("too many requests")
+            || stderr_lower.contains("429")
+            || stderr_lower.contains("quota exceeded")
+    }
+
+    /// Check if stderr indicates token/context exhaustion.
+    fn check_token_exhausted(stderr_lower: &str) -> bool {
+        stderr_lower.contains("token")
+            || stderr_lower.contains("context length")
+            || stderr_lower.contains("maximum context")
+            || stderr_lower.contains("too long")
+            || stderr_lower.contains("input too large")
+    }
+
+    /// Check if stderr indicates network connectivity errors.
+    fn check_network_error(stderr_lower: &str) -> bool {
+        stderr_lower.contains("connection refused")
+            || stderr_lower.contains("network unreachable")
+            || stderr_lower.contains("dns resolution")
+            || stderr_lower.contains("name resolution")
+            || stderr_lower.contains("no route to host")
+            || stderr_lower.contains("network is down")
+            || stderr_lower.contains("host unreachable")
+            || stderr_lower.contains("connection reset")
+            || stderr_lower.contains("broken pipe")
+            || stderr_lower.contains("econnrefused")
+            || stderr_lower.contains("enetunreach")
+    }
+
+    /// Check if stderr indicates API unavailability.
+    fn check_api_unavailable(stderr_lower: &str) -> bool {
+        stderr_lower.contains("service unavailable")
+            || stderr_lower.contains("503")
+            || stderr_lower.contains("502")
+            || stderr_lower.contains("504")
+            || stderr_lower.contains("500")
+            || stderr_lower.contains("internal server error")
+            || stderr_lower.contains("bad gateway")
+            || stderr_lower.contains("gateway timeout")
+            || stderr_lower.contains("overloaded")
+            || stderr_lower.contains("maintenance")
+    }
+
+    /// Check if stderr indicates timeout.
+    fn check_timeout(stderr_lower: &str) -> bool {
+        stderr_lower.contains("timeout")
+            || stderr_lower.contains("timed out")
+            || stderr_lower.contains("request timeout")
+            || stderr_lower.contains("deadline exceeded")
+    }
+
+    /// Check if stderr indicates authentication failure.
+    fn check_auth_failure(stderr_lower: &str) -> bool {
+        stderr_lower.contains("unauthorized")
+            || stderr_lower.contains("authentication")
+            || stderr_lower.contains("401")
+            || stderr_lower.contains("api key")
+            || stderr_lower.contains("invalid token")
+            || stderr_lower.contains("forbidden")
+            || stderr_lower.contains("403")
+            || stderr_lower.contains("access denied")
+    }
+
+    /// Check if stderr indicates disk space exhaustion.
+    fn check_disk_full(stderr_lower: &str) -> bool {
+        stderr_lower.contains("no space left")
+            || stderr_lower.contains("disk full")
+            || stderr_lower.contains("enospc")
+            || stderr_lower.contains("out of disk")
+            || stderr_lower.contains("insufficient storage")
+    }
+
+    /// Check if exit code or stderr indicates process was killed.
+    fn check_process_killed(exit_code: i32, stderr_lower: &str) -> bool {
+        // Exit code 137 = 128 + 9 (SIGKILL), 139 = 128 + 11 (SIGSEGV)
+        exit_code == 137
+            || exit_code == 139
+            || exit_code == -9
+            || stderr_lower.contains("killed")
+            || stderr_lower.contains("oom")
+            || stderr_lower.contains("out of memory")
+            || stderr_lower.contains("memory exhausted")
+            || stderr_lower.contains("cannot allocate")
+            || stderr_lower.contains("segmentation fault")
+            || stderr_lower.contains("sigsegv")
+            || stderr_lower.contains("sigkill")
+    }
+
+    /// Check if stderr indicates invalid JSON response.
+    fn check_invalid_response(stderr_lower: &str) -> bool {
+        stderr_lower.contains("invalid json")
+            || stderr_lower.contains("json parse")
+            || stderr_lower.contains("unexpected token")
+            || stderr_lower.contains("malformed")
+            || stderr_lower.contains("truncated response")
+            || stderr_lower.contains("incomplete response")
+    }
+
+    /// Check if stderr indicates tool execution failure.
+    fn check_tool_execution_failed(stderr_lower: &str) -> bool {
+        stderr_lower.contains("write error")
+            || stderr_lower.contains("cannot write")
+            || stderr_lower.contains("failed to write")
+            || stderr_lower.contains("unable to create file")
+            || stderr_lower.contains("file creation failed")
+            || stderr_lower.contains("i/o error")
+            || stderr_lower.contains("io error")
+            || stderr_lower.contains("tool failed")
+            || stderr_lower.contains("tool execution failed")
+            || stderr_lower.contains("tool call failed")
+    }
+
+    /// Check if stderr indicates permission denied.
+    fn check_permission_denied(stderr_lower: &str) -> bool {
+        stderr_lower.contains("permission denied")
+            || stderr_lower.contains("operation not permitted")
+            || stderr_lower.contains("insufficient permissions")
+            || stderr_lower.contains("eacces")
+            || stderr_lower.contains("eperm")
+    }
+
+    /// Check if stderr contains GLM/CCS-specific error patterns.
+    fn check_glm_ccs_quirk(stderr_lower: &str, exit_code: i32) -> bool {
+        // Check for CCS-specific error patterns
+        if stderr_lower.contains("ccs") || stderr_lower.contains("glm") {
+            // CCS/GLM with exit code 1 is likely a permission/tool issue
+            if exit_code == 1 {
+                return true;
+            }
+            // CCS-specific error patterns
+            if stderr_lower.contains("ccs") && stderr_lower.contains("failed") {
+                return true;
+            }
+            // GLM-specific permission errors
+            if stderr_lower.contains("glm")
+                && (stderr_lower.contains("permission")
+                    || stderr_lower.contains("denied")
+                    || stderr_lower.contains("unauthorized"))
+            {
+                return true;
+            }
+        }
+        // Fallback for GLM with any error and exit code 1
+        stderr_lower.contains("glm") && exit_code == 1
+    }
+
+    /// Check if exit code or stderr indicates command not found.
+    fn check_command_not_found(exit_code: i32, stderr_lower: &str) -> bool {
+        exit_code == 127
+            || exit_code == 126
+            || stderr_lower.contains("command not found")
+            || stderr_lower.contains("not found")
+            || stderr_lower.contains("no such file")
+    }
+
     /// Classify an error from exit code, output, and agent name.
     ///
     /// This variant takes the agent name into account for better classification.
@@ -200,6 +359,7 @@ impl AgentErrorKind {
     /// * `exit_code` - The process exit code
     /// * `stderr` - The standard error output from the agent
     /// * `agent_name` - Optional agent name for context-aware classification
+    /// * `model_flag` - Optional model flag for context-aware classification
     pub fn classify_with_agent(
         exit_code: i32,
         stderr: &str,
@@ -210,8 +370,21 @@ impl AgentErrorKind {
 
         // If we know this is a GLM-like agent and it failed with exit code 1,
         // classify it as AgentSpecificQuirk to trigger fallback instead of retry
-        let is_problematic_agent =
-            agent_name.is_some_and(is_glm_like_agent) || model_flag.is_some_and(is_glm_like_agent);
+        let is_problematic_agent = agent_name.is_some_and(|name| {
+            let name_lower = name.to_lowercase();
+            name_lower.contains("glm")
+                || name_lower.contains("zhipuai")
+                || name_lower.contains("zai")
+                || name_lower.contains("qwen")
+                || name_lower.contains("deepseek")
+        }) || model_flag.is_some_and(|flag| {
+            let flag_lower = flag.to_lowercase();
+            flag_lower.contains("glm")
+                || flag_lower.contains("zhipuai")
+                || flag_lower.contains("zai")
+                || flag_lower.contains("qwen")
+                || flag_lower.contains("deepseek")
+        });
 
         if is_problematic_agent && exit_code == 1 {
             // GLM and similar agents often exit with code 1 for various issues.
@@ -219,180 +392,44 @@ impl AgentErrorKind {
             return Self::AgentSpecificQuirk;
         }
 
-        // Rate limiting indicators (API-side)
-        if stderr_lower.contains("rate limit")
-            || stderr_lower.contains("too many requests")
-            || stderr_lower.contains("429")
-            || stderr_lower.contains("quota exceeded")
-        {
+        // Check error patterns in priority order
+        if Self::check_rate_limit(&stderr_lower) {
             return Self::RateLimited;
         }
-
-        // Token/context exhaustion (API-side)
-        if stderr_lower.contains("token")
-            || stderr_lower.contains("context length")
-            || stderr_lower.contains("maximum context")
-            || stderr_lower.contains("too long")
-            || stderr_lower.contains("input too large")
-        {
+        if Self::check_token_exhausted(&stderr_lower) {
             return Self::TokenExhausted;
         }
-
-        // Network errors (client-side connectivity issues)
-        if stderr_lower.contains("connection refused")
-            || stderr_lower.contains("network unreachable")
-            || stderr_lower.contains("dns resolution")
-            || stderr_lower.contains("name resolution")
-            || stderr_lower.contains("no route to host")
-            || stderr_lower.contains("network is down")
-            || stderr_lower.contains("host unreachable")
-            || stderr_lower.contains("connection reset")
-            || stderr_lower.contains("broken pipe")
-            || stderr_lower.contains("econnrefused")
-            || stderr_lower.contains("enetunreach")
-        {
+        if Self::check_network_error(&stderr_lower) {
             return Self::NetworkError;
         }
-
-        // API unavailable (server-side issues)
-        if stderr_lower.contains("service unavailable")
-            || stderr_lower.contains("503")
-            || stderr_lower.contains("502")
-            || stderr_lower.contains("504")
-            || stderr_lower.contains("500")
-            || stderr_lower.contains("internal server error")
-            || stderr_lower.contains("bad gateway")
-            || stderr_lower.contains("gateway timeout")
-            || stderr_lower.contains("overloaded")
-            || stderr_lower.contains("maintenance")
-        {
+        if Self::check_api_unavailable(&stderr_lower) {
             return Self::ApiUnavailable;
         }
-
-        // Request timeout
-        if stderr_lower.contains("timeout")
-            || stderr_lower.contains("timed out")
-            || stderr_lower.contains("request timeout")
-            || stderr_lower.contains("deadline exceeded")
-        {
+        if Self::check_timeout(&stderr_lower) {
             return Self::Timeout;
         }
-
-        // Auth failures
-        if stderr_lower.contains("unauthorized")
-            || stderr_lower.contains("authentication")
-            || stderr_lower.contains("401")
-            || stderr_lower.contains("api key")
-            || stderr_lower.contains("invalid token")
-            || stderr_lower.contains("forbidden")
-            || stderr_lower.contains("403")
-            || stderr_lower.contains("access denied")
-        {
+        if Self::check_auth_failure(&stderr_lower) {
             return Self::AuthFailure;
         }
-
-        // Disk space exhaustion
-        if stderr_lower.contains("no space left")
-            || stderr_lower.contains("disk full")
-            || stderr_lower.contains("enospc")
-            || stderr_lower.contains("out of disk")
-            || stderr_lower.contains("insufficient storage")
-        {
+        if Self::check_disk_full(&stderr_lower) {
             return Self::DiskFull;
         }
-
-        // Process killed (OOM or signals)
-        // Exit code 137 = 128 + 9 (SIGKILL), 139 = 128 + 11 (SIGSEGV)
-        if exit_code == 137
-            || exit_code == 139
-            || exit_code == -9
-            || stderr_lower.contains("killed")
-            || stderr_lower.contains("oom")
-            || stderr_lower.contains("out of memory")
-            || stderr_lower.contains("memory exhausted")
-            || stderr_lower.contains("cannot allocate")
-            || stderr_lower.contains("segmentation fault")
-            || stderr_lower.contains("sigsegv")
-            || stderr_lower.contains("sigkill")
-        {
+        if Self::check_process_killed(exit_code, &stderr_lower) {
             return Self::ProcessKilled;
         }
-
-        // Invalid JSON response
-        if stderr_lower.contains("invalid json")
-            || stderr_lower.contains("json parse")
-            || stderr_lower.contains("unexpected token")
-            || stderr_lower.contains("malformed")
-            || stderr_lower.contains("truncated response")
-            || stderr_lower.contains("incomplete response")
-        {
+        if Self::check_invalid_response(&stderr_lower) {
             return Self::InvalidResponse;
         }
-
-        // Tool execution failures (file writes, tool calls, etc.)
-        // These should trigger fallback, not retry
-        if stderr_lower.contains("write error")
-            || stderr_lower.contains("cannot write")
-            || stderr_lower.contains("failed to write")
-            || stderr_lower.contains("unable to create file")
-            || stderr_lower.contains("file creation failed")
-            || stderr_lower.contains("i/o error")
-            || stderr_lower.contains("io error")
-            || stderr_lower.contains("tool failed")
-            || stderr_lower.contains("tool execution failed")
-            || stderr_lower.contains("tool call failed")
-        {
+        if Self::check_tool_execution_failed(&stderr_lower) {
             return Self::ToolExecutionFailed;
         }
-
-        // Permission denied errors (specific patterns that should fallback)
-        // These need to be checked BEFORE the generic "error" catch-all
-        // Note: "access denied" is already caught by AuthFailure above (for HTTP 403)
-        // This catches file-system permission errors specifically
-        if stderr_lower.contains("permission denied")
-            || stderr_lower.contains("operation not permitted")
-            || stderr_lower.contains("insufficient permissions")
-            || stderr_lower.contains("eacces")
-            || stderr_lower.contains("eperm")
-        {
+        if Self::check_permission_denied(&stderr_lower) {
             return Self::ToolExecutionFailed;
         }
-
-        // GLM/CCS-specific known issues
-        // These are known quirks that should trigger fallback
-        // Check for CCS-specific error patterns
-        if stderr_lower.contains("ccs") || stderr_lower.contains("glm") {
-            // CCS/GLM with exit code 1 is likely a permission/tool issue
-            if exit_code == 1 {
-                return Self::AgentSpecificQuirk;
-            }
-            // CCS-specific error patterns
-            if stderr_lower.contains("ccs") && stderr_lower.contains("failed") {
-                return Self::AgentSpecificQuirk;
-            }
-            // GLM-specific permission errors
-            if stderr_lower.contains("glm")
-                && (stderr_lower.contains("permission")
-                    || stderr_lower.contains("denied")
-                    || stderr_lower.contains("unauthorized"))
-            {
-                return Self::AgentSpecificQuirk;
-            }
-        }
-
-        // Fallback for GLM with any error and exit code 1
-        if stderr_lower.contains("glm") && exit_code == 1 {
+        if Self::check_glm_ccs_quirk(&stderr_lower, exit_code) {
             return Self::AgentSpecificQuirk;
         }
-
-        // Command not found (keep this after permission checks since permission
-        // errors also contain "permission denied")
-        if exit_code == 127
-            || exit_code == 126
-            || stderr_lower.contains("command not found")
-            || stderr_lower.contains("not found")
-            || stderr_lower.contains("no such file")
-        {
+        if Self::check_command_not_found(exit_code, &stderr_lower) {
             return Self::CommandNotFound;
         }
 

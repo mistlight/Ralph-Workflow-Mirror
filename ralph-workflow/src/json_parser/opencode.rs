@@ -30,14 +30,12 @@
 //! - Content updates in-place without visual artifacts
 //! - Terminal state is clean and predictable
 
-#![expect(clippy::too_many_lines)]
-#![expect(clippy::items_after_statements)]
-
 use crate::common::truncate_text;
 use crate::config::Verbosity;
 use crate::logger::{Colors, CHECK, CROSS};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
@@ -275,14 +273,11 @@ impl OpenCodeParser {
                         reason
                     );
                     if !tokens_str.is_empty() {
-                        use std::fmt::Write;
                         let _ = write!(out, ", {tokens_str}");
                     }
                     if cost > 0.0 {
-                        use std::fmt::Write;
                         let _ = write!(out, ", ${cost:.4}");
                     }
-                    use std::fmt::Write;
                     let _ = writeln!(out, "){}", c.reset());
                     out
                 })
@@ -320,7 +315,6 @@ impl OpenCodeParser {
                     if let Some(t) = title {
                         let limit = self.verbosity.truncate_limit("text");
                         let preview = truncate_text(t, limit);
-                        use std::fmt::Write;
                         let _ = writeln!(
                             out,
                             "{}[{}]{} {}  └─ {}{}",
@@ -341,7 +335,6 @@ impl OpenCodeParser {
                                 let limit = self.verbosity.truncate_limit("tool_input");
                                 let preview = truncate_text(&input_str, limit);
                                 if !preview.is_empty() {
-                                    use std::fmt::Write;
                                     let _ = writeln!(
                                         out,
                                         "{}[{}]{} {}  └─ {}{}",
@@ -373,7 +366,6 @@ impl OpenCodeParser {
                                 let limit = self.verbosity.truncate_limit("tool_result");
                                 let preview = truncate_text(&output_str, limit);
                                 if !preview.is_empty() {
-                                    use std::fmt::Write;
                                     let _ = writeln!(
                                         out,
                                         "{}[{}]{} {}  └─ Output: {}{}",
@@ -427,7 +419,7 @@ impl OpenCodeParser {
             }
             _ => {
                 // Unknown event type - use the generic formatter in verbose mode
-                format_unknown_json_event(line, prefix, c, self.verbosity.is_verbose())
+                format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
             }
         };
 

@@ -19,36 +19,53 @@ pub enum TryAgentResult {
     NoRetry,
 }
 
+/// Configuration for attempting an agent with retries.
+pub struct AgentAttemptConfig<'a> {
+    /// Agent name
+    pub agent_name: &'a str,
+    /// Optional model flag override
+    pub model_flag: Option<&'a str>,
+    /// Label for logging
+    pub label: &'a str,
+    /// Display name for logging
+    pub display_name: &'a str,
+    /// Command string to execute
+    pub cmd_str: &'a str,
+    /// Prompt content to send
+    pub prompt: &'a str,
+    /// Log file path
+    pub logfile: &'a str,
+    /// JSON parser type
+    pub parser_type: JsonParserType,
+    /// Environment variables to pass
+    pub env_vars: &'a std::collections::HashMap<String, String>,
+    /// Model index in chain
+    pub model_index: usize,
+    /// Agent index in chain
+    pub agent_index: usize,
+    /// Retry cycle number
+    pub cycle: usize,
+    /// Fallback configuration
+    pub fallback_config: &'a crate::agents::fallback::FallbackConfig,
+}
+
 /// Try a single agent/model configuration with retries.
 ///
 /// Returns the result of the attempt: success, unrecoverable error, or should-fallback.
-#[expect(clippy::too_many_arguments)]
-#[expect(clippy::too_many_lines)]
 pub fn try_agent_with_retries(
-    agent_name: &str,
-    model_flag: Option<&str>,
-    label: &str,
-    display_name: &str,
-    cmd_str: &str,
-    prompt: &str,
-    logfile: &str,
-    parser_type: JsonParserType,
-    env_vars: &std::collections::HashMap<String, String>,
-    model_index: usize,
-    agent_index: usize,
-    cycle: usize,
+    config: &AgentAttemptConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
-    fallback_config: &crate::agents::fallback::FallbackConfig,
 ) -> io::Result<TryAgentResult> {
-    let model_suffix = model_flag
+    let model_suffix = config
+        .model_flag
         .as_ref()
         .map(|m| format!(" [{m}]"))
         .unwrap_or_default();
-    let is_glm_agent = is_glm_like_agent(agent_name);
+    let is_glm_agent = is_glm_like_agent(config.agent_name);
 
     // GLM-specific diagnostic output (only on first try to avoid spam)
-    if is_glm_agent && agent_index == 0 && cycle == 0 && model_index == 0 {
-        let cmd_argv = split_command(cmd_str).ok();
+    if is_glm_agent && config.agent_index == 0 && config.cycle == 0 && config.model_index == 0 {
+        let cmd_argv = split_command(config.cmd_str).ok();
         let full_cmd_log = cmd_argv.as_ref().map_or_else(
             || "<unparseable command>".to_string(),
             |argv| {
@@ -59,9 +76,10 @@ pub fn try_agent_with_retries(
         );
 
         if runtime.config.verbosity.is_debug() {
-            runtime
-                .logger
-                .info(&format!("GLM agent '{agent_name}' command configuration:"));
+            runtime.logger.info(&format!(
+                "GLM agent '{}' command configuration:",
+                config.agent_name
+            ));
             runtime
                 .logger
                 .info(&format!("  Full command: {full_cmd_log}"));
@@ -69,23 +87,23 @@ pub fn try_agent_with_retries(
     }
 
     // Try with retries
-    for retry in 0..fallback_config.max_retries {
+    for retry in 0..config.fallback_config.max_retries {
         if retry > 0 {
             runtime.logger.info(&format!(
                 "Retry {}/{} for {}{}...",
-                retry, fallback_config.max_retries, display_name, model_suffix,
+                retry, config.fallback_config.max_retries, config.display_name, model_suffix,
             ));
         }
 
         let result = run_with_prompt(
             &PromptCommand {
-                label,
-                display_name,
-                cmd_str,
-                prompt,
-                logfile,
-                parser_type,
-                env_vars,
+                label: config.label,
+                display_name: config.display_name,
+                cmd_str: config.cmd_str,
+                prompt: config.prompt,
+                logfile: config.logfile,
+                parser_type: config.parser_type,
+                env_vars: config.env_vars,
             },
             runtime,
         )?;
@@ -98,13 +116,13 @@ pub fn try_agent_with_retries(
         let error_kind = crate::agents::AgentErrorKind::classify_with_agent(
             result.exit_code,
             &result.stderr,
-            Some(agent_name),
-            model_flag,
+            Some(config.agent_name),
+            config.model_flag,
         );
 
         runtime.logger.warn(&format!(
             "Agent '{}'{} failed: {} (exit code {})",
-            agent_name,
+            config.agent_name,
             model_suffix,
             error_kind.description(),
             result.exit_code
@@ -142,14 +160,18 @@ pub fn try_agent_with_retries(
         if matches!(error_kind, crate::agents::AgentErrorKind::AuthFailure) {
             runtime
                 .logger
-                .info(&crate::agents::auth_failure_advice(model_flag));
+                .info(&crate::agents::auth_failure_advice(config.model_flag));
         } else {
             runtime.logger.info(error_kind.recovery_advice());
         }
 
         // Provide installation guidance for command not found errors
         if error_kind.is_command_not_found() {
-            let binary = cmd_str.split_whitespace().next().unwrap_or(agent_name);
+            let binary = config
+                .cmd_str
+                .split_whitespace()
+                .next()
+                .unwrap_or(config.agent_name);
             let guidance = crate::platform::InstallGuidance::for_binary(binary);
             runtime.logger.info(&guidance.format());
         }
@@ -177,7 +199,8 @@ pub fn try_agent_with_retries(
         // Check if we should fallback to next agent
         if error_kind.should_fallback() {
             runtime.logger.info(&format!(
-                "Switching from '{display_name}'{model_suffix} to next configured fallback..."
+                "Switching from '{}'{} to next configured fallback...",
+                config.display_name, model_suffix,
             ));
             return Ok(TryAgentResult::Fallback);
         }
@@ -188,17 +211,17 @@ pub fn try_agent_with_retries(
         }
 
         // Otherwise, continue retrying the same model/agent
-        if retry + 1 < fallback_config.max_retries {
+        if retry + 1 < config.fallback_config.max_retries {
             runtime.logger.info(&format!(
                 "Retrying '{}'{} (attempt {}/{})",
-                display_name,
+                config.display_name,
                 model_suffix,
                 retry + 2,
-                fallback_config.max_retries
+                config.fallback_config.max_retries
             ));
             let wait_ms = error_kind
                 .suggested_wait_ms()
-                .max(fallback_config.retry_delay_ms);
+                .max(config.fallback_config.retry_delay_ms);
             std::thread::sleep(std::time::Duration::from_millis(wait_ms));
         }
     }

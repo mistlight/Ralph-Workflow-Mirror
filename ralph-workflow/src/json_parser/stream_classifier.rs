@@ -99,7 +99,7 @@ impl StreamEventClassifier {
             .unwrap_or(false);
 
         // Check for control event patterns
-        if Self::is_control_event(&type_name, obj) {
+        if Self::is_control_event(type_name.as_ref(), obj) {
             return ClassificationResult {
                 event_type: StreamEventType::Control,
                 type_name,
@@ -108,7 +108,7 @@ impl StreamEventClassifier {
         }
 
         // Check for partial/delta indicators
-        if self.is_partial_event(&type_name, obj, is_delta) {
+        if self.is_partial_event(type_name.as_ref(), obj, is_delta) {
             return ClassificationResult {
                 event_type: StreamEventType::Partial,
                 type_name,
@@ -126,8 +126,7 @@ impl StreamEventClassifier {
     }
 
     /// Check if an event is a control/metadata event
-    #[expect(clippy::ref_option)]
-    fn is_control_event(type_name: &Option<String>, obj: &serde_json::Map<String, Value>) -> bool {
+    fn is_control_event(type_name: Option<&String>, obj: &serde_json::Map<String, Value>) -> bool {
         // Check type name for control patterns
         if let Some(name) = type_name {
             let control_patterns = [
@@ -167,10 +166,9 @@ impl StreamEventClassifier {
     }
 
     /// Check if an event is a partial/delta event
-    #[expect(clippy::ref_option)]
     fn is_partial_event(
         &self,
-        type_name: &Option<String>,
+        type_name: Option<&String>,
         obj: &serde_json::Map<String, Value>,
         explicit_delta: bool,
     ) -> bool {

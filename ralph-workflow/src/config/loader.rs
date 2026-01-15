@@ -15,7 +15,6 @@
 //! (`~/.config/ralph/agents.toml` and `.agent/agents.toml`) and emits
 //! deprecation warnings when they are used.
 
-#![expect(clippy::too_many_lines)]
 use super::parser::parse_env_bool;
 use super::types::{Config, ReviewDepth, Verbosity};
 use super::unified::{unified_config_path, UnifiedConfig};
@@ -110,12 +109,19 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         developer_provider: None,
         reviewer_provider: None,
         reviewer_json_parser: None, // Set from env var or CLI
-        force_universal_prompt: general.force_universal_prompt,
+        features: crate::config::types::FeatureFlags {
+            checkpoint_enabled: general.features.checkpoint_enabled,
+            force_universal_prompt: general.features.force_universal_prompt,
+        },
         developer_iters: general.developer_iters,
         reviewer_reviews: general.reviewer_reviews,
         fast_check_cmd: None,
         full_check_cmd: None,
-        interactive: general.interactive,
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: general.behavior.interactive,
+            auto_detect_stack: general.behavior.auto_detect_stack,
+            strict_validation: general.behavior.strict_validation,
+        },
         prompt_path: general
             .prompt_path
             .as_ref()
@@ -124,11 +130,8 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         reviewer_context: general.reviewer_context,
         verbosity: Verbosity::from(general.verbosity),
         commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
-        auto_detect_stack: general.auto_detect_stack,
-        checkpoint_enabled: general.checkpoint_enabled,
-        strict_validation: general.strict_validation,
         review_depth,
-        isolation_mode: general.isolation_mode,
+        isolation_mode: general.features.isolation_mode,
         git_user_name: general.git_user_name.clone(),
         git_user_email: general.git_user_email.clone(),
     }
@@ -146,20 +149,24 @@ fn default_config() -> Config {
         developer_provider: None,
         reviewer_provider: None,
         reviewer_json_parser: None,
-        force_universal_prompt: false,
+        features: crate::config::types::FeatureFlags {
+            checkpoint_enabled: true,
+            force_universal_prompt: false,
+        },
         developer_iters: 5,
         reviewer_reviews: 2,
         fast_check_cmd: None,
         full_check_cmd: None,
-        interactive: true,
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: true,
+            auto_detect_stack: true,
+            strict_validation: false,
+        },
         prompt_path: PathBuf::from(".agent/last_prompt.txt"),
         developer_context: 1,
         reviewer_context: 0,
         verbosity: Verbosity::Verbose,
         commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
-        auto_detect_stack: true,
-        checkpoint_enabled: true,
-        strict_validation: false,
         review_depth: ReviewDepth::default(),
         isolation_mode: true,
         git_user_name: None,
@@ -167,199 +174,196 @@ fn default_config() -> Config {
     }
 }
 
-/// Apply environment variable overrides to config.
-fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config {
-    const MAX_ITERS: u32 = 50;
-    const MAX_REVIEWS: u32 = 10;
-    const MAX_CONTEXT: u8 = 2;
+/// Environment variable parsing constants.
+const MAX_ITERS: u32 = 50;
+const MAX_REVIEWS: u32 = 10;
+const MAX_CONTEXT: u8 = 2;
 
-    fn parse_u32_env(name: &str, warnings: &mut Vec<String>, max: u32) -> Option<u32> {
-        let raw = std::env::var(name).ok()?;
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return None;
+/// Parse a u32 environment variable with max value clamping.
+fn parse_u32_env(name: &str, warnings: &mut Vec<String>, max: u32) -> Option<u32> {
+    let raw = std::env::var(name).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match trimmed.parse::<u32>() {
+        Ok(n) if n <= max => Some(n),
+        Ok(n) => {
+            warnings.push(format!(
+                "Env var {name}={n} is too large; clamping to {max}."
+            ));
+            Some(max)
         }
-        match trimmed.parse::<u32>() {
-            Ok(n) if n <= max => Some(n),
-            Ok(n) => {
-                warnings.push(format!(
-                    "Env var {name}={n} is too large; clamping to {max}."
-                ));
-                Some(max)
+        Err(_) => {
+            warnings.push(format!(
+                "Env var {name}='{trimmed}' is not a valid number; ignoring."
+            ));
+            None
+        }
+    }
+}
+
+/// Parse a u8 environment variable with max value clamping.
+fn parse_u8_env(name: &str, warnings: &mut Vec<String>, max: u8) -> Option<u8> {
+    let raw = std::env::var(name).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match trimmed.parse::<u8>() {
+        Ok(n) if n <= max => Some(n),
+        Ok(n) => {
+            warnings.push(format!(
+                "Env var {name}={n} is out of range; clamping to {max}."
+            ));
+            Some(max)
+        }
+        Err(_) => {
+            warnings.push(format!(
+                "Env var {name}='{trimmed}' is not a valid number; ignoring."
+            ));
+            None
+        }
+    }
+}
+
+/// Parse a non-empty string environment variable with warnings.
+fn parse_string_env(name: &str, warnings: &mut Vec<String>) -> Option<String> {
+    let val = env::var(name).ok()?;
+    let trimmed = val.trim();
+    if trimmed.is_empty() {
+        warnings.push(format!("Env var {name} is empty; ignoring."));
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// Parse an optional string environment variable (no warning if empty).
+fn parse_optional_string_env(name: &str) -> Option<String> {
+    let val = env::var(name).ok()?;
+    let trimmed = val.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// Parse a string environment variable into a `PathBuf`.
+fn parse_path_env(name: &str) -> Option<PathBuf> {
+    env::var(name).ok().map(PathBuf::from)
+}
+
+/// Apply agent selection environment variables.
+fn apply_agent_vars(config: &mut Config, warnings: &mut Vec<String>) {
+    if let Some(agent) = parse_string_env("RALPH_DEVELOPER_AGENT", warnings) {
+        config.developer_agent = Some(agent);
+    } else if let Some(agent) = parse_string_env("RALPH_DRIVER_AGENT", warnings) {
+        config.developer_agent = Some(agent);
+    }
+    if let Some(agent) = parse_string_env("RALPH_REVIEWER_AGENT", warnings) {
+        config.reviewer_agent = Some(agent);
+    }
+}
+
+/// Apply string-based override environment variables.
+fn apply_string_overrides(config: &mut Config, warnings: &mut Vec<String>) {
+    if let Some(cmd) = parse_string_env("RALPH_DEVELOPER_CMD", warnings) {
+        config.developer_cmd = Some(cmd);
+    }
+    if let Some(cmd) = parse_string_env("RALPH_REVIEWER_CMD", warnings) {
+        config.reviewer_cmd = Some(cmd);
+    }
+}
+
+/// Apply model/provider environment variables.
+fn apply_model_provider_vars(config: &mut Config) {
+    if let Some(model) = parse_optional_string_env("RALPH_DEVELOPER_MODEL") {
+        config.developer_model = Some(model);
+    }
+    if let Some(model) = parse_optional_string_env("RALPH_REVIEWER_MODEL") {
+        config.reviewer_model = Some(model);
+    }
+    if let Some(provider) = parse_optional_string_env("RALPH_DEVELOPER_PROVIDER") {
+        config.developer_provider = Some(provider);
+    }
+    if let Some(provider) = parse_optional_string_env("RALPH_REVIEWER_PROVIDER") {
+        config.reviewer_provider = Some(provider);
+    }
+    if let Some(parser) = parse_optional_string_env("RALPH_REVIEWER_JSON_PARSER") {
+        config.reviewer_json_parser = Some(parser);
+    }
+}
+
+/// Apply boolean flag environment variables.
+fn apply_bool_vars(config: &mut Config) {
+    let apply_bool = |name: &str, target: &mut bool| {
+        if let Ok(val) = env::var(name) {
+            if let Some(b) = parse_env_bool(&val) {
+                *target = b;
             }
-            Err(_) => {
-                warnings.push(format!(
-                    "Env var {name}='{trimmed}' is not a valid number; ignoring."
-                ));
-                None
-            }
         }
-    }
+    };
+    apply_bool(
+        "RALPH_REVIEWER_UNIVERSAL_PROMPT",
+        &mut config.features.force_universal_prompt,
+    );
+    apply_bool("RALPH_INTERACTIVE", &mut config.behavior.interactive);
+    apply_bool(
+        "RALPH_AUTO_DETECT_STACK",
+        &mut config.behavior.auto_detect_stack,
+    );
+    apply_bool(
+        "RALPH_CHECKPOINT_ENABLED",
+        &mut config.features.checkpoint_enabled,
+    );
+    apply_bool(
+        "RALPH_STRICT_VALIDATION",
+        &mut config.behavior.strict_validation,
+    );
+    apply_bool("RALPH_ISOLATION_MODE", &mut config.isolation_mode);
+}
 
-    fn parse_u8_env(name: &str, warnings: &mut Vec<String>, max: u8) -> Option<u8> {
-        let raw = std::env::var(name).ok()?;
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        match trimmed.parse::<u8>() {
-            Ok(n) if n <= max => Some(n),
-            Ok(n) => {
-                warnings.push(format!(
-                    "Env var {name}={n} is out of range; clamping to {max}."
-                ));
-                Some(max)
-            }
-            Err(_) => {
-                warnings.push(format!(
-                    "Env var {name}='{trimmed}' is not a valid number; ignoring."
-                ));
-                None
-            }
-        }
-    }
-
-    // Agent selection
-    if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_DEVELOPER_AGENT is empty; ignoring.".to_string());
-        } else {
-            config.developer_agent = Some(trimmed.to_string());
-        }
-    } else if let Ok(val) = env::var("RALPH_DRIVER_AGENT") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_DRIVER_AGENT is empty; ignoring.".to_string());
-        } else {
-            config.developer_agent = Some(trimmed.to_string());
-        }
-    }
-    if let Ok(val) = env::var("RALPH_REVIEWER_AGENT") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_REVIEWER_AGENT is empty; ignoring.".to_string());
-        } else {
-            config.reviewer_agent = Some(trimmed.to_string());
-        }
-    }
-
-    // Command overrides
-    if let Ok(val) = env::var("RALPH_DEVELOPER_CMD") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_DEVELOPER_CMD is empty; ignoring.".to_string());
-        } else {
-            config.developer_cmd = Some(trimmed.to_string());
-        }
-    }
-    if let Ok(val) = env::var("RALPH_REVIEWER_CMD") {
-        let trimmed = val.trim();
-        if trimmed.is_empty() {
-            warnings.push("Env var RALPH_REVIEWER_CMD is empty; ignoring.".to_string());
-        } else {
-            config.reviewer_cmd = Some(trimmed.to_string());
-        }
-    }
-
-    // Model overrides
-    if let Ok(val) = env::var("RALPH_DEVELOPER_MODEL") {
-        config.developer_model = Some(val);
-    }
-    if let Ok(val) = env::var("RALPH_REVIEWER_MODEL") {
-        config.reviewer_model = Some(val);
-    }
-
-    // Provider overrides
-    if let Ok(val) = env::var("RALPH_DEVELOPER_PROVIDER") {
-        config.developer_provider = Some(val);
-    }
-    if let Ok(val) = env::var("RALPH_REVIEWER_PROVIDER") {
-        config.reviewer_provider = Some(val);
-    }
-
-    // JSON parser override for reviewer (useful for testing different parsers)
-    if let Ok(val) = env::var("RALPH_REVIEWER_JSON_PARSER") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.reviewer_json_parser = Some(trimmed.to_string());
-        }
-    }
-
-    // Force universal review prompt (useful for problematic agents)
-    if let Ok(val) = env::var("RALPH_REVIEWER_UNIVERSAL_PROMPT") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.force_universal_prompt = b;
-        }
-    }
-
-    // Iteration counts
+/// Apply numeric environment variables.
+fn apply_numeric_vars(config: &mut Config, warnings: &mut Vec<String>) {
     if let Some(n) = parse_u32_env("RALPH_DEVELOPER_ITERS", warnings, MAX_ITERS) {
         config.developer_iters = n;
     }
     if let Some(n) = parse_u32_env("RALPH_REVIEWER_REVIEWS", warnings, MAX_REVIEWS) {
         config.reviewer_reviews = n;
     }
+    if let Some(n) = parse_u8_env("RALPH_DEVELOPER_CONTEXT", warnings, MAX_CONTEXT) {
+        config.developer_context = n;
+    }
+    if let Some(n) = parse_u8_env("RALPH_REVIEWER_CONTEXT", warnings, MAX_CONTEXT) {
+        config.reviewer_context = n;
+    }
+}
 
-    // Check commands
-    if let Ok(val) = env::var("FAST_CHECK_CMD") {
-        if !val.is_empty() {
-            config.fast_check_cmd = Some(val);
-        }
-    }
-    if let Ok(val) = env::var("FULL_CHECK_CMD") {
-        if !val.is_empty() {
-            config.full_check_cmd = Some(val);
-        }
-    }
-
-    // Boolean flags
-    if let Ok(val) = env::var("RALPH_INTERACTIVE") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.interactive = b;
-        }
-    }
-    if let Ok(val) = env::var("RALPH_AUTO_DETECT_STACK") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.auto_detect_stack = b;
-        }
-    }
-    if let Ok(val) = env::var("RALPH_CHECKPOINT_ENABLED") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.checkpoint_enabled = b;
-        }
-    }
-    if let Ok(val) = env::var("RALPH_STRICT_VALIDATION") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.strict_validation = b;
-        }
-    }
-    if let Ok(val) = env::var("RALPH_ISOLATION_MODE") {
-        if let Some(b) = parse_env_bool(&val) {
-            config.isolation_mode = b;
-        }
-    }
-
-    // Verbosity
+/// Apply verbosity environment variable.
+fn apply_verbosity(config: &mut Config, warnings: &mut Vec<String>) {
     if let Ok(val) = env::var("RALPH_VERBOSITY") {
         let trimmed = val.trim();
-        if trimmed.is_empty() {
-            // ignore
-        } else if let Ok(n) = trimmed.parse::<u8>() {
-            if n > 4 {
+        if !trimmed.is_empty() {
+            if let Ok(n) = trimmed.parse::<u8>() {
+                if n > 4 {
+                    warnings.push(format!(
+                        "Env var RALPH_VERBOSITY={n} is out of range; clamping to 4 (debug)."
+                    ));
+                }
+                config.verbosity = Verbosity::from(n.min(4));
+            } else {
                 warnings.push(format!(
-                    "Env var RALPH_VERBOSITY={n} is out of range; clamping to 4 (debug)."
+                    "Env var RALPH_VERBOSITY='{trimmed}' is not a valid number; ignoring."
                 ));
             }
-            config.verbosity = Verbosity::from(n.min(4));
-        } else {
-            warnings.push(format!(
-                "Env var RALPH_VERBOSITY='{trimmed}' is not a valid number; ignoring."
-            ));
         }
     }
+}
 
-    // Review depth
+/// Apply review depth environment variable.
+fn apply_review_depth(config: &mut Config, warnings: &mut Vec<String>) {
     if let Ok(val) = env::var("RALPH_REVIEW_DEPTH") {
         if let Some(depth) = ReviewDepth::from_str(&val) {
             config.review_depth = depth;
@@ -370,34 +374,47 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
             ));
         }
     }
+}
 
-    // Paths
-    if let Ok(val) = env::var("RALPH_PROMPT_PATH") {
-        config.prompt_path = PathBuf::from(val);
+/// Apply check command environment variables.
+fn apply_check_vars(config: &mut Config) {
+    if let Some(cmd) = parse_optional_string_env("FAST_CHECK_CMD") {
+        config.fast_check_cmd = Some(cmd);
     }
+    if let Some(cmd) = parse_optional_string_env("FULL_CHECK_CMD") {
+        config.full_check_cmd = Some(cmd);
+    }
+}
 
-    // Context levels
-    if let Some(n) = parse_u8_env("RALPH_DEVELOPER_CONTEXT", warnings, MAX_CONTEXT) {
-        config.developer_context = n;
+/// Apply path-based environment variables.
+fn apply_path_vars(config: &mut Config) {
+    if let Some(path) = parse_path_env("RALPH_PROMPT_PATH") {
+        config.prompt_path = path;
     }
-    if let Some(n) = parse_u8_env("RALPH_REVIEWER_CONTEXT", warnings, MAX_CONTEXT) {
-        config.reviewer_context = n;
-    }
+}
 
-    // Git user identity
-    if let Ok(val) = env::var("RALPH_GIT_USER_NAME") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.git_user_name = Some(trimmed.to_string());
-        }
+/// Apply git user identity environment variables.
+fn apply_git_vars(config: &mut Config) {
+    if let Some(name) = parse_optional_string_env("RALPH_GIT_USER_NAME") {
+        config.git_user_name = Some(name);
     }
-    if let Ok(val) = env::var("RALPH_GIT_USER_EMAIL") {
-        let trimmed = val.trim();
-        if !trimmed.is_empty() {
-            config.git_user_email = Some(trimmed.to_string());
-        }
+    if let Some(email) = parse_optional_string_env("RALPH_GIT_USER_EMAIL") {
+        config.git_user_email = Some(email);
     }
+}
 
+/// Apply environment variable overrides to config.
+fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config {
+    apply_agent_vars(&mut config, warnings);
+    apply_string_overrides(&mut config, warnings);
+    apply_model_provider_vars(&mut config);
+    apply_bool_vars(&mut config);
+    apply_numeric_vars(&mut config, warnings);
+    apply_check_vars(&mut config);
+    apply_verbosity(&mut config, warnings);
+    apply_review_depth(&mut config, warnings);
+    apply_path_vars(&mut config);
+    apply_git_vars(&mut config);
     config
 }
 
@@ -445,7 +462,7 @@ mod tests {
         assert!(config.reviewer_agent.is_none());
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.reviewer_reviews, 2);
-        assert!(config.interactive);
+        assert!(config.behavior.interactive);
         assert!(config.isolation_mode);
         assert_eq!(config.verbosity, Verbosity::Verbose);
     }

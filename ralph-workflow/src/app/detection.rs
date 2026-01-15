@@ -16,7 +16,7 @@ pub fn detect_project_stack(
     logger: &Logger,
     colors: Colors,
 ) -> (Option<ProjectStack>, Option<ReviewGuidelines>) {
-    if !config.auto_detect_stack {
+    if !config.behavior.auto_detect_stack {
         return (None, None);
     }
 
