@@ -718,4 +718,25 @@ mod tests {
         // Note: clean_plain_text removes empty lines, so double newlines become single
         assert_eq!(result, "feat: add feature\nThis adds new functionality.");
     }
+
+    #[test]
+    fn test_unescape_json_strings_idempotent() {
+        // Calling unescape_json_strings twice should produce the same result
+        // as calling it once (idempotent)
+        let input = "feat: add feature\\n\\nThis adds new functionality.";
+        let once = unescape_json_strings(input);
+        let twice = unescape_json_strings(&once);
+        assert_eq!(once, twice);
+        assert_eq!(once, "feat: add feature\n\nThis adds new functionality.");
+    }
+
+    #[test]
+    fn test_unescape_json_strings_idempotent_on_clean_content() {
+        // Calling on already-clean content should be safe (no-op)
+        let input = "feat: add feature\n\nThis is already clean.";
+        let once = unescape_json_strings(input);
+        let twice = unescape_json_strings(&once);
+        assert_eq!(once, input);
+        assert_eq!(once, twice);
+    }
 }
