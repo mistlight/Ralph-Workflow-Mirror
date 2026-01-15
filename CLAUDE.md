@@ -26,6 +26,8 @@ Follow these instructions exactly. If unsure, choose the safest and simplest opt
 If any instruction here conflicts with another project file (e.g. `CONTRIBUTING.md`),
 follow the **stricter** rule.
 
+For design principles, testing philosophy, and dead code policy, see **[CODE_STYLE.md](CODE_STYLE.md)**.
+
 ---
 
 ## Absolute rule: no `#[allow(dead_code)]`
