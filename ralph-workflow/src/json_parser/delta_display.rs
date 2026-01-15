@@ -133,11 +133,14 @@ impl DeltaRenderer for TextDeltaRenderer {
         // Sanitize embedded newlines to spaces to prevent artificial line breaks
         let sanitized = accumulated.replace('\n', " ");
 
+        // Write prefix on its own line, then content below (no newline on content)
+        // This creates a stable prefix line with in-place content updates below it
         format!(
-            "{}[{}]{} {}{}{}",
+            "{}[{}]{}{}\n{}{}{}",
             colors.dim(),
             prefix,
             colors.reset(),
+            colors.reset(), // Extra reset to ensure clean state
             colors.white(),
             sanitized,
             colors.reset()
@@ -148,7 +151,8 @@ impl DeltaRenderer for TextDeltaRenderer {
         // Sanitize embedded newlines to spaces
         let sanitized = accumulated.replace('\n', " ");
 
-        // Clear entire line, carriage return, show accumulated content without prefix
+        // Clear entire line, carriage return, show accumulated content
+        // The prefix is on the line above (from render_first_delta), so we only update content
         // Using \x1b[2K (clear entire line) instead of \x1b[0K (clear to end)
         format!("{CLEAR_LINE}\r{}{}", colors.white(), sanitized)
     }
