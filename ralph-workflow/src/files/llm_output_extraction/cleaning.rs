@@ -504,7 +504,7 @@ fn remove_formatted_thinking_patterns(content: &str) -> String {
 ///
 /// This handles:
 /// - Markdown code fences
-/// - Formatted thinking output (e.g., "[Claude] Thinking: ...")
+/// - Formatted thinking output (e.g., "\[Claude\] Thinking: ...")
 /// - AI thought process patterns (e.g., "Looking at this diff...")
 /// - Common prefixes like "Commit message:", "Output:", etc.
 /// - Excessive whitespace
