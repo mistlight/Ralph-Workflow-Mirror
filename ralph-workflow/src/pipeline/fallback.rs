@@ -1,7 +1,7 @@
 //! Fallback logic for agent execution with retries.
 
 use crate::agents::{is_glm_like_agent, JsonParserType};
-use crate::cli::{format_argv_for_log, split_command, truncate_text};
+use crate::common::{format_argv_for_log, split_command, truncate_text};
 use std::io;
 
 use super::prompt::{run_with_prompt, PipelineRuntime, PromptCommand};

@@ -1,7 +1,7 @@
 //! Command execution helpers and fallback orchestration.
 
 use crate::agents::{validate_model_flag, AgentRegistry, AgentRole, JsonParserType};
-use crate::cli::split_command;
+use crate::common::split_command;
 
 use super::fallback::try_agent_with_retries;
 use super::fallback::TryAgentResult;

@@ -662,21 +662,6 @@ impl StreamingSession {
             .map(std::string::String::as_str)
     }
 
-    /// Clear content for a specific index (for content block reuse).
-    #[cfg(test)]
-    pub fn clear_index(&mut self, index: u64) {
-        let index_str = index.to_string();
-        for content_type in [
-            ContentType::Text,
-            ContentType::Thinking,
-            ContentType::ToolInput,
-        ] {
-            let key = (content_type, index_str.clone());
-            self.accumulated.remove(&key);
-            self.key_order.retain(|k| k != &key);
-        }
-    }
-
     /// Check if incoming text is likely a snapshot (full accumulated content) rather than a delta.
     ///
     /// This performs content-based detection by checking if the incoming text starts with
@@ -873,16 +858,25 @@ mod tests {
 
     #[test]
     fn test_clear_index() {
+        // Behavioral test: verify that creating a new session gives clean state
+        // instead of testing clear_index() which is now removed
         let mut session = StreamingSession::new();
         session.on_message_start();
 
         session.on_text_delta(0, "Before");
-        session.clear_index(0);
-        session.on_text_delta(0, "After");
+        // Instead of clearing, verify that a new session starts fresh
+        let mut fresh_session = StreamingSession::new();
+        fresh_session.on_message_start();
+        fresh_session.on_text_delta(0, "After");
 
         assert_eq!(
-            session.get_accumulated(ContentType::Text, "0"),
+            fresh_session.get_accumulated(ContentType::Text, "0"),
             Some("After")
+        );
+        // Original session should still have "Before"
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Before")
         );
     }
 
