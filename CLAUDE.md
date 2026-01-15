@@ -54,7 +54,7 @@ Ensure you run git rebase on the main branch if working on a feature branch and 
 You **must** run the following commands and ensure they succeed.
 
 ```bash
-# THIS MUST PRODUCE NO OUTPUT
+# THIS IS VERY IMPORTANT!!!! THIS MUST PRODUCE NO OUTPUT!!! NOTHING AT ALL SHOULD DISPLAY WITH THIS COMMAND
 rg -n --pcre2 '(?x)
   \#\s*!?\[\s*
   (allow|expect)
@@ -64,7 +64,8 @@ rg -n --pcre2 '(?x)
   \)
   \s*\]
 ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
-# DO NOT CONTINUE IF THE ABOVE COMMAND PRODUCE ANYTHING AND FIX THE ISSUE
+# DO NOT CONTINUE IF THE ABOVE COMMAND PRODUCE ANYTHING AND FIX THE ISSUE, 
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
