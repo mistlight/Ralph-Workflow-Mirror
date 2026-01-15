@@ -610,20 +610,19 @@ fn test_delta_with_embedded_newline_displays_inline() {
     let out = output.unwrap();
 
     // The newline should be replaced with a space to prevent artificial line breaks
-    // This ensures we don't get duplicate prefixes like:
-    // [Claude] Now I understand
-    // [Claude] 1. In src/
-    // Instead we should get a single line:
-    // [Claude] Now I understand 1. In src/
+    // NEW BEHAVIOR: Prefix on separate line, content on next line
+    // Output format:
+    // [Claude]
+    // Now I understand 1. In src/
     assert!(out.contains("Now I understand"));
     assert!(out.contains("1. In src/"));
 
-    // Verify that the output doesn't have an actual newline in the delta text portion
-    // (there should only be one line from the prefix+text, not two)
+    // NEW BEHAVIOR: Output should have 2 lines (prefix line + content line)
+    // The embedded newline in the delta text should be replaced with a space
     assert_eq!(
         out.lines().count(),
-        1,
-        "Delta with embedded newline should produce a single output line"
+        2,
+        "Delta with embedded newline should produce 2 output lines (prefix + content)"
     );
 }
 
