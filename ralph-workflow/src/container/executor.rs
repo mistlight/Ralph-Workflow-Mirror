@@ -1,8 +1,7 @@
 //! Container command executor
-#![expect(dead_code)]
-
 //!
 //! Translates agent commands into container execution.
+#![cfg_attr(feature = "security-mode", expect(dead_code))]
 
 use crate::container::codex;
 use crate::container::config::{validate_working_dir, ContainerConfig, ExecutionOptions};

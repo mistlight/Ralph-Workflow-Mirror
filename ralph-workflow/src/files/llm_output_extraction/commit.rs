@@ -1,9 +1,9 @@
 //! Commit Message Validation and Recovery Functions
-#![expect(dead_code)]
 //!
 //! This module provides utilities for validating commit messages, salvaging
 //! valid messages from mixed output, and generating fallback messages from
 //! git diff metadata.
+#![cfg_attr(feature = "commit-salvage", expect(dead_code))]
 
 use regex::Regex;
 

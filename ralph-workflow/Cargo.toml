@@ -12,6 +12,7 @@ keywords = ["ai", "agent", "git", "workflow", "automation"]
 categories = ["command-line-utilities", "development-tools"]
 
 [features]
+default = ["commit-salvage", "security-mode"]
 build-image = []
 commit-salvage = []
 security-mode = []

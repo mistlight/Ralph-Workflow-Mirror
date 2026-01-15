@@ -1,8 +1,7 @@
 //! User account security mode executor
-#![expect(dead_code)]
-
 //!
 //! Runs agent commands as a dedicated user account for isolation.
+#![cfg_attr(feature = "security-mode", expect(dead_code))]
 //!
 //! This provides an alternative to container isolation that:
 //! - Works on macOS (where Linux containers can't run macOS binaries)
