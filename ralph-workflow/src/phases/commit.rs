@@ -496,9 +496,7 @@ pub fn generate_commit_message(
                     // Agent error detected - check if it's TokenExhausted
                     // For TokenExhausted, we should continue trying smaller prompt variants
                     // rather than immediately breaking to agent fallback
-                    // Get error kind first before moving extraction
-                    let error_kind = extraction.error_kind();
-                    if error_kind == Some(AgentErrorKind::TokenExhausted) {
+                    if extraction.error_kind() == Some(AgentErrorKind::TokenExhausted) {
                         runtime.logger.warn(&format!(
                             "TokenExhausted detected with {}. Trying smaller prompt variant.",
                             strategy.description()
@@ -520,7 +518,9 @@ pub fn generate_commit_message(
                         // Other agent errors - log and break to fallback
                         runtime.logger.warn(&format!(
                             "Agent error detected: {}. Skipping remaining prompt variants.",
-                            error_kind.map_or("unknown", AgentErrorKind::description)
+                            extraction
+                                .error_kind()
+                                .map_or("unknown", AgentErrorKind::description)
                         ));
                         last_extraction = Some(extraction);
                         // Break out of the strategy loop - we've hit a hard error
@@ -533,24 +533,29 @@ pub fn generate_commit_message(
                         "Extraction produced fallback message with {strategy}"
                     ));
                     last_extraction = Some(extraction);
+
+                    // Move to next strategy
                     if let Some(next) = strategy.next() {
                         strategy = next;
-                        continue;
+                    } else {
+                        // No more strategies - use the last fallback we got
+                        runtime.logger.warn(&format!(
+                            "All {} prompt variants exhausted, using fallback message",
+                            CommitRetryStrategy::total_stages()
+                        ));
+                        break;
                     }
-                    runtime.logger.warn(&format!(
-                        "All {} prompt variants exhausted, using fallback message",
-                        CommitRetryStrategy::total_stages()
+                } else {
+                    // Got a valid extraction (Extracted or Salvaged) - use it
+                    runtime.logger.info(&format!(
+                        "Successfully extracted commit message with {strategy}"
                     ));
-                    break;
+                    return Ok(CommitMessageResult {
+                        message: extraction.into_message(),
+                        success: true,
+                        _log_path: log_file,
+                    });
                 }
-                runtime.logger.info(&format!(
-                    "Successfully extracted commit message with {strategy}"
-                ));
-                return Ok(CommitMessageResult {
-                    message: extraction.into_message(),
-                    success: true,
-                    _log_path: log_file,
-                });
             }
             Ok(None) => {
                 // Extraction completely failed - generate fallback and continue

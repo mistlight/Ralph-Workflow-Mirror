@@ -165,12 +165,12 @@ fn handle_git_changes_and_commit(
     prev_snap: &str,
 ) -> anyhow::Result<String> {
     let snap = git_snapshot()?;
-    if snap != prev_snap {
+    if snap == prev_snap {
+        ctx.logger.warn("No git-status change detected");
+    } else {
         ctx.logger.success("Repository modified");
         ctx.stats.changes_detected += 1;
         create_commit_if_agent_available(ctx, i)?;
-    } else {
-        ctx.logger.warn("No git-status change detected");
     }
     Ok(snap)
 }
