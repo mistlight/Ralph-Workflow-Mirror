@@ -5,11 +5,6 @@
 use crate::agents::OpenCodeProviderType;
 use crate::colors::Colors;
 
-/// Provider category for display grouping
-struct ProviderCategory {
-    name: &'static str,
-    providers: &'static [(OpenCodeProviderType, &'static str)],
-}
 
 /// Helper function to print provider information for --list-providers.
 fn print_provider_info(colors: Colors, provider: OpenCodeProviderType, agent_alias: &str) {
