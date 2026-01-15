@@ -486,17 +486,40 @@ pub fn generate_commit_message(
             Ok(Some(extraction)) => {
                 // Check if we got a valid extraction or a fallback
                 if extraction.is_agent_error() {
-                    // Agent error detected - log and break to fallback
-                    runtime.logger.warn(&format!(
-                        "Agent error detected: {}. Skipping remaining prompt variants.",
-                        extraction
-                            .error_kind()
-                            .map_or("unknown", AgentErrorKind::description)
-                    ));
-                    last_extraction = Some(extraction);
-                    // Break out of the strategy loop - we've hit a hard error
-                    // that requires switching agents or using fallback
-                    break;
+                    // Agent error detected - check if it's TokenExhausted
+                    // For TokenExhausted, we should continue trying smaller prompt variants
+                    // rather than immediately breaking to agent fallback
+                    if extraction.error_kind() == Some(AgentErrorKind::TokenExhausted) {
+                        runtime.logger.warn(&format!(
+                            "TokenExhausted detected with {}. Trying smaller prompt variant.",
+                            strategy.description()
+                        ));
+                        last_extraction = Some(extraction);
+
+                        // Move to next (smaller) strategy instead of breaking
+                        if let Some(next) = strategy.next() {
+                            strategy = next;
+                        } else {
+                            // All strategies exhausted with TokenExhausted - will try truncation
+                            runtime.logger.warn(&format!(
+                                "All {} prompt variants failed with TokenExhausted.",
+                                CommitRetryStrategy::total_stages()
+                            ));
+                            break;
+                        }
+                    } else {
+                        // Other agent errors - log and break to fallback
+                        runtime.logger.warn(&format!(
+                            "Agent error detected: {}. Skipping remaining prompt variants.",
+                            extraction
+                                .error_kind()
+                                .map_or("unknown", AgentErrorKind::description)
+                        ));
+                        last_extraction = Some(extraction);
+                        // Break out of the strategy loop - we've hit a hard error
+                        // that requires switching agents or using fallback
+                        break;
+                    }
                 } else if extraction.is_fallback() {
                     // Fallback was generated - log and continue to next prompt variant
                     runtime.logger.warn(&format!(
