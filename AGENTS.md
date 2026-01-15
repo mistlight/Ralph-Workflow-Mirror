@@ -14,6 +14,8 @@ Agents should optimize for, in order:
 
 If any instruction below conflicts with another file (e.g., `CONTRIBUTING.md`), follow the stricter rule.
 
+For design principles, testing philosophy, and dead code policy, see **[CODE_STYLE.md](CODE_STYLE.md)**.
+
 ---
 
 ## Build & test expectations
