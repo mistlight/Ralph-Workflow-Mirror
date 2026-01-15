@@ -8,8 +8,8 @@
 //!
 //! The `DeltaRenderer` trait defines a consistent interface for rendering
 //! streaming deltas across all parsers. Implementations must ensure:
-//! - First chunk shows prefix with accumulated content
-//! - Subsequent chunks update in-place (no prefix, carriage return)
+//! - First chunk shows prefix with accumulated content on a single line
+//! - Subsequent chunks update in-place (clear line, rewrite with prefix, carriage return)
 //! - Final newline on completion only
 //!
 //! # In-Place Updates
@@ -20,6 +20,17 @@
 //!
 //! This ensures that previous content is completely erased before displaying
 //! the updated content, preventing visual artifacts.
+//!
+//! # Single-Line Pattern
+//!
+//! The renderer uses a single-line pattern with carriage return for in-place updates.
+//! This is the industry standard for streaming CLIs (used by Rich, Ink, Bubble Tea).
+//!
+//! ```text
+//! [ccs-glm] Hello\r          <- First chunk with prefix and carriage return
+//! \x1b[2K\r[ccs-glm] Hello World\r  <- Second chunk clears line, rewrites with accumulated
+//! [ccs-glm] Hello World\n    <- Final output with newline
+//! ```
 
 use crate::logger::Colors;
 
@@ -29,31 +40,27 @@ use crate::logger::Colors;
 /// Using `\x1b[2K` ensures the entire line is cleared during in-place updates.
 pub const CLEAR_LINE: &str = "\x1b[2K";
 
-/// ANSI escape sequence for moving cursor up one line.
-///
-/// Used to move from the current line back to the content line for in-place updates.
-pub const CURSOR_UP: &str = "\x1b[1A";
-
 /// Renderer for streaming delta content.
 ///
 /// This trait defines the contract for rendering streaming deltas consistently
 /// across all parsers. Implementations must ensure:
 ///
-/// 1. **First chunk**: Shows prefix with accumulated content, no trailing newline
-/// 2. **Subsequent chunks**: Updates in-place with `\x1b[2K\r` (clear entire line + carriage return), no prefix
+/// 1. **First chunk**: Shows prefix with accumulated content on single line, ends with `\r`
+/// 2. **Subsequent chunks**: Clear line, rewrite with prefix and accumulated content, end with `\r`
 /// 3. **Completion**: Final newline added when streaming completes
 ///
 /// # Rendering Rules
 ///
 /// - `render_first_delta()`: Called for the first delta of a content block
 ///   - Must include prefix
-///   - Must NOT include trailing newline (stays on same line for in-place updates)
+///   - Must end with `\r` (carriage return, not newline)
 ///   - Shows the accumulated content so far
 ///
 /// - `render_subsequent_delta()`: Called for subsequent deltas
-///   - Must NOT include prefix
+///   - Must include prefix (rewrite entire line)
 ///   - Must use `\x1b[2K\r` to clear entire line and return to start
 ///   - Shows the full accumulated content (not just the new delta)
+///   - Must end with `\r`
 ///
 /// - `render_completion()`: Called when streaming completes
 ///   - Adds a final newline to move cursor to next line
@@ -72,14 +79,15 @@ pub const CURSOR_UP: &str = "\x1b[1A";
 ///     "ccs-glm",
 ///     colors
 /// );
-/// // Output: "[ccs-glm] Hello" (no newline)
+/// // Output: "[ccs-glm] Hello\r" (no newline, just carriage return)
 ///
 /// // Second chunk
 /// let output = DeltaRenderer::render_subsequent_delta(
 ///     "Hello World",
+///     "ccs-glm",
 ///     colors
 /// );
-/// // Output: "\x1b[2K\rHello World" (no newline, in-place update with full line clear)
+/// // Output: "\x1b[2K\r[ccs-glm] Hello World\r" (clear, rewrite full line)
 ///
 /// // Complete
 /// let output = DeltaRenderer::render_completion();
@@ -90,7 +98,7 @@ pub trait DeltaRenderer {
     ///
     /// This is called when streaming begins for a new content block.
     /// The output should include the prefix and the accumulated content,
-    /// but no trailing newline (to allow in-place updates).
+    /// ending with `\r` for in-place updates.
     ///
     /// # Arguments
     /// * `accumulated` - The full accumulated content so far
@@ -98,21 +106,22 @@ pub trait DeltaRenderer {
     /// * `colors` - Terminal colors
     ///
     /// # Returns
-    /// A formatted string with prefix and content, no trailing newline.
+    /// A formatted string with prefix and content, ending with `\r`.
     fn render_first_delta(accumulated: &str, prefix: &str, colors: Colors) -> String;
 
     /// Render a subsequent delta (in-place update).
     ///
     /// This is called for all deltas after the first. The output should
-    /// clear the entire line and overwrite with the accumulated content.
+    /// clear the entire line and rewrite with the prefix and accumulated content.
     ///
     /// # Arguments
     /// * `accumulated` - The full accumulated content so far
+    /// * `prefix` - The agent prefix (e.g., "ccs-glm")
     /// * `colors` - Terminal colors
     ///
     /// # Returns
-    /// A formatted string with `\x1b[2K\r` prefix and content, no trailing newline.
-    fn render_subsequent_delta(accumulated: &str, colors: Colors) -> String;
+    /// A formatted string with `\x1b[2K\r` prefix, full line rewrite, ending with `\r`.
+    fn render_subsequent_delta(accumulated: &str, prefix: &str, colors: Colors) -> String;
 
     /// Render the completion of streaming.
     ///
@@ -127,9 +136,9 @@ pub trait DeltaRenderer {
 
 /// Default implementation of `DeltaRenderer` for text content.
 ///
-/// This implementation follows the NEW rendering rules with separate prefix line:
-/// - Prefix appears on its own line (above content)
-/// - Content updates in-place on the line below
+/// This implementation follows the single-line rendering pattern:
+/// - Prefix and content appear on the same line
+/// - Content updates in-place using carriage return
 /// - Sanitizes newlines to spaces (to prevent artificial line breaks)
 /// - Uses ANSI escape codes for in-place updates with full line clear
 /// - Applies consistent color formatting
@@ -137,12 +146,12 @@ pub trait DeltaRenderer {
 /// # Output Pattern
 ///
 /// ```text
-/// [ccs-glm]         <- Prefix line (static)
-/// Hello             <- Content line (updated in-place)
-/// Hello World       <- Content line (updated in-place)
+/// [ccs-glm] Hello\r          <- First chunk with prefix and carriage return
+/// \x1b[2K\r[ccs-glm] Hello World\r  <- Second chunk clears line, rewrites with accumulated
+/// [ccs-glm] Hello World\n    <- Final output with newline
 /// ```
 ///
-/// This differs from the old pattern where prefix and content were on the same line.
+/// This is the industry standard pattern used by production CLIs like Rich, Ink, and Bubble Tea.
 pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {
@@ -150,30 +159,33 @@ impl DeltaRenderer for TextDeltaRenderer {
         // Sanitize embedded newlines to spaces to prevent artificial line breaks
         let sanitized = accumulated.replace('\n', " ");
 
-        // NEW PATTERN: Prefix on its own line, content on the next line
-        // The prefix line is static and won't be affected by in-place updates
-        // The content line (below) will be updated in-place by subsequent deltas
+        // Single-line pattern: prefix and content on same line, ending with \r
+        // This allows subsequent deltas to rewrite the entire line
         format!(
-            "{}[{}]{}\n{}{}\n",
+            "{}[{}]{} {}{}{}\r",
             colors.dim(),
             prefix,
             colors.reset(),
             colors.white(),
-            sanitized
+            sanitized,
+            colors.reset()
         )
     }
 
-    fn render_subsequent_delta(accumulated: &str, colors: Colors) -> String {
+    fn render_subsequent_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
         // Sanitize embedded newlines to spaces
         let sanitized = accumulated.replace('\n', " ");
 
-        // Clear entire line, move cursor up, clear that line, carriage return, show accumulated content
-        // This creates true in-place update on the content line (below the prefix)
-        // Cursor up moves us to the content line, clear and rewrite it
+        // Clear entire line, carriage return, rewrite with prefix and accumulated content
+        // This creates true in-place update on a single line
         format!(
-            "{CLEAR_LINE}{CURSOR_UP}{CLEAR_LINE}\r{}{}",
+            "{CLEAR_LINE}\r{}[{}]{} {}{}{}\r",
+            colors.dim(),
+            prefix,
+            colors.reset(),
             colors.white(),
-            sanitized
+            sanitized,
+            colors.reset()
         )
     }
 }
@@ -287,36 +299,33 @@ mod tests {
         let output = TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", test_colors());
         assert!(output.contains("[ccs-glm]"));
         assert!(output.contains("Hello"));
-        // NEW BEHAVIOR: First delta outputs prefix on one line, content on next
-        // So output ends with newline (after content)
-        assert!(output.ends_with('\n'));
-        // Should have exactly 2 newlines (one after prefix, one after content)
-        let newline_count = output.matches('\n').count();
-        assert_eq!(
-            newline_count, 2,
-            "Should have 2 newlines (after prefix and content)"
-        );
+        // NEW BEHAVIOR: First delta ends with \r (carriage return), not \n
+        assert!(output.ends_with('\r'));
+        // Should have exactly 1 carriage return
+        let cr_count = output.matches('\r').count();
+        assert_eq!(cr_count, 1, "Should have 1 carriage return");
     }
 
     #[test]
     fn test_text_delta_renderer_subsequent_delta() {
-        let output = TextDeltaRenderer::render_subsequent_delta("Hello World", test_colors());
-        // Should contain carriage return, cursor up, and FULL line clear (twice)
+        let output =
+            TextDeltaRenderer::render_subsequent_delta("Hello World", "ccs-glm", test_colors());
+        // Should contain carriage return and FULL line clear
         assert!(output.contains(CLEAR_LINE));
-        assert!(output.contains(CURSOR_UP));
         assert!(output.contains('\r'));
         assert!(output.contains("Hello World"));
         // Subsequent delta should NOT have trailing newline
         assert!(!output.ends_with('\n'));
-        // Should NOT contain prefix
-        assert!(!output.contains("[ccs-glm]"));
-        // Should contain CURSOR_UP for moving to content line
-        assert!(output.contains("\x1b[1A"));
+        // Should contain prefix (rewrite entire line)
+        assert!(output.contains("[ccs-glm]"));
+        // Should NOT contain CURSOR_UP (no longer needed for single-line pattern)
+        assert!(!output.contains("\x1b[1A"));
     }
 
     #[test]
     fn test_text_delta_renderer_uses_full_line_clear() {
-        let output = TextDeltaRenderer::render_subsequent_delta("Hello World", test_colors());
+        let output =
+            TextDeltaRenderer::render_subsequent_delta("Hello World", "ccs-glm", test_colors());
         // Should use \x1b[2K (full line clear), not \x1b[0K (clear to end)
         assert!(output.contains("\x1b[2K"));
         // Should NOT contain \x1b[0K
@@ -342,18 +351,18 @@ mod tests {
     fn test_text_delta_renderer_in_place_update_sequence() {
         let colors = test_colors();
 
-        // First chunk - NEW BEHAVIOR: prefix on separate line, content on next line
+        // First chunk - NEW BEHAVIOR: single line with prefix and content, ending with \r
         let out1 = TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", colors);
         assert!(out1.contains("[ccs-glm]"));
-        // First delta now ends with newline (after content line)
-        assert!(out1.ends_with('\n'));
+        // First delta ends with \r (carriage return)
+        assert!(out1.ends_with('\r'));
 
-        // Second chunk (in-place update with cursor up)
-        let out2 = TextDeltaRenderer::render_subsequent_delta("Hello World", colors);
+        // Second chunk (in-place update without cursor up)
+        let out2 = TextDeltaRenderer::render_subsequent_delta("Hello World", "ccs-glm", colors);
         assert!(out2.contains("\x1b[2K"));
-        assert!(out2.contains("\x1b[1A")); // CURSOR_UP
+        assert!(!out2.contains("\x1b[1A")); // No CURSOR_UP
         assert!(out2.contains('\r'));
-        assert!(!out2.contains("[ccs-glm]"));
+        assert!(out2.contains("[ccs-glm]")); // Prefix is rewritten
         assert!(!out2.ends_with('\n'));
 
         // Completion

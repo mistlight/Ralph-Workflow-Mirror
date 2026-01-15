@@ -27,7 +27,7 @@
 //!
 //! 3. **Text/Thinking deltas** (zero or more per block):
 //!    - First delta for each `(content_type, index)` shows prefix
-//!    - Subsequent deltas update in-place (no prefix)
+//!    - Subsequent deltas update in-place (with prefix, using carriage return)
 //!    - Sets `started_output=true` for the current block
 //!
 //! 4. **`MessageStop`**:

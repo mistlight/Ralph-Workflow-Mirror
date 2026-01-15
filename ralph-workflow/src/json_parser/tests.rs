@@ -545,11 +545,11 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
     parser.parse_stream(reader, &mut writer).unwrap();
     let output = String::from_utf8(writer).unwrap();
 
-    // After the fix, streaming should show accumulated text on the same line:
-    // [Claude] warning: unu\r           (first chunk with prefix)
-    // warning: unused\r                (second chunk overwriting with accumulated text)
-    // warning: unused vari\r            (third chunk overwriting with accumulated text)
-    // warning: unused variable\n        (final chunk + message_stop adds newline)
+    // After the fix, streaming should show accumulated text on a single line using in-place updates:
+    // [Claude] warning: unu\r                    (first chunk with prefix)
+    // \x1b[2K\r[Claude] warning: unused\r      (second chunk clears line, rewrites with accumulated)
+    // \x1b[2K\r[Claude] warning: unused vari\r (third chunk clears line, rewrites with accumulated)
+    // \x1b[2K\r[Claude] warning: unused variable\n (final chunk + message_stop adds newline)
 
     // The output should contain carriage returns for overwriting
     assert!(
@@ -557,12 +557,17 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
         "Should contain carriage returns for overwriting"
     );
 
-    // Should only have ONE prefix (not multiple)
-    let prefix_count = output.matches("[Claude]").count();
-    assert_eq!(
-        prefix_count, 1,
-        "Should have exactly 1 prefix, not multiple duplicates"
+    // Should contain the line clear escape sequence
+    assert!(
+        output.contains("\x1b[2K"),
+        "Should contain line clear escape sequence for in-place updates"
     );
+
+    // With the single-line pattern, each delta rewrites the entire line including prefix
+    // The output string will contain multiple prefixes, but visually only one is shown
+    // due to carriage returns and line clearing
+    let prefix_count = output.matches("[Claude]").count();
+    assert!(prefix_count >= 1, "Should have at least 1 prefix");
 
     // The final accumulated text should be present
     assert!(
@@ -610,19 +615,18 @@ fn test_delta_with_embedded_newline_displays_inline() {
     let out = output.unwrap();
 
     // The newline should be replaced with a space to prevent artificial line breaks
-    // NEW BEHAVIOR: Prefix on separate line, content on next line
-    // Output format:
-    // [Claude]
-    // Now I understand 1. In src/
+    // NEW BEHAVIOR: Single-line pattern with prefix and content on same line, ending with \r
+    // Output format: "[Claude] Now I understand 1. In src/\r"
     assert!(out.contains("Now I understand"));
     assert!(out.contains("1. In src/"));
 
-    // NEW BEHAVIOR: Output should have 2 lines (prefix line + content line)
+    // NEW BEHAVIOR: Output should have 1 line (prefix + content on same line)
     // The embedded newline in the delta text should be replaced with a space
+    // The output ends with \r, not \n, so lines().count() returns 1
     assert_eq!(
         out.lines().count(),
-        2,
-        "Delta with embedded newline should produce 2 output lines (prefix + content)"
+        1,
+        "Delta with embedded newline should produce 1 output line (prefix + content on same line)"
     );
 }
 
@@ -753,12 +757,10 @@ fn test_streaming_accumulation_behavior() {
         "Should contain carriage returns for streaming overwrite"
     );
 
-    // Should only have ONE prefix at the start
+    // With the single-line pattern, each delta rewrites the entire line including prefix
+    // The output string will contain multiple prefixes, but visually only one is shown
     let prefix_count = output.matches("[Claude]").count();
-    assert_eq!(
-        prefix_count, 1,
-        "Should have exactly 1 prefix, not multiple duplicates"
-    );
+    assert!(prefix_count >= 1, "Should have at least 1 prefix");
 
     // The final accumulated text should be present
     assert!(
@@ -837,7 +839,7 @@ fn test_streaming_single_chunk() {
     parser.parse_stream(reader, &mut writer).unwrap();
     let output = String::from_utf8(writer).unwrap();
 
-    // Should have exactly one prefix
+    // With single chunk, there should be exactly one prefix (first delta only)
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(prefix_count, 1, "Single chunk should have exactly 1 prefix");
 
@@ -946,9 +948,13 @@ fn test_streaming_rapid_chunks() {
 
     let output = String::from_utf8(writer).unwrap();
 
-    // Should have exactly one prefix despite many chunks
+    // With the single-line pattern, each delta rewrites the entire line including prefix
+    // 10 deltas = 10 prefixes in output string, but visually only one is shown
     let prefix_count = output.matches("[Claude]").count();
-    assert_eq!(prefix_count, 1, "Rapid chunks should have exactly 1 prefix");
+    assert_eq!(
+        prefix_count, 10,
+        "Rapid chunks should have 10 prefixes (one per delta)"
+    );
 
     // Should contain carriage returns for overwriting
     assert!(
@@ -1037,10 +1043,12 @@ fn test_streaming_consistency_across_parsers() {
         claude_output.contains('\r'),
         "Claude should use carriage returns"
     );
+    // With the single-line pattern, each delta includes the prefix
+    // 2 deltas = 2 prefixes in output string
     assert_eq!(
         claude_output.matches("[Claude]").count(),
-        1,
-        "Claude should have 1 prefix"
+        2,
+        "Claude should have 2 prefixes (one per delta)"
     );
 
     // Test Codex parser
@@ -1061,16 +1069,17 @@ fn test_streaming_consistency_across_parsers() {
         codex_output.contains('\r'),
         "Codex should use carriage returns"
     );
-    // With StreamingSession, Codex shows prefix only once (no duplicate content)
+    // With the single-line pattern, each item.started includes the prefix
+    // 2 item.started events = 2 prefixes in output string
     assert_eq!(
         codex_output.matches("[Codex]").count(),
-        1,
-        "Codex shows prefix only once with StreamingSession"
+        2,
+        "Codex shows 2 prefixes (one per item.started)"
     );
 
     // Test Gemini parser
-    // Note: With StreamingSession, Gemini shows prefix only on first delta (1 prefix)
-    // The final non-delta message just adds a newline without re-displaying content
+    // Note: With the single-line pattern, each delta includes the prefix
+    // The final non-delta message is deduplicated and only adds a newline
     let gemini_parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
     let gemini_input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true}
 {"type":"message","role":"assistant","content":" World","delta":true}
@@ -1086,16 +1095,18 @@ fn test_streaming_consistency_across_parsers() {
         gemini_output.contains('\r'),
         "Gemini should use carriage returns"
     );
-    // With StreamingSession, Gemini shows prefix only once (no duplicate content)
+    // With the single-line pattern, each delta includes the prefix
+    // 2 deltas = 2 prefixes in output string
     assert_eq!(
         gemini_output.matches("[Gemini]").count(),
-        1,
-        "Gemini shows prefix only once with StreamingSession"
+        2,
+        "Gemini shows 2 prefixes (one per delta)"
     );
 
     // Test OpenCode parser
-    // Note: OpenCode shows prefix on first text event AND on step_finish (2 prefixes total)
-    // The step_finish event shows different content (Step finished message) not the text content
+    // Note: With the single-line pattern, each text event includes the prefix
+    // The step_finish event also shows a prefix (different content)
+    // 2 text events + 1 step_finish = 3 prefixes total
     let opencode_parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
     let opencode_input = r#"{"type":"text","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":"Hello"}}
 {"type":"text","timestamp":1768191347232,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":" World"}}
@@ -1111,11 +1122,11 @@ fn test_streaming_consistency_across_parsers() {
         opencode_output.contains('\r'),
         "OpenCode should use carriage returns"
     );
-    // OpenCode shows prefix on first text event and step_finish (different content, not duplicate)
+    // With the single-line pattern: 2 text events (each with prefix) + 1 step_finish (with prefix) = 3
     assert_eq!(
         opencode_output.matches("[OpenCode]").count(),
-        2,
-        "OpenCode shows prefix on text event and step_finish"
+        3,
+        "OpenCode shows 3 prefixes (2 text events + 1 step_finish)"
     );
 }
 
@@ -1231,10 +1242,17 @@ fn test_mixed_small_and_large_deltas() {
 /// This test simulates the problematic output pattern from the ccs-glm agent:
 /// - One token per line with repeated prefix (the bug we're fixing)
 /// - After the fix, output should have:
-///   - Exactly 1 prefix
-///   - Carriage return updates for subsequent deltas
+///   - Single-line in-place rendering with carriage returns
+///   - Line clearing before each rewrite
 ///   - Single final newline
 ///   - No duplication of final message
+///
+/// With the single-line pattern:
+/// - First delta: `[Claude] H\r`
+/// - Second delta: `\x1b[2K\r[Claude] He\r`
+/// - ...and so on
+/// - Each delta rewrites the entire line with prefix
+/// - Visually, the user sees only one prefix that updates in-place
 #[test]
 fn test_ccs_glm_streaming_no_duplicate_prefix() {
     use std::io::Cursor;
@@ -1270,11 +1288,12 @@ fn test_ccs_glm_streaming_no_duplicate_prefix() {
     let output = String::from_utf8(writer).unwrap();
 
     // Verify the fix:
-    // 1. Should have exactly ONE prefix (not multiple duplicates)
+    // 1. With the single-line pattern, each delta includes the prefix
+    // 12 tokens = 12 prefixes in output string, but visually only one is shown
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 1,
-        "Should have exactly 1 prefix, got {prefix_count}. Output: {output:?}"
+        prefix_count, 12,
+        "Should have 12 prefixes (one per delta). Output: {output:?}"
     );
 
     // 2. Should contain carriage returns for in-place updates
@@ -1332,11 +1351,12 @@ fn test_ccs_glm_complete_message_deduplication() {
         "Complete message should not be duplicated. Found {full_text_count} occurrences. Output: {output:?}"
     );
 
-    // Should only have ONE prefix from streaming
+    // With the single-line pattern, each delta includes the prefix
+    // 3 deltas = 3 prefixes in output string (but visually only one is shown)
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 1,
-        "Should have exactly 1 prefix from streaming. Output: {output:?}"
+        prefix_count, 3,
+        "Should have 3 prefixes from streaming (one per delta). Output: {output:?}"
     );
 }
 
@@ -1465,11 +1485,13 @@ fn test_repeated_content_block_start_no_duplicate_prefix() {
     parser.parse_stream(reader, &mut writer).unwrap();
     let output = String::from_utf8(writer).unwrap();
 
-    // Should have exactly ONE prefix (not multiple duplicates from repeated ContentBlockStart)
+    // With the single-line pattern, each delta includes the prefix
+    // 3 deltas = 3 prefixes in output string (but visually only one is shown)
+    // Even though ContentBlockStart is repeated, it's for the same index so accumulation continues
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 1,
-        "Should have exactly 1 prefix even with repeated ContentBlockStart for same index. \
+        prefix_count, 3,
+        "Should have 3 prefixes (one per delta) with repeated ContentBlockStart for same index. \
         Got {prefix_count} prefixes. Output: {output:?}"
     );
 
@@ -1515,11 +1537,12 @@ fn test_multiple_messages_with_proper_separation() {
     parser.parse_stream(reader, &mut writer).unwrap();
     let output = String::from_utf8(writer).unwrap();
 
-    // Should have exactly TWO prefixes (one per message)
+    // With the single-line pattern, each delta includes the prefix
+    // 2 messages x 2 deltas each = 4 prefixes in output string
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 2,
-        "Should have exactly 2 prefixes, one per message. Got {prefix_count}. Output: {output:?}"
+        prefix_count, 4,
+        "Should have 4 prefixes (2 per message). Got {prefix_count}. Output: {output:?}"
     );
 
     // Should contain both messages

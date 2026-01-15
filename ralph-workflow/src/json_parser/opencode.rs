@@ -408,7 +408,9 @@ impl OpenCodeParser {
                             ));
                         }
                         // Subsequent deltas: use renderer for in-place update
-                        return Some(TextDeltaRenderer::render_subsequent_delta(&preview, *c));
+                        return Some(TextDeltaRenderer::render_subsequent_delta(
+                            &preview, prefix, *c,
+                        ));
                     }
                 }
                 String::new()
