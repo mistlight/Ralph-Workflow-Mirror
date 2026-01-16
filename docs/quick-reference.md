@@ -214,7 +214,7 @@ Ralph's streaming system handles real-time AI agent output. These environment va
 
 | Flag | Description |
 |------|-------------|
-| `--show-streaming-metrics` | Display streaming quality metrics after agent completion |
+| `--show-streaming-metrics` | Display streaming quality metrics after each agent completes. Shows delta size statistics, snapshot repairs, large deltas, and protocol violations detected during streaming. Works independently of verbosity level - metrics are shown when this flag is set, regardless of verbosity settings. |
 
 ## Files Created by Ralph
 

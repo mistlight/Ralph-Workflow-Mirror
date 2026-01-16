@@ -30,7 +30,17 @@ struct StreamingLineReader<R: Read> {
 }
 
 /// Maximum buffer size in bytes to prevent unbounded memory growth.
+///
 /// This limits the impact of agents that output continuous data without newlines.
+/// The value of 1 MiB was chosen to:
+/// - Handle most legitimate JSON documents (typically < 100KB)
+/// - Allow for reasonably long single-line JSON outputs
+/// - Prevent memory exhaustion from malicious input
+/// - Keep the buffer size manageable for most systems
+///
+/// If your use case requires larger single-line JSON, consider:
+/// - Modifying your agent to output NDJSON (newline-delimited JSON)
+/// - Adjusting this constant and rebuilding
 const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1 MiB
 
 impl<R: Read> StreamingLineReader<R> {

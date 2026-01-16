@@ -53,7 +53,8 @@ pub fn colors_enabled() -> bool {
     // Check CLICOLOR_FORCE - forces colors even in non-TTY
     // See <https://man.openbsd.org/man1/ls.1#CLICOLOR_FORCE>
     // Per the BSD specification, any non-empty value except "0" forces colors.
-    // An empty string means the variable is unset, so we ignore it.
+    // The empty string check handles the case where the variable is unset or
+    // explicitly set to empty (both cases should be ignored).
     if let Ok(val) = std::env::var("CLICOLOR_FORCE") {
         if !val.is_empty() && val != "0" {
             return true;

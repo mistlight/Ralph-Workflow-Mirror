@@ -152,7 +152,12 @@ impl IncrementalNdjsonParser {
 
         // Convert to UTF-8 (should be valid JSON)
         let Ok(json_str) = String::from_utf8(self.buffer.drain(..json_end).collect()) else {
-            // Invalid UTF-8 - skip this JSON
+            // Invalid UTF-8 - skip this JSON and log a warning.
+            // This may indicate data corruption or encoding issues in the input stream.
+            eprintln!(
+                "Warning: Skipping JSON with invalid UTF-8 encoding. \
+                This may indicate data corruption or encoding issues."
+            );
             self.started = false;
             return;
         };
@@ -169,7 +174,8 @@ impl IncrementalNdjsonParser {
 
     /// Get any incomplete JSON currently in the buffer.
     ///
-    /// This is useful for debugging or for handling partial data at end of stream.
+    /// This method is available in test builds for debugging purposes.
+    /// It allows inspection of partial JSON data during parser development.
     #[must_use]
     #[cfg(test)]
     pub fn partial(&self) -> &[u8] {

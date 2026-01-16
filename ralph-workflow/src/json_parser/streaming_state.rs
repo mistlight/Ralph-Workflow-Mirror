@@ -150,11 +150,11 @@ const MAX_FUZZY_MATCH_RATIO: usize = 95;
 /// is a genuine delta, not a snapshot.
 const MIN_FUZZY_MATCH_LENGTH: usize = 20;
 
-/// Number of consecutive large deltas required to trigger pattern detection warning.
+/// Minimum number of consecutive large deltas required to trigger pattern detection warning.
 ///
 /// This threshold prevents false positives from occasional large deltas.
 /// Three consecutive large deltas indicate a pattern (not a one-off event).
-const PATTERN_DETECTION_MIN_DELTAS: usize = 3;
+const DEFAULT_PATTERN_DETECTION_MIN_DELTAS: usize = 3;
 
 /// Maximum number of delta sizes to track per content key for pattern detection.
 ///
@@ -675,10 +675,10 @@ impl StreamingSession {
 
         // Pattern detection: Check if we're seeing repeated large deltas
         // This indicates the same content is being sent repeatedly (snapshot-as-delta)
-        if sizes.len() >= PATTERN_DETECTION_MIN_DELTAS && self.verbose_warnings {
+        if sizes.len() >= DEFAULT_PATTERN_DETECTION_MIN_DELTAS && self.verbose_warnings {
             // Check if at least 3 of the last N deltas were large
             let large_count = sizes.iter().filter(|&&s| s > snapshot_threshold()).count();
-            if large_count >= PATTERN_DETECTION_MIN_DELTAS {
+            if large_count >= DEFAULT_PATTERN_DETECTION_MIN_DELTAS {
                 eprintln!(
                     "Warning: Detected pattern of {large_count} large deltas for key '{key}'. \
                     This strongly suggests a snapshot-as-delta bug where the same \
