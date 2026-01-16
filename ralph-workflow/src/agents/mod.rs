@@ -68,7 +68,9 @@ mod registry;
 
 // Re-export public types for crate-level access
 pub use ccs::is_ccs_ref;
-pub use config::{global_agents_config_path, AgentsConfigFile, ConfigInitResult, ConfigSource};
+pub use config::{
+    global_agents_config_path, AgentConfig, AgentsConfigFile, ConfigInitResult, ConfigSource,
+};
 pub use error::{is_glm_like_agent, AgentErrorKind};
 pub use fallback::AgentRole;
 pub use parser::JsonParserType;
