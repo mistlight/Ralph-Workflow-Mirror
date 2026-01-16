@@ -14,8 +14,8 @@ use super::context::PhaseContext;
 use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole};
 use crate::files::llm_output_extraction::{
     detect_agent_errors_in_output, extract_llm_output, generate_fallback_commit_message,
-    preprocess_raw_content, try_extract_structured_commit, try_salvage_commit_message,
-    validate_commit_message, CommitExtractionResult, OutputFormat,
+    preprocess_raw_content, try_extract_structured_commit, try_extract_xml_commit,
+    try_salvage_commit_message, validate_commit_message, CommitExtractionResult, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
@@ -1121,8 +1121,17 @@ fn extract_commit_message_from_logs(
         return Ok(Some(CommitExtractionResult::AgentError(error_kind)));
     }
 
-    // SECOND: Try structured JSON extraction (new primary method)
-    // This is the preferred method when the agent outputs JSON schema format
+    // SECOND: Try XML extraction (new primary method)
+    // This is the preferred method because XML tags are distinctive and don't
+    // require escape sequences for newlines
+    if let Some(message) = try_extract_xml_commit(&content) {
+        logger.info("Successfully extracted commit message from XML format");
+        return Ok(Some(CommitExtractionResult::Extracted(message)));
+    }
+
+    logger.info("XML extraction failed, trying JSON schema extraction...");
+
+    // THIRD: Try structured JSON extraction (fallback for older prompts)
     if let Some(message) = try_extract_structured_commit(&content) {
         logger.info("Successfully extracted commit message from JSON schema");
         return Ok(Some(CommitExtractionResult::Extracted(message)));

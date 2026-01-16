@@ -152,6 +152,98 @@ pub fn try_extract_structured_commit(content: &str) -> Option<String> {
     try_extract_from_text(trimmed)
 }
 
+/// Try to extract commit message from XML-based output format.
+///
+/// This function looks for the distinctive `<ralph-commit>` tags used by our
+/// XML-based commit prompt template. The XML format is preferred because:
+/// - No escape sequence issues (actual newlines work fine)
+/// - Distinctive tags unlikely to appear in LLM analysis text
+/// - Clear boundaries for parsing
+///
+/// # Expected Format
+///
+/// ```xml
+/// <ralph-commit>
+/// <ralph-subject>type(scope): description</ralph-subject>
+/// <ralph-body>Optional body text here.
+/// Can span multiple lines.</ralph-body>
+/// </ralph-commit>
+/// ```
+///
+/// The `<ralph-body>` tag is optional and may be omitted for commits without a body.
+///
+/// # Returns
+///
+/// * `Some(message)` if valid XML with a valid conventional commit subject was found
+/// * `None` if tags not found or subject validation fails
+pub fn try_extract_xml_commit(content: &str) -> Option<String> {
+    // Find the <ralph-commit> block
+    let commit_start = content.find("<ralph-commit>")?;
+    let commit_end = content.find("</ralph-commit>")?;
+
+    if commit_start >= commit_end {
+        return None;
+    }
+
+    // Extract content between the tags
+    let commit_block = &content[commit_start + "<ralph-commit>".len()..commit_end];
+
+    // Extract subject (required)
+    let subject = extract_xml_tag_content(commit_block, "ralph-subject")?;
+    let subject = subject.trim();
+
+    if subject.is_empty() {
+        return None;
+    }
+
+    // Validate conventional commit format
+    if !is_conventional_commit_subject(subject) {
+        return None;
+    }
+
+    // Extract body (optional)
+    let body = extract_xml_tag_content(commit_block, "ralph-body");
+
+    // Format the commit message
+    match body {
+        Some(body_content) if !body_content.trim().is_empty() => {
+            Some(format!("{}\n\n{}", subject, body_content.trim()))
+        }
+        _ => Some(subject.to_string()),
+    }
+}
+
+/// Extract content between XML-style tags.
+///
+/// # Arguments
+///
+/// * `content` - The content to search
+/// * `tag_name` - The tag name (without angle brackets)
+///
+/// # Returns
+///
+/// * `Some(content)` if the tag was found with content
+/// * `None` if the tag was not found or was empty
+fn extract_xml_tag_content(content: &str, tag_name: &str) -> Option<String> {
+    let open_tag = format!("<{tag_name}>");
+    let close_tag = format!("</{tag_name}>");
+
+    let start = content.find(&open_tag)?;
+    let end = content.find(&close_tag)?;
+
+    if start >= end {
+        return None;
+    }
+
+    let inner = &content[start + open_tag.len()..end];
+
+    if inner.is_empty() {
+        None
+    } else {
+        Some(inner.to_string())
+    }
+}
+
 /// Try to extract a structured commit message from text content.
 ///
 /// This handles:
@@ -1746,6 +1838,184 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         assert!(
             result.is_err(),
             "Commit message containing {{\"subject\":}} should be rejected"
+        );
+    }
+
+    // =========================================================================
+    // Tests for XML extraction (try_extract_xml_commit)
+    // =========================================================================
+
+    #[test]
+    fn test_xml_extract_basic_subject_only() {
+        // Test basic XML extraction with subject only
+        let content = r"<ralph-commit>
+<ralph-subject>feat: add new feature</ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_some(), "Should extract from basic XML");
+        assert_eq!(result.unwrap(), "feat: add new feature");
+    }
+
+    #[test]
+    fn test_xml_extract_with_body() {
+        // Test XML extraction with subject and body
+        let content = r"<ralph-commit>
+<ralph-subject>feat(auth): add OAuth2 login flow</ralph-subject>
+<ralph-body>Implement Google and GitHub OAuth providers.
+Add session management for OAuth tokens.</ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_some(), "Should extract from XML with body");
+        let msg = result.unwrap();
+        assert!(msg.starts_with("feat(auth): add OAuth2 login flow"));
+        assert!(msg.contains("Implement Google and GitHub OAuth providers"));
+        assert!(msg.contains("Add session management"));
+    }
+
+    #[test]
+    fn test_xml_extract_with_empty_body() {
+        // Test XML extraction with empty body tags
+        let content = r"<ralph-commit>
+<ralph-subject>fix: resolve bug</ralph-subject>
+<ralph-body></ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_some(), "Should extract even with empty body");
+        // Empty body should be treated as no body
+        assert_eq!(result.unwrap(), "fix: resolve bug");
+    }
+
+    #[test]
+    fn test_xml_extract_ignores_preamble() {
+        // Test that content before <ralph-commit> is ignored
+        let content = r"Here is the commit message based on my analysis:
+
+Looking at the diff, I can see...
+
+<ralph-commit>
+<ralph-subject>refactor: simplify logic</ralph-subject>
+</ralph-commit>
+
+That's all!";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_some(), "Should ignore preamble and extract XML");
+        assert_eq!(result.unwrap(), "refactor: simplify logic");
+    }
+
+    #[test]
+    fn test_xml_extract_fails_missing_tags() {
+        // Test that extraction fails when tags are missing
+        let content = "Just some text without XML tags";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_none(), "Should fail when XML tags are missing");
+    }
+
+    #[test]
+    fn test_xml_extract_fails_invalid_commit_type() {
+        // Test that extraction fails for invalid conventional commit types
+        let content = r"<ralph-commit>
+<ralph-subject>invalid: not a real type</ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_none(), "Should reject invalid commit type");
+    }
+
+    #[test]
+    fn test_xml_extract_fails_missing_subject() {
+        // Test that extraction fails when subject is missing
+        let content = r"<ralph-commit>
+<ralph-body>Just a body, no subject</ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_none(), "Should fail when subject is missing");
+    }
+
+    #[test]
+    fn test_xml_extract_fails_empty_subject() {
+        // Test that extraction fails when subject is empty
+        let content = r"<ralph-commit>
+<ralph-subject></ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_none(), "Should fail when subject is empty");
+    }
+
+    #[test]
+    fn test_xml_extract_handles_whitespace_in_subject() {
+        // Test that whitespace around subject is trimmed
+        let content = r"<ralph-commit>
+<ralph-subject>   docs: update readme   </ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_some(), "Should handle whitespace in subject");
+        assert_eq!(result.unwrap(), "docs: update readme");
+    }
+
+    #[test]
+    fn test_xml_extract_with_breaking_change() {
+        // Test XML extraction with breaking change indicator
+        let content = r"<ralph-commit>
+<ralph-subject>feat!: drop Python 3.7 support</ralph-subject>
+<ralph-body>BREAKING CHANGE: Minimum Python version is now 3.8.</ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_some(), "Should handle breaking change indicator");
+        let msg = result.unwrap();
+        assert!(msg.starts_with("feat!:"));
+        assert!(msg.contains("BREAKING CHANGE"));
+    }
+
+    #[test]
+    fn test_xml_extract_with_scope() {
+        // Test XML extraction with scope
+        let content = r"<ralph-commit>
+<ralph-subject>test(parser): add coverage for edge cases</ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_some(), "Should handle scope in subject");
+        assert_eq!(result.unwrap(), "test(parser): add coverage for edge cases");
+    }
+
+    #[test]
+    fn test_xml_extract_body_preserves_newlines() {
+        // Test that newlines in body are preserved
+        let content = r"<ralph-commit>
+<ralph-subject>feat: add feature</ralph-subject>
+<ralph-body>Line 1
+Line 2
+Line 3</ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_some(), "Should preserve newlines in body");
+        let msg = result.unwrap();
+        assert!(msg.contains("Line 1\nLine 2\nLine 3"));
+    }
+
+    #[test]
+    fn test_xml_extract_fails_malformed_tags() {
+        // Test that extraction fails for malformed tags (end before start)
+        let content = r"</ralph-commit>
+<ralph-subject>feat: add feature</ralph-subject>
+<ralph-commit>";
+        let result = try_extract_xml_commit(content);
+        assert!(result.is_none(), "Should fail for malformed tags");
+    }
+
+    #[test]
+    fn test_xml_extract_handles_markdown_code_fence() {
+        // Test that XML inside markdown code fence is NOT extracted
+        // (the XML tags should be directly in the output, not wrapped)
+        let content = r"```xml
+<ralph-commit>
+<ralph-subject>feat: add feature</ralph-subject>
+</ralph-commit>
+```";
+        // The XML extractor looks for tags directly, so this should still work
+        // since the tags are present in the content
+        let result = try_extract_xml_commit(content);
+        assert!(
+            result.is_some(),
+            "Should extract from XML even inside code fence"
         );
     }
 }

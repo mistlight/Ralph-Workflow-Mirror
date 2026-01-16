@@ -1,0 +1,302 @@
+# Plan: Harden Commit Process
+
+## Summary
+
+This plan addresses the persistent difficulties with commit message generation by implementing two major improvements: (1) switching from JSON-based output format to XML-based format with distinctive tags that are easier to parse reliably, and (2) implementing comprehensive per-attempt logging that preserves all attempts without overwriting, includes detailed parsing diagnostics, and captures user-visible output. The XML format uses unique tags like `<ralph-commit>`, `<ralph-subject>`, and `<ralph-body>` that are unlikely to appear in LLM analysis text and don't require escape sequences for newlines. All prompts will be migrated to the template-based system using `Template::new()` from `template_engine.rs`.
+
+## Implementation Steps
+
+### Phase 1: XML-Based Commit Message Format (Steps 1-6)
+
+#### Step 1: Create XML Commit Prompt Template
+Create a new template file for the main commit message generation prompt.
+
+**File:** `ralph-workflow/src/prompts/templates/commit_message_xml.txt`
+
+**Details:**
+- Use `{{DIFF}}` variable placeholder (same as review templates)
+- Instruct the LLM to output using XML format with specific tags:
+  - `<ralph-commit>` as the outer container
+  - `<ralph-subject>` for the subject line (required)
+  - `<ralph-body>` for the optional body
+- Include existing Conventional Commits guidelines
+- Include negative examples showing what NOT to do (preamble, analysis, markdown fences)
+- Emphasize that actual newlines are fine within XML tags (unlike JSON)
+
+#### Step 2: Create XML Extraction Function
+Add the core XML parsing logic to extract commit messages from LLM output.
+
+**File:** `ralph-workflow/src/files/llm_output_extraction/commit.rs`
+
+**Details:**
+- Add new function `try_extract_xml_commit(content: &str) -> Option<String>`
+- Use simple string operations to find `<ralph-commit>...</ralph-commit>` block
+- Within that block, extract content between `<ralph-subject>` and `</ralph-subject>`
+- Optionally extract content between `<ralph-body>` and `</ralph-body>` (may be empty or absent)
+- Validate extracted subject against conventional commit format using existing `is_conventional_commit_subject()`
+- Format as "subject\n\nbody" or just "subject" if no body
+- Return None if tags not found or validation fails
+
+#### Step 3: Update Extraction Priority
+Modify the commit message extraction flow to try XML first.
+
+**File:** `ralph-workflow/src/files/llm_output_extraction/commit.rs`
+
+**Details:**
+- In `try_extract_structured_commit()` or create new unified extraction function
+- Order of extraction attempts:
+  1. XML extraction (new primary method) via `try_extract_xml_commit()`
+  2. JSON schema extraction (existing `try_extract_structured_commit()`)
+  3. Pattern-based extraction via `extract_llm_output()`
+  4. Salvage mechanism via `try_salvage_commit_message()`
+- Log which method succeeded (for debugging)
+
+#### Step 4: Update Main Commit Prompt Function
+Modify the primary commit prompt to use the template system.
+
+**File:** `ralph-workflow/src/prompts/commit.rs`
+
+**Details:**
+- Load template using `include_str!("templates/commit_message_xml.txt")`
+- Create `Template::new()` with the loaded content
+- Replace `prompt_generate_commit_message_with_diff()` to use template rendering
+- Use `HashMap::from([("DIFF", diff_content.to_string())])` for variables
+- Keep existing empty diff check
+
+#### Step 5: Create XML Retry Prompt Variants
+Create stricter XML prompts for the retry strategy stages.
+
+**File:** `ralph-workflow/src/prompts/commit.rs`
+
+**Details:**
+- Create `prompt_strict_xml_commit(diff: &str) -> String` - emphasizes XML-only output
+- Create `prompt_ultra_minimal_xml_commit(diff: &str) -> String` - bare minimum XML template
+- Keep existing emergency prompts as fallback (they're already minimal enough)
+- These don't need separate template files - inline templates are fine for short prompts
+
+#### Step 6: Add XML Parsing Tests
+Add tests for the new XML extraction.
+
+**File:** `ralph-workflow/src/files/llm_output_extraction/commit.rs` (in `mod tests`)
+
+**Details:**
+- Test basic XML extraction with subject and body
+- Test extraction with subject only (no body tags)
+- Test extraction with empty body tags
+- Test extraction fails gracefully when tags missing
+- Test extraction handles nested content correctly
+- Test extraction ignores preamble before `<ralph-commit>`
+
+### Phase 2: Comprehensive Per-Attempt Logging (Steps 7-12)
+
+#### Step 7: Create CommitAttemptLogger Struct
+Create a dedicated struct for managing per-attempt logging.
+
+**File:** `ralph-workflow/src/phases/commit.rs`
+
+**Details:**
+- Create struct `CommitAttemptLogger`:
+  ```rust
+  struct CommitAttemptLogger {
+      attempt_number: usize,
+      agent: String,
+      strategy: String,
+      log_dir: String,
+  }
+  ```
+- Implement methods:
+  - `new(attempt: usize, agent: &str, strategy: &str, log_dir: &str) -> Self`
+  - `raw_output_path(&self) -> String` - returns path like `attempt_001_claude_initial.log`
+  - `parse_log_path(&self) -> String` - returns path like `attempt_001_claude_initial_parse.log`
+  - `log_raw_output(&self, content: &str) -> io::Result<()>`
+  - `log_parse_attempt(&self, method: &str, success: bool, reason: &str, extracted: &str) -> io::Result<()>`
+  - `log_to_user_output(&self, msg: &str) -> io::Result<()>` - appends to `user_output.log`
+
+#### Step 8: Implement Attempt Logging Methods
+Implement the logging methods for CommitAttemptLogger.
+
+**File:** `ralph-workflow/src/phases/commit.rs`
+
+**Details:**
+- `log_raw_output()`: Write raw agent output to `{log_dir}/attempt_{N:03}_{agent}_{strategy}.log`
+- `log_parse_attempt()`: Append to parse log with format:
+  ```
+  [TIMESTAMP] Parsing attempt: {method}
+  Success: {success}
+  Reason: {reason}
+  Content length: {len}
+  Extracted:
+  ---
+  {extracted}
+  ---
+  ```
+- `log_to_user_output()`: Append timestamped message to `{log_dir}/user_output.log`
+
+#### Step 9: Track Global Attempt Number
+Modify the main commit generation loop to track attempts.
+
+**File:** `ralph-workflow/src/phases/commit.rs`
+
+**Details:**
+- In `generate_commit_message()`, add `let mut global_attempt: usize = 0;`
+- Before each agent/strategy attempt, increment: `global_attempt += 1;`
+- Create `CommitAttemptLogger` with this number
+- Pass logger to `run_commit_attempt_with_agent()`
+
+#### Step 10: Update run_commit_attempt_with_agent
+Integrate per-attempt logging into the attempt function.
+
+**File:** `ralph-workflow/src/phases/commit.rs`
+
+**Details:**
+- Add parameter: `attempt_logger: &CommitAttemptLogger`
+- Change logfile path to use `attempt_logger.raw_output_path()`
+- After agent runs, read log content and also log to parse log
+- Pass attempt_logger to extraction function
+
+#### Step 11: Update Extraction to Log Parse Attempts
+Add detailed parse logging to extraction.
+
+**File:** `ralph-workflow/src/phases/commit.rs`
+
+**Details:**
+- Modify `extract_commit_message_from_logs()` signature to accept `attempt_logger: &CommitAttemptLogger`
+- After each extraction method attempt, call `attempt_logger.log_parse_attempt()` with:
+  - Method name ("XML extraction", "JSON schema", "Salvage", etc.)
+  - Success/failure
+  - Reason for failure (e.g., "Tags not found", "Invalid conventional commit format")
+  - The content that was extracted (or attempted)
+
+#### Step 12: Log User-Visible Messages
+Capture all user-visible output to the user_output.log.
+
+**File:** `ralph-workflow/src/phases/commit.rs`
+
+**Details:**
+- At key points in `generate_commit_message()`, call `attempt_logger.log_to_user_output()`
+- Log: "Starting attempt N with agent X using strategy Y"
+- Log: "Extraction succeeded/failed with method Z"
+- Log: "Final commit message: {subject line}"
+- Log warnings and errors shown to user
+
+### Phase 3: Template Engine Enhancement (Step 13, if needed)
+
+#### Step 13: Add Optional Loop Support to Template Engine
+If file list prompts need loops, extend the template engine.
+
+**File:** `ralph-workflow/src/prompts/template_engine.rs`
+
+**Details:**
+- This step is CONDITIONAL - only implement if Step 5 reveals a need for loops
+- Alternative approach: Pre-build file list as a string before passing to template
+- If loops needed, add `{{#each VAR}}...{{/each}}` syntax
+- Add parsing in `extract_variables()` and handling in `render()`
+
+## Critical Files for Implementation
+
+1. **`ralph-workflow/src/prompts/templates/commit_message_xml.txt`** (NEW)
+   - Primary template for XML-based commit message generation
+   - Uses `{{DIFF}}` variable
+
+2. **`ralph-workflow/src/prompts/commit.rs`** (MODIFY)
+   - Load and render XML template
+   - Add XML-based retry prompt variants
+   - Use Template::new() pattern from template_engine.rs
+
+3. **`ralph-workflow/src/files/llm_output_extraction/commit.rs`** (MODIFY)
+   - Add `try_extract_xml_commit()` function
+   - Update extraction priority to try XML first
+   - Add tests for XML extraction
+
+4. **`ralph-workflow/src/phases/commit.rs`** (MODIFY)
+   - Add `CommitAttemptLogger` struct with logging methods
+   - Track global attempt number across retry loop
+   - Integrate logging into attempt and extraction functions
+   - Create separate log files per attempt
+
+5. **`ralph-workflow/src/prompts/template_engine.rs`** (POSSIBLY MODIFY)
+   - Only if loop support is needed for file list prompts
+   - Prefer pre-building strings if possible
+
+## Risks & Mitigations
+
+### Risk 1: XML Tags Appear in LLM Output Incorrectly
+- **Risk:** LLM outputs malformed XML or nests thinking inside tags
+- **Mitigation:** Use highly distinctive tag names (`<ralph-commit>`) unlikely to appear naturally. Add validation that content between tags looks like a commit message. Fall back to JSON/salvage extraction if XML fails.
+
+### Risk 2: Increased Log Storage
+- **Risk:** Per-attempt logs consume significantly more disk space
+- **Mitigation:** Log files are already written to `.agent/logs/` which is gitignored. Consider adding cleanup of old logs in future iterations. Logs are text-only and compress well if needed.
+
+### Risk 3: Performance Overhead from Logging
+- **Risk:** Writing multiple log files per attempt slows down commit generation
+- **Mitigation:** Log writes are small (KB range) and I/O is not on the critical path. The existing system already writes logs; we're just organizing them differently.
+
+### Risk 4: Template Engine Limitations
+- **Risk:** Current template engine doesn't support loops needed for file lists
+- **Mitigation:** Pre-build variable content as strings before templating. Only add loop support if absolutely necessary. The existing file list prompts use inline string building which can continue.
+
+### Risk 5: Breaking Existing JSON Extraction
+- **Risk:** Changing extraction priority might break agents that work well with JSON
+- **Mitigation:** Keep JSON extraction as secondary fallback. Both XML and JSON paths remain active. Test with multiple agents before deployment.
+
+## Verification Strategy
+
+### Acceptance Check 1: Per-Attempt Logging
+- Run a commit that requires multiple retries (large diff or problematic agent)
+- Verify `.agent/logs/commit_generation/` contains:
+  - `attempt_001_*.log` through `attempt_N_*.log` (separate files)
+  - `attempt_001_*_parse.log` through `attempt_N_*_parse.log` (parse diagnostics)
+  - `user_output.log` (user-visible messages)
+- Verify no files are overwritten (check timestamps and content differ)
+
+### Acceptance Check 2: Log Verbosity
+- Read parse log files and verify they contain:
+  - Which extraction method was tried
+  - Success/failure status
+  - Detailed reason for failure
+  - The actual content that was extracted or attempted
+
+### Acceptance Check 3: User Output Log
+- Verify `user_output.log` contains timestamped messages that match what was displayed to the user
+- Should include attempt starts, extraction results, and final outcome
+
+### Acceptance Check 4: Template System Usage
+- Verify `prompt_generate_commit_message_with_diff()` uses `Template::new()`
+- Verify commit template file exists at `src/prompts/templates/commit_message_xml.txt`
+- Run with RUST_LOG=debug and verify template rendering logs
+
+### Acceptance Check 5: XML Extraction Works
+- Create a test that provides XML-formatted commit output
+- Verify `try_extract_xml_commit()` correctly extracts subject and body
+- Verify it falls back gracefully when XML is malformed
+
+### Manual Testing Steps
+1. Run `cargo test --all-features` - all tests pass
+2. Run `cargo clippy --all-targets --all-features -- -D warnings` - no warnings
+3. Run the verification regex commands from CLAUDE.md - no output
+4. Test commit generation with a real diff and verify logs are created correctly
+5. Intentionally cause parsing failures and verify detailed parse logs are created
+
+### Test Commands
+```bash
+# Verify no allow/expect attributes
+rg -n -U --pcre2 '(?x)
+  \#\s*!?\[\s*
+  (allow|expect)
+  \s*\(
+    [^()\]]*
+    (?:\([^()\]]*\)[^()\]]*)*
+  \)
+  \s*\]
+' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+
+# Run full test suite
+cargo test --all-features
+
+# Run clippy
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Format check
+cargo fmt --all -- --check
+```

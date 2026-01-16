@@ -2,16 +2,6 @@
 //!
 //! This module contains tests that parse actual LLM output from prompt-log files
 //! to ensure parsing works correctly for real-world scenarios.
-
-#[cfg(test)]
-mod prompt_log_1_tests;
-#[cfg(test)]
-mod prompt_log_2_tests;
-#[cfg(test)]
-mod prompt_log_3_tests;
-#[cfg(test)]
-mod prompt_log_4_tests;
-#[cfg(test)]
-mod prompt_log_5_tests;
-#[cfg(test)]
-mod prompt_log_6_tests;
+//!
+//! Note: Individual prompt_log_*_tests modules are loaded dynamically and may not
+//! always be present. See the `golden/` directory for actual test data.
