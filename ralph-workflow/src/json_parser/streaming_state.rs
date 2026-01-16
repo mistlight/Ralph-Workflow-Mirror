@@ -94,7 +94,9 @@
 
 use crate::json_parser::health::StreamingQualityMetrics;
 use crate::json_parser::types::ContentType;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 /// Ralph enforces a **delta contract** for all streaming content.
 ///
@@ -207,6 +209,15 @@ pub struct StreamingSession {
     /// When false, suppresses diagnostic warnings that are useful for debugging
     /// but noisy in production (e.g., GLM protocol violations, snapshot detection).
     verbose_warnings: bool,
+    /// Count of snapshot repairs performed during this session
+    snapshot_repairs_count: usize,
+    /// Count of deltas that exceeded the size threshold
+    large_delta_count: usize,
+    /// Count of protocol violations detected (e.g., `MessageStart` during streaming)
+    protocol_violations: usize,
+    /// Hash of the final streamed content (for deduplication)
+    /// Computed at `message_stop` using all accumulated content
+    final_content_hash: Option<u64>,
 }
 
 impl StreamingSession {
@@ -269,6 +280,8 @@ impl StreamingSession {
         let is_mid_stream_restart = self.state == StreamingState::Streaming;
 
         if is_mid_stream_restart {
+            // Track protocol violation
+            self.protocol_violations += 1;
             // Log the contract violation for debugging (only if verbose warnings enabled)
             if self.verbose_warnings {
                 eprintln!(
@@ -488,7 +501,11 @@ impl StreamingSession {
         let actual_delta = if is_snapshot {
             // Extract only the new portion to prevent exponential duplication
             match self.get_delta_from_snapshot(delta, key) {
-                Ok(extracted) => extracted.to_string(),
+                Ok(extracted) => {
+                    // Track successful snapshot repair
+                    self.snapshot_repairs_count += 1;
+                    extracted.to_string()
+                }
                 Err(e) => {
                     // Snapshot detection had a false positive - use the original delta
                     if self.verbose_warnings {
@@ -506,11 +523,14 @@ impl StreamingSession {
 
         // Warn on large deltas BEFORE modification to detect snapshot-as-delta issues
         // Use the original delta size since that's what we actually received
-        if delta_size > SNAPSHOT_THRESHOLD && self.verbose_warnings {
-            eprintln!(
-                "Warning: Large delta ({delta_size} chars) for key '{key}'. \
-                This may indicate unusual streaming behavior or a snapshot being sent as a delta."
-            );
+        if delta_size > SNAPSHOT_THRESHOLD {
+            self.large_delta_count += 1;
+            if self.verbose_warnings {
+                eprintln!(
+                    "Warning: Large delta ({delta_size} chars) for key '{key}'. \
+                    This may indicate unusual streaming behavior or a snapshot being sent as a delta."
+                );
+            }
         }
 
         // Track delta size for pattern detection (use original delta size for detection)
@@ -663,6 +683,9 @@ impl StreamingSession {
         let was_in_block = self.ensure_content_block_finalized();
         self.state = StreamingState::Finalized;
 
+        // Compute content hash for deduplication
+        self.final_content_hash = self.compute_content_hash();
+
         // Mark the current message as displayed to prevent duplicate display
         // when the final "Assistant" event arrives
         if let Some(message_id) = self.current_message_id.clone() {
@@ -679,6 +702,87 @@ impl StreamingSession {
     /// all content was already streamed.
     pub fn has_any_streamed_content(&self) -> bool {
         !self.streamed_types.is_empty()
+    }
+
+    /// Compute hash of all accumulated content for deduplication.
+    ///
+    /// This computes a hash of ALL accumulated content across all content types
+    /// and indices. This is used to detect if a final message contains the same
+    /// content that was already streamed.
+    ///
+    /// # Returns
+    /// * `Some(hash)` - Hash of all accumulated content, or None if no content
+    fn compute_content_hash(&self) -> Option<u64> {
+        if self.accumulated.is_empty() {
+            return None;
+        }
+
+        let mut hasher = DefaultHasher::new();
+
+        // Collect and sort keys for consistent hashing
+        // Note: We can't sort ContentType directly, so we convert to tuple representation
+        let mut keys: Vec<_> = self.accumulated.keys().collect();
+        // Sort by string representation for consistency (not perfect but good enough for deduplication)
+        keys.sort_by_key(|k| format!("{:?}-{}", k.0, k.1));
+
+        for key in keys {
+            if let Some(content) = self.accumulated.get(key) {
+                // Hash the key and content together
+                format!("{:?}-{}", key.0, key.1).hash(&mut hasher);
+                content.hash(&mut hasher);
+            }
+        }
+
+        Some(hasher.finish())
+    }
+
+    /// Check if content matches the previously streamed content by hash.
+    ///
+    /// This is a more precise alternative to `has_any_streamed_content()` for
+    /// deduplication. Instead of checking if ANY content was streamed, this checks
+    /// if the EXACT content was streamed by comparing hashes.
+    ///
+    /// This method looks at ALL accumulated content across all content types and indices.
+    /// If the combined accumulated content matches the input, it returns true.
+    ///
+    /// # Arguments
+    /// * `content` - The content to check (typically text content from final message)
+    ///
+    /// # Returns
+    /// * `true` - The content hash matches the previously streamed content
+    /// * `false` - The content is different or no content was streamed
+    #[allow(clippy::option_if_let_else)]
+    pub fn is_duplicate_by_hash(&self, content: &str) -> bool {
+        if let Some(_streamed_hash) = self.final_content_hash {
+            // For text content, we need to hash only the text portions
+            // to match how the final message content is structured
+            let mut hasher = DefaultHasher::new();
+
+            // Collect only text content from accumulated (in order)
+            let mut text_keys: Vec<_> = self
+                .accumulated
+                .keys()
+                .filter(|(ct, _)| *ct == ContentType::Text)
+                .collect();
+            text_keys.sort_by_key(|k| format!("{:?}-{}", k.0, k.1));
+
+            for key in text_keys {
+                if let Some(text) = self.accumulated.get(key) {
+                    text.hash(&mut hasher);
+                }
+            }
+
+            let combined_text_hash = hasher.finish();
+
+            // Also hash the input content
+            let mut content_hasher = DefaultHasher::new();
+            content.hash(&mut content_hasher);
+            let content_hash = content_hasher.finish();
+
+            content_hash == combined_text_hash
+        } else {
+            false
+        }
     }
 
     /// Get accumulated content for a specific type and index.
@@ -827,7 +931,14 @@ impl StreamingSession {
     pub fn get_streaming_quality_metrics(&self) -> StreamingQualityMetrics {
         // Flatten all delta sizes across all content types and keys
         let all_sizes = self.delta_sizes.values().flat_map(|v| v.iter().copied());
-        StreamingQualityMetrics::from_sizes(all_sizes)
+        let mut metrics = StreamingQualityMetrics::from_sizes(all_sizes);
+
+        // Add session-level metrics
+        metrics.snapshot_repairs_count = self.snapshot_repairs_count;
+        metrics.large_delta_count = self.large_delta_count;
+        metrics.protocol_violations = self.protocol_violations;
+
+        metrics
     }
 }
 
@@ -1654,5 +1765,202 @@ mod tests {
         assert!(session_quiet
             .get_accumulated(ContentType::Text, "0")
             .is_some());
+    }
+
+    // Tests for enhanced streaming metrics
+
+    #[test]
+    fn test_streaming_quality_metrics_includes_snapshot_repairs() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_content_block_start(0);
+
+        // First delta
+        session.on_text_delta(0, "Hello");
+
+        // GLM sends snapshot instead of delta
+        let snapshot = "Hello World!";
+        let _ = session.on_text_delta(0, snapshot);
+
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(
+            metrics.snapshot_repairs_count, 1,
+            "Should track one snapshot repair"
+        );
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_includes_large_delta_count() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Send 3 large deltas
+        for _ in 0..3 {
+            let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+            let _ = session.on_text_delta(0, &large_delta);
+        }
+
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(
+            metrics.large_delta_count, 3,
+            "Should track three large deltas"
+        );
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_includes_protocol_violations() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_text_delta(0, "Hello");
+
+        // Simulate GLM sending repeated MessageStart during streaming
+        session.on_message_start();
+        session.on_text_delta(0, " World");
+
+        // Another violation
+        session.on_message_start();
+
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(
+            metrics.protocol_violations, 2,
+            "Should track two protocol violations"
+        );
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_all_new_fields_zero_by_default() {
+        let session = StreamingSession::new();
+        let metrics = session.get_streaming_quality_metrics();
+
+        assert_eq!(metrics.snapshot_repairs_count, 0);
+        assert_eq!(metrics.large_delta_count, 0);
+        assert_eq!(metrics.protocol_violations, 0);
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_comprehensive_tracking() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Normal delta
+        session.on_text_delta(0, "Hello");
+
+        // Large delta
+        let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        let _ = session.on_text_delta(0, &large_delta);
+
+        // Snapshot repair (note: the snapshot is also large, so it counts as another large delta)
+        let snapshot = format!("Hello{large_delta} World");
+        let _ = session.on_text_delta(0, &snapshot);
+
+        // Check metrics BEFORE the protocol violation (which clears delta_sizes)
+        let metrics = session.get_streaming_quality_metrics();
+        assert_eq!(metrics.snapshot_repairs_count, 1);
+        assert_eq!(
+            metrics.large_delta_count, 2,
+            "Both the large delta and the snapshot are large"
+        );
+        assert_eq!(metrics.total_deltas, 3);
+        assert_eq!(metrics.protocol_violations, 0, "No violation yet");
+
+        // Protocol violation
+        session.on_message_start();
+
+        // After violation, protocol_violations is incremented but delta_sizes is cleared
+        let metrics_after = session.get_streaming_quality_metrics();
+        assert_eq!(metrics_after.protocol_violations, 1);
+        assert_eq!(
+            metrics_after.total_deltas, 0,
+            "Delta sizes cleared after violation"
+        );
+    }
+
+    // Tests for hash-based deduplication
+
+    #[test]
+    fn test_content_hash_computed_on_message_stop() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_text_delta(0, "Hello");
+        session.on_text_delta(0, " World");
+
+        // Hash should be None before message_stop
+        assert_eq!(session.final_content_hash, None);
+
+        // Hash should be computed after message_stop
+        session.on_message_stop();
+        assert!(session.final_content_hash.is_some());
+    }
+
+    #[test]
+    fn test_content_hash_none_when_no_content() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // No content streamed
+        session.on_message_stop();
+        assert_eq!(session.final_content_hash, None);
+    }
+
+    #[test]
+    fn test_is_duplicate_by_hash_returns_true_for_matching_content() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_text_delta(0, "Hello World");
+        session.on_message_stop();
+
+        // Same content should be detected as duplicate
+        assert!(session.is_duplicate_by_hash("Hello World"));
+    }
+
+    #[test]
+    fn test_is_duplicate_by_hash_returns_false_for_different_content() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_text_delta(0, "Hello World");
+        session.on_message_stop();
+
+        // Different content should NOT be detected as duplicate
+        assert!(!session.is_duplicate_by_hash("Different content"));
+    }
+
+    #[test]
+    fn test_is_duplicate_by_hash_returns_false_when_no_content_streamed() {
+        let session = StreamingSession::new();
+
+        // No content streamed, so no hash
+        assert!(!session.is_duplicate_by_hash("Hello World"));
+    }
+
+    #[test]
+    fn test_content_hash_multiple_content_blocks() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+        session.on_text_delta(0, "First block");
+        session.on_text_delta(1, "Second block");
+        session.on_message_stop();
+
+        // Hash should be computed from all blocks
+        assert!(session.final_content_hash.is_some());
+        // Individual content shouldn't match the combined hash
+        assert!(!session.is_duplicate_by_hash("First block"));
+        assert!(!session.is_duplicate_by_hash("Second block"));
+    }
+
+    #[test]
+    fn test_content_hash_consistent_for_same_content() {
+        let mut session1 = StreamingSession::new();
+        session1.on_message_start();
+        session1.on_text_delta(0, "Hello");
+        session1.on_text_delta(0, " World");
+        session1.on_message_stop();
+
+        let mut session2 = StreamingSession::new();
+        session2.on_message_start();
+        session2.on_text_delta(0, "Hello World");
+        session2.on_message_stop();
+
+        // Same content should produce the same hash
+        assert_eq!(session1.final_content_hash, session2.final_content_hash);
     }
 }

@@ -280,9 +280,9 @@ This section captures areas that warrant exploration. Each area may spawn specif
 - Interaction with `--no-ansi` flag concept
 
 **Exploration Tasks**:
-- [ ] Survey how production CLIs (gh, cargo) handle terminal detection
-- [ ] Identify minimum viable terminal mode enum: `Full | Basic | None`
-- [ ] Prototype `TerminalMode` threading through parser → renderer
+- [x] Survey how production CLIs (gh, cargo) handle terminal detection
+- [x] Identify minimum viable terminal mode enum: `Full | Basic | None`
+- [x] Prototype `TerminalMode` threading through parser → renderer
 
 ### Area 2: Conditional Warning Emission
 
@@ -320,9 +320,22 @@ This section captures areas that warrant exploration. Each area may spawn specif
 - `content_hash`: For deduplication debugging
 
 **Exploration Tasks**:
-- [ ] Define metric schema that balances detail vs overhead
-- [ ] Prototype collection points in `StreamingSession`
-- [ ] Design output format (JSON for machine, text for human)
+- [x] Define metric schema that balances detail vs overhead
+- [x] Prototype collection points in `StreamingSession`
+- [x] Design output format (JSON for machine, text for human)
+
+**Implementation (2026-01-16)**:
+- Added three new metrics to `StreamingQualityMetrics`:
+  - `snapshot_repairs_count`: Tracks auto-repair triggers for snapshot-as-delta bugs
+  - `large_delta_count`: Tracks deltas exceeding `SNAPSHOT_THRESHOLD` (200 chars)
+  - `protocol_violations`: Tracks `MessageStart` during `Streaming` state transitions
+- Updated `get_streaming_quality_metrics()` to include session-level metrics
+- Increment counters in appropriate locations:
+  - `snapshot_repairs_count` in snapshot repair success path
+  - `large_delta_count` when delta size exceeds threshold
+  - `protocol_violations` on mid-stream `MessageStart` detection
+- Enhanced `format()` method to display new metrics with colors (yellow for warnings, red for violations)
+- Added comprehensive test coverage for all new metrics
 
 ### Area 4: Line Length Management
 
@@ -336,9 +349,21 @@ This section captures areas that warrant exploration. Each area may spawn specif
 3. Do nothing (current behavior)
 
 **Exploration Tasks**:
-- [ ] Measure terminal width reliably (`COLUMNS` env, `terminal_size` crate)
-- [ ] Prototype truncation in `sanitize_for_display()`
-- [ ] Test visual behavior with wrapped lines
+- [x] Measure terminal width reliably (`COLUMNS` env, `terminal_size` crate)
+- [x] Prototype truncation in `sanitize_for_display()`
+- [x] Test visual behavior with wrapped lines
+
+**Implementation (2026-01-16)**:
+- Added `TerminalMode::get_width()` method to detect terminal width from `COLUMNS` environment variable
+- Fallback to 80 columns when `COLUMNS` not set or invalid
+- Updated `sanitize_for_display()` to accept `terminal_mode` and `prefix` parameters
+- Added `truncate_to_terminal_width()` function that:
+  - Calculates available width (terminal_width - prefix_len - ANSI_overhead - ellipsis_len)
+  - Truncates content to available width with "..." ellipsis indicator
+  - Only applies in `TerminalMode::Full` (where cursor positioning is used)
+- Updated all render functions (`render_first_delta`, `render_subsequent_delta`) to pass terminal mode and prefix
+- Added comprehensive tests for truncation behavior in different terminal modes
+- Tests verify: truncation in Full mode, no truncation in Basic/None modes, ellipsis display
 
 ### Area 5: Content Hash Deduplication
 
@@ -352,9 +377,25 @@ This section captures areas that warrant exploration. Each area may spawn specif
 - More precise than "any content was streamed"
 
 **Exploration Tasks**:
-- [ ] Identify hash algorithm (xxhash for speed?)
-- [ ] Determine what content to hash (full? first N chars?)
-- [ ] Evaluate memory/performance overhead
+- [x] Identify hash algorithm (xxhash for speed?)
+- [x] Determine what content to hash (full? first N chars?)
+- [x] Evaluate memory/performance overhead
+
+**Implementation (2026-01-16)**:
+- Used `std::collections::hash_map::DefaultHasher` (64-bit) for good distribution and performance
+- Added `final_content_hash: Option<u64>` field to `StreamingSession`
+- Implemented `compute_content_hash()` that:
+  - Hashes ALL accumulated content across all content types and indices
+  - Sorts keys for consistent hashing regardless of insertion order
+  - Returns `None` when no content accumulated
+- Implemented `is_duplicate_by_hash()` that:
+  - Compares hash of input text content against streamed content hash
+  - Only considers text content (ContentType::Text) for comparison
+  - Returns `true` only when hashes match exactly
+- Integrated into `ClaudeParser` to use hash-based deduplication as fallback when message ID unavailable
+- Extracts text content from final message before deduplication check
+- Falls back to `has_any_streamed_content()` if no text content available
+- Added comprehensive test coverage for hash computation and duplicate detection
 
 ### Area 6: Prefix Debouncing
 
@@ -384,9 +425,11 @@ This section captures areas that warrant exploration. Each area may spawn specif
 3. Buffer and emit clean output at end
 
 **Exploration Tasks**:
-- [ ] Define "clean" output format for non-TTY
-- [ ] Prototype `DeltaRenderer` variant without escapes
-- [ ] Test with common non-TTY scenarios (pipes, redirects, CI)
+- [x] Define "clean" output format for non-TTY
+- [x] Prototype `DeltaRenderer` variant without escapes
+- [x] Test with common non-TTY scenarios (pipes, redirects, CI)
+
+**Note**: This area was completed as part of Area 1 (Terminal Mode Detection). The `TerminalMode::None` mode provides clean output without escape sequences for non-TTY scenarios.
 
 ---
 
@@ -481,6 +524,8 @@ cargo test -p ralph-workflow json_parser::tests
 - [x] Terminal mode detection implemented
 - [x] Warnings conditional on verbosity
 - [x] Non-TTY output clean (no escape leakage)
+- [x] Streaming metrics available for debugging
+- [x] Line length management for long content
 
 ### Long-Term (Ongoing)
 - [ ] Zero streaming-related bug reports per release
@@ -568,6 +613,9 @@ Emit structured events (JSON) and rely on external renderer.
 | 2026-01-16 | Initial draft |
 | 2026-01-16 | **Area 2 (Conditional Warning Emission) completed**: Added `verbose_warnings` field to `StreamingSession`, implemented `with_verbose_warnings()` builder, updated all four `eprintln!` calls to respect verbosity, added parser integration for `Verbosity::Debug` mode, added comprehensive tests |
 | 2026-01-16 | **Area 1 (Terminal Mode Detection) completed**: Implemented terminal capability detection with three modes (Full, Basic, None), added environment variable support (`NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE`, `TERM`), integrated with all parsers (Claude, Codex, Gemini, OpenCode), added comprehensive unit and integration tests for non-full terminal modes, verified clean output without escape sequences in non-TTY scenarios |
+| 2026-01-16 | **Area 3 (Streaming Metrics Enhancement) completed**: Added `snapshot_repairs_count`, `large_delta_count`, and `protocol_violations` to `StreamingQualityMetrics`, updated `get_streaming_quality_metrics()` to include session-level metrics, enhanced `format()` to display new metrics with colors, added comprehensive tests |
+| 2026-01-16 | **Area 4 (Line Length Management) completed**: Added `TerminalMode::get_width()` to detect terminal width from `COLUMNS` env var, implemented `truncate_to_terminal_width()` for content truncation with ellipsis, updated `sanitize_for_display()` to accept `terminal_mode` and `prefix` parameters, added truncation logic only in `TerminalMode::Full`, added comprehensive tests for different terminal modes |
+| 2026-01-16 | **Area 5 (Content Hash Deduplication) completed**: Added `final_content_hash` field to `StreamingSession`, implemented `compute_content_hash()` using `DefaultHasher`, implemented `is_duplicate_by_hash()` for precise deduplication, integrated into `ClaudeParser` as fallback when message ID unavailable, added comprehensive test coverage |
 
 ---
 

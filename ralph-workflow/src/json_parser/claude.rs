@@ -291,6 +291,7 @@ impl ClaudeParser {
     }
 
     /// Format an assistant event
+    #[allow(clippy::too_many_lines)]
     fn format_assistant_event(
         &self,
         message: Option<crate::json_parser::types::AssistantMessage>,
@@ -304,9 +305,37 @@ impl ClaudeParser {
         // already shown the streaming deltas, showing it again causes duplication.
         let session = self.streaming_session.borrow();
 
+        // Extract text content for hash-based deduplication BEFORE the move
+        let text_content_for_hash = message.as_ref().and_then(|msg| {
+            msg.content.as_ref().map(|content| {
+                content
+                    .iter()
+                    .filter_map(|block| {
+                        if let ContentBlock::Text { text } = block {
+                            text.as_deref()
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+        });
+
         // Check for duplicate using message ID if available
+        // If no message ID, try hash-based deduplication for more precision
+        // Fall back to coarse "has_any_streamed_content" check
         let is_duplicate = session.get_current_message_id().map_or_else(
-            || session.has_any_streamed_content(),
+            || {
+                // Try hash-based deduplication first (more precise)
+                if let Some(text_content) = text_content_for_hash {
+                    if !text_content.is_empty() {
+                        return session.is_duplicate_by_hash(&text_content);
+                    }
+                }
+                // Fallback to coarse check
+                session.has_any_streamed_content()
+            },
             |message_id| session.is_duplicate_final_message(message_id),
         );
 

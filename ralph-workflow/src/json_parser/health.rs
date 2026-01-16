@@ -65,6 +65,12 @@ pub struct StreamingQualityMetrics {
     pub max_delta_size: usize,
     /// Classification of streaming pattern
     pub pattern: StreamingPattern,
+    /// Number of times auto-repair was triggered for snapshot-as-delta bugs
+    pub snapshot_repairs_count: usize,
+    /// Number of deltas that exceeded the size threshold (indicating potential snapshots)
+    pub large_delta_count: usize,
+    /// Number of protocol violations detected (e.g., `MessageStart` during streaming)
+    pub protocol_violations: usize,
 }
 
 /// Classification of streaming patterns based on delta size variance.
@@ -141,6 +147,9 @@ impl StreamingQualityMetrics {
             min_delta_size,
             max_delta_size,
             pattern,
+            snapshot_repairs_count: 0,
+            large_delta_count: 0,
+            protocol_violations: 0,
         }
     }
 
@@ -161,7 +170,7 @@ impl StreamingQualityMetrics {
             StreamingPattern::Bursty => "bursty",
         };
 
-        format!(
+        let mut parts = vec![format!(
             "{}[Streaming]{} {} deltas, avg {} bytes (min {}, max {}), pattern: {}",
             colors.dim(),
             colors.reset(),
@@ -170,7 +179,36 @@ impl StreamingQualityMetrics {
             self.min_delta_size,
             self.max_delta_size,
             pattern_str
-        )
+        )];
+
+        if self.snapshot_repairs_count > 0 {
+            parts.push(format!(
+                "{}snapshot repairs: {}{}",
+                colors.yellow(),
+                self.snapshot_repairs_count,
+                colors.reset()
+            ));
+        }
+
+        if self.large_delta_count > 0 {
+            parts.push(format!(
+                "{}large deltas: {}{}",
+                colors.yellow(),
+                self.large_delta_count,
+                colors.reset()
+            ));
+        }
+
+        if self.protocol_violations > 0 {
+            parts.push(format!(
+                "{}protocol violations: {}{}",
+                colors.red(),
+                self.protocol_violations,
+                colors.reset()
+            ));
+        }
+
+        parts.join(", ")
     }
 }
 
@@ -903,5 +941,62 @@ mod tests {
         let formatted = metrics.format(colors);
 
         assert!(formatted.contains("No deltas recorded"));
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format_with_snapshot_repairs() {
+        let mut metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+        metrics.snapshot_repairs_count = 2;
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        assert!(formatted.contains("3 deltas"));
+        assert!(formatted.contains("snapshot repairs: 2"));
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format_with_large_deltas() {
+        let mut metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+        metrics.large_delta_count = 5;
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        assert!(formatted.contains("3 deltas"));
+        assert!(formatted.contains("large deltas: 5"));
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format_with_protocol_violations() {
+        let mut metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+        metrics.protocol_violations = 1;
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        assert!(formatted.contains("3 deltas"));
+        assert!(formatted.contains("protocol violations: 1"));
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format_with_all_metrics() {
+        let mut metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+        metrics.snapshot_repairs_count = 2;
+        metrics.large_delta_count = 5;
+        metrics.protocol_violations = 1;
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        assert!(formatted.contains("3 deltas"));
+        assert!(formatted.contains("snapshot repairs: 2"));
+        assert!(formatted.contains("large deltas: 5"));
+        assert!(formatted.contains("protocol violations: 1"));
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_new_fields_zero_by_default() {
+        let metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+
+        assert_eq!(metrics.snapshot_repairs_count, 0);
+        assert_eq!(metrics.large_delta_count, 0);
+        assert_eq!(metrics.protocol_violations, 0);
     }
 }
