@@ -181,8 +181,8 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
     fs::create_dir_all(AGENT_DIR)?;
 
     // Write atomically by writing to temp file then renaming
-    let checkpoint = checkpoint_path();
-    let temp_path = format!("{checkpoint}.tmp");
+    let checkpoint_path_str = checkpoint_path();
+    let temp_path = format!("{checkpoint_path_str}.tmp");
 
     // Ensure temp file is cleaned up even if write or rename fails
     let write_result = fs::write(&temp_path, &json);
@@ -191,7 +191,7 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
         return write_result;
     }
 
-    let rename_result = fs::rename(&temp_path, &checkpoint);
+    let rename_result = fs::rename(&temp_path, &checkpoint_path_str);
     if rename_result.is_err() {
         let _ = fs::remove_file(&temp_path);
         return rename_result;
@@ -218,14 +218,14 @@ pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
     }
 
     let content = fs::read_to_string(path)?;
-    let checkpoint: PipelineCheckpoint = serde_json::from_str(&content).map_err(|e| {
+    let loaded_checkpoint: PipelineCheckpoint = serde_json::from_str(&content).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Failed to parse checkpoint: {e}"),
         )
     })?;
 
-    Ok(Some(checkpoint))
+    Ok(Some(loaded_checkpoint))
 }
 
 /// Delete the checkpoint file.

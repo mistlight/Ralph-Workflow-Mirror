@@ -104,6 +104,10 @@ pub fn is_ccs_ref(agent_name: &str) -> bool {
     parse_ccs_ref(agent_name).is_some()
 }
 
+/// Check if a command appears to be the CCS executable.
+///
+/// This is a heuristic check based on the file name of the command.
+/// Returns `true` if the file name is `ccs` or `ccs.exe`.
 fn looks_like_ccs_executable(cmd0: &str) -> bool {
     Path::new(cmd0)
         .file_name()
@@ -111,6 +115,12 @@ fn looks_like_ccs_executable(cmd0: &str) -> bool {
         .is_some_and(|n| n == "ccs" || n == "ccs.exe")
 }
 
+/// Extract the CCS profile name from a CCS command.
+///
+/// Parses a CCS command string to extract the profile name.
+/// Supports common patterns like `ccs <profile>` and `ccs api <profile>`.
+///
+/// Returns `Some(profile_name)` if a profile is found, `None` otherwise.
 fn ccs_profile_from_command(original_cmd: &str) -> Option<String> {
     let parts = split_command(original_cmd).ok()?;
     if !parts.first().is_some_and(|p| looks_like_ccs_executable(p)) {

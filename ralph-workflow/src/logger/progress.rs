@@ -47,7 +47,7 @@ pub fn print_progress(current: u32, total: u32, label: &str) {
     .unwrap_or(0);
     let empty = bar_width - filled;
 
-    let bar: String = "█".repeat(filled) + &"░".repeat(empty);
+    let bar: String = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
     println!(
         "{}{}:{} {}[{}]{} {}{}%{} ({}/{})",
@@ -88,7 +88,7 @@ mod tests {
         )
         .unwrap_or(0);
         let empty = bar_width - filled;
-        let bar: String = "█".repeat(filled) + &"░".repeat(empty);
+        let bar: String = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
         (pct, bar)
     }
 
