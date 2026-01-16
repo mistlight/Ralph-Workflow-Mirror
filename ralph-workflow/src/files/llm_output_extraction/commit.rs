@@ -269,14 +269,12 @@ fn file_count_pattern_regex() -> &'static Regex {
     })
 }
 
-/// Validate extracted content for use as a commit message.
-///
-/// # Returns
-///
-/// `Ok(())` if valid, `Err(reason)` if invalid
-pub fn validate_commit_message(content: &str) -> Result<(), String> {
-    let content = content.trim();
+// =========================================================================
+// Commit Message Validation Helper Functions
+// =========================================================================
 
+/// Validate basic length requirements for commit message content.
+fn validate_basic_length(content: &str) -> Result<(), String> {
     // Check for empty
     if content.is_empty() {
         return Err("Commit message is empty".to_string());
@@ -298,7 +296,11 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         ));
     }
 
-    // Check for JSON artifacts that indicate extraction failure
+    Ok(())
+}
+
+/// Validate that content does not contain JSON parsing artifacts.
+fn validate_no_json_artifacts(content: &str) -> Result<(), String> {
     let json_indicators = [
         r#"{"type":"#,
         r#"{"result":"#,
@@ -316,11 +318,11 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
             ));
         }
     }
+    Ok(())
+}
 
-    // Check for literal escape sequences that indicate JSON unescaping failure.
-    // These patterns suggest that JSON was partially decoded but escape sequences
-    // leaked through. We check for multiple patterns to catch different failure modes.
-
+/// Validate that content does not contain literal escape sequences indicating JSON unescaping failure.
+fn validate_no_literal_escape_sequences(content: &str) -> Result<(), String> {
     // Pattern 1: Body starts with literal \n\n (most common JSON escaping issue)
     // After a subject line like "feat: add", the body should start with actual newlines,
     // not literal "\n\n" characters. This indicates the JSON wasn't properly unescaped.
@@ -367,7 +369,11 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         );
     }
 
-    // Check for error markers
+    Ok(())
+}
+
+/// Validate that content does not start with error markers.
+fn validate_no_error_markers(content: &str) -> Result<(), String> {
     let error_markers = [
         "error:",
         "failed to",
@@ -384,7 +390,11 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
             return Err(format!("Commit message starts with error marker: {marker}"));
         }
     }
+    Ok(())
+}
 
+/// Validate that content does not contain agent error messages.
+fn validate_no_agent_errors(content: &str) -> Result<(), String> {
     // Check for agent error messages that leaked into output
     // This handles cases where agents output errors in their result field
     // that bypassed the normal stderr error detection
@@ -397,6 +407,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         "invalid request",
         "request failed",
     ];
+    let content_lower = content.to_lowercase();
     for pattern in &agent_error_patterns {
         if content_lower.contains(pattern) {
             return Err(format!(
@@ -404,6 +415,12 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
             ));
         }
     }
+    Ok(())
+}
+
+/// Validate that content does not contain AI thought process leakage.
+fn validate_no_thought_process_leakage(content: &str) -> Result<(), String> {
+    let content_lower = content.to_lowercase();
 
     // Check for AI thought process leakage at the start of the message
     // This validation catches cases where the filtering in remove_thought_process_patterns
@@ -478,7 +495,11 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         }
     }
 
-    // Check for placeholder content
+    Ok(())
+}
+
+/// Validate that content does not contain placeholder text.
+fn validate_no_placeholders(content: &str) -> Result<(), String> {
     let placeholders = [
         "[commit message]",
         "<commit message>",
@@ -487,6 +508,7 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         "[insert",
         "<insert",
     ];
+    let content_lower = content.to_lowercase();
     for placeholder in placeholders {
         if content_lower.contains(placeholder) {
             return Err(format!(
@@ -494,6 +516,12 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
             ));
         }
     }
+    Ok(())
+}
+
+/// Validate that content does not match bad commit message patterns.
+fn validate_no_bad_patterns(content: &str) -> Result<(), String> {
+    let content_lower = content.to_lowercase();
 
     // Check for bad commit message patterns (vague, meaningless messages)
     // Use regex to catch ALL variants, not just hardcoded numbers
@@ -565,6 +593,27 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
             ));
         }
     }
+
+    Ok(())
+}
+
+/// Validate extracted content for use as a commit message.
+///
+/// # Returns
+///
+/// `Ok(())` if valid, `Err(reason)` if invalid
+pub fn validate_commit_message(content: &str) -> Result<(), String> {
+    let content = content.trim();
+
+    // Run all validation checks in order
+    validate_basic_length(content)?;
+    validate_no_json_artifacts(content)?;
+    validate_no_literal_escape_sequences(content)?;
+    validate_no_error_markers(content)?;
+    validate_no_agent_errors(content)?;
+    validate_no_thought_process_leakage(content)?;
+    validate_no_placeholders(content)?;
+    validate_no_bad_patterns(content)?;
 
     Ok(())
 }
