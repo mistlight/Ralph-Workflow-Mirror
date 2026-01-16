@@ -16,7 +16,7 @@
 {# VARIABLES:                                                                  #}
 {#   PROMPT - Original user request from PROMPT.md (required)                   #}
 {#   PLAN   - Implementation plan from PLAN.md (required)                      #}
-#   DIFF   - Git diff content to review (required)                             #}
+{#   DIFF    - Git diff content to review (required)                          #}
 {#                                                                             #}
 {# NOTES:                                                                      #}
 {#   - Designed for agents with weaker instruction-following                    #}

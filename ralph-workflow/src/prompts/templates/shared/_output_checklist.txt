@@ -17,7 +17,7 @@
 {#   - Use when review output should be in checklist format                    #}
 {# ============================================================================ #}
 
-OUTPUT (prioritized checklist with [file:line]):
+# OUTPUT: Prioritized checklist with [file:line] references
 - [ ] Critical: [file:line] Blocks merge
 - [ ] High: [file:line] Should fix before merge
 - [ ] Medium: [file:line] Should address
