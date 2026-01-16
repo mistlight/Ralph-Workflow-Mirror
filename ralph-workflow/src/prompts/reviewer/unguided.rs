@@ -42,7 +42,15 @@ INPUTS TO READ:
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md (you need unbiased perspective)
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below. Focus on:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+
+Focus on:
 1) Code quality and correctness
 2) Bugs, security, tests
 3) Code style and maintainability
@@ -64,7 +72,15 @@ If no issues found in the changed files, return "No issues found.""#
             r#"You are in DETAILED REVIEW MODE.
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below. Focus on:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+
+Focus on:
 - Bugs, security, tests
 - Code style and maintainability
 
@@ -105,7 +121,15 @@ INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below. Focus on:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+
+Focus on:
 1) Code quality and correctness
 2) Bugs, error handling, tests
 3) Security regressions (inputs validated, outputs escaped)
@@ -128,6 +152,15 @@ If no issues found, return \"No issues found in changed files.\""
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
+
+YOUR TASK:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
 
 DIFF TO REVIEW:
 ```diff
@@ -165,7 +198,15 @@ pub fn prompt_universal_review_with_diff(context: ContextLevel, diff: &str) -> S
         ContextLevel::Minimal => format!(
             r#"REVIEW TASK
 
-Review ONLY the changes in the DIFF below for:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+
+Review for:
 - Bugs, errors, security issues
 - Missing tests
 - Code quality and style
@@ -191,7 +232,15 @@ IMPORTANT: Use the format [file:line] for each issue."#
         ContextLevel::Normal => format!(
             r#"REVIEW TASK
 
-Review ONLY the changes in the DIFF below for quality and correctness.
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+
+Review for quality and correctness.
 
 DIFF TO REVIEW:
 ```diff
