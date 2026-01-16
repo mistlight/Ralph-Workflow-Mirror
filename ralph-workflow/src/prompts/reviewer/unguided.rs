@@ -19,22 +19,18 @@ use std::collections::HashMap;
 
 /// Load and render a template from a string with the given variables.
 ///
-/// If template rendering fails, returns a minimal fallback prompt that still
-/// includes the diff to ensure the review phase can proceed with content.
+/// Templates are embedded at compile time via `include_str!`, so any failure
+/// indicates a programming error (missing template file or malformed template).
+/// This function panics with a clear error message to make such issues visible.
 fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
     let template = Template::new(template_content);
-    match template.render(variables) {
-        Ok(rendered) => rendered,
-        Err(e) => {
-            // Fallback to a minimal prompt that still includes the diff
-            // This ensures the review phase can proceed even if template rendering fails
-            eprintln!("Warning: Failed to render template: {e}");
-            let diff = variables.get("DIFF").map_or("", String::as_str);
-            format!(
-                "Review the following code changes and identify any issues:\n\n```diff\n{diff}\n```"
-            )
-        }
-    }
+    template.render(variables).unwrap_or_else(|e| {
+        panic!(
+            "Failed to render template: {e}. \
+            This indicates a programming error - templates are embedded at compile time. \
+            Please check that the template file exists and all variables are properly defined."
+        )
+    })
 }
 
 /// Generate detailed reviewer review prompt without language-specific guidelines,
