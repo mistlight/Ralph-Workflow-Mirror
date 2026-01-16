@@ -1018,13 +1018,12 @@ fn create_commit_log_session(log_dir: &str, runtime: &mut PipelineRuntime) -> Co
 /// Try all agents with their strategy variants.
 ///
 /// This function implements the correct cycling order:
-/// - Outer loop: Iterate through strategies (9 total)
-/// - Inner loop: Try each agent with the current strategy
-/// - Only advance to next strategy if ALL agents failed with current strategy
+/// - Outer loop: Iterate through agents
+/// - Inner loop: Try all strategies with the current agent
+/// - Only advance to next agent if ALL strategies failed with current agent
 ///
-/// This ensures we try the current strategy with ALL agents before moving
-/// to the next strategy, which is more efficient than trying all strategies
-/// with one agent before moving to the next.
+/// This ensures each agent gets the best chance to succeed with the most
+/// detailed prompt (Initial) before we try degraded fallback prompts.
 fn try_agents_with_strategies(
     agents: &[&str],
     ctx: &CommitAttemptContext<'_>,
@@ -1034,18 +1033,25 @@ fn try_agents_with_strategies(
     session: &mut CommitLogSession,
     total_attempts: &mut usize,
 ) -> Option<anyhow::Result<CommitMessageResult>> {
-    let mut strategy = CommitRetryStrategy::Initial;
-    loop {
-        runtime
-            .logger
-            .info(&format!("Trying strategy: {}", strategy.description()));
+    for (agent_idx, agent) in agents.iter().enumerate() {
+        runtime.logger.info(&format!(
+            "Trying agent {}/{}: {agent}",
+            agent_idx + 1,
+            agents.len()
+        ));
 
-        for (idx, agent) in agents.iter().enumerate() {
-            runtime
-                .logger
-                .info(&format!("  - Agent {}/{}: {agent}", idx + 1, agents.len()));
+        let mut strategy = CommitRetryStrategy::Initial;
+        let mut agent_attempts = 0;
+        loop {
+            runtime.logger.info(&format!(
+                "  - Strategy {}/{}: {}",
+                agent_attempts + 1,
+                CommitRetryStrategy::total_stages(),
+                strategy.description()
+            ));
 
             *total_attempts += 1;
+            agent_attempts += 1;
             if let Some(result) = run_commit_attempt_with_agent(
                 strategy,
                 ctx,
@@ -1057,17 +1063,16 @@ fn try_agents_with_strategies(
             ) {
                 return Some(result);
             }
+
+            match strategy.next() {
+                Some(next) => strategy = next,
+                None => break,
+            }
         }
 
         runtime.logger.warn(&format!(
-            "All agents failed with strategy '{}', moving to next strategy...",
-            strategy.description()
+            "All strategies failed for {agent}, moving to next agent..."
         ));
-
-        match strategy.next() {
-            Some(next) => strategy = next,
-            None => break,
-        }
     }
     None
 }

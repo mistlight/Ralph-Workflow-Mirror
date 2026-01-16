@@ -235,10 +235,7 @@ impl ParsingTraceLog {
         Ok(())
     }
 
-    fn write_parsing_steps(
-        w: &mut impl Write,
-        trace: &Self,
-    ) -> std::io::Result<()> {
+    fn write_parsing_steps(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
         writeln!(
             w,
             "--------------------------------------------------------------------------------"
@@ -259,11 +256,7 @@ impl ParsingTraceLog {
                 } else {
                     "✗ FAILED"
                 };
-                writeln!(
-                    w,
-                    "{}. {} [{}]",
-                    step.step_number, step.description, status
-                )?;
+                writeln!(w, "{}. {} [{}]", step.step_number, step.description, status)?;
                 writeln!(w)?;
 
                 if let Some(input) = &step.input {
@@ -292,10 +285,7 @@ impl ParsingTraceLog {
         Ok(())
     }
 
-    fn write_final_message(
-        w: &mut impl Write,
-        trace: &Self,
-    ) -> std::io::Result<()> {
+    fn write_final_message(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
         writeln!(
             w,
             "--------------------------------------------------------------------------------"
