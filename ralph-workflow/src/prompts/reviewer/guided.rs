@@ -11,8 +11,6 @@
 //! - **Security-focused review**: OWASP Top 10 combined with language-specific
 //!   security checks
 
-#![allow(clippy::uninlined_format_args)]
-
 use super::super::types::ContextLevel;
 use crate::guidelines::ReviewGuidelines;
 
@@ -47,14 +45,22 @@ INPUTS TO READ:
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below, then apply language-specific checks:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+
+Then apply these language-specific checks:
 
 Language-Specific checks:
-{}
+{guidelines_section}
 
 DIFF TO REVIEW:
 ```diff
-{}
+{diff}
 ```
 
 OUTPUT (prioritized checklist with [file:line]):
@@ -63,21 +69,28 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found in the changed files, return "No issues found.""#,
-            guidelines_section, diff
+If no issues found in the changed files, return "No issues found.""#
         ),
         ContextLevel::Normal => format!(
             r#"You are in REVIEW MODE.
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below, then apply language-specific checks:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+
+Then apply these language-specific checks:
 
 Language-Specific checks:
-{}
+{guidelines_section}
 
 DIFF TO REVIEW:
 ```diff
-{}
+{diff}
 ```
 
 OUTPUT (prioritized checklist with [file:line]):
@@ -86,8 +99,7 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found in the changed files, return "No issues found.""#,
-            guidelines_section, diff
+If no issues found in the changed files, return "No issues found.""#
         ),
     }
 }
@@ -123,47 +135,59 @@ INPUTS TO READ:
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+
+Review for:
 1) Code quality and correctness
 2) Security (injection, auth, secrets)
 3) Performance/resources (bottlenecks, leaks)
 4) Maintainability (error handling, tests)
 
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
-{}
+{priority_section}
 
 DIFF TO REVIEW:
 ```diff
-{}
+{diff}
 ```
 
 OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description",
-            priority_section, diff
+- [ ] Low: [file:line] Description"
         ),
         ContextLevel::Normal => format!(
             r"You are in COMPREHENSIVE REVIEW MODE.
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below.
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
 
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
-{}
+{priority_section}
 
 DIFF TO REVIEW:
 ```diff
-{}
+{diff}
 ```
 
 OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description",
-            priority_section, diff
+- [ ] Low: [file:line] Description"
         ),
     }
 }
@@ -199,7 +223,13 @@ INPUTS TO READ:
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below for security issues:
+Review ONLY the changes in the DIFF below for security issues. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
 
 SECURITY FOCUS (OWASP TOP 10):
 - Broken Access Control
@@ -208,11 +238,11 @@ SECURITY FOCUS (OWASP TOP 10):
 - Security Misconfiguration
 
 LANGUAGE-SPECIFIC SECURITY:
-{}
+{security_section}
 
 DIFF TO REVIEW:
 ```diff
-{}
+{diff}
 ```
 
 OUTPUT (prioritized checklist with [file:line]):
@@ -221,21 +251,26 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Medium: [file:line] SECURITY - Address as needed
 - [ ] Low: [file:line] SECURITY - Nice to have
 
-If no security issues found in the changed files, return "No security issues found.""#,
-            security_section, diff
+If no security issues found in the changed files, return "No security issues found.""#
         ),
         ContextLevel::Normal => format!(
             r#"You are in SECURITY REVIEW MODE.
 
 YOUR TASK:
-Review ONLY the changes in the DIFF below for security issues.
+Review ONLY the changes in the DIFF below for security issues. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
 
 LANGUAGE-SPECIFIC SECURITY:
-{}
+{security_section}
 
 DIFF TO REVIEW:
 ```diff
-{}
+{diff}
 ```
 
 OUTPUT (prioritized checklist with [file:line]):
@@ -244,8 +279,7 @@ OUTPUT (prioritized checklist with [file:line]):
 - [ ] Medium: [file:line] SECURITY - Description
 - [ ] Low: [file:line] SECURITY - Description
 
-If no security issues found in the changed files, return "No security issues found.""#,
-            security_section, diff
+If no security issues found in the changed files, return "No security issues found.""#
         ),
     }
 }

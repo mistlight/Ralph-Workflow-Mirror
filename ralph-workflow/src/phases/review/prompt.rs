@@ -37,18 +37,13 @@ pub fn should_use_universal_prompt(agent: &str, model_flag: Option<&str>, force:
 }
 
 /// Build the review prompt based on configuration and agent type.
-#[allow(clippy::too_many_lines)]
 pub fn build_review_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
     guidelines: Option<&ReviewGuidelines>,
 ) -> (String, String) {
-    // Fetch the diff from the starting commit to pass directly to the reviewer
-    // This keeps agents isolated from git operations and ensures they only review
-    // the changes made since the pipeline started.
     let diff_result = get_and_validate_diff(ctx);
 
-    // Check if we should use the universal prompt for this agent
     let use_universal = should_use_universal_prompt(
         ctx.reviewer_agent,
         ctx.config.reviewer_model.as_deref(),
@@ -56,119 +51,163 @@ pub fn build_review_prompt(
     );
 
     if use_universal {
-        let reason = if ctx.config.features.force_universal_prompt {
-            "forced via config/env"
-        } else {
-            "better compatibility"
-        };
-        ctx.logger.info(&format!(
-            "Using universal/simplified review prompt for agent '{}' ({})",
-            ctx.reviewer_agent, reason
-        ));
-        return match diff_result {
-            Ok(Some(diff)) => (
-                "review (universal)".to_string(),
-                prompt_universal_review_with_diff(reviewer_context, &diff),
-            ),
-            Ok(None) => ("review (universal - skipped)".to_string(), String::new()),
-            Err(()) => ("review (universal - error)".to_string(), String::new()),
-        };
+        return build_universal_prompt(ctx, reviewer_context, diff_result);
     }
 
     match ctx.config.review_depth {
         ReviewDepth::Security => {
-            ctx.logger.info(if guidelines.is_some() {
-                "Using security-focused review with language-specific checks"
-            } else {
-                "Using security-focused review"
+            build_security_prompt(ctx, reviewer_context, guidelines, diff_result)
+        }
+        ReviewDepth::Incremental => build_incremental_prompt(ctx, reviewer_context, diff_result),
+        ReviewDepth::Comprehensive => {
+            build_comprehensive_prompt(ctx, reviewer_context, guidelines, diff_result)
+        }
+        ReviewDepth::Standard => {
+            build_standard_prompt(ctx, reviewer_context, guidelines, diff_result)
+        }
+    }
+}
+
+/// Build the universal/simplified review prompt.
+fn build_universal_prompt(
+    ctx: &PhaseContext<'_>,
+    reviewer_context: ContextLevel,
+    diff_result: Result<Option<String>, ()>,
+) -> (String, String) {
+    let reason = if ctx.config.features.force_universal_prompt {
+        "forced via config/env"
+    } else {
+        "better compatibility"
+    };
+    ctx.logger.info(&format!(
+        "Using universal/simplified review prompt for agent '{}' ({reason}')",
+        ctx.reviewer_agent
+    ));
+    match diff_result {
+        Ok(Some(diff)) => (
+            "review (universal)".to_string(),
+            prompt_universal_review_with_diff(reviewer_context, &diff),
+        ),
+        Ok(None) => ("review (universal - skipped)".to_string(), String::new()),
+        Err(()) => ("review (universal - error)".to_string(), String::new()),
+    }
+}
+
+/// Build the security-focused review prompt.
+fn build_security_prompt(
+    ctx: &PhaseContext<'_>,
+    reviewer_context: ContextLevel,
+    guidelines: Option<&ReviewGuidelines>,
+    diff_result: Result<Option<String>, ()>,
+) -> (String, String) {
+    ctx.logger.info(if guidelines.is_some() {
+        "Using security-focused review with language-specific checks"
+    } else {
+        "Using security-focused review"
+    });
+    match diff_result {
+        Ok(Some(diff)) => {
+            let guidelines_ref = guidelines.unwrap_or_else(|| {
+                static DEFAULT_GUIDELINES: std::sync::OnceLock<ReviewGuidelines> =
+                    std::sync::OnceLock::new();
+                DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
             });
-            match diff_result {
-                Ok(Some(diff)) => {
-                    let guidelines_ref = guidelines.unwrap_or_else(|| {
-                        static DEFAULT_GUIDELINES: std::sync::OnceLock<ReviewGuidelines> =
-                            std::sync::OnceLock::new();
-                        DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
-                    });
+            (
+                "review (security)".to_string(),
+                prompt_security_focused_review_with_diff(reviewer_context, guidelines_ref, &diff),
+            )
+        }
+        Ok(None) => ("review (security - skipped)".to_string(), String::new()),
+        Err(()) => ("review (security - error)".to_string(), String::new()),
+    }
+}
+
+/// Build the incremental review prompt.
+fn build_incremental_prompt(
+    ctx: &PhaseContext<'_>,
+    reviewer_context: ContextLevel,
+    diff_result: Result<Option<String>, ()>,
+) -> (String, String) {
+    match diff_result {
+        Ok(Some(diff)) => {
+            ctx.logger
+                .info("Using incremental review (changed files only)");
+            (
+                "review (incremental)".to_string(),
+                prompt_incremental_review_with_diff(reviewer_context, &diff),
+            )
+        }
+        Ok(None) => ("review (incremental - skipped)".to_string(), String::new()),
+        Err(()) => ("review (incremental - error)".to_string(), String::new()),
+    }
+}
+
+/// Build the comprehensive review prompt.
+fn build_comprehensive_prompt(
+    ctx: &PhaseContext<'_>,
+    reviewer_context: ContextLevel,
+    guidelines: Option<&ReviewGuidelines>,
+    diff_result: Result<Option<String>, ()>,
+) -> (String, String) {
+    ctx.logger.info(if guidelines.is_some() {
+        "Using comprehensive review with language-specific checks"
+    } else {
+        "Using comprehensive review"
+    });
+    match diff_result {
+        Ok(Some(diff)) => {
+            let guidelines_ref = guidelines.unwrap_or_else(|| {
+                static DEFAULT_GUIDELINES: std::sync::OnceLock<ReviewGuidelines> =
+                    std::sync::OnceLock::new();
+                DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
+            });
+            (
+                "review (comprehensive)".to_string(),
+                prompt_comprehensive_review_with_diff(reviewer_context, guidelines_ref, &diff),
+            )
+        }
+        Ok(None) => (
+            "review (comprehensive - skipped)".to_string(),
+            String::new(),
+        ),
+        Err(()) => ("review (comprehensive - error)".to_string(), String::new()),
+    }
+}
+
+/// Build the standard review prompt.
+fn build_standard_prompt(
+    ctx: &PhaseContext<'_>,
+    reviewer_context: ContextLevel,
+    guidelines: Option<&ReviewGuidelines>,
+    diff_result: Result<Option<String>, ()>,
+) -> (String, String) {
+    match diff_result {
+        Ok(Some(diff)) => {
+            ctx.logger.info(if guidelines.is_some() {
+                "Using standard review with language-specific checks"
+            } else {
+                "Using detailed review without stack-specific checks"
+            });
+            guidelines.map_or_else(
+                || {
                     (
-                        "review (security)".to_string(),
-                        prompt_security_focused_review_with_diff(
+                        "review (standard)".to_string(),
+                        prompt_detailed_review_without_guidelines_with_diff(
                             reviewer_context,
-                            guidelines_ref,
                             &diff,
                         ),
                     )
-                }
-                Ok(None) => ("review (security - skipped)".to_string(), String::new()),
-                Err(()) => ("review (security - error)".to_string(), String::new()),
-            }
+                },
+                |g| {
+                    (
+                        "review (standard)".to_string(),
+                        prompt_reviewer_review_with_guidelines_and_diff(reviewer_context, g, &diff),
+                    )
+                },
+            )
         }
-        ReviewDepth::Incremental => match diff_result {
-            Ok(Some(diff)) => {
-                ctx.logger
-                    .info("Using incremental review (changed files only)");
-                (
-                    "review (incremental)".to_string(),
-                    prompt_incremental_review_with_diff(reviewer_context, &diff),
-                )
-            }
-            Ok(None) => ("review (incremental - skipped)".to_string(), String::new()),
-            Err(()) => ("review (incremental - error)".to_string(), String::new()),
-        },
-        ReviewDepth::Comprehensive => match diff_result {
-            Ok(Some(diff)) => {
-                ctx.logger.info(if guidelines.is_some() {
-                    "Using comprehensive review with language-specific checks"
-                } else {
-                    "Using comprehensive review"
-                });
-                let guidelines_ref = guidelines.unwrap_or_else(|| {
-                    static DEFAULT_GUIDELINES: std::sync::OnceLock<ReviewGuidelines> =
-                        std::sync::OnceLock::new();
-                    DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
-                });
-                (
-                    "review (comprehensive)".to_string(),
-                    prompt_comprehensive_review_with_diff(reviewer_context, guidelines_ref, &diff),
-                )
-            }
-            Ok(None) => (
-                "review (comprehensive - skipped)".to_string(),
-                String::new(),
-            ),
-            Err(()) => ("review (comprehensive - error)".to_string(), String::new()),
-        },
-        ReviewDepth::Standard => match diff_result {
-            Ok(Some(diff)) => {
-                ctx.logger.info(if guidelines.is_some() {
-                    "Using standard review with language-specific checks"
-                } else {
-                    "Using detailed review without stack-specific checks"
-                });
-                guidelines.map_or_else(
-                    || {
-                        (
-                            "review (standard)".to_string(),
-                            prompt_detailed_review_without_guidelines_with_diff(
-                                reviewer_context,
-                                &diff,
-                            ),
-                        )
-                    },
-                    |g| {
-                        (
-                            "review (standard)".to_string(),
-                            prompt_reviewer_review_with_guidelines_and_diff(
-                                reviewer_context,
-                                g,
-                                &diff,
-                            ),
-                        )
-                    },
-                )
-            }
-            Ok(None) => ("review (standard - skipped)".to_string(), String::new()),
-            Err(()) => ("review (standard - error)".to_string(), String::new()),
-        },
+        Ok(None) => ("review (standard - skipped)".to_string(), String::new()),
+        Err(()) => ("review (standard - error)".to_string(), String::new()),
     }
 }
 
@@ -203,6 +242,13 @@ fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<String>, ()> {
                     "Diff size for review: {} bytes",
                     truncated_diff.len()
                 ));
+                // Log a preview of the diff content for verification
+                if truncated_diff.len() > 500 {
+                    ctx.logger
+                        .info(&format!("Diff preview:\n{}...", &truncated_diff[..500]));
+                } else {
+                    ctx.logger.info(&format!("Diff preview:\n{truncated_diff}"));
+                }
             }
             Ok(Some(truncated_diff))
         }
