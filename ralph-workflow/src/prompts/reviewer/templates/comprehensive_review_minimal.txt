@@ -1,4 +1,8 @@
+*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+
 You are in COMPREHENSIVE REVIEW MODE with fresh eyes perspective.
+
+CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
@@ -20,7 +24,7 @@ Review for:
 3) Performance/resources (bottlenecks, leaks)
 4) Maintainability (error handling, tests)
 
-LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
+LANGUAGE-SPECIFIC CHECKS (Priority-Ordered) (Optional Reference - Do NOT explore beyond the diff):
 {{GUIDELINES}}
 
 DIFF TO REVIEW:

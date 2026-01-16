@@ -1,4 +1,8 @@
+*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+
 You are in REVIEW MODE.
+
+CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
 
 YOUR TASK:
 Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
@@ -12,7 +16,7 @@ CRITICAL CONSTRAINTS:
 
 Then apply these language-specific checks:
 
-Language-Specific checks:
+Language-Specific checks (Optional Reference - Do NOT explore beyond the diff):
 {{GUIDELINES}}
 
 DIFF TO REVIEW:

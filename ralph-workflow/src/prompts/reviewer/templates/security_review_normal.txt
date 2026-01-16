@@ -1,4 +1,8 @@
+*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+
 You are in SECURITY REVIEW MODE.
+
+CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
 
 YOUR TASK:
 Review ONLY the changes in the DIFF below for security issues. Do NOT explore the repository, read other files, or run any commands.
@@ -10,7 +14,7 @@ CRITICAL CONSTRAINTS:
 - Your analysis MUST be limited to the diff content provided
 - DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
 
-LANGUAGE-SPECIFIC SECURITY:
+LANGUAGE-SPECIFIC SECURITY (Optional Reference - Do NOT explore beyond the diff):
 {{GUIDELINES}}
 
 DIFF TO REVIEW:

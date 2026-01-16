@@ -84,10 +84,11 @@ fn build_universal_prompt(
         ctx.reviewer_agent
     ));
     match diff_result {
-        Ok(Some(diff)) => (
-            "review (universal)".to_string(),
-            prompt_universal_review_with_diff(reviewer_context, &diff),
-        ),
+        Ok(Some(diff)) => {
+            let prompt = prompt_universal_review_with_diff(reviewer_context, &diff);
+            log_prompt_debug_info(ctx, &prompt, "universal");
+            ("review (universal)".to_string(), prompt)
+        }
         Ok(None) => ("review (universal - skipped)".to_string(), String::new()),
         Err(()) => ("review (universal - error)".to_string(), String::new()),
     }
@@ -112,10 +113,10 @@ fn build_security_prompt(
                     std::sync::OnceLock::new();
                 DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
             });
-            (
-                "review (security)".to_string(),
-                prompt_security_focused_review_with_diff(reviewer_context, guidelines_ref, &diff),
-            )
+            let prompt =
+                prompt_security_focused_review_with_diff(reviewer_context, guidelines_ref, &diff);
+            log_prompt_debug_info(ctx, &prompt, "security");
+            ("review (security)".to_string(), prompt)
         }
         Ok(None) => ("review (security - skipped)".to_string(), String::new()),
         Err(()) => ("review (security - error)".to_string(), String::new()),
@@ -132,10 +133,9 @@ fn build_incremental_prompt(
         Ok(Some(diff)) => {
             ctx.logger
                 .info("Using incremental review (changed files only)");
-            (
-                "review (incremental)".to_string(),
-                prompt_incremental_review_with_diff(reviewer_context, &diff),
-            )
+            let prompt = prompt_incremental_review_with_diff(reviewer_context, &diff);
+            log_prompt_debug_info(ctx, &prompt, "incremental");
+            ("review (incremental)".to_string(), prompt)
         }
         Ok(None) => ("review (incremental - skipped)".to_string(), String::new()),
         Err(()) => ("review (incremental - error)".to_string(), String::new()),
@@ -161,10 +161,10 @@ fn build_comprehensive_prompt(
                     std::sync::OnceLock::new();
                 DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
             });
-            (
-                "review (comprehensive)".to_string(),
-                prompt_comprehensive_review_with_diff(reviewer_context, guidelines_ref, &diff),
-            )
+            let prompt =
+                prompt_comprehensive_review_with_diff(reviewer_context, guidelines_ref, &diff);
+            log_prompt_debug_info(ctx, &prompt, "comprehensive");
+            ("review (comprehensive)".to_string(), prompt)
         }
         Ok(None) => (
             "review (comprehensive - skipped)".to_string(),
@@ -190,19 +190,18 @@ fn build_standard_prompt(
             });
             guidelines.map_or_else(
                 || {
-                    (
-                        "review (standard)".to_string(),
-                        prompt_detailed_review_without_guidelines_with_diff(
-                            reviewer_context,
-                            &diff,
-                        ),
-                    )
+                    let prompt = prompt_detailed_review_without_guidelines_with_diff(
+                        reviewer_context,
+                        &diff,
+                    );
+                    log_prompt_debug_info(ctx, &prompt, "standard (detailed)");
+                    ("review (standard)".to_string(), prompt)
                 },
                 |g| {
-                    (
-                        "review (standard)".to_string(),
-                        prompt_reviewer_review_with_guidelines_and_diff(reviewer_context, g, &diff),
-                    )
+                    let prompt =
+                        prompt_reviewer_review_with_guidelines_and_diff(reviewer_context, g, &diff);
+                    log_prompt_debug_info(ctx, &prompt, "standard (guided)");
+                    ("review (standard)".to_string(), prompt)
                 },
             )
         }
@@ -217,6 +216,32 @@ fn build_standard_prompt(
 /// This function detects those agents for which alternative handling may be needed.
 fn is_problematic_prompt_target(agent: &str, model_flag: Option<&str>) -> bool {
     is_glm_like_agent(agent) || model_flag.is_some_and(is_glm_like_agent)
+}
+
+/// Log debug information about the prompt being sent to the reviewer agent.
+fn log_prompt_debug_info(ctx: &PhaseContext<'_>, prompt: &str, prompt_type: &str) {
+    if ctx.config.verbosity.is_debug() {
+        ctx.logger.info(&format!(
+            "Review prompt type: {prompt_type}, size: {} bytes",
+            prompt.len()
+        ));
+        // Log a preview of the prompt content for verification
+        if prompt.len() > 500 {
+            ctx.logger
+                .info(&format!("Prompt preview:\n{}...", &prompt[..500]));
+        } else {
+            ctx.logger.info(&format!("Prompt preview:\n{prompt}"));
+        }
+        // Verify diff was included (check for actual content, not placeholder)
+        let has_diff_placeholder = prompt.contains("{{DIFF}}");
+        let has_actual_diff = prompt.contains("DIFF TO REVIEW")
+            && prompt
+                .lines()
+                .any(|l| l.starts_with('+') || l.starts_with('-') || l.starts_with("diff --git"));
+        ctx.logger.info(&format!(
+            "Diff inclusion check - placeholder present: {has_diff_placeholder}, actual diff content: {has_actual_diff}"
+        ));
+    }
 }
 
 /// Fetch and validate the git diff from the starting commit.
@@ -423,5 +448,87 @@ mod tests {
 
         // Should not trigger for non-GLM models
         assert!(!should_use_universal_prompt("openai", Some("gpt-4"), false));
+    }
+
+    /// Test that prompts contain the "CLOSED BOOK REVIEW" constraint phrase.
+    #[test]
+    fn test_prompts_contain_closed_book_constraint() {
+        let sample_diff = "+ new line";
+
+        let prompts_to_check = vec![
+            prompt_reviewer_review_with_guidelines_and_diff(
+                ContextLevel::Minimal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_comprehensive_review_with_diff(
+                ContextLevel::Normal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_security_focused_review_with_diff(
+                ContextLevel::Minimal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, sample_diff),
+            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff),
+            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff),
+        ];
+
+        for prompt in prompts_to_check {
+            assert!(
+                prompt.contains("CLOSED BOOK REVIEW"),
+                "Prompt should contain 'CLOSED BOOK REVIEW' constraint. Prompt: {}",
+                &prompt[..prompt.len().min(200)]
+            );
+            assert!(
+                prompt.contains("NO ACCESS TO REPOSITORY"),
+                "Prompt should contain 'NO ACCESS TO REPOSITORY' constraint. Prompt: {}",
+                &prompt[..prompt.len().min(200)]
+            );
+        }
+    }
+
+    /// Test that actual diff content is substituted (not the {{DIFF}} placeholder).
+    #[test]
+    fn test_actual_diff_content_is_substituted_not_placeholder() {
+        let sample_diff = "+ new line\n- old line";
+
+        let prompts_to_check = vec![
+            prompt_reviewer_review_with_guidelines_and_diff(
+                ContextLevel::Minimal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_comprehensive_review_with_diff(
+                ContextLevel::Normal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_security_focused_review_with_diff(
+                ContextLevel::Minimal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, sample_diff),
+            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff),
+            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff),
+        ];
+
+        for prompt in prompts_to_check {
+            // Prompt should contain the actual diff content
+            assert!(
+                prompt.contains(sample_diff),
+                "Prompt should contain actual diff content. Prompt: {}",
+                &prompt[..prompt.len().min(500)]
+            );
+            // Prompt should NOT contain the template placeholder
+            assert!(
+                !prompt.contains("{{DIFF}}"),
+                "Prompt should not contain {{DIFF}} placeholder. Prompt: {}",
+                &prompt[..prompt.len().min(500)]
+            );
+        }
     }
 }

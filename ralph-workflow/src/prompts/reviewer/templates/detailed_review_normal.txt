@@ -1,4 +1,8 @@
+*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+
 You are in DETAILED REVIEW MODE.
+
+CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
 
 YOUR TASK:
 Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
