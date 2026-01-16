@@ -70,9 +70,12 @@ rg -n -U --pcre2 '(?x)
     [^()]*?
     \b(allow|expect)\s*\(
   ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
-# DO NOT CONTINUE IF THE ABOVE COMMAND PRODUCE ANYTHING AND FIX THE ISSUE, 
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+

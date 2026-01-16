@@ -25,8 +25,8 @@ Ensure you run git rebase on the main branch if working on a feature branch and 
 Before opening a PR (or marking work “done”), run:
 
 ```bash
-# THIS MUST BE EMPTY
-rg -n --pcre2 '(?x)
+# THIS IS VERY IMPORTANT!!!! THESE TWO COMMANDS MUST PRODUCE NO OUTPUT!!! NOTHING AT ALL SHOULD DISPLAY WITH THIS COMMAND
+rg -n -U --pcre2 '(?x)
   \#\s*!?\[\s*
   (allow|expect)
   \s*\(
@@ -35,7 +35,18 @@ rg -n --pcre2 '(?x)
   \)
   \s*\]
 ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+
+rg -n -U --pcre2 '(?x)
+  \#\s*!?\[\s*cfg_attr\s*\(
+    [^()]*?
+    \b(allow|expect)\s*\(
+  ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
