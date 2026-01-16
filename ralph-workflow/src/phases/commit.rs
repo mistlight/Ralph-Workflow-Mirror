@@ -516,17 +516,28 @@ pub fn generate_commit_message(
                             break;
                         }
                     } else {
-                        // Other agent errors - log and break to fallback
+                        // Other agent errors - log and continue to next prompt variant
+                        // run_with_fallback() already tried all agents, so now we try
+                        // progressively simpler prompts to see if any agent can succeed
                         runtime.logger.warn(&format!(
-                            "Agent error detected: {}. Skipping remaining prompt variants.",
+                            "Agent error detected: {}. All agents failed with current prompt, trying simpler prompt...",
                             extraction
                                 .error_kind()
                                 .map_or("unknown", AgentErrorKind::description)
                         ));
                         last_extraction = Some(extraction);
-                        // Break out of the strategy loop - we've hit a hard error
-                        // that requires switching agents or using fallback
-                        break;
+
+                        // Move to next (simpler) strategy
+                        if let Some(next) = strategy.next() {
+                            strategy = next;
+                        } else {
+                            // All strategies exhausted
+                            runtime.logger.warn(&format!(
+                                "All {} prompt variants failed with agent errors.",
+                                CommitRetryStrategy::total_stages()
+                            ));
+                            break;
+                        }
                     }
                 } else if extraction.is_fallback() {
                     // Fallback was generated - log and continue to next prompt variant
