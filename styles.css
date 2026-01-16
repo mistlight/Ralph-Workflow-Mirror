@@ -1436,12 +1436,38 @@ pre code {
     }
 
     .hero-title {
-        font-size: clamp(2rem, 10vw, 3.5rem);
+        font-size: clamp(1.75rem, 8vw, 3rem);
     }
 
     .terminal-body {
         padding: var(--space-4);
         font-size: var(--text-xs);
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: clamp(1.25rem, 6.5vw, 1.75rem);
+        text-align: center;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* Keep block display but allow proper line breaking */
+    .hero-title-line {
+        display: block;
+    }
+
+    .hero-word {
+        display: inline;
+    }
+
+    .hero-content {
+        text-align: center;
+    }
+
+    .hero-badges {
+        justify-content: center;
     }
 }
 
@@ -3086,6 +3112,25 @@ pre code {
     animation: slideUp 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.2s;
     opacity: 0;
+}
+
+/* Mobile hero title - must come after the duplicate .hero-title rule above */
+@media (max-width: 640px) {
+    .hero-title {
+        font-size: clamp(1.5rem, 7vw, 2.5rem);
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: clamp(1.25rem, 6vw, 1.75rem);
+    }
+}
+
+@media (max-width: 375px) {
+    .hero-title {
+        font-size: clamp(1rem, 5.5vw, 1.5rem);
+    }
 }
 
 .hero-title-line {
