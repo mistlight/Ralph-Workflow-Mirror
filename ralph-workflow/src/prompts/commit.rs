@@ -2,11 +2,14 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
-/// Template for commit message prompt with diff placeholder.
-const COMMIT_MESSAGE_PROMPT_TEMPLATE: &str = r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
+/// Template for the commit message generation prompt.
+///
+/// This template instructs the LLM to generate high-quality Conventional Commits
+/// messages from a provided git diff.
+const COMMIT_PROMPT_TEMPLATE: &str = r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
 
 DIFF:
-__DIFF_CONTENT__
+{{diff}}
 
 ---
 
@@ -203,13 +206,19 @@ GUIDELINES:
 /// and trigger fallback commit message generation. Callers should still check for
 /// meaningful changes before calling this function for efficiency.
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
+    // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
+
     if diff_content.is_empty() {
+        // Return an error message instead of a placeholder
+        // This will be caught by validation in commit_with_auto_message
+        // and trigger fallback commit message generation
         return "ERROR: Empty diff provided. This indicates a bug in the caller - \
                 meaningful changes should be checked before requesting a commit message."
             .to_string();
     }
-    COMMIT_MESSAGE_PROMPT_TEMPLATE.replace("__DIFF_CONTENT__", diff_content)
+
+    COMMIT_PROMPT_TEMPLATE.replace("{{diff}}", diff_content)
 }
 
 /// Generate strict JSON-only prompt for commit message retry.
