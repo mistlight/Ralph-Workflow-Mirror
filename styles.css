@@ -3182,6 +3182,31 @@ body:not([data-audience]) .audience-newcomer-content {
     display: block;
 }
 
+/* Override for FAQ category headings (which use display: flex)
+   These need higher specificity to properly hide when audience is selected */
+body[data-audience="developer"] .faq-category.audience-newcomer-content,
+body[data-audience="developer"] .faq-category.audience-vibe-coder-content,
+body[data-audience="vibe-coder"] .faq-category.audience-developer-content,
+body[data-audience="vibe-coder"] .faq-category.audience-newcomer-content,
+body[data-audience="newcomer"] .faq-category.audience-developer-content,
+body[data-audience="newcomer"] .faq-category.audience-vibe-coder-content {
+    display: none;
+}
+
+/* When an audience is selected, show the matching FAQ categories with flex */
+body[data-audience="developer"] .faq-category.audience-developer-content,
+body[data-audience="vibe-coder"] .faq-category.audience-vibe-coder-content,
+body[data-audience="newcomer"] .faq-category.audience-newcomer-content {
+    display: flex;
+}
+
+/* When no audience is selected, show all FAQ categories */
+body:not([data-audience]) .faq-category.audience-developer-content,
+body:not([data-audience]) .faq-category.audience-vibe-coder-content,
+body:not([data-audience]) .faq-category.audience-newcomer-content {
+    display: flex;
+}
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
