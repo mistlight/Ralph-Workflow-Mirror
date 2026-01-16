@@ -20,8 +20,12 @@ const SAMPLE_DIFF: &str = r#"diff --git a/src/main.rs b/src/main.rs
 
 #[test]
 fn prompt_reviewer_review_with_diff_mentions_fresh_eyes_in_minimal() {
-    let result =
-        prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Minimal, SAMPLE_DIFF);
+    let result = prompt_detailed_review_without_guidelines_with_diff(
+        ContextLevel::Minimal,
+        SAMPLE_DIFF,
+        "",
+        "",
+    );
     assert!(result.contains("fresh eyes"));
     assert!(result.contains("DETAILED REVIEW MODE"));
     // Issues are now returned as structured output, not written to file
@@ -30,8 +34,12 @@ fn prompt_reviewer_review_with_diff_mentions_fresh_eyes_in_minimal() {
 
 #[test]
 fn prompt_detailed_review_without_guidelines_with_diff_is_actionable() {
-    let result =
-        prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Minimal, SAMPLE_DIFF);
+    let result = prompt_detailed_review_without_guidelines_with_diff(
+        ContextLevel::Minimal,
+        SAMPLE_DIFF,
+        "",
+        "",
+    );
     assert!(result.contains("DETAILED REVIEW MODE"));
     assert!(result.contains("Review ONLY the changes in the DIFF"));
     assert!(result.contains("prioritized checklist"));
@@ -57,6 +65,8 @@ fn prompt_reviewer_review_with_guidelines_and_diff_includes_guideline_section() 
         ContextLevel::Minimal,
         &guidelines,
         SAMPLE_DIFF,
+        "",
+        "",
     );
     assert!(result.contains("Language-Specific"));
     assert!(result.contains("SECURITY"));
@@ -67,8 +77,13 @@ fn prompt_reviewer_review_with_guidelines_and_diff_includes_guideline_section() 
 #[test]
 fn prompt_security_review_with_diff_contains_owasp_terms() {
     let guidelines = ReviewGuidelines::default();
-    let result =
-        prompt_security_focused_review_with_diff(ContextLevel::Minimal, &guidelines, SAMPLE_DIFF);
+    let result = prompt_security_focused_review_with_diff(
+        ContextLevel::Minimal,
+        &guidelines,
+        SAMPLE_DIFF,
+        "",
+        "",
+    );
     assert!(result.contains("OWASP TOP 10"));
     assert!(result.contains("Injection"));
     assert!(result.contains("Review ONLY the changes in the DIFF"));
@@ -79,7 +94,7 @@ fn prompt_security_review_with_diff_contains_owasp_terms() {
 fn prompt_incremental_review_with_diff_provides_diff_inline() {
     use super::unguided::prompt_incremental_review_with_diff;
 
-    let result = prompt_incremental_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF);
+    let result = prompt_incremental_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF, "", "");
 
     // The diff should be included inline in the prompt
     assert!(result.contains("```diff"));
@@ -103,10 +118,20 @@ fn prompt_incremental_review_with_diff_provides_diff_inline() {
 fn all_reviewer_prompts_with_diff_isolate_agents_from_git() {
     // Verify none of the active reviewer prompts tell agents to run git commands
     let prompts = vec![
-        prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Minimal, SAMPLE_DIFF),
-        prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, SAMPLE_DIFF),
-        prompt_universal_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF),
-        prompt_universal_review_with_diff(ContextLevel::Normal, SAMPLE_DIFF),
+        prompt_detailed_review_without_guidelines_with_diff(
+            ContextLevel::Minimal,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_detailed_review_without_guidelines_with_diff(
+            ContextLevel::Normal,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_universal_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF, "", ""),
+        prompt_universal_review_with_diff(ContextLevel::Normal, SAMPLE_DIFF, "", ""),
     ];
 
     for prompt in prompts {
@@ -133,15 +158,34 @@ fn all_reviewer_prompts_with_diff_include_diff_content() {
     // Verify all diff-based prompts include the diff and tell agent to review only the diff
     let guidelines = ReviewGuidelines::default();
     let prompts = vec![
-        prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Minimal, SAMPLE_DIFF),
+        prompt_detailed_review_without_guidelines_with_diff(
+            ContextLevel::Minimal,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
         prompt_reviewer_review_with_guidelines_and_diff(
             ContextLevel::Minimal,
             &guidelines,
             SAMPLE_DIFF,
+            "",
+            "",
         ),
-        prompt_comprehensive_review_with_diff(ContextLevel::Minimal, &guidelines, SAMPLE_DIFF),
-        prompt_security_focused_review_with_diff(ContextLevel::Minimal, &guidelines, SAMPLE_DIFF),
-        prompt_universal_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF),
+        prompt_comprehensive_review_with_diff(
+            ContextLevel::Minimal,
+            &guidelines,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_security_focused_review_with_diff(
+            ContextLevel::Minimal,
+            &guidelines,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_universal_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF, "", ""),
     ];
 
     for prompt in prompts {
@@ -170,26 +214,64 @@ fn all_reviewer_prompts_contain_critical_constraints() {
     // that explicitly tells agents not to explore the repository
     let guidelines = ReviewGuidelines::default();
     let prompts = vec![
-        prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Minimal, SAMPLE_DIFF),
-        prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, SAMPLE_DIFF),
-        prompt_incremental_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF),
-        prompt_incremental_review_with_diff(ContextLevel::Normal, SAMPLE_DIFF),
+        prompt_detailed_review_without_guidelines_with_diff(
+            ContextLevel::Minimal,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_detailed_review_without_guidelines_with_diff(
+            ContextLevel::Normal,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_incremental_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF, "", ""),
+        prompt_incremental_review_with_diff(ContextLevel::Normal, SAMPLE_DIFF, "", ""),
         prompt_reviewer_review_with_guidelines_and_diff(
             ContextLevel::Minimal,
             &guidelines,
             SAMPLE_DIFF,
+            "",
+            "",
         ),
         prompt_reviewer_review_with_guidelines_and_diff(
             ContextLevel::Normal,
             &guidelines,
             SAMPLE_DIFF,
+            "",
+            "",
         ),
-        prompt_comprehensive_review_with_diff(ContextLevel::Minimal, &guidelines, SAMPLE_DIFF),
-        prompt_comprehensive_review_with_diff(ContextLevel::Normal, &guidelines, SAMPLE_DIFF),
-        prompt_security_focused_review_with_diff(ContextLevel::Minimal, &guidelines, SAMPLE_DIFF),
-        prompt_security_focused_review_with_diff(ContextLevel::Normal, &guidelines, SAMPLE_DIFF),
-        prompt_universal_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF),
-        prompt_universal_review_with_diff(ContextLevel::Normal, SAMPLE_DIFF),
+        prompt_comprehensive_review_with_diff(
+            ContextLevel::Minimal,
+            &guidelines,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_comprehensive_review_with_diff(
+            ContextLevel::Normal,
+            &guidelines,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_security_focused_review_with_diff(
+            ContextLevel::Minimal,
+            &guidelines,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_security_focused_review_with_diff(
+            ContextLevel::Normal,
+            &guidelines,
+            SAMPLE_DIFF,
+            "",
+            "",
+        ),
+        prompt_universal_review_with_diff(ContextLevel::Minimal, SAMPLE_DIFF, "", ""),
+        prompt_universal_review_with_diff(ContextLevel::Normal, SAMPLE_DIFF, "", ""),
     ];
 
     for prompt in prompts {

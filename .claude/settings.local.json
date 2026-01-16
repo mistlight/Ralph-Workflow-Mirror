@@ -47,7 +47,9 @@
       "WebFetch(domain:evilmartians.com)",
       "WebFetch(domain:www.atlassian.com)",
       "WebFetch(domain:lucasfcosta.com)",
-      "WebFetch(domain:github.blog)"
+      "WebFetch(domain:github.blog)",
+      "Bash(git reset:*)",
+      "Bash(git worktree:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

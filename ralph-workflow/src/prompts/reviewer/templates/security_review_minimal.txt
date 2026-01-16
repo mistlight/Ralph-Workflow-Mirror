@@ -24,6 +24,14 @@ SECURITY FOCUS (OWASP TOP 10):
 - Cryptographic Failures
 - Security Misconfiguration
 
+{# ORIGINAL REQUEST - The user's original prompt #}
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+{# IMPLEMENTATION PLAN - What the changes are implementing #}
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
 LANGUAGE-SPECIFIC SECURITY (Optional Reference - Do NOT explore beyond the diff):
 {{GUIDELINES}}
 

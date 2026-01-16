@@ -21,15 +21,15 @@ use std::collections::HashMap;
 ///
 /// If template rendering fails, returns a minimal fallback prompt that still
 /// includes the diff to ensure the review phase can proceed with content.
-fn load_template_str(template_content: &str, diff: &str) -> String {
-    let variables = HashMap::from([("DIFF", diff.to_string())]);
+fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
     let template = Template::new(template_content);
-    match template.render(&variables) {
+    match template.render(variables) {
         Ok(rendered) => rendered,
         Err(e) => {
             // Fallback to a minimal prompt that still includes the diff
             // This ensures the review phase can proceed even if template rendering fails
             eprintln!("Warning: Failed to render template: {e}");
+            let diff = variables.get("DIFF").map_or("", String::as_str);
             format!(
                 "Review the following code changes and identify any issues:\n\n```diff\n{diff}\n```"
             )
@@ -51,15 +51,24 @@ fn load_template_str(template_content: &str, diff: &str) -> String {
 ///
 /// * `context` - The context level (minimal or normal)
 /// * `diff` - The git diff to review (changes since pipeline start)
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_detailed_review_without_guidelines_with_diff(
     context: ContextLevel,
     diff: &str,
+    prompt_content: &str,
+    plan_content: &str,
 ) -> String {
     let template_content = match context {
         ContextLevel::Minimal => include_str!("templates/detailed_review_minimal.txt"),
         ContextLevel::Normal => include_str!("templates/detailed_review_normal.txt"),
     };
-    load_template_str(template_content, diff)
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("DIFF", diff.to_string()),
+    ]);
+    load_template_str(template_content, &variables)
 }
 
 /// Generate incremental review prompt with diff included directly.
@@ -74,12 +83,24 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
 ///
 /// * `context` - The context level (minimal or normal)
 /// * `diff` - The git diff to review (changes since pipeline start)
-pub fn prompt_incremental_review_with_diff(context: ContextLevel, diff: &str) -> String {
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+pub fn prompt_incremental_review_with_diff(
+    context: ContextLevel,
+    diff: &str,
+    prompt_content: &str,
+    plan_content: &str,
+) -> String {
     let template_content = match context {
         ContextLevel::Minimal => include_str!("templates/incremental_review_minimal.txt"),
         ContextLevel::Normal => include_str!("templates/incremental_review_normal.txt"),
     };
-    load_template_str(template_content, diff)
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("DIFF", diff.to_string()),
+    ]);
+    load_template_str(template_content, &variables)
 }
 
 /// Generate a universal/simplified review prompt for maximum agent compatibility,
@@ -99,10 +120,22 @@ pub fn prompt_incremental_review_with_diff(context: ContextLevel, diff: &str) ->
 ///
 /// * `context` - The context level (minimal or normal)
 /// * `diff` - The git diff to review (changes since pipeline start)
-pub fn prompt_universal_review_with_diff(context: ContextLevel, diff: &str) -> String {
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+pub fn prompt_universal_review_with_diff(
+    context: ContextLevel,
+    diff: &str,
+    prompt_content: &str,
+    plan_content: &str,
+) -> String {
     let template_content = match context {
         ContextLevel::Minimal => include_str!("templates/universal_review_minimal.txt"),
         ContextLevel::Normal => include_str!("templates/universal_review_normal.txt"),
     };
-    load_template_str(template_content, diff)
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("DIFF", diff.to_string()),
+    ]);
+    load_template_str(template_content, &variables)
 }

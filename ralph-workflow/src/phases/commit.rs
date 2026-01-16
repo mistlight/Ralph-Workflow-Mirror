@@ -1755,21 +1755,32 @@ fn try_recovery_layers(
     None
 }
 
-/// Find the most recently modified log file matching a pattern.
+/// Find the most recently modified log file in a directory or matching a prefix pattern.
+///
+/// Supports two modes:
+/// 1. **Directory mode**: If `log_path` is a directory, find the most recent `.log` file in it
+/// 2. **Prefix mode**: If `log_path` is not a directory, treat it as a prefix pattern and
+///    search for files matching `{prefix}*.log` in the parent directory
 ///
 /// # Arguments
 ///
-/// * `log_prefix` - The prefix of log files to search for (e.g., ".`agent/logs/commit_generation`")
+/// * `log_path` - Either a directory path or a prefix pattern for log files
 ///
 /// # Returns
 ///
 /// * `Ok(Some(path))` - Path to the most recent log file
 /// * `Ok(None)` - No log files found
 /// * `Err(e)` - Error reading directory
-fn find_most_recent_log(log_prefix: &str) -> anyhow::Result<Option<std::path::PathBuf>> {
-    // Get the parent directory of the log prefix
-    let log_path = std::path::PathBuf::from(log_prefix);
-    let parent_dir = match log_path.parent() {
+fn find_most_recent_log(log_path: &str) -> anyhow::Result<Option<std::path::PathBuf>> {
+    let path = std::path::PathBuf::from(log_path);
+
+    // Mode 1: If path is a directory, search for .log files with empty prefix (matches all)
+    if path.is_dir() {
+        return find_most_recent_log_with_prefix(&path, "");
+    }
+
+    // Mode 2: Prefix pattern mode - search parent directory for files starting with the prefix
+    let parent_dir = match path.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
         _ => std::path::PathBuf::from("."),
     };
@@ -1778,20 +1789,33 @@ fn find_most_recent_log(log_prefix: &str) -> anyhow::Result<Option<std::path::Pa
         return Ok(None);
     }
 
-    let entries = fs::read_dir(parent_dir)?;
+    let base_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
+    find_most_recent_log_with_prefix(&parent_dir, base_name)
+}
+
+/// Find the most recently modified log file matching a prefix pattern.
+///
+/// Only matches `.log` files that start with `prefix`. If `prefix` is empty,
+/// matches any `.log` file in the directory.
+fn find_most_recent_log_with_prefix(
+    dir: &std::path::Path,
+    prefix: &str,
+) -> anyhow::Result<Option<std::path::PathBuf>> {
+    if !dir.exists() {
+        return Ok(None);
+    }
+
+    let entries = fs::read_dir(dir)?;
     let mut most_recent: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
-
-    // Extract the base name to match (e.g., "commit_generation" from ".agent/logs/commit_generation")
-    let base_name = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
 
-        // Only look at .log files that start with the base name
+        // Only look at .log files that start with the prefix (or any .log file if prefix is empty)
         if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-            if !file_name.starts_with(base_name)
+            if !file_name.starts_with(prefix)
                 || path.extension().and_then(|s| s.to_str()) != Some("log")
             {
                 continue;
@@ -1800,16 +1824,16 @@ fn find_most_recent_log(log_prefix: &str) -> anyhow::Result<Option<std::path::Pa
             continue;
         }
 
-        let metadata = entry.metadata()?;
-        let modified = metadata.modified()?;
-
-        match &most_recent {
-            None => {
-                most_recent = Some((path, modified));
-            }
-            Some((_, prev_modified)) => {
-                if modified > *prev_modified {
-                    most_recent = Some((path, modified));
+        if let Ok(metadata) = entry.metadata() {
+            if let Ok(modified) = metadata.modified() {
+                match &most_recent {
+                    None => {
+                        most_recent = Some((path, modified));
+                    }
+                    Some((_, prev_modified)) if modified > *prev_modified => {
+                        most_recent = Some((path, modified));
+                    }
+                    _ => {}
                 }
             }
         }

@@ -3,6 +3,12 @@ You are in FIX MODE. Address issues found during review.
 INPUTS TO READ:
 - .agent/ISSUES.md - Issues to address (if it exists)
 
+{# ORIGINAL REQUEST - The user's original prompt for context #}
+{{PROMPT}}
+
+{# IMPLEMENTATION PLAN - The plan that was being implemented #}
+{{PLAN}}
+
 YOUR TASK:
 1. Read .agent/ISSUES.md to understand any issues (if it exists)
 2. Fix issues found, prioritizing by severity
