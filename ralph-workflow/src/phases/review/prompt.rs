@@ -268,3 +268,160 @@ fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<String>, ()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::guidelines::ReviewGuidelines;
+
+    /// Test that all prompt builder functions explicitly include the diff content.
+    #[test]
+    fn test_all_prompts_include_diff_content() {
+        let sample_diff = "+ new line\n- old line";
+
+        // Test guided prompts (with guidelines)
+        let guidelines = ReviewGuidelines::default();
+        let prompt_with_guidelines = prompt_reviewer_review_with_guidelines_and_diff(
+            ContextLevel::Minimal,
+            &guidelines,
+            sample_diff,
+        );
+        assert!(
+            prompt_with_guidelines.contains(sample_diff),
+            "Standard review prompt should include diff"
+        );
+        assert!(
+            prompt_with_guidelines.contains("CRITICAL CONSTRAINTS"),
+            "Prompt should have constraints"
+        );
+        assert!(
+            prompt_with_guidelines.contains("MUST NOT run git commands"),
+            "Prompt should explicitly forbid running git commands"
+        );
+
+        let comprehensive_prompt =
+            prompt_comprehensive_review_with_diff(ContextLevel::Normal, &guidelines, sample_diff);
+        assert!(
+            comprehensive_prompt.contains(sample_diff),
+            "Comprehensive prompt should include diff"
+        );
+
+        let security_prompt = prompt_security_focused_review_with_diff(
+            ContextLevel::Minimal,
+            &guidelines,
+            sample_diff,
+        );
+        assert!(
+            security_prompt.contains(sample_diff),
+            "Security prompt should include diff"
+        );
+
+        // Test unguided prompts (without guidelines)
+        let detailed_prompt =
+            prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, sample_diff);
+        assert!(
+            detailed_prompt.contains(sample_diff),
+            "Detailed prompt should include diff"
+        );
+
+        let incremental_prompt =
+            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff);
+        assert!(
+            incremental_prompt.contains(sample_diff),
+            "Incremental prompt should include diff"
+        );
+
+        let universal_prompt = prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff);
+        assert!(
+            universal_prompt.contains(sample_diff),
+            "Universal prompt should include diff"
+        );
+    }
+
+    /// Test that prompts explicitly constrain agents from exploring the codebase.
+    #[test]
+    fn test_prompts_constrain_agent_from_exploring() {
+        let sample_diff = "+ new line";
+
+        let prompts_to_check = vec![
+            prompt_reviewer_review_with_guidelines_and_diff(
+                ContextLevel::Minimal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_comprehensive_review_with_diff(
+                ContextLevel::Normal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_security_focused_review_with_diff(
+                ContextLevel::Minimal,
+                &ReviewGuidelines::default(),
+                sample_diff,
+            ),
+            prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, sample_diff),
+            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff),
+            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff),
+        ];
+
+        let forbidden_patterns = [
+            ("DO NOT run", "explicitly forbids running"),
+            ("MUST NOT", "uses strong constraint language"),
+            ("read other files", "forbids reading other files"),
+            ("explore the", "forbids exploration"),
+        ];
+
+        for prompt in prompts_to_check {
+            // Each prompt should have at least some constraint language
+            let has_constraints = forbidden_patterns
+                .iter()
+                .any(|(pattern, _)| prompt.contains(pattern));
+            assert!(
+                has_constraints,
+                "Prompt should contain constraint language. Prompt: {}",
+                &prompt[..prompt.len().min(200)]
+            );
+        }
+    }
+
+    /// Test that prompts forbid running specific commands.
+    #[test]
+    fn test_prompts_forbid_specific_commands() {
+        let sample_diff = "+ new line";
+
+        let universal_prompt =
+            prompt_universal_review_with_diff(ContextLevel::Minimal, sample_diff);
+        // Universal prompt should explicitly forbid running commands like ls, find, git, cat
+        assert!(
+            universal_prompt.contains("ls")
+                || universal_prompt.contains("git")
+                || universal_prompt.contains("cat"),
+            "Universal prompt should explicitly forbid running common commands"
+        );
+    }
+
+    /// Test `should_use_universal_prompt` detection.
+    #[test]
+    fn test_should_use_universal_prompt() {
+        // Should return true for GLM agents
+        assert!(should_use_universal_prompt("glmtok", None, false));
+        assert!(should_use_universal_prompt("zhipuai", None, false));
+
+        // Should return true when forced
+        assert!(should_use_universal_prompt("claude", None, true));
+
+        // Should return false for non-GLM agents when not forced
+        assert!(!should_use_universal_prompt("claude", None, false));
+        assert!(!should_use_universal_prompt("openai", None, false));
+    }
+
+    /// Test that model flag is checked for GLM agents.
+    #[test]
+    fn test_should_use_universal_with_model_flag() {
+        // Should detect GLM via model flag
+        assert!(should_use_universal_prompt("openai", Some("glm-4"), false));
+
+        // Should not trigger for non-GLM models
+        assert!(!should_use_universal_prompt("openai", Some("gpt-4"), false));
+    }
+}

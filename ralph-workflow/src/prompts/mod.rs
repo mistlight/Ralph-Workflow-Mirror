@@ -15,6 +15,7 @@
 mod commit;
 mod developer;
 mod reviewer;
+mod template_engine;
 mod types;
 
 // Re-export all public items for backward compatibility
@@ -30,6 +31,7 @@ pub use reviewer::{
     prompt_incremental_review_with_diff, prompt_reviewer_review_with_guidelines_and_diff,
     prompt_security_focused_review_with_diff, prompt_universal_review_with_diff,
 };
+pub use template_engine::Template;
 pub use types::{Action, ContextLevel, Role};
 
 use crate::guidelines::ReviewGuidelines;

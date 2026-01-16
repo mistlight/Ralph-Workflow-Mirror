@@ -14,6 +14,22 @@
 //! - **Universal review**: Simplified prompt for agent compatibility
 
 use super::super::types::ContextLevel;
+use super::super::Template;
+use std::collections::HashMap;
+
+/// Load and render a template from a string with the given variables.
+fn load_template_str(template_content: &str, diff: &str) -> String {
+    let variables = HashMap::from([("DIFF", diff.to_string())]);
+    let template = Template::from_str(template_content.to_string());
+    match template.render(&variables) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            // Fallback to empty string if template rendering fails
+            eprintln!("Warning: Failed to render template: {e}");
+            String::new()
+        }
+    }
+}
 
 /// Generate detailed reviewer review prompt without language-specific guidelines,
 /// including the diff directly in the prompt.
@@ -33,71 +49,11 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
     context: ContextLevel,
     diff: &str,
 ) -> String {
-    match context {
-        ContextLevel::Minimal => format!(
-            r#"You are in DETAILED REVIEW MODE with fresh eyes perspective.
-
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md (you need unbiased perspective)
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-Focus on:
-1) Code quality and correctness
-2) Bugs, security, tests
-3) Code style and maintainability
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Description (blocks merge)
-- [ ] High: [file:line] Description (should fix before merge)
-- [ ] Medium: [file:line] Description (should address)
-- [ ] Low: [file:line] Description (nice to have)
-
-If no issues found in the changed files, return "No issues found.""#
-        ),
-        ContextLevel::Normal => format!(
-            r#"You are in DETAILED REVIEW MODE.
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-Focus on:
-- Bugs, security, tests
-- Code style and maintainability
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Blocks merge
-- [ ] High: [file:line] Should fix before merge
-- [ ] Medium: [file:line] Should address
-- [ ] Low: [file:line] Nice to have
-
-If no issues found in the changed files, return "No issues found.""#
-        ),
-    }
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/detailed_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/detailed_review_normal.txt"),
+    };
+    load_template_str(template_content, diff)
 }
 
 /// Generate incremental review prompt with diff included directly.
@@ -113,67 +69,11 @@ If no issues found in the changed files, return "No issues found.""#
 /// * `context` - The context level (minimal or normal)
 /// * `diff` - The git diff to review (changes since pipeline start)
 pub fn prompt_incremental_review_with_diff(context: ContextLevel, diff: &str) -> String {
-    match context {
-        ContextLevel::Minimal => format!(
-            "You are in INCREMENTAL REVIEW MODE with fresh eyes.
-
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-Focus on:
-1) Code quality and correctness
-2) Bugs, error handling, tests
-3) Security regressions (inputs validated, outputs escaped)
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found, return \"No issues found in changed files.\""
-        ),
-        ContextLevel::Normal => format!(
-            "You are in INCREMENTAL REVIEW MODE.
-
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"
-        ),
-    }
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/incremental_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/incremental_review_normal.txt"),
+    };
+    load_template_str(template_content, diff)
 }
 
 /// Generate a universal/simplified review prompt for maximum agent compatibility,
@@ -194,68 +94,9 @@ OUTPUT (prioritized checklist):
 /// * `context` - The context level (minimal or normal)
 /// * `diff` - The git diff to review (changes since pipeline start)
 pub fn prompt_universal_review_with_diff(context: ContextLevel, diff: &str) -> String {
-    match context {
-        ContextLevel::Minimal => format!(
-            r#"REVIEW TASK
-
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-Review for:
-- Bugs, errors, security issues
-- Missing tests
-- Code quality and style
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT FORMAT
-
-Return your findings using this format:
-
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found in the changed files, return exactly: "No issues found."
-
-IMPORTANT: Use the format [file:line] for each issue."#
-        ),
-        ContextLevel::Normal => format!(
-            r#"REVIEW TASK
-
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-Review for quality and correctness.
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT FORMAT
-
-Return your findings using this format:
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found in the changed files, return exactly: "No issues found.""#
-        ),
-    }
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/universal_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/universal_review_normal.txt"),
+    };
+    load_template_str(template_content, diff)
 }

@@ -12,7 +12,22 @@
 //!   security checks
 
 use super::super::types::ContextLevel;
+use super::super::Template;
 use crate::guidelines::ReviewGuidelines;
+use std::collections::HashMap;
+
+/// Load and render a template from a string with the given variables.
+fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
+    let template = Template::from_str(template_content.to_string());
+    match template.render(variables) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            // Fallback to empty string if template rendering fails
+            eprintln!("Warning: Failed to render template: {e}");
+            String::new()
+        }
+    }
+}
 
 /// Generate reviewer review prompt with language-specific guidelines,
 /// including the diff directly in the prompt.
@@ -35,73 +50,17 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff(
     diff: &str,
 ) -> String {
     let guidelines_section = guidelines.format_for_prompt();
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/standard_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/standard_review_normal.txt"),
+    };
 
-    match context {
-        ContextLevel::Minimal => format!(
-            r#"You are in REVIEW MODE with fresh eyes perspective.
+    let variables = HashMap::from([
+        ("DIFF", diff.to_string()),
+        ("GUIDELINES", guidelines_section),
+    ]);
 
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-Then apply these language-specific checks:
-
-Language-Specific checks:
-{guidelines_section}
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found in the changed files, return "No issues found.""#
-        ),
-        ContextLevel::Normal => format!(
-            r#"You are in REVIEW MODE.
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-Then apply these language-specific checks:
-
-Language-Specific checks:
-{guidelines_section}
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found in the changed files, return "No issues found.""#
-        ),
-    }
+    load_template_str(template_content, &variables)
 }
 
 /// Generate comprehensive review prompt with priority-based guidelines,
@@ -125,71 +84,14 @@ pub fn prompt_comprehensive_review_with_diff(
     diff: &str,
 ) -> String {
     let priority_section = guidelines.format_for_prompt_with_priorities();
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/comprehensive_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/comprehensive_review_normal.txt"),
+    };
 
-    match context {
-        ContextLevel::Minimal => format!(
-            r"You are in COMPREHENSIVE REVIEW MODE with fresh eyes perspective.
+    let variables = HashMap::from([("DIFF", diff.to_string()), ("GUIDELINES", priority_section)]);
 
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-Review for:
-1) Code quality and correctness
-2) Security (injection, auth, secrets)
-3) Performance/resources (bottlenecks, leaks)
-4) Maintainability (error handling, tests)
-
-LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
-{priority_section}
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"
-        ),
-        ContextLevel::Normal => format!(
-            r"You are in COMPREHENSIVE REVIEW MODE.
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
-{priority_section}
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"
-        ),
-    }
+    load_template_str(template_content, &variables)
 }
 
 /// Generate security-focused review prompt with security-oriented guidelines,
@@ -213,73 +115,12 @@ pub fn prompt_security_focused_review_with_diff(
     diff: &str,
 ) -> String {
     let security_section = guidelines.format_for_prompt();
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/security_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/security_review_normal.txt"),
+    };
 
-    match context {
-        ContextLevel::Minimal => format!(
-            r#"You are in SECURITY REVIEW MODE with fresh eyes perspective.
+    let variables = HashMap::from([("DIFF", diff.to_string()), ("GUIDELINES", security_section)]);
 
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below for security issues. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-SECURITY FOCUS (OWASP TOP 10):
-- Broken Access Control
-- Injection
-- Cryptographic Failures
-- Security Misconfiguration
-
-LANGUAGE-SPECIFIC SECURITY:
-{security_section}
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] SECURITY - Immediate fix required
-- [ ] High: [file:line] SECURITY - Fix before merge
-- [ ] Medium: [file:line] SECURITY - Address as needed
-- [ ] Low: [file:line] SECURITY - Nice to have
-
-If no security issues found in the changed files, return "No security issues found.""#
-        ),
-        ContextLevel::Normal => format!(
-            r#"You are in SECURITY REVIEW MODE.
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below for security issues. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-
-LANGUAGE-SPECIFIC SECURITY:
-{security_section}
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] SECURITY - Description
-- [ ] High: [file:line] SECURITY - Description
-- [ ] Medium: [file:line] SECURITY - Description
-- [ ] Low: [file:line] SECURITY - Description
-
-If no security issues found in the changed files, return "No security issues found.""#
-        ),
-    }
+    load_template_str(template_content, &variables)
 }

@@ -1,0 +1,16 @@
+You are in REVIEW MODE.
+
+YOUR TASK:
+Review ONLY the changes shown in the DIFF below for:
+- Code quality and correctness
+- Bugs, error handling, tests
+- Security issues
+
+DIFF TO REVIEW:
+```diff
+{DIFF}
+```
+
+OUTPUT:
+Return your findings as structured output.
+If no issues, return "No issues found."

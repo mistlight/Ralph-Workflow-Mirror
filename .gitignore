@@ -1,6 +1,5 @@
 # Per-worktree prompt (local)
 PROMPT.md
-PROMPT*
 
 # Agent loop artifacts (local)
 .agent/
