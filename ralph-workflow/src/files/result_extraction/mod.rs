@@ -20,6 +20,7 @@
 //! This dual-mode support handles both legacy directory-based logs and the current
 //! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
 
+mod file_extraction;
 mod file_finder;
 mod json_extraction;
 mod plan_extraction;
@@ -28,6 +29,7 @@ mod text_extraction;
 mod types;
 mod validation;
 
+pub use file_extraction::extract_file_paths_from_issues;
 pub use json_extraction::extract_last_result;
 pub use plan_extraction::extract_plan_from_logs_text;
 pub use types::ExtractionResult;

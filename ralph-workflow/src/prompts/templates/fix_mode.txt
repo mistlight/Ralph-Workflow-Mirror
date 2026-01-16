@@ -14,12 +14,16 @@ YOUR TASK:
 2. Fix issues found, prioritizing by severity
 3. Verify fixes work
 
+{# FILES TO MODIFY - Explicit list of files you may work on #}
+{{FILES_TO_MODIFY}}
+
 CRITICAL CONSTRAINTS:
 - The ISSUES are provided above - review them carefully
 - You MUST ONLY modify files that are mentioned in the ISSUES section
+- You MAY read files listed above to understand the code you're fixing
 - You MUST NOT read any other files in the repository
 - You MUST NOT run git commands or explore the codebase
-- DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
+- DO NOT run any commands including `ls`, `find`, `git`, `cat`, `git grep`, etc.
 - Your work MUST be limited to fixing issues described in the ISSUES section
 
 AFTER FIXING:
