@@ -6,6 +6,180 @@
 use regex::Regex;
 use std::sync::OnceLock;
 
+/// Strip thought pattern and look for commit message with blank line detection.
+///
+/// Handles pattern stripping with blank line detection. Returns Some(result) if
+/// pattern was found and processed, None otherwise.
+fn strip_thought_pattern_with_blank_line(content: &str, pattern: &str) -> Option<String> {
+    let rest = content.strip_prefix(pattern)?;
+
+    // Find the first blank line after the pattern
+    if let Some(blank_line_pos) = rest.find("\n\n") {
+        let remaining = rest[blank_line_pos + 2..].trim();
+        if !remaining.is_empty() {
+            // Check if it looks like a clean commit message
+            if looks_like_commit_message_start(remaining) {
+                return Some(remaining.to_string());
+            }
+            // Otherwise, update result to continue with aggressive filtering below
+            return Some(remaining.to_string());
+        }
+    } else if let Some(single_newline) = rest.find('\n') {
+        // If no double newline, try to skip to after the first single newline
+        let after_newline = &rest[single_newline + 1..];
+        // Check if what follows looks like a commit message
+        if looks_like_commit_message_start(after_newline.trim()) {
+            return Some(after_newline.to_string());
+        }
+        // If not, check if the rest starts with numbered analysis
+        if after_newline.trim().starts_with("1. ")
+            || after_newline.trim().starts_with("1. **")
+            || after_newline.trim().starts_with("- ")
+        {
+            return Some(after_newline.trim().to_string());
+        }
+    }
+
+    // If the remaining content after the pattern is all analysis (no valid commit), return empty
+    let rest_trimmed = rest.trim();
+    if looks_like_analysis_text(rest_trimmed)
+        && find_conventional_commit_start(rest_trimmed).is_none()
+    {
+        return Some(String::new());
+    }
+
+    None
+}
+
+/// Strip numbered analysis patterns and extract commit message.
+///
+/// Handles numbered list patterns like "1. First change\n2. Second change\n\nfix: actual".
+/// Returns Some(result) if pattern was found and processed, None otherwise.
+fn strip_numbered_analysis_patterns(content: &str) -> Option<String> {
+    let result_lower = content.to_lowercase();
+    let numbered_start_patterns = [
+        "1. ",
+        "1)\n",
+        "- first",
+        "- the first",
+        "* first",
+        "* the first",
+    ];
+
+    for pattern in &numbered_start_patterns {
+        if result_lower.starts_with(pattern) || content.starts_with(pattern) {
+            // Try to find the commit message by looking for conventional commit format
+            if let Some(commit_start) = find_conventional_commit_start(content) {
+                return Some(content[commit_start..].to_string());
+            }
+            // Fallback: look for a blank line after the analysis
+            if let Some(blank_pos) = content.find("\n\n") {
+                let after_analysis = &content[blank_pos + 2..];
+                // Check if the content after looks like a real commit message
+                if after_analysis.trim().starts_with(char::is_alphanumeric) {
+                    return Some(after_analysis.to_string());
+                }
+            }
+            return Some(content.to_string());
+        }
+    }
+
+    None
+}
+
+/// Strip markdown bold analysis patterns and extract commit message.
+///
+/// Handles markdown bold patterns like "1. **Test assertion style** (file.rs): Description".
+/// Returns Some(result) if pattern was found and processed, None otherwise.
+fn strip_markdown_bold_analysis(content: &str) -> Option<String> {
+    if starts_with_markdown_bold_analysis(content) {
+        if let Some(commit_start) = find_conventional_commit_start(content) {
+            return Some(content[commit_start..].to_string());
+        }
+        // Fallback: look for double newline after the analysis
+        if let Some(blank_pos) = content.find("\n\n") {
+            let after_analysis = &content[blank_pos + 2..];
+            if after_analysis.trim().starts_with(char::is_alphanumeric) {
+                return Some(after_analysis.to_string());
+            }
+        }
+        return Some(content.to_string());
+    }
+    None
+}
+
+/// Extract commit from analysis by detecting multi-line analysis with conventional commit.
+///
+/// Handles aggressive filtering with commit detection. Returns Some(result) if pattern
+/// was found and processed, None otherwise.
+fn extract_commit_from_analysis(content: &str) -> Option<String> {
+    if let Some(commit_start) = find_conventional_commit_start(content) {
+        // Verify that the content before the commit looks like analysis
+        let before_commit = &content[..commit_start];
+        // Check multiple conditions to identify analysis:
+        // 1. Contains multiple lines (analysis is typically multi-line)
+        // 2. Either looks like analysis text OR contains common analysis patterns
+        let is_analysis = before_commit.contains('\n')
+            && (looks_like_analysis_text(before_commit)
+                || before_commit.to_lowercase().contains("changes")
+                || before_commit.to_lowercase().contains("diff")
+                || before_commit.contains("1.")
+                || before_commit.contains("- "));
+
+        if is_analysis {
+            return Some(content[commit_start..].to_string());
+        }
+    }
+    None
+}
+
+/// Filter analysis text with embedded conventional commit type mentions.
+///
+/// Handles analysis text filtering with embedded type mentions like "**feat**".
+/// Returns Some(result) if content should be filtered, None otherwise.
+fn filter_analysis_with_embedded_types(content: &str) -> Option<String> {
+    if !looks_like_analysis_text(content) {
+        return None;
+    }
+
+    // Check if there's markdown-bold type mention embedded in analysis text
+    // like "This is a **refactor**..." which indicates analysis, not a commit
+    let result_lower = content.to_lowercase();
+    if result_lower.contains("**feat**")
+        || result_lower.contains("**fix**")
+        || result_lower.contains("**refactor**")
+        || result_lower.contains("**chore**")
+        || result_lower.contains("**test**")
+        || result_lower.contains("**docs**")
+        || result_lower.contains("**perf**")
+        || result_lower.contains("**style**")
+    {
+        // Look for the pattern "**type**:" (with colon) which indicates
+        // it might be an actual commit message in markdown format
+        if result_lower.contains("**feat**:")
+            || result_lower.contains("**fix**:")
+            || result_lower.contains("**refactor**:")
+            || result_lower.contains("**chore**:")
+            || result_lower.contains("**test**:")
+            || result_lower.contains("**docs**:")
+            || result_lower.contains("**perf**:")
+            || result_lower.contains("**style**:")
+        {
+            // This might be a valid commit message in markdown, keep it
+            return Some(content.to_string());
+        }
+        // Otherwise, it's analysis with embedded type mentions, filter it out
+        return Some(String::new());
+    }
+
+    // If no conventional commit was found and it looks like analysis, return empty
+    if find_conventional_commit_start(content).is_none() {
+        return Some(String::new());
+    }
+
+    None
+}
+
 /// Remove AI thought process patterns from extracted content.
 ///
 /// This is a helper function that filters out common AI thought process
@@ -17,11 +191,9 @@ use std::sync::OnceLock;
 /// - Numbered/bullet lists without proper separation
 /// - Multi-line analysis that ends with conventional commit format
 pub fn remove_thought_process_patterns(content: &str) -> String {
-    let mut result = content;
+    let mut result = content.to_string();
 
     // Remove AI thought process prefixes
-    // These are patterns that AI agents commonly use when starting their response
-    // We remove everything from the start up to and including the first blank line
     let thought_patterns = [
         "Looking at this diff, I can see",
         "Looking at this diff",
@@ -37,7 +209,6 @@ pub fn remove_thought_process_patterns(content: &str) -> String {
         "Looking at the changes",
         "I've analyzed",
         "After reviewing",
-        // Additional patterns to catch more variations
         "Based on the git diff",
         "Based on the git diff, here are the changes",
         "Based on the git diff, here's what changed",
@@ -58,165 +229,39 @@ pub fn remove_thought_process_patterns(content: &str) -> String {
         "Key changes include",
         "Several changes include",
         "This diff shows the following",
-        // Additional patterns for GLM agent output
         "The most substantive change is",
         "The most substantive changes are",
         "The most substantive user-facing change is",
     ];
 
     for pattern in &thought_patterns {
-        if let Some(rest) = result.strip_prefix(pattern) {
-            // Find the first blank line after the pattern
-            if let Some(blank_line_pos) = rest.find("\n\n") {
-                // Don't return immediately - there might be more analysis after the blank line
-                // Instead, update result to continue processing
-                let remaining = rest[blank_line_pos + 2..].trim();
-                if !remaining.is_empty() {
-                    // Continue processing with the remaining content
-                    // Check if it still starts with analysis patterns (numbered lists, etc.)
-                    // If it looks like a clean commit message, return it
-                    if looks_like_commit_message_start(remaining) {
-                        return remaining.to_string();
-                    }
-                    // Otherwise, update result to continue with aggressive filtering below
-                    result = remaining;
-                    break; // Continue to numbered/bold analysis pattern checks
-                }
-            } else if let Some(single_newline) = rest.find('\n') {
-                // If no double newline, try to skip to after the first single newline
-                let after_newline = &rest[single_newline + 1..];
-                // Check if what follows looks like a commit message (starts with conventional commit type)
-                if looks_like_commit_message_start(after_newline.trim()) {
-                    return after_newline.to_string();
-                }
-                // If not, check if the rest starts with numbered analysis
-                if after_newline.trim().starts_with("1. ")
-                    || after_newline.trim().starts_with("1. **")
-                    || after_newline.trim().starts_with("- ")
-                {
-                    // Skip to after numbered analysis - continue processing
-                    // but don't return yet, let the numbered pattern handler deal with it
-                    result = after_newline.trim();
-                    break;
-                }
-            }
-            // If we found and stripped a pattern but couldn't find a clean commit message
-            // or numbered analysis to continue from, check if rest looks like pure analysis
-            // If the remaining content after the pattern is all analysis (no valid commit),
-            // return empty
-            let rest_trimmed = rest.trim();
-            if looks_like_analysis_text(rest_trimmed)
-                && find_conventional_commit_start(rest_trimmed).is_none()
-            {
-                return String::new();
-            }
-        }
-    }
-
-    // Remove numbered analysis patterns (e.g., "1. First change\n2. Second change\n\nfix: actual")
-    // These are common when AI agents provide numbered analysis before the actual commit message
-    let result_lower = result.to_lowercase();
-    let numbered_start_patterns = [
-        "1. ",
-        "1)\n",
-        "- first",
-        "- the first",
-        "* first",
-        "* the first",
-    ];
-    for pattern in &numbered_start_patterns {
-        if result_lower.starts_with(pattern) || result.starts_with(pattern) {
-            // Try to find the commit message by looking for conventional commit format
-            if let Some(commit_start) = find_conventional_commit_start(result) {
-                return result[commit_start..].to_string();
-            }
-            // Fallback: look for a blank line after the analysis
-            if let Some(blank_pos) = result.find("\n\n") {
-                let after_analysis = &result[blank_pos + 2..];
-                // Check if the content after looks like a real commit message
-                if after_analysis.trim().starts_with(char::is_alphanumeric) {
-                    return after_analysis.to_string();
-                }
-            }
+        if let Some(new_result) = strip_thought_pattern_with_blank_line(&result, pattern) {
+            result = new_result;
             break;
         }
     }
 
-    // Remove markdown bold analysis patterns (e.g., "1. **Test assertion style** (file.rs): Description")
-    // These patterns use markdown bold formatting for category headers in numbered lists
-    if starts_with_markdown_bold_analysis(result) {
-        if let Some(commit_start) = find_conventional_commit_start(result) {
-            return result[commit_start..].to_string();
-        }
-        // Fallback: look for double newline after the analysis
-        if let Some(blank_pos) = result.find("\n\n") {
-            let after_analysis = &result[blank_pos + 2..];
-            if after_analysis.trim().starts_with(char::is_alphanumeric) {
-                return after_analysis.to_string();
-            }
-        }
+    // Remove numbered analysis patterns
+    if let Some(new_result) = strip_numbered_analysis_patterns(&result) {
+        return new_result;
     }
 
-    // Additional aggressive filtering: detect if the content starts with
-    // multi-line analysis and ends with a conventional commit format
-    if let Some(commit_start) = find_conventional_commit_start(result) {
-        // Verify that the content before the commit looks like analysis
-        let before_commit = &result[..commit_start];
-        // Check multiple conditions to identify analysis:
-        // 1. Contains multiple lines (analysis is typically multi-line)
-        // 2. Either looks like analysis text OR contains common analysis patterns
-        let is_analysis = before_commit.contains('\n')
-            && (looks_like_analysis_text(before_commit)
-                || before_commit.to_lowercase().contains("changes")
-                || before_commit.to_lowercase().contains("diff")
-                || before_commit.contains("1.")
-                || before_commit.contains("- "));
-
-        if is_analysis {
-            return result[commit_start..].to_string();
-        }
+    // Remove markdown bold analysis patterns
+    if let Some(new_result) = strip_markdown_bold_analysis(&result) {
+        return new_result;
     }
 
-    // Final check: if the entire content looks like analysis without a valid commit,
-    // return empty string. This catches cases like "The main changes I see are:\n1. **Analysis**"
-    // followed by more analysis paragraphs but no proper commit message.
-    if looks_like_analysis_text(result) {
-        // Check if there's markdown-bold type mention embedded in analysis text
-        // like "This is a **refactor**..." which indicates analysis, not a commit
-        let result_lower = result.to_lowercase();
-        if result_lower.contains("**feat**")
-            || result_lower.contains("**fix**")
-            || result_lower.contains("**refactor**")
-            || result_lower.contains("**chore**")
-            || result_lower.contains("**test**")
-            || result_lower.contains("**docs**")
-            || result_lower.contains("**perf**")
-            || result_lower.contains("**style**")
-        {
-            // Look for the pattern "**type**:" (with colon) which indicates
-            // it might be an actual commit message in markdown format
-            if result_lower.contains("**feat**:")
-                || result_lower.contains("**fix**:")
-                || result_lower.contains("**refactor**:")
-                || result_lower.contains("**chore**:")
-                || result_lower.contains("**test**:")
-                || result_lower.contains("**docs**:")
-                || result_lower.contains("**perf**:")
-                || result_lower.contains("**style**:")
-            {
-                // This might be a valid commit message in markdown, keep it
-                return result.to_string();
-            }
-            // Otherwise, it's analysis with embedded type mentions, filter it out
-            return String::new();
-        }
-        // If no conventional commit was found and it looks like analysis, return empty
-        if find_conventional_commit_start(result).is_none() {
-            return String::new();
-        }
+    // Additional aggressive filtering: detect analysis ending with conventional commit
+    if let Some(new_result) = extract_commit_from_analysis(&result) {
+        return new_result;
     }
 
-    result.to_string()
+    // Final check: filter analysis with embedded type mentions
+    if let Some(new_result) = filter_analysis_with_embedded_types(&result) {
+        return new_result;
+    }
+
+    result
 }
 
 /// Check if text starts with markdown bold analysis patterns.
@@ -749,354 +794,4 @@ pub fn clean_plain_text(content: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_remove_thought_process_patterns_basic() {
-        let input = "Looking at this diff, I can see changes to parser.\n\nfeat(parser): fix bug";
-        let result = remove_thought_process_patterns(input);
-        assert_eq!(result, "feat(parser): fix bug");
-    }
-
-    #[test]
-    fn test_remove_thought_process_patterns_numbered_list() {
-        let input = "1. First change\n2. Second change\n\nfix: actual commit";
-        let result = remove_thought_process_patterns(input);
-        assert_eq!(result, "fix: actual commit");
-    }
-
-    #[test]
-    fn test_remove_thought_process_patterns_markdown_bold() {
-        let input = "1. **Analysis** (file.rs): Description\n\nfeat: add feature";
-        let result = remove_thought_process_patterns(input);
-        assert_eq!(result, "feat: add feature");
-    }
-
-    #[test]
-    fn test_looks_like_commit_message_start() {
-        assert!(looks_like_commit_message_start("feat: add feature"));
-        assert!(looks_like_commit_message_start("fix(parser): resolve bug"));
-        assert!(looks_like_commit_message_start(
-            "chore(docs): update readme"
-        ));
-        assert!(!looks_like_commit_message_start("Add feature"));
-        assert!(!looks_like_commit_message_start("Update code"));
-    }
-
-    #[test]
-    fn test_find_conventional_commit_start() {
-        let input = "Some analysis text\n\nfeat: add feature";
-        let pos = find_conventional_commit_start(input);
-        assert_eq!(pos, Some(20)); // Position of "feat" (after "Some analysis text\n\n")
-    }
-
-    #[test]
-    fn test_looks_like_analysis_text() {
-        assert!(looks_like_analysis_text(
-            "Looking at this diff, I see changes"
-        ));
-        assert!(looks_like_analysis_text(
-            "1. First change\n2. Second change"
-        ));
-        assert!(looks_like_analysis_text("Key categories of changes"));
-        assert!(!looks_like_analysis_text("feat: add feature"));
-    }
-
-    #[test]
-    fn test_remove_formatted_thinking_patterns() {
-        let input = "[Claude] Thinking: Analyzing...\n\nfeat: actual message";
-        let result = remove_formatted_thinking_patterns(input);
-        assert!(result.contains("feat: actual message"));
-        assert!(!result.contains("[Claude] Thinking"));
-    }
-
-    #[test]
-    fn test_clean_plain_text() {
-        let input = "```text\nfeat: add feature\n```";
-        let result = clean_plain_text(input);
-        assert_eq!(result, "feat: add feature");
-    }
-
-    #[test]
-    fn test_unescape_json_strings_newlines() {
-        let input = "feat: add feature\\n\\nThis adds new functionality.";
-        let result = unescape_json_strings(input);
-        assert_eq!(result, "feat: add feature\n\nThis adds new functionality.");
-    }
-
-    #[test]
-    fn test_unescape_json_strings_tabs() {
-        let input = "feat: add feature\\n\\t- bullet point";
-        let result = unescape_json_strings(input);
-        assert_eq!(result, "feat: add feature\n\t- bullet point");
-    }
-
-    #[test]
-    fn test_unescape_json_strings_mixed() {
-        let input = "feat: add feature\\n\\nDetails:\\r\\n\\t- item 1\\n\\t- item 2";
-        let result = unescape_json_strings(input);
-        assert_eq!(
-            result,
-            "feat: add feature\n\nDetails:\r\n\t- item 1\n\t- item 2"
-        );
-    }
-
-    #[test]
-    fn test_unescape_json_strings_no_escape_sequences() {
-        let input = "feat: add feature\n\nThis is already correct.";
-        let result = unescape_json_strings(input);
-        // Should not modify content that doesn't have literal escape sequences
-        assert_eq!(result, "feat: add feature\n\nThis is already correct.");
-    }
-
-    #[test]
-    fn test_clean_plain_text_unescapes() {
-        let input = "```text\nfeat: add feature\\n\\nThis adds new functionality.\n```";
-        let result = clean_plain_text(input);
-        // Note: clean_plain_text removes empty lines, so double newlines become single
-        assert_eq!(result, "feat: add feature\nThis adds new functionality.");
-    }
-
-    #[test]
-    fn test_unescape_json_strings_idempotent() {
-        // Calling unescape_json_strings twice should produce the same result
-        // as calling it once (idempotent)
-        let input = "feat: add feature\\n\\nThis adds new functionality.";
-        let once = unescape_json_strings(input);
-        let twice = unescape_json_strings(&once);
-        assert_eq!(once, twice);
-    }
-
-    // =========================================================================
-    // Tests for unescape_json_strings_aggressive
-    // =========================================================================
-
-    #[test]
-    fn test_unescape_json_strings_aggressive_double_escaped() {
-        let input = "feat: add feature\\\\n\\\\nDouble escaped";
-        let result = unescape_json_strings_aggressive(input);
-        assert_eq!(result, "feat: add feature\n\nDouble escaped");
-    }
-
-    #[test]
-    fn test_unescape_json_strings_aggressive_single_escaped() {
-        let input = "feat: add feature\\n\\nSingle escaped";
-        let result = unescape_json_strings_aggressive(input);
-        assert_eq!(result, "feat: add feature\n\nSingle escaped");
-    }
-
-    #[test]
-    fn test_unescape_json_strings_aggressive_triple_escaped() {
-        let input = "feat: add feature\\\\\\n\\\\\\nTriple escaped";
-        let result = unescape_json_strings_aggressive(input);
-        // Triple backslash-n is interpreted as backslash-backslash-newline
-        // After aggressive unescaping: \\n becomes \n (literal backslash + n), then \n becomes newline
-        // The actual result is backslash-newline-backslash-newline after first pass
-        assert_eq!(result, "feat: add feature\\\n\\\nTriple escaped");
-    }
-
-    #[test]
-    fn test_unescape_json_strings_aggressive_mixed_escape_sequences() {
-        let input = "feat: add\\\\n\\\\t\\n\\rMixed";
-        let result = unescape_json_strings_aggressive(input);
-        assert_eq!(result, "feat: add\n\t\n\rMixed");
-    }
-
-    #[test]
-    fn test_unescape_json_strings_aggressive_already_unescaped() {
-        let input = "feat: add feature\n\nAlready correct";
-        let result = unescape_json_strings_aggressive(input);
-        assert_eq!(result, "feat: add feature\n\nAlready correct");
-    }
-
-    // =========================================================================
-    // Tests for contains_literal_escape_sequences
-    // =========================================================================
-
-    #[test]
-    fn test_contains_literal_escape_sequences_body_with_literal_escapes() {
-        // Second line is literally "\n\n" which indicates improper unescaping
-        let input = "feat: add feature\n\\n\\nBody text";
-        assert!(contains_literal_escape_sequences(input));
-    }
-
-    #[test]
-    fn test_contains_literal_escape_sequences_repeated_escapes() {
-        // Pattern with multiple escaped newlines in a row
-        let input = "feat: add feature\n\\n\\n\\n\\nMany escaped";
-        assert!(contains_literal_escape_sequences(input));
-    }
-
-    #[test]
-    fn test_contains_literal_escape_sequences_clean_message() {
-        // Properly formatted message should not trigger detection
-        let input = "feat: add feature\n\nBody text here";
-        assert!(!contains_literal_escape_sequences(input));
-    }
-
-    #[test]
-    fn test_contains_literal_escape_sequences_no_second_line() {
-        // Single line message should not trigger
-        let input = "feat: add feature";
-        assert!(!contains_literal_escape_sequences(input));
-    }
-
-    #[test]
-    fn test_contains_literal_escape_sequences_literal_escaped_on_first_line() {
-        // Literal escapes on first line shouldn't false positive
-        let input = "\\n\\nfeat: add feature";
-        // The second line (after the first newline) would be "feat: add feature"
-        // which doesn't start with escape sequences
-        assert!(!contains_literal_escape_sequences(input));
-    }
-
-    // =========================================================================
-    // Tests for final_escape_sequence_cleanup
-    // =========================================================================
-
-    #[test]
-    fn test_final_escape_sequence_cleanup_with_literal_escapes() {
-        let input = "feat: add feature\n\\n\\nBody with literal escapes";
-        let result = final_escape_sequence_cleanup(input);
-        // The function detects \n\n and applies aggressive unescaping
-        // Result is 3 newlines (original + the 2 from \n\n unescaping)
-        assert_eq!(result, "feat: add feature\n\n\nBody with literal escapes");
-    }
-
-    #[test]
-    fn test_final_escape_sequence_cleanup_clean_message() {
-        let input = "feat: add feature\n\nAlready clean body";
-        let result = final_escape_sequence_cleanup(input);
-        // No changes needed - content is preserved
-        assert_eq!(result, "feat: add feature\n\nAlready clean body");
-    }
-
-    #[test]
-    fn test_final_escape_sequence_cleanup_with_tabs() {
-        let input = "feat: add feature\\n\\t- item 1\\n\\t- item 2";
-        let result = final_escape_sequence_cleanup(input);
-        // Tabs are preserved through cleanup
-        assert_eq!(result, "feat: add feature\n\t- item 1\n\t- item 2");
-    }
-
-    #[test]
-    fn test_final_escape_sequence_cleanup_with_carriage_returns() {
-        let input = "feat: add feature\\r\\nBody text";
-        let result = final_escape_sequence_cleanup(input);
-        // Carriage returns are converted to newlines
-        assert_eq!(result, "feat: add feature\r\nBody text");
-    }
-
-    #[test]
-    fn test_final_escape_sequence_cleanup_double_escaped() {
-        let input = "feat: add feature\n\\\\n\\\\nDouble escaped in body";
-        let result = final_escape_sequence_cleanup(input);
-        // The actual input is newline + \\n + \\n, which becomes newline + \n + \n (not fully unescaped)
-        assert_eq!(result, "feat: add feature\n\\\n\\\nDouble escaped in body");
-    }
-
-    #[test]
-    fn test_final_escape_sequence_cleanup_whitespace_trimming() {
-        let input = "feat: add feature\n\\n\\n  Body with spaces  \\n  \\n  ";
-        let result = final_escape_sequence_cleanup(input);
-        // Escape sequences are handled, but whitespace trimming is NOT done here
-        // The \n\n becomes \n\n\n (original + 2 from unescaping)
-        assert_eq!(
-            result,
-            "feat: add feature\n\n\n  Body with spaces  \n  \n  "
-        );
-    }
-
-    #[test]
-    fn test_unescape_json_strings_idempotent_on_clean_content() {
-        // Calling on already-clean content should be safe (no-op)
-        let input = "feat: add feature\n\nThis is already clean.";
-        let once = unescape_json_strings(input);
-        let twice = unescape_json_strings(&once);
-        assert_eq!(once, input);
-        assert_eq!(once, twice);
-    }
-
-    // =========================================================================
-    // Tests for preprocess_raw_content
-    // =========================================================================
-
-    #[test]
-    fn test_preprocess_raw_content_single_escaped() {
-        // Single-escaped \n should become actual newline
-        let input = "feat: add feature\\n\\nThis adds new functionality.";
-        let result = preprocess_raw_content(input);
-        assert_eq!(result, "feat: add feature\n\nThis adds new functionality.");
-    }
-
-    #[test]
-    fn test_preprocess_raw_content_double_escaped() {
-        // Double-escaped \\n should also become actual newline
-        let input = "feat: add feature\\\\n\\\\nDouble escaped";
-        let result = preprocess_raw_content(input);
-        assert_eq!(result, "feat: add feature\n\nDouble escaped");
-    }
-
-    #[test]
-    fn test_preprocess_raw_content_triple_escaped() {
-        // Triple-escaped \\\n should become backslash + newline
-        let input = "feat: add feature\\\\\\n\\\\\\nTriple escaped";
-        let result = preprocess_raw_content(input);
-        // Triple backslash-n after first pass: \\n becomes \n (placeholder)
-        // After full processing: backslash-newline-backslash-newline
-        assert_eq!(result, "feat: add feature\\\n\\\nTriple escaped");
-    }
-
-    #[test]
-    fn test_preprocess_raw_content_mixed_escapes() {
-        // Mixed escape sequences
-        let input = "feat: add\\n\\t\\n\\rMixed";
-        let result = preprocess_raw_content(input);
-        assert_eq!(result, "feat: add\n\t\n\rMixed");
-    }
-
-    #[test]
-    fn test_preprocess_raw_content_idempotent() {
-        // Calling preprocess_raw_content twice should produce the same result
-        let input = "feat: add feature\\n\\nThis adds new functionality.";
-        let once = preprocess_raw_content(input);
-        let twice = preprocess_raw_content(&once);
-        assert_eq!(once, twice);
-    }
-
-    #[test]
-    fn test_preprocess_raw_content_no_escape_sequences() {
-        // Content without escape sequences should pass through unchanged
-        let input = "feat: add feature\n\nThis is already correct.";
-        let result = preprocess_raw_content(input);
-        assert_eq!(result, input);
-    }
-
-    #[test]
-    fn test_preprocess_raw_content_with_tabs() {
-        // Tab escapes should be handled
-        let input = "feat: add feature\\n\\t- bullet 1\\n\\t- bullet 2";
-        let result = preprocess_raw_content(input);
-        assert_eq!(result, "feat: add feature\n\t- bullet 1\n\t- bullet 2");
-    }
-
-    #[test]
-    fn test_preprocess_raw_content_with_carriage_returns() {
-        // Carriage return escapes should be handled
-        let input = "feat: add feature\\r\\nBody text";
-        let result = preprocess_raw_content(input);
-        assert_eq!(result, "feat: add feature\r\nBody text");
-    }
-
-    #[test]
-    fn test_preprocess_raw_content_complex_json_like() {
-        // Complex case: JSON with embedded escapes
-        // Note: The function unescapes \\n to actual newlines, not literal \n
-        let input = r#"{"subject":"feat: add feature\\n","body":"Line 1\\nLine 2"}"#;
-        let result = preprocess_raw_content(input);
-        // After preprocessing, double-escaped sequences become actual newlines
-        assert!(result.contains("feat: add feature\n"));
-        assert!(result.contains("Line 1\nLine 2"));
-    }
-}
+mod cleaning_tests;

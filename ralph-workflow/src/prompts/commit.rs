@@ -143,8 +143,8 @@ Second line"}}
 CORRECT:
 {{"subject": "feat: add feature", "body": null}}
 
-CORRECT (with body using \n for newline):
-{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\nAdd session management for OAuth tokens."}}"#;
+CORRECT (with body using \\n for newline):
+{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\\nAdd session management for OAuth tokens."}}"#;
 
 /// Generate fix prompt (applies to either role).
 ///
@@ -208,8 +208,9 @@ GUIDELINES:
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
+    let has_changes = !diff_content.is_empty();
 
-    if diff_content.is_empty() {
+    if !has_changes {
         // Return an error message instead of a placeholder
         // This will be caught by validation in commit_with_auto_message
         // and trigger fallback commit message generation

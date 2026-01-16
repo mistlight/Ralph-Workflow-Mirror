@@ -269,8 +269,38 @@ fn file_count_pattern_regex() -> &'static Regex {
     })
 }
 
-/// Check for JSON artifacts that indicate extraction failure.
-fn check_json_artifacts(content: &str) -> Result<(), String> {
+// =========================================================================
+// Commit Message Validation Helper Functions
+// =========================================================================
+
+/// Validate basic length requirements for commit message content.
+fn validate_basic_length(content: &str) -> Result<(), String> {
+    // Check for empty
+    if content.is_empty() {
+        return Err("Commit message is empty".to_string());
+    }
+
+    // Check minimum length
+    if content.len() < 5 {
+        return Err(format!(
+            "Commit message too short ({} chars, minimum 5)",
+            content.len()
+        ));
+    }
+
+    // Check maximum length (Git convention: first line <72, total <1000)
+    if content.len() > 2000 {
+        return Err(format!(
+            "Commit message too long ({} chars, maximum 2000)",
+            content.len()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Validate that content does not contain JSON parsing artifacts.
+fn validate_no_json_artifacts(content: &str) -> Result<(), String> {
     let json_indicators = [
         r#"{"type":"#,
         r#"{"result":"#,
@@ -293,22 +323,30 @@ fn check_json_artifacts(content: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Check for literal escape sequences that indicate JSON unescaping failure.
-fn check_escape_sequences(content: &str) -> Result<(), String> {
-    // Pattern 1: Body starts with literal \n\n
+/// Validate that content does not contain literal escape sequences indicating JSON unescaping failure.
+fn validate_no_literal_escape_sequences(content: &str) -> Result<(), String> {
+    // Pattern 1: Body starts with literal \n\n (most common JSON escaping issue)
+    // After a subject line like "feat: add", the body should start with actual newlines,
+    // not literal "\n\n" characters. This indicates the JSON wasn't properly unescaped.
     let lines: Vec<&str> = content.lines().collect();
     if lines.len() >= 2 {
         let second_line = lines[1].trim();
+        // Check if body starts with literal escape sequences
         if second_line == "\\n" || second_line == "\\n\\n" || second_line.starts_with("\\n\\n") {
             return Err(
                 "Commit message body appears to contain literal escape sequences (\\n\\n). \
-                 This indicates JSON was not properly unescaped."
+                 This indicates JSON was not properly unescaped. \
+                 Expected actual newlines after subject line."
                     .to_string(),
             );
         }
     }
 
-    // Pattern 2: JSON artifacts combined with escape sequences
+    // Pattern 2: Check for literal escape sequences COMBINED WITH JSON artifacts
+    // This is a safety check for cases where unescaping failed but only when
+    // combined with other JSON indicators that indicate actual parsing failure.
+    // Individual literal \n, \t, \r without JSON artifacts may be legitimate
+    // content in commit messages (e.g., "fix: handle \\n in filenames")
     let json_and_escape_patterns = [
         (r#"{"type":"#, "\\n"),
         (r#"{"result":"#, "\\n"),
@@ -318,12 +356,13 @@ fn check_escape_sequences(content: &str) -> Result<(), String> {
     for (json_pattern, escape_pattern) in json_and_escape_patterns {
         if content.contains(json_pattern) && content.contains(escape_pattern) {
             return Err(format!(
-                "Commit message contains both JSON artifacts ({json_pattern}) and literal escape sequences. This indicates JSON parsing failure."
+                "Commit message contains both JSON artifacts ({json_pattern}) and literal escape sequences ({escape_pattern}). This indicates JSON parsing failure."
             ));
         }
     }
 
-    // Pattern 3: Repeated literal escape sequences
+    // Pattern 3: Check for repeated literal escape sequences that suggest bulk unescaping failure
+    // This catches cases where \\n\\n\\n appears (multiple escaped newlines that weren't processed)
     if content.contains("\\n\\n\\n") || content.contains("\\n\\n\\n\\n") {
         return Err(
             "Commit message contains repeated literal escape sequences (\\n\\n\\n). \
@@ -335,8 +374,8 @@ fn check_escape_sequences(content: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Check for error markers and agent error messages.
-fn check_error_patterns(_content: &str, content_lower: &str) -> Result<(), String> {
+/// Validate that content does not start with error markers.
+fn validate_no_error_markers(content: &str) -> Result<(), String> {
     let error_markers = [
         "error:",
         "failed to",
@@ -347,12 +386,20 @@ fn check_error_patterns(_content: &str, content_lower: &str) -> Result<(), Strin
         "i don't have access",
         "cannot generate",
     ];
+    let content_lower = content.to_lowercase();
     for marker in error_markers {
         if content_lower.starts_with(marker) {
             return Err(format!("Commit message starts with error marker: {marker}"));
         }
     }
+    Ok(())
+}
 
+/// Validate that content does not contain agent error messages.
+fn validate_no_agent_errors(content: &str) -> Result<(), String> {
+    // Check for agent error messages that leaked into output
+    // This handles cases where agents output errors in their result field
+    // that bypassed the normal stderr error detection
     let agent_error_patterns = [
         "prompt is too long",
         "token limit exceeded",
@@ -362,6 +409,7 @@ fn check_error_patterns(_content: &str, content_lower: &str) -> Result<(), Strin
         "invalid request",
         "request failed",
     ];
+    let content_lower = content.to_lowercase();
     for pattern in &agent_error_patterns {
         if content_lower.contains(pattern) {
             return Err(format!(
@@ -369,12 +417,16 @@ fn check_error_patterns(_content: &str, content_lower: &str) -> Result<(), Strin
             ));
         }
     }
-
     Ok(())
 }
 
-/// Check for AI thought process leakage patterns.
-fn check_thought_process_leakage(content: &str, content_lower: &str) -> Result<(), String> {
+/// Validate that content does not contain AI thought process leakage.
+fn validate_no_thought_process_leakage(content: &str) -> Result<(), String> {
+    let content_lower = content.to_lowercase();
+
+    // Check for AI thought process leakage at the start of the message
+    // This validation catches cases where the filtering in remove_thought_process_patterns
+    // failed to remove the AI analysis before the actual commit message
     let thought_process_prefixes = [
         "looking at this diff",
         "i can see",
@@ -387,6 +439,7 @@ fn check_thought_process_leakage(content: &str, content_lower: &str) -> Result<(
         "looking at the changes",
         "i've analyzed",
         "after reviewing",
+        // Additional patterns to catch more variations
         "based on the git diff",
         "here are the changes",
         "here's what changed",
@@ -408,12 +461,12 @@ fn check_thought_process_leakage(content: &str, content_lower: &str) -> Result<(
     for prefix in &thought_process_prefixes {
         if content_lower.starts_with(prefix) {
             return Err(format!(
-                "Commit message starts with AI thought process ({prefix})."
+                "Commit message starts with AI thought process ({prefix}). This indicates a bug in the thought process filtering."
             ));
         }
     }
 
-    // Check for numbered analysis at the start
+    // Check for numbered analysis at the start (1., 2., 3., etc.)
     if content.trim_start().starts_with("1. ")
         || content.trim_start().starts_with("1)\n")
         || content_lower.starts_with("- first")
@@ -424,18 +477,22 @@ fn check_thought_process_leakage(content: &str, content_lower: &str) -> Result<(
         );
     }
 
-    // Check for formatted thinking output patterns
+    // Check for formatted thinking output patterns (e.g., "[Claude] Thinking:")
+    // This catches formatted thinking output from CLI display that leaked into the log
     let formatted_thinking_patterns = [
         "[claude] thinking:",
+        "[claude] Thinking:",
         "[agent] thinking:",
+        "[agent] Thinking:",
         "[assistant] thinking:",
+        "[assistant] Thinking:",
         "] thinking:",
         "] Thinking:",
     ];
     for pattern in &formatted_thinking_patterns {
-        if content_lower.contains(pattern) {
+        if content_lower.starts_with(pattern) || content.contains(pattern) {
             return Err(format!(
-                "Commit message contains formatted thinking pattern ({pattern})."
+                "Commit message contains formatted thinking pattern ({pattern}). This indicates AI thinking output leaked into the commit message."
             ));
         }
     }
@@ -443,8 +500,8 @@ fn check_thought_process_leakage(content: &str, content_lower: &str) -> Result<(
     Ok(())
 }
 
-/// Check for placeholder content and bad patterns.
-fn check_placeholder_and_vague_patterns(content: &str, content_lower: &str) -> Result<(), String> {
+/// Validate that content does not contain placeholder text.
+fn validate_no_placeholders(content: &str) -> Result<(), String> {
     let placeholders = [
         "[commit message]",
         "<commit message>",
@@ -453,6 +510,7 @@ fn check_placeholder_and_vague_patterns(content: &str, content_lower: &str) -> R
         "[insert",
         "<insert",
     ];
+    let content_lower = content.to_lowercase();
     for placeholder in placeholders {
         if content_lower.contains(placeholder) {
             return Err(format!(
@@ -460,13 +518,25 @@ fn check_placeholder_and_vague_patterns(content: &str, content_lower: &str) -> R
             ));
         }
     }
+    Ok(())
+}
 
-    if file_count_pattern_regex().is_match(content_lower) {
+/// Validate that content does not match bad commit message patterns.
+fn validate_no_bad_patterns(content: &str) -> Result<(), String> {
+    let content_lower = content.to_lowercase();
+
+    // Check for bad commit message patterns (vague, meaningless messages)
+    // Use regex to catch ALL variants, not just hardcoded numbers
+
+    // Pattern 1: "chore: N file(s) changed" for ANY number N
+    // Handles: "file(s) changed", "files changed", "file changed" variations
+    if file_count_pattern_regex().is_match(&content_lower) {
         return Err(format!(
             "Commit message matches bad pattern (file count pattern): '{content}'. Use semantic description instead."
         ));
     }
 
+    // Pattern 2: Generic vague patterns
     let vague_patterns = [
         ("chore: apply changes", "vague 'apply changes' pattern"),
         ("chore: update code", "vague 'update code' pattern"),
@@ -479,14 +549,12 @@ fn check_placeholder_and_vague_patterns(content: &str, content_lower: &str) -> R
         }
     }
 
-    Ok(())
-}
-
-/// Check for file list patterns in commit messages.
-fn check_file_list_patterns(content: &str) -> Result<(), String> {
+    // Check for filename list patterns like "chore: update src/file.rs" or "chore: src/file.rs, src/other.rs"
+    // These are bad because they just list filenames without semantic meaning
     let first_line = content.lines().next().unwrap_or(content);
     let first_line_lower = first_line.to_lowercase();
 
+    // Check both "chore: update <path>" and "chore: <path>" patterns
     if first_line_lower.starts_with("chore: update ") || first_line_lower.starts_with("chore:") {
         let subject = first_line_lower
             .replacen("chore: update ", "", 1)
@@ -494,18 +562,29 @@ fn check_file_list_patterns(content: &str) -> Result<(), String> {
             .trim()
             .to_string();
 
+        // Check if subject looks like a file path or list of file paths
+        // File paths contain '/' or end with common extensions
+        // We need to check for multiple patterns:
+        // 1. Single file path: "src/file.rs"
+        // 2. Multiple files with commas: "src/a.rs, src/b.rs"
+        // 3. Multiple files with "and": "src/a.rs and src/b.rs"
+
+        // Common code file extensions
         let code_extensions = [
             ".rs", ".js", ".ts", ".py", ".go", ".java", ".c", ".cpp", ".h", ".cs", ".php", ".rb",
             ".swift", ".kt",
         ];
 
+        // Check if subject looks like a file path or list of file paths
         let looks_like_file_list = subject.contains('/')
-            || subject.contains('\\')
-            || code_extensions.iter().any(|ext| subject.ends_with(ext));
+            || subject.contains('\\') || // Windows paths
+            code_extensions.iter().any(|ext| subject.ends_with(ext));
 
+        // Additional check: if there are commas and file extensions, it's definitely a file list
         let has_comma_separated_files =
             subject.contains(", ") && code_extensions.iter().any(|ext| subject.contains(ext));
 
+        // Check for "and" separated files
         let has_and_separated_files =
             subject.contains(" and ") && code_extensions.iter().any(|ext| subject.contains(ext));
 
@@ -528,36 +607,15 @@ fn check_file_list_patterns(content: &str) -> Result<(), String> {
 pub fn validate_commit_message(content: &str) -> Result<(), String> {
     let content = content.trim();
 
-    // Check for empty
-    if content.is_empty() {
-        return Err("Commit message is empty".to_string());
-    }
-
-    // Check minimum length
-    if content.len() < 5 {
-        return Err(format!(
-            "Commit message too short ({} chars, minimum 5)",
-            content.len()
-        ));
-    }
-
-    // Check maximum length (Git convention: first line <72, total <1000)
-    if content.len() > 2000 {
-        return Err(format!(
-            "Commit message too long ({} chars, maximum 2000)",
-            content.len()
-        ));
-    }
-
-    let content_lower = content.to_lowercase();
-
-    // Run all validation checks
-    check_json_artifacts(content)?;
-    check_escape_sequences(content)?;
-    check_error_patterns(content, &content_lower)?;
-    check_thought_process_leakage(content, &content_lower)?;
-    check_placeholder_and_vague_patterns(content, &content_lower)?;
-    check_file_list_patterns(content)?;
+    // Run all validation checks in order
+    validate_basic_length(content)?;
+    validate_no_json_artifacts(content)?;
+    validate_no_literal_escape_sequences(content)?;
+    validate_no_error_markers(content)?;
+    validate_no_agent_errors(content)?;
+    validate_no_thought_process_leakage(content)?;
+    validate_no_placeholders(content)?;
+    validate_no_bad_patterns(content)?;
 
     Ok(())
 }

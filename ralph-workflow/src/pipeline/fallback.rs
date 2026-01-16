@@ -2,6 +2,7 @@
 
 use crate::agents::{is_glm_like_agent, AgentErrorKind, JsonParserType};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
+use crate::logger::Logger;
 use std::io;
 
 use super::prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
@@ -49,9 +50,20 @@ pub struct AgentAttemptConfig<'a> {
     pub fallback_config: &'a crate::agents::fallback::FallbackConfig,
 }
 
-/// Log GLM-specific diagnostic information on first attempt.
-fn log_glm_diagnostics(config: &AgentAttemptConfig<'_>, runtime: &PipelineRuntime<'_>) {
-    let cmd_argv = split_command(config.cmd_str).ok();
+/// Log GLM-specific diagnostic output (only on first try to avoid spam).
+fn log_glm_diagnostics(
+    agent_name: &str,
+    cmd_str: &str,
+    agent_index: usize,
+    cycle: usize,
+    model_index: usize,
+    runtime: &PipelineRuntime<'_>,
+) {
+    if agent_index != 0 || cycle != 0 || model_index != 0 {
+        return;
+    }
+
+    let cmd_argv = split_command(cmd_str).ok();
     let full_cmd_log = cmd_argv.as_ref().map_or_else(
         || "<unparseable command>".to_string(),
         |argv| {
@@ -62,23 +74,37 @@ fn log_glm_diagnostics(config: &AgentAttemptConfig<'_>, runtime: &PipelineRuntim
     );
 
     if runtime.config.verbosity.is_debug() {
-        runtime.logger.info(&format!(
-            "GLM agent '{}' command configuration:",
-            config.agent_name
-        ));
+        runtime
+            .logger
+            .info(&format!("GLM agent '{agent_name}' command configuration:"));
         runtime
             .logger
             .info(&format!("  Full command: {full_cmd_log}"));
     }
 }
 
-/// Log error diagnostics and recovery advice based on error kind.
-fn log_error_diagnostics(
-    config: &AgentAttemptConfig<'_>,
-    runtime: &PipelineRuntime<'_>,
-    error_kind: AgentErrorKind,
+/// Handle agent error classification, logging, and user guidance.
+///
+/// Returns the `AgentErrorKind` for downstream decision logic.
+fn handle_agent_error(
+    exit_code: i32,
+    stderr: &str,
+    agent_name: &str,
+    model_flag: Option<&str>,
+    cmd_str: &str,
     is_glm_agent: bool,
-) {
+    runtime: &PipelineRuntime<'_>,
+) -> AgentErrorKind {
+    let error_kind =
+        AgentErrorKind::classify_with_agent(exit_code, stderr, Some(agent_name), model_flag);
+
+    let model_suffix = model_flag.map(|m| format!(" [{m}]")).unwrap_or_default();
+
+    runtime.logger.warn(&format!(
+        "Agent '{agent_name}{model_suffix}' failed: {} (exit code {exit_code})",
+        error_kind.description()
+    ));
+
     // GLM-specific diagnostics
     if is_glm_agent
         && matches!(
@@ -110,18 +136,14 @@ fn log_error_diagnostics(
     if matches!(error_kind, AgentErrorKind::AuthFailure) {
         runtime
             .logger
-            .info(&crate::agents::auth_failure_advice(config.model_flag));
+            .info(&crate::agents::auth_failure_advice(model_flag));
     } else {
         runtime.logger.info(error_kind.recovery_advice());
     }
 
     // Provide installation guidance for command not found errors
     if error_kind.is_command_not_found() {
-        let binary = config
-            .cmd_str
-            .split_whitespace()
-            .next()
-            .unwrap_or(config.agent_name);
+        let binary = cmd_str.split_whitespace().next().unwrap_or(agent_name);
         let guidance = crate::platform::InstallGuidance::for_binary(binary);
         runtime.logger.info(&guidance.format());
     }
@@ -135,75 +157,28 @@ fn log_error_diagnostics(
 
     // Provide context reduction hint for memory-related errors
     if error_kind.suggests_smaller_context() {
-        runtime.logger.info(
-            "Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0",
-        );
+        runtime.logger.info("Tip: Try reducing context size with RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0");
     }
+
+    error_kind
 }
 
-/// Handle a single retry attempt, returning Some(result) if we should exit the retry loop.
-fn handle_retry_attempt(
-    config: &AgentAttemptConfig<'_>,
-    runtime: &PipelineRuntime<'_>,
+/// Log retry message and wait before next retry.
+fn log_retry_message(
+    display_name: &str,
     model_suffix: &str,
-    is_glm_agent: bool,
-    exit_code: i32,
-    stderr: &str,
     retry: u32,
-) -> Option<TryAgentResult> {
-    let error_kind = AgentErrorKind::classify_with_agent(
-        exit_code,
-        stderr,
-        Some(config.agent_name),
-        config.model_flag,
-    );
-
-    runtime.logger.warn(&format!(
-        "Agent '{}'{} failed: {} (exit code {})",
-        config.agent_name,
-        model_suffix,
-        error_kind.description(),
-        exit_code
+    max_retries: u32,
+    error_kind: AgentErrorKind,
+    retry_delay_ms: u64,
+    logger: &Logger,
+) {
+    logger.info(&format!(
+        "Retrying '{display_name}{model_suffix}' (attempt {}/{max_retries})",
+        retry + 1
     ));
-
-    log_error_diagnostics(config, runtime, error_kind, is_glm_agent);
-
-    if error_kind.is_unrecoverable() {
-        runtime
-            .logger
-            .error("Unrecoverable error - cannot continue pipeline");
-        return Some(TryAgentResult::Unrecoverable(exit_code));
-    }
-
-    if error_kind.should_fallback() {
-        runtime.logger.info(&format!(
-            "Switching from '{}'{} to next configured fallback...",
-            config.display_name, model_suffix,
-        ));
-        return Some(TryAgentResult::Fallback);
-    }
-
-    if !error_kind.should_retry() {
-        runtime.logger.info("Not retrying (non-retriable error)");
-        return Some(TryAgentResult::NoRetry);
-    }
-
-    // Continue retrying - sleep if not last retry
-    if retry + 1 < config.fallback_config.max_retries {
-        runtime.logger.info(&format!(
-            "Retrying '{}'{} (attempt {}/{})",
-            config.display_name,
-            model_suffix,
-            retry + 2,
-            config.fallback_config.max_retries
-        ));
-        let wait_ms = error_kind
-            .suggested_wait_ms()
-            .max(config.fallback_config.retry_delay_ms);
-        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
-    }
-
-    None // Continue retry loop
+    let wait_ms = error_kind.suggested_wait_ms().max(retry_delay_ms);
+    std::thread::sleep(std::time::Duration::from_millis(wait_ms));
 }
 
 /// Try a single agent/model configuration with retries.
@@ -221,8 +196,15 @@ pub fn try_agent_with_retries(
     let is_glm_agent = is_glm_like_agent(config.agent_name);
 
     // GLM-specific diagnostic output (only on first try to avoid spam)
-    if is_glm_agent && config.agent_index == 0 && config.cycle == 0 && config.model_index == 0 {
-        log_glm_diagnostics(config, runtime);
+    if is_glm_agent {
+        log_glm_diagnostics(
+            config.agent_name,
+            config.cmd_str,
+            config.agent_index,
+            config.cycle,
+            config.model_index,
+            runtime,
+        );
     }
 
     // Try with retries
@@ -251,16 +233,50 @@ pub fn try_agent_with_retries(
             return Ok(TryAgentResult::Success);
         }
 
-        if let Some(result) = handle_retry_attempt(
-            config,
-            runtime,
-            &model_suffix,
-            is_glm_agent,
+        // Handle error classification, logging, and user guidance
+        let error_kind = handle_agent_error(
             result.exit_code,
             &result.stderr,
-            retry,
-        ) {
-            return Ok(result);
+            config.agent_name,
+            config.model_flag,
+            config.cmd_str,
+            is_glm_agent,
+            runtime,
+        );
+
+        // Check for unrecoverable errors - abort immediately
+        if error_kind.is_unrecoverable() {
+            runtime
+                .logger
+                .error("Unrecoverable error - cannot continue pipeline");
+            return Ok(TryAgentResult::Unrecoverable(result.exit_code));
+        }
+
+        // Check if we should fallback to next agent
+        if error_kind.should_fallback() {
+            runtime.logger.info(&format!(
+                "Switching from '{}{}' to next configured fallback...",
+                config.display_name, model_suffix,
+            ));
+            return Ok(TryAgentResult::Fallback);
+        }
+
+        if !error_kind.should_retry() {
+            runtime.logger.info("Not retrying (non-retriable error)");
+            return Ok(TryAgentResult::NoRetry);
+        }
+
+        // Otherwise, continue retrying the same model/agent
+        if retry + 1 < config.fallback_config.max_retries {
+            log_retry_message(
+                config.display_name,
+                &model_suffix,
+                retry + 1,
+                config.fallback_config.max_retries,
+                error_kind,
+                config.fallback_config.retry_delay_ms,
+                runtime.logger,
+            );
         }
     }
 

@@ -13,24 +13,57 @@ use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::pipeline::Timer;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path;
 
-/// Helper to create a test script that tracks invocations.
+/// Helper to create test scripts that track execution count.
+///
+/// Returns (`fail_script_path`, `ok_script_path`, `fail_count_path`, `ok_count_path`).
 #[cfg(unix)]
-fn create_test_script(path: &Path, count_file: &Path, exit_code: i32) {
+fn create_test_scripts(
+    dir: &path::Path,
+) -> (path::PathBuf, path::PathBuf, path::PathBuf, path::PathBuf) {
+    let fail_count = dir.join("fail_count.txt");
+    let ok_count = dir.join("ok_count.txt");
+
+    let fail_script = dir.join("fail.sh");
     std::fs::write(
-        path,
+        &fail_script,
         format!(
-            "#!/bin/sh\necho x >> \"{}\"\nexit {exit_code}\n",
-            count_file.display()
+            r#"#!/bin/sh
+echo x >> "{}"
+exit 1
+"#,
+            fail_count.display()
         ),
     )
     .unwrap();
+
+    let ok_script = dir.join("ok.sh");
+    std::fs::write(
+        &ok_script,
+        format!(
+            r#"#!/bin/sh
+echo x >> "{}"
+exit 0
+"#,
+            ok_count.display()
+        ),
+    )
+    .unwrap();
+
+    (fail_script, ok_script, fail_count, ok_count)
 }
 
-/// Helper to set up a test registry with glm and ok agents.
+/// Helper to set up a test registry with GLM and fallback CCS agents.
+///
+/// Configures the registry with aliases for GLM (which fails) and OK (which succeeds),
+/// and applies a fallback chain configuration.
 #[cfg(unix)]
-fn setup_test_registry(fail_script: &Path, ok_script: &Path) -> AgentRegistry {
+fn setup_test_registry_with_fallback(
+    _dir: &path::Path,
+    fail_script: &path::Path,
+    ok_script: &path::Path,
+) -> AgentRegistry {
     let mut registry = AgentRegistry::new().unwrap();
     let defaults = crate::config::CcsConfig {
         output_flag: String::new(),
@@ -74,16 +107,9 @@ fn setup_test_registry(fail_script: &Path, ok_script: &Path) -> AgentRegistry {
 #[test]
 fn run_with_fallback_does_not_retry_problematic_glm_reviewer() {
     let dir = tempfile::tempdir().unwrap();
-    let fail_count = dir.path().join("fail_count.txt");
-    let ok_count = dir.path().join("ok_count.txt");
 
-    let fail_script = dir.path().join("fail.sh");
-    create_test_script(&fail_script, &fail_count, 1);
-
-    let ok_script = dir.path().join("ok.sh");
-    create_test_script(&ok_script, &ok_count, 0);
-
-    let registry = setup_test_registry(&fail_script, &ok_script);
+    let (fail_script, ok_script, fail_count, ok_count) = create_test_scripts(dir.path());
+    let registry = setup_test_registry_with_fallback(dir.path(), &fail_script, &ok_script);
 
     // Set up runtime components inline (lifetime issues prevent extracting this)
     let colors = Colors { enabled: false };

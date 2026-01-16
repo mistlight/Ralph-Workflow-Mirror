@@ -1,12 +1,364 @@
 //! Command execution helpers and fallback orchestration.
 
-use crate::agents::{validate_model_flag, AgentRegistry, AgentRole, JsonParserType};
+use crate::agents::{validate_model_flag, AgentConfig, AgentRegistry, AgentRole, JsonParserType};
 use crate::common::split_command;
 
 use super::fallback::try_agent_with_retries;
 use super::fallback::TryAgentResult;
 use super::model_flag::resolve_model_with_provider;
 use super::prompt::PipelineRuntime;
+
+/// Build the list of agents to try and log the fallback chain.
+fn build_agents_to_try<'a>(fallbacks: &'a [&'a str], primary_agent: &'a str) -> Vec<&'a str> {
+    let mut agents_to_try: Vec<&'a str> = vec![primary_agent];
+    for fb in fallbacks {
+        if *fb != primary_agent && !agents_to_try.contains(fb) {
+            agents_to_try.push(fb);
+        }
+    }
+    agents_to_try
+}
+
+/// Get CLI model/provider overrides based on role.
+fn get_cli_overrides(
+    role: AgentRole,
+    runtime: &PipelineRuntime<'_>,
+) -> (Option<String>, Option<String>) {
+    match role {
+        AgentRole::Developer => (
+            runtime.config.developer_model.clone(),
+            runtime.config.developer_provider.clone(),
+        ),
+        AgentRole::Reviewer => (
+            runtime.config.reviewer_model.clone(),
+            runtime.config.reviewer_provider.clone(),
+        ),
+        AgentRole::Commit => (None, None), // Commit role doesn't have CLI overrides
+    }
+}
+
+/// Context for building model flags.
+struct ModelFlagBuildContext<'a> {
+    agent_index: usize,
+    cli_model_override: Option<&'a String>,
+    cli_provider_override: Option<&'a String>,
+    agent_config: &'a AgentConfig,
+    agent_name: &'a str,
+    fallback_config: &'a crate::agents::fallback::FallbackConfig,
+    display_name: &'a str,
+    runtime: &'a PipelineRuntime<'a>,
+}
+
+/// Build the list of model flags to try for an agent.
+fn build_model_flags_list(ctx: &ModelFlagBuildContext<'_>) -> Vec<Option<String>> {
+    let mut model_flags_to_try: Vec<Option<String>> = Vec::new();
+
+    // CLI override takes highest priority for primary agent
+    // Provider override can modify the model's provider prefix
+    if ctx.agent_index == 0
+        && (ctx.cli_model_override.is_some() || ctx.cli_provider_override.is_some())
+    {
+        let resolved = resolve_model_with_provider(
+            ctx.cli_provider_override.map(std::string::String::as_str),
+            ctx.cli_model_override.map(std::string::String::as_str),
+            ctx.agent_config.model_flag.as_deref(),
+        );
+        if resolved.is_some() {
+            model_flags_to_try.push(resolved);
+        }
+    }
+
+    // Add the agent's default model (None means use agent's configured model_flag or no model)
+    if model_flags_to_try.is_empty() {
+        model_flags_to_try.push(None);
+    }
+
+    // Add provider fallback models for this agent
+    if ctx.fallback_config.has_provider_fallbacks(ctx.agent_name) {
+        let provider_fallbacks = ctx.fallback_config.get_provider_fallbacks(ctx.agent_name);
+        ctx.runtime.logger.info(&format!(
+            "Agent '{}' has {} provider fallback(s) configured",
+            ctx.display_name,
+            provider_fallbacks.len()
+        ));
+        for model in provider_fallbacks {
+            model_flags_to_try.push(Some(model.clone()));
+        }
+    }
+
+    model_flags_to_try
+}
+
+/// Build the command string for a specific model configuration.
+fn build_command_for_model(
+    agent_index: usize,
+    cycle: u32,
+    model_index: usize,
+    role: AgentRole,
+    model_flag: Option<&str>,
+    agent_config: &AgentConfig,
+    runtime: &PipelineRuntime<'_>,
+) -> String {
+    let model_ref = model_flag;
+    if agent_index == 0 && cycle == 0 && model_index == 0 {
+        // For primary agent on first cycle, respect env var command overrides
+        match role {
+            AgentRole::Developer => {
+                runtime.config.developer_cmd.clone().unwrap_or_else(|| {
+                    agent_config.build_cmd_with_model(true, true, true, model_ref)
+                })
+            }
+            AgentRole::Reviewer => {
+                runtime.config.reviewer_cmd.clone().unwrap_or_else(|| {
+                    agent_config.build_cmd_with_model(true, true, false, model_ref)
+                })
+            }
+            AgentRole::Commit => {
+                // Commit role doesn't have cmd override, use default
+                agent_config.build_cmd_with_model(true, true, false, model_ref)
+            }
+        }
+    } else {
+        agent_config.build_cmd_with_model(true, true, role == AgentRole::Developer, model_ref)
+    }
+}
+
+/// GLM-specific validation for print flag.
+fn validate_glm_print_flag(
+    agent_name: &str,
+    agent_config: &AgentConfig,
+    cmd_str: &str,
+    agent_index: usize,
+    cycle: u32,
+    model_index: usize,
+    runtime: &PipelineRuntime<'_>,
+) {
+    if !crate::agents::is_glm_like_agent(agent_name)
+        || agent_index != 0
+        || cycle != 0
+        || model_index != 0
+    {
+        return;
+    }
+
+    let cmd_argv = split_command(cmd_str).ok();
+    let has_print_flag = cmd_argv
+        .as_ref()
+        .is_some_and(|argv| argv.iter().any(|arg| arg == "-p"));
+    if !has_print_flag {
+        if agent_config.print_flag.is_empty() {
+            runtime.logger.warn(&format!(
+                "GLM agent '{agent_name}' is missing '-p' flag: print_flag is empty in configuration. \
+                 Add 'print_flag = \"-p\"' to [ccs] section in ~/.config/ralph-workflow.toml"
+            ));
+        } else {
+            runtime.logger.warn(&format!(
+                "GLM agent '{agent_name}' may be missing '-p' flag in command. Check configuration."
+            ));
+        }
+    }
+}
+
+/// Build label and logfile paths for execution.
+fn build_execution_metadata(
+    model_flag: Option<&String>,
+    display_name: &str,
+    base_label: &str,
+    agent_name: &str,
+    logfile_prefix: &str,
+    model_index: usize,
+) -> (String, String, String) {
+    let model_suffix = model_flag.map(|m| format!(" [{m}]")).unwrap_or_default();
+    let display_name_with_suffix = format!("{display_name}{model_suffix}");
+    let label = format!("{base_label} ({display_name_with_suffix})");
+    // Sanitize agent name for log file path - replace "/" with "-" to avoid
+    // creating subdirectories (e.g., "ccs/glm" -> "ccs-glm")
+    let safe_agent_name = agent_name.replace('/', "-");
+    let logfile = format!("{logfile_prefix}_{safe_agent_name}_{model_index}.log");
+    (label, logfile, display_name_with_suffix)
+}
+
+/// Result of trying a single agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrySingleAgentResult {
+    /// Agent succeeded - return success
+    Success,
+    /// Unrecoverable error - abort immediately
+    Unrecoverable(i32),
+    /// Should fall back to next agent
+    Fallback,
+    /// Continue to next model (no retry)
+    NoRetry,
+}
+
+/// Context for trying a single model.
+struct TryModelContext<'a> {
+    agent_config: &'a AgentConfig,
+    agent_name: &'a str,
+    display_name: &'a str,
+    agent_index: usize,
+    cycle: u32,
+    model_index: usize,
+    role: AgentRole,
+    model_flag: Option<&'a String>,
+    base_label: &'a str,
+    prompt: &'a str,
+    logfile_prefix: &'a str,
+    fallback_config: &'a crate::agents::fallback::FallbackConfig,
+}
+
+/// Try a single model configuration for an agent.
+fn try_single_model(
+    ctx: &TryModelContext<'_>,
+    runtime: &mut PipelineRuntime<'_>,
+) -> std::io::Result<TrySingleAgentResult> {
+    let mut parser_type = ctx.agent_config.json_parser;
+
+    if ctx.role == AgentRole::Reviewer {
+        if let Some(ref parser_override) = runtime.config.reviewer_json_parser {
+            parser_type = JsonParserType::parse(parser_override);
+            if ctx.agent_index == 0 && ctx.cycle == 0 && ctx.model_index == 0 {
+                runtime.logger.info(&format!(
+                    "Using JSON parser override '{parser_override}' for reviewer"
+                ));
+            }
+        }
+    }
+
+    let cmd_str = build_command_for_model(
+        ctx.agent_index,
+        ctx.cycle,
+        ctx.model_index,
+        ctx.role,
+        ctx.model_flag.map(std::string::String::as_str),
+        ctx.agent_config,
+        runtime,
+    );
+
+    validate_glm_print_flag(
+        ctx.agent_name,
+        ctx.agent_config,
+        &cmd_str,
+        ctx.agent_index,
+        ctx.cycle,
+        ctx.model_index,
+        runtime,
+    );
+
+    let (label, logfile, display_name_with_suffix) = build_execution_metadata(
+        ctx.model_flag,
+        ctx.display_name,
+        ctx.base_label,
+        ctx.agent_name,
+        ctx.logfile_prefix,
+        ctx.model_index,
+    );
+
+    let attempt_config = crate::pipeline::fallback::AgentAttemptConfig {
+        agent_name: ctx.agent_name,
+        model_flag: ctx.model_flag.map(std::string::String::as_str),
+        label: &label,
+        display_name: &display_name_with_suffix,
+        cmd_str: &cmd_str,
+        prompt: ctx.prompt,
+        logfile: &logfile,
+        parser_type,
+        env_vars: &ctx.agent_config.env_vars,
+        model_index: ctx.model_index,
+        agent_index: ctx.agent_index,
+        cycle: ctx.cycle as usize,
+        fallback_config: ctx.fallback_config,
+    };
+    let result = try_agent_with_retries(&attempt_config, runtime)?;
+
+    match result {
+        TryAgentResult::Success => Ok(TrySingleAgentResult::Success),
+        TryAgentResult::Unrecoverable(exit_code) => {
+            Ok(TrySingleAgentResult::Unrecoverable(exit_code))
+        }
+        TryAgentResult::Fallback => Ok(TrySingleAgentResult::Fallback),
+        TryAgentResult::NoRetry => Ok(TrySingleAgentResult::NoRetry),
+    }
+}
+
+/// Context for trying a single agent.
+struct TryAgentContext<'a> {
+    agent_name: &'a str,
+    agent_index: usize,
+    cycle: u32,
+    role: AgentRole,
+    base_label: &'a str,
+    prompt: &'a str,
+    logfile_prefix: &'a str,
+    cli_model_override: Option<&'a String>,
+    cli_provider_override: Option<&'a String>,
+}
+
+/// Try a single agent with all its model configurations.
+fn try_single_agent(
+    ctx: &TryAgentContext<'_>,
+    runtime: &mut PipelineRuntime<'_>,
+    registry: &AgentRegistry,
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+) -> std::io::Result<TrySingleAgentResult> {
+    let Some(agent_config) = registry.resolve_config(ctx.agent_name) else {
+        runtime.logger.warn(&format!(
+            "Agent '{}' not found in registry, skipping",
+            ctx.agent_name
+        ));
+        return Ok(TrySingleAgentResult::Fallback);
+    };
+
+    let display_name = registry.display_name(ctx.agent_name);
+    let model_ctx = ModelFlagBuildContext {
+        agent_index: ctx.agent_index,
+        cli_model_override: ctx.cli_model_override,
+        cli_provider_override: ctx.cli_provider_override,
+        agent_config: &agent_config,
+        agent_name: ctx.agent_name,
+        fallback_config,
+        display_name: &display_name,
+        runtime,
+    };
+    let model_flags_to_try = build_model_flags_list(&model_ctx);
+
+    if ctx.agent_index == 0 && ctx.cycle == 0 {
+        for model_flag in model_flags_to_try.iter().flatten() {
+            for warning in validate_model_flag(model_flag) {
+                runtime.logger.warn(&warning);
+            }
+        }
+    }
+
+    for (model_index, model_flag) in model_flags_to_try.iter().enumerate() {
+        let model_ctx = TryModelContext {
+            agent_config: &agent_config,
+            agent_name: ctx.agent_name,
+            display_name: &display_name,
+            agent_index: ctx.agent_index,
+            cycle: ctx.cycle,
+            model_index,
+            role: ctx.role,
+            model_flag: model_flag.as_ref(),
+            base_label: ctx.base_label,
+            prompt: ctx.prompt,
+            logfile_prefix: ctx.logfile_prefix,
+            fallback_config,
+        };
+        let result = try_single_model(&model_ctx, runtime)?;
+
+        match result {
+            TrySingleAgentResult::Success => return Ok(TrySingleAgentResult::Success),
+            TrySingleAgentResult::Unrecoverable(exit_code) => {
+                return Ok(TrySingleAgentResult::Unrecoverable(exit_code))
+            }
+            TrySingleAgentResult::Fallback => return Ok(TrySingleAgentResult::Fallback),
+            TrySingleAgentResult::NoRetry => {}
+        }
+    }
+
+    Ok(TrySingleAgentResult::NoRetry)
+}
 
 /// Run a command with automatic fallback to alternative agents on failure.
 pub fn run_with_fallback(
@@ -21,7 +373,6 @@ pub fn run_with_fallback(
     let fallback_config = registry.fallback_config();
     let fallbacks = registry.available_fallbacks(role);
     if fallback_config.has_fallbacks(role) {
-        // Log the configured agent chain for visibility
         runtime.logger.info(&format!(
             "Agent fallback chain for {role}: {}",
             fallbacks.join(", ")
@@ -32,28 +383,9 @@ pub fn run_with_fallback(
         ));
     }
 
-    // Build the list of agents to try
-    let mut agents_to_try: Vec<&str> = vec![primary_agent];
-    for fb in &fallbacks {
-        if *fb != primary_agent && !agents_to_try.contains(fb) {
-            agents_to_try.push(fb);
-        }
-    }
+    let agents_to_try = build_agents_to_try(&fallbacks, primary_agent);
+    let (cli_model_override, cli_provider_override) = get_cli_overrides(role, runtime);
 
-    // Get the CLI model and provider overrides based on role (if any)
-    let (cli_model_override, cli_provider_override) = match role {
-        AgentRole::Developer => (
-            runtime.config.developer_model.as_deref(),
-            runtime.config.developer_provider.as_deref(),
-        ),
-        AgentRole::Reviewer => (
-            runtime.config.reviewer_model.as_deref(),
-            runtime.config.reviewer_provider.as_deref(),
-        ),
-        AgentRole::Commit => (None, None), // Commit role doesn't have CLI overrides
-    };
-
-    // Cycle through all agents with exponential backoff
     for cycle in 0..fallback_config.max_cycles {
         if cycle > 0 {
             let backoff_ms = fallback_config.calculate_backoff(cycle - 1);
@@ -67,179 +399,27 @@ pub fn run_with_fallback(
         }
 
         for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
-            let Some(agent_config) = registry.resolve_config(agent_name) else {
-                runtime.logger.warn(&format!(
-                    "Agent '{agent_name}' not found in registry, skipping"
-                ));
-                continue;
+            let ctx = TryAgentContext {
+                agent_name,
+                agent_index,
+                cycle,
+                role,
+                base_label,
+                prompt,
+                logfile_prefix,
+                cli_model_override: cli_model_override.as_ref(),
+                cli_provider_override: cli_provider_override.as_ref(),
             };
+            let result = try_single_agent(&ctx, runtime, registry, fallback_config)?;
 
-            // Get display name for this agent (used throughout user-facing output)
-            let display_name = registry.display_name(agent_name);
-
-            // Build the list of model flags to try for this agent:
-            // 1. CLI model/provider override (if provided and this is the primary agent)
-            // 2. Agent's configured model_flag (from agents.toml)
-            // 3. Provider fallback models (from agent_chain.provider_fallback)
-            let mut model_flags_to_try: Vec<Option<String>> = Vec::new();
-
-            // CLI override takes highest priority for primary agent
-            // Provider override can modify the model's provider prefix
-            if agent_index == 0 && (cli_model_override.is_some() || cli_provider_override.is_some())
-            {
-                let resolved = resolve_model_with_provider(
-                    cli_provider_override,
-                    cli_model_override,
-                    agent_config.model_flag.as_deref(),
-                );
-                if resolved.is_some() {
-                    model_flags_to_try.push(resolved);
-                }
-            }
-
-            // Add the agent's default model (None means use agent's configured model_flag or no model)
-            if model_flags_to_try.is_empty() {
-                model_flags_to_try.push(None);
-            }
-
-            // Add provider fallback models for this agent
-            if fallback_config.has_provider_fallbacks(agent_name) {
-                let provider_fallbacks = fallback_config.get_provider_fallbacks(agent_name);
-                runtime.logger.info(&format!(
-                    "Agent '{}' has {} provider fallback(s) configured",
-                    display_name,
-                    provider_fallbacks.len()
-                ));
-                for model in provider_fallbacks {
-                    model_flags_to_try.push(Some(model.clone()));
-                }
-            }
-
-            // Validate model flags and emit warnings (only on first try to avoid spam)
-            if agent_index == 0 && cycle == 0 {
-                for model_flag in model_flags_to_try.iter().flatten() {
-                    for warning in validate_model_flag(model_flag) {
-                        runtime.logger.warn(&warning);
-                    }
-                }
-            }
-
-            // Try each model flag
-            for (model_index, model_flag) in model_flags_to_try.iter().enumerate() {
-                let mut parser_type = agent_config.json_parser;
-
-                // Apply parser override for reviewer if configured
-                // CLI/env var override takes precedence over agent config
-                if role == AgentRole::Reviewer {
-                    if let Some(ref parser_override) = runtime.config.reviewer_json_parser {
-                        parser_type = JsonParserType::parse(parser_override);
-                        // Only log on first try to avoid spam
-                        if agent_index == 0 && cycle == 0 && model_index == 0 {
-                            runtime.logger.info(&format!(
-                                "Using JSON parser override '{parser_override}' for reviewer"
-                            ));
-                        }
-                    }
-                }
-
-                // Build command with model override
-                let model_ref = model_flag.as_deref();
-                let cmd_str = if agent_index == 0 && cycle == 0 && model_index == 0 {
-                    // For primary agent on first cycle, respect env var command overrides
-                    match role {
-                        AgentRole::Developer => {
-                            runtime.config.developer_cmd.clone().unwrap_or_else(|| {
-                                agent_config.build_cmd_with_model(true, true, true, model_ref)
-                            })
-                        }
-                        AgentRole::Reviewer => {
-                            runtime.config.reviewer_cmd.clone().unwrap_or_else(|| {
-                                agent_config.build_cmd_with_model(true, true, false, model_ref)
-                            })
-                        }
-                        AgentRole::Commit => {
-                            // Commit role doesn't have cmd override, use default
-                            agent_config.build_cmd_with_model(true, true, false, model_ref)
-                        }
-                    }
-                } else {
-                    agent_config.build_cmd_with_model(
-                        true,
-                        true,
-                        role == AgentRole::Developer,
-                        model_ref,
-                    )
-                };
-
-                // GLM-specific diagnostic output for print flag validation
-                if crate::agents::is_glm_like_agent(agent_name)
-                    && agent_index == 0
-                    && cycle == 0
-                    && model_index == 0
-                {
-                    let cmd_argv = split_command(&cmd_str).ok();
-                    let has_print_flag = cmd_argv
-                        .as_ref()
-                        .is_some_and(|argv| argv.iter().any(|arg| arg == "-p"));
-                    if !has_print_flag {
-                        if agent_config.print_flag.is_empty() {
-                            runtime.logger.warn(&format!(
-                                "GLM agent '{agent_name}' is missing '-p' flag: print_flag is empty in configuration. \
-                                 Add 'print_flag = \"-p\"' to [ccs] section in ~/.config/ralph-workflow.toml"
-                            ));
-                        } else {
-                            runtime.logger.warn(&format!(
-                                "GLM agent '{agent_name}' may be missing '-p' flag in command. Check configuration."
-                            ));
-                        }
-                    }
-                }
-
-                let model_suffix = model_flag
-                    .as_ref()
-                    .map(|m| format!(" [{m}]"))
-                    .unwrap_or_default();
-                let display_name = registry.display_name(agent_name);
-                let label = format!("{base_label} ({display_name}{model_suffix})");
-                // Sanitize agent name for log file path - replace "/" with "-" to avoid
-                // creating subdirectories (e.g., "ccs/glm" -> "ccs-glm")
-                let safe_agent_name = agent_name.replace('/', "-");
-                let logfile = format!("{logfile_prefix}_{safe_agent_name}_{model_index}.log");
-
-                // Try this agent/model configuration with retries
-                let attempt_config = crate::pipeline::fallback::AgentAttemptConfig {
-                    agent_name,
-                    model_flag: model_flag.as_deref(),
-                    label: &label,
-                    display_name: &display_name,
-                    cmd_str: &cmd_str,
-                    prompt,
-                    logfile: &logfile,
-                    parser_type,
-                    env_vars: &agent_config.env_vars,
-                    model_index,
-                    agent_index,
-                    cycle: cycle as usize,
-                    fallback_config,
-                };
-                let result = try_agent_with_retries(&attempt_config, runtime)?;
-
-                match result {
-                    TryAgentResult::Success => return Ok(0),
-                    TryAgentResult::Unrecoverable(exit_code) => return Ok(exit_code),
-                    TryAgentResult::Fallback => {
-                        // Break to next model/agent
-                        break;
-                    }
-                    TryAgentResult::NoRetry => {
-                        // Non-retriable error - continue to next model/agent
-                    }
-                }
+            match result {
+                TrySingleAgentResult::Success => return Ok(0),
+                TrySingleAgentResult::Unrecoverable(exit_code) => return Ok(exit_code),
+                TrySingleAgentResult::Fallback | TrySingleAgentResult::NoRetry => {}
             }
         }
     }
 
-    // All cycles exhausted
     runtime.logger.error(&format!(
         "All agents exhausted after {} cycles with exponential backoff",
         fallback_config.max_cycles
