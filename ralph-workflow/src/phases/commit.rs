@@ -1774,9 +1774,9 @@ fn try_recovery_layers(
 fn find_most_recent_log(log_path: &str) -> anyhow::Result<Option<std::path::PathBuf>> {
     let path = std::path::PathBuf::from(log_path);
 
-    // Mode 1: If path is a directory, search for any .log file in it
+    // Mode 1: If path is a directory, search for .log files with empty prefix (matches all)
     if path.is_dir() {
-        return find_most_recent_log_in_directory(&path);
+        return find_most_recent_log_with_prefix(&path, "");
     }
 
     // Mode 2: Prefix pattern mode - search parent directory for files starting with the prefix
@@ -1794,44 +1794,10 @@ fn find_most_recent_log(log_path: &str) -> anyhow::Result<Option<std::path::Path
     find_most_recent_log_with_prefix(&parent_dir, base_name)
 }
 
-/// Find the most recently modified `.log` file in a directory.
-fn find_most_recent_log_in_directory(
-    dir: &std::path::Path,
-) -> anyhow::Result<Option<std::path::PathBuf>> {
-    if !dir.exists() {
-        return Ok(None);
-    }
-
-    let entries = fs::read_dir(dir)?;
-    let mut most_recent: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-
-        // Only look at .log files
-        if path.extension().and_then(|s| s.to_str()) != Some("log") {
-            continue;
-        }
-
-        if let Ok(metadata) = entry.metadata() {
-            if let Ok(modified) = metadata.modified() {
-                match &most_recent {
-                    None => {
-                        most_recent = Some((path, modified));
-                    }
-                    Some((_, prev_modified)) if modified > *prev_modified => {
-                        most_recent = Some((path, modified));
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    Ok(most_recent.map(|(path, _)| path))
-}
-
 /// Find the most recently modified log file matching a prefix pattern.
+///
+/// Only matches `.log` files that start with `prefix`. If `prefix` is empty,
+/// matches any `.log` file in the directory.
 fn find_most_recent_log_with_prefix(
     dir: &std::path::Path,
     prefix: &str,
@@ -1846,7 +1812,7 @@ fn find_most_recent_log_with_prefix(
     for entry in entries.flatten() {
         let path = entry.path();
 
-        // Only look at .log files that start with the prefix
+        // Only look at .log files that start with the prefix (or any .log file if prefix is empty)
         if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
             if !file_name.starts_with(prefix)
                 || path.extension().and_then(|s| s.to_str()) != Some("log")
