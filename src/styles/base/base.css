@@ -30,6 +30,11 @@ body {
     line-height: var(--leading-normal);
     color: var(--color-text-primary);
     background-color: var(--color-bg);
+    background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 212, 255, 0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 60%, rgba(255, 0, 110, 0.04) 0%, transparent 50%),
+        radial-gradient(ellipse 50% 30% at 20% 80%, rgba(163, 255, 18, 0.03) 0%, transparent 50%);
+    background-attachment: fixed;
     min-height: 100vh;
     overflow-x: hidden;
     transition: background-color var(--duration-500) var(--ease-out),

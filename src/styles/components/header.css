@@ -117,7 +117,7 @@
     align-items: center;
     justify-content: center;
     flex-direction: column;
-    gap: 5px;
+    gap: var(--space-1-5);
     padding: var(--space-2);
 }
 

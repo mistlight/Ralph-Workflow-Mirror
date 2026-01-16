@@ -228,7 +228,7 @@ code, .inline-code, .inline {
     content: '';
     width: 4px;
     height: 24px;
-    background-color: #a78bfa;
+    background-color: var(--color-violet);
     border-radius: var(--radius-full);
 }
 
@@ -271,7 +271,7 @@ code, .inline-code, .inline {
 }
 
 .faq-summary--violet {
-    border-left: 3px solid #a78bfa;
+    border-left: 3px solid var(--color-violet);
 }
 
 /* === FAQ TOGGLE === */

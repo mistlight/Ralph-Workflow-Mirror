@@ -18,16 +18,26 @@
 .terminal-window::before {
     content: '';
     position: absolute;
-    inset: -1px;
+    inset: -2px;
     border-radius: var(--radius-2xl);
-    padding: 1px;
-    background: linear-gradient(135deg, var(--color-primary), var(--color-accent), var(--color-lime));
+    padding: 2px;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 50%, var(--color-lime) 100%);
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
-    opacity: 0.5;
+    opacity: 0.6;
     pointer-events: none;
+    animation: border-shift 8s linear infinite;
+}
+
+@keyframes border-shift {
+    0%, 100% {
+        filter: hue-rotate(0deg);
+    }
+    50% {
+        filter: hue-rotate(30deg);
+    }
 }
 
 /* === TERMINAL HEADER === */
@@ -53,9 +63,18 @@
     background-color: var(--color-text-faint);
 }
 
-.terminal-dot-red { background-color: #ff5f56; }
-.terminal-dot-yellow { background-color: #ffbd2e; }
-.terminal-dot-green { background-color: #27ca40; }
+.terminal-dot-red {
+    background-color: var(--terminal-dot-red);
+    box-shadow: 0 0 8px var(--terminal-dot-red);
+}
+.terminal-dot-yellow {
+    background-color: var(--terminal-dot-yellow);
+    box-shadow: 0 0 8px var(--terminal-dot-yellow);
+}
+.terminal-dot-green {
+    background-color: var(--terminal-dot-green);
+    box-shadow: 0 0 8px var(--terminal-dot-green);
+}
 
 .terminal-title {
     font-family: var(--font-mono);

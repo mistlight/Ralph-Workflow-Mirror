@@ -54,11 +54,23 @@
     --color-lime-dim: rgba(163, 255, 18, 0.12);
     --color-lime-glow: rgba(163, 255, 18, 0.25);
 
+    /* Quaternary - Violet */
+    --color-violet: #a78bfa;
+    --color-violet-light: #c4b5fd;
+    --color-violet-dark: #8b5cf6;
+    --color-violet-dim: rgba(167, 139, 250, 0.12);
+    --color-violet-glow: rgba(167, 139, 250, 0.25);
+
     /* Semantic Colors */
     --color-success: #a3ff12;
     --color-warning: #ffc800;
     --color-error: #ff006e;
     --color-info: #00d4ff;
+
+    /* Terminal Colors */
+    --terminal-dot-red: #ff5f56;
+    --terminal-dot-yellow: #ffbd2e;
+    --terminal-dot-green: #27ca40;
 
     /* Neutral Scale - Cool Zinc */
     --neutral-50: #fafafa;
@@ -90,6 +102,8 @@
     --border-strong: rgba(244, 244, 245, 0.18);
     --border-accent: rgba(0, 212, 255, 0.25);
     --border-glow: rgba(0, 212, 255, 0.5);
+    --border-lime: rgba(163, 255, 18, 0.25);
+    --border-accent-color: rgba(255, 0, 110, 0.25);
 
     /* === TYPOGRAPHY: Futuristic Precision === */
 
@@ -222,6 +236,7 @@
 
     /* Magenta Glow */
     --shadow-glow-accent: 0 0 24px rgba(255, 0, 110, 0.35), 0 0 8px rgba(255, 0, 110, 0.2);
+    --shadow-glow-accent-strong: 0 8px 16px rgba(255, 0, 110, 0.4);
 
     /* Lime Glow */
     --shadow-glow-success: 0 0 24px rgba(163, 255, 18, 0.35), 0 0 8px rgba(163, 255, 18, 0.2);

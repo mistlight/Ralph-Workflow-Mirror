@@ -1160,7 +1160,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
     gap: var(--space-3);
     padding: var(--space-4);
     background-color: var(--color-lime-dim);
-    border: 1px solid rgba(163, 255, 18, 0.25);
+    border: 1px solid var(--border-lime);
     border-radius: var(--radius-lg);
     margin-top: var(--space-4);
 }

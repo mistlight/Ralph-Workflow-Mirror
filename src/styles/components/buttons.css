@@ -43,19 +43,40 @@
 
 /* Primary Button - Electric Cyan */
 .btn-primary {
-    background-color: var(--color-primary);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
     color: var(--color-bg);
     box-shadow: var(--shadow-glow-sm);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Ripple effect for primary button */
+.btn-primary::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+    transform: translate(-50%, -50%);
+    transition: width var(--duration-500) var(--ease-out), height var(--duration-500) var(--ease-out);
+    border-radius: 50%;
+}
+
+.btn-primary:hover::after {
+    width: 300px;
+    height: 300px;
 }
 
 .btn-primary:hover {
-    background-color: var(--color-primary-light);
-    box-shadow: var(--shadow-glow-md);
-    transform: translateY(-2px);
+    background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 100%);
+    box-shadow: var(--shadow-glow-md), 0 0 30px var(--color-primary-glow);
+    transform: translateY(-2px) scale(1.02);
 }
 
 .btn-primary:active {
-    transform: translateY(0);
+    transform: translateY(0) scale(0.98);
 }
 
 /* Secondary Button - Outline */
@@ -63,13 +84,30 @@
     background-color: transparent;
     color: var(--color-primary);
     border-color: var(--color-primary);
+    position: relative;
+    z-index: 1;
+}
+
+.btn-secondary::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+    opacity: 0;
+    transition: opacity var(--duration-200) var(--ease-out);
+    z-index: -1;
+    border-radius: inherit;
 }
 
 .btn-secondary:hover {
-    background-color: var(--color-primary-dim);
+    color: var(--color-bg);
     border-color: var(--color-primary-light);
-    box-shadow: var(--shadow-glow-sm);
+    box-shadow: var(--shadow-glow-sm), 0 0 20px var(--color-primary-glow);
     transform: translateY(-2px);
+}
+
+.btn-secondary:hover::before {
+    opacity: 1;
 }
 
 /* Ghost Button */
@@ -94,7 +132,7 @@
 
 .btn-accent:hover {
     background-color: var(--color-accent-light);
-    box-shadow: var(--shadow-glow-accent), 0 8px 16px rgba(255, 0, 110, 0.4);
+    box-shadow: var(--shadow-glow-accent), var(--shadow-glow-accent-strong);
     transform: translateY(-2px);
 }
 

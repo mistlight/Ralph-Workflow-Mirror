@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Learn how Ralph Workflow orchestrates Developer and Reviewer AI agents in a self-correcting loop to ship production-ready code.">
+    <meta name="keywords" content="Ralph, multi-agent AI, Developer agent, Reviewer agent, workflow automation, AI coding">
+    <meta name="author" content="Ralph Workflow Contributors">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="How Ralph Works - Multi-Agent AI Orchestration">
+    <meta property="og:description" content="Discover the self-correcting loop that turns PROMPT.md into committed code.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://mistlight.codeberg.page/ralph/how-it-works.html">
+    <meta property="og:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
+    <meta property="og:site_name" content="Ralph Workflow">
+
+    <link rel="canonical" href="https://mistlight.codeberg.page/ralph/how-it-works.html">
+    <meta name="theme-color" content="#0a0a0b">
+
+    <title>How it Works - Ralph Workflow</title>
+
+    <!-- Fonts: Syne (display/headings), DM Sans (body), JetBrains Mono (code) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/assets/logo-icon-CSGv8iTM.svg">
+    <link rel="apple-touch-icon" href="/assets/logo-icon-CSGv8iTM.svg">
+
+    <!-- Vite CSS import -->
+
+    <!-- Vite development module (will be replaced during build) -->
+  <script type="module" crossorigin src="/assets/main-D6qX88Lv.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/main-D1lSgfIS.css">
+</head>
+<body>
+    <!-- Skip Link -->
+    <a href="#main" class="skip-link">Skip to content</a>
+
+    <!-- Navigation -->
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo" aria-label="Ralph Workflow - Home">
+                <div class="logo-mark">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4h6c1.5 0 2.5.5 2.5 2v3c0 1-.5 1.5-1.5 2S11 12.5 10 15H8l1.5-5c-.75 0-1.75-.25-2.25-1V4z"/>
+                        <path d="M8 7.5h3c.4 0 .5.1.5.5v1.5c0 .3-.1.5-.5.5H8" fill="currentColor"/>
+                    </svg>
+                </div>
+                <span class="logo-text">ralph</span>
+            </a>
+
+            <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+                <span></span>
+                <span></span>
+            </button>
+
+            <ul class="nav-menu">
+                <li><a href="index.html" class="nav-link">Home</a></li>
+                <li><a href="how-it-works.html" class="nav-link nav-link--active" aria-current="page">How it Works</a></li>
+                <li><a href="getting-started.html" class="nav-link">Getting Started</a></li>
+                <li class="nav-dropdown">
+                    <button class="nav-link nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">
+                        Docs
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                    <ul class="nav-dropdown-menu">
+                        <li><a href="docs/writing-specs.html" class="nav-link">Writing Specs</a></li>
+                        <li><a href="docs/overnight-runs.html" class="nav-link">Overnight Runs</a></li>
+                        <li><a href="docs/workflows.html" class="nav-link">Workflows</a></li>
+                    </ul>
+                </li>
+                <li><a href="open-source.html" class="nav-link">Open Source</a></li>
+                <li><a href="faq.html" class="nav-link">FAQ</a></li>
+                <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="nav-link nav-link-external">Codeberg <span class="external-icon" aria-hidden="true">→</span></a></li>
+            </ul>
+
+            <!-- Dark Mode Toggle -->
+            <button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
+                <svg class="sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <svg class="moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <main id="main" role="main">
+        <!-- Page Header -->
+        <section class="page-header">
+            <div class="page-header-content">
+                <div class="page-header-badges">
+                    <span class="badge badge-amber"><span class="badge-dot"></span> Multi-Agent System</span>
+                </div>
+                <h1 class="page-title">How Ralph Works</h1>
+                <p class="page-subtitle">A self-correcting loop that turns your ideas into production-ready code</p>
+            </div>
+        </section>
+
+        <!-- The Core Concept -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">01</span>
+                    <h2 class="section-title">The Core Concept</h2>
+                    <p class="section-subtitle">Think of Ralph as a two-person team that never sleeps</p>
+                </div>
+
+                <div class="concept-grid">
+                    <div class="concept-text">
+                        <p class="lead-paragraph">
+                            Traditional AI coding tools are like having a conversation with a single assistant. You ask, they answer, you copy-paste, you find bugs, you go back and ask again. It's slow and tedious.
+                        </p>
+                        <p>
+                            Ralph takes a different approach: it orchestrates <strong>two specialized AI agents</strong> that work together automatically. The Developer writes code while the Reviewer validates it. They iterate in a loop until the code meets quality standards—without you lifting a finger.
+                        </p>
+                        <p>
+                            This concept, pioneered by <a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Geoffrey Huntley</a>, mirrors how real development teams work: someone writes, someone reviews, feedback is incorporated, and the cycle continues until everyone is satisfied.
+                        </p>
+                    </div>
+                    <div class="concept-visual">
+                        <div class="mental-model-card">
+                            <h4>Mental Model</h4>
+                            <p>Think of Ralph as hiring a junior developer and a senior reviewer who work together 24/7. You give them the requirements, and they don't stop until the code is ready to ship.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- The Workflow Diagram -->
+        <section class="section section--alt">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">02</span>
+                    <h2 class="section-title">The Workflow</h2>
+                    <p class="section-subtitle">From PROMPT.md to committed code in four stages</p>
+                </div>
+
+                <!-- Large Workflow Diagram -->
+                <div class="workflow-diagram-large">
+                    <svg viewBox="0 0 800 280" class="workflow-svg-large" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ralph workflow diagram showing the four stages">
+                        <!-- Background Glow - Terminal Noir cyan -->
+                        <defs>
+                            <radialGradient id="diagramGlowLarge" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="rgba(0, 212, 255, 0.08)" stop-opacity="1" />
+                                <stop offset="100%" stop-color="rgba(0, 212, 255, 0)" stop-opacity="0" />
+                            </radialGradient>
+                            <filter id="glowLarge">
+                                <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                                <feMerge>
+                                    <feMergeNode in="coloredBlur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                        <ellipse cx="400" cy="120" rx="380" ry="100" fill="url(#diagramGlowLarge)"/>
+
+                        <!-- Connection Lines - Electric cyan -->
+                        <line x1="160" y1="120" x2="260" y2="120" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
+                        <line x1="360" y1="120" x2="460" y2="120" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
+                        <line x1="560" y1="120" x2="660" y2="120" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
+
+                        <!-- Arrows - Electric cyan -->
+                        <polygon points="255,115 265,120 255,125" fill="#00d4ff" opacity="0.7"/>
+                        <polygon points="355,115 365,120 355,125" fill="#00d4ff" opacity="0.7"/>
+                        <polygon points="455,115 465,120 455,125" fill="#00d4ff" opacity="0.7"/>
+                        <polygon points="555,115 565,120 555,125" fill="#00d4ff" opacity="0.7"/>
+                        <polygon points="655,115 665,120 655,125" fill="#00d4ff" opacity="0.7"/>
+
+                        <!-- Stage 1: PROMPT.md - Electric cyan -->
+                        <g class="workflow-node">
+                            <rect x="60" y="70" width="100" height="100" rx="8" fill="#151518" stroke="#00d4ff" stroke-width="2"/>
+                            <text x="110" y="105" text-anchor="middle" fill="#00d4ff" font-size="28">📝</text>
+                            <text x="110" y="135" text-anchor="middle" fill="#e4e4e7" font-size="12" font-family="JetBrains Mono, monospace">PROMPT.md</text>
+                            <text x="110" y="155" text-anchor="middle" fill="#71717a" font-size="10">Your requirements</text>
+                        </g>
+
+                        <!-- Stage 2: Developer Agent - Hot magenta -->
+                        <g class="workflow-node">
+                            <rect x="260" y="70" width="100" height="100" rx="8" fill="#151518" stroke="#ff006e" stroke-width="2"/>
+                            <text x="310" y="105" text-anchor="middle" fill="#ff006e" font-size="28">⚙️</text>
+                            <text x="310" y="135" text-anchor="middle" fill="#e4e4e7" font-size="12" font-family="JetBrains Mono, monospace">DEVELOPER</text>
+                            <text x="310" y="155" text-anchor="middle" fill="#71717a" font-size="10">Writes code</text>
+                        </g>
+
+                        <!-- Stage 3: Reviewer Agent - Electric cyan -->
+                        <g class="workflow-node">
+                            <rect x="460" y="70" width="100" height="100" rx="8" fill="#151518" stroke="#00d4ff" stroke-width="2"/>
+                            <text x="510" y="105" text-anchor="middle" fill="#00d4ff" font-size="28">🔍</text>
+                            <text x="510" y="135" text-anchor="middle" fill="#e4e4e7" font-size="12" font-family="JetBrains Mono, monospace">REVIEWER</text>
+                            <text x="510" y="155" text-anchor="middle" fill="#71717a" font-size="10">Validates quality</text>
+                        </g>
+
+                        <!-- Stage 4: Git Commit - Electric lime success -->
+                        <g class="workflow-node">
+                            <rect x="660" y="70" width="100" height="100" rx="8" fill="#151518" stroke="#a3ff12" stroke-width="2"/>
+                            <text x="710" y="105" text-anchor="middle" fill="#a3ff12" font-size="28">✓</text>
+                            <text x="710" y="135" text-anchor="middle" fill="#e4e4e7" font-size="12" font-family="JetBrains Mono, monospace">COMMIT</text>
+                            <text x="710" y="155" text-anchor="middle" fill="#71717a" font-size="10">Ready to push</text>
+                        </g>
+
+                        <!-- Loop Indicator - Hot magenta -->
+                        <path d="M 310 180 Q 410 220 510 180" fill="none" stroke="#ff006e" stroke-width="2" stroke-dasharray="6,4" opacity="0.6"/>
+                        <text x="410" y="215" text-anchor="middle" fill="#71717a" font-size="11">Iterate until approved</text>
+                        <polygon points="505,178 515,180 505,182" fill="#ff006e" opacity="0.6"/>
+
+                        <!-- Loop back arrow - Hot magenta -->
+                        <path d="M 460 90 Q 410 50 360 90" fill="none" stroke="#ff006e" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <polygon points="365,87 358,90 365,93" fill="#ff006e" opacity="0.4"/>
+                        <text x="410" y="55" text-anchor="middle" fill="#ff006e" font-size="9" opacity="0.7">Fix issues</text>
+                    </svg>
+                </div>
+
+                <!-- Stage Descriptions -->
+                <div class="stages-grid">
+                    <div class="stage-card">
+                        <div class="stage-number stage-number--amber">1</div>
+                        <h3>You Write PROMPT.md</h3>
+                        <p>Describe what you want in plain English. Include requirements, constraints, and any technical preferences. This is the single source of truth for your task.</p>
+                    </div>
+
+                    <div class="stage-card">
+                        <div class="stage-number stage-number--sage">2</div>
+                        <h3>Developer Agent Writes</h3>
+                        <p>The Developer agent reads your prompt, analyzes your codebase, and implements the changes. It has full access to your repository and modifies files directly.</p>
+                    </div>
+
+                    <div class="stage-card">
+                        <div class="stage-number stage-number--forest">3</div>
+                        <h3>Reviewer Agent Validates</h3>
+                        <p>The Reviewer examines the code for quality, bugs, security issues, and adherence to your requirements. If problems are found, it sends feedback to the Developer.</p>
+                    </div>
+
+                    <div class="stage-card">
+                        <div class="stage-number stage-number--green">4</div>
+                        <h3>Commit is Created</h3>
+                        <p>Once both agents agree the code is ready, Ralph creates a semantic Git commit. Your changes are ready to review and push.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- The Self-Correcting Loop -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">03</span>
+                    <h2 class="section-title">The Self-Correcting Loop</h2>
+                    <p class="section-subtitle">The secret sauce that makes Ralph actually work</p>
+                </div>
+
+                <div class="loop-explanation">
+                    <div class="loop-content">
+                        <p class="lead-paragraph">
+                            The magic of Ralph isn't just having two agents—it's the <strong>feedback loop</strong> between them.
+                        </p>
+
+                        <div class="loop-steps">
+                            <div class="loop-step">
+                                <div class="loop-step-icon loop-step-icon--write">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+                                        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+                                    </svg>
+                                </div>
+                                <div class="loop-step-content">
+                                    <h4>Developer Writes</h4>
+                                    <p>The Developer agent produces initial code based on your PROMPT.md</p>
+                                </div>
+                            </div>
+
+                            <div class="loop-step">
+                                <div class="loop-step-icon loop-step-icon--review">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="11" cy="11" r="8"/>
+                                        <path d="M21 21l-4.35-4.35"/>
+                                    </svg>
+                                </div>
+                                <div class="loop-step-content">
+                                    <h4>Reviewer Examines</h4>
+                                    <p>The Reviewer checks for bugs, security issues, code style, and requirement adherence</p>
+                                </div>
+                            </div>
+
+                            <div class="loop-step">
+                                <div class="loop-step-icon loop-step-icon--feedback">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                    </svg>
+                                </div>
+                                <div class="loop-step-content">
+                                    <h4>Feedback is Given</h4>
+                                    <p>If issues are found, specific feedback is sent back to the Developer</p>
+                                </div>
+                            </div>
+
+                            <div class="loop-step">
+                                <div class="loop-step-icon loop-step-icon--fix">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="1 4 1 10 7 10"/>
+                                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                                    </svg>
+                                </div>
+                                <div class="loop-step-content">
+                                    <h4>Developer Fixes</h4>
+                                    <p>The Developer addresses the feedback and produces improved code</p>
+                                </div>
+                            </div>
+
+                            <div class="loop-step">
+                                <div class="loop-step-icon loop-step-icon--approve">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                        <polyline points="22 4 12 14.01 9 11.01"/>
+                                    </svg>
+                                </div>
+                                <div class="loop-step-content">
+                                    <h4>Loop Until Approved</h4>
+                                    <p>This continues until the Reviewer approves or the iteration limit is reached</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="loop-sidebar">
+                        <div class="iteration-modes-card">
+                            <h4>Iteration Modes</h4>
+                            <p>Control how many cycles Ralph runs:</p>
+                            <ul class="iteration-list">
+                                <li><code>-Q</code> Quick — 3 passes</li>
+                                <li><code>-S</code> Standard — 5 passes</li>
+                                <li><code>-T</code> Thorough — 10 passes</li>
+                                <li><code>-E</code> Extensive — 20 passes</li>
+                                <li><code>-L</code> Long — 30 passes</li>
+                            </ul>
+                            <p class="iteration-note">More passes = higher quality, but takes longer and costs more in API calls.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Before vs After Comparison -->
+        <section class="section section--alt">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">04</span>
+                    <h2 class="section-title">Before vs After</h2>
+                    <p class="section-subtitle">See the difference Ralph makes in your workflow</p>
+                </div>
+
+                <div class="comparison-table">
+                    <div class="comparison-column comparison-column--before">
+                        <div class="comparison-header comparison-header--before">
+                            <h3>Manual AI Chat</h3>
+                            <span class="comparison-badge--before">Before Ralph</span>
+                        </div>
+                        <ul class="comparison-list">
+                            <li class="comparison-item--negative">
+                                <span class="comparison-icon">✕</span>
+                                Copy prompt to chat interface
+                            </li>
+                            <li class="comparison-item--negative">
+                                <span class="comparison-icon">✕</span>
+                                Wait for AI response
+                            </li>
+                            <li class="comparison-item--negative">
+                                <span class="comparison-icon">✕</span>
+                                Copy code back to editor
+                            </li>
+                            <li class="comparison-item--negative">
+                                <span class="comparison-icon">✕</span>
+                                Find bugs manually
+                            </li>
+                            <li class="comparison-item--negative">
+                                <span class="comparison-icon">✕</span>
+                                Go back to chat, explain bug
+                            </li>
+                            <li class="comparison-item--negative">
+                                <span class="comparison-icon">✕</span>
+                                Repeat until frustrated
+                            </li>
+                            <li class="comparison-item--negative">
+                                <span class="comparison-icon">✕</span>
+                                Write commit message yourself
+                            </li>
+                        </ul>
+                        <div class="comparison-time">
+                            <span class="time-label">Typical time:</span>
+                            <span class="time-value">30-60 minutes</span>
+                        </div>
+                    </div>
+
+                    <div class="comparison-divider">
+                        <span>vs</span>
+                    </div>
+
+                    <div class="comparison-column comparison-column--after">
+                        <div class="comparison-header comparison-header--after">
+                            <h3>Ralph Workflow</h3>
+                            <span class="comparison-badge--after">With Ralph</span>
+                        </div>
+                        <ul class="comparison-list">
+                            <li class="comparison-item--positive">
+                                <span class="comparison-icon">✓</span>
+                                Write PROMPT.md once
+                            </li>
+                            <li class="comparison-item--positive">
+                                <span class="comparison-icon">✓</span>
+                                Run <code>ralph -S</code>
+                            </li>
+                            <li class="comparison-item--positive">
+                                <span class="comparison-icon">✓</span>
+                                Go get coffee ☕
+                            </li>
+                            <li class="comparison-item--positive">
+                                <span class="comparison-icon">✓</span>
+                                Return to committed code
+                            </li>
+                        </ul>
+                        <div class="comparison-time">
+                            <span class="time-label">Typical time:</span>
+                            <span class="time-value">3-10 minutes</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="section cta-section">
+            <div class="content-container">
+                <div class="cta-content">
+                    <h2>Ready to try it yourself?</h2>
+                    <p>Install Ralph in under 5 minutes and run your first automated workflow.</p>
+                    <div class="cta-buttons">
+                        <a href="getting-started.html" class="btn btn-primary">
+                            Get Started
+                            <span class="btn-arrow" aria-hidden="true">→</span>
+                        </a>
+                        <a href="docs/writing-specs.html" class="btn btn-secondary">
+                            Learn to Write Specs
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h3>Ralph Workflow</h3>
+                <p>Multi-agent AI orchestration for automated code development. Ship your ideas with autonomous agents that collaborate until quality is achieved.</p>
+            </div>
+
+            <div class="footer-links">
+                <h4>Project</h4>
+                <ul>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener">Repository</a></li>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/issues" target="_blank" rel="noopener">Issues</a></li>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h4>Documentation</h4>
+                <ul>
+                    <li><a href="getting-started.html">Getting Started</a></li>
+                    <li><a href="docs/writing-specs.html">Writing Specs</a></li>
+                    <li><a href="docs/workflows.html">Workflows</a></li>
+                    <li><a href="faq.html">FAQ</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h4>Community</h4>
+                <ul>
+                    <li><a href="open-source.html">Open Source</a></li>
+                    <li><a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Original Concept</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <div class="footer-copy">
+                <p>&copy; 2025 Ralph Workflow Contributors. Licensed under <a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>.</p>
+            </div>
+            <a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="footer-cta">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                Star on Codeberg
+            </a>
+        </div>
+    </footer>
+</body>
+</html>
