@@ -15,6 +15,7 @@
 mod commit;
 mod developer;
 mod reviewer;
+mod template_engine;
 mod types;
 
 // Re-export all public items for backward compatibility
@@ -26,11 +27,11 @@ pub use commit::{
 };
 pub use developer::{prompt_developer_iteration, prompt_plan};
 pub use reviewer::{
-    prompt_comprehensive_review, prompt_detailed_review_without_guidelines,
-    prompt_incremental_review_with_diff, prompt_reviewer_review,
-    prompt_reviewer_review_with_guidelines, prompt_security_focused_review,
-    prompt_universal_review,
+    prompt_comprehensive_review_with_diff, prompt_detailed_review_without_guidelines_with_diff,
+    prompt_incremental_review_with_diff, prompt_reviewer_review_with_guidelines_and_diff,
+    prompt_security_focused_review_with_diff, prompt_universal_review_with_diff,
 };
+pub use template_engine::Template;
 pub use types::{Action, ContextLevel, Role};
 
 use crate::guidelines::ReviewGuidelines;
@@ -53,7 +54,7 @@ pub fn prompt_for_agent(
     context: ContextLevel,
     iteration: Option<u32>,
     total_iterations: Option<u32>,
-    guidelines: Option<&ReviewGuidelines>,
+    _guidelines: Option<&ReviewGuidelines>,
     prompt_md_content: Option<&str>,
 ) -> String {
     match (role, action) {
@@ -63,20 +64,13 @@ pub fn prompt_for_agent(
             total_iterations.unwrap_or(1),
             context,
         ),
-        (Role::Reviewer, Action::Review) => guidelines.map_or_else(
-            || prompt_reviewer_review(context),
-            |g| prompt_reviewer_review_with_guidelines(context, g),
-        ),
         (_, Action::Fix) => prompt_fix(),
-        // Fallback for Developer + Review (shouldn't happen but be safe)
-        (Role::Developer, Action::Review) => prompt_reviewer_review(context),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::language_detector::ProjectStack;
 
     #[test]
     fn test_prompt_for_agent_developer() {
@@ -96,8 +90,12 @@ mod tests {
 
     #[test]
     fn test_prompt_for_agent_reviewer() {
-        let result = prompt_reviewer_review(ContextLevel::Minimal);
+        let result = prompt_detailed_review_without_guidelines_with_diff(
+            ContextLevel::Minimal,
+            "sample diff",
+        );
         assert!(result.contains("fresh eyes"));
+        assert!(result.contains("DETAILED REVIEW MODE"));
     }
 
     #[test]
@@ -128,8 +126,14 @@ mod tests {
         let prompts_to_check = vec![
             prompt_developer_iteration(1, 5, ContextLevel::Normal),
             prompt_developer_iteration(1, 5, ContextLevel::Minimal),
-            prompt_reviewer_review(ContextLevel::Normal),
-            prompt_reviewer_review(ContextLevel::Minimal),
+            prompt_detailed_review_without_guidelines_with_diff(
+                ContextLevel::Normal,
+                "sample diff",
+            ),
+            prompt_detailed_review_without_guidelines_with_diff(
+                ContextLevel::Minimal,
+                "sample diff",
+            ),
             prompt_fix(),
             prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
@@ -177,54 +181,6 @@ mod tests {
         );
         // Should fall back to developer iteration prompt
         assert!(result.contains("IMPLEMENTATION MODE"));
-    }
-
-    #[test]
-    fn test_prompt_for_agent_with_guidelines() {
-        let stack = ProjectStack {
-            primary_language: "Python".to_string(),
-            secondary_languages: vec![],
-            frameworks: vec!["Django".to_string()],
-            has_tests: true,
-            test_framework: Some("pytest".to_string()),
-            package_manager: Some("pip".to_string()),
-        };
-
-        let guidelines = ReviewGuidelines::for_stack(&stack);
-
-        let result = prompt_for_agent(
-            Role::Reviewer,
-            Action::Review,
-            ContextLevel::Minimal,
-            None,
-            None,
-            Some(&guidelines),
-            None,
-        );
-
-        // Should use the enhanced prompt with guidelines
-        assert!(result.contains("Language-Specific"));
-        assert!(result.contains("SECURITY"));
-    }
-
-    #[test]
-    fn test_prompt_for_agent_without_guidelines() {
-        // When no guidelines are provided, should use the standard prompt
-        let result = prompt_for_agent(
-            Role::Reviewer,
-            Action::Review,
-            ContextLevel::Minimal,
-            None,
-            None,
-            None,
-            None,
-        );
-
-        // Should use standard prompt
-        assert!(result.contains("REVIEW MODE"));
-        assert!(result.contains("fresh eyes"));
-        // Should NOT contain language-specific section header
-        assert!(!result.contains("Language-Specific"));
     }
 
     #[test]
@@ -289,8 +245,14 @@ mod tests {
         let prompts_to_check = vec![
             prompt_developer_iteration(1, 5, ContextLevel::Normal),
             prompt_developer_iteration(1, 5, ContextLevel::Minimal),
-            prompt_reviewer_review(ContextLevel::Normal),
-            prompt_reviewer_review(ContextLevel::Minimal),
+            prompt_detailed_review_without_guidelines_with_diff(
+                ContextLevel::Normal,
+                "sample diff",
+            ),
+            prompt_detailed_review_without_guidelines_with_diff(
+                ContextLevel::Minimal,
+                "sample diff",
+            ),
             prompt_fix(),
             prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b\n"),
