@@ -69,6 +69,12 @@ fn format_files_section(files: &[String]) -> String {
             result.push_str(file);
             result.push('\n');
         }
+        // Add explicit clarification that agent doesn't need to read ISSUES.md
+        result.push_str(
+            "\nIMPORTANT: Work ONLY with the files listed above. The ISSUES content\n\
+            is provided in this prompt - you do NOT need to read any files\n\
+            to discover what to fix.\n",
+        );
         result
     }
 }
@@ -490,9 +496,11 @@ mod tests {
             fix_prompt.contains("ONLY") || fix_prompt.contains("only"),
             "Fix prompt should instruct to only work on specific files"
         );
+        // Updated to match new constraint language that references FILES YOU MAY MODIFY
         assert!(
-            fix_prompt.contains("mentioned in the ISSUES") || fix_prompt.contains("ISSUES section"),
-            "Fix prompt should limit work to files mentioned in ISSUES"
+            fix_prompt.contains("FILES YOU MAY MODIFY")
+                || fix_prompt.contains("embedded ISSUES content"),
+            "Fix prompt should limit work to specific files from ISSUES"
         );
     }
 
@@ -567,9 +575,10 @@ mod tests {
 - [ ] [src/main.rs:42] Bug in main function
 ";
         let fix_prompt = prompt_fix("", "", issues);
+        // Updated to match new constraint language that references FILES YOU MAY MODIFY
         assert!(
-            fix_prompt.contains("MAY read files listed above")
-                || fix_prompt.contains("MAY read files listed"),
+            fix_prompt.contains("MAY read the files listed")
+                || fix_prompt.contains("FILES YOU MAY MODIFY"),
             "Fix prompt should explicitly allow reading listed files"
         );
     }
@@ -634,6 +643,34 @@ mod tests {
         assert_eq!(
             main_count, 1,
             "File should appear only once in the list (deduplicated)"
+        );
+    }
+
+    #[test]
+    fn test_fix_prompt_explicitly_states_content_is_embedded() {
+        let fix_prompt = prompt_fix("", "", "");
+        assert!(
+            fix_prompt.contains("embedded above") || fix_prompt.contains("EMBEDDED"),
+            "Fix prompt should explicitly state ISSUES content is embedded in the prompt"
+        );
+    }
+
+    #[test]
+    fn test_fix_prompt_tells_agent_not_to_read_issues_file() {
+        let fix_prompt = prompt_fix("", "", "");
+        assert!(
+            fix_prompt.contains("you do NOT need to read it")
+                || fix_prompt.contains("do NOT need to read ISSUES.md"),
+            "Fix prompt should explicitly tell agent it doesn't need to read ISSUES.md"
+        );
+    }
+
+    #[test]
+    fn test_fix_prompt_references_file_list_section_explicitly() {
+        let fix_prompt = prompt_fix("prompt", "plan", "issues");
+        assert!(
+            fix_prompt.contains("FILES YOU MAY MODIFY"),
+            "Fix prompt should explicitly reference the FILES YOU MAY MODIFY section"
         );
     }
 }
