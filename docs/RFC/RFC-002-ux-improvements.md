@@ -218,19 +218,35 @@ This section tracks the implementation status of RFC-002 proposals against the a
 
 ### In Progress Features
 
-#### 🚧 Phase 5.1: Full Environment Variable Compliance
+#### ✅ Phase 5.1: Full Environment Variable Compliance
 
-**Status**: Partially Implemented
+**Status**: Fully Implemented
 
-**Implemented**:
-- `terminal.rs`: Full support for NO_COLOR, CLICOLOR, CLICOLOR_FORCE, TERM
-- `logger/mod.rs`: NO_COLOR support only
+**Location**: `ralph-workflow/src/logger/mod.rs:35-77`
 
-**Remaining Work**:
-- Add CLICOLOR and CLICOLOR_FORCE support to `logger/mod.rs`
-- Ensure consistent color behavior across all modules
+**Implementation Details**:
+- **Environment Variable Compliance** (now consistent across all modules):
+  - `NO_COLOR=1`: Disables all ANSI output (<https://no-color.org/>)
+  - `CLICOLOR_FORCE=1`: Forces colors even in non-TTY
+  - `CLICOLOR=0`: Disables colors on macOS
+  - `TERM=dumb`: Disables colors for basic terminals
 
-**Priority**: P1 (High)
+- **Priority Order**:
+  1. `NO_COLOR` (highest priority - takes precedence)
+  2. `CLICOLOR_FORCE` (forces colors even in non-TTY)
+  3. `CLICOLOR` (macOS color disable)
+  4. `TERM` (dumb terminal check)
+  5. TTY detection (fallback)
+
+- **Consistency**: The `logger/mod.rs` module now matches the comprehensive environment variable detection logic from `terminal.rs`, ensuring consistent color behavior across the entire application.
+
+**Test Coverage**: Lines 188-310 (7 new tests added):
+- `test_colors_enabled_respects_no_color`
+- `test_colors_enabled_respects_clicolor_force`
+- `test_colors_enabled_respects_clicolor_zero`
+- `test_colors_enabled_respects_term_dumb`
+- `test_colors_enabled_no_color_takes_precedence`
+- `test_colors_enabled_term_dumb_case_insensitive`
 
 ---
 
@@ -418,12 +434,12 @@ ralph --completions fish > ~/.config/fish/completions/ralph.fish
 | Priority Level | Total Items | Completed | In Progress | Not Started |
 |----------------|-------------|-----------|-------------|-------------|
 | P0 (Critical) | 6 | 0 | 0 | 6 |
-| P1 (High) | 8 | 3 | 1 | 4 |
+| P1 (High) | 8 | 4 | 0 | 4 |
 | P2 (Medium) | 4 | 2 | 0 | 2 |
 | P3 (Lower) | 4 | 1 | 0 | 3 |
-| **Total** | **22** | **6 (27%)** | **1 (5%)** | **15 (68%)** |
+| **Total** | **22** | **7 (32%)** | **0 (0%)** | **15 (68%)** |
 
-**Overall Completion**: 27% (6 of 22 items)
+**Overall Completion**: 32% (7 of 22 items)
 
 **Note**: The completed features are substantial infrastructure improvements (terminal standards, diagnostics, streaming metrics) that provide a solid foundation for remaining user-facing features.
 
