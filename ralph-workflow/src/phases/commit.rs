@@ -1500,6 +1500,94 @@ fn validate_and_record_extraction(
     }
 }
 
+/// Import types needed for parsing trace helpers.
+use crate::phases::commit_logging::{ParsingTraceLog, ParsingTraceStep};
+
+/// Write parsing trace log to file with error handling.
+fn write_parsing_trace_with_logging(
+    parsing_trace: &ParsingTraceLog,
+    log_dir: &str,
+    logger: &Logger,
+) {
+    if let Err(e) = parsing_trace.write_to_file(std::path::Path::new(log_dir)) {
+        logger.warn(&format!("Failed to write parsing trace log: {e}"));
+    }
+}
+
+/// Try XML extraction and record in parsing trace.
+/// Returns `Some(result)` if extraction succeeded, `None` otherwise.
+fn try_xml_extraction_traced(
+    content: &str,
+    step_number: &mut usize,
+    parsing_trace: &mut ParsingTraceLog,
+    logger: &Logger,
+    attempt_log: &mut CommitAttemptLog,
+    log_dir: &str,
+) -> Option<CommitExtractionResult> {
+    let (xml_result, xml_detail) = try_extract_xml_commit_with_trace(content);
+    logger.info(&format!("  ✓ XML extraction: {xml_detail}"));
+
+    parsing_trace.add_step(
+        ParsingTraceStep::new(*step_number, "XML Extraction")
+            .with_input(&content[..content.len().min(1000)])
+            .with_result(xml_result.as_deref().unwrap_or("[No XML found]"))
+            .with_success(xml_result.is_some())
+            .with_details(&xml_detail),
+    );
+    *step_number += 1;
+
+    if let Some(message) = xml_result {
+        if let Some(result) =
+            validate_and_record_extraction(&message, "XML", xml_detail, logger, attempt_log)
+        {
+            parsing_trace.set_final_message(&message);
+            write_parsing_trace_with_logging(parsing_trace, log_dir, logger);
+            return Some(result);
+        }
+    } else {
+        attempt_log.add_extraction_attempt(ExtractionAttempt::failure("XML", xml_detail));
+    }
+    logger.info("  ✗ XML extraction failed, trying JSON schema extraction...");
+    None
+}
+
+/// Try JSON extraction and record in parsing trace.
+/// Returns `Some(result)` if extraction succeeded, `None` otherwise.
+fn try_json_extraction_traced(
+    content: &str,
+    step_number: &mut usize,
+    parsing_trace: &mut ParsingTraceLog,
+    logger: &Logger,
+    attempt_log: &mut CommitAttemptLog,
+    log_dir: &str,
+) -> Option<CommitExtractionResult> {
+    let (json_result, json_detail) = try_extract_structured_commit_with_trace(content);
+    logger.info(&format!("  ✓ JSON extraction: {json_detail}"));
+
+    parsing_trace.add_step(
+        ParsingTraceStep::new(*step_number, "JSON Schema Extraction")
+            .with_input(&content[..content.len().min(1000)])
+            .with_result(json_result.as_deref().unwrap_or("[No JSON found]"))
+            .with_success(json_result.is_some())
+            .with_details(&json_detail),
+    );
+    *step_number += 1;
+
+    if let Some(message) = json_result {
+        if let Some(result) =
+            validate_and_record_extraction(&message, "JSON", json_detail, logger, attempt_log)
+        {
+            parsing_trace.set_final_message(&message);
+            write_parsing_trace_with_logging(parsing_trace, log_dir, logger);
+            return Some(result);
+        }
+    } else {
+        attempt_log.add_extraction_attempt(ExtractionAttempt::failure("JSON", json_detail));
+    }
+    logger.info("  ✗ JSON schema extraction failed, falling back to pattern-based extraction");
+    None
+}
+
 /// Extract a commit message from agent logs with full tracing for diagnostics.
 ///
 /// Similar to `extract_commit_message_from_logs` but records all extraction
@@ -1515,8 +1603,6 @@ fn extract_commit_message_from_logs_with_trace(
     logger: &Logger,
     attempt_log: &mut CommitAttemptLog,
 ) -> anyhow::Result<Option<CommitExtractionResult>> {
-    use crate::phases::commit_logging::{ParsingTraceLog, ParsingTraceStep};
-
     // Create parsing trace log
     let mut parsing_trace = ParsingTraceLog::new(
         attempt_log.attempt_number,
@@ -1551,7 +1637,7 @@ fn extract_commit_message_from_logs_with_trace(
                 .with_details(&format!("Agent error: {}", error_kind.description())),
         );
         parsing_trace.set_final_message("[AGENT ERROR]");
-        let _ = parsing_trace.write_to_file(std::path::Path::new(log_dir));
+        write_parsing_trace_with_logging(&parsing_trace, log_dir, logger);
 
         return Ok(Some(CommitExtractionResult::AgentError(error_kind)));
     }
@@ -1559,56 +1645,28 @@ fn extract_commit_message_from_logs_with_trace(
     let mut step_number = 1;
 
     // Try XML extraction
-    let (xml_result, xml_detail) = try_extract_xml_commit_with_trace(&content);
-    logger.info(&format!("  ✓ XML extraction: {xml_detail}"));
-
-    parsing_trace.add_step(
-        ParsingTraceStep::new(step_number, "XML Extraction")
-            .with_input(&content[..content.len().min(1000)])
-            .with_result(xml_result.as_deref().unwrap_or("[No XML found]"))
-            .with_success(xml_result.is_some())
-            .with_details(&xml_detail),
-    );
-    step_number += 1;
-
-    if let Some(message) = xml_result {
-        if let Some(result) =
-            validate_and_record_extraction(&message, "XML", xml_detail, logger, attempt_log)
-        {
-            parsing_trace.set_final_message(&message);
-            let _ = parsing_trace.write_to_file(std::path::Path::new(log_dir));
-            return Ok(Some(result));
-        }
-    } else {
-        attempt_log.add_extraction_attempt(ExtractionAttempt::failure("XML", xml_detail));
+    if let Some(result) = try_xml_extraction_traced(
+        &content,
+        &mut step_number,
+        &mut parsing_trace,
+        logger,
+        attempt_log,
+        log_dir,
+    ) {
+        return Ok(Some(result));
     }
-    logger.info("  ✗ XML extraction failed, trying JSON schema extraction...");
 
     // Try JSON extraction
-    let (json_result, json_detail) = try_extract_structured_commit_with_trace(&content);
-    logger.info(&format!("  ✓ JSON extraction: {json_detail}"));
-
-    parsing_trace.add_step(
-        ParsingTraceStep::new(step_number, "JSON Schema Extraction")
-            .with_input(&content[..content.len().min(1000)])
-            .with_result(json_result.as_deref().unwrap_or("[No JSON found]"))
-            .with_success(json_result.is_some())
-            .with_details(&json_detail),
-    );
-    step_number += 1;
-
-    if let Some(message) = json_result {
-        if let Some(result) =
-            validate_and_record_extraction(&message, "JSON", json_detail, logger, attempt_log)
-        {
-            parsing_trace.set_final_message(&message);
-            let _ = parsing_trace.write_to_file(std::path::Path::new(log_dir));
-            return Ok(Some(result));
-        }
-    } else {
-        attempt_log.add_extraction_attempt(ExtractionAttempt::failure("JSON", json_detail));
+    if let Some(result) = try_json_extraction_traced(
+        &content,
+        &mut step_number,
+        &mut parsing_trace,
+        logger,
+        attempt_log,
+        log_dir,
+    ) {
+        return Ok(Some(result));
     }
-    logger.info("  ✗ JSON schema extraction failed, falling back to pattern-based extraction");
 
     // Pattern-based extraction with recovery layers
     let pattern_result =
@@ -1635,7 +1693,7 @@ fn extract_commit_message_from_logs_with_trace(
         );
     }
 
-    let _ = parsing_trace.write_to_file(std::path::Path::new(log_dir));
+    write_parsing_trace_with_logging(&parsing_trace, log_dir, logger);
     Ok(pattern_result)
 }
 

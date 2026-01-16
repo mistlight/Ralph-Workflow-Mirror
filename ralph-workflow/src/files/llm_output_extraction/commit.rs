@@ -706,13 +706,9 @@ fn validate_no_placeholders(content: &str) -> Result<(), String> {
     let valid_template_vars = ["{{prompt}}", "{{plan}}", "{{diff}}"];
     let content_lower = content.to_lowercase();
 
-    // First, check if the content only contains valid template variables
-    // If so, skip the placeholder check entirely
-    for valid_var in &valid_template_vars {
-        if content_lower == *valid_var {
-            return Ok(());
-        }
-    }
+    // Check if content consists ONLY of valid template variables (no other text)
+    // This is valid - template variables alone are not placeholders
+    let is_only_valid_template_var = valid_template_vars.iter().any(|v| content_lower == *v);
 
     // Placeholder patterns with word boundary checks
     // These patterns must appear as complete phrases, not as substrings
@@ -730,9 +726,13 @@ fn validate_no_placeholders(content: &str) -> Result<(), String> {
     let combined_pattern = placeholder_patterns.join("|");
     if let Ok(re) = regex::Regex::new(&combined_pattern) {
         if re.is_match(content) {
-            return Err(
-                "Commit message contains placeholder text (e.g., '[commit message]', '<commit message>', or similar)".to_string()
-            );
+            // Only error if this is NOT just a valid template variable
+            // (e.g., "{{prompt}} [commit message]" should still fail)
+            if !is_only_valid_template_var {
+                return Err(
+                    "Commit message contains placeholder text (e.g., '[commit message]', '<commit message>', or similar)".to_string()
+                );
+            }
         }
     }
 
@@ -740,12 +740,12 @@ fn validate_no_placeholders(content: &str) -> Result<(), String> {
     // word that isn't part of a valid technical term like "placeholder attribute"
     // We check for phrases like "is a placeholder", "placeholder for", etc.
     let placeholder_context_patterns = [
-        r"(?i)\bplaceholder\s+for\b",     // "placeholder for"
-        r"(?i)\bplaceholder\s+text\b",    // "placeholder text"
-        r"(?i)\bplaceholder\s+here\b",    // "placeholder here"
-        r"(?i)\bplaceholder\s*\)",        // "placeholder)"
-        r"(?i)is\s+a\s+placeholder\b",    // "is a placeholder"
-        r"(?i)this\s+is\s+placeholder\b", // "this is placeholder" (grammatically incorrect, likely placeholder)
+        r"(?i)\bplaceholder\s+for\b",              // "placeholder for"
+        r"(?i)\bplaceholder\s+text\b",             // "placeholder text"
+        r"(?i)\bplaceholder\s+here\b",             // "placeholder here"
+        r"(?i)\bplaceholder\s*\)",                 // "placeholder)"
+        r"(?i)is\s+(?:a\s+)?placeholder\b",        // "is a placeholder" or "is placeholder"
+        r"(?i)this\s+is\s+(?:a\s+)?placeholder\b", // "this is a placeholder" or "this is placeholder"
     ];
 
     let combined_placeholder_context = placeholder_context_patterns.join("|");
