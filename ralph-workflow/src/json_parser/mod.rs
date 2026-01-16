@@ -47,6 +47,7 @@ mod gemini;
 #[cfg(test)]
 mod gemini_tests;
 pub mod health;
+mod incremental_parser;
 mod opencode;
 #[cfg(test)]
 mod opencode_tests;

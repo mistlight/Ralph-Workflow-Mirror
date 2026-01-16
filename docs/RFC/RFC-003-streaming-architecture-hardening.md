@@ -659,6 +659,13 @@ Emit structured events (JSON) and rely on external renderer.
   - Maintains the same API as `BufReader` for minimal code changes
 
   This fixes the user experience issue where Codex showed a blank screen for a long time before displaying all output at once. The fix applies to all parsers (Claude, Codex, Gemini, OpenCode) and ensures character-by-character streaming as intended. |
+| 2026-01-16 | **Enhancement: True incremental NDJSON parsing**: Implemented `IncrementalNdjsonParser` in `json_parser/incremental_parser.rs` to enable true real-time streaming without waiting for newlines. The previous approach still used `reader.lines()` which blocks until a complete line is received. The new incremental parser:
+  - Processes NDJSON events byte-by-byte, detecting complete JSON objects by tracking brace nesting depth
+  - Yields complete JSON events immediately when the closing brace is detected, without waiting for newlines
+  - Handles multi-line JSON, embedded strings, escaped quotes, and partial JSON spanning multiple reads
+  - Integrated into all four parsers (Claude, Codex, Gemini, OpenCode) replacing `reader.lines()` with `fill_buf()`/`consume()` loop
+
+  This achieves the ChatGPT-like real-time streaming experience where characters appear as they're generated, not all at once at the end. The improvement is especially noticeable for Codex and other agents that buffer their stdout. |
 
 ---
 

@@ -815,9 +815,11 @@ impl ClaudeParser {
     /// Parse a stream of Claude NDJSON events
     pub(crate) fn parse_stream<R: BufRead, W: Write>(
         &self,
-        reader: R,
+        mut reader: R,
         mut writer: W,
     ) -> io::Result<()> {
+        use super::incremental_parser::IncrementalNdjsonParser;
+
         let c = &self.colors;
         let monitor = HealthMonitor::new("Claude");
         let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
@@ -829,70 +831,92 @@ impl ClaudeParser {
                 .map(std::io::BufWriter::new)
         });
 
-        for line in reader.lines() {
-            let line = line?;
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
+        // Use incremental parser for true real-time streaming
+        // This processes JSON as soon as it's complete, not waiting for newlines
+        let mut incremental_parser = IncrementalNdjsonParser::new();
+        let mut byte_buffer = Vec::new();
+
+        loop {
+            // Read available bytes
+            byte_buffer.clear();
+            let chunk = reader.fill_buf()?;
+            if chunk.is_empty() {
+                break;
             }
 
-            // In debug mode, also show the raw JSON
-            if self.verbosity.is_debug() {
-                writeln!(
-                    writer,
-                    "{}[DEBUG]{} {}{}{}",
-                    c.dim(),
-                    c.reset(),
-                    c.dim(),
-                    &line,
-                    c.reset()
-                )?;
-            }
+            // Process all bytes immediately
+            byte_buffer.extend_from_slice(chunk);
+            let consumed = chunk.len();
+            reader.consume(consumed);
 
-            // Parse the event once - parse_event handles malformed JSON by returning None
-            match self.parse_event(&line) {
-                Some(output) => {
-                    // Check if this is a partial/delta event (streaming content)
-                    if trimmed.starts_with('{') {
-                        if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
-                            if Self::is_partial_event(&event) {
-                                monitor.record_partial_event();
+            // Feed bytes to incremental parser
+            let json_events = incremental_parser.feed(&byte_buffer);
+
+            // Process each complete JSON event immediately
+            for line in json_events {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                // In debug mode, also show the raw JSON
+                if self.verbosity.is_debug() {
+                    writeln!(
+                        writer,
+                        "{}[DEBUG]{} {}{}{}",
+                        c.dim(),
+                        c.reset(),
+                        c.dim(),
+                        &line,
+                        c.reset()
+                    )?;
+                }
+
+                // Parse the event once - parse_event handles malformed JSON by returning None
+                match self.parse_event(&line) {
+                    Some(output) => {
+                        // Check if this is a partial/delta event (streaming content)
+                        if trimmed.starts_with('{') {
+                            if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
+                                if Self::is_partial_event(&event) {
+                                    monitor.record_partial_event();
+                                } else {
+                                    monitor.record_parsed();
+                                }
                             } else {
                                 monitor.record_parsed();
                             }
                         } else {
                             monitor.record_parsed();
                         }
-                    } else {
-                        monitor.record_parsed();
+                        write!(writer, "{output}")?;
+                        writer.flush()?;
                     }
-                    write!(writer, "{output}")?;
-                    writer.flush()?;
-                }
-                None => {
-                    // Check if this was a control event (state management with no user output)
-                    // Control events are valid JSON that return empty output but aren't "ignored"
-                    if trimmed.starts_with('{') {
-                        if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
-                            if Self::is_control_event(&event) {
-                                monitor.record_control_event();
+                    None => {
+                        // Check if this was a control event (state management with no user output)
+                        // Control events are valid JSON that return empty output but aren't "ignored"
+                        if trimmed.starts_with('{') {
+                            if let Ok(event) = serde_json::from_str::<ClaudeEvent>(&line) {
+                                if Self::is_control_event(&event) {
+                                    monitor.record_control_event();
+                                } else {
+                                    // Valid JSON but not a control event - track as unknown
+                                    monitor.record_unknown_event();
+                                }
                             } else {
-                                // Valid JSON but not a control event - track as unknown
-                                monitor.record_unknown_event();
+                                // Failed to deserialize - track as parse error
+                                monitor.record_parse_error();
                             }
                         } else {
-                            // Failed to deserialize - track as parse error
-                            monitor.record_parse_error();
+                            monitor.record_ignored();
                         }
-                    } else {
-                        monitor.record_ignored();
                     }
                 }
-            }
 
-            // Log raw JSON to file if configured
-            if let Some(ref mut file) = log_writer {
-                writeln!(file, "{line}")?;
+                // Log raw JSON to file if configured
+                if let Some(ref mut file) = log_writer {
+                    writeln!(file, "{line}")?;
+                }
             }
         }
 
