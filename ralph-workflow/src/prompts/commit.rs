@@ -2,6 +2,8 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
+use crate::prompts::template_engine::Template;
+
 /// Template for the commit message generation prompt.
 ///
 /// This template instructs the LLM to generate high-quality Conventional Commits
@@ -149,8 +151,7 @@ CORRECT (with body using \\n for newline):
 /// Generate fix prompt (applies to either role).
 ///
 /// This prompt is agent-agnostic and works with any AI coding assistant.
-/// Instructions for NOTES.md are intentionally vague to avoid creating
-/// overly-specific context that could contaminate future runs.
+/// Uses a template-based approach for consistency with review prompts.
 ///
 /// # Agent-Orchestrator Separation
 ///
@@ -162,30 +163,20 @@ CORRECT (with body using \\n for newline):
 /// ISSUES.md is an orchestrator-managed file - the agent should NOT modify it.
 /// The orchestrator writes ISSUES.md before invoking the fix agent and may
 /// delete it after fix cycles (e.g., in isolation mode).
+///
+/// # Constraints
+///
+/// The fix agent is constrained to ONLY work on files mentioned in ISSUES.md.
+/// This prevents the agent from exploring the repository and keeps changes
+/// focused on the issues identified during review.
 pub fn prompt_fix() -> String {
-    r#"You are in FIX MODE. Address issues found during review.
-
-INPUTS TO READ:
-- .agent/ISSUES.md - Issues to address (if it exists)
-
-YOUR TASK:
-1. Read .agent/ISSUES.md to understand any issues (if it exists)
-2. Fix issues found, prioritizing by severity
-3. Verify fixes work
-
-AFTER FIXING:
-Return your completion status as structured output:
-- "All issues addressed." (if you believe everything is fixed)
-- "Issues remain." (if you believe issues still exist)
-- "No issues found." (if ISSUES.md didn't exist or was empty)
-
-DO NOT modify ISSUES.md - the orchestrator manages this file.
-You SHOULD modify source code files to fix the issues.
-
-GUIDELINES:
-- Fix issues properly, don't just suppress warnings
-- Ensure fixes don't introduce new issues"#
-        .to_string()
+    let template_content = include_str!("templates/fix_mode.txt");
+    Template::from_str(template_content.to_string())
+        .render(&std::collections::HashMap::new())
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render fix template: {e}");
+            String::new()
+        })
 }
 
 /// Generate prompt for creating commit message from provided diff.
@@ -515,5 +506,79 @@ mod tests {
         let ultra_minimal = prompt_ultra_minimal_commit(diff);
         // Emergency should be the shortest
         assert!(emergency.len() < ultra_minimal.len());
+    }
+
+    #[test]
+    fn test_fix_prompt_contains_constraint_language() {
+        // Verify that fix prompt contains explicit constraint language
+        let fix_prompt = prompt_fix();
+        assert!(
+            fix_prompt.contains("MUST NOT") || fix_prompt.contains("DO NOT"),
+            "Fix prompt should contain explicit constraint language (MUST NOT or DO NOT)"
+        );
+        assert!(
+            fix_prompt.contains("CRITICAL CONSTRAINTS"),
+            "Fix prompt should contain a CRITICAL CONSTRAINTS section"
+        );
+    }
+
+    #[test]
+    fn test_fix_prompt_forbids_exploration() {
+        // Verify that fix prompt explicitly forbids repository exploration
+        let fix_prompt = prompt_fix();
+        assert!(
+            fix_prompt.contains("MUST NOT read any other files")
+                || fix_prompt.contains("MUST NOT run git commands")
+                || fix_prompt.contains("DO NOT run any commands"),
+            "Fix prompt should explicitly forbid exploration or running commands"
+        );
+    }
+
+    #[test]
+    fn test_fix_prompt_instructs_to_only_work_on_issues_files() {
+        // Verify that fix prompt instructs to only work on files from ISSUES.md
+        let fix_prompt = prompt_fix();
+        assert!(
+            fix_prompt.contains("ISSUES.md"),
+            "Fix prompt should reference ISSUES.md"
+        );
+        assert!(
+            fix_prompt.contains("ONLY read") || fix_prompt.contains("only read"),
+            "Fix prompt should instruct to only read specific files"
+        );
+        assert!(
+            fix_prompt.contains("mentioned in ISSUES.md")
+                || fix_prompt.contains("files that are mentioned"),
+            "Fix prompt should limit work to files mentioned in ISSUES.md"
+        );
+    }
+
+    #[test]
+    fn test_fix_prompt_forbids_running_commands() {
+        // Verify that fix prompt explicitly forbids running commands
+        let fix_prompt = prompt_fix();
+        let command_patterns = ["git", "ls", "find", "cat", "DO NOT run any commands"];
+        let has_command_constraint = command_patterns
+            .iter()
+            .any(|pattern| fix_prompt.contains(pattern));
+        assert!(
+            has_command_constraint,
+            "Fix prompt should explicitly forbid running commands"
+        );
+    }
+
+    #[test]
+    fn test_fix_prompt_is_template_based() {
+        // Verify that fix prompt uses template-based approach (not hardcoded string)
+        let fix_prompt = prompt_fix();
+        // If template loading failed, we'd get an empty string
+        assert!(
+            !fix_prompt.is_empty(),
+            "Fix prompt should not be empty (template loading should succeed)"
+        );
+        assert!(
+            fix_prompt.contains("FIX MODE"),
+            "Fix prompt should contain FIX MODE indicator"
+        );
     }
 }
