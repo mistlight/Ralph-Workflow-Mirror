@@ -44,8 +44,7 @@ pub fn prompt_developer_iteration(
     template.render(&variables).unwrap_or_else(|_| {
         // Fallback to minimal prompt if template rendering fails
         format!(
-            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{}\n\nIMPLEMENTATION PLAN:\n{}\n\nExecute the next steps from the plan above.\n",
-            prompt_content, plan_content
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n"
         )
     })
 }
@@ -80,8 +79,7 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
     template.render(&variables).unwrap_or_else(|_| {
         // Fallback to minimal prompt if template rendering fails
         format!(
-            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{}\n\nIdentify critical files and implementation steps.\n",
-            prompt_md
+            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n"
         )
     })
 }

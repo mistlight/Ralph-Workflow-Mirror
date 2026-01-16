@@ -57,7 +57,6 @@ pub struct PromptConfig {
 
 impl PromptConfig {
     /// Create a new prompt configuration with default values.
-    #[must_use]
     pub const fn new() -> Self {
         Self {
             iteration: None,
@@ -69,7 +68,6 @@ impl PromptConfig {
     }
 
     /// Set iteration numbers for developer iteration prompts.
-    #[must_use]
     pub const fn with_iterations(mut self, iteration: u32, total: u32) -> Self {
         self.iteration = Some(iteration);
         self.total_iterations = Some(total);
@@ -77,21 +75,18 @@ impl PromptConfig {
     }
 
     /// Set PROMPT.md content for planning prompts.
-    #[must_use]
     pub fn with_prompt_md(mut self, content: String) -> Self {
         self.prompt_md_content = Some(content);
         self
     }
 
     /// Set (PROMPT.md, PLAN.md) content tuple for developer iteration prompts.
-    #[must_use]
     pub fn with_prompt_and_plan(mut self, prompt: String, plan: String) -> Self {
         self.prompt_and_plan = Some((prompt, plan));
         self
     }
 
     /// Set (PROMPT.md, PLAN.md, ISSUES.md) content tuple for fix prompts.
-    #[must_use]
     pub fn with_prompt_plan_and_issues(
         mut self,
         prompt: String,

@@ -24,10 +24,10 @@ use std::collections::HashMap;
 /// Returns a minimal fallback prompt on failure to ensure the review phase can proceed.
 fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
     let template = Template::new(template_content);
-    template.render(variables).unwrap_or_else(|e| {
+    template.render(variables).unwrap_or_else(|_| {
         // Fallback to minimal prompt that still includes the diff
         // This ensures the review phase can proceed even if template rendering fails
-        let diff = variables.get("DIFF").map(|s| s.as_str()).unwrap_or("");
+        let diff = variables.get("DIFF").map_or("", |s| s.as_str());
         format!(
             "Review the following changes:\n\n{diff}\n\n\
              Provide feedback on any issues found."
