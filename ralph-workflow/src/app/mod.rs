@@ -141,51 +141,19 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         }
     }
 
-    // Validate agent commands exist
-    validate_agent_commands(
+    // Validate agents and set up git repo and PROMPT.md
+    let Some(repo_root) = validate_and_setup_agents(
         &config,
         &registry,
         &developer_agent,
         &reviewer_agent,
         &config_path,
-    )?;
-
-    // Validate agents are workflow-capable
-    validate_can_commit(
-        &config,
-        &registry,
-        &developer_agent,
-        &reviewer_agent,
-        &config_path,
-    )?;
-
-    // Set up git repo and working directory
-    require_git_repo()?;
-    let repo_root = get_repo_root()?;
-    env::set_current_dir(&repo_root)?;
-
-    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
-    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
-    if config.behavior.interactive && !std::path::Path::new("PROMPT.md").exists() {
-        if let Some(template_name) = prompt_template_selection(colors) {
-            create_prompt_from_template(&template_name, colors)?;
-            println!();
-            logger.info(
-                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
-            );
-            logger.info(&format!(
-                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-                config.commit_msg
-            ));
-            return Ok(());
-        }
-        println!();
-        logger.info("PROMPT.md is required to run the pipeline.");
-        logger.info(
-            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-        );
+        colors,
+        &logger,
+    )?
+    else {
         return Ok(());
-    }
+    };
 
     ensure_files(config.isolation_mode)?;
 
@@ -253,6 +221,85 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
         return true;
     }
     false
+}
+
+/// Validates agent commands and workflow capability, then sets up git repo and PROMPT.md.
+///
+/// Returns `Some(repo_root)` if setup succeeded and should continue.
+/// Returns `None` if the user declined PROMPT.md creation (to exit early).
+fn validate_and_setup_agents(
+    config: &crate::config::Config,
+    registry: &AgentRegistry,
+    developer_agent: &str,
+    reviewer_agent: &str,
+    config_path: &std::path::Path,
+    colors: Colors,
+    logger: &Logger,
+) -> anyhow::Result<Option<std::path::PathBuf>> {
+    // Validate agent commands exist
+    validate_agent_commands(
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        config_path,
+    )?;
+
+    // Validate agents are workflow-capable
+    validate_can_commit(
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        config_path,
+    )?;
+
+    // Set up git repo and working directory
+    require_git_repo()?;
+    let repo_root = get_repo_root()?;
+    env::set_current_dir(&repo_root)?;
+
+    // Set up PROMPT.md if needed (may return None to exit early)
+    let should_continue = setup_git_and_prompt_file(config, colors, logger)?;
+    if should_continue.is_none() {
+        return Ok(None);
+    }
+
+    Ok(Some(repo_root))
+}
+
+/// In interactive mode, prompts to create PROMPT.md from a template before `ensure_files()`.
+///
+/// Returns `Ok(Some(()))` if setup succeeded and should continue.
+/// Returns `Ok(None)` if the user declined PROMPT.md creation (to exit early).
+fn setup_git_and_prompt_file(
+    config: &crate::config::Config,
+    colors: Colors,
+    logger: &Logger,
+) -> anyhow::Result<Option<()>> {
+    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
+    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
+    if config.behavior.interactive && !std::path::Path::new("PROMPT.md").exists() {
+        if let Some(template_name) = prompt_template_selection(colors) {
+            create_prompt_from_template(&template_name, colors)?;
+            println!();
+            logger.info(
+                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+            );
+            logger.info(&format!(
+                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                config.commit_msg
+            ));
+            return Ok(None);
+        }
+        println!();
+        logger.info("PROMPT.md is required to run the pipeline.");
+        logger.info(
+            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+        );
+        return Ok(None);
+    }
+    Ok(Some(()))
 }
 
 /// Runs the full development/review/commit pipeline.
