@@ -365,6 +365,420 @@ fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
     result
 }
 
+/// Check and pre-truncate diff if it exceeds agent's token limits.
+///
+/// Returns the (possibly truncated) diff and whether truncation occurred.
+fn check_and_pre_truncate_diff(
+    diff: &str,
+    commit_agent: &str,
+    runtime: &PipelineRuntime,
+) -> (String, bool) {
+    let max_size = max_prompt_size_for_agent(commit_agent);
+    if diff.len() > max_size {
+        runtime.logger.warn(&format!(
+            "Diff size ({} KB) exceeds agent limit ({} KB). Pre-truncating to avoid token errors.",
+            diff.len() / 1024,
+            max_size / 1024
+        ));
+        (truncate_diff_if_large(diff, max_size), true)
+    } else {
+        runtime.logger.info(&format!(
+            "Diff size ({} KB) is within safe limit ({} KB).",
+            diff.len() / 1024,
+            max_size / 1024
+        ));
+        (diff.to_string(), false)
+    }
+}
+
+/// Generate the appropriate prompt for the current retry strategy.
+fn generate_prompt_for_strategy(strategy: CommitRetryStrategy, working_diff: &str) -> String {
+    match strategy {
+        CommitRetryStrategy::Initial => prompt_generate_commit_message_with_diff(working_diff),
+        CommitRetryStrategy::StrictJson => prompt_strict_json_commit(working_diff),
+        CommitRetryStrategy::StrictJsonV2 => prompt_strict_json_commit_v2(working_diff),
+        CommitRetryStrategy::UltraMinimal => prompt_ultra_minimal_commit(working_diff),
+        CommitRetryStrategy::UltraMinimalV2 => prompt_ultra_minimal_commit_v2(working_diff),
+        CommitRetryStrategy::FileListOnly => prompt_file_list_only_commit(working_diff),
+        CommitRetryStrategy::FileListSummaryOnly => {
+            prompt_file_list_summary_only_commit(working_diff)
+        }
+        CommitRetryStrategy::Emergency => prompt_emergency_commit(working_diff),
+        CommitRetryStrategy::EmergencyNoDiff => prompt_emergency_no_diff_commit(working_diff),
+    }
+}
+
+/// Log the current attempt with prompt size information.
+fn log_commit_attempt(
+    strategy: CommitRetryStrategy,
+    prompt_size_kb: usize,
+    commit_agent: &str,
+    runtime: &PipelineRuntime,
+) {
+    if strategy == CommitRetryStrategy::Initial {
+        runtime.logger.info(&format!(
+            "Attempt 1/{}: Using {} (prompt size: {} KB, agent: {})",
+            CommitRetryStrategy::total_stages(),
+            strategy,
+            prompt_size_kb,
+            commit_agent
+        ));
+    } else {
+        runtime.logger.warn(&format!(
+            "Attempt {}/{}: Re-prompting with {} (prompt size: {} KB, agent: {})...",
+            strategy as usize + 1,
+            CommitRetryStrategy::total_stages(),
+            strategy,
+            prompt_size_kb,
+            commit_agent
+        ));
+    }
+}
+
+/// Handle the extraction result from a commit attempt.
+///
+/// Returns `Some(result)` if we should return early (success or hard error),
+/// or `None` if we should continue to the next strategy.
+fn handle_commit_extraction_result(
+    extraction_result: anyhow::Result<Option<CommitExtractionResult>>,
+    strategy: CommitRetryStrategy,
+    log_dir: &str,
+    runtime: &PipelineRuntime,
+    last_extraction: &mut Option<CommitExtractionResult>,
+) -> Option<anyhow::Result<CommitMessageResult>> {
+    let log_file = format!("{log_dir}/final.log");
+
+    match extraction_result {
+        Ok(Some(extraction)) => {
+            let error_kind = extraction.error_kind();
+            if extraction.is_agent_error() {
+                if error_kind == Some(AgentErrorKind::TokenExhausted) {
+                    runtime.logger.warn(&format!(
+                        "TokenExhausted detected with {}. Trying smaller prompt variant.",
+                        strategy.description()
+                    ));
+                    *last_extraction = Some(extraction);
+                    None // Continue to next strategy
+                } else {
+                    let error_desc = error_kind.map_or("unknown", AgentErrorKind::description);
+                    runtime.logger.warn(&format!(
+                        "Agent error detected: {error_desc}. Skipping remaining prompt variants."
+                    ));
+                    *last_extraction = Some(extraction);
+                    Some(Err(anyhow::anyhow!("Agent error: {error_desc}")))
+                }
+            } else if extraction.is_fallback() {
+                runtime.logger.warn(&format!(
+                    "Extraction produced fallback message with {strategy}"
+                ));
+                *last_extraction = Some(extraction);
+                None // Continue to next strategy
+            } else {
+                runtime.logger.info(&format!(
+                    "Successfully extracted commit message with {strategy}"
+                ));
+                Some(Ok(CommitMessageResult {
+                    message: extraction.into_message(),
+                    success: true,
+                    _log_path: log_file,
+                }))
+            }
+        }
+        Ok(None) => {
+            runtime.logger.warn(&format!(
+                "No valid commit message extracted with {strategy}, will use fallback"
+            ));
+            None // Continue to next strategy
+        }
+        Err(e) => {
+            runtime.logger.error(&format!(
+                "Failed to extract commit message with {strategy}: {e}"
+            ));
+            None // Continue to next strategy
+        }
+    }
+}
+
+/// Run a single commit attempt with the given strategy.
+fn run_commit_attempt(
+    strategy: CommitRetryStrategy,
+    working_diff: &str,
+    log_dir: &str,
+    runtime: &mut PipelineRuntime,
+    registry: &AgentRegistry,
+    commit_agent: &str,
+    last_extraction: &mut Option<CommitExtractionResult>,
+) -> Option<anyhow::Result<CommitMessageResult>> {
+    let prompt = generate_prompt_for_strategy(strategy, working_diff);
+    let prompt_size_kb = prompt.len() / 1024;
+
+    log_commit_attempt(strategy, prompt_size_kb, commit_agent, runtime);
+
+    let exit_code = run_with_fallback(
+        AgentRole::Commit,
+        &format!("generate commit message ({})", strategy.description()),
+        &prompt,
+        log_dir,
+        runtime,
+        registry,
+        commit_agent,
+    )
+    .ok()?;
+
+    if exit_code != 0 {
+        runtime
+            .logger
+            .warn("Commit agent failed, checking logs for partial output...");
+    }
+
+    let extraction_result =
+        extract_commit_message_from_logs(log_dir, working_diff, commit_agent, runtime.logger);
+
+    handle_commit_extraction_result(
+        extraction_result,
+        strategy,
+        log_dir,
+        runtime,
+        last_extraction,
+    )
+}
+
+/// Try progressive truncation recovery when `TokenExhausted` is detected.
+fn try_progressive_truncation_recovery(
+    diff: &str,
+    log_dir: &str,
+    log_file: &str,
+    runtime: &mut PipelineRuntime,
+    registry: &AgentRegistry,
+    commit_agent: &str,
+) -> anyhow::Result<CommitMessageResult> {
+    runtime
+        .logger
+        .warn("TokenExhausted detected: All agents failed due to token limits.");
+    runtime
+        .logger
+        .warn("Attempting progressive diff truncation...");
+
+    let truncation_stages = [
+        (50_000, "50KB"),
+        (25_000, "25KB"),
+        (10_000, "10KB"),
+        (1_000, "file-list-only"),
+    ];
+
+    for (size_kb, label) in truncation_stages {
+        runtime.logger.warn(&format!(
+            "Truncation retry: Trying {} limit ({})...",
+            label,
+            size_kb / 1024
+        ));
+
+        let truncated_diff = truncate_diff_if_large(diff, size_kb);
+        let prompt = prompt_emergency_commit(&truncated_diff);
+
+        runtime.logger.info(&format!(
+            "Truncated diff attempt ({}): prompt size {} KB",
+            label,
+            prompt.len() / 1024
+        ));
+
+        let exit_code = run_with_fallback(
+            AgentRole::Commit,
+            &format!("generate commit message (truncated {label})"),
+            &prompt,
+            log_dir,
+            runtime,
+            registry,
+            commit_agent,
+        )?;
+
+        if exit_code == 0 {
+            if let Ok(Some(extraction)) = extract_commit_message_from_logs(
+                log_dir,
+                &truncated_diff,
+                commit_agent,
+                runtime.logger,
+            ) {
+                if extraction.is_agent_error() {
+                    runtime.logger.warn(&format!(
+                        "{label} truncation still hit token limits, trying smaller size..."
+                    ));
+                    continue;
+                }
+
+                let message = extraction.into_message();
+                if !message.is_empty() {
+                    runtime.logger.info(&format!(
+                        "Successfully generated commit message with {label} truncation"
+                    ));
+                    return Ok(CommitMessageResult {
+                        message,
+                        success: true,
+                        _log_path: log_file.to_string(),
+                    });
+                }
+                break;
+            }
+        }
+    }
+
+    // All truncation stages failed - try emergency no-diff
+    try_emergency_no_diff_recovery(diff, log_dir, log_file, runtime, registry, commit_agent)
+}
+
+/// Try further truncation recovery when already pre-truncated and still got `TokenExhausted`.
+fn try_further_truncation_recovery(
+    diff: &str,
+    log_dir: &str,
+    log_file: &str,
+    runtime: &mut PipelineRuntime,
+    registry: &AgentRegistry,
+    commit_agent: &str,
+) -> anyhow::Result<CommitMessageResult> {
+    runtime
+        .logger
+        .warn("Already pre-truncated but still hit token limits. Trying further truncation...");
+
+    let further_truncation_stages = [
+        (25_000, "25KB"),
+        (10_000, "10KB"),
+        (1_000, "file-list-only"),
+    ];
+
+    for (size_kb, label) in further_truncation_stages {
+        runtime.logger.warn(&format!(
+            "Further truncation: Trying {} limit ({})...",
+            label,
+            size_kb / 1024
+        ));
+
+        let truncated_diff = truncate_diff_if_large(diff, size_kb);
+        let prompt = prompt_emergency_commit(&truncated_diff);
+
+        let exit_code = run_with_fallback(
+            AgentRole::Commit,
+            &format!("generate commit message (further truncated {label})"),
+            &prompt,
+            log_dir,
+            runtime,
+            registry,
+            commit_agent,
+        )?;
+
+        if exit_code == 0 {
+            if let Ok(Some(extraction)) = extract_commit_message_from_logs(
+                log_dir,
+                &truncated_diff,
+                commit_agent,
+                runtime.logger,
+            ) {
+                if extraction.is_agent_error() {
+                    continue;
+                }
+                let message = extraction.into_message();
+                if !message.is_empty() {
+                    return Ok(CommitMessageResult {
+                        message,
+                        success: true,
+                        _log_path: log_file.to_string(),
+                    });
+                }
+                break;
+            }
+        }
+    }
+
+    runtime
+        .logger
+        .warn("All further truncation stages failed. Generating fallback from diff...");
+    let fallback = generate_fallback_commit_message(diff);
+    Ok(CommitMessageResult {
+        message: fallback,
+        success: true,
+        _log_path: log_file.to_string(),
+    })
+}
+
+/// Return the hardcoded fallback commit message as last resort.
+fn return_hardcoded_fallback(log_file: &str, runtime: &PipelineRuntime) -> CommitMessageResult {
+    runtime.logger.warn("");
+    runtime.logger.warn("All recovery methods failed:");
+    runtime.logger.warn("  - All 8 prompt variants exhausted");
+    runtime
+        .logger
+        .warn("  - All agents in fallback chain exhausted");
+    runtime.logger.warn("  - All truncation stages failed");
+    runtime.logger.warn("  - Emergency prompts failed");
+    runtime.logger.warn("");
+    runtime
+        .logger
+        .warn("Using hardcoded fallback commit message as last resort.");
+    runtime.logger.warn(&format!(
+        "Fallback message: \"{HARDCODED_FALLBACK_COMMIT}\""
+    ));
+    runtime.logger.warn("");
+
+    CommitMessageResult {
+        message: HARDCODED_FALLBACK_COMMIT.to_string(),
+        success: true,
+        _log_path: log_file.to_string(),
+    }
+}
+
+/// Try emergency no-diff recovery when truncation fails.
+fn try_emergency_no_diff_recovery(
+    diff: &str,
+    log_dir: &str,
+    log_file: &str,
+    runtime: &mut PipelineRuntime,
+    registry: &AgentRegistry,
+    commit_agent: &str,
+) -> anyhow::Result<CommitMessageResult> {
+    runtime
+        .logger
+        .warn("All truncation stages failed. Trying emergency no-diff prompt...");
+    let working_diff = diff; // Use original diff for no-diff prompt
+    let no_diff_prompt = prompt_emergency_no_diff_commit(working_diff);
+
+    let exit_code = run_with_fallback(
+        AgentRole::Commit,
+        "generate commit message (emergency no-diff)",
+        &no_diff_prompt,
+        log_dir,
+        runtime,
+        registry,
+        commit_agent,
+    )?;
+
+    if exit_code == 0 {
+        if let Ok(Some(extraction)) =
+            extract_commit_message_from_logs(log_dir, working_diff, commit_agent, runtime.logger)
+        {
+            if !extraction.is_agent_error() {
+                let message = extraction.into_message();
+                if !message.is_empty() {
+                    return Ok(CommitMessageResult {
+                        message,
+                        success: true,
+                        _log_path: log_file.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    // Emergency no-diff failed - generate fallback
+    runtime
+        .logger
+        .warn("Emergency no-diff failed. Generating fallback from diff metadata...");
+    let fallback = generate_fallback_commit_message(diff);
+    Ok(CommitMessageResult {
+        message: fallback,
+        success: true,
+        _log_path: log_file.to_string(),
+    })
+}
+
 /// Generate a commit message using the standard agent pipeline with fallback.
 ///
 /// This function uses the same `run_with_fallback()` pipeline as other phases,
@@ -401,222 +815,39 @@ pub fn generate_commit_message(
     let log_dir = ".agent/logs/commit_generation";
     let log_file = format!("{log_dir}/final.log");
 
-    // Ensure log directory exists
     fs::create_dir_all(log_dir)?;
-
     runtime.logger.info("Generating commit message...");
 
-    // Step 1: Proactive prompt size checking
-    // Before calling run_with_fallback(), check if the prompt will exceed
-    // typical agent token limits and pre-truncate if needed
-    let max_size = max_prompt_size_for_agent(commit_agent);
-    let (working_diff, diff_was_pre_truncated) = if diff.len() > max_size {
-        runtime.logger.warn(&format!(
-            "Diff size ({} KB) exceeds agent limit ({} KB). Pre-truncating to avoid token errors.",
-            diff.len() / 1024,
-            max_size / 1024
-        ));
-        (truncate_diff_if_large(diff, max_size), true)
-    } else {
-        runtime.logger.info(&format!(
-            "Diff size ({} KB) is within safe limit ({} KB).",
-            diff.len() / 1024,
-            max_size / 1024
-        ));
-        (diff.to_string(), false)
-    };
+    let (working_diff, diff_was_pre_truncated) =
+        check_and_pre_truncate_diff(diff, commit_agent, runtime);
 
-    // Try each prompt variant in sequence
     let mut strategy = CommitRetryStrategy::Initial;
     let mut last_extraction: Option<CommitExtractionResult> = None;
 
-    while let Some(current_strategy) = Some(strategy) {
-        // Generate the appropriate prompt for this retry stage
-        let prompt = match current_strategy {
-            CommitRetryStrategy::Initial => prompt_generate_commit_message_with_diff(&working_diff),
-            CommitRetryStrategy::StrictJson => prompt_strict_json_commit(&working_diff),
-            CommitRetryStrategy::StrictJsonV2 => prompt_strict_json_commit_v2(&working_diff),
-            CommitRetryStrategy::UltraMinimal => prompt_ultra_minimal_commit(&working_diff),
-            CommitRetryStrategy::UltraMinimalV2 => prompt_ultra_minimal_commit_v2(&working_diff),
-            CommitRetryStrategy::FileListOnly => prompt_file_list_only_commit(&working_diff),
-            CommitRetryStrategy::FileListSummaryOnly => {
-                prompt_file_list_summary_only_commit(&working_diff)
-            }
-            CommitRetryStrategy::Emergency => prompt_emergency_commit(&working_diff),
-            CommitRetryStrategy::EmergencyNoDiff => prompt_emergency_no_diff_commit(&working_diff),
-        };
-
-        // Log prompt size for diagnostic purposes
-        let prompt_size_kb = prompt.len() / 1024;
-
-        // Log the current attempt with enhanced diagnostics
-        if strategy == CommitRetryStrategy::Initial {
-            runtime.logger.info(&format!(
-                "Attempt 1/{}: Using {} (prompt size: {} KB, agent: {})",
-                CommitRetryStrategy::total_stages(),
-                strategy,
-                prompt_size_kb,
-                commit_agent
-            ));
-        } else {
-            runtime.logger.warn(&format!(
-                "Attempt {}/{}: Re-prompting with {} (prompt size: {} KB, agent: {})...",
-                strategy as usize + 1,
-                CommitRetryStrategy::total_stages(),
-                strategy,
-                prompt_size_kb,
-                commit_agent
-            ));
-        }
-
-        // Run the agent through the standard pipeline
-        let exit_code = run_with_fallback(
-            AgentRole::Commit,
-            &format!("generate commit message ({})", strategy.description()),
-            &prompt,
+    // Try each prompt variant in sequence
+    loop {
+        // Run the current attempt
+        if let Some(result) = run_commit_attempt(
+            strategy,
+            &working_diff,
             log_dir,
             runtime,
             registry,
             commit_agent,
-        )?;
-
-        // Try to extract the commit message from the agent output
-        if exit_code != 0 {
-            // Agent failed - check if we can extract a partial result
-            runtime
-                .logger
-                .warn("Commit agent failed, checking logs for partial output...");
+            &mut last_extraction,
+        ) {
+            return result;
         }
-        let extraction_result =
-            extract_commit_message_from_logs(log_dir, &working_diff, commit_agent, runtime.logger);
 
-        match extraction_result {
-            Ok(Some(extraction)) => {
-                // Check if we got a valid extraction or a fallback
-                if extraction.is_agent_error() {
-                    // Agent error detected - check if it's TokenExhausted
-                    // For TokenExhausted, we should continue trying smaller prompt variants
-                    // rather than immediately breaking to agent fallback
-                    if extraction.error_kind() == Some(AgentErrorKind::TokenExhausted) {
-                        runtime.logger.warn(&format!(
-                            "TokenExhausted detected with {}. Trying smaller prompt variant.",
-                            strategy.description()
-                        ));
-                        last_extraction = Some(extraction);
-
-                        // Move to next (smaller) strategy instead of breaking
-                        if let Some(next) = strategy.next() {
-                            strategy = next;
-                        } else {
-                            // All strategies exhausted with TokenExhausted - will try truncation
-                            runtime.logger.warn(&format!(
-                                "All {} prompt variants failed with TokenExhausted.",
-                                CommitRetryStrategy::total_stages()
-                            ));
-                            break;
-                        }
-                    } else {
-                        // Other agent errors - log and continue to next prompt variant
-                        // run_with_fallback() already tried all agents, so now we try
-                        // progressively simpler prompts to see if any agent can succeed
-                        runtime.logger.warn(&format!(
-                            "Agent error detected: {}. All agents failed with current prompt, trying simpler prompt...",
-                            extraction
-                                .error_kind()
-                                .map_or("unknown", AgentErrorKind::description)
-                        ));
-                        last_extraction = Some(extraction);
-
-                        // Move to next (simpler) strategy
-                        if let Some(next) = strategy.next() {
-                            strategy = next;
-                        } else {
-                            // All strategies exhausted
-                            runtime.logger.warn(&format!(
-                                "All {} prompt variants failed with agent errors.",
-                                CommitRetryStrategy::total_stages()
-                            ));
-                            break;
-                        }
-                    }
-                } else if extraction.is_fallback() {
-                    // Fallback was generated - log and continue to next prompt variant
-                    runtime.logger.warn(&format!(
-                        "Extraction produced fallback message with {strategy}"
-                    ));
-                    last_extraction = Some(extraction);
-
-                    // Move to next strategy
-                    if let Some(next) = strategy.next() {
-                        strategy = next;
-                    } else {
-                        // No more strategies - use the last fallback we got
-                        runtime.logger.warn(&format!(
-                            "All {} prompt variants exhausted, using fallback message",
-                            CommitRetryStrategy::total_stages()
-                        ));
-                        break;
-                    }
-                } else {
-                    // Got a valid extraction (Extracted or Salvaged) - use it
-                    runtime.logger.info(&format!(
-                        "Successfully extracted commit message with {strategy}"
-                    ));
-                    return Ok(CommitMessageResult {
-                        message: extraction.into_message(),
-                        success: true,
-                        _log_path: log_file,
-                    });
-                }
-            }
-            Ok(None) => {
-                // Extraction completely failed - generate fallback and continue
-                runtime.logger.warn(&format!(
-                    "No valid commit message extracted with {strategy}, will use fallback"
-                ));
-                // Move to next strategy (they all generate fallbacks, so last one will be used)
-                if let Some(next) = strategy.next() {
-                    strategy = next;
-                } else {
-                    // All strategies exhausted - generate final fallback
-                    runtime
-                        .logger
-                        .warn("All prompt variants exhausted, generating fallback from diff...");
-                    let fallback = generate_fallback_commit_message(diff);
-                    return Ok(CommitMessageResult {
-                        message: fallback,
-                        success: true,
-                        _log_path: log_file,
-                    });
-                }
-            }
-            Err(e) => {
-                // Extraction error - log and continue to next strategy
-                runtime.logger.error(&format!(
-                    "Failed to extract commit message with {strategy}: {e}"
-                ));
-
-                if let Some(next) = strategy.next() {
-                    strategy = next;
-                } else {
-                    // All strategies failed with error - generate fallback
-                    runtime
-                        .logger
-                        .warn("All prompt variants failed with error, generating fallback...");
-                    let fallback = generate_fallback_commit_message(diff);
-                    return Ok(CommitMessageResult {
-                        message: fallback,
-                        success: true,
-                        _log_path: log_file,
-                    });
-                }
-            }
+        // Move to next strategy or exit loop
+        match strategy.next() {
+            Some(next) => strategy = next,
+            None => break,
         }
     }
 
-    // If we have a fallback from the last attempt, use it
-    if let Some(extraction) = last_extraction {
-        // If we have an AgentError, generate a deterministic fallback from diff
+    // Check if we have a fallback result to use
+    if let Some(extraction) = &last_extraction {
         if extraction.is_agent_error() {
             runtime.logger.warn(&format!(
                 "Agent error ({}) - generating fallback commit message from diff...",
@@ -627,249 +858,56 @@ pub fn generate_commit_message(
             let fallback = generate_fallback_commit_message(diff);
             return Ok(CommitMessageResult {
                 message: fallback,
-                success: true, // We have a valid (though generic) message
+                success: true,
                 _log_path: log_file,
             });
         }
-
-        // Otherwise use the fallback message from the extraction
         runtime
             .logger
             .warn("Using fallback commit message from final attempt");
         return Ok(CommitMessageResult {
-            message: extraction.into_message(),
-            success: true, // We still have a valid (though generic) message
+            message: extraction.clone().into_message(),
+            success: true,
             _log_path: log_file,
         });
     }
 
-    // If all strategies failed with TokenExhausted error, try with progressively truncated diff
-    // Skip if we already pre-truncated (avoid double truncation)
+    // If all strategies failed with TokenExhausted error, try progressive truncation
     if last_extraction
         == Some(CommitExtractionResult::AgentError(
             AgentErrorKind::TokenExhausted,
         ))
         && !diff_was_pre_truncated
     {
-        runtime
-            .logger
-            .warn("TokenExhausted detected: All agents failed due to token limits.");
-        runtime
-            .logger
-            .warn("Attempting progressive diff truncation...");
-
-        // Progressive truncation stages: 50KB -> 25KB -> 10KB -> file-list-only -> emergency
-        let truncation_stages = [
-            (50_000, "50KB"),
-            (25_000, "25KB"),
-            (10_000, "10KB"),
-            (1_000, "file-list-only"),
-        ];
-
-        for (size_kb, label) in truncation_stages {
-            runtime.logger.warn(&format!(
-                "Truncation retry: Trying {} limit ({})...",
-                label,
-                size_kb / 1024
-            ));
-
-            let truncated_diff = truncate_diff_if_large(diff, size_kb);
-            let prompt = prompt_emergency_commit(&truncated_diff);
-
-            runtime.logger.info(&format!(
-                "Truncated diff attempt ({}): prompt size {} KB",
-                label,
-                prompt.len() / 1024
-            ));
-
-            let exit_code = run_with_fallback(
-                AgentRole::Commit,
-                &format!("generate commit message (truncated {label})"),
-                &prompt,
-                log_dir,
-                runtime,
-                registry,
-                commit_agent,
-            )?;
-
-            if exit_code == 0 {
-                if let Ok(Some(extraction)) = extract_commit_message_from_logs(
-                    log_dir,
-                    &truncated_diff,
-                    commit_agent,
-                    runtime.logger,
-                ) {
-                    // Check if we got a valid result (not an agent error)
-                    if extraction.is_agent_error() {
-                        // TokenExhausted - continue to next truncation stage
-                        runtime.logger.warn(&format!(
-                            "{label} truncation still hit token limits, trying smaller size..."
-                        ));
-                        continue;
-                    }
-
-                    // Not an agent error - try to use the message
-                    let message = extraction.into_message();
-                    if !message.is_empty() {
-                        runtime.logger.info(&format!(
-                            "Successfully generated commit message with {label} truncation"
-                        ));
-                        return Ok(CommitMessageResult {
-                            message,
-                            success: true,
-                            _log_path: log_file,
-                        });
-                    }
-                    // Empty message - break out and try fallback
-                    break;
-                }
-            }
-        }
-
-        // All truncation stages failed - try emergency no-diff as last resort
-        runtime
-            .logger
-            .warn("All truncation stages failed. Trying emergency no-diff prompt...");
-        let no_diff_prompt = prompt_emergency_no_diff_commit(&working_diff);
-
-        let exit_code = run_with_fallback(
-            AgentRole::Commit,
-            "generate commit message (emergency no-diff)",
-            &no_diff_prompt,
+        return try_progressive_truncation_recovery(
+            diff,
             log_dir,
+            &log_file,
             runtime,
             registry,
             commit_agent,
-        )?;
+        );
+    }
 
-        if exit_code == 0 {
-            if let Ok(Some(extraction)) = extract_commit_message_from_logs(
-                log_dir,
-                &working_diff,
-                commit_agent,
-                runtime.logger,
-            ) {
-                if !extraction.is_agent_error() {
-                    let message = extraction.into_message();
-                    if !message.is_empty() {
-                        return Ok(CommitMessageResult {
-                            message,
-                            success: true,
-                            _log_path: log_file,
-                        });
-                    }
-                }
-            }
-        }
-        // Emergency no-diff failed - generate fallback from diff metadata
-        runtime
-            .logger
-            .warn("Emergency no-diff failed. Generating fallback from diff metadata...");
-        let fallback = generate_fallback_commit_message(diff);
-        return Ok(CommitMessageResult {
-            message: fallback,
-            success: true,
-            _log_path: log_file,
-        });
-    } else if last_extraction
+    // Already pre-truncated and still got TokenExhausted - try further truncation
+    if last_extraction
         == Some(CommitExtractionResult::AgentError(
             AgentErrorKind::TokenExhausted,
         ))
         && diff_was_pre_truncated
     {
-        // Already pre-truncated and still got TokenExhausted - try progressive truncation
-        runtime
-            .logger
-            .warn("Already pre-truncated but still hit token limits. Trying further truncation...");
-
-        // Start with smaller sizes since we already pre-truncated
-        let further_truncation_stages = [
-            (25_000, "25KB"),
-            (10_000, "10KB"),
-            (1_000, "file-list-only"),
-        ];
-
-        for (size_kb, label) in further_truncation_stages {
-            runtime.logger.warn(&format!(
-                "Further truncation: Trying {} limit ({})...",
-                label,
-                size_kb / 1024
-            ));
-
-            let truncated_diff = truncate_diff_if_large(diff, size_kb);
-            let prompt = prompt_emergency_commit(&truncated_diff);
-
-            let exit_code = run_with_fallback(
-                AgentRole::Commit,
-                &format!("generate commit message (further truncated {label})"),
-                &prompt,
-                log_dir,
-                runtime,
-                registry,
-                commit_agent,
-            )?;
-
-            if exit_code == 0 {
-                if let Ok(Some(extraction)) = extract_commit_message_from_logs(
-                    log_dir,
-                    &truncated_diff,
-                    commit_agent,
-                    runtime.logger,
-                ) {
-                    if extraction.is_agent_error() {
-                        // Still TokenExhausted - continue to next stage
-                        continue;
-                    }
-                    // Not an agent error - try to use the message
-                    let message = extraction.into_message();
-                    if !message.is_empty() {
-                        return Ok(CommitMessageResult {
-                            message,
-                            success: true,
-                            _log_path: log_file,
-                        });
-                    }
-                    // Empty message - break out
-                    break;
-                }
-            }
-        }
-
-        // All further truncation failed - generate fallback directly
-        runtime
-            .logger
-            .warn("All further truncation stages failed. Generating fallback from diff...");
-        let fallback = generate_fallback_commit_message(diff);
-        return Ok(CommitMessageResult {
-            message: fallback,
-            success: true,
-            _log_path: log_file,
-        });
+        return try_further_truncation_recovery(
+            diff,
+            log_dir,
+            &log_file,
+            runtime,
+            registry,
+            commit_agent,
+        );
     }
 
     // All automated recovery exhausted - use hardcoded fallback as last resort
-    runtime.logger.warn("");
-    runtime.logger.warn("All recovery methods failed:");
-    runtime.logger.warn("  - All 8 prompt variants exhausted");
-    runtime
-        .logger
-        .warn("  - All agents in fallback chain exhausted");
-    runtime.logger.warn("  - All truncation stages failed");
-    runtime.logger.warn("  - Emergency prompts failed");
-    runtime.logger.warn("");
-    runtime
-        .logger
-        .warn("Using hardcoded fallback commit message as last resort.");
-    runtime.logger.warn(&format!(
-        "Fallback message: \"{HARDCODED_FALLBACK_COMMIT}\""
-    ));
-    runtime.logger.warn("");
-
-    Ok(CommitMessageResult {
-        message: HARDCODED_FALLBACK_COMMIT.to_string(),
-        success: true,
-        _log_path: log_file,
-    })
+    Ok(return_hardcoded_fallback(&log_file, runtime))
 }
 
 /// Create a commit with an automatically generated message using the standard pipeline.

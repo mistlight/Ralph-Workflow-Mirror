@@ -97,234 +97,22 @@ impl GeminiParser {
         let output = match event {
             GeminiEvent::Init {
                 session_id, model, ..
-            } => {
-                // Reset streaming state on new session
-                self.streaming_session.borrow_mut().on_message_start();
-                let sid = session_id.unwrap_or_else(|| "unknown".to_string());
-                // Set the current message ID for duplicate detection
-                self.streaming_session
-                    .borrow_mut()
-                    .set_current_message_id(Some(sid.clone()));
-                let model_str = model.unwrap_or_else(|| "unknown".to_string());
-                format!(
-                    "{}[{}]{} {}Session started{} {}({:.8}..., {}){}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    c.cyan(),
-                    c.reset(),
-                    c.dim(),
-                    sid,
-                    model_str,
-                    c.reset()
-                )
-            }
+            } => self.format_init_event(session_id, model),
             GeminiEvent::Message {
                 role,
                 content,
                 delta,
-            } => {
-                let role_str = role.unwrap_or_else(|| "unknown".to_string());
-                let is_delta = delta.unwrap_or(false);
-
-                if let Some(text) = content {
-                    if is_delta && role_str == "assistant" {
-                        // Accumulate delta content using StreamingSession
-                        let (show_prefix, accumulated_text) = {
-                            let mut session = self.streaming_session.borrow_mut();
-                            let show_prefix = session.on_text_delta_key("main", &text);
-                            // Get accumulated text for streaming display
-                            let accumulated_text = session
-                                .get_accumulated(ContentType::Text, "main")
-                                .unwrap_or("")
-                                .to_string();
-                            (show_prefix, accumulated_text)
-                        };
-
-                        // Use TextDeltaRenderer for consistent rendering across all parsers
-                        if show_prefix {
-                            // First delta: use renderer with prefix
-                            return Some(TextDeltaRenderer::render_first_delta(
-                                &accumulated_text,
-                                prefix,
-                                *c,
-                            ));
-                        }
-                        // Subsequent deltas: use renderer for in-place update
-                        return Some(TextDeltaRenderer::render_subsequent_delta(
-                            &accumulated_text,
-                            prefix,
-                            *c,
-                        ));
-                    } else if !is_delta && role_str == "assistant" {
-                        // Non-delta message - check for duplicate using message ID or fallback to streaming content check
-                        let session = self.streaming_session.borrow();
-                        let is_duplicate = session.get_current_message_id().map_or_else(
-                            || session.has_any_streamed_content(),
-                            |message_id| session.is_duplicate_final_message(message_id),
-                        );
-                        let was_streaming = session.has_any_streamed_content();
-                        drop(session);
-
-                        // Finalize the message (this marks it as displayed)
-                        let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
-
-                        // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
-                        if is_duplicate || was_streaming {
-                            return Some(TextDeltaRenderer::render_completion());
-                        }
-
-                        // Otherwise, show the full content (non-streaming path)
-                        let limit = self.verbosity.truncate_limit("text");
-                        let preview = truncate_text(&text, limit);
-
-                        return Some(format!(
-                            "{}[{}]{} {}{}{}\n",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.white(),
-                            preview,
-                            c.reset()
-                        ));
-                    }
-                    // User or other role messages
-                    let limit = self.verbosity.truncate_limit("text");
-                    let preview = truncate_text(&text, limit);
-                    return Some(format!(
-                        "{}[{}]{} {}{}:{} {}{}{}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.blue(),
-                        role_str,
-                        c.reset(),
-                        c.dim(),
-                        preview,
-                        c.reset()
-                    ));
-                }
-                String::new()
-            }
+            } => self.format_message_event(role, content, delta),
             GeminiEvent::ToolUse {
                 tool_name,
                 parameters,
                 ..
-            } => {
-                let tool_name = tool_name.unwrap_or_else(|| "unknown".to_string());
-                let mut out = format!(
-                    "{}[{}]{} {}Tool{}: {}{}{}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    c.magenta(),
-                    c.reset(),
-                    c.bold(),
-                    tool_name,
-                    c.reset()
-                );
-                if self.verbosity.show_tool_input() {
-                    if let Some(ref params) = parameters {
-                        let params_str = format_tool_input(params);
-                        let limit = self.verbosity.truncate_limit("tool_input");
-                        let preview = truncate_text(&params_str, limit);
-                        if !preview.is_empty() {
-                            let _ = writeln!(
-                                out,
-                                "{}[{}]{} {}  └─ {}{}",
-                                c.dim(),
-                                prefix,
-                                c.reset(),
-                                c.dim(),
-                                preview,
-                                c.reset()
-                            );
-                        }
-                    }
-                }
-                out
-            }
+            } => self.format_tool_use_event(tool_name, parameters.as_ref()),
             GeminiEvent::ToolResult { status, output, .. } => {
-                let status_str = status.unwrap_or_else(|| "unknown".to_string());
-                let is_success = status_str == "success";
-                let icon = if is_success { CHECK } else { CROSS };
-                let color = if is_success { c.green() } else { c.red() };
-
-                let mut out = format!(
-                    "{}[{}]{} {}{} Tool result{}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    color,
-                    icon,
-                    c.reset()
-                );
-
-                if self.verbosity.is_verbose() {
-                    if let Some(ref output_text) = output {
-                        let limit = self.verbosity.truncate_limit("tool_result");
-                        let preview = truncate_text(output_text, limit);
-                        let _ = writeln!(
-                            out,
-                            "{}[{}]{} {}  └─ {}{}",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.dim(),
-                            preview,
-                            c.reset()
-                        );
-                    }
-                }
-                out
+                self.format_tool_result_event(status, output.as_ref())
             }
-            GeminiEvent::Error { message, code, .. } => {
-                let msg = message.unwrap_or_else(|| "unknown error".to_string());
-                let code_str = code.map_or_else(String::new, |c| format!(" ({c})"));
-                format!(
-                    "{}[{}]{} {}{} Error{}:{} {}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    c.red(),
-                    CROSS,
-                    code_str,
-                    c.reset(),
-                    msg
-                )
-            }
-            GeminiEvent::Result { status, stats, .. } => {
-                let status_result = status.unwrap_or_else(|| "unknown".to_string());
-                let is_success = status_result == "success";
-                let icon = if is_success { CHECK } else { CROSS };
-                let color = if is_success { c.green() } else { c.red() };
-
-                let stats_display = stats.map_or_else(String::new, |s| {
-                    let duration_s = s.duration_ms.unwrap_or(0) / 1000;
-                    let duration_m = duration_s / 60;
-                    let duration_s_rem = duration_s % 60;
-                    let input = s.input_tokens.unwrap_or(0);
-                    let output = s.output_tokens.unwrap_or(0);
-                    let tools = s.tool_calls.unwrap_or(0);
-                    format!(
-                        "({duration_m}m {duration_s_rem}s, in:{input} out:{output}, {tools} tools)"
-                    )
-                });
-
-                format!(
-                    "{}[{}]{} {}{} {}{} {}{}{}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    color,
-                    icon,
-                    status_result,
-                    c.reset(),
-                    c.dim(),
-                    stats_display,
-                    c.reset()
-                )
-            }
+            GeminiEvent::Error { message, code, .. } => self.format_error_event(message, code),
+            GeminiEvent::Result { status, stats, .. } => self.format_result_event(status, stats),
             GeminiEvent::Unknown => {
                 // Use the generic unknown event formatter for consistent handling
                 format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
@@ -336,6 +124,259 @@ impl GeminiParser {
         } else {
             Some(output)
         }
+    }
+
+    /// Format an Init event
+    fn format_init_event(&self, session_id: Option<String>, model: Option<String>) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        // Reset streaming state on new session
+        self.streaming_session.borrow_mut().on_message_start();
+        let sid = session_id.unwrap_or_else(|| "unknown".to_string());
+        // Set the current message ID for duplicate detection
+        self.streaming_session
+            .borrow_mut()
+            .set_current_message_id(Some(sid.clone()));
+        let model_str = model.unwrap_or_else(|| "unknown".to_string());
+        format!(
+            "{}[{}]{} {}Session started{} {}({:.8}..., {}){}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            c.cyan(),
+            c.reset(),
+            c.dim(),
+            sid,
+            model_str,
+            c.reset()
+        )
+    }
+
+    /// Format a Message event
+    fn format_message_event(
+        &self,
+        role: Option<String>,
+        content: Option<String>,
+        delta: Option<bool>,
+    ) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        let role_str = role.unwrap_or_else(|| "unknown".to_string());
+        let is_delta = delta.unwrap_or(false);
+
+        if let Some(text) = content {
+            if is_delta && role_str == "assistant" {
+                // Accumulate delta content using StreamingSession
+                let (show_prefix, accumulated_text) = {
+                    let mut session = self.streaming_session.borrow_mut();
+                    let show_prefix = session.on_text_delta_key("main", &text);
+                    // Get accumulated text for streaming display
+                    let accumulated_text = session
+                        .get_accumulated(ContentType::Text, "main")
+                        .unwrap_or("")
+                        .to_string();
+                    (show_prefix, accumulated_text)
+                };
+
+                // Use TextDeltaRenderer for consistent rendering across all parsers
+                if show_prefix {
+                    // First delta: use renderer with prefix
+                    return TextDeltaRenderer::render_first_delta(&accumulated_text, prefix, *c);
+                }
+                // Subsequent deltas: use renderer for in-place update
+                return TextDeltaRenderer::render_subsequent_delta(&accumulated_text, prefix, *c);
+            } else if !is_delta && role_str == "assistant" {
+                // Non-delta message - check for duplicate using message ID or fallback to streaming content check
+                let session = self.streaming_session.borrow();
+                let is_duplicate = session.get_current_message_id().map_or_else(
+                    || session.has_any_streamed_content(),
+                    |message_id| session.is_duplicate_final_message(message_id),
+                );
+                let was_streaming = session.has_any_streamed_content();
+                drop(session);
+
+                // Finalize the message (this marks it as displayed)
+                let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
+
+                // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
+                if is_duplicate || was_streaming {
+                    return TextDeltaRenderer::render_completion();
+                }
+
+                // Otherwise, show the full content (non-streaming path)
+                let limit = self.verbosity.truncate_limit("text");
+                let preview = truncate_text(&text, limit);
+
+                return format!(
+                    "{}[{}]{} {}{}{}\n",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.white(),
+                    preview,
+                    c.reset()
+                );
+            }
+            // User or other role messages
+            let limit = self.verbosity.truncate_limit("text");
+            let preview = truncate_text(&text, limit);
+            return format!(
+                "{}[{}]{} {}{}:{} {}{}{}\n",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.blue(),
+                role_str,
+                c.reset(),
+                c.dim(),
+                preview,
+                c.reset()
+            );
+        }
+        String::new()
+    }
+
+    /// Format a `ToolUse` event
+    fn format_tool_use_event(
+        &self,
+        tool_name: Option<String>,
+        parameters: Option<&serde_json::Value>,
+    ) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        let tool_name = tool_name.unwrap_or_else(|| "unknown".to_string());
+        let mut out = format!(
+            "{}[{}]{} {}Tool{}: {}{}{}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            c.magenta(),
+            c.reset(),
+            c.bold(),
+            tool_name,
+            c.reset()
+        );
+        if self.verbosity.show_tool_input() {
+            if let Some(params) = parameters {
+                let params_str = format_tool_input(params);
+                let limit = self.verbosity.truncate_limit("tool_input");
+                let preview = truncate_text(&params_str, limit);
+                if !preview.is_empty() {
+                    let _ = writeln!(
+                        out,
+                        "{}[{}]{} {}  └─ {}{}",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.dim(),
+                        preview,
+                        c.reset()
+                    );
+                }
+            }
+        }
+        out
+    }
+
+    /// Format a `ToolResult` event
+    fn format_tool_result_event(&self, status: Option<String>, output: Option<&String>) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        let status_str = status.unwrap_or_else(|| "unknown".to_string());
+        let is_success = status_str == "success";
+        let icon = if is_success { CHECK } else { CROSS };
+        let color = if is_success { c.green() } else { c.red() };
+
+        let mut out = format!(
+            "{}[{}]{} {}{} Tool result{}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            color,
+            icon,
+            c.reset()
+        );
+
+        if self.verbosity.is_verbose() {
+            if let Some(output_text) = output {
+                let limit = self.verbosity.truncate_limit("tool_result");
+                let preview = truncate_text(output_text, limit);
+                let _ = writeln!(
+                    out,
+                    "{}[{}]{} {}  └─ {}{}",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.dim(),
+                    preview,
+                    c.reset()
+                );
+            }
+        }
+        out
+    }
+
+    /// Format an `Error` event
+    fn format_error_event(&self, message: Option<String>, code: Option<String>) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        let msg = message.unwrap_or_else(|| "unknown error".to_string());
+        let code_str = code.map_or_else(String::new, |c| format!(" ({c})"));
+        format!(
+            "{}[{}]{} {}{} Error{}:{} {}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            c.red(),
+            CROSS,
+            code_str,
+            c.reset(),
+            msg
+        )
+    }
+
+    /// Format a `Result` event
+    fn format_result_event(
+        &self,
+        status: Option<String>,
+        event_stats: Option<crate::json_parser::types::GeminiStats>,
+    ) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        let status_result = status.unwrap_or_else(|| "unknown".to_string());
+        let is_success = status_result == "success";
+        let icon = if is_success { CHECK } else { CROSS };
+        let color = if is_success { c.green() } else { c.red() };
+
+        let stats_display = event_stats.map_or_else(String::new, |s| {
+            let duration_s = s.duration_ms.unwrap_or(0) / 1000;
+            let duration_m = duration_s / 60;
+            let duration_s_rem = duration_s % 60;
+            let input = s.input_tokens.unwrap_or(0);
+            let output = s.output_tokens.unwrap_or(0);
+            let tools = s.tool_calls.unwrap_or(0);
+            format!("({duration_m}m {duration_s_rem}s, in:{input} out:{output}, {tools} tools)")
+        });
+
+        format!(
+            "{}[{}]{} {}{} {}{} {}{}{}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            color,
+            icon,
+            status_result,
+            c.reset(),
+            c.dim(),
+            stats_display,
+            c.reset()
+        )
     }
 
     /// Check if a Gemini event is a control event (state management with no user output)
