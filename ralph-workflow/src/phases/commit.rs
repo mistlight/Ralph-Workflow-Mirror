@@ -1809,7 +1809,8 @@ fn find_most_recent_log_with_prefix(
     let entries = fs::read_dir(dir)?;
     let mut most_recent: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
 
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry?;
         let path = entry.path();
 
         // Only look at .log files that start with the prefix (or any .log file if prefix is empty)

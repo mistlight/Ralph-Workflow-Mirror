@@ -392,7 +392,7 @@ fn run_fix_pass(
     update_status("Applying fixes", ctx.config.isolation_mode)?;
 
     // Read PROMPT.md and PLAN.md for context
-    let prompt_content = fs::read_to_string(".agent/PROMPT.md").unwrap_or_default();
+    let prompt_content = fs::read_to_string("PROMPT.md").unwrap_or_default();
     let plan_content = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
 
     let fix_prompt = prompt_for_agent(
