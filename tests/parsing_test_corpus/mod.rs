@@ -13,3 +13,5 @@ mod prompt_log_3_tests;
 mod prompt_log_4_tests;
 #[cfg(test)]
 mod prompt_log_5_tests;
+#[cfg(test)]
+mod prompt_log_6_tests;
