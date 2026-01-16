@@ -261,57 +261,70 @@ This section tracks the implementation status of RFC-002 proposals against the a
 **Rationale**: Addresses critical "Is it stuck?" friction point
 
 **Implementation Notes**:
-- **Location**: `ralph-workflow/src/app/mod.rs:81-100` (main `run()` function)
-- **Pattern**: Add `logger.info()` call immediately after agent resolution (line ~99)
-- **Example**:
+- **Location**: `ralph-workflow/src/app/mod.rs:97-100` (after agent resolution)
+- **Existing Code Pattern**: The codebase already has 150+ logger.info/success/warn/error calls
+  - Review phase: 60+ feedback messages in `phases/review/prompt.rs` and `phases/review/validation.rs`
+  - Commit phase: 50+ feedback messages in `phases/commit.rs`
+  - Development phase: 15+ feedback messages in `phases/development.rs`
+- **Exact Integration Point**:
   ```rust
+  // EXISTING CODE (lines ~97-100)
+  let validated = resolve_required_agents(&config)?;
   let developer_agent = validated.developer_agent;
   let reviewer_agent = validated.reviewer_agent;
 
-  // ADD HERE: Immediate feedback
+  // Get display names for UI/logging (already exists at line 103-104)
+  let developer_display = registry.display_name(&developer_agent);
+  let reviewer_display = registry.display_name(&reviewer_agent);
+
+  // ADD HERE: Immediate feedback (after line 104)
   logger.info(&format!(
       "Starting pipeline with {} (dev) → {} (review)...",
-      developer_agent, reviewer_agent
+      developer_display, reviewer_display
   ));
   ```
-- **Existing Pattern**: Use the same `Logger::info()` pattern already used throughout the codebase
-- **Test**: Verify output appears before first agent call (may need manual testing)
+- **Test**: Run `ralph` and verify message appears before first agent call (manual test)
 - **Dependencies**: None (uses existing Logger infrastructure)
 
 ---
 
-#### ⏳ Phase 1.2: Pipeline Phase Indicator - P0
+#### 🔄 Phase 1.2: Pipeline Phase Indicator - P0
 
-**Status**: Not Started
+**Status**: Partially Implemented
 
-**Proposal**: Show `[Development 3/5] claude ━━━━━━ 2m 34s` with progress bar
+**Location**: `ralph-workflow/src/logger/progress.rs:1-123`
 
-**Suggested Implementation**: Use `indicatif` crate (cargo's progress library)
+**Implementation Details**:
+- **Progress Bar Function**: `print_progress()` already exists
+  - Displays visual progress bar: `[████████░░░░░░░░░] 60% (3/5)`
+  - Used in development phase at `phases/development.rs:63`
+  - Shows percentage, filled bar with block characters, and current/total counts
+- **Integration Point**: Already called in development phase iteration loop
 
-**Implementation Notes**:
-- **Add Dependency**: Add `indicatif = "0.17"` to `Cargo.toml`
-- **Location**: Create new module `ralph-workflow/src/logger/progress.rs` (pattern exists at line 29)
-- **Integration Points**:
-  - `ralph-workflow/src/phases/mod.rs`: Phase execution entry points
-  - `ralph-workflow/src/app/mod.rs`: Main pipeline orchestration
-- **Existing Foundation**: `print_progress()` already exists at `logger/mod.rs:29`
-- **Key Functions to Hook**:
-  - `run_development_phase()` - wrap with progress bar
-  - `run_review_phase()` - wrap with progress bar
-  - Iteration loops within each phase
-- **Example Pattern** (similar to existing `print_progress`):
-  ```rust
-  use indicatif::{ProgressBar, ProgressStyle};
+**Missing from Original Proposal**:
+- **Agent Name Display**: Progress bar doesn't show which agent is running
+- **Elapsed Time**: No time tracking/ETA display (proposal showed `2m 34s`)
+- **Phase Label**: No "[Development]" prefix in progress display
+- **Multi-Phase Progress**: No simultaneous progress for multiple phases
+- **Animated Updates**: Progress bar is static (printed once per iteration, not updated in-place)
 
-  let total_iters = config.general.developer_iters;
-  let pb = ProgressBar::new(total_iters);
-  pb.set_style(ProgressStyle::with_template(
-      "[{prefix}] {bar:40.cyan/dim} {pos}/{len} {elapsed_precise}"
-  ).unwrap());
-  pb.set_prefix(format!("Development {}", agent));
-  ```
-- **Accessibility**: Use `TerminalMode::Basic` from existing `terminal.rs` to disable animations
-- **Dependencies**: Phase 1.1 (for consistent feedback pattern)
+**Suggested Enhancement**: Use `indicatif` crate for advanced features
+- Add dependency: `indicatif = "0.17"` to `Cargo.toml`
+- Provides in-place updates, elapsed time, ETA calculation
+- Supports multi-progress bars for concurrent phases
+- Integrates with existing `TerminalMode` for accessibility
+
+**Current Output**:
+```
+Overall: [████████████░░░░░░░░░] 60% (3/5)
+```
+
+**Proposed Output** (with indicatif):
+```
+[Development 3/5] claude ━━━━━━━━━━━━━━━━ 2m 34s
+```
+
+**Dependencies**: Phase 1.1 (for consistent feedback pattern)
 
 ---
 
@@ -415,39 +428,38 @@ This section tracks the implementation status of RFC-002 proposals against the a
 
 ---
 
-#### ⏳ Phase 4.0: Action-Reaction Feedback - P0
+#### 🔄 Phase 4.0: Action-Reaction Feedback - P0
 
-**Status**: Not Started
+**Status**: Partially Implemented
 
-**Proposal**: Feedback for every user action (agent starts, completes, phase changes, etc.)
+**Location**: `ralph-workflow/src/phases/development.rs:58-63`
 
-**Implementation Notes**:
-- **Location**: `ralph-workflow/src/app/mod.rs` (main pipeline orchestration)
-- **Pattern**: Use existing `Logger` methods (`info()`, `success()`, `warn()`, `error()`)
-- **Key Integration Points**:
-  - **Agent Start**: Before each phase call (~line 100+)
-  - **Iteration Complete**: After each agent iteration
-  - **Phase Changes**: Between development and review phases
-  - **Completion**: At successful pipeline finish
-- **Example**:
-  ```rust
-  // Before agent call
-  logger.info(&format!("Starting development iteration {}/{} with {}...",
-      current_iter, total_iters, agent_name));
+**Implementation Details**:
+- **Iteration Feedback**: Already implemented in development phase
+  - `logger.subheader()` displays "Iteration X of Y" (development.rs:59-62)
+  - `print_progress()` shows visual progress bar (development.rs:63)
+  - Example output: `[████████████░░░░░░░░░] 60% (3/5)`
+- **Progress Bar Infrastructure**: `logger/progress.rs:1-123`
+  - Displays visual bar with percentage and counts
+  - Format: `[████████░░░░░░░░░] 50% (5/10)`
+  - Handles edge cases (zero total, overflow protection)
 
-  // After agent completion
-  logger.success(&format!("✓ Iteration {} complete ({} files changed)",
-      current_iter, changed_files_count));
+**Missing from Original Proposal**:
+- **Agent Start Feedback**: No "Starting pipeline..." message before first agent call
+- **Phase Transition Feedback**: No "Switching to review phase..." message
+- **Completion Summary**: No explicit "Pipeline completed successfully" beyond banner
+- **Ctrl+C Hint**: No cancellation hint during long operations (Phase 8.3)
 
-  // Phase transition
-  logger.info("Switching to review phase...");
-  ```
-- **Color Scheme**: Use existing `Colors` from `logger/mod.rs:79-194`
-  - Success: `colors.green()`
-  - Warning: `colors.yellow()`
-  - Info: `colors.blue()`
-  - Error: `colors.red()`
-- **Dependencies**: Phase 1.1 (for consistent feedback pattern)
+**Existing Logger Usage Throughout Codebase**:
+- Review phase: 60+ feedback messages in `phases/review/prompt.rs` and `phases/review/validation.rs`
+- Commit phase: 50+ feedback messages in `phases/commit.rs`
+- Development phase: 15+ feedback messages in `phases/development.rs`
+- App orchestration: 30+ messages in `app/mod.rs`
+
+**Integration Points for Missing Feedback**:
+- **Agent Start**: `app/mod.rs:100` (after agent resolution)
+- **Phase Transitions**: Between phase calls in main pipeline
+- **Ctrl+C Hint**: Display alongside initial feedback (Phase 8.3)
 
 ---
 
@@ -549,17 +561,25 @@ ralph --completions fish > ~/.config/fish/completions/ralph.fish
 **Proposal**: Display "Press Ctrl+C to cancel" during long operations
 
 **Implementation Notes**:
-- **Location**: `ralph-workflow/src/app/mod.rs` (main pipeline execution)
-- **Display Point**: After initial feedback message (Phase 1.1 implementation)
-- **Pattern**: Add `logger.warn()` or `logger.info()` with hint
-- **Example**:
+- **Location**: `ralph-workflow/src/app/mod.rs` (immediately after Phase 1.1 feedback)
+- **Display Point**: Same location as Phase 1.1, right after the "Starting pipeline..." message
+- **Exact Integration**:
   ```rust
-  logger.info("Starting pipeline with claude (dev) → codex (rev)...");
-  logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+  // Phase 1.1 message
+  logger.info(&format!(
+      "Starting pipeline with {} (dev) → {} (review)...",
+      developer_display, reviewer_display
+  ));
+
+  // ADD HERE: Cancellation hint
+  if std::io::stdin().is_terminal() {
+      logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+  }
   ```
-- **Alternative**: Display once at start of long-running phases
-- **Check**: Use `std::io::stdin().is_terminal()` to only show in interactive mode
-- **Existing Pattern**: Similar to how errors show actionable next steps
+- **Interactive Mode Check**: `std::io::stdin().is_terminal()` ensures hint only shows in interactive terminals
+- **Existing Pattern**: Similar to checkpoint hints already in codebase
+  - Example: `logger.warn("Press Ctrl+C to cancel")` pattern used in other CLI tools
+- **Color Scheme**: Use `logger.warn()` which already applies yellow warning color
 - **Dependencies**: Phase 1.1 (to display alongside initial feedback)
 
 ---
@@ -576,17 +596,22 @@ ralph --completions fish > ~/.config/fish/completions/ralph.fish
 
 ### Summary Statistics
 
-| Priority Level | Total Items | Completed | In Progress | Not Started |
-|----------------|-------------|-----------|-------------|-------------|
-| P0 (Critical) | 6 | 0 | 0 | 6 |
-| P1 (High) | 8 | 4 | 0 | 4 |
-| P2 (Medium) | 4 | 2 | 0 | 2 |
-| P3 (Lower) | 4 | 1 | 0 | 3 |
-| **Total** | **22** | **7 (32%)** | **0 (0%)** | **15 (68%)** |
+| Priority Level | Total Items | Completed | In Progress | Partial | Not Started |
+|----------------|-------------|-----------|-------------|---------|-------------|
+| P0 (Critical) | 6 | 0 | 0 | 2 | 4 |
+| P1 (High) | 8 | 4 | 0 | 0 | 4 |
+| P2 (Medium) | 4 | 2 | 0 | 0 | 2 |
+| P3 (Lower) | 4 | 1 | 0 | 0 | 3 |
+| **Total** | **22** | **7 (32%)** | **0 (0%)** | **2 (9%)** | **13 (59%)** |
 
-**Overall Completion**: 32% (7 of 22 items)
+**Overall Completion**: 32% (7 fully completed + 2 partially completed of 22 items)
 
-**Note**: The completed features are substantial infrastructure improvements (terminal standards, diagnostics, streaming metrics) that provide a solid foundation for remaining user-facing features.
+**Completed Features**: Terminal standards, diagnostics, streaming metrics, environment variable compliance, template listing
+**Partially Completed**:
+- Phase 1.2 (Pipeline Phase Indicator) - has basic progress bar, missing agent name/elapsed time
+- Phase 4.0 (Action-Reaction Feedback) - has iteration feedback in development phase, missing pipeline start/transition feedback
+
+**Note**: The completed features are substantial infrastructure improvements (terminal standards, diagnostics, streaming metrics) that provide a solid foundation for remaining user-facing features. Two P0 items have partial implementation that can be enhanced with relatively small effort.
 
 ---
 
@@ -1752,47 +1777,67 @@ Some features work better when implemented together:
 
 This section provides a condensed guide for contributors who want to implement RFC-002 features.
 
+### Current Codebase Patterns (Observed)
+
+**Logger Usage**: The codebase extensively uses logger methods for feedback:
+- 150+ logger calls across the codebase (info, success, warn, error)
+- Pattern: `ctx.logger.info()`, `logger.success()`, `logger.warn()`, `logger.error()`
+- Colors automatically applied via the Colors infrastructure
+- Examples in `phases/development.rs:80`, `phases/review/prompt.rs:109`, `app/mod.rs:134`
+
+**Progress Bar**: Already exists in `logger/progress.rs`:
+- Function: `print_progress(current: u32, total: u32, label: &str)`
+- Format: `[████████░░░░░░░░░] 60% (3/5)`
+- Used in development phase at `phases/development.rs:63`
+
+**Display Names**: Registry provides agent display names:
+- `registry.display_name(&agent_name)` already used at `app/mod.rs:103-104`
+- Returns human-readable names like "Claude Code" instead of "claude"
+
 ### Easiest Wins (Can be done in 1-2 hours each)
 
-#### 1. Phase 8.3: Cancellation Hint (Ctrl+C)
-**File**: `ralph-workflow/src/app/mod.rs` (~line 99)
+#### 1. Phase 8.3: Cancellation Hint (Ctrl+C) - 15 minutes
+**File**: `ralph-workflow/src/app/mod.rs` (after line 104)
 
 ```rust
-// Add after agent resolution (line ~99)
-logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+// Add after display names are retrieved
+if std::io::stdin().is_terminal() {
+    logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+}
 ```
 
 **Why it's easy**: Single line addition, uses existing Logger infrastructure, no dependencies.
 
-#### 2. Phase 1.1: Immediate Feedback (100ms Rule)
-**File**: `ralph-workflow/src/app/mod.rs` (~line 99)
+#### 2. Phase 1.1: Immediate Feedback (100ms Rule) - 15 minutes
+**File**: `ralph-workflow/src/app/mod.rs` (after line 104)
 
 ```rust
-let developer_agent = validated.developer_agent;
-let reviewer_agent = validated.reviewer_agent;
-
-// ADD HERE
+// developer_display and reviewer_display already available at line 103-104
 logger.info(&format!(
     "Starting pipeline with {} (dev) → {} (review)...",
-    developer_agent, reviewer_agent
+    developer_display, reviewer_display
 ));
 ```
 
 **Why it's easy**: Single statement, uses existing patterns, immediately visible impact.
 
-#### 3. Phase 4.0: Basic Action-Reaction Feedback
-**File**: `ralph-workflow/src/app/mod.rs` (multiple locations)
+#### 3. Phase 4.0: Phase Transition Feedback - 30 minutes
+**File**: `ralph-workflow/src/app/mod.rs` (multiple locations in main pipeline flow)
 
 Add feedback messages at key points:
 - After phase completion: `logger.success("✓ Development phase complete")`
 - Before phase transitions: `logger.info("Switching to review phase...")`
+- At pipeline end: `logger.success("✓ Pipeline completed successfully")`
 
 **Why it's easy**: Leverages existing Logger methods, multiple small wins, no new infrastructure.
 
 ### Medium-Effort High-Impact Features
 
-#### Phase 1.2: Pipeline Phase Indicator
+#### Phase 1.2: Enhanced Pipeline Phase Indicator
 **Effort**: 4-6 hours
+
+**Current State**: Basic progress bar exists (`logger/progress.rs`)
+**Missing**: Agent name, elapsed time, phase label
 
 **Steps**:
 1. Add `indicatif = "0.17"` to `Cargo.toml` dependencies
@@ -1805,8 +1850,8 @@ Add feedback messages at key points:
 **Effort**: 3-4 hours
 
 **Steps**:
-1. Add detection logic in `app/mod.rs` after `initialize_config()`
-2. Create interactive prompt using `dialoguer` crate
+1. Add detection logic in `app/mod.rs` after `initialize_config()` (line ~86)
+2. Create interactive prompt using `dialoguer` crate or std::io::stdin()
 3. Call existing `handle_init_global()` and `prompt_template_selection()`
 
 **Example PR Title**: `feat(onboarding): add first-run detection and setup wizard`
@@ -1814,8 +1859,11 @@ Add feedback messages at key points:
 #### Phase 3.1: Actionable Error Messages
 **Effort**: 4-6 hours
 
+**Current State**: `recovery_advice()` returns prose at `agents/error.rs:147-188`
+**Missing**: Structured actionable commands
+
 **Steps**:
-1. Add `ActionableAdvice` struct to `agents/error.rs`
+1. Add `ActionableAdvice` struct to `agents/error.rs` (after line 188)
 2. Implement `actionable_advice()` method for each error kind
 3. Update error display to use structured advice
 
@@ -1823,15 +1871,17 @@ Add feedback messages at key points:
 
 ### Key File Locations Reference
 
-| Purpose | File | Key Lines |
-|---------|------|-----------|
-| Main pipeline | `ralph-workflow/src/app/mod.rs` | 81-100 (entry), 100+ (orchestration) |
-| Error types | `ralph-workflow/src/agents/error.rs` | 36-65 (enum), 67-100+ (methods) |
-| CLI args | `ralph-workflow/src/cli/args.rs` | 1-100+ (flag definitions) |
-| Logger | `ralph-workflow/src/logger/mod.rs` | 35-194 (colors), 29+ (progress) |
+| Purpose | File | Key Lines/Notes |
+|---------|------|-----------------|
+| Main pipeline entry | `ralph-workflow/src/app/mod.rs` | 81-210 (config/validation), 210+ (orchestration) |
+| Agent resolution | `ralph-workflow/src/app/mod.rs` | 97-100 (where Phase 1.1 should go) |
+| Display names | `ralph-workflow/src/app/mod.rs` | 103-104 (developer_display, reviewer_display) |
+| Error types | `ralph-workflow/src/agents/error.rs` | 36-65 (enum), 147-188 (recovery_advice) |
+| Logger infrastructure | `ralph-workflow/src/logger/mod.rs` | 35-77 (color detection), 29+ (progress) |
+| Progress bar | `ralph-workflow/src/logger/progress.rs` | 1-123 (print_progress function) |
 | Terminal modes | `ralph-workflow/src/json_parser/terminal.rs` | 1-325 (mode detection) |
-| Templates | `ralph-workflow/src/templates/mod.rs` | 113+ (listing) |
-| Init handlers | `ralph-workflow/src/cli/init.rs` | 27-67 (global init) |
+| Development phase | `ralph-workflow/src/phases/development.rs` | 58-63 (iteration feedback) |
+| Review phase | `ralph-workflow/src/phases/review/` | 60+ logger calls in prompt.rs and validation.rs |
 
 ### Testing Strategy
 
@@ -1843,20 +1893,21 @@ For each feature:
 
 ### Common Patterns to Follow
 
-#### Adding a new CLI flag:
-```rust
-// In cli/args.rs
-#[arg(long, help = "Your flag description")]
-pub your_flag: bool,
-```
-
 #### Adding a new logger message:
 ```rust
-// Use existing Colors and Logger
+// Use existing Logger methods (colors are automatic)
 logger.info("Informational message");
 logger.success("✓ Success message");
 logger.warn("Warning message");
 logger.error("✗ Error message");
+logger.subheader("Section Header");  // For major sections
+```
+
+#### Getting display names:
+```rust
+// Pattern from app/mod.rs:103-104
+let developer_display = registry.display_name(&developer_agent);
+let reviewer_display = registry.display_name(&reviewer_agent);
 ```
 
 #### Checking terminal capabilities:
@@ -1872,12 +1923,20 @@ if mode == TerminalMode::Basic {
 }
 ```
 
+#### Interactive mode check:
+```rust
+// Pattern: only show interactive features in TTY
+if std::io::stdin().is_terminal() {
+    // Show interactive prompt
+}
+```
+
 ### Example PR Workflow
 
 1. **Branch**: `git checkout -b rfc-002/phase-X.Y-description`
 2. **Implement**: Make changes following patterns above
 3. **Test**: `cargo test --all-features && cargo clippy --all-targets`
-4. **Document**: Update RFC-002 status section with "In Progress"
+4. **Document**: Update RFC-002 status section with implementation notes
 5. **PR**: Use title like `feat(ux): [RFC-002] Phase X.Y: Description`
 
 ---
