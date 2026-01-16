@@ -28,7 +28,7 @@ use std::collections::HashMap;
 /// focused on the issues identified during review.
 pub fn prompt_fix() -> String {
     let template_content = include_str!("templates/fix_mode.txt");
-    Template::new(template_content.to_string())
+    Template::new(template_content)
         .render(&std::collections::HashMap::new())
         .unwrap_or_else(|e| {
             eprintln!("Warning: Failed to render fix template: {e}");
@@ -74,7 +74,7 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     }
 
     let template_content = include_str!("templates/commit_message_xml.txt");
-    let template = Template::new(template_content.to_string());
+    let template = Template::new(template_content);
     let variables = HashMap::from([("DIFF", diff_content.to_string())]);
 
     template.render(&variables).unwrap_or_else(|e| {
