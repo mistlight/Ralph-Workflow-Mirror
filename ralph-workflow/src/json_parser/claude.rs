@@ -74,7 +74,7 @@ pub struct ClaudeParser {
 }
 
 impl ClaudeParser {
-    /// Create a new ClaudeParser with the given colors and verbosity.
+    /// Create a new `ClaudeParser` with the given colors and verbosity.
     ///
     /// # Arguments
     ///
@@ -83,7 +83,7 @@ impl ClaudeParser {
     ///
     /// # Returns
     ///
-    /// A new ClaudeParser instance
+    /// A new `ClaudeParser` instance
     ///
     /// # Example
     ///
@@ -98,7 +98,7 @@ impl ClaudeParser {
         Self::with_printer(colors, verbosity, super::printer::shared_stdout())
     }
 
-    /// Create a new ClaudeParser with a custom printer.
+    /// Create a new `ClaudeParser` with a custom printer.
     ///
     /// # Arguments
     ///
@@ -108,7 +108,7 @@ impl ClaudeParser {
     ///
     /// # Returns
     ///
-    /// A new ClaudeParser instance
+    /// A new `ClaudeParser` instance
     pub fn with_printer(colors: Colors, verbosity: Verbosity, printer: SharedPrinter) -> Self {
         let verbose_warnings = matches!(verbosity, Verbosity::Debug);
         let streaming_session = StreamingSession::new().with_verbose_warnings(verbose_warnings);
@@ -160,6 +160,35 @@ impl ClaudeParser {
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
+    }
+
+    /// Get a shared reference to the printer.
+    ///
+    /// This allows tests and other code to access the printer after parsing
+    /// to verify output content, check for duplicates, etc.
+    ///
+    /// # Returns
+    ///
+    /// A clone of the shared printer reference (`Rc<RefCell<dyn Printable>>`)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use ralph_workflow::json_parser::{ClaudeParser, printer::TestPrinter};
+    /// use std::rc::Rc;
+    /// use std::cell::RefCell;
+    ///
+    /// let printer = Rc::new(RefCell::new(TestPrinter::new()));
+    /// let parser = ClaudeParser::with_printer(colors, verbosity, Rc::clone(&printer));
+    ///
+    /// // Parse events...
+    ///
+    /// // Now access the printer to verify output
+    /// let printer_ref = parser.printer().borrow();
+    /// assert!(!printer_ref.has_duplicate_consecutive_lines());
+    /// ```
+    pub fn printer(&self) -> SharedPrinter {
+        Rc::clone(&self.printer)
     }
 
     /// Parse and display a single Claude JSON event

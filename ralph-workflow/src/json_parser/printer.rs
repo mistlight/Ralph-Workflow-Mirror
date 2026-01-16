@@ -183,8 +183,8 @@ impl TestPrinter {
 
 impl std::io::Write for TestPrinter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let s = std::str::from_utf8(buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let s =
+            std::str::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let mut buffer = self.buffer.borrow_mut();
         buffer.push_str(s);
 
@@ -239,6 +239,7 @@ pub fn shared_test() -> SharedPrinter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn test_stdout_printer() {
@@ -313,9 +314,7 @@ mod tests {
     fn test_printer_count_pattern() {
         let mut printer = TestPrinter::new();
 
-        printer
-            .write_all(b"test\nmore test\ntest again\n")
-            .unwrap();
+        printer.write_all(b"test\nmore test\ntest again\n").unwrap();
         printer.flush().unwrap();
 
         assert_eq!(printer.count_pattern("test"), 3);
@@ -325,9 +324,7 @@ mod tests {
     fn test_printer_detects_duplicates() {
         let mut printer = TestPrinter::new();
 
-        printer
-            .write_all(b"Line 1\nLine 1\nLine 2\n")
-            .unwrap();
+        printer.write_all(b"Line 1\nLine 1\nLine 2\n").unwrap();
         printer.flush().unwrap();
 
         assert!(printer.has_duplicate_consecutive_lines());
@@ -354,9 +351,7 @@ mod tests {
     fn test_printer_no_false_positives() {
         let mut printer = TestPrinter::new();
 
-        printer
-            .write_all(b"Line 1\nLine 2\nLine 3\n")
-            .unwrap();
+        printer.write_all(b"Line 1\nLine 2\nLine 3\n").unwrap();
         printer.flush().unwrap();
 
         assert!(!printer.has_duplicate_consecutive_lines());
