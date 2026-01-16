@@ -39,8 +39,6 @@
 //!             Delta   Portion Only
 //! ```
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
 /// Rolling hash window for fast substring detection.

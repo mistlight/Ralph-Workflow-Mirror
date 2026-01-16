@@ -117,18 +117,18 @@ impl IncrementalNdjsonParser {
                 }
             }
             b'{' if !self.in_string => {
-                self.buffer.push(byte);
-                self.depth += 1;
-                self.started = true;
-                // Check for depth limit to prevent overflow
-                if self.depth > MAX_JSON_DEPTH {
+                // Check for depth limit to prevent overflow BEFORE pushing
+                if self.depth + 1 > MAX_JSON_DEPTH {
                     // Depth exceeded - reset parser state to skip this malformed JSON
                     self.buffer.clear();
                     self.depth = 0;
                     self.started = false;
                     self.in_string = false;
                     self.escape_next = false;
-                    return;
+                } else {
+                    self.buffer.push(byte);
+                    self.depth += 1;
+                    self.started = true;
                 }
             }
             b'}' if !self.in_string && self.started => {

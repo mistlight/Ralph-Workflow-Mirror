@@ -21,8 +21,9 @@ mod prompt;
 mod runner;
 mod types;
 
+pub use fallback::OutputValidator;
 pub use prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
-pub use runner::run_with_fallback;
+pub use runner::{FallbackConfig, run_with_fallback, run_with_fallback_and_validator};
 pub use types::{AgentPhaseGuard, Stats};
 
 // ===== Timer Utilities =====

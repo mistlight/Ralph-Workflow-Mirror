@@ -1,11 +1,11 @@
 {# ============================================================================ #}
 {# Template: conflict_resolution.txt                                            #}
-{# Version: 1.0                                                                  #}
+{# Version: 1.1                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
 {#   Prompt for resolving merge conflicts during rebase operations.             #}
-{#   Agent receives conflicted files and must produce merged versions.          #}
+{#   Agent receives conflicted files and must resolve them by editing files.     #}
 {#                                                                             #}
 {# WHEN USED:                                                                  #}
 {#   During rebase operations when merge conflicts occur.                       #}
@@ -18,12 +18,13 @@
 {#   CONFLICTS - Formatted section showing conflicted files                     #}
 {#                                                                             #}
 {# OUTPUT:                                                                     #}
-{#   JSON object with "resolved_files" mapping paths to resolved content.       #}
+{#   Primary: Edit files on disk to remove conflict markers                     #}
+{#   Optional: JSON object with "resolved_files" mapping paths to content       #}
 {#                                                                             #}
 {# NOTES:                                                                      #}
 {#   - Agent MUST NOT know we're in a rebase (security requirement)             #}
 {#   - Prompt frames conflicts as "merge conflicts" not rebase conflicts         #}
-{#   - Each resolved file must contain COMPLETE content, not just diffs         #}
+{#   - File edits are validated for conflict marker removal                     #}
 {# ============================================================================ #}
 
 # MERGE CONFLICT RESOLUTION
@@ -34,6 +35,8 @@ There are merge conflicts that need to be resolved. Below are the files with con
 
 ## Conflict Resolution Instructions
 
+PRIMARY GOAL: Resolve all merge conflicts by editing the files on disk.
+
 For each conflicted file below:
 1. Review both versions of the changes (the 'ours' and 'theirs' sections)
 2. Intelligently merge the changes, considering:
@@ -41,17 +44,21 @@ For each conflicted file below:
    - The implementation plan if available
    - The intent of both versions
    - Code correctness and consistency
-3. Produce the final merged file content WITHOUT conflict markers
+3. **EDIT THE FILE ON DISK** using the Edit tool to resolve the conflicts
+   - Remove ALL conflict markers (<<<<<<<, =======, >>>>>>>)
+   - Keep the merged content that best combines both versions
 
-IMPORTANT: Your output must include the complete resolved file contents. Do not include conflict markers (<<<<<<<, =======, >>>>>>>) in your output.
+**CRITICAL**: You MUST use the Edit tool to modify each conflicted file on disk. This is the primary way conflicts are resolved. The files will be validated to ensure all conflict markers are removed.
+
+OPTIONAL: After editing files, you may optionally provide JSON output confirming what was resolved. This is not required - successful file edits are sufficient.
 
 ## Conflicted Files
 
 {{CONFLICTS}}
 
-## Output Format
+## Optional JSON Output Format
 
-Provide your response as a JSON object with the following structure:
+If you choose to provide JSON output (optional), use this format to confirm your resolutions:
 
 ```json
 {
@@ -64,4 +71,4 @@ Provide your response as a JSON object with the following structure:
 
 Each resolved file should contain the COMPLETE file content, not just the changed sections. The content must be free of conflict markers.
 
-If you cannot resolve a particular conflict, you may mark it for manual resolution by omitting it from the resolved_files object. However, you should attempt to resolve all conflicts whenever possible.
+**Note**: If you cannot resolve a particular conflict, you may mark it for manual resolution by omitting it from the resolved_files object. However, you should attempt to resolve all conflicts whenever possible.

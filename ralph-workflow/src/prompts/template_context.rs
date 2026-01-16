@@ -92,10 +92,9 @@ mod tests {
 
     #[test]
     fn test_template_context_registry_access() {
-        let context = TemplateContext::default();
-        let registry = context.registry();
+        let _context = TemplateContext::default();
         // Should be able to access registry methods
-        assert!(!registry.all_template_names().is_empty());
+        assert!(!TemplateRegistry::all_template_names().is_empty());
     }
 
     #[test]
@@ -126,17 +125,17 @@ mod tests {
 
     #[test]
     fn test_template_context_all_templates() {
-        let context = TemplateContext::default();
+        let _context = TemplateContext::default();
         // Should be able to list all templates
-        let names = context.registry().all_template_names();
+        let names = TemplateRegistry::all_template_names();
         assert!(names.len() > 10);
         assert!(names.contains(&"developer_iteration".to_string()));
     }
 
     #[test]
     fn test_template_context_all_templates_not_empty() {
-        let context = TemplateContext::default();
-        let names = context.registry().all_template_names();
+        let _context = TemplateContext::default();
+        let names = TemplateRegistry::all_template_names();
         assert!(!names.is_empty());
     }
 }

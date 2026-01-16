@@ -141,9 +141,8 @@ impl TemplateRegistry {
     ///
     /// A vector of all embedded template names, sorted alphabetically.
     #[must_use]
-    #[allow(clippy::unused_self)]
     #[cfg(test)]
-    pub fn all_template_names(&self) -> Vec<String> {
+    pub fn all_template_names() -> Vec<String> {
         use crate::prompts::template_catalog;
         template_catalog::list_all_templates()
             .iter()
@@ -243,8 +242,7 @@ mod tests {
 
     #[test]
     fn test_all_template_names() {
-        let registry = TemplateRegistry::new(None);
-        let names = registry.all_template_names();
+        let names = TemplateRegistry::all_template_names();
         assert!(!names.is_empty());
         assert!(names.len() >= 20); // At least 20 templates
         assert!(names.contains(&"developer_iteration".to_string()));
@@ -294,7 +292,7 @@ mod tests {
     #[test]
     fn test_all_templates_have_content() {
         let registry = TemplateRegistry::new(None);
-        for name in registry.all_template_names() {
+        for name in TemplateRegistry::all_template_names() {
             let result = registry.get_template(&name);
             assert!(result.is_ok(), "Template '{name}' should load successfully");
             let content = result.unwrap();

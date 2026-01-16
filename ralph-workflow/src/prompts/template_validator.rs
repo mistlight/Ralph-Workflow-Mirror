@@ -260,167 +260,194 @@ pub fn extract_metadata(content: &str) -> TemplateMetadata {
 /// - Unclosed loops
 /// - Unclosed comments
 /// - Invalid syntax in conditionals and loops
-#[allow(clippy::too_many_lines)]
 pub fn validate_syntax(content: &str) -> Vec<ValidationError> {
-    let mut errors = Vec::new();
     let bytes = content.as_bytes();
-    let mut i = 0;
-    let mut line = 0;
+    SyntaxValidator::new(content).validate(bytes)
+}
 
-    // Track nesting for conditionals and loops
-    let mut conditional_stack = Vec::new();
-    let mut loop_stack = Vec::new();
+/// Helper struct for template syntax validation.
+struct SyntaxValidator<'a> {
+    content: &'a str,
+    errors: Vec<ValidationError>,
+    line: usize,
+    i: usize,
+    conditional_stack: Vec<(usize, &'static str)>,
+    loop_stack: Vec<(usize, &'static str)>,
+}
 
-    while i < bytes.len() {
-        // Track line numbers
-        if bytes[i] == b'\n' {
-            line += 1;
+impl<'a> SyntaxValidator<'a> {
+    fn new(content: &'a str) -> Self {
+        Self {
+            content,
+            errors: Vec::new(),
+            line: 0,
+            i: 0,
+            conditional_stack: Vec::new(),
+            loop_stack: Vec::new(),
         }
+    }
 
-        // Check for {# comment start
-        if i + 1 < bytes.len() && bytes[i] == b'{' && bytes[i + 1] == b'#' {
-            let comment_start = line;
-            i += 2;
-            while i + 1 < bytes.len() && !(bytes[i] == b'#' && bytes[i + 1] == b'}') {
-                if bytes[i] == b'\n' {
-                    line += 1;
-                }
-                i += 1;
+    fn validate(mut self, bytes: &[u8]) -> Vec<ValidationError> {
+        while self.i < bytes.len() {
+            self.track_newlines(bytes);
+            if self.try_skip_comment(bytes) {
+                continue;
             }
-            if i + 1 >= bytes.len() {
-                errors.push(ValidationError::UnclosedComment {
+            if self.try_parse_conditional(bytes) {
+                continue;
+            }
+            if self.try_parse_loop(bytes) {
+                continue;
+            }
+            self.i += 1;
+        }
+        self.check_unclosed_blocks();
+        self.errors
+    }
+
+    fn track_newlines(&mut self, bytes: &[u8]) {
+        if bytes[self.i] == b'\n' {
+            self.line += 1;
+        }
+    }
+
+    fn try_skip_comment(&mut self, bytes: &[u8]) -> bool {
+        if self.i + 1 < bytes.len() && bytes[self.i] == b'{' && bytes[self.i + 1] == b'#' {
+            let comment_start = self.line;
+            self.i += 2;
+            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'#' && bytes[self.i + 1] == b'}') {
+                if bytes[self.i] == b'\n' {
+                    self.line += 1;
+                }
+                self.i += 1;
+            }
+            if self.i + 1 >= bytes.len() {
+                self.errors.push(ValidationError::UnclosedComment {
                     line: comment_start,
                 });
             }
-            if i + 1 < bytes.len() {
-                i += 2;
+            if self.i + 1 < bytes.len() {
+                self.i += 2;
             }
-            continue;
+            true
+        } else {
+            false
         }
+    }
 
+    fn try_parse_conditional(&mut self, bytes: &[u8]) -> bool {
         // Check for {% if ... %}
-        if i + 5 < bytes.len()
-            && bytes[i] == b'{'
-            && bytes[i + 1] == b'%'
-            && bytes[i + 2] == b' '
-            && bytes[i + 3] == b'i'
-            && bytes[i + 4] == b'f'
-            && bytes[i + 5] == b' '
+        if self.i + 5 < bytes.len()
+            && bytes[self.i] == b'{'
+            && bytes[self.i + 1] == b'%'
+            && bytes[self.i + 2] == b' '
+            && bytes[self.i + 3] == b'i'
+            && bytes[self.i + 4] == b'f'
+            && bytes[self.i + 5] == b' '
         {
-            let if_start = i;
-            i += 6;
-            // Find the end of the if tag
-            while i + 1 < bytes.len() && !(bytes[i] == b'%' && bytes[i + 1] == b'}') {
-                i += 1;
+            let if_start = self.i;
+            self.i += 6;
+            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'%' && bytes[self.i + 1] == b'}') {
+                self.i += 1;
             }
-            if i + 1 >= bytes.len() {
-                errors.push(ValidationError::UnclosedConditional { line });
+            if self.i + 1 >= bytes.len() {
+                self.errors.push(ValidationError::UnclosedConditional { line: self.line });
             } else {
-                // Extract condition
-                let condition = content[if_start + 6..i].trim();
-                // Validate condition syntax
+                let condition = self.content[if_start + 6..self.i].trim();
                 if condition.is_empty() || condition.contains('{') || condition.contains('}') {
-                    errors.push(ValidationError::InvalidConditional {
-                        line,
+                    self.errors.push(ValidationError::InvalidConditional {
+                        line: self.line,
                         syntax: condition.to_string(),
                     });
                 }
-                conditional_stack.push((line, "if"));
-                i += 2;
+                self.conditional_stack.push((self.line, "if"));
+                self.i += 2;
             }
-            continue;
+            return true;
         }
 
         // Check for {% endif %}
-        if i + 9 < bytes.len()
-            && bytes[i] == b'{'
-            && bytes[i + 1] == b'%'
-            && bytes[i + 2] == b' '
-            && bytes[i + 3] == b'e'
-            && bytes[i + 4] == b'n'
-            && bytes[i + 5] == b'd'
-            && bytes[i + 6] == b'i'
-            && bytes[i + 7] == b'f'
-            && bytes[i + 8] == b' '
-            && bytes[i + 9] == b'%'
+        if self.i + 9 < bytes.len()
+            && bytes[self.i] == b'{'
+            && bytes[self.i + 1] == b'%'
+            && bytes[self.i + 2] == b' '
+            && bytes[self.i + 3] == b'e'
+            && bytes[self.i + 4] == b'n'
+            && bytes[self.i + 5] == b'd'
+            && bytes[self.i + 6] == b'i'
+            && bytes[self.i + 7] == b'f'
+            && bytes[self.i + 8] == b' '
+            && bytes[self.i + 9] == b'%'
         {
-            if conditional_stack.is_empty() {
-                // Unmatched endif
-            } else {
-                conditional_stack.pop();
-            }
-            i += 11;
-            continue;
+            self.conditional_stack.pop();
+            self.i += 11;
+            return true;
         }
 
+        false
+    }
+
+    fn try_parse_loop(&mut self, bytes: &[u8]) -> bool {
         // Check for {% for ... %}
-        if i + 6 < bytes.len()
-            && bytes[i] == b'{'
-            && bytes[i + 1] == b'%'
-            && bytes[i + 2] == b' '
-            && bytes[i + 3] == b'f'
-            && bytes[i + 4] == b'o'
-            && bytes[i + 5] == b'r'
-            && bytes[i + 6] == b' '
+        if self.i + 6 < bytes.len()
+            && bytes[self.i] == b'{'
+            && bytes[self.i + 1] == b'%'
+            && bytes[self.i + 2] == b' '
+            && bytes[self.i + 3] == b'f'
+            && bytes[self.i + 4] == b'o'
+            && bytes[self.i + 5] == b'r'
+            && bytes[self.i + 6] == b' '
         {
-            let for_start = i;
-            i += 7;
-            // Find the end of the for tag
-            while i + 1 < bytes.len() && !(bytes[i] == b'%' && bytes[i + 1] == b'}') {
-                i += 1;
+            let for_start = self.i;
+            self.i += 7;
+            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'%' && bytes[self.i + 1] == b'}') {
+                self.i += 1;
             }
-            if i + 1 >= bytes.len() {
-                errors.push(ValidationError::UnclosedLoop { line });
+            if self.i + 1 >= bytes.len() {
+                self.errors.push(ValidationError::UnclosedLoop { line: self.line });
             } else {
-                // Extract condition
-                let condition = content[for_start + 7..i].trim();
-                // Validate "item in ITEMS" syntax
+                let condition = self.content[for_start + 7..self.i].trim();
                 if !condition.contains(" in ") || condition.split(" in ").count() != 2 {
-                    errors.push(ValidationError::InvalidLoop {
-                        line,
+                    self.errors.push(ValidationError::InvalidLoop {
+                        line: self.line,
                         syntax: condition.to_string(),
                     });
                 }
-                loop_stack.push((line, "for"));
-                i += 2;
+                self.loop_stack.push((self.line, "for"));
+                self.i += 2;
             }
-            continue;
+            return true;
         }
 
         // Check for {% endfor %}
-        if i + 10 < bytes.len()
-            && bytes[i] == b'{'
-            && bytes[i + 1] == b'%'
-            && bytes[i + 2] == b' '
-            && bytes[i + 3] == b'e'
-            && bytes[i + 4] == b'n'
-            && bytes[i + 5] == b'd'
-            && bytes[i + 6] == b'f'
-            && bytes[i + 7] == b'o'
-            && bytes[i + 8] == b'r'
-            && bytes[i + 9] == b' '
+        if self.i + 10 < bytes.len()
+            && bytes[self.i] == b'{'
+            && bytes[self.i + 1] == b'%'
+            && bytes[self.i + 2] == b' '
+            && bytes[self.i + 3] == b'e'
+            && bytes[self.i + 4] == b'n'
+            && bytes[self.i + 5] == b'd'
+            && bytes[self.i + 6] == b'f'
+            && bytes[self.i + 7] == b'o'
+            && bytes[self.i + 8] == b'r'
+            && bytes[self.i + 9] == b' '
         {
-            if loop_stack.is_empty() {
-                // Unmatched endfor
-            } else {
-                loop_stack.pop();
-            }
-            i += 12;
-            continue;
+            self.loop_stack.pop();
+            self.i += 12;
+            return true;
         }
 
-        i += 1;
+        false
     }
 
-    // Check for unclosed blocks
-    if let Some((line, _)) = conditional_stack.first() {
-        errors.push(ValidationError::UnclosedConditional { line: *line });
+    fn check_unclosed_blocks(&mut self) {
+        if let Some((line, _)) = self.conditional_stack.first() {
+            self.errors.push(ValidationError::UnclosedConditional { line: *line });
+        }
+        if let Some((line, _)) = self.loop_stack.first() {
+            self.errors.push(ValidationError::UnclosedLoop { line: *line });
+        }
     }
-    if let Some((line, _)) = loop_stack.first() {
-        errors.push(ValidationError::UnclosedLoop { line: *line });
-    }
-
-    errors
 }
 
 /// Validate a complete template.
