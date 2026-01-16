@@ -4,36 +4,11 @@
 //!
 //! This module provides a single source of truth for all embedded templates,
 //! consolidating scattered `include_str!` calls across the codebase.
-//!
-//! # Template Categories
-//!
-//! - **Commit**: Templates for commit message generation
-//! - **Developer**: Templates for developer agent prompts
-//! - **Reviewer**: Templates for code review prompts
-//! - **`FixMode`**: Templates for fix mode prompts
-//! - **Rebase**: Templates for conflict resolution prompts
 
 use std::collections::HashMap;
 
-/// Template category for organization and filtering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
-pub enum TemplateCategory {
-    /// Commit message generation templates
-    Commit,
-    /// Developer agent prompts
-    Developer,
-    /// Code review prompts
-    Reviewer,
-    /// Fix mode prompts
-    FixMode,
-    /// Rebase/conflict resolution prompts
-    Rebase,
-}
-
 /// Metadata about an embedded template.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct EmbeddedTemplate {
     /// Template name (used for lookup and user override files)
     pub name: &'static str,
@@ -41,8 +16,6 @@ pub struct EmbeddedTemplate {
     pub content: &'static str,
     /// Human-readable description
     pub description: &'static str,
-    /// Template category
-    pub category: TemplateCategory,
 }
 
 /// Get an embedded template by name.
@@ -52,7 +25,6 @@ pub struct EmbeddedTemplate {
 /// * `Some(String)` - Template content if found
 /// * `None` - Template not found
 #[must_use]
-#[allow(dead_code)]
 pub fn get_embedded_template(name: &str) -> Option<String> {
     EMBEDDED_TEMPLATES.get(name).map(|t| t.content.to_string())
 }
@@ -64,7 +36,7 @@ pub fn get_embedded_template(name: &str) -> Option<String> {
 /// * `Some(&EmbeddedTemplate)` - Template metadata if found
 /// * `None` - Template not found
 #[must_use]
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn get_template_metadata(name: &str) -> Option<&'static EmbeddedTemplate> {
     EMBEDDED_TEMPLATES.get(name)
 }
@@ -77,26 +49,6 @@ pub fn get_template_metadata(name: &str) -> Option<&'static EmbeddedTemplate> {
 #[must_use]
 pub fn list_all_templates() -> Vec<&'static EmbeddedTemplate> {
     let mut templates: Vec<&EmbeddedTemplate> = EMBEDDED_TEMPLATES.values().collect();
-    templates.sort_by_key(|t| t.name);
-    templates
-}
-
-/// List templates by category.
-///
-/// # Arguments
-///
-/// * `category` - The category to filter by
-///
-/// # Returns
-///
-/// A vector of templates in the specified category, sorted by name.
-#[must_use]
-#[allow(dead_code)]
-pub fn list_templates_by_category(category: TemplateCategory) -> Vec<&'static EmbeddedTemplate> {
-    let mut templates: Vec<&EmbeddedTemplate> = EMBEDDED_TEMPLATES
-        .values()
-        .filter(|t| t.category == category)
-        .collect();
     templates.sort_by_key(|t| t.name);
     templates
 }
@@ -141,7 +93,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_message_xml",
                 content: include_str!("templates/commit_message_xml.txt"),
                 description: "Generate Conventional Commits messages from git diffs (XML format)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -151,7 +102,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_strict_json",
                 content: include_str!("templates/commit_strict_json.txt"),
                 description: "Strict JSON commit message format (retry attempt 1)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -161,7 +111,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_strict_json_v2",
                 content: include_str!("templates/commit_strict_json_v2.txt"),
                 description: "Strict JSON commit message format with examples (retry attempt 2)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -171,7 +120,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_ultra_minimal",
                 content: include_str!("templates/commit_ultra_minimal.txt"),
                 description: "Ultra-minimal commit message prompt (retry attempt 3)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -181,7 +129,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_ultra_minimal_v2",
                 content: include_str!("templates/commit_ultra_minimal_v2.txt"),
                 description: "Ultra-minimal commit message prompt v2 (retry attempt 4)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -191,7 +138,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_file_list_only",
                 content: include_str!("templates/commit_file_list_only.txt"),
                 description: "Commit message from file list only (fallback 1)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -201,7 +147,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_file_list_summary",
                 content: include_str!("templates/commit_file_list_summary.txt"),
                 description: "Commit message from file summary (fallback 2)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -211,7 +156,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_emergency",
                 content: include_str!("templates/commit_emergency.txt"),
                 description: "Emergency commit message with diff (fallback 3)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -221,7 +165,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_emergency_no_diff",
                 content: include_str!("templates/commit_emergency_no_diff.txt"),
                 description: "Emergency commit message without diff (last resort)",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -231,7 +174,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_message_fallback",
                 content: include_str!("templates/commit_message_fallback.txt"),
                 description: "Fallback commit message template",
-                category: TemplateCategory::Commit,
             },
         );
 
@@ -245,7 +187,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "developer_iteration",
                 content: include_str!("templates/developer_iteration.txt"),
                 description: "Developer agent implementation mode prompt",
-                category: TemplateCategory::Developer,
             },
         );
 
@@ -255,7 +196,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "planning",
                 content: include_str!("templates/planning.txt"),
                 description: "Planning phase prompt for implementation plans",
-                category: TemplateCategory::Developer,
             },
         );
 
@@ -265,7 +205,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "developer_iteration_fallback",
                 content: include_str!("templates/developer_iteration_fallback.txt"),
                 description: "Fallback developer iteration prompt",
-                category: TemplateCategory::Developer,
             },
         );
 
@@ -275,7 +214,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "planning_fallback",
                 content: include_str!("templates/planning_fallback.txt"),
                 description: "Fallback planning prompt",
-                category: TemplateCategory::Developer,
             },
         );
 
@@ -289,7 +227,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "fix_mode",
                 content: include_str!("templates/fix_mode.txt"),
                 description: "Fix mode prompt for addressing review issues",
-                category: TemplateCategory::FixMode,
             },
         );
 
@@ -299,7 +236,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "fix_mode_fallback",
                 content: include_str!("templates/fix_mode_fallback.txt"),
                 description: "Fallback fix mode prompt",
-                category: TemplateCategory::FixMode,
             },
         );
 
@@ -313,7 +249,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "conflict_resolution",
                 content: include_str!("templates/conflict_resolution.txt"),
                 description: "Merge conflict resolution prompt",
-                category: TemplateCategory::Rebase,
             },
         );
 
@@ -323,7 +258,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "conflict_resolution_fallback",
                 content: include_str!("templates/conflict_resolution_fallback.txt"),
                 description: "Fallback conflict resolution prompt",
-                category: TemplateCategory::Rebase,
             },
         );
 
@@ -337,7 +271,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "detailed_review_minimal",
                 content: include_str!("reviewer/templates/detailed_review_minimal.txt"),
                 description: "Detailed review mode (minimal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -347,7 +280,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "detailed_review_normal",
                 content: include_str!("reviewer/templates/detailed_review_normal.txt"),
                 description: "Detailed review mode (normal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -357,7 +289,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "incremental_review_minimal",
                 content: include_str!("reviewer/templates/incremental_review_minimal.txt"),
                 description: "Incremental review (changed files only, minimal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -367,7 +298,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "incremental_review_normal",
                 content: include_str!("reviewer/templates/incremental_review_normal.txt"),
                 description: "Incremental review (changed files only, normal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -377,7 +307,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "universal_review_minimal",
                 content: include_str!("reviewer/templates/universal_review_minimal.txt"),
                 description: "Universal review (all file types, minimal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -387,7 +316,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "universal_review_normal",
                 content: include_str!("reviewer/templates/universal_review_normal.txt"),
                 description: "Universal review (all file types, normal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -397,7 +325,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "standard_review_minimal",
                 content: include_str!("reviewer/templates/standard_review_minimal.txt"),
                 description: "Standard review (balanced, minimal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -407,7 +334,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "standard_review_normal",
                 content: include_str!("reviewer/templates/standard_review_normal.txt"),
                 description: "Standard review (balanced, normal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -417,7 +343,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "comprehensive_review_minimal",
                 content: include_str!("reviewer/templates/comprehensive_review_minimal.txt"),
                 description: "Comprehensive review (thorough, minimal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -427,7 +352,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "comprehensive_review_normal",
                 content: include_str!("reviewer/templates/comprehensive_review_normal.txt"),
                 description: "Comprehensive review (thorough, normal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -437,7 +361,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "security_review_minimal",
                 content: include_str!("reviewer/templates/security_review_minimal.txt"),
                 description: "Security-focused review (OWASP, minimal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -447,7 +370,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "security_review_normal",
                 content: include_str!("reviewer/templates/security_review_normal.txt"),
                 description: "Security-focused review (OWASP, normal context)",
-                category: TemplateCategory::Reviewer,
             },
         );
 
@@ -479,7 +401,6 @@ mod tests {
         assert!(metadata.is_some());
         let template = metadata.unwrap();
         assert_eq!(template.name, "commit_message_xml");
-        assert_eq!(template.category, TemplateCategory::Commit);
         assert!(!template.description.is_empty());
     }
 
@@ -493,27 +414,6 @@ mod tests {
         for window in templates.windows(2) {
             assert!(window[0].name <= window[1].name);
         }
-    }
-
-    #[test]
-    fn test_list_templates_by_category() {
-        let commit_templates = list_templates_by_category(TemplateCategory::Commit);
-        assert!(!commit_templates.is_empty());
-        assert!(commit_templates
-            .iter()
-            .all(|t| t.category == TemplateCategory::Commit));
-
-        let developer_templates = list_templates_by_category(TemplateCategory::Developer);
-        assert!(!developer_templates.is_empty());
-        assert!(developer_templates
-            .iter()
-            .all(|t| t.category == TemplateCategory::Developer));
-
-        let reviewer_templates = list_templates_by_category(TemplateCategory::Reviewer);
-        assert!(!reviewer_templates.is_empty());
-        assert!(reviewer_templates
-            .iter()
-            .all(|t| t.category == TemplateCategory::Reviewer));
     }
 
     #[test]
