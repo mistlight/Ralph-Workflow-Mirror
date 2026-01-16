@@ -12,7 +12,7 @@ use std::collections::HashMap;
 ///
 /// # Agent-Orchestrator Separation
 ///
-/// The fix agent reads ISSUES.md (written by the orchestrator after extracting
+/// The fix agent receives ISSUES content (embedded by the orchestrator after extracting
 /// from the reviewer's JSON output) and modifies source code files to fix issues.
 /// The agent returns structured output (completion status) that the orchestrator
 /// captures via JSON logging.
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 ///
 /// # Constraints
 ///
-/// The fix agent is constrained to ONLY work on files mentioned in ISSUES.md.
+/// The fix agent is constrained to ONLY work on files mentioned in the ISSUES content.
 /// This prevents the agent from exploring the repository and keeps changes
 /// focused on the issues identified during review.
 ///
@@ -31,11 +31,13 @@ use std::collections::HashMap;
 ///
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
-pub fn prompt_fix(prompt_content: &str, plan_content: &str) -> String {
+/// * `issues_content` - Content of ISSUES.md for context about issues to fix
+pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str) -> String {
     let template_content = include_str!("templates/fix_mode.txt");
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
+        ("ISSUES", issues_content.to_string()),
     ]);
     Template::new(template_content)
         .render(&variables)
@@ -329,8 +331,12 @@ mod tests {
 
     #[test]
     fn test_prompt_fix() {
-        let result = prompt_fix("test prompt content", "test plan content");
-        assert!(result.contains("ISSUES.md"));
+        let result = prompt_fix(
+            "test prompt content",
+            "test plan content",
+            "test issues content",
+        );
+        assert!(result.contains("test issues content"));
         // Agent should NOT modify ISSUES.md - orchestrator manages this file
         assert!(result.contains("DO NOT modify ISSUES.md"));
         assert!(result.contains("orchestrator manages this file"));
@@ -347,8 +353,7 @@ mod tests {
 
     #[test]
     fn test_prompt_fix_with_empty_context() {
-        let result = prompt_fix("", "");
-        assert!(result.contains("ISSUES.md"));
+        let result = prompt_fix("", "", "");
         assert!(result.contains("FIX MODE"));
         // Should still render successfully with empty context
         assert!(!result.is_empty());
@@ -357,7 +362,7 @@ mod tests {
     #[test]
     fn test_notes_md_references_are_minimal_or_absent() {
         // NOTES.md references should be minimal or absent (isolation mode removes these files)
-        let fix_prompt = prompt_fix("", "");
+        let fix_prompt = prompt_fix("", "", "");
 
         // Fix prompt may have optional language or no reference
         // It uses "(if it exists)" when referencing NOTES.md
@@ -424,7 +429,7 @@ mod tests {
     #[test]
     fn test_fix_prompt_contains_constraint_language() {
         // Verify that fix prompt contains explicit constraint language
-        let fix_prompt = prompt_fix("", "");
+        let fix_prompt = prompt_fix("", "", "");
         assert!(
             fix_prompt.contains("MUST NOT") || fix_prompt.contains("DO NOT"),
             "Fix prompt should contain explicit constraint language (MUST NOT or DO NOT)"
@@ -438,7 +443,7 @@ mod tests {
     #[test]
     fn test_fix_prompt_forbids_exploration() {
         // Verify that fix prompt explicitly forbids repository exploration
-        let fix_prompt = prompt_fix("", "");
+        let fix_prompt = prompt_fix("", "", "");
         assert!(
             fix_prompt.contains("MUST NOT read any other files")
                 || fix_prompt.contains("MUST NOT run git commands")
@@ -449,27 +454,26 @@ mod tests {
 
     #[test]
     fn test_fix_prompt_instructs_to_only_work_on_issues_files() {
-        // Verify that fix prompt instructs to only work on files from ISSUES.md
-        let fix_prompt = prompt_fix("", "");
+        // Verify that fix prompt instructs to only work on files from ISSUES
+        let fix_prompt = prompt_fix("", "", "test issues");
         assert!(
-            fix_prompt.contains("ISSUES.md"),
-            "Fix prompt should reference ISSUES.md"
+            fix_prompt.contains("test issues"),
+            "Fix prompt should contain the embedded issues content"
         );
         assert!(
-            fix_prompt.contains("ONLY read") || fix_prompt.contains("only read"),
-            "Fix prompt should instruct to only read specific files"
+            fix_prompt.contains("ONLY") || fix_prompt.contains("only"),
+            "Fix prompt should instruct to only work on specific files"
         );
         assert!(
-            fix_prompt.contains("mentioned in ISSUES.md")
-                || fix_prompt.contains("files that are mentioned"),
-            "Fix prompt should limit work to files mentioned in ISSUES.md"
+            fix_prompt.contains("mentioned in the ISSUES") || fix_prompt.contains("ISSUES section"),
+            "Fix prompt should limit work to files mentioned in ISSUES"
         );
     }
 
     #[test]
     fn test_fix_prompt_forbids_running_commands() {
         // Verify that fix prompt explicitly forbids running commands
-        let fix_prompt = prompt_fix("", "");
+        let fix_prompt = prompt_fix("", "", "");
         let command_patterns = ["git", "ls", "find", "cat", "DO NOT run any commands"];
         let has_command_constraint = command_patterns
             .iter()
@@ -483,7 +487,7 @@ mod tests {
     #[test]
     fn test_fix_prompt_is_template_based() {
         // Verify that fix prompt uses template-based approach (not hardcoded string)
-        let fix_prompt = prompt_fix("", "");
+        let fix_prompt = prompt_fix("", "", "");
         // If template loading failed, we'd get an empty string
         assert!(
             !fix_prompt.is_empty(),

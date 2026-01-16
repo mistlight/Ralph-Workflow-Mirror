@@ -50,6 +50,8 @@ pub struct PromptConfig {
     pub prompt_md_content: Option<String>,
     /// (PROMPT.md, PLAN.md) content tuple for developer iteration prompts.
     pub prompt_and_plan: Option<(String, String)>,
+    /// (PROMPT.md, PLAN.md, ISSUES.md) content tuple for fix prompts.
+    pub prompt_plan_and_issues: Option<(String, String, String)>,
 }
 
 impl PromptConfig {
@@ -61,6 +63,7 @@ impl PromptConfig {
             total_iterations: None,
             prompt_md_content: None,
             prompt_and_plan: None,
+            prompt_plan_and_issues: None,
         }
     }
 
@@ -83,6 +86,18 @@ impl PromptConfig {
     #[must_use]
     pub fn with_prompt_and_plan(mut self, prompt: String, plan: String) -> Self {
         self.prompt_and_plan = Some((prompt, plan));
+        self
+    }
+
+    /// Set (PROMPT.md, PLAN.md, ISSUES.md) content tuple for fix prompts.
+    #[must_use]
+    pub fn with_prompt_plan_and_issues(
+        mut self,
+        prompt: String,
+        plan: String,
+        issues: String,
+    ) -> Self {
+        self.prompt_plan_and_issues = Some((prompt, plan, issues));
         self
     }
 }
@@ -117,10 +132,10 @@ pub fn prompt_for_agent(
             )
         }
         (_, Action::Fix) => {
-            let (prompt_content, plan_content) = config
-                .prompt_and_plan
-                .unwrap_or((String::new(), String::new()));
-            prompt_fix(&prompt_content, &plan_content)
+            let (prompt_content, plan_content, issues_content) = config
+                .prompt_plan_and_issues
+                .unwrap_or((String::new(), String::new(), String::new()));
+            prompt_fix(&prompt_content, &plan_content, &issues_content)
         }
     }
 }
@@ -194,7 +209,7 @@ mod tests {
                 "",
                 "",
             ),
-            prompt_fix("", ""),
+            prompt_fix("", "", ""),
             prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
         ];
@@ -218,11 +233,14 @@ mod tests {
             Role::Developer,
             Action::Fix,
             ContextLevel::Normal,
-            PromptConfig::new()
-                .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
+            PromptConfig::new().with_prompt_plan_and_issues(
+                "test prompt".to_string(),
+                "test plan".to_string(),
+                "test issues".to_string(),
+            ),
         );
         assert!(result.contains("FIX MODE"));
-        assert!(result.contains("ISSUES.md"));
+        assert!(result.contains("test issues"));
         // Should include PROMPT and PLAN context
         assert!(result.contains("test prompt"));
         assert!(result.contains("test plan"));
@@ -237,7 +255,6 @@ mod tests {
             PromptConfig::new(),
         );
         assert!(result.contains("FIX MODE"));
-        assert!(result.contains("ISSUES.md"));
         // Should still work with empty context
         assert!(!result.is_empty());
     }
@@ -271,7 +288,7 @@ mod tests {
 
         let prompts_to_check = vec![
             prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
-            prompt_fix("", ""),
+            prompt_fix("", "", ""),
         ];
 
         for prompt in prompts_to_check {
@@ -331,7 +348,7 @@ mod tests {
                 "",
                 "",
             ),
-            prompt_fix("", ""),
+            prompt_fix("", "", ""),
             prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b\n"),
         ];
