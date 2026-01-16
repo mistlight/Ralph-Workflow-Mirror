@@ -1,18 +1,18 @@
 //! Git identity resolution with fallback chain.
 //!
 //! This module provides a comprehensive git identity resolution system that:
-//! 1. Reads git config through libgit2's standard mechanisms
+//! 1. Works with git config as the primary source (via libgit2 in caller)
 //! 2. Adds Ralph-specific configuration options (config file, env vars, CLI args)
 //! 3. Implements sensible fallbacks (system username, default values)
 //! 4. Provides clear error messages when identity cannot be determined
 //!
 //! # Priority Chain
 //!
-//! The identity is resolved in the following order (highest to lowest priority):
-//! 1. Explicit CLI args (highest priority)
-//! 2. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
-//! 3. Ralph config file (`[general]` section with `git_user_name`, `git_user_email`)
-//! 4. Git config (via libgit2) - maintains backward compatibility
+//! The identity is resolved in the following order (for overrides to git config):
+//! 1. Git config (via libgit2) - primary source, checked first by caller
+//! 2. Explicit CLI args (highest priority override)
+//! 3. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
+//! 4. Ralph config file (`[general]` section with `git_user_name`, `git_user_email`)
 //! 5. System username + derived email (sane fallback)
 //! 6. Default values ("Ralph Workflow", "ralph@localhost") - last resort
 
@@ -138,96 +138,6 @@ fn get_hostname() -> Option<String> {
     None
 }
 
-/// Source of the resolved git identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IdentitySource {
-    /// Identity from CLI arguments.
-    CliArgs,
-    /// Identity from environment variables.
-    Environment,
-    /// Identity from Ralph config file.
-    RalphConfig,
-    /// Identity from system username/hostname.
-    SystemFallback,
-}
-
-/// Resolve git identity with the full priority chain.
-///
-/// # Arguments
-///
-/// * `cli_name` - Optional name from CLI arguments
-/// * `cli_email` - Optional email from CLI arguments
-/// * `config_name` - Optional name from Ralph config
-/// * `config_email` - Optional email from Ralph config
-///
-/// # Returns
-///
-/// Returns `Ok((GitIdentity, IdentitySource))` with the resolved identity and its source,
-/// or `Err(String)` with an error message if identity cannot be determined.
-pub fn resolve_git_identity(
-    cli_name: Option<&str>,
-    cli_email: Option<&str>,
-    config_name: Option<&str>,
-    config_email: Option<&str>,
-) -> Result<(GitIdentity, IdentitySource), String> {
-    // Priority 1: CLI arguments (highest)
-    if let (Some(name), Some(email)) = (cli_name, cli_email) {
-        let identity = GitIdentity::new(name.to_string(), email.to_string());
-        if let Err(e) = identity.validate() {
-            return Err(format!("CLI git identity validation failed: {e}"));
-        }
-        return Ok((identity, IdentitySource::CliArgs));
-    }
-
-    // Priority 2: Environment variables
-    let env_name = env::var("RALPH_GIT_USER_NAME").ok();
-    let env_email = env::var("RALPH_GIT_USER_EMAIL").ok();
-
-    if let (Some(name), Some(email)) = (env_name.as_ref(), env_email.as_ref()) {
-        let name = name.trim();
-        let email = email.trim();
-        if !name.is_empty() && !email.is_empty() {
-            let identity = GitIdentity::new(name.to_string(), email.to_string());
-            if let Err(e) = identity.validate() {
-                return Err(format!("Environment git identity validation failed: {e}"));
-            }
-            return Ok((identity, IdentitySource::Environment));
-        }
-    }
-
-    // Priority 3: Ralph config file
-    if let (Some(name), Some(email)) = (config_name, config_email) {
-        let name = name.trim();
-        let email = email.trim();
-        if !name.is_empty() && !email.is_empty() {
-            let identity = GitIdentity::new(name.to_string(), email.to_string());
-            if let Err(e) = identity.validate() {
-                return Err(format!("Config git identity validation failed: {e}"));
-            }
-            return Ok((identity, IdentitySource::RalphConfig));
-        }
-    }
-
-    // Priority 4: Git config (via libgit2)
-    // Note: This is handled by the caller (git_commit function) because
-    // it needs access to the git2::Repository
-
-    // For now, we'll return that git config should be checked
-    // If git config fails, we fall through to our own fallbacks
-
-    // Priority 5: System username + derived email
-    let username = fallback_username();
-    let email = fallback_email(&username);
-    let identity = GitIdentity::new(username, email);
-    if let Err(e) = identity.validate() {
-        // Shouldn't happen with our fallbacks, but handle it
-        return Err(format!(
-            "System fallback git identity validation failed: {e}"
-        ));
-    }
-    Ok((identity, IdentitySource::SystemFallback))
-}
-
 /// Get the default git identity (last resort).
 ///
 /// This should never be reached if the fallback chain is working correctly.
@@ -301,33 +211,6 @@ mod tests {
         let email = fallback_email(username);
         assert!(email.contains('@'));
         assert!(email.starts_with(username));
-    }
-
-    #[test]
-    fn test_resolve_git_identity_cli_args() {
-        let (identity, source) =
-            resolve_git_identity(Some("CLI User"), Some("cli@example.com"), None, None).unwrap();
-        assert_eq!(identity.name, "CLI User");
-        assert_eq!(identity.email, "cli@example.com");
-        assert_eq!(source, IdentitySource::CliArgs);
-    }
-
-    #[test]
-    fn test_resolve_git_identity_config() {
-        let (identity, source) =
-            resolve_git_identity(None, None, Some("Config User"), Some("config@example.com"))
-                .unwrap();
-        assert_eq!(identity.name, "Config User");
-        assert_eq!(identity.email, "config@example.com");
-        assert_eq!(source, IdentitySource::RalphConfig);
-    }
-
-    #[test]
-    fn test_resolve_git_identity_fallback() {
-        let (identity, source) = resolve_git_identity(None, None, None, None).unwrap();
-        assert!(!identity.name.is_empty());
-        assert!(identity.email.contains('@'));
-        assert_eq!(source, IdentitySource::SystemFallback);
     }
 
     #[test]

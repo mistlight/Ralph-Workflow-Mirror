@@ -200,6 +200,14 @@ reviewer = [
   "claude",      # Fallback: Claude Code
 ]
 
+# Commit agents - for generating commit messages
+# Uses the same fallback pattern as other roles
+commit = [
+  "claude",      # Primary: Claude Code
+  "codex",       # Fallback: OpenAI Codex
+  "opencode",    # Fallback: OpenCode
+]
+
 # Maximum retries per agent before trying the next one
 max_retries = 3
 

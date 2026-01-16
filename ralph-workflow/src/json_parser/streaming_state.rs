@@ -711,11 +711,13 @@ impl StreamingSession {
 
         // Check if previous is contained within text
         if text.contains(previous) {
-            // Calculate overlap ratio
-            let overlap_ratio = previous.len() as f64 / text.len() as f64;
-            // If >85% of the incoming text is the previous content, it's likely a snapshot
-            // (High threshold to avoid false positives while catching true snapshots)
-            overlap_ratio > 0.85
+            // Calculate overlap ratio using integer arithmetic to avoid precision loss
+            // Check: previous.len() * 100 > text.len() * 85 (equivalent to previous/text > 0.85)
+            // This avoids f64 precision issues for large usize values
+            let prev_len = previous.len();
+            let text_len = text.len();
+            // Use saturating multiplication to avoid overflow for extremely large strings
+            prev_len.saturating_mul(100) > text_len.saturating_mul(85)
         } else {
             false
         }
