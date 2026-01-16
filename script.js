@@ -244,7 +244,11 @@
     // Speed control functionality
     speedButtons.forEach(btn => {
         btn.addEventListener('click', () => {
-            const speed = parseFloat(btn.dataset.speed);
+            // Validate speed value exists and is a valid number
+            const rawSpeed = btn.dataset.speed;
+            if (!rawSpeed) return;
+            const speed = parseFloat(rawSpeed);
+            if (isNaN(speed) || speed <= 0) return;
             animationSpeed = speed;
 
             // Update active state
@@ -308,8 +312,14 @@
                 const timeout = setTimeout(() => {
                     if (step.type === 'command') {
                         const commandLine = terminalLines[0];
-                        commandLine.querySelector('.terminal-command').textContent = step.text;
-                        commandLine.classList.add('typed');
+                        // Validate commandLine and querySelector result exist
+                        if (commandLine) {
+                            const commandElement = commandLine.querySelector('.terminal-command');
+                            if (commandElement) {
+                                commandElement.textContent = step.text;
+                            }
+                            commandLine.classList.add('typed');
+                        }
                     } else {
                         // For demo, we'll just animate the existing lines
                         if (index < terminalLines.length - 1) {
@@ -480,7 +490,9 @@
 
     installTabs.forEach(tab => {
         tab.addEventListener('click', function() {
+            // Validate dataset.tab exists
             const targetTab = this.dataset.tab;
+            if (!targetTab) return;
 
             // Update active tab
             installTabs.forEach(t => t.classList.remove('install-tab-active'));
@@ -1167,7 +1179,10 @@
 
     audienceOptions.forEach(option => {
         option.addEventListener('click', () => {
+            // Validate dataset.audience exists and is a valid value
             const audience = option.dataset.audience;
+            const validAudiences = ['developer', 'vibe-coder', 'newcomer'];
+            if (!audience || !validAudiences.includes(audience)) return;
 
             // Update button states
             audienceOptions.forEach(opt => {
@@ -1200,7 +1215,7 @@
                 'newcomer': '#install'
             };
 
-            // Validate audience is a valid key before accessing sectionMap
+            // Validate audience is a valid key before accessing sectionMap (already validated above)
             if (!Object.hasOwn(sectionMap, audience)) return;
 
             const targetSection = sectionMap[audience];
@@ -1234,7 +1249,9 @@
     // Tab switching
     demoTabs.forEach(tab => {
         tab.addEventListener('click', () => {
+            // Validate dataset.tab exists
             const targetTab = tab.dataset.tab;
+            if (!targetTab) return;
 
             demoTabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
@@ -1520,7 +1537,9 @@ impl AuthService {
 
     expandButtons.forEach(btn => {
         btn.addEventListener('click', () => {
+            // Validate dataset.expand exists
             const targetId = btn.dataset.expand;
+            if (!targetId) return;
             const targetContent = document.getElementById(targetId);
             const isExpanded = btn.getAttribute('aria-expanded') === 'true';
 
