@@ -106,7 +106,7 @@ pub fn sanitize_for_display(content: &str) -> String {
         }
     }
 
-    // Trim leading and trailing whitespace
+    // Trim leading and trailing whitespace for display
     result.trim().to_string()
 }
 

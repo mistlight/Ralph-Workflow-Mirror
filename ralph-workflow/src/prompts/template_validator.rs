@@ -276,7 +276,7 @@ struct SyntaxValidator<'a> {
 }
 
 impl<'a> SyntaxValidator<'a> {
-    fn new(content: &'a str) -> Self {
+    const fn new(content: &'a str) -> Self {
         Self {
             content,
             errors: Vec::new(),

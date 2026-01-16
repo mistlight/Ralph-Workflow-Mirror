@@ -972,8 +972,9 @@ impl StreamingSession {
     /// * `true` - The content hash matches the previously streamed content
     /// * `false` - The content is different or no content was streamed
     pub fn is_duplicate_by_hash(&self, content: &str) -> bool {
-        // Check if any accumulated text content matches the input content
+        // Check if the input content matches ALL accumulated text content combined
         // This handles the case where assistant events arrive during streaming (before message_stop)
+        // We collect and combine all text content in index order
         let mut text_keys: Vec<_> = self
             .accumulated
             .keys()
@@ -981,17 +982,16 @@ impl StreamingSession {
             .collect();
         text_keys.sort_by_key(|k| format!("{:?}-{}", k.0, k.1));
 
-        for key in text_keys {
-            if let Some(accumulated_text) = self.accumulated.get(key) {
-                // Direct string comparison is more reliable than hashing
-                // because hashing can have collisions and we want exact match
-                if accumulated_text == content {
-                    return true;
-                }
-            }
-        }
+        // Combine all accumulated text content in sorted order
+        let combined_content: String = text_keys
+            .iter()
+            .filter_map(|key| self.accumulated.get(key))
+            .cloned()
+            .collect();
 
-        false
+        // Direct string comparison is more reliable than hashing
+        // because hashing can have collisions and we want exact match
+        combined_content == content
     }
 
     /// Get accumulated content for a specific type and index.
@@ -1108,19 +1108,19 @@ impl StreamingSession {
     /// # Arguments
     /// * `content_type` - The type of content
     /// * `index` - The content index (as string for flexibility)
-    /// * `sanitized_content` - The sanitized content to hash
-    pub fn mark_content_rendered_sanitized(
+    /// * `content` - The content to hash
+    pub fn mark_content_hash_rendered(
         &mut self,
         content_type: ContentType,
         index: &str,
-        sanitized_content: &str,
+        content: &str,
     ) {
         // Also update last_rendered for compatibility
         self.mark_rendered(content_type, index);
 
-        // Add the hash of the sanitized content to the rendered set
+        // Add the hash of the content to the rendered set
         let mut hasher = DefaultHasher::new();
-        sanitized_content.hash(&mut hasher);
+        content.hash(&mut hasher);
         let hash = hasher.finish();
         self.rendered_content_hashes.insert(hash);
     }
@@ -1136,17 +1136,17 @@ impl StreamingSession {
     /// * `sanitized_content` - The sanitized content to check
     ///
     /// # Returns
-    /// * `true` - This sanitized content has been rendered before
-    /// * `false` - This sanitized content has not been rendered
-    pub fn is_content_rendered_sanitized(
+    /// * `true` - This exact content has been rendered before
+    /// * `false` - This exact content has not been rendered
+    pub fn is_content_hash_rendered(
         &self,
         _content_type: ContentType,
         _index: &str,
-        sanitized_content: &str,
+        content: &str,
     ) -> bool {
-        // Compute hash of sanitized content
+        // Compute hash of exact content
         let mut hasher = DefaultHasher::new();
-        sanitized_content.hash(&mut hasher);
+        content.hash(&mut hasher);
         let hash = hasher.finish();
 
         // Check if this hash has been rendered before

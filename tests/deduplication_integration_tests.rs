@@ -24,13 +24,7 @@
 //!
 //! This tests the exact same code path as production usage.
 
-use std::cell::RefCell;
-use std::io::Cursor;
-use std::path::Path;
-use std::rc::Rc;
-
-use ralph_workflow::config::Verbosity;
-use ralph_workflow::json_parser::printer::{SharedPrinter, TestPrinter};
+use ralph_workflow::json_parser::printer::TestPrinter;
 use ralph_workflow::json_parser::ClaudeParser;
 use ralph_workflow::logger::Colors;
 
