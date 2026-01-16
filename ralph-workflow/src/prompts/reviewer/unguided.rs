@@ -18,15 +18,21 @@ use super::super::Template;
 use std::collections::HashMap;
 
 /// Load and render a template from a string with the given variables.
+///
+/// If template rendering fails, returns a minimal fallback prompt that still
+/// includes the diff to ensure the review phase can proceed with content.
 fn load_template_str(template_content: &str, diff: &str) -> String {
     let variables = HashMap::from([("DIFF", diff.to_string())]);
     let template = Template::new(template_content.to_string());
     match template.render(&variables) {
         Ok(rendered) => rendered,
         Err(e) => {
-            // Fallback to empty string if template rendering fails
+            // Fallback to a minimal prompt that still includes the diff
+            // This ensures the review phase can proceed even if template rendering fails
             eprintln!("Warning: Failed to render template: {e}");
-            String::new()
+            format!(
+                "Review the following code changes and identify any issues:\n\n```diff\n{diff}\n```"
+            )
         }
     }
 }
