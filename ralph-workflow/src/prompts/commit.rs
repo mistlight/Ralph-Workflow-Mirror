@@ -3,6 +3,8 @@
 //! Prompts for commit message generation and fix actions.
 
 use crate::files::result_extraction::extract_file_paths_from_issues;
+#[cfg(test)]
+use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;
 
@@ -52,6 +54,59 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
             // Use fallback template if main template fails
             let fallback_content = include_str!("templates/fix_mode_fallback.txt");
             let fallback_template = Template::new(fallback_content);
+            fallback_template
+                .render(&variables)
+                .unwrap_or_else(|_| {
+                    // Last resort emergency fallback
+                    format!(
+                        "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n"
+                    )
+                })
+        })
+}
+
+/// Generate fix prompt using template registry.
+///
+/// This version uses the template registry which supports user template overrides.
+/// It's the recommended way to generate prompts going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - Content of PROMPT.md for context about the original request
+/// * `plan_content` - Content of PLAN.md for context about the implementation plan
+/// * `issues_content` - Content of ISSUES.md for context about issues to fix
+#[cfg(test)]
+pub fn prompt_fix_with_context(
+    context: &TemplateContext,
+    prompt_content: &str,
+    plan_content: &str,
+    issues_content: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("fix_mode")
+        .unwrap_or_else(|_| include_str!("templates/fix_mode.txt").to_string());
+
+    // Extract file paths from ISSUES content to provide explicit list
+    let files_to_modify = extract_file_paths_from_issues(issues_content);
+    let files_section = format_files_section(&files_to_modify);
+
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("ISSUES", issues_content.to_string()),
+        ("FILES_TO_MODIFY", files_section),
+    ]);
+    Template::new(&template_content)
+        .render(&variables)
+        .unwrap_or_else(|_| {
+            // Use fallback template if main template fails
+            let fallback_content = context
+                .registry()
+                .get_template("fix_mode_fallback")
+                .unwrap_or_else(|_| include_str!("templates/fix_mode_fallback.txt").to_string());
+            let fallback_template = Template::new(&fallback_content);
             fallback_template
                 .render(&variables)
                 .unwrap_or_else(|_| {
@@ -134,6 +189,57 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
         // Use fallback template if main template fails
         let fallback_content = include_str!("templates/commit_message_fallback.txt");
         let fallback_template = Template::new(fallback_content);
+        fallback_template
+            .render(&variables)
+            .unwrap_or_else(|_| {
+                // Last resort emergency fallback
+                format!(
+                    "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
+                     Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
+                )
+            })
+    })
+}
+
+/// Generate prompt for creating commit message from provided diff using template registry.
+///
+/// This version uses the template registry which supports user template overrides.
+/// It's the recommended way to generate prompts going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+#[cfg(test)]
+pub fn prompt_generate_commit_message_with_diff_with_context(
+    context: &TemplateContext,
+    diff: &str,
+) -> String {
+    // Check if diff is empty or whitespace-only
+    let diff_content = diff.trim();
+    let has_changes = !diff_content.is_empty();
+
+    if !has_changes {
+        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
+                meaningful changes should be checked before requesting a commit message."
+            .to_string();
+    }
+
+    let template_content = context
+        .registry()
+        .get_template("commit_message_xml")
+        .unwrap_or_else(|_| include_str!("templates/commit_message_xml.txt").to_string());
+    let template = Template::new(&template_content);
+    let variables = HashMap::from([("DIFF", diff_content.to_string())]);
+
+    template.render(&variables).unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to render commit template: {e}");
+        // Use fallback template if main template fails
+        let fallback_content = context
+            .registry()
+            .get_template("commit_message_fallback")
+            .unwrap_or_else(|_| include_str!("templates/commit_message_fallback.txt").to_string());
+        let fallback_template = Template::new(&fallback_content);
         fallback_template
             .render(&variables)
             .unwrap_or_else(|_| {
@@ -691,5 +797,69 @@ mod tests {
             fix_prompt.contains("FILES YOU MAY MODIFY"),
             "Fix prompt should explicitly reference the FILES YOU MAY MODIFY section"
         );
+    }
+
+    #[test]
+    fn test_prompt_fix_with_context() {
+        let context = TemplateContext::default();
+        let result = prompt_fix_with_context(
+            &context,
+            "test prompt content",
+            "test plan content",
+            "test issues content",
+        );
+        assert!(result.contains("test issues content"));
+        assert!(result.contains("DO NOT modify the ISSUES content"));
+        assert!(result.contains("provided for reference only"));
+        assert!(result.contains("SHOULD modify source code files"));
+        assert!(result.contains("FIX MODE"));
+        assert!(result.contains("All issues addressed"));
+        assert!(result.contains("Issues remain"));
+        assert!(result.contains("test prompt content"));
+        assert!(result.contains("test plan content"));
+    }
+
+    #[test]
+    fn test_prompt_fix_with_context_empty() {
+        let context = TemplateContext::default();
+        let result = prompt_fix_with_context(&context, "", "", "");
+        assert!(result.contains("FIX MODE"));
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_context_based_fix_matches_regular() {
+        let context = TemplateContext::default();
+        let regular = prompt_fix("prompt", "plan", "issues");
+        let with_context = prompt_fix_with_context(&context, "prompt", "plan", "issues");
+        // Both should produce equivalent output
+        assert_eq!(regular, with_context);
+    }
+
+    #[test]
+    fn test_prompt_generate_commit_message_with_diff_with_context() {
+        let context = TemplateContext::default();
+        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
+        let result = prompt_generate_commit_message_with_diff_with_context(&context, diff);
+        assert!(!result.is_empty());
+        assert!(result.contains("DIFF:") || result.contains("diff"));
+        assert!(!result.contains("ERROR: Empty diff"));
+    }
+
+    #[test]
+    fn test_prompt_generate_commit_message_with_diff_with_context_empty() {
+        let context = TemplateContext::default();
+        let result = prompt_generate_commit_message_with_diff_with_context(&context, "");
+        assert!(result.contains("ERROR: Empty diff"));
+    }
+
+    #[test]
+    fn test_context_based_commit_matches_regular() {
+        let context = TemplateContext::default();
+        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
+        let regular = prompt_generate_commit_message_with_diff(diff);
+        let with_context = prompt_generate_commit_message_with_diff_with_context(&context, diff);
+        // Both should produce equivalent output
+        assert_eq!(regular, with_context);
     }
 }

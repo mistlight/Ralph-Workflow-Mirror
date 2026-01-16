@@ -7,6 +7,9 @@ use std::collections::HashMap;
 use super::template_engine::Template;
 use super::types::ContextLevel;
 
+#[cfg(test)]
+use super::template_context::TemplateContext;
+
 /// Generate developer iteration prompt.
 ///
 /// Note: We do NOT tell the agent how many total iterations exist.
@@ -88,6 +91,111 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
         // Use fallback template if main template fails
         let fallback_content = include_str!("templates/planning_fallback.txt");
         let fallback_template = Template::new(fallback_content);
+        fallback_template
+            .render(&variables)
+            .unwrap_or_else(|_| {
+                // Last resort emergency fallback
+                format!(
+                    "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n"
+                )
+            })
+    })
+}
+
+/// Generate developer iteration prompt using template registry.
+///
+/// This version uses the template registry which supports user template overrides.
+/// It's the recommended way to generate prompts going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `iteration` - The current iteration number (accepted for API compatibility, not exposed to agent)
+/// * `total` - The total number of iterations (accepted for API compatibility, not exposed to agent)
+/// * `ctx_level` - The context level (minimal or normal) (accepted for API compatibility, not used in template)
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+#[cfg(test)]
+pub fn prompt_developer_iteration_with_context(
+    context: &TemplateContext,
+    iteration: u32,
+    total: u32,
+    ctx_level: ContextLevel,
+    prompt_content: &str,
+    plan_content: &str,
+) -> String {
+    // Note: iteration, total, and ctx_level are accepted for API compatibility
+    // but are intentionally not exposed to the agent to prevent context pollution.
+    let _ = (iteration, total, ctx_level);
+
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration")
+        .unwrap_or_else(|_| {
+            // Fallback to embedded template if registry fails
+            include_str!("templates/developer_iteration.txt").to_string()
+        });
+    let template = Template::new(&template_content);
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+    ]);
+
+    template.render(&variables).unwrap_or_else(|_| {
+        // Use fallback template if main template fails
+        let fallback_content = context
+            .registry()
+            .get_template("developer_iteration_fallback")
+            .unwrap_or_else(|_| {
+                // Fallback to embedded template if registry fails
+                include_str!("templates/developer_iteration_fallback.txt").to_string()
+            });
+        let fallback_template = Template::new(&fallback_content);
+        fallback_template
+            .render(&variables)
+            .unwrap_or_else(|_| {
+                // Last resort emergency fallback
+                format!(
+                    "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n"
+                )
+            })
+    })
+}
+
+/// Generate prompt for planning phase using template registry.
+///
+/// This version uses the template registry which supports user template overrides.
+/// It's the recommended way to generate prompts going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
+///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
+///   which prevents accidental deletion.
+#[cfg(test)]
+pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Option<&str>) -> String {
+    let template_content = context
+        .registry()
+        .get_template("planning")
+        .unwrap_or_else(|_| {
+            // Fallback to embedded template if registry fails
+            include_str!("templates/planning.txt").to_string()
+        });
+    let template = Template::new(&template_content);
+    let prompt_md = prompt_content.unwrap_or("No requirements provided");
+    let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
+
+    template.render(&variables).unwrap_or_else(|_| {
+        // Use fallback template if main template fails
+        let fallback_content = context
+            .registry()
+            .get_template("planning_fallback")
+            .unwrap_or_else(|_| {
+                // Fallback to embedded template if registry fails
+                include_str!("templates/planning_fallback.txt").to_string()
+            });
+        let fallback_template = Template::new(&fallback_content);
         fallback_template
             .render(&variables)
             .unwrap_or_else(|_| {
@@ -199,5 +307,121 @@ mod tests {
                 "Developer prompt should not tell agent to run git add"
             );
         }
+    }
+
+    #[test]
+    fn test_prompt_developer_iteration_with_context() {
+        let context = TemplateContext::default();
+        let result = prompt_developer_iteration_with_context(
+            &context,
+            2,
+            5,
+            ContextLevel::Normal,
+            "test prompt",
+            "test plan",
+        );
+        // Agent should receive PROMPT and PLAN content directly
+        assert!(result.contains("test prompt"));
+        assert!(result.contains("test plan"));
+        assert!(result.contains("IMPLEMENTATION MODE"));
+        // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+        assert!(!result.contains("PROMPT.md"));
+        assert!(!result.contains("PLAN.md"));
+    }
+
+    #[test]
+    fn test_prompt_developer_iteration_with_context_minimal() {
+        let context = TemplateContext::default();
+        let result = prompt_developer_iteration_with_context(
+            &context,
+            1,
+            5,
+            ContextLevel::Minimal,
+            "test prompt",
+            "test plan",
+        );
+        // Agent should receive PROMPT and PLAN content directly
+        assert!(result.contains("test prompt"));
+        assert!(result.contains("test plan"));
+        assert!(!result.contains("PROMPT.md"));
+        assert!(!result.contains("PLAN.md"));
+    }
+
+    #[test]
+    fn test_prompt_plan_with_context() {
+        let context = TemplateContext::default();
+        let result = prompt_plan_with_context(&context, None);
+        assert!(result.contains("PLANNING MODE"));
+        assert!(result.contains("Implementation Steps"));
+        assert!(result.contains("Critical Files"));
+        assert!(result.contains("Verification Strategy"));
+        assert!(result.contains("READ-ONLY"));
+        assert!(result.contains("STRICTLY PROHIBITED"));
+        assert!(result.contains("PHASE 1: UNDERSTANDING"));
+        assert!(result.contains("PHASE 2: EXPLORATION"));
+        assert!(result.contains("PHASE 3: DESIGN"));
+        assert!(result.contains("PHASE 4: REVIEW"));
+        assert!(result.contains("PHASE 5: WRITE PLAN"));
+    }
+
+    #[test]
+    fn test_prompt_plan_with_context_and_content() {
+        let context = TemplateContext::default();
+        let prompt_md = "# Test Prompt\n\nThis is the content.";
+        let result = prompt_plan_with_context(&context, Some(prompt_md));
+        assert!(result.contains("USER REQUIREMENTS:"));
+        assert!(result.contains("This is the content."));
+        assert!(!result.contains("PROMPT.md"));
+        assert!(result.contains("PLANNING MODE"));
+        assert!(result.contains("PHASE 1: UNDERSTANDING"));
+    }
+
+    #[test]
+    fn test_context_based_prompts_isolate_from_git() {
+        let context = TemplateContext::default();
+        let prompts = vec![
+            prompt_developer_iteration_with_context(&context, 1, 3, ContextLevel::Minimal, "", ""),
+            prompt_developer_iteration_with_context(&context, 2, 3, ContextLevel::Normal, "", ""),
+            prompt_plan_with_context(&context, None),
+        ];
+
+        for prompt in prompts {
+            assert!(
+                !prompt.contains("git diff"),
+                "Developer prompt should not tell agent to run git diff"
+            );
+            assert!(
+                !prompt.contains("git status"),
+                "Developer prompt should not tell agent to run git status"
+            );
+            assert!(
+                !prompt.contains("git commit"),
+                "Developer prompt should not tell agent to run git commit"
+            );
+            assert!(
+                !prompt.contains("git add"),
+                "Developer prompt should not tell agent to run git add"
+            );
+        }
+    }
+
+    #[test]
+    fn test_context_based_matches_regular_functions() {
+        let context = TemplateContext::default();
+        let regular = prompt_developer_iteration(1, 3, ContextLevel::Normal, "prompt", "plan");
+        let with_context = prompt_developer_iteration_with_context(
+            &context,
+            1,
+            3,
+            ContextLevel::Normal,
+            "prompt",
+            "plan",
+        );
+        // Both should produce equivalent output
+        assert_eq!(regular, with_context);
+
+        let regular_plan = prompt_plan(None);
+        let with_context_plan = prompt_plan_with_context(&context, None);
+        assert_eq!(regular_plan, with_context_plan);
     }
 }

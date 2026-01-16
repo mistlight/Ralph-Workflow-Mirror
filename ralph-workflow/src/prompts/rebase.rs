@@ -11,6 +11,8 @@
 
 #![deny(unsafe_code)]
 
+#[cfg(test)]
+use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -62,6 +64,59 @@ pub fn build_conflict_resolution_prompt(
         // Use fallback template
         let fallback_template_content = include_str!("templates/conflict_resolution_fallback.txt");
         let fallback_template = Template::new(fallback_template_content);
+        fallback_template.render(&variables).unwrap_or_else(|e| {
+            eprintln!("Critical: Failed to render fallback template: {e}");
+            // Last resort: minimal emergency prompt - conflicts_section is captured from closure
+            format!(
+                "# MERGE CONFLICT RESOLUTION\n\nResolve these conflicts:\n\n{}",
+                &conflicts_section
+            )
+        })
+    })
+}
+
+/// Build a conflict resolution prompt using template registry.
+///
+/// This version uses the template registry which supports user template overrides.
+/// It's the recommended way to generate prompts going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `conflicts` - Map of file paths to their conflict information
+/// * `prompt_md_content` - Optional content from PROMPT.md for task context
+/// * `plan_content` - Optional content from PLAN.md for additional context
+#[cfg(test)]
+pub fn build_conflict_resolution_prompt_with_context(
+    context: &TemplateContext,
+    conflicts: &HashMap<String, FileConflict>,
+    prompt_md_content: Option<&str>,
+    plan_content: Option<&str>,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("conflict_resolution")
+        .unwrap_or_else(|_| include_str!("templates/conflict_resolution.txt").to_string());
+    let template = Template::new(&template_content);
+
+    let ctx_section = format_context_section(prompt_md_content, plan_content);
+    let conflicts_section = format_conflicts_section(conflicts);
+
+    let variables = HashMap::from([
+        ("CONTEXT", ctx_section),
+        ("CONFLICTS", conflicts_section.clone()),
+    ]);
+
+    template.render(&variables).unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to render conflict resolution template: {e}");
+        // Use fallback template
+        let fallback_template_content = context
+            .registry()
+            .get_template("conflict_resolution_fallback")
+            .unwrap_or_else(|_| {
+                include_str!("templates/conflict_resolution_fallback.txt").to_string()
+            });
+        let fallback_template = Template::new(&fallback_template_content);
         fallback_template.render(&variables).unwrap_or_else(|e| {
             eprintln!("Critical: Failed to render fallback template: {e}");
             // Last resort: minimal emergency prompt - conflicts_section is captured from closure
@@ -335,5 +390,81 @@ mod tests {
         assert!(prompt.contains("## Conflict Resolution Instructions"));
         assert!(prompt.contains("## Output Format"));
         assert!(prompt.contains("resolved_files"));
+    }
+
+    #[test]
+    fn test_build_conflict_resolution_prompt_with_registry_context() {
+        let context = TemplateContext::default();
+        let conflicts = HashMap::new();
+        let prompt =
+            build_conflict_resolution_prompt_with_context(&context, &conflicts, None, None);
+
+        // The prompt should NOT mention "rebase" or "rebasing"
+        assert!(!prompt.to_lowercase().contains("rebase"));
+        assert!(!prompt.to_lowercase().contains("rebasing"));
+
+        // But it SHOULD mention "merge conflict"
+        assert!(prompt.to_lowercase().contains("merge conflict"));
+    }
+
+    #[test]
+    fn test_build_conflict_resolution_prompt_with_registry_context_and_content() {
+        let context = TemplateContext::default();
+        let mut conflicts = HashMap::new();
+        conflicts.insert(
+            "test.rs".to_string(),
+            FileConflict {
+                conflict_content: "<<<<<<< ours\nfn foo() {}\n=======\nfn bar() {}\n>>>>>>> theirs"
+                    .to_string(),
+                current_content: "<<<<<<< ours\nfn foo() {}\n=======\nfn bar() {}\n>>>>>>> theirs"
+                    .to_string(),
+            },
+        );
+
+        let prompt_md = "Add a new feature";
+        let plan = "1. Create foo function\n2. Create bar function";
+
+        let prompt = build_conflict_resolution_prompt_with_context(
+            &context,
+            &conflicts,
+            Some(prompt_md),
+            Some(plan),
+        );
+
+        // Should include context from PROMPT.md
+        assert!(prompt.contains("Add a new feature"));
+
+        // Should include context from PLAN.md
+        assert!(prompt.contains("Create foo function"));
+        assert!(prompt.contains("Create bar function"));
+
+        // Should include the conflicted file
+        assert!(prompt.contains("test.rs"));
+
+        // Should NOT mention rebase
+        assert!(!prompt.to_lowercase().contains("rebase"));
+    }
+
+    #[test]
+    fn test_registry_context_based_matches_regular() {
+        let context = TemplateContext::default();
+        let mut conflicts = HashMap::new();
+        conflicts.insert(
+            "test.rs".to_string(),
+            FileConflict {
+                conflict_content: "conflict".to_string(),
+                current_content: "current".to_string(),
+            },
+        );
+
+        let regular = build_conflict_resolution_prompt(&conflicts, Some("prompt"), Some("plan"));
+        let with_context = build_conflict_resolution_prompt_with_context(
+            &context,
+            &conflicts,
+            Some("prompt"),
+            Some("plan"),
+        );
+        // Both should produce equivalent output
+        assert_eq!(regular, with_context);
     }
 }

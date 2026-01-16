@@ -11,14 +11,13 @@
 //! 2. Embedded template: Compiled-in fallback
 //! 3. Error: Template not found
 
+#[cfg(test)]
 use std::fs;
 use std::path::PathBuf;
 
-use crate::prompts::partials::get_shared_partials;
-
 /// Error type for template loading operations.
 #[derive(Debug, Clone, thiserror::Error)]
-#[allow(dead_code)]
+#[cfg(test)]
 pub enum TemplateError {
     /// Template not found in user directory or embedded catalog
     #[error("Template '{name}' not found")]
@@ -27,10 +26,6 @@ pub enum TemplateError {
     /// Error reading user template file
     #[error("Failed to read template '{name}': {reason}")]
     ReadError { name: String, reason: String },
-
-    /// User template has invalid syntax
-    #[error("Template '{name}' has invalid syntax: {reason}")]
-    SyntaxError { name: String, reason: String },
 }
 
 /// Template registry for loading templates from multiple sources.
@@ -102,25 +97,6 @@ impl TemplateRegistry {
         }
     }
 
-    /// Get the file path for a user template.
-    ///
-    /// # Returns
-    ///
-    /// * `Some(PathBuf)` - Path to user template if it exists
-    /// * `None` - User template directory not configured or file doesn't exist
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn user_template_path(&self, name: &str) -> Option<PathBuf> {
-        self.user_templates_dir.as_ref().and_then(|dir| {
-            let path = dir.join(format!("{name}.txt"));
-            if path.exists() {
-                Some(path)
-            } else {
-                None
-            }
-        })
-    }
-
     /// Load a template by name.
     ///
     /// Template loading priority:
@@ -136,7 +112,7 @@ impl TemplateRegistry {
     ///
     /// * `Ok(String)` - Template content
     /// * `Err(TemplateError)` - Template not found or read error
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get_template(&self, name: &str) -> Result<String, TemplateError> {
         use crate::prompts::template_catalog;
 
@@ -162,51 +138,13 @@ impl TemplateRegistry {
         })
     }
 
-    /// Load a partial template by name.
-    ///
-    /// Partials are shared template snippets that can be included in other templates.
-    /// User partials override embedded partials, similar to regular templates.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Partial name (without `.txt` extension)
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(String)` - Partial content
-    /// * `Err(TemplateError)` - Partial not found
-    #[allow(dead_code)]
-    pub fn get_partial(&self, name: &str) -> Result<String, TemplateError> {
-        // Try user partial first (stored in user templates dir)
-        if let Some(user_dir) = &self.user_templates_dir {
-            let user_path = user_dir.join(format!("{name}.txt"));
-            if user_path.exists() {
-                return fs::read_to_string(&user_path).map_err(|e| TemplateError::ReadError {
-                    name: name.to_string(),
-                    reason: e.to_string(),
-                });
-            }
-        }
-
-        // Fall back to embedded partials
-        let partials = get_shared_partials();
-        if let Some(content) = partials.get(name) {
-            return Ok(content.clone());
-        }
-
-        // Partial not found
-        Err(TemplateError::TemplateNotFound {
-            name: name.to_string(),
-        })
-    }
-
     /// Get all template names available in the embedded catalog.
     ///
     /// # Returns
     ///
     /// A vector of all embedded template names, sorted alphabetically.
     #[must_use]
-    #[allow(dead_code)]
+    #[cfg(test)]
     #[allow(clippy::unused_self)]
     pub fn all_template_names(&self) -> Vec<String> {
         use crate::prompts::template_catalog;
@@ -216,32 +154,15 @@ impl TemplateRegistry {
             .collect()
     }
 
-    /// Get metadata about an embedded template.
-    ///
-    /// # Returns
-    ///
-    /// * `Some(&EmbeddedTemplate)` - Template metadata if found
-    /// * `None` - Template not found in embedded catalog
-    #[must_use]
-    #[allow(dead_code)]
-    #[allow(clippy::unused_self)]
-    pub fn template_metadata(
-        &self,
-        name: &str,
-    ) -> Option<&'static crate::prompts::template_catalog::EmbeddedTemplate> {
-        use crate::prompts::template_catalog;
-        template_catalog::get_template_metadata(name)
-    }
-
     /// Check if a template exists (either user or embedded).
     ///
     /// # Returns
     ///
     /// `true` if the template exists in user directory or embedded catalog
     #[must_use]
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn template_exists(&self, name: &str) -> bool {
-        self.has_user_template(name) || self.template_metadata(name).is_some()
+        self.has_user_template(name) || self.get_template(name).is_ok()
     }
 }
 
@@ -324,23 +245,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_partial_embedded() {
-        let registry = TemplateRegistry::new(None);
-        let partials = get_shared_partials();
-        if let Some((name, _)) = partials.iter().next() {
-            let result = registry.get_partial(name);
-            assert!(result.is_ok());
-        }
-    }
-
-    #[test]
-    fn test_get_partial_not_found() {
-        let registry = TemplateRegistry::new(None);
-        let result = registry.get_partial("nonexistent_partial");
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_all_template_names() {
         let registry = TemplateRegistry::new(None);
         let names = registry.all_template_names();
@@ -348,23 +252,6 @@ mod tests {
         assert!(names.len() >= 20); // At least 20 templates
         assert!(names.contains(&"developer_iteration".to_string()));
         assert!(names.contains(&"commit_message_xml".to_string()));
-    }
-
-    #[test]
-    fn test_template_metadata() {
-        let registry = TemplateRegistry::new(None);
-        let metadata = registry.template_metadata("commit_message_xml");
-        assert!(metadata.is_some());
-        let template = metadata.unwrap();
-        assert_eq!(template.name, "commit_message_xml");
-        assert!(!template.description.is_empty());
-    }
-
-    #[test]
-    fn test_template_metadata_not_found() {
-        let registry = TemplateRegistry::new(None);
-        let metadata = registry.template_metadata("nonexistent");
-        assert!(metadata.is_none());
     }
 
     #[test]
@@ -378,12 +265,6 @@ mod tests {
     fn test_template_not_exists() {
         let registry = TemplateRegistry::new(None);
         assert!(!registry.template_exists("nonexistent_template"));
-    }
-
-    #[test]
-    fn test_user_template_path_none() {
-        let registry = TemplateRegistry::new(None);
-        assert!(registry.user_template_path("developer_iteration").is_none());
     }
 
     #[test]
