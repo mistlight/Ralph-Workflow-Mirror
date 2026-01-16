@@ -1,6 +1,6 @@
-# Per-worktree prompt (local)
-PROMPT.md
-PROMPT*
+# Per-worktree prompt (local) - anchored to root to avoid matching src/prompts/
+/PROMPT.md
+/PROMPT*
 
 # Agent loop artifacts (local)
 .agent/

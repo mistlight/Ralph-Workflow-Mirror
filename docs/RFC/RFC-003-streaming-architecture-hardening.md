@@ -1,0 +1,563 @@
+# RFC-003: AI Agent Streaming Architecture Hardening
+
+**RFC Number**: RFC-003
+**Title**: AI Agent Streaming Architecture Hardening
+**Status**: Draft
+**Author**: Architecture Analysis
+**Created**: 2026-01-16
+
+---
+
+## Abstract
+
+This RFC documents the current streaming architecture for AI agent output in Ralph and proposes a framework for continuous hardening. The streaming system handles real-time NDJSON parsing, multiline cursor-based terminal rendering, and state management across multiple agent types (Claude, Codex, Gemini, OpenCode). This RFC identifies architectural strengths, known edge cases, and establishes principles for ongoing improvement.
+
+---
+
+## Motivation
+
+The streaming system is a critical path for user experience—it's the primary way users observe AI agent activity. Current implementation is production-ready but has accumulated technical debt and edge case handling that would benefit from systematic review and hardening.
+
+### Why This RFC Exists
+
+1. **Document Tribal Knowledge**: The streaming system has sophisticated edge case handling (snapshot-as-delta detection, GLM protocol quirks) that isn't fully documented
+2. **Establish Hardening Framework**: Define principles for evaluating and improving streaming reliability
+3. **Enable Continuous Improvement**: Create a living document that guides incremental enhancements
+4. **Prevent Regression**: Codify invariants that must be maintained across changes
+
+### Current Pain Points
+
+| Issue | User Impact | Frequency |
+|-------|-------------|-----------|
+| Escape sequences leak to files when piped | Corrupted log output | Common |
+| Long lines wrap and break in-place updates | Visual glitches | Occasional |
+| Warnings print unconditionally to stderr | Noisy production output | With GLM agents |
+| No graceful degradation for non-ANSI terminals | Broken rendering | Rare |
+
+---
+
+## Current Architecture
+
+### Three-Layer Design
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Execution Layer                          │
+│  prompt.rs: spawn_agent_process(), stream_agent_output()    │
+│  - BufReader with 8KB chunks                                │
+│  - Routes to appropriate parser based on JsonParserType     │
+│  - Stderr collected in separate thread (512KB max)          │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     Parser Layer                            │
+│  claude.rs, codex.rs, gemini.rs, opencode.rs                │
+│  - NDJSON deserialization via serde                         │
+│  - StreamingSession for state management                    │
+│  - Event classification (delta/complete/control/error)      │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Rendering Layer                          │
+│  delta_display.rs: DeltaRenderer trait, TextDeltaRenderer   │
+│  - Escape sequences for in-place updates                    │
+│  - Content sanitization (newlines → spaces)                 │
+│  - Prefix formatting with colors                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Files
+
+| File | Lines | Responsibility |
+|------|-------|----------------|
+| `streaming_state.rs` | ~1,460 | Unified state tracking, snapshot detection, deduplication |
+| `delta_display.rs` | ~790 | Terminal rendering, escape sequences, sanitization |
+| `claude.rs` | ~800 | Claude protocol parsing, primary parser |
+| `prompt.rs` | ~440 | Process spawning, output routing |
+| `health.rs` | ~900 | Parser health metrics, quality monitoring |
+
+### Multiline Cursor Pattern
+
+The renderer uses the industry-standard multiline cursor pattern (Rich, Ink, Bubble Tea):
+
+```
+[agent] Hello\n\x1b[1A           ← First: content + newline + cursor up
+\x1b[2K\r[agent] Hello World\n\x1b[1A  ← Update: clear + rewrite + newline + cursor up
+[agent] Hello World!\n\x1b[1B\n       ← Complete: cursor down + newline
+```
+
+**Escape Sequence Reference**:
+
+| Sequence | Name | Purpose |
+|----------|------|---------|
+| `\x1b[2K` | Clear Line | Erase entire line (not just to cursor) |
+| `\r` | Carriage Return | Move cursor to column 0 |
+| `\x1b[1A` | Cursor Up | Move cursor up 1 line |
+| `\x1b[1B` | Cursor Down | Move cursor down 1 line |
+| `\n` | Newline | Flush buffer, move to next line |
+
+**Why This Pattern**:
+- Newline forces immediate terminal buffer flush
+- Cursor repositioning enables reliable in-place rewrites
+- Works across terminal emulators with ANSI support
+
+### Streaming State Machine
+
+```
+                    ┌──────────┐
+                    │   Idle   │◄────────────────────┐
+                    └────┬─────┘                     │
+                         │ on_message_start()        │
+                         ▼                           │
+                    ┌──────────┐                     │
+              ┌────►│Streaming │◄────┐               │
+              │     └────┬─────┘     │               │
+              │          │           │               │
+    on_text_delta()      │     on_thinking_delta()   │
+              │          │           │               │
+              └──────────┴───────────┘               │
+                         │ on_message_stop()         │
+                         ▼                           │
+                    ┌──────────┐                     │
+                    │Finalized │─────────────────────┘
+                    └──────────┘   (next message_start)
+```
+
+### Delta Contract
+
+**Invariant**: Every streaming event contains only newly generated text (delta), never full accumulated content (snapshot).
+
+**Violation Detection** (`streaming_state.rs:443-534`):
+1. Size threshold: Deltas > 200 chars trigger warning
+2. Content matching: If incoming text starts with/contains accumulated, it's a snapshot
+3. Pattern detection: 3+ large deltas indicates systematic snapshot-as-delta bug
+
+**Auto-Repair**: When snapshot detected, extract only the truly new portion to prevent duplication.
+
+---
+
+## Known Issues & Current Mitigations
+
+### Issue 1: Snapshot-as-Delta Bug (GLM/ccs-glm)
+
+**Problem**: Some agents send full accumulated content as "delta" instead of incremental chunks.
+
+**Impact**: Exponential content duplication:
+```
+Delta 1: "Hello"           → Display: "Hello"
+Delta 2: "Hello World"     → Display: "HelloHello World" (BUG!)
+Delta 3: "Hello World!"    → Display: "HelloHello WorldHello World!" (WORSE!)
+```
+
+**Current Mitigation** (`streaming_state.rs:674-778`):
+- `is_likely_snapshot()`: Detects if incoming text contains previous accumulated content
+- `get_delta_from_snapshot()`: Extracts only the new portion
+- Fuzzy matching for >85% content overlap
+
+**Gaps**:
+- False positives possible when genuine large delta legitimately starts with previous content
+- No metrics on how often auto-repair triggers
+- Warnings unconditionally printed to stderr
+
+### Issue 2: Repeated MessageStart During Streaming
+
+**Problem**: GLM sends `MessageStart` mid-stream, resetting state and causing prefix spam.
+
+**Current Mitigation** (`streaming_state.rs:235-273`):
+- Detect `Streaming` → `MessageStart` transition
+- Preserve `output_started_for_key` to prevent re-displaying prefix
+- Clear accumulated content but maintain output tracking
+
+**Gaps**:
+- Warning always printed regardless of verbosity level
+- No configurable behavior for handling protocol violations
+
+### Issue 3: Duplicate Final Message Display
+
+**Problem**: After streaming deltas complete, the "Assistant" event re-displays same content.
+
+**Current Mitigation** (`claude.rs:281-389`):
+- Track message ID via `displayed_final_messages`
+- Check `is_duplicate_final_message()` before display
+- Fallback to `has_any_streamed_content()` when ID unavailable
+
+**Gaps**:
+- Fallback is brittle—any streamed content skips entire message
+- Tool use events may still duplicate in edge cases
+
+### Issue 4: Terminal Compatibility
+
+**Problem**: Escape sequences fail or leak in various scenarios:
+- Non-ANSI terminals (e.g., `TERM=dumb`)
+- Piped output (`ralph | tee log.txt`)
+- Very long lines (wrap affects cursor positioning)
+
+**Current Mitigation**: None explicit—assumes ANSI terminal.
+
+**Gaps**:
+- No TTY detection
+- No graceful degradation
+- No line length truncation during streaming
+
+### Issue 5: Content Block Transitions
+
+**Problem**: Without proper finalization, content from different blocks concatenates ("glued text").
+
+**Current Mitigation** (`streaming_state.rs:334-386`):
+- `on_content_block_start()` finalizes previous block
+- Only clears accumulated when transitioning to different index
+- `ContentBlockState` tracks current block and output status
+
+**Gaps**:
+- Limited test coverage for rapid index switches
+- Edge case: repeated `ContentBlockStart` for same index
+
+---
+
+## Architectural Principles
+
+### Principle 1: Defensive Parsing
+
+> Assume agents will violate the streaming contract. Detect and repair rather than crash.
+
+**Application**:
+- Always validate delta size and content patterns
+- Auto-repair snapshot-as-delta violations
+- Log violations for debugging but continue gracefully
+
+### Principle 2: Progressive Enhancement
+
+> Support the best experience on capable terminals while degrading gracefully.
+
+**Application**:
+- Detect terminal capabilities (TTY, ANSI support)
+- Provide fallback rendering for limited terminals
+- Never corrupt output in non-TTY scenarios
+
+### Principle 3: Observable State
+
+> Make streaming state inspectable for debugging and monitoring.
+
+**Application**:
+- Expose `StreamingQualityMetrics` after each run
+- Track repair counts, large delta frequencies
+- Enable verbose logging conditionally
+
+### Principle 4: Single Source of Truth
+
+> All parsers use `StreamingSession` for state—no parser-specific tracking.
+
+**Application**:
+- `StreamingSession` is the only authority on streaming state
+- Parsers call lifecycle methods, don't maintain parallel state
+- Deduplication logic centralized in session
+
+### Principle 5: Separation of Concerns
+
+> Parsing, state management, and rendering are independent layers.
+
+**Application**:
+- Parsers handle protocol deserialization only
+- `StreamingSession` handles state transitions only
+- `DeltaRenderer` handles terminal output only
+
+---
+
+## Areas for Investigation
+
+This section captures areas that warrant exploration. Each area may spawn specific implementation work or may be deprioritized based on findings.
+
+### Area 1: Terminal Mode Detection
+
+**Question**: How should Ralph detect terminal capabilities and adapt rendering?
+
+**Considerations**:
+- `std::io::IsTerminal` (Rust 1.70+) for TTY detection
+- `TERM` environment variable parsing
+- `NO_COLOR` / `CLICOLOR` compliance (per RFC-002)
+- Interaction with `--no-ansi` flag concept
+
+**Exploration Tasks**:
+- [ ] Survey how production CLIs (gh, cargo) handle terminal detection
+- [ ] Identify minimum viable terminal mode enum: `Full | Basic | None`
+- [ ] Prototype `TerminalMode` threading through parser → renderer
+
+### Area 2: Conditional Warning Emission
+
+**Question**: How should streaming warnings integrate with the logging system?
+
+**Considerations**:
+- Current `eprintln!` is not verbosity-aware
+- Warnings valuable for debugging but noisy in production
+- May need separate "streaming diagnostics" verbosity
+
+**Exploration Tasks**:
+- [ ] Audit all `eprintln!` in `streaming_state.rs` (lines 241, 460, 472, 494)
+- [ ] Design integration with existing `Logger` or `tracing`
+- [ ] Define verbosity thresholds for different warning types
+
+### Area 3: Streaming Metrics Enhancement
+
+**Question**: What metrics would help diagnose streaming issues in production?
+
+**Current State**: `StreamingQualityMetrics` has basic size statistics.
+
+**Potential Additions**:
+- `snapshot_repairs_count`: How often auto-repair triggered
+- `large_delta_count`: How many deltas exceeded threshold
+- `protocol_violations`: MessageStart-during-Streaming count
+- `content_hash`: For deduplication debugging
+
+**Exploration Tasks**:
+- [ ] Define metric schema that balances detail vs overhead
+- [ ] Prototype collection points in `StreamingSession`
+- [ ] Design output format (JSON for machine, text for human)
+
+### Area 4: Line Length Management
+
+**Question**: How should long lines be handled during streaming?
+
+**Problem**: Lines longer than terminal width wrap, breaking cursor positioning.
+
+**Options**:
+1. Truncate displayed content to terminal width with ellipsis
+2. Switch to scroll mode for long content
+3. Do nothing (current behavior)
+
+**Exploration Tasks**:
+- [ ] Measure terminal width reliably (`COLUMNS` env, `terminal_size` crate)
+- [ ] Prototype truncation in `sanitize_for_display()`
+- [ ] Test visual behavior with wrapped lines
+
+### Area 5: Content Hash Deduplication
+
+**Question**: Can content hashing improve deduplication when message IDs unavailable?
+
+**Current State**: Fallback uses `has_any_streamed_content()` which is coarse.
+
+**Potential Approach**:
+- Hash accumulated content at `message_stop`
+- Compare hash when final message arrives
+- More precise than "any content was streamed"
+
+**Exploration Tasks**:
+- [ ] Identify hash algorithm (xxhash for speed?)
+- [ ] Determine what content to hash (full? first N chars?)
+- [ ] Evaluate memory/performance overhead
+
+### Area 6: Prefix Debouncing
+
+**Question**: Should prefix display frequency be configurable?
+
+**Current State**: Prefix shown on every delta. `PrefixDebouncer` exists but is `#[cfg(test)]` only.
+
+**Considerations**:
+- Character-by-character streaming creates visual noise
+- Some users prefer always seeing the prefix
+- May need time-based and count-based thresholds
+
+**Exploration Tasks**:
+- [ ] Gather user feedback on prefix repetition
+- [ ] Enable `PrefixDebouncer` for production experimentation
+- [ ] Design config surface (`streaming.prefix_debounce_ms`?)
+
+### Area 7: Non-TTY Output Mode
+
+**Question**: What should streaming look like when stdout is not a terminal?
+
+**Current State**: Escape sequences leak to files.
+
+**Options**:
+1. Disable all in-place updates, use simple line output
+2. Strip escape sequences from final output
+3. Buffer and emit clean output at end
+
+**Exploration Tasks**:
+- [ ] Define "clean" output format for non-TTY
+- [ ] Prototype `DeltaRenderer` variant without escapes
+- [ ] Test with common non-TTY scenarios (pipes, redirects, CI)
+
+---
+
+## Implementation Priorities
+
+When addressing areas above, prioritize based on:
+
+| Priority | Criteria |
+|----------|----------|
+| **P0** | Causes data corruption or misleading output |
+| **P1** | Affects common user scenarios |
+| **P2** | Affects edge cases or power users |
+| **P3** | Polish and optimization |
+
+### Current Priority Assessment
+
+| Area | Priority | Rationale |
+|------|----------|-----------|
+| Terminal Mode Detection | P1 | Piped output is common; escape leakage is confusing |
+| Conditional Warnings | P1 | Noisy stderr affects GLM users regularly |
+| Streaming Metrics | P2 | Useful for debugging but not user-facing |
+| Line Length Management | P2 | Affects occasional long responses |
+| Content Hash Dedup | P2 | Current fallback works for most cases |
+| Prefix Debouncing | P3 | Cosmetic; current behavior is acceptable |
+| Non-TTY Output Mode | P1 | Same as terminal detection; common scenario |
+
+---
+
+## Testing Strategy
+
+### Invariants to Test
+
+1. **Delta Contract**: Accumulated content equals concatenation of all deltas
+2. **No Duplication**: Final message display doesn't repeat streamed content
+3. **State Reset**: New message clears previous message state
+4. **Prefix Logic**: First delta shows prefix; subsequent don't (unless same-index restart)
+
+### Edge Cases to Cover
+
+```rust
+// Snapshot-as-delta
+session.on_text_delta(0, "Hello");
+session.on_text_delta(0, "Hello World");  // Should extract " World"
+
+// Repeated MessageStart
+session.on_message_start();
+session.on_text_delta(0, "A");
+session.on_message_start();  // Mid-stream restart
+session.on_text_delta(0, "B");  // Should NOT show prefix again
+
+// Rapid index switches
+session.on_content_block_start(0);
+session.on_text_delta(0, "X");
+session.on_content_block_start(1);
+session.on_content_block_start(0);  // Back to 0
+session.on_text_delta(0, "Y");  // What's the expected state?
+
+// Very long single delta
+session.on_text_delta(0, "x".repeat(10000));  // Warn? Truncate?
+
+// Empty deltas
+session.on_text_delta(0, "");
+session.on_text_delta(0, "   ");
+```
+
+### Test Commands
+
+```bash
+# All streaming tests
+cargo test -p ralph-workflow streaming
+
+# Snapshot detection tests
+cargo test -p ralph-workflow test_snapshot
+
+# Delta display tests
+cargo test -p ralph-workflow delta_display
+
+# Full parser integration
+cargo test -p ralph-workflow json_parser::tests
+```
+
+---
+
+## Success Criteria
+
+### Short-Term (This RFC)
+- [ ] Document current architecture accurately
+- [ ] Identify all known edge cases
+- [ ] Establish investigation areas for future work
+
+### Medium-Term (Next Quarter)
+- [ ] Terminal mode detection implemented
+- [ ] Warnings conditional on verbosity
+- [ ] Non-TTY output clean (no escape leakage)
+
+### Long-Term (Ongoing)
+- [ ] Zero streaming-related bug reports per release
+- [ ] Streaming metrics available for debugging
+- [ ] All edge cases covered by tests
+
+---
+
+## Risks & Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| Regression in snapshot detection | Comprehensive test suite, golden tests |
+| Performance impact from metrics | Lazy computation, opt-in detailed metrics |
+| Breaking changes to `DeltaRenderer` trait | Versioned trait or feature flag |
+| Terminal detection false positives | Conservative defaults, user override flag |
+
+---
+
+## Alternatives Considered
+
+### Alternative 1: Replace Cursor Pattern with Scroll
+
+Instead of in-place updates, always append new lines and let terminal scroll.
+
+**Rejected**: Loses the "building up" visual effect that users expect from streaming.
+
+### Alternative 2: Full TUI Framework
+
+Use `ratatui` or similar for sophisticated rendering.
+
+**Deferred**: Current escape sequence approach is simpler and sufficient. May revisit for complex multi-agent scenarios.
+
+### Alternative 3: Structured Streaming Output
+
+Emit structured events (JSON) and rely on external renderer.
+
+**Rejected**: Breaks the CLI-first philosophy. May add as opt-in mode later.
+
+---
+
+## References
+
+### Internal
+
+| File | Description |
+|------|-------------|
+| `ralph-workflow/src/json_parser/streaming_state.rs` | Core state management |
+| `ralph-workflow/src/json_parser/delta_display.rs` | Rendering implementation |
+| `ralph-workflow/src/json_parser/README.md` | Module documentation |
+| `ralph-workflow/src/json_parser/claude.rs` | Reference parser implementation |
+| `ralph-workflow/src/pipeline/prompt.rs` | Process spawning and routing |
+
+### External
+
+| Resource | Relevance |
+|----------|-----------|
+| [Rich (Python)](https://rich.readthedocs.io/) | Reference for terminal rendering patterns |
+| [Ink (React for CLI)](https://github.com/vadimdemedes/ink) | Similar cursor-based rendering |
+| [Bubble Tea (Go)](https://github.com/charmbracelet/bubbletea) | Production CLI framework patterns |
+| [ANSI Escape Codes](https://en.wikipedia.org/wiki/ANSI_escape_code) | Escape sequence reference |
+
+---
+
+## Open Questions
+
+1. **Threshold Tuning**: Is 200 chars the right `SNAPSHOT_THRESHOLD`? Should it be configurable?
+
+2. **Fuzzy Match Ratio**: Is 85% overlap the right threshold for fuzzy snapshot detection?
+
+3. **Warning Aggregation**: Should warnings be collected and summarized at end rather than inline?
+
+4. **Multi-Agent Streaming**: If Ralph supports parallel agents, how does rendering interleave?
+
+5. **State Persistence**: Should streaming state survive process restart for checkpoint/resume?
+
+6. **Accessibility**: Should there be a "no animation" mode that disables in-place updates entirely?
+
+---
+
+## Changelog
+
+| Date | Change |
+|------|--------|
+| 2026-01-16 | Initial draft |
+
+---
+
+*This RFC is a living document. Update as investigation areas are explored and implementations complete.*

@@ -20,6 +20,14 @@ CRITICAL CONSTRAINTS:
 
 Then apply these language-specific checks:
 
+{# ORIGINAL REQUEST - The user's original prompt #}
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+{# IMPLEMENTATION PLAN - What the changes are implementing #}
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
 Language-Specific checks (Optional Reference - Do NOT explore beyond the diff):
 {{GUIDELINES}}
 

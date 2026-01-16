@@ -24,6 +24,14 @@ Review for:
 3) Performance/resources (bottlenecks, leaks)
 4) Maintainability (error handling, tests)
 
+{# ORIGINAL REQUEST - The user's original prompt #}
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+{# IMPLEMENTATION PLAN - What the changes are implementing #}
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
 LANGUAGE-SPECIFIC CHECKS (Priority-Ordered) (Optional Reference - Do NOT explore beyond the diff):
 {{GUIDELINES}}
 

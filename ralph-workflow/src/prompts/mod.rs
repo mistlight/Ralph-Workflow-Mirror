@@ -34,37 +34,91 @@ pub use reviewer::{
 pub use template_engine::Template;
 pub use types::{Action, ContextLevel, Role};
 
-use crate::guidelines::ReviewGuidelines;
+/// Configuration for prompt generation.
+///
+/// Groups related parameters to reduce function argument count.
+#[derive(Debug, Clone, Default)]
+pub struct PromptConfig {
+    /// The current iteration number (for developer iteration prompts).
+    pub iteration: Option<u32>,
+    /// The total number of iterations (for developer iteration prompts).
+    pub total_iterations: Option<u32>,
+    /// PROMPT.md content for planning prompts.
+    pub prompt_md_content: Option<String>,
+    /// (PROMPT.md, PLAN.md) content tuple for developer iteration prompts.
+    pub prompt_and_plan: Option<(String, String)>,
+}
+
+impl PromptConfig {
+    /// Create a new prompt configuration with default values.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            iteration: None,
+            total_iterations: None,
+            prompt_md_content: None,
+            prompt_and_plan: None,
+        }
+    }
+
+    /// Set iteration numbers for developer iteration prompts.
+    #[must_use]
+    pub const fn with_iterations(mut self, iteration: u32, total: u32) -> Self {
+        self.iteration = Some(iteration);
+        self.total_iterations = Some(total);
+        self
+    }
+
+    /// Set PROMPT.md content for planning prompts.
+    #[must_use]
+    pub fn with_prompt_md(mut self, content: String) -> Self {
+        self.prompt_md_content = Some(content);
+        self
+    }
+
+    /// Set (PROMPT.md, PLAN.md) content tuple for developer iteration prompts.
+    #[must_use]
+    pub fn with_prompt_and_plan(mut self, prompt: String, plan: String) -> Self {
+        self.prompt_and_plan = Some((prompt, plan));
+        self
+    }
+}
 
 /// Generate a prompt for any agent type.
 ///
 /// This is the main dispatcher function that routes to the appropriate
 /// prompt generator based on role and action.
 ///
-/// The optional `guidelines` parameter allows providing language-specific review
-/// guidance when the project stack has been detected. When provided, review prompts
-/// will include tailored checks for the detected language and frameworks.
-///
-/// The optional `prompt_md_content` parameter allows providing PROMPT.md content
-/// directly to the planning prompt, preventing agents from discovering it through
-/// file exploration.
+/// The config parameter allows providing:
+/// - Language-specific review guidance when the project stack has been detected
+/// - PROMPT.md content for planning prompts
+/// - PROMPT.md and PLAN.md content for developer iteration prompts
 pub fn prompt_for_agent(
     role: Role,
     action: Action,
     context: ContextLevel,
-    iteration: Option<u32>,
-    total_iterations: Option<u32>,
-    _guidelines: Option<&ReviewGuidelines>,
-    prompt_md_content: Option<&str>,
+    config: PromptConfig,
 ) -> String {
     match (role, action) {
-        (_, Action::Plan) => prompt_plan(prompt_md_content),
-        (Role::Developer | Role::Reviewer, Action::Iterate) => prompt_developer_iteration(
-            iteration.unwrap_or(1),
-            total_iterations.unwrap_or(1),
-            context,
-        ),
-        (_, Action::Fix) => prompt_fix(),
+        (_, Action::Plan) => prompt_plan(config.prompt_md_content.as_deref()),
+        (Role::Developer | Role::Reviewer, Action::Iterate) => {
+            let (prompt_content, plan_content) = config
+                .prompt_and_plan
+                .unwrap_or((String::new(), String::new()));
+            prompt_developer_iteration(
+                config.iteration.unwrap_or(1),
+                config.total_iterations.unwrap_or(1),
+                context,
+                &prompt_content,
+                &plan_content,
+            )
+        }
+        (_, Action::Fix) => {
+            let (prompt_content, plan_content) = config
+                .prompt_and_plan
+                .unwrap_or((String::new(), String::new()));
+            prompt_fix(&prompt_content, &plan_content)
+        }
     }
 }
 
@@ -78,14 +132,14 @@ mod tests {
             Role::Developer,
             Action::Iterate,
             ContextLevel::Normal,
-            Some(3),
-            Some(10),
-            None,
-            None,
+            PromptConfig::new()
+                .with_iterations(3, 10)
+                .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
         );
         // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
         assert!(!result.contains("PROMPT.md"));
-        assert!(result.contains("PLAN.md"));
+        assert!(result.contains("test prompt"));
+        assert!(result.contains("test plan"));
     }
 
     #[test]
@@ -93,6 +147,8 @@ mod tests {
         let result = prompt_detailed_review_without_guidelines_with_diff(
             ContextLevel::Minimal,
             "sample diff",
+            "",
+            "",
         );
         assert!(result.contains("fresh eyes"));
         assert!(result.contains("DETAILED REVIEW MODE"));
@@ -104,10 +160,7 @@ mod tests {
             Role::Developer,
             Action::Plan,
             ContextLevel::Normal,
-            None,
-            None,
-            None,
-            None,
+            PromptConfig::new().with_prompt_md("test requirements".to_string()),
         );
         // Plan is now returned as structured output, not written to file
         assert!(result.contains("PLANNING MODE"));
@@ -124,17 +177,21 @@ mod tests {
         ];
 
         let prompts_to_check = vec![
-            prompt_developer_iteration(1, 5, ContextLevel::Normal),
-            prompt_developer_iteration(1, 5, ContextLevel::Minimal),
+            prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
+            prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
             prompt_detailed_review_without_guidelines_with_diff(
                 ContextLevel::Normal,
                 "sample diff",
+                "",
+                "",
             ),
             prompt_detailed_review_without_guidelines_with_diff(
                 ContextLevel::Minimal,
                 "sample diff",
+                "",
+                "",
             ),
-            prompt_fix(),
+            prompt_fix("", ""),
             prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
         ];
@@ -158,13 +215,28 @@ mod tests {
             Role::Developer,
             Action::Fix,
             ContextLevel::Normal,
-            None,
-            None,
-            None,
-            None,
+            PromptConfig::new()
+                .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
         );
         assert!(result.contains("FIX MODE"));
         assert!(result.contains("ISSUES.md"));
+        // Should include PROMPT and PLAN context
+        assert!(result.contains("test prompt"));
+        assert!(result.contains("test plan"));
+    }
+
+    #[test]
+    fn test_prompt_for_agent_fix_with_empty_context() {
+        let result = prompt_for_agent(
+            Role::Developer,
+            Action::Fix,
+            ContextLevel::Normal,
+            PromptConfig::new(),
+        );
+        assert!(result.contains("FIX MODE"));
+        assert!(result.contains("ISSUES.md"));
+        // Should still work with empty context
+        assert!(!result.is_empty());
     }
 
     #[test]
@@ -174,10 +246,9 @@ mod tests {
             Role::Reviewer,
             Action::Iterate,
             ContextLevel::Normal,
-            Some(1),
-            Some(3),
-            None,
-            None,
+            PromptConfig::new()
+                .with_iterations(1, 3)
+                .with_prompt_and_plan(String::new(), String::new()),
         );
         // Should fall back to developer iteration prompt
         assert!(result.contains("IMPLEMENTATION MODE"));
@@ -196,8 +267,8 @@ mod tests {
         ];
 
         let prompts_to_check = vec![
-            prompt_developer_iteration(1, 5, ContextLevel::Normal),
-            prompt_fix(),
+            prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
+            prompt_fix("", ""),
         ];
 
         for prompt in prompts_to_check {
@@ -216,7 +287,7 @@ mod tests {
     #[test]
     fn test_developer_notes_md_not_referenced() {
         // Developer prompt should NOT mention NOTES.md at all (isolation mode)
-        let developer_prompt = prompt_developer_iteration(1, 5, ContextLevel::Normal);
+        let developer_prompt = prompt_developer_iteration(1, 5, ContextLevel::Normal, "", "");
         assert!(
             !developer_prompt.contains("NOTES.md"),
             "Developer prompt should not reference NOTES.md in isolation mode"
@@ -243,17 +314,21 @@ mod tests {
         ];
 
         let prompts_to_check = vec![
-            prompt_developer_iteration(1, 5, ContextLevel::Normal),
-            prompt_developer_iteration(1, 5, ContextLevel::Minimal),
+            prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
+            prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
             prompt_detailed_review_without_guidelines_with_diff(
                 ContextLevel::Normal,
                 "sample diff",
+                "",
+                "",
             ),
             prompt_detailed_review_without_guidelines_with_diff(
                 ContextLevel::Minimal,
                 "sample diff",
+                "",
+                "",
             ),
-            prompt_fix(),
+            prompt_fix("", ""),
             prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b\n"),
         ];

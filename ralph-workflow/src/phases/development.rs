@@ -17,7 +17,7 @@ use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
-use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
+use crate::prompts::{prompt_for_agent, Action, ContextLevel, PromptConfig, Role};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -96,14 +96,17 @@ pub fn run_development_phase(
         ctx.logger.info("Executing plan...");
         update_status("Starting development iteration", ctx.config.isolation_mode)?;
 
+        // Read PROMPT.md and PLAN.md for context in developer iteration
+        let prompt_md = fs::read_to_string("PROMPT.md").unwrap_or_default();
+        let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
+
         let prompt = prompt_for_agent(
             Role::Developer,
             Action::Iterate,
             developer_context,
-            Some(i),
-            Some(ctx.config.developer_iters),
-            None, // No guidelines needed for development iteration
-            None, // No PROMPT.md content needed for iteration
+            PromptConfig::new()
+                .with_iterations(i, ctx.config.developer_iters)
+                .with_prompt_and_plan(prompt_md, plan_md),
         );
 
         let exit_code = {
@@ -194,10 +197,9 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         Role::Developer,
         Action::Plan,
         ContextLevel::Normal,
-        None,
-        None,
-        None, // No guidelines needed for planning
-        prompt_md_content.as_deref(),
+        prompt_md_content
+            .map(|content| PromptConfig::new().with_prompt_md(content))
+            .unwrap_or_default(),
     );
 
     let log_dir = format!(".agent/logs/planning_{iteration}");
