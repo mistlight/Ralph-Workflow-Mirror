@@ -52,6 +52,7 @@ mod opencode;
 mod opencode_tests;
 mod stream_classifier;
 pub mod streaming_state;
+mod terminal;
 mod types;
 
 pub use claude::ClaudeParser;

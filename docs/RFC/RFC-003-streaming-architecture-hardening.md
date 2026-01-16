@@ -2,7 +2,7 @@
 
 **RFC Number**: RFC-003
 **Title**: AI Agent Streaming Architecture Hardening
-**Status**: Draft
+**Status**: In Progress
 **Author**: Architecture Analysis
 **Created**: 2026-01-16
 
@@ -294,9 +294,18 @@ This section captures areas that warrant exploration. Each area may spawn specif
 - May need separate "streaming diagnostics" verbosity
 
 **Exploration Tasks**:
-- [ ] Audit all `eprintln!` in `streaming_state.rs` (lines 241, 460, 472, 494)
-- [ ] Design integration with existing `Logger` or `tracing`
-- [ ] Define verbosity thresholds for different warning types
+- [x] Audit all `eprintln!` in `streaming_state.rs` (lines 241, 460, 472, 494)
+- [x] Design integration with existing `Logger` or `tracing`
+- [x] Define verbosity thresholds for different warning types
+
+**Implementation (2026-01-16)**:
+- Added `verbose_warnings: bool` field to `StreamingSession`
+- Added `with_verbose_warnings()` builder method
+- All four `eprintln!` warnings now conditional on `verbose_warnings`
+- Parsers enable `verbose_warnings` only when `Verbosity::Debug` (level 4)
+- Added comprehensive test coverage for conditional warning behavior
+- Default behavior: warnings suppressed (production-friendly)
+- Debug mode: warnings enabled for debugging GLM protocol issues
 
 ### Area 3: Streaming Metrics Enhancement
 
@@ -469,9 +478,9 @@ cargo test -p ralph-workflow json_parser::tests
 - [ ] Establish investigation areas for future work
 
 ### Medium-Term (Next Quarter)
-- [ ] Terminal mode detection implemented
-- [ ] Warnings conditional on verbosity
-- [ ] Non-TTY output clean (no escape leakage)
+- [x] Terminal mode detection implemented
+- [x] Warnings conditional on verbosity
+- [x] Non-TTY output clean (no escape leakage)
 
 ### Long-Term (Ongoing)
 - [ ] Zero streaming-related bug reports per release
@@ -557,6 +566,8 @@ Emit structured events (JSON) and rely on external renderer.
 | Date | Change |
 |------|--------|
 | 2026-01-16 | Initial draft |
+| 2026-01-16 | **Area 2 (Conditional Warning Emission) completed**: Added `verbose_warnings` field to `StreamingSession`, implemented `with_verbose_warnings()` builder, updated all four `eprintln!` calls to respect verbosity, added parser integration for `Verbosity::Debug` mode, added comprehensive tests |
+| 2026-01-16 | **Area 1 (Terminal Mode Detection) completed**: Implemented terminal capability detection with three modes (Full, Basic, None), added environment variable support (`NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE`, `TERM`), integrated with all parsers (Claude, Codex, Gemini, OpenCode), added comprehensive unit and integration tests for non-full terminal modes, verified clean output without escape sequences in non-TTY scenarios |
 
 ---
 

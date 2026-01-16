@@ -42,6 +42,7 @@ use std::rc::Rc;
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
+use super::terminal::TerminalMode;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType};
 
 /// `OpenCode` event types
@@ -132,16 +133,21 @@ pub struct OpenCodeParser {
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Terminal mode for output formatting
+    terminal_mode: RefCell<TerminalMode>,
 }
 
 impl OpenCodeParser {
     pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
+        let verbose_warnings = matches!(verbosity, Verbosity::Debug);
+        let streaming_session = StreamingSession::new().with_verbose_warnings(verbose_warnings);
         Self {
             colors,
             verbosity,
             log_file: None,
             display_name: "OpenCode".to_string(),
-            streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            streaming_session: Rc::new(RefCell::new(streaming_session)),
+            terminal_mode: RefCell::new(TerminalMode::detect()),
         }
     }
 
@@ -152,6 +158,12 @@ impl OpenCodeParser {
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_terminal_mode(self, mode: TerminalMode) -> Self {
+        *self.terminal_mode.borrow_mut() = mode;
         self
     }
 
@@ -284,8 +296,9 @@ impl OpenCodeParser {
             let color = if is_success { c.green() } else { c.yellow() };
 
             // Add final newline if we were streaming text
+            let terminal_mode = *self.terminal_mode.borrow();
             let newline_prefix = if is_duplicate || was_streaming {
-                TextDeltaRenderer::render_completion()
+                TextDeltaRenderer::render_completion(terminal_mode)
             } else {
                 String::new()
             };
@@ -443,12 +456,23 @@ impl OpenCodeParser {
                 let preview = truncate_text(&accumulated_text, limit);
 
                 // Use TextDeltaRenderer for consistent rendering across all parsers
+                let terminal_mode = *self.terminal_mode.borrow();
                 if show_prefix {
                     // First delta: use renderer with prefix
-                    return TextDeltaRenderer::render_first_delta(&preview, prefix, *c);
+                    return TextDeltaRenderer::render_first_delta(
+                        &preview,
+                        prefix,
+                        *c,
+                        terminal_mode,
+                    );
                 }
                 // Subsequent deltas: use renderer for in-place update
-                return TextDeltaRenderer::render_subsequent_delta(&preview, prefix, *c);
+                return TextDeltaRenderer::render_subsequent_delta(
+                    &preview,
+                    prefix,
+                    *c,
+                    terminal_mode,
+                );
             }
         }
         String::new()

@@ -41,6 +41,7 @@ use std::rc::Rc;
 
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
+use super::terminal::TerminalMode;
 use super::types::{format_unknown_json_event, CodexEvent};
 
 use event_handlers::{
@@ -61,18 +62,23 @@ pub struct CodexParser {
     reasoning_accumulator: Rc<RefCell<super::types::DeltaAccumulator>>,
     /// Turn counter for generating synthetic turn IDs
     turn_counter: Rc<RefCell<u64>>,
+    /// Terminal mode for output formatting
+    terminal_mode: RefCell<TerminalMode>,
 }
 
 impl CodexParser {
     pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
+        let verbose_warnings = matches!(verbosity, Verbosity::Debug);
+        let streaming_session = StreamingSession::new().with_verbose_warnings(verbose_warnings);
         Self {
             colors,
             verbosity,
             log_file: None,
             display_name: "Codex".to_string(),
-            streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            streaming_session: Rc::new(RefCell::new(streaming_session)),
             reasoning_accumulator: Rc::new(RefCell::new(super::types::DeltaAccumulator::new())),
             turn_counter: Rc::new(RefCell::new(0)),
+            terminal_mode: RefCell::new(TerminalMode::detect()),
         }
     }
 
@@ -83,6 +89,12 @@ impl CodexParser {
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_terminal_mode(self, mode: TerminalMode) -> Self {
+        *self.terminal_mode.borrow_mut() = mode;
         self
     }
 
@@ -110,6 +122,7 @@ impl CodexParser {
             display_name: &self.display_name,
             streaming_session: &self.streaming_session,
             reasoning_accumulator: &self.reasoning_accumulator,
+            terminal_mode: *self.terminal_mode.borrow(),
         };
 
         match event {
