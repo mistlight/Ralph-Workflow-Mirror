@@ -19,6 +19,7 @@ use crate::logger::Logger;
 use crate::phases::generate_commit_message;
 use crate::pipeline::PipelineRuntime;
 use crate::pipeline::Timer;
+use crate::prompts::TemplateContext;
 use std::env;
 
 /// Handles the `--show-commit-msg` command.
@@ -121,6 +122,7 @@ pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()
 /// Returns `Ok(())` on success or an error if generation fails.
 pub fn handle_generate_commit_msg(
     config: &Config,
+    template_context: &TemplateContext,
     registry: &AgentRegistry,
     logger: &Logger,
     colors: Colors,
@@ -152,8 +154,14 @@ pub fn handle_generate_commit_msg(
     // - Proper fallback chain support via run_with_fallback()
     // - Structured logging to .agent/logs/
     // - Meaningful error diagnostics
-    let result = generate_commit_message(&diff, registry, &mut runtime, developer_agent)
-        .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
+    let result = generate_commit_message(
+        &diff,
+        registry,
+        &mut runtime,
+        developer_agent,
+        template_context,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
 
     if !result.success || result.message.trim().is_empty() {
         anyhow::bail!("Commit message generation failed");

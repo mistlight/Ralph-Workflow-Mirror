@@ -10,6 +10,7 @@ use crate::guidelines::ReviewGuidelines;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Stats;
 use crate::pipeline::Timer;
+use crate::prompts::template_context::TemplateContext;
 
 /// Shared context for all pipeline phases.
 ///
@@ -34,6 +35,8 @@ pub struct PhaseContext<'a> {
     pub reviewer_agent: &'a str,
     /// Review guidelines based on detected project stack.
     pub review_guidelines: Option<&'a ReviewGuidelines>,
+    /// Template context for loading user templates.
+    pub template_context: &'a TemplateContext,
 }
 
 impl PhaseContext<'_> {}
@@ -69,6 +72,7 @@ mod tests {
     use crate::config::Config;
     use crate::logger::{Colors, Logger};
     use crate::pipeline::{Stats, Timer};
+    use crate::prompts::template_context::TemplateContext;
 
     /// Test fixture for creating `PhaseContext` in tests.
     struct TestFixture {
@@ -77,6 +81,7 @@ mod tests {
         logger: Logger,
         timer: Timer,
         stats: Stats,
+        template_context: TemplateContext,
     }
 
     impl TestFixture {
@@ -88,6 +93,7 @@ mod tests {
                 logger: Logger::new(colors),
                 timer: Timer::new(),
                 stats: Stats::default(),
+                template_context: TemplateContext::default(),
             }
         }
     }
@@ -117,6 +123,7 @@ mod tests {
             developer_agent: "developer-agent",
             reviewer_agent: "reviewer-agent",
             review_guidelines: None,
+            template_context: &fixture.template_context,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -151,6 +158,7 @@ mod tests {
             developer_agent: "developer-agent",
             reviewer_agent: "reviewer-agent-1",
             review_guidelines: None,
+            template_context: &fixture.template_context,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -177,6 +185,7 @@ mod tests {
             developer_agent: "fallback-developer",
             reviewer_agent: "fallback-reviewer",
             review_guidelines: None,
+            template_context: &fixture.template_context,
         };
 
         let result = get_primary_commit_agent(&ctx);

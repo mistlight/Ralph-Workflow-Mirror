@@ -95,10 +95,8 @@ impl IncrementalNdjsonParser {
 
     /// Process a single byte, tracking state and extracting complete JSONs.
     ///
-    /// # Panics
-    ///
-    /// This method will panic if the depth exceeds `MAX_JSON_DEPTH`. This is
-    /// intentional to prevent integer overflow from malicious input.
+    /// If the depth exceeds `MAX_JSON_DEPTH`, the parser will reset to a safe
+    /// state and skip the current JSON to prevent integer overflow from malicious input.
     fn process_byte(&mut self, byte: u8, complete_jsons: &mut Vec<String>) {
         // Handle escape sequences
         if self.escape_next {
@@ -123,11 +121,15 @@ impl IncrementalNdjsonParser {
                 self.depth += 1;
                 self.started = true;
                 // Check for depth limit to prevent overflow
-                assert!(
-                    self.depth <= MAX_JSON_DEPTH,
-                    "JSON nesting depth exceeds maximum of {MAX_JSON_DEPTH}. \
-                    This may indicate malicious input with extremely deep nesting."
-                );
+                if self.depth > MAX_JSON_DEPTH {
+                    // Depth exceeded - reset parser state to skip this malformed JSON
+                    self.buffer.clear();
+                    self.depth = 0;
+                    self.started = false;
+                    self.in_string = false;
+                    self.escape_next = false;
+                    return;
+                }
             }
             b'}' if !self.in_string && self.started => {
                 self.buffer.push(byte);
@@ -152,12 +154,7 @@ impl IncrementalNdjsonParser {
 
         // Convert to UTF-8 (should be valid JSON)
         let Ok(json_str) = String::from_utf8(self.buffer.drain(..json_end).collect()) else {
-            // Invalid UTF-8 - skip this JSON and log a warning.
-            // This may indicate data corruption or encoding issues in the input stream.
-            eprintln!(
-                "Warning: Skipping JSON with invalid UTF-8 encoding. \
-                This may indicate data corruption or encoding issues."
-            );
+            // Invalid UTF-8 - skip this JSON silently
             self.started = false;
             return;
         };
@@ -328,16 +325,20 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "JSON nesting depth exceeds maximum")]
     fn test_incremental_parser_depth_limit() {
         let mut parser = IncrementalNdjsonParser::new();
         // Create JSON with depth exceeding MAX_JSON_DEPTH.
-        // We need exactly MAX_JSON_DEPTH + 1 opening braces to trigger the assertion.
+        // We need exactly MAX_JSON_DEPTH + 1 opening braces to exceed the limit.
         let mut input = String::new();
         for _ in 0..=MAX_JSON_DEPTH {
             input.push('{');
         }
-        // This should panic due to exceeding the depth limit
-        let _ = parser.feed(input.as_bytes());
+        // Feed the deeply nested input - should handle gracefully without panicking
+        let events = parser.feed(input.as_bytes());
+        // Parser should reset and return no events (skipped malformed JSON)
+        assert_eq!(events.len(), 0);
+        // Parser should be in a clean state after handling the error
+        assert!(!parser.is_parsing());
+        assert_eq!(parser.partial().len(), 0);
     }
 }

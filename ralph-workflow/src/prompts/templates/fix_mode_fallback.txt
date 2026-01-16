@@ -1,29 +1,37 @@
 {# ============================================================================ #}
-{# Template: commit_emergency_no_diff.txt                                       #}
+{# Template: fix_mode_fallback.txt                                               #}
 {# Version: 1.0                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
-{#   Absolute last resort commit prompt with no diff at all.                    #}
-{#   Just asks for a generic commit when everything else fails.                  #}
+{#   Fallback prompt for fix mode when main template fails to render.           #}
+{#   This is a minimal fallback to ensure the system continues working.         #}
 {#                                                                             #}
 {# WHEN USED:                                                                  #}
-{#   Absolute final fallback when all other prompts fail.                        #}
+{#   During fix mode when the main fix_mode.txt template fails to render.      #}
 {#                                                                             #}
 {# TRIGGER:                                                                    #}
-{#   All retry attempts including emergency have failed.                         #}
+{#   Template rendering error in prompt_fix().                                  #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
-{#   None - this template uses a hardcoded fallback                              #}
+{#   PROMPT   - Content from PROMPT.md with task context                        #}
+{#   PLAN     - Content from PLAN.md with implementation plan                    #}
 {#                                                                             #}
 {# OUTPUT:                                                                     #}
-#   <ralph-commit><ralph-subject>chore: automated commit</ralph-subject></ralph-commit>  #}
+{#   Structured output with completion status                                    #}
 {#                                                                             #}
 {# NOTES:                                                                      #}
-{#   - Doesn't include any diff at all                                          #}
-{#   - Returns hardcoded commit message as final fallback                        #}
+{#   This is a GRACEFUL FALLBACK when template system has issues              #}
 {# ============================================================================ #}
 
-<ralph-commit>
-<ralph-subject>chore: changes</ralph-subject>
-</ralph-commit>
+FIX MODE
+
+Read .agent/ISSUES.md and fix the issues found.
+
+Context:
+
+PROMPT:
+{{PROMPT}}
+
+PLAN:
+{{PLAN}}

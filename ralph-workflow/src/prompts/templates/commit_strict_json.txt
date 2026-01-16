@@ -1,3 +1,29 @@
+{# ============================================================================ #}
+{# Template: commit_strict_json.txt                                             #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Strict retry prompt for commit message generation.                         #}
+{#   Used when initial attempt fails to produce valid XML output.               #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   First retry attempt when commit_message_xml.txt fails.                     #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Commit generation fails XML validation.                                    #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   DIFF - Git diff to analyze (required)                                      #}
+{#                                                                             #}
+{# OUTPUT:                                                                     #}
+{#   <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>  #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Simpler than main template to reduce response complexity                 #}
+{#   - Focuses on proper XML format with minimal instructions                   #}
+{# ============================================================================ #}
+
 Your previous response was not valid. Return ONLY the XML tags below.
 
 DIFF:

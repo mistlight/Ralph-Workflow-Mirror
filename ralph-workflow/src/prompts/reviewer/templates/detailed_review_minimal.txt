@@ -1,6 +1,35 @@
+{# ============================================================================ #}
+{# Template: detailed_review_minimal.txt                                       #}
+{# Version: 2.0                                                                #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Prompt for detailed reviewer review mode with minimal context.            #}
+{#   Instructs the agent to review changes with PROMPT, PLAN, and DIFF.       #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   - During detailed review phase                                            #}
+{#   - With minimal context level (PROMPT + PLAN + DIFF)                       #}
+{#   - Triggered by: --reviewer detailed --context minimal                      #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   - Pipeline runtime: review phase with detailed reviewer and minimal context #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   MODE     - Review mode name (e.g., "DETAILED REVIEW MODE")                #}
+{#   PROMPT   - Original user request from PROMPT.md (required)                #}
+{#   PLAN     - Implementation plan from PLAN.md (required)                    #}
+{#   DIFF     - Git diff content to review (required)                           #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Uses shared partials for common sections                                #}
+{#   - Focus areas are specific to detailed review with numbered list          #}
+{#   - Checklist output format prioritizes issues by severity                  #}
+{# ============================================================================ #}
+
 *** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
 
-You are in DETAILED REVIEW MODE with fresh eyes perspective.
+You are in {{MODE}} with fresh eyes perspective.
 
 CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
 
@@ -18,23 +47,14 @@ CRITICAL CONSTRAINTS:
 - Your analysis MUST be limited to the diff content provided
 - DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
 
-{# ORIGINAL REQUEST - The user's original prompt #}
-ORIGINAL REQUEST:
-{{PROMPT}}
-
-{# IMPLEMENTATION PLAN - What the changes are implementing #}
-IMPLEMENTATION PLAN:
-{{PLAN}}
+{{> shared/_context_section}}
 
 Focus on:
 1) Code quality and correctness
 2) Bugs, security, tests
 3) Code style and maintainability
 
-DIFF TO REVIEW:
-```diff
-{{DIFF}}
-```
+{{> shared/_diff_section}}
 
 OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Description (blocks merge)

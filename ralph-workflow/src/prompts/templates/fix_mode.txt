@@ -1,3 +1,33 @@
+{# ============================================================================ #}
+{# Template: fix_mode.txt                                                       #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Prompt for fix mode to address issues found during review.                 #}
+{#   Agent reads ISSUES.md and modifies source code to fix issues.              #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   During fix mode (after review phase finds issues).                         #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Pipeline runtime: fix phase when ISSUES.md exists.                         #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   PROMPT - Original user request from PROMPT.md (for context)                 #}
+{#   PLAN   - Implementation plan from .agent/PLAN.md (for context)              #}
+{#                                                                             #}
+{# CONSTRAINTS:                                                                #}
+{#   - Agent MUST ONLY work on files mentioned in ISSUES.md                      #}
+{#   - Agent MUST NOT read other files or run commands                           #}
+{#   - Agent MUST NOT modify ISSUES.md (orchestrator manages it)                  #}
+{#   - Agent SHOULD modify source code files to fix issues                       #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - ISSUES.md references are optional (isolation mode may remove it)          #}
+{#   - Agent returns completion status as structured output                      #}
+{# ============================================================================ #}
+
 You are in FIX MODE. Address issues found during review.
 
 {# ISSUES FROM REVIEW - Pre-loaded for you #}

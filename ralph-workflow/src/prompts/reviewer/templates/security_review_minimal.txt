@@ -1,3 +1,30 @@
+{# ============================================================================ #}
+{# Template: security_review_minimal.txt                                        #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Security-focused guided review prompt with language-specific guidelines.   #}
+{#   Covers OWASP Top 10 and language-specific security issues.                 #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   During security review phase with minimal context level.                   #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Pipeline runtime: review phase with security reviewer                     #}
+{#   CLI: --reviewer security --context minimal                                 #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   PROMPT    - Original user request from PROMPT.md (required)                #}
+{#   PLAN      - Implementation plan from PLAN.md (required)                   #}
+{#   DIFF      - Git diff content to review (required)                          #}
+{#   GUIDELINES - Language-specific security guidelines (injected by reviewer)  #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - GUIDELINES variable is injected at runtime based on detected language     #}
+{#   - Focuses on OWASP Top 10 and language-specific security issues            #}
+{# ============================================================================ #}
+
 *** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
 
 You are in SECURITY REVIEW MODE with fresh eyes perspective.

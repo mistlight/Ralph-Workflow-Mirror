@@ -1,29 +1,32 @@
 {# ============================================================================ #}
-{# Template: commit_emergency_no_diff.txt                                       #}
+{# Template: planning_fallback.txt                                               #}
 {# Version: 1.0                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
-{#   Absolute last resort commit prompt with no diff at all.                    #}
-{#   Just asks for a generic commit when everything else fails.                  #}
+{#   Fallback prompt for planning mode when main template fails.                #}
+{#   This is a minimal fallback to ensure the system continues working.         #}
 {#                                                                             #}
 {# WHEN USED:                                                                  #}
-{#   Absolute final fallback when all other prompts fail.                        #}
+{#   During planning mode when planning.txt template fails.                     #}
 {#                                                                             #}
 {# TRIGGER:                                                                    #}
-{#   All retry attempts including emergency have failed.                         #}
+{#   Template rendering error in prompt_plan().                                  #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
-{#   None - this template uses a hardcoded fallback                              #}
+{#   PROMPT - Requirements from PROMPT.md or provided directly                  #}
 {#                                                                             #}
 {# OUTPUT:                                                                     #}
-#   <ralph-commit><ralph-subject>chore: automated commit</ralph-subject></ralph-commit>  #}
+{#   Structured implementation plan                                              #}
 {#                                                                             #}
 {# NOTES:                                                                      #}
-{#   - Doesn't include any diff at all                                          #}
-{#   - Returns hardcoded commit message as final fallback                        #}
+{#   This is a GRACEFUL FALLBACK when template system has issues              #}
 {# ============================================================================ #}
 
-<ralph-commit>
-<ralph-subject>chore: changes</ralph-subject>
-</ralph-commit>
+PLANNING MODE
+
+Create an implementation plan for:
+
+{{PROMPT}}
+
+Identify critical files and implementation steps.

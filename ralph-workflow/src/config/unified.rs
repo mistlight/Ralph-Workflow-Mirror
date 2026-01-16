@@ -130,6 +130,10 @@ pub struct GeneralConfig {
     /// Path to save last prompt.
     #[serde(default)]
     pub prompt_path: Option<String>,
+    /// User templates directory for custom template overrides.
+    /// When set, templates in this directory take priority over embedded templates.
+    #[serde(default)]
+    pub templates_dir: Option<String>,
     /// Git user name for commits (optional, falls back to git config).
     #[serde(default)]
     pub git_user_name: Option<String>,
@@ -160,6 +164,7 @@ impl Default for GeneralConfig {
             reviewer_context: 0,
             review_depth: "standard".to_string(),
             prompt_path: None,
+            templates_dir: None,
             git_user_name: None,
             git_user_email: None,
         }

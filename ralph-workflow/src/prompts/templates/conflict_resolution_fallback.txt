@@ -1,17 +1,18 @@
 {# ============================================================================ #}
-{# Template: conflict_resolution.txt                                            #}
+{# Template: conflict_resolution_fallback.txt                                     #}
 {# Version: 1.0                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
-{#   Prompt for resolving merge conflicts during rebase operations.             #}
-{#   Agent receives conflicted files and must produce merged versions.          #}
+{#   Fallback prompt for resolving merge conflicts when main template fails.    #}
+{#   This is a minimal fallback to ensure system continues working.             #}
 {#                                                                             #}
 {# WHEN USED:                                                                  #}
-{#   During rebase operations when merge conflicts occur.                       #}
+{#   During rebase operations when merge conflicts occur AND the main           #}
+{#   conflict_resolution.txt template fails to render.                          #}
 {#                                                                             #}
 {# TRIGGER:                                                                    #}
-{#   Git operation: rebase encounters conflicts.                                #}
+{#   Template rendering error in build_conflict_resolution_prompt().            #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
 {#   CONTEXT   - Formatted section with PROMPT.md and PLAN.md content           #}
@@ -24,6 +25,7 @@
 {#   - Agent MUST NOT know we're in a rebase (security requirement)             #}
 {#   - Prompt frames conflicts as "merge conflicts" not rebase conflicts         #}
 {#   - Each resolved file must contain COMPLETE content, not just diffs         #}
+{#   - This is a GRACEFUL FALLBACK when template system has issues             #}
 {# ============================================================================ #}
 
 # MERGE CONFLICT RESOLUTION
@@ -37,8 +39,8 @@ There are merge conflicts that need to be resolved. Below are the files with con
 For each conflicted file below:
 1. Review both versions of the changes (the 'ours' and 'theirs' sections)
 2. Intelligently merge the changes, considering:
-   - The task context above
-   - The implementation plan if available
+   - The task context from PROMPT.md above
+   - The implementation plan from PLAN.md if available
    - The intent of both versions
    - Code correctness and consistency
 3. Produce the final merged file content WITHOUT conflict markers

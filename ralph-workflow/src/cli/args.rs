@@ -165,6 +165,51 @@ pub struct TemplateListFlag {
     pub list_templates: bool,
 }
 
+/// Template management subcommands.
+#[derive(Parser, Debug, Default)]
+// CLI flags are naturally boolean - these represent independent user choices
+#[allow(clippy::struct_excessive_bools)]
+pub struct TemplateCommands {
+    /// Initialize user templates directory
+    #[arg(
+        long,
+        help = "Create ~/.config/ralph/templates/ with default templates"
+    )]
+    pub init: bool,
+
+    /// Force overwrite existing templates when initializing
+    #[arg(
+        long,
+        requires = "init",
+        help = "Overwrite existing templates during init"
+    )]
+    pub force: bool,
+
+    /// Validate all templates for syntax errors
+    #[arg(long, help = "Validate all templates for syntax errors")]
+    pub validate: bool,
+
+    /// Show template content and metadata
+    #[arg(long, value_name = "NAME", help = "Show template content and metadata")]
+    pub show: Option<String>,
+
+    /// List all prompt templates with their variables
+    #[arg(long, help = "List all prompt templates with their variables")]
+    pub list: bool,
+
+    /// Extract variables from a template
+    #[arg(long, value_name = "NAME", help = "Extract variables from a template")]
+    pub variables: Option<String>,
+
+    /// Test render a template with provided variables
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Test render a template with provided variables"
+    )]
+    pub render: Option<String>,
+}
+
 /// Commit message plumbing flags.
 #[derive(Parser, Debug, Default)]
 pub struct CommitPlumbingFlags {
@@ -333,6 +378,10 @@ pub struct Args {
     /// Template listing flag
     #[command(flatten)]
     pub template_list: TemplateListFlag,
+
+    /// Template management commands
+    #[command(flatten)]
+    pub template_commands: TemplateCommands,
 
     /// Commit message plumbing flags
     #[command(flatten)]

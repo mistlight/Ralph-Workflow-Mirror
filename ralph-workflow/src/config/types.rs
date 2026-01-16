@@ -214,6 +214,9 @@ pub struct Config {
     pub(crate) behavior: BehavioralFlags,
     /// Path to save last prompt
     pub(crate) prompt_path: PathBuf,
+    /// User templates directory for custom template overrides
+    /// When set, templates in this directory take priority over embedded templates
+    pub(crate) user_templates_dir: Option<PathBuf>,
     /// Developer context level (0=minimal, 1=normal)
     pub(crate) developer_context: u8,
     /// Reviewer context level (0=minimal/fresh eyes, 1=normal)
@@ -244,6 +247,12 @@ impl Config {
     pub(crate) fn with_commit_msg(mut self, msg: String) -> Self {
         self.commit_msg = msg;
         self
+    }
+
+    /// Get the user templates directory.
+    #[must_use]
+    pub const fn user_templates_dir(&self) -> Option<&std::path::PathBuf> {
+        self.user_templates_dir.as_ref()
     }
 }
 

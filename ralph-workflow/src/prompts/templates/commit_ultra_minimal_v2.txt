@@ -1,3 +1,28 @@
+{# ============================================================================ #}
+{# Template: commit_ultra_minimal_v2.txt                                        #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Even shorter ultra-minimal variant with only subject template.              #}
+{#   Used when commit_ultra_minimal.txt still produces too much output.         #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   Fourth retry attempt when commit_ultra_minimal.txt fails.                  #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Commit generation fails XML validation four times.                         #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   DIFF - Git diff to analyze (required)                                      #}
+{#                                                                             #}
+{# OUTPUT:                                                                     #}
+#   <ralph-commit><ralph-subject>fix: </ralph-subject></ralph-commit>             #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Absolute minimum context, only provides subject line template             #}
+{# ============================================================================ #}
+
 {{DIFF}}
 
 <ralph-commit>

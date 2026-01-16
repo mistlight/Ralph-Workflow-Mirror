@@ -1,5 +1,31 @@
-{# Planning phase prompt with 5-phase workflow #}
-{# The agent creates a detailed implementation plan based on user requirements #}
+{# ============================================================================ #}
+{# Template: planning.txt                                                       #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Prompt for planning phase to create detailed implementation plans.         #}
+{#   Follows Claude Code's 5-phase planning workflow pattern.                   #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   During planning phase (before implementation begins).                       #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Pipeline runtime: planning phase at start of workflow.                     #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   PROMPT - User requirements from PROMPT.md (required)                        #}
+{#                                                                             #}
+{# OUTPUT:                                                                     #}
+{#   Structured plan with: Summary, Implementation Steps, Critical Files,       #}
+{#   Risks & Mitigations, Verification Strategy.                                #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Agent is strictly READ-ONLY during planning (no file modifications)      #}
+{#   - Agent receives PROMPT.md content directly (not file path)                 #}
+{#   - Plan is returned as structured output, not written to file               #}
+{#   - Reference: https://github.com/Piebald-AI/claude-code-system-prompts      #}
+{# ============================================================================ #}
 
 You are in PLANNING MODE. Create a detailed implementation plan.
 

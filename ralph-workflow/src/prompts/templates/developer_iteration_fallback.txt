@@ -1,29 +1,42 @@
 {# ============================================================================ #}
-{# Template: commit_emergency_no_diff.txt                                       #}
+{# Template: developer_iteration_fallback.txt                                    #}
 {# Version: 1.0                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
-{#   Absolute last resort commit prompt with no diff at all.                    #}
-{#   Just asks for a generic commit when everything else fails.                  #}
+{#   Fallback prompt for developer iteration when main template fails.          #}
+{#   This is a minimal fallback to ensure the system continues working.         #}
 {#                                                                             #}
 {# WHEN USED:                                                                  #}
-{#   Absolute final fallback when all other prompts fail.                        #}
+{#   During developer iteration when developer_iteration.txt fails.            #}
 {#                                                                             #}
 {# TRIGGER:                                                                    #}
-{#   All retry attempts including emergency have failed.                         #}
+{#   Template rendering error in prompt_developer_iteration().                  #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
-{#   None - this template uses a hardcoded fallback                              #}
+{#   ITERATION         - Current iteration number                               #}
+{#   TOTAL_ITERATIONS   - Total number of iterations planned                   #}
+{#   CONTEXT_LEVEL     - Context level (Normal/Minimal)                        #}
+{#   PROMPT            - Task context from PROMPT.md                            #}
+{#   PLAN              - Implementation plan from PLAN.md                       #}
 {#                                                                             #}
 {# OUTPUT:                                                                     #}
-#   <ralph-commit><ralph-subject>chore: automated commit</ralph-subject></ralph-commit>  #}
+{#   Structured output with completion status                                    #}
 {#                                                                             #}
 {# NOTES:                                                                      #}
-{#   - Doesn't include any diff at all                                          #}
-{#   - Returns hardcoded commit message as final fallback                        #}
+{#   This is a GRACEFUL FALLBACK when template system has issues              #}
 {# ============================================================================ #}
 
-<ralph-commit>
-<ralph-subject>chore: changes</ralph-subject>
-</ralph-commit>
+IMPLEMENTATION MODE
+
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
+{% if ITERATION %}
+Iteration: {{ITERATION}} of {{TOTAL_ITERATIONS}}
+{% endif %}
+
+Execute the next steps from the plan above.

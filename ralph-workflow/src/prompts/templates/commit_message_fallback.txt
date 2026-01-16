@@ -1,29 +1,30 @@
 {# ============================================================================ #}
-{# Template: commit_emergency_no_diff.txt                                       #}
+{# Template: commit_message_fallback.txt                                          #}
 {# Version: 1.0                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
-{#   Absolute last resort commit prompt with no diff at all.                    #}
-{#   Just asks for a generic commit when everything else fails.                  #}
+{#   Fallback prompt for commit message generation when main template fails.     #}
+{#   This is a minimal fallback to ensure the system continues working.         #}
 {#                                                                             #}
 {# WHEN USED:                                                                  #}
-{#   Absolute final fallback when all other prompts fail.                        #}
+{#   During commit message generation when commit_message_xml.txt fails.        #}
 {#                                                                             #}
 {# TRIGGER:                                                                    #}
-{#   All retry attempts including emergency have failed.                         #}
+{#   Template rendering error in prompt_generate_commit_message_with_diff().    #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
-{#   None - this template uses a hardcoded fallback                              #}
+{#   DIFF - Git diff to generate commit message for                             #}
 {#                                                                             #}
 {# OUTPUT:                                                                     #}
-#   <ralph-commit><ralph-subject>chore: automated commit</ralph-subject></ralph-commit>  #}
+{#   Conventional commit message in XML format                                   #}
 {#                                                                             #}
 {# NOTES:                                                                      #}
-{#   - Doesn't include any diff at all                                          #}
-{#   - Returns hardcoded commit message as final fallback                        #}
+{#   This is a GRACEFUL FALLBACK when template system has issues              #}
 {# ============================================================================ #}
 
-<ralph-commit>
-<ralph-subject>chore: changes</ralph-subject>
-</ralph-commit>
+Generate a conventional commit message for this diff:
+
+{{DIFF}}
+
+Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>
