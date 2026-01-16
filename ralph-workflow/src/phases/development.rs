@@ -96,7 +96,9 @@ pub fn run_development_phase(
         ctx.logger.info("Executing plan...");
         update_status("Starting development iteration", ctx.config.isolation_mode)?;
 
-        // Read PROMPT.md and PLAN.md for context in developer iteration
+        // Read PROMPT.md and PLAN.md content directly to pass as context.
+        // This prevents agents from discovering these files through exploration,
+        // reducing the risk of accidental deletion.
         let prompt_md = fs::read_to_string("PROMPT.md").unwrap_or_default();
         let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
 
