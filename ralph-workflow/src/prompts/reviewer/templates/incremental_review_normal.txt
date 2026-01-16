@@ -1,4 +1,8 @@
+*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+
 You are in INCREMENTAL REVIEW MODE.
+
+CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
