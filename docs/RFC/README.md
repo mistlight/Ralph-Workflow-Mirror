@@ -24,6 +24,7 @@ An RFC is a design document that describes a proposed change to Ralph. RFCs are 
 | Status | Meaning |
 |--------|---------|
 | Draft | Under development, not yet ready for review |
+| In Progress | Implementation has started, some features complete |
 | Review | Open for community feedback |
 | Accepted | Approved for implementation |
 | Rejected | Not moving forward |
@@ -35,7 +36,7 @@ An RFC is a design document that describes a proposed change to Ralph. RFCs are 
 | RFC | Title | Status |
 |-----|-------|--------|
 | [RFC-001](./RFC-001-enhanced-opencode-integration.md) | Enhanced OpenCode Integration | Draft |
-| [RFC-002](./RFC-002-ux-improvements.md) | Developer Experience Improvements | Draft |
+| [RFC-002](./RFC-002-ux-improvements.md) | Developer Experience Improvements | In Progress |
 | [RFC-003](./RFC-003-streaming-architecture-hardening.md) | AI Agent Streaming Architecture Hardening | Implemented |
 
 ## Creating a New RFC

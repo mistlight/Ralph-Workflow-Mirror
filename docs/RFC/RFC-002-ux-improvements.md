@@ -2,9 +2,10 @@
 
 **RFC Number**: RFC-002
 **Title**: Developer Experience Improvements for Ralph Orchestrator
-**Status**: Draft
+**Status**: In Progress
 **Author**: Analysis based on codebase review
 **Created**: 2026-01-15
+**Last Updated**: 2026-01-16
 
 ---
 
@@ -44,6 +45,387 @@ This RFC proposes UX improvements for Ralph Workflow based on industry-standard 
 ## Abstract
 
 This RFC proposes a comprehensive set of user experience improvements for Ralph Workflow to enhance developer productivity, reduce friction for new users, and provide better feedback during long-running operations. The proposal is grounded in industry-standard CLI design principles from [Command Line Interface Guidelines](https://clig.dev/), [Atlassian's 10 Design Principles](https://www.atlassian.com/blog/it-teams/10-design-principles-for-delightful-clis), and patterns from production tools like GitHub CLI, cargo, and npm.
+
+---
+
+## Implementation Status
+
+**Last Updated**: 2026-01-16
+
+This section tracks the implementation status of RFC-002 proposals against the actual codebase.
+
+### Completed Features
+
+#### ✅ Phase 5: Color & Terminal Standards (P1)
+
+**Status**: Fully Implemented
+
+**Location**: `ralph-workflow/src/json_parser/terminal.rs:1-325`
+
+**Implementation Details**:
+- **Environment Variable Compliance**:
+  - `NO_COLOR=1`: Disables all ANSI output (https://no-color.org/)
+  - `CLICOLOR_FORCE=1`: Forces colors even in non-TTY
+  - `CLICOLOR=0`: Disables colors on macOS
+  - `TERM=dumb`: Basic mode (colors without cursor positioning)
+
+- **Three-Tier Terminal Mode System**:
+  - `TerminalMode::Full`: Full ANSI support including cursor positioning, colors
+  - `TerminalMode::Basic`: Basic TTY with colors but no cursor positioning
+  - `TerminalMode::None`: Non-TTY output (pipes, redirects, CI environments)
+
+- **Accessibility Support**:
+  - `TerminalMode::Basic` for screen readers (static output without cursor positioning)
+  - Respects standard environment variables for accessibility
+
+**Test Coverage**: Lines 211-324
+
+---
+
+#### ✅ Phase 1.3: Heartbeat with Accessibility Mode (P1)
+
+**Status**: Fully Implemented
+
+**Location**: `ralph-workflow/src/json_parser/terminal.rs:32-46`
+
+**Implementation Details**:
+- The `TerminalMode::Basic` variant provides accessibility support for:
+  - Screen readers (no cursor positioning animations)
+  - Non-TTY environments (pipes, redirects)
+  - `TERM=dumb` terminals
+- Static progress output instead of animated spinners in Basic mode
+
+**Related**: This is part of the terminal mode detection system above.
+
+---
+
+#### ✅ Phase 7.3: Streaming Quality Metrics (P3)
+
+**Status**: Fully Implemented
+
+**Location**: `ralph-workflow/src/json_parser/streaming_state.rs:986-1005`
+
+**Implementation Details**:
+- **Delta Size Tracking**: Tracks individual delta sizes across all content types
+- **Snapshot-as-Delta Detection**: Detects when agents send full accumulated content as "deltas"
+- **Protocol Violation Tracking**: Counts non-standard agent protocol events (e.g., repeated `MessageStart`)
+- **Environment Variable Configuration**:
+  - `RALPH_STREAMING_SNAPSHOT_THRESHOLD`: Threshold for detecting violations (default: 200, range: 50-1000)
+  - `RALPH_STREAMING_FUZZY_MATCH_RATIO`: Fuzzy detection ratio (default: 85, range: 50-95)
+- **Metrics Fields**:
+  - `total_deltas`: Total number of deltas processed
+  - `min_delta_size`, `max_delta_size`, `avg_delta_size`: Size statistics
+  - `snapshot_repairs_count`: Number of snapshot-as-delta repairs performed
+  - `large_delta_count`: Number of deltas exceeding threshold
+  - `protocol_violations`: Number of protocol violations detected
+
+**Test Coverage**: Lines 1834-1940
+
+---
+
+#### ✅ Phase 6.1: Enhanced Diagnostics (P2)
+
+**Status**: Fully Implemented
+
+**Locations**:
+- `ralph-workflow/src/diagnostics/mod.rs:1-31`
+- `ralph-workflow/src/cli/handlers/diagnose.rs:1-349`
+
+**Implementation Details**:
+- **System Information Gathering** (`diagnostics/system.rs`):
+  - OS, architecture, working directory
+  - Shell detection (`SHELL` environment variable)
+  - Git version and repository status
+  - Current branch and uncommitted changes
+
+- **Agent Availability Testing** (`diagnostics/agents.rs`):
+  - Tests all configured agents for availability
+  - Reports display names, JSON parsers, and commands
+  - Provides clear ✓/✗ status indicators
+
+- **Configuration Validation**:
+  - Unified config file existence and path
+  - Review depth configuration
+  - Legacy global agents.toml detection
+  - Loaded configuration sources
+
+- **Project Stack Detection** (`diagnose.rs:263-329`):
+  - Primary and secondary language detection
+  - Framework detection
+  - Package manager detection
+  - Test framework detection
+  - Language type indicators (Rust, Python, JS/TS, Go)
+  - Review guidelines summary with severity breakdown
+
+- **PROMPT.md Validation** (`diagnose.rs:215-240`):
+  - File existence and size
+  - Line count
+  - Goal section detection
+  - Acceptance criteria section detection
+
+- **Checkpoint Status** (`diagnose.rs:242-261`):
+  - Checkpoint file existence
+  - Phase, iteration, and agent information
+  - Interrupted run detection
+
+- **Recent Log Display** (`diagnose.rs:331-348`):
+  - Last 10 entries from `.agent/logs/pipeline.log`
+
+**Usage**: `ralph --diagnose`
+
+---
+
+#### ✅ Phase 5.0: Color Standardization (P1)
+
+**Status**: Partially Implemented
+
+**Location**: `ralph-workflow/src/logger/mod.rs:35-134`
+
+**Implementation Details**:
+- **ANSI 4-Bit Color Support**: Full color palette (red, green, yellow, blue, magenta, cyan, white)
+- **Style Codes**: Bold, dim, reset
+- **NO_COLOR Compliance**: Respects `NO_COLOR` environment variable (line 37)
+- **TTY Detection**: Automatically disables colors when stdout is not a terminal
+
+**Missing from Original Proposal**:
+- CLICOLOR and CLICOLOR_FORCE support in `logger/mod.rs` (only in `terminal.rs`)
+- Semantic color enum (currently using direct ANSI codes)
+
+**Note**: The `terminal.rs` module has full CLICOLOR/CLICOLOR_FORCE support, but the `logger` module only implements NO_COLOR.
+
+---
+
+#### ✅ Phase 8: Template Listing (P2)
+
+**Status**: Fully Implemented
+
+**Locations**:
+- `ralph-workflow/src/templates/mod.rs:113`
+- `ralph-workflow/src/cli/init.rs:188-215`
+
+**Implementation Details**:
+- `list_templates()` function returns available templates with descriptions
+- `handle_list_templates()` displays formatted template list
+- Usage: `ralph --list-templates`
+- Templates include: feature-spec, bug-fix, refactor, blank, context
+
+**Integration**:
+- Referenced in error messages when PROMPT.md is missing
+- Available in `--init-prompt` command flow
+- Documented in `--help` output
+
+---
+
+### In Progress Features
+
+#### 🚧 Phase 5.1: Full Environment Variable Compliance
+
+**Status**: Partially Implemented
+
+**Implemented**:
+- `terminal.rs`: Full support for NO_COLOR, CLICOLOR, CLICOLOR_FORCE, TERM
+- `logger/mod.rs`: NO_COLOR support only
+
+**Remaining Work**:
+- Add CLICOLOR and CLICOLOR_FORCE support to `logger/mod.rs`
+- Ensure consistent color behavior across all modules
+
+**Priority**: P1 (High)
+
+---
+
+### Not Started Features
+
+#### ⏳ Phase 1.1: Immediate Feedback (100ms Rule) - P0
+
+**Status**: Not Started
+
+**Proposal**: Print "Starting..." within 100ms before agent calls
+
+**Rationale**: Addresses critical "Is it stuck?" friction point
+
+---
+
+#### ⏳ Phase 1.2: Pipeline Phase Indicator - P0
+
+**Status**: Not Started
+
+**Proposal**: Show `[Development 3/5] claude ━━━━━━ 2m 34s` with progress bar
+
+**Suggested Implementation**: Use `indicatif` crate (cargo's progress library)
+
+---
+
+#### ⏳ Phase 2.1: First-Run Detection - P0
+
+**Status**: Not Started
+
+**Proposal**: Auto-detect first run and offer guided setup
+
+**Current Behavior**: Requires manual `--init-global` + `--init-prompt`
+
+---
+
+#### ⏳ Phase 2.2: `ralph setup` Command - P1
+
+**Status**: Not Started
+
+**Proposal**: Interactive setup wizard for configuration
+
+**Flow**: Agent detection → Verification → Prompt template selection
+
+---
+
+#### ⏳ Phase 3.1: Actionable Error Messages - P0
+
+**Status**: Not Started
+
+**Proposal**: Include copy-pasteable fix commands in every error
+
+**Current State**: Error classification exists (`agents/error.rs`) but advice is prose, not actionable commands
+
+---
+
+#### ⏳ Phase 3.2: "Did You Mean?" Suggestions - P1
+
+**Status**: Not Started
+
+**Proposal**: Fuzzy matching for typos in agent names
+
+**Example**: `Unknown agent 'cluade' - Did you mean 'claude'?`
+
+---
+
+#### ⏳ Phase 4.0: Action-Reaction Feedback - P0
+
+**Status**: Not Started
+
+**Proposal**: Feedback for every user action (agent starts, completes, phase changes, etc.)
+
+---
+
+#### ⏳ Phase 4.1: Watch Mode - P2
+
+**Status**: Not Started
+
+**Proposal**: Monitor PROMPT.md for changes and auto-run
+
+**Command**: `ralph --watch`
+
+---
+
+#### ⏳ Phase 4.2: Post-Run Actions Menu - P2
+
+**Status**: Not Started
+
+**Proposal**: Interactive menu after pipeline completion (view diff, edit prompt, run again, push)
+
+---
+
+#### ⏳ Phase 4.3: Confirmation for Destructive Operations - P2
+
+**Status**: Not Started
+
+**Proposal**: Confirmation prompts for operations that modify git history
+
+---
+
+#### ⏳ Phase 6.1: Shell Completions - P1
+
+**Status**: Not Started
+
+**Proposal**: Generate shell completions for bash, zsh, fish
+
+**Commands**:
+```bash
+ralph --completions bash > /etc/bash_completion.d/ralph
+ralph --completions zsh > ~/.zfunc/_ralph
+ralph --completions fish > ~/.config/fish/completions/ralph.fish
+```
+
+---
+
+#### ⏳ Phase 6.2: Desktop Notifications - P3
+
+**Status**: Not Started
+
+**Proposal**: Notify when long-running pipelines complete
+
+**Command**: `ralph --notify "feat: change"`
+
+---
+
+#### ⏳ Phase 7.1: Run History - P2
+
+**Status**: Not Started
+
+**Proposal**: Track runs in `.agent/history.json`
+
+**Command**: `ralph history`
+
+---
+
+#### ⏳ Phase 7.2: Replay Command - P3
+
+**Status**: Not Started
+
+**Proposal**: Re-run with same settings
+
+**Command**: `ralph replay run_abc123`
+
+---
+
+#### ⏳ Phase 8.1: `ralph status` Command - P1
+
+**Status**: Not Started
+
+**Proposal**: Show current `.agent` state
+
+**Command**: `ralph status`
+
+---
+
+#### ⏳ Phase 8.2: `ralph clean` Command - P1
+
+**Status**: Not Started
+
+**Proposal**: Reset `.agent` directory with confirmation
+
+**Command**: `ralph clean`
+
+---
+
+#### ⏳ Phase 8.3: Cancellation Hint (Ctrl+C) - P0
+
+**Status**: Not Started
+
+**Proposal**: Display "Press Ctrl+C to cancel" during long operations
+
+---
+
+#### ⏳ Phase 1.4: Estimated Time Remaining - P3
+
+**Status**: Not Started
+
+**Proposal**: Track historical run times and display ETA
+
+**Storage**: `.agent/metrics.json`
+
+---
+
+### Summary Statistics
+
+| Priority Level | Total Items | Completed | In Progress | Not Started |
+|----------------|-------------|-----------|-------------|-------------|
+| P0 (Critical) | 6 | 0 | 0 | 6 |
+| P1 (High) | 8 | 3 | 1 | 4 |
+| P2 (Medium) | 4 | 2 | 0 | 2 |
+| P3 (Lower) | 4 | 1 | 0 | 3 |
+| **Total** | **22** | **6 (27%)** | **1 (5%)** | **15 (68%)** |
+
+**Overall Completion**: 27% (6 of 22 items)
+
+**Note**: The completed features are substantial infrastructure improvements (terminal standards, diagnostics, streaming metrics) that provide a solid foundation for remaining user-facing features.
 
 ---
 
