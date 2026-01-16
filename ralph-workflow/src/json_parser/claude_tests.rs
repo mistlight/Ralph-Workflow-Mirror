@@ -165,3 +165,17 @@ fn test_ccs_glm_event_sequence() {
         "message_stop should produce output after content"
     );
 }
+
+/// Test that `with_terminal_mode` method works correctly
+#[test]
+fn test_with_terminal_mode() {
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+
+    // Verify the parser was created successfully
+    let json = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}"#;
+    let output = parser.parse_event(json);
+    assert!(output.is_some());
+}

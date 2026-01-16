@@ -121,3 +121,17 @@ fn test_gemini_parser_non_json_passthrough() {
     assert!(output.is_some());
     assert!(output.unwrap().contains("Warning: rate limit approaching"));
 }
+
+/// Test that `with_terminal_mode` method works correctly
+#[test]
+fn test_with_terminal_mode() {
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+
+    // Verify the parser was created successfully
+    let json = r#"{"type":"message","role":"assistant","content":"Hello"}"#;
+    let output = parser.parse_event(json);
+    assert!(output.is_some());
+}

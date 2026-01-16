@@ -32,3 +32,17 @@ fn test_opencode_streaming_with_tool_use_events() {
         "parse_stream should succeed for OpenCode events"
     );
 }
+
+/// Test that `with_terminal_mode` method works correctly
+#[test]
+fn test_with_terminal_mode() {
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+
+    // Verify the parser was created successfully
+    let json = r#"{"type":"text","timestamp":1768191347231,"sessionID":"test","part":{"id":"prt_001","type":"text","text":"Hello"}}"#;
+    let output = parser.parse_event(json);
+    assert!(output.is_some());
+}

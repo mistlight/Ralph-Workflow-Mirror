@@ -148,3 +148,17 @@ fn test_codex_parser_non_json_passthrough() {
     assert!(output.is_some());
     assert!(output.unwrap().contains("Error: something went wrong"));
 }
+
+/// Test that `with_terminal_mode` method works correctly
+#[test]
+fn test_with_terminal_mode() {
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+
+    // Verify the parser was created successfully
+    let json = r#"{"type":"thread.started","thread_id":"test123"}"#;
+    let output = parser.parse_event(json);
+    assert!(output.is_some());
+}

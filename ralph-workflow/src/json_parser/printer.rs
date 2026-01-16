@@ -190,28 +190,6 @@ impl TestPrinter {
         duplicates
     }
 
-    /// Count occurrences of a prefix pattern in output lines.
-    ///
-    /// Useful for detecting duplicate message prefixes, tool blocks, etc.
-    pub fn count_prefix_occurrences(&self, prefix: &str) -> usize {
-        self.get_lines()
-            .iter()
-            .filter(|l| l.trim().starts_with(prefix))
-            .count()
-    }
-
-    /// Find all lines that match a pattern.
-    ///
-    /// Returns the line numbers and content for all matching lines.
-    pub fn find_lines_with_pattern(&self, pattern: &str) -> Vec<(usize, String)> {
-        self.get_lines()
-            .iter()
-            .enumerate()
-            .filter(|(_, l)| l.contains(pattern))
-            .map(|(i, l)| (i, l.clone()))
-            .collect()
-    }
-
     /// Get statistics about the output.
     ///
     /// Returns a tuple of (line_count, char_count).
@@ -433,5 +411,38 @@ mod tests {
         // Verify the complete output
         let output = printer.get_output();
         assert!(output.contains("Partial content\n"));
+    }
+
+    #[test]
+    fn test_printer_get_stats() {
+        let mut printer = TestPrinter::new();
+
+        printer.write_all(b"Line 1\nLine 2\n").unwrap();
+        printer.flush().unwrap();
+
+        let (line_count, char_count) = printer.get_stats();
+        assert_eq!(line_count, 2);
+        assert!(char_count > 0);
+    }
+
+    #[test]
+    fn test_shared_stdout() {
+        let printer = shared_stdout();
+        // Verify the function creates a valid SharedPrinter
+        let _borrowed = printer.borrow();
+    }
+
+    #[test]
+    fn test_shared_stderr() {
+        let printer = shared_stderr();
+        // Verify the function creates a valid SharedPrinter
+        let _borrowed = printer.borrow();
+    }
+
+    #[test]
+    fn test_shared_test() {
+        let printer = shared_test();
+        // Verify the function creates a valid SharedPrinter
+        let _borrowed = printer.borrow();
     }
 }

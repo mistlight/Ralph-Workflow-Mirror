@@ -100,7 +100,6 @@ impl CodexParser {
         self
     }
 
-    #[cfg(test)]
     pub(crate) fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
