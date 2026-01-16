@@ -21,7 +21,7 @@ mod prompt;
 mod runner;
 mod types;
 
-pub use prompt::PipelineRuntime;
+pub use prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
 pub use runner::run_with_fallback;
 pub use types::{AgentPhaseGuard, Stats};
 

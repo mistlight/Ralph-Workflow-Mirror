@@ -29,6 +29,7 @@ use crate::prompts::{
 use std::fmt;
 use std::fs::{self, File};
 use std::io::Read;
+use std::str::FromStr;
 
 /// Maximum safe prompt size in bytes before pre-truncation.
 ///
@@ -505,31 +506,71 @@ fn handle_commit_extraction_result(
     }
 }
 
-/// Run a single commit attempt with the given strategy.
-fn run_commit_attempt(
+/// Build the list of agents to try for commit generation.
+///
+/// This helper function constructs the ordered list of agents to try,
+/// starting with the primary agent and followed by configured fallbacks.
+fn build_agents_to_try<'a>(fallbacks: &'a [&'a str], primary_agent: &'a str) -> Vec<&'a str> {
+    let mut agents_to_try: Vec<&'a str> = vec![primary_agent];
+    for fb in fallbacks {
+        if *fb != primary_agent && !agents_to_try.contains(fb) {
+            agents_to_try.push(fb);
+        }
+    }
+    agents_to_try
+}
+
+/// Run a single commit attempt with the given strategy and agent.
+///
+/// This function runs a single agent (not using fallback) to allow for
+/// per-agent prompt variant cycling. Returns Some(result) if we should
+/// return early (success or hard error), or None if we should continue
+/// to the next strategy.
+fn run_commit_attempt_with_agent(
     strategy: CommitRetryStrategy,
     working_diff: &str,
     log_dir: &str,
     runtime: &mut PipelineRuntime,
     registry: &AgentRegistry,
-    commit_agent: &str,
+    agent: &str,
     last_extraction: &mut Option<CommitExtractionResult>,
 ) -> Option<anyhow::Result<CommitMessageResult>> {
     let prompt = generate_prompt_for_strategy(strategy, working_diff);
     let prompt_size_kb = prompt.len() / 1024;
 
-    log_commit_attempt(strategy, prompt_size_kb, commit_agent, runtime);
+    log_commit_attempt(strategy, prompt_size_kb, agent, runtime);
 
-    let exit_code = run_with_fallback(
-        AgentRole::Commit,
-        &format!("generate commit message ({})", strategy.description()),
-        &prompt,
-        log_dir,
+    // Get the agent config
+    let Some(agent_config) = registry.resolve_config(agent) else {
+        runtime
+            .logger
+            .warn(&format!("Agent '{agent}' not found in registry, skipping"));
+        return None;
+    };
+
+    // Build the command for this agent
+    let cmd_str = agent_config.build_cmd_with_model(true, true, false, None);
+    let logfile = format!("{log_dir}/{}_latest.log", agent.replace('/', "-"));
+
+    // Run the agent directly (without fallback)
+    let exit_code = match crate::pipeline::run_with_prompt(
+        &crate::pipeline::PromptCommand {
+            label: &format!("generate commit message ({})", strategy.description()),
+            display_name: agent,
+            cmd_str: &cmd_str,
+            prompt: &prompt,
+            logfile: &logfile,
+            parser_type: agent_config.json_parser,
+            env_vars: &agent_config.env_vars,
+        },
         runtime,
-        registry,
-        commit_agent,
-    )
-    .ok()?;
+    ) {
+        Ok(result) => result.exit_code,
+        Err(e) => {
+            runtime.logger.error(&format!("Failed to run agent: {e}"));
+            return None;
+        }
+    };
 
     if exit_code != 0 {
         runtime
@@ -538,7 +579,7 @@ fn run_commit_attempt(
     }
 
     let extraction_result =
-        extract_commit_message_from_logs(log_dir, working_diff, commit_agent, runtime.logger);
+        extract_commit_message_from_logs(log_dir, working_diff, agent, runtime.logger);
 
     handle_commit_extraction_result(
         extraction_result,
@@ -802,6 +843,14 @@ fn try_emergency_no_diff_recovery(
 /// 5. On failure, try emergency prompt
 /// 6. Only use hardcoded fallback after all prompt variants exhausted
 ///
+/// # Agent Cycling Behavior
+///
+/// This function implements proper agent cycling by trying all prompt variants
+/// on each agent before falling back to the next agent in the chain:
+/// - Agent 1: Prompt 1 → Prompt 2 → ... → Prompt 9
+/// - Agent 2: Prompt 1 → Prompt 2 → ... → Prompt 9
+/// - Agent 3: etc.
+///
 /// # Arguments
 ///
 /// * `diff` - The git diff to generate a commit message for
@@ -827,28 +876,50 @@ pub fn generate_commit_message(
     let (working_diff, diff_was_pre_truncated) =
         check_and_pre_truncate_diff(diff, commit_agent, runtime);
 
-    let mut strategy = CommitRetryStrategy::Initial;
+    let _fallback_config = registry.fallback_config();
+    let fallbacks = registry.available_fallbacks(AgentRole::Commit);
+    let agents_to_try = build_agents_to_try(&fallbacks, commit_agent);
+
     let mut last_extraction: Option<CommitExtractionResult> = None;
 
-    // Try each prompt variant in sequence
-    loop {
-        // Run the current attempt
-        if let Some(result) = run_commit_attempt(
-            strategy,
-            &working_diff,
-            log_dir,
-            runtime,
-            registry,
-            commit_agent,
-            &mut last_extraction,
-        ) {
-            return result;
+    // Try each agent with all prompt variants before moving to the next agent
+    for (agent_index, current_agent) in agents_to_try.iter().enumerate() {
+        runtime.logger.info(&format!(
+            "Trying agent {}/{}: {}",
+            agent_index + 1,
+            agents_to_try.len(),
+            current_agent
+        ));
+
+        let mut strategy = CommitRetryStrategy::Initial;
+
+        // Try each prompt variant in sequence on this agent
+        loop {
+            // Run the current attempt
+            if let Some(result) = run_commit_attempt_with_agent(
+                strategy,
+                &working_diff,
+                log_dir,
+                runtime,
+                registry,
+                current_agent,
+                &mut last_extraction,
+            ) {
+                return result;
+            }
+
+            // Move to next strategy or exit loop (try next agent)
+            match strategy.next() {
+                Some(next) => strategy = next,
+                None => break,
+            }
         }
 
-        // Move to next strategy or exit loop
-        match strategy.next() {
-            Some(next) => strategy = next,
-            None => break,
+        // If we exhausted all prompt variants for this agent, log and continue to next agent
+        if agent_index + 1 < agents_to_try.len() {
+            runtime.logger.warn(&format!(
+                "All prompt variants exhausted for '{current_agent}', falling back to next agent..."
+            ));
         }
     }
 
@@ -1076,7 +1147,7 @@ fn extract_commit_message_from_logs(
                 None
             }
         })
-        .map(OutputFormat::from_str);
+        .and_then(|s| OutputFormat::from_str(s).ok());
 
     // Extract the commit message using the standard extraction
     let extraction = extract_llm_output(&content, format_hint);

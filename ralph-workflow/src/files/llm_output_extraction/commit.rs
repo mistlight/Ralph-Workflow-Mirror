@@ -1705,6 +1705,23 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         assert!(msg.starts_with("docs: update readme"));
     }
 
+    #[test]
+    fn test_try_extract_structured_commit_from_ndjson_with_markdown_fence() {
+        // Test extraction from NDJSON stream where result contains markdown with JSON code fence
+        // This is the format used by PROMPT-LOG5.log (GLM-4.7 with markdown JSON)
+        let ndjson = r#"{"type":"stream_event","data":"..."}
+{"type":"result","result":"The changes look clean. Now I'll generate the commit message:\n\n```json\n{\n  \"subject\": \"refactor(review): pass diff directly to all review prompts\",\n  \"body\": \"Previously, review prompts would tell agents to run git commands to\\nfetch the diff. This change:\\n\\n1. Fetches the diff once at the start of build_review_prompt\\n2. Passes it directly to all review prompt functions\"\n}\n```"}
+"#;
+        let result = try_extract_structured_commit(ndjson);
+        assert!(
+            result.is_some(),
+            "Should extract from NDJSON result field with markdown code fence"
+        );
+        let msg = result.unwrap();
+        assert!(msg.starts_with("refactor(review):"));
+        assert!(msg.contains("pass diff directly"));
+    }
+
     // =========================================================================
     // Tests for validate_commit_message - JSON artifact detection
     // =========================================================================
