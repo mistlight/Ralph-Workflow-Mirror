@@ -44,10 +44,14 @@ fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) 
 /// * `context` - The context level (minimal or normal)
 /// * `guidelines` - The language-specific review guidelines
 /// * `diff` - The git diff to review (changes since pipeline start)
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_reviewer_review_with_guidelines_and_diff(
     context: ContextLevel,
     guidelines: &ReviewGuidelines,
     diff: &str,
+    prompt_content: &str,
+    plan_content: &str,
 ) -> String {
     let guidelines_section = guidelines.format_for_prompt();
     let template_content = match context {
@@ -56,6 +60,8 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff(
     };
 
     let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
         ("GUIDELINES", guidelines_section),
     ]);
@@ -78,10 +84,14 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff(
 /// * `context` - The context level (minimal or normal)
 /// * `guidelines` - The language-specific review guidelines
 /// * `diff` - The git diff to review (changes since pipeline start)
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_comprehensive_review_with_diff(
     context: ContextLevel,
     guidelines: &ReviewGuidelines,
     diff: &str,
+    prompt_content: &str,
+    plan_content: &str,
 ) -> String {
     let priority_section = guidelines.format_for_prompt_with_priorities();
     let template_content = match context {
@@ -89,7 +99,12 @@ pub fn prompt_comprehensive_review_with_diff(
         ContextLevel::Normal => include_str!("templates/comprehensive_review_normal.txt"),
     };
 
-    let variables = HashMap::from([("DIFF", diff.to_string()), ("GUIDELINES", priority_section)]);
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("DIFF", diff.to_string()),
+        ("GUIDELINES", priority_section),
+    ]);
 
     load_template_str(template_content, &variables)
 }
@@ -109,10 +124,14 @@ pub fn prompt_comprehensive_review_with_diff(
 /// * `context` - The context level (minimal or normal)
 /// * `guidelines` - The language-specific review guidelines
 /// * `diff` - The git diff to review (changes since pipeline start)
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_security_focused_review_with_diff(
     context: ContextLevel,
     guidelines: &ReviewGuidelines,
     diff: &str,
+    prompt_content: &str,
+    plan_content: &str,
 ) -> String {
     let security_section = guidelines.format_for_prompt();
     let template_content = match context {
@@ -120,7 +139,12 @@ pub fn prompt_security_focused_review_with_diff(
         ContextLevel::Normal => include_str!("templates/security_review_normal.txt"),
     };
 
-    let variables = HashMap::from([("DIFF", diff.to_string()), ("GUIDELINES", security_section)]);
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("DIFF", diff.to_string()),
+        ("GUIDELINES", security_section),
+    ]);
 
     load_template_str(template_content, &variables)
 }

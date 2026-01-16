@@ -21,7 +21,7 @@ use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
-use crate::prompts::{prompt_for_agent, Action, ContextLevel, Role};
+use crate::prompts::{prompt_for_agent, Action, ContextLevel, PromptConfig, Role};
 use crate::review_metrics::ReviewMetrics;
 
 mod prompt;
@@ -390,14 +390,16 @@ fn run_fix_pass(
     reviewer_context: ContextLevel,
 ) -> anyhow::Result<()> {
     update_status("Applying fixes", ctx.config.isolation_mode)?;
+
+    // Read PROMPT.md and PLAN.md for context
+    let prompt_content = fs::read_to_string(".agent/PROMPT.md").unwrap_or_default();
+    let plan_content = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
+
     let fix_prompt = prompt_for_agent(
         Role::Reviewer,
         Action::Fix,
         reviewer_context,
-        None,
-        None,
-        None,
-        None,
+        PromptConfig::new().with_prompt_and_plan(prompt_content, plan_content),
     );
 
     // Log the fix prompt details for debugging (when verbose)

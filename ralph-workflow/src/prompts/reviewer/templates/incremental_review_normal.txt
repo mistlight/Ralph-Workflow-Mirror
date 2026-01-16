@@ -17,6 +17,14 @@ CRITICAL CONSTRAINTS:
 - Your analysis MUST be limited to the diff content provided
 - DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
 
+{# ORIGINAL REQUEST - The user's original prompt #}
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+{# IMPLEMENTATION PLAN - What the changes are implementing #}
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
 DIFF TO REVIEW:
 ```diff
 {{DIFF}}

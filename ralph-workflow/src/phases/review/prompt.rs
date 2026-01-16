@@ -5,6 +5,8 @@
 //! - Review depth configuration
 //! - Custom review guidelines
 
+use std::fs;
+
 use crate::agents::is_glm_like_agent;
 use crate::config::ReviewDepth;
 use crate::git_helpers::get_git_diff_from_start;
@@ -16,6 +18,16 @@ use crate::prompts::{
 };
 
 use super::super::context::PhaseContext;
+
+/// Read PROMPT.md and .agent/PLAN.md files for review context.
+///
+/// Returns (`prompt_content`, `plan_content`). If files don't exist or can't be read,
+/// returns empty strings to allow templates to render without errors.
+fn read_prompt_and_plan() -> (String, String) {
+    let prompt = fs::read_to_string("PROMPT.md").unwrap_or_default();
+    let plan = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
+    (prompt, plan)
+}
 
 /// Check if the reviewer agent should use the universal/simplified prompt.
 ///
@@ -83,9 +95,15 @@ fn build_universal_prompt(
         "Using universal/simplified review prompt for agent '{}' ({reason}')",
         ctx.reviewer_agent
     ));
+    let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
         Ok(Some(diff)) => {
-            let prompt = prompt_universal_review_with_diff(reviewer_context, &diff);
+            let prompt = prompt_universal_review_with_diff(
+                reviewer_context,
+                &diff,
+                &prompt_content,
+                &plan_content,
+            );
             log_prompt_debug_info(ctx, &prompt, "universal");
             ("review (universal)".to_string(), prompt)
         }
@@ -106,6 +124,7 @@ fn build_security_prompt(
     } else {
         "Using security-focused review"
     });
+    let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
         Ok(Some(diff)) => {
             let guidelines_ref = guidelines.unwrap_or_else(|| {
@@ -113,8 +132,13 @@ fn build_security_prompt(
                     std::sync::OnceLock::new();
                 DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
             });
-            let prompt =
-                prompt_security_focused_review_with_diff(reviewer_context, guidelines_ref, &diff);
+            let prompt = prompt_security_focused_review_with_diff(
+                reviewer_context,
+                guidelines_ref,
+                &diff,
+                &prompt_content,
+                &plan_content,
+            );
             log_prompt_debug_info(ctx, &prompt, "security");
             ("review (security)".to_string(), prompt)
         }
@@ -129,11 +153,17 @@ fn build_incremental_prompt(
     reviewer_context: ContextLevel,
     diff_result: Result<Option<String>, ()>,
 ) -> (String, String) {
+    let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
         Ok(Some(diff)) => {
             ctx.logger
                 .info("Using incremental review (changed files only)");
-            let prompt = prompt_incremental_review_with_diff(reviewer_context, &diff);
+            let prompt = prompt_incremental_review_with_diff(
+                reviewer_context,
+                &diff,
+                &prompt_content,
+                &plan_content,
+            );
             log_prompt_debug_info(ctx, &prompt, "incremental");
             ("review (incremental)".to_string(), prompt)
         }
@@ -154,6 +184,7 @@ fn build_comprehensive_prompt(
     } else {
         "Using comprehensive review"
     });
+    let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
         Ok(Some(diff)) => {
             let guidelines_ref = guidelines.unwrap_or_else(|| {
@@ -161,8 +192,13 @@ fn build_comprehensive_prompt(
                     std::sync::OnceLock::new();
                 DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
             });
-            let prompt =
-                prompt_comprehensive_review_with_diff(reviewer_context, guidelines_ref, &diff);
+            let prompt = prompt_comprehensive_review_with_diff(
+                reviewer_context,
+                guidelines_ref,
+                &diff,
+                &prompt_content,
+                &plan_content,
+            );
             log_prompt_debug_info(ctx, &prompt, "comprehensive");
             ("review (comprehensive)".to_string(), prompt)
         }
@@ -181,6 +217,7 @@ fn build_standard_prompt(
     guidelines: Option<&ReviewGuidelines>,
     diff_result: Result<Option<String>, ()>,
 ) -> (String, String) {
+    let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
         Ok(Some(diff)) => {
             ctx.logger.info(if guidelines.is_some() {
@@ -193,13 +230,20 @@ fn build_standard_prompt(
                     let prompt = prompt_detailed_review_without_guidelines_with_diff(
                         reviewer_context,
                         &diff,
+                        &prompt_content,
+                        &plan_content,
                     );
                     log_prompt_debug_info(ctx, &prompt, "standard (detailed)");
                     ("review (standard)".to_string(), prompt)
                 },
                 |g| {
-                    let prompt =
-                        prompt_reviewer_review_with_guidelines_and_diff(reviewer_context, g, &diff);
+                    let prompt = prompt_reviewer_review_with_guidelines_and_diff(
+                        reviewer_context,
+                        g,
+                        &diff,
+                        &prompt_content,
+                        &plan_content,
+                    );
                     log_prompt_debug_info(ctx, &prompt, "standard (guided)");
                     ("review (standard)".to_string(), prompt)
                 },
@@ -310,6 +354,8 @@ mod tests {
             ContextLevel::Minimal,
             &guidelines,
             sample_diff,
+            "",
+            "",
         );
         assert!(
             prompt_with_guidelines.contains(sample_diff),
@@ -324,8 +370,13 @@ mod tests {
             "Prompt should explicitly forbid running git commands"
         );
 
-        let comprehensive_prompt =
-            prompt_comprehensive_review_with_diff(ContextLevel::Normal, &guidelines, sample_diff);
+        let comprehensive_prompt = prompt_comprehensive_review_with_diff(
+            ContextLevel::Normal,
+            &guidelines,
+            sample_diff,
+            "",
+            "",
+        );
         assert!(
             comprehensive_prompt.contains(sample_diff),
             "Comprehensive prompt should include diff"
@@ -335,6 +386,8 @@ mod tests {
             ContextLevel::Minimal,
             &guidelines,
             sample_diff,
+            "",
+            "",
         );
         assert!(
             security_prompt.contains(sample_diff),
@@ -342,21 +395,26 @@ mod tests {
         );
 
         // Test unguided prompts (without guidelines)
-        let detailed_prompt =
-            prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, sample_diff);
+        let detailed_prompt = prompt_detailed_review_without_guidelines_with_diff(
+            ContextLevel::Normal,
+            sample_diff,
+            "",
+            "",
+        );
         assert!(
             detailed_prompt.contains(sample_diff),
             "Detailed prompt should include diff"
         );
 
         let incremental_prompt =
-            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff);
+            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff, "", "");
         assert!(
             incremental_prompt.contains(sample_diff),
             "Incremental prompt should include diff"
         );
 
-        let universal_prompt = prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff);
+        let universal_prompt =
+            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff, "", "");
         assert!(
             universal_prompt.contains(sample_diff),
             "Universal prompt should include diff"
@@ -373,20 +431,31 @@ mod tests {
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
             prompt_comprehensive_review_with_diff(
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
             prompt_security_focused_review_with_diff(
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
-            prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, sample_diff),
-            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff),
-            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff),
+            prompt_detailed_review_without_guidelines_with_diff(
+                ContextLevel::Normal,
+                sample_diff,
+                "",
+                "",
+            ),
+            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff, "", ""),
+            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff, "", ""),
         ];
 
         let forbidden_patterns = [
@@ -415,7 +484,7 @@ mod tests {
         let sample_diff = "+ new line";
 
         let universal_prompt =
-            prompt_universal_review_with_diff(ContextLevel::Minimal, sample_diff);
+            prompt_universal_review_with_diff(ContextLevel::Minimal, sample_diff, "", "");
         // Universal prompt should explicitly forbid running commands like ls, find, git, cat
         assert!(
             universal_prompt.contains("ls")
@@ -460,20 +529,31 @@ mod tests {
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
             prompt_comprehensive_review_with_diff(
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
             prompt_security_focused_review_with_diff(
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
-            prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, sample_diff),
-            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff),
-            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff),
+            prompt_detailed_review_without_guidelines_with_diff(
+                ContextLevel::Normal,
+                sample_diff,
+                "",
+                "",
+            ),
+            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff, "", ""),
+            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff, "", ""),
         ];
 
         for prompt in prompts_to_check {
@@ -500,20 +580,31 @@ mod tests {
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
             prompt_comprehensive_review_with_diff(
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
             prompt_security_focused_review_with_diff(
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
+                "",
+                "",
             ),
-            prompt_detailed_review_without_guidelines_with_diff(ContextLevel::Normal, sample_diff),
-            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff),
-            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff),
+            prompt_detailed_review_without_guidelines_with_diff(
+                ContextLevel::Normal,
+                sample_diff,
+                "",
+                "",
+            ),
+            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff, "", ""),
+            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff, "", ""),
         ];
 
         for prompt in prompts_to_check {
