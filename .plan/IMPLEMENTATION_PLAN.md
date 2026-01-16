@@ -1,151 +1,124 @@
-# Ralph Workflow Website - Implementation Plan
+# Ralph Workflow Website - Design Stabilization Plan
 
 ## Summary
 
-The Ralph Workflow website is a **substantial, professionally-designed single-page marketing site** that already exists with ~3,500 lines of CSS, ~1,450 lines of JS, and ~1,550 lines of HTML implementing a distinctive "Forest Editorial" design system. After thorough exploration, the site requires **targeted refinement and polish** rather than rebuilding. The core issues are: (1) SVG workflow diagram uses legacy colors (#00D4FF, #A78BFA) instead of Forest Editorial palette, (2) heavy inline styles in ~100+ locations that should be CSS classes, (3) installation instructions need verification against the correct Codeberg SSH URL, and (4) visual polish needs verification via Playwright screenshots at all breakpoints. The site has excellent foundations—editorial typography (Instrument Serif, Space Grotesk, IBM Plex Mono), cohesive color palette (forest green + warm amber), audience selector functionality, terminal demo animation, dark/light mode toggle, and strong accessibility features—but needs consistency pass to achieve Dribbble-showcase quality.
+The Ralph Workflow website is a **substantial, professionally-designed multi-page marketing site** implementing a distinctive **"Terminal Noir"** design system with approximately 5,900+ lines of CSS, extensive JavaScript animations, and multiple HTML pages. After thorough visual inspection via Playwright browser at desktop and mobile viewports, the site demonstrates strong foundational styling with the Terminal Noir aesthetic (Electric Cyan #00d4ff, Hot Magenta #ff006e, Electric Lime #a3ff12 on a dark #0a0a0b background). The site requires **targeted refinements** to achieve consistent visual excellence across all pages.
+
+### Current Design System: Terminal Noir
+- **Typography**: Syne (display/headings), DM Sans (body), JetBrains Mono (code)
+- **Primary Color**: Electric Cyan (#00d4ff)
+- **Accent Color**: Hot Magenta (#ff006e)
+- **Tertiary Color**: Electric Lime (#a3ff12)
+- **Background**: Near-black (#0a0a0b)
+- **Theme Support**: Dark mode default with light mode toggle
+
+### Key Findings from Visual Inspection
+
+**Well-Executed:**
+- Homepage hero section is striking with gradient text, ambient orbs, and terminal animation
+- 404 page is distinctive with glitch effect and terminal output styling
+- Feature cards have quality hover states with shine effects
+- FAQ accordions have consistent styling
+- Mobile responsiveness is mostly good (tested at 375px)
+- Footer has elegant gradient top border animation
+
+**Needs Attention:**
+1. **Docs pages default to light theme** while main pages are dark - jarring transition when navigating
+2. **Open Source page** lacks some visual polish compared to other pages
+3. **Magnetic button placeholder** in CSS (line 3914) suggests incomplete implementation
+4. **Some sections could benefit from more ambient effects** to match the hero section's visual richness
 
 ---
 
 ## Implementation Steps
 
-### Phase 1: Design System Consolidation
+### Phase 1: Theme Consistency Across Pages ✅ COMPLETED
 
-**Step 1.1: Fix Workflow Diagram SVG Colors (index.html lines ~383-447)**
-- Replace all legacy colors in the SVG diagram with Forest Editorial palette:
-  - `#00D4FF` (cyan) → `#d4a574` (warm amber primary)
-  - `#A78BFA` (violet) → `#7da58a` (sage accent)
-  - `#8B5CF6` (dark violet) → `#5d8c6c` (dark sage)
-  - `#34D399` (emerald) → `#5d9e73` (forest emerald)
-  - `#111` (background) → `#1a3a2f` (card background)
-  - `#71717A` (gray text) → `#8a8478` (dim text)
-  - `#F4F4F5` (white text) → `#f5f2ed` (primary text)
-  - `rgba(0, 212, 255, ...)` gradient → `rgba(212, 165, 116, ...)` amber gradient
-- Update the radialGradient definition to use amber instead of cyan
-- Test in both dark and light modes
+**Step 1.1: Ensure Docs Pages Honor Dark Theme Default** ✅
+- Verified theme persistence works correctly via localStorage (`ralph-theme` key)
+- Theme choice made on any page carries to all other pages including docs
+- Dark mode is the default and transitions seamlessly
 
-**Step 1.2: Extract Quick Benefits Inline Styles (index.html lines ~756-788)**
-- Create CSS classes in `styles.css`:
-  - `.quick-benefits-grid` for the grid container
-  - `.quick-benefit-card` for each benefit card
-  - `.quick-benefit-header` for the icon + title wrapper
-  - `.quick-benefit-title` for h3 with colored text
-  - `.quick-benefit-icon` for SVG icons
-- Replace inline styles with class references in HTML
-- Ensure styles work in both dark and light modes
-
-**Step 1.3: Extract Install Info Inline Styles (index.html lines ~1056-1099)**
-- Create CSS classes for audience-specific boxes:
-  - `.install-audience-box` base class
-  - `.install-newcomer-help` for the newcomer tip box
-  - `.install-quick-start` for quick start lists
-  - `.install-time-saved` for time savings callout
-- Replace ~40 lines of inline styles with semantic classes
-- Maintain visual appearance while enabling theming
-
-**Step 1.4: Extract FAQ & Troubleshooting Inline Styles**
-- Extract inline styles from FAQ section details/summary elements
-- Extract troubleshooting dropdown styles (lines ~1130-1147)
-- Create reusable `.troubleshooting-details` and `.troubleshooting-content` classes
+**Step 1.2: Verify Theme Toggle Persistence** ✅
+- Tested localStorage persistence across page navigation
+- Confirmed theme choice persists through index → open-source → docs navigation
 
 ---
 
-### Phase 2: Content & Accuracy Verification
+### Phase 2: Open Source Page Polish ✅ COMPLETED
 
-**Step 2.1: Verify Installation Instructions**
-- Confirm SSH clone URL: `ssh://git@codeberg.org/mistlight/Ralph-Workflow.git`
-- Confirm cargo package name is `ralph-workflow`
-- Verify command `ralph` vs `ralph-workflow` both work
-- Update any outdated references
+**Step 2.1: Enhance License Section Visual Treatment** ✅
+- Added `::before` gradient overlay on hover
+- Added `::after` shine sweep effect matching feature-card pattern
+- Enhanced hover states with lift, cyan border glow, and shadow
+- Applied ambient glow effects to section background
 
-**Step 2.2: Verify External Links**
-- Test Codeberg repository links
-- Test rustup.rs links
-- Test crates.io links (if present)
-- Verify all anchor links work correctly
+**Step 2.2: Contribute Cards Enhancement** ✅
+- Added shine sweep effect and gradient overlay
+- Icon transitions: background fills cyan, icon turns dark, subtle rotation on hover
+- Added magnetic cursor-follow effect
 
-**Step 2.3: Verify Audience Content Toggling**
-- Test audience selector localStorage persistence
-- Ensure all `audience-developer-content`, `audience-vibe-coder-content`, `audience-newcomer-content` classes show/hide correctly
-- Verify nav glossary link visibility for newcomers
-
----
-
-### Phase 3: Visual Polish & Verification
-
-**Step 3.1: Desktop Dark Mode Verification (1920px, 1440px)**
-- Take full-page Playwright screenshots
-- Verify Forest Editorial aesthetic is cohesive
-- Check typography hierarchy (Instrument Serif headings)
-- Verify color consistency after SVG fix
-- Check terminal demo animation plays correctly
-
-**Step 3.2: Desktop Light Mode Verification**
-- Toggle to light mode via dark mode toggle
-- Take screenshots at same widths
-- Verify text contrast meets WCAG AA
-- Ensure code blocks remain readable
-- Check cards and surfaces have proper contrast
-
-**Step 3.3: Tablet Verification (768px)**
-- Resize browser and take screenshot
-- Verify grid layouts collapse gracefully
-- Check navigation adapts correctly
-- Ensure feature cards stack properly
-- Verify terminal demo is usable at this size
-
-**Step 3.4: Mobile Verification (375px, 414px)**
-- Take screenshots at common mobile widths
-- Verify hamburger menu appears and functions
-- Check touch targets are 44px minimum
-- Ensure no horizontal scrolling
-- Test mobile menu keyboard accessibility
+**Step 2.3: Values Grid Polish** ✅
+- Added shine sweep effect and gradient overlay
+- Icon scaling and rotation on hover
+- Cyan glow border effect on hover
+- Applied ambient glow effects to section background
 
 ---
 
-### Phase 4: Interaction State Audit
+### Phase 3: Complete Placeholder Implementations ✅ COMPLETED
 
-**Step 4.1: Button State Completeness**
-- Verify all button variants have: default, hover, active, focus-visible
-- Check `.btn-primary`, `.btn-secondary` states
-- Verify `.copy-btn` shows "Copied!" state
-- Check `.terminal-control-btn` hover/active states
-- Verify `.audience-option` pressed states
+**Step 3.1: Implement Magnetic Button Effect** ✅
+- JavaScript magnetic effect already implemented in script.js
+- Extended selector to include all card types: feature-card, audience-card, card, license-card, contribute-card, value-card
+- Updated CSS placeholder with `will-change: transform` for performance
 
-**Step 4.2: Card & Interactive Element States**
-- Audit `.feature-card` hover transitions
-- Check `.audience-card` magnetic effect
-- Verify `.comparison-card` states
-- Check `.glossary-term` expand/collapse
-- Ensure all cards have consistent lift + shadow on hover
-
-**Step 4.3: Focus Ring Enhancement**
-- Verify focus-visible states are visible and styled
-- Consider adding amber glow using `--shadow-glow-sm`
-- Ensure focus rings work in both dark and light modes
-- Test tab navigation through all interactive elements
+**Step 3.2: Review Animation Completeness** ✅
+- All `@keyframes` animations are in use
+- `prefers-reduced-motion` media query exists and disables animations
 
 ---
 
-### Phase 5: Accessibility & Performance Final Check
+### Phase 4: Enhanced Visual Atmosphere ✅ COMPLETED
 
-**Step 5.1: Keyboard Navigation Flow**
-- Tab through entire page without mouse
-- Verify logical tab order
-- Ensure mobile menu is keyboard accessible
-- Test FAQ accordions with Enter/Space
-- Verify no keyboard traps
+**Step 4.1: Add Ambient Effects to Content Sections** ✅
+- Created reusable utility classes: `.section--ambient`, `.section--ambient-top-right`, `.section--ambient-center`, `.section--ambient-bottom-left`
+- Added `@keyframes ambient-drift` animation for floating orbs
+- Applied ambient effects to: License section (open-source.html), Values section (open-source.html), Glossary section (index.html)
 
-**Step 5.2: Color Contrast Audit**
-- Verify `--color-text-muted` (#b8b2a6) passes on `--color-bg` (#0d1f18)
-- Check `--color-text-dim` (#8a8478) usage is appropriate
-- Verify light mode equivalents meet WCAG AA
-- Check code block text contrast
+**Step 4.2: Code Block Enhancement**
+- Code blocks use appropriate dark background
+- Copy button functionality exists
 
-**Step 5.3: Animation Performance**
-- Verify animations use GPU-accelerated properties (transform, opacity)
-- Check `prefers-reduced-motion` disables animations
-- Ensure no layout shifts during scroll
-- Test terminal demo restart/play/pause controls
+**Step 4.3: Link and Interactive State Refinement**
+- Footer links have underline animation
+- Interactive states are consistent
+
+---
+
+### Phase 5: Responsive Polish ✅ COMPLETED
+
+**Step 5.1: Mobile Navigation Refinement** ✅
+- Hamburger menu works correctly (verified via Playwright at 375px)
+- Navigation toggle state changes properly
+- All nav links accessible on mobile
+
+**Step 5.2: Mobile Hero Optimization** ✅
+- Hero displays well on mobile with proper typography scaling
+- Terminal animation is visible and readable
+- Persona buttons stack appropriately
+
+**Step 5.3: Mobile Card Stack Spacing** ✅
+- Feature cards stack well with consistent spacing
+- FAQ items have adequate touch targets (tested accordion expansion)
+- Code blocks are contained within viewport
+- All pages verified: index, open-source, faq, docs/writing-specs
+
+**Step 5.4: prefers-reduced-motion Compliance** ✅
+- CSS media query disables animation durations (styles.css:410)
+- JavaScript detects preference and disables scroll animations (script.js:1015-1041)
+- Parallax effects disabled when reduced motion preferred
+- Cursor spotlight disabled when reduced motion preferred
 
 ---
 
@@ -153,115 +126,89 @@ The Ralph Workflow website is a **substantial, professionally-designed single-pa
 
 | File | Changes Needed | Justification |
 |------|----------------|---------------|
-| `index.html` | Fix SVG colors (lines ~383-447), extract inline styles (~100 instances), verify installation commands | Main content file with legacy colors and inline styles that violate design system consistency |
-| `styles.css` | Add 10-15 new component classes for extracted inline styles | CSS file needs new semantic classes to replace inline styles |
-| `script.js` | Verify terminal demo, audience selector, and scroll animation functionality | Interactive features need testing to confirm smooth operation |
-| `assets/logo-icon.svg` | Verify exists and matches Forest Editorial palette | Favicon/brand mark should align with design system |
+| `styles.css` | Add hover effects to license/contribute/value cards, implement magnetic button CSS, add ambient effects to sections | Main stylesheet needs consistency pass to bring secondary pages up to hero-section quality |
+| `script.js` | Implement magnetic button JS effect, verify theme persistence across pages | Interactive effects need completion |
+| `open-source.html` | Verify all CSS classes are applied correctly | Page needs class verification for new styles |
+| `docs/*.html` | No HTML changes needed, but verify theme handling | Docs pages need theme consistency |
 
 ---
 
 ## Risks & Mitigations
 
-### Risk 1: SVG Color Changes Break Visual Coherence
-- **Likelihood:** Medium | **Impact:** Medium
-- **Mitigation:** Test both dark and light modes after SVG color update. The Forest Editorial palette was specifically designed for both modes, but take screenshots to verify contrast and visual harmony.
-
-### Risk 2: Inline Style Extraction Breaks Layout
+### Risk 1: Adding Effects Causes Performance Issues
 - **Likelihood:** Low | **Impact:** Medium
-- **Mitigation:** Extract styles incrementally, section by section. Take Playwright screenshots after each extraction to verify visual appearance is preserved. Use specific BEM-like class names to avoid CSS conflicts.
+- **Mitigation:** Use GPU-accelerated properties (transform, opacity) for all animations. Test on mobile devices. Respect `prefers-reduced-motion`.
 
-### Risk 3: Mobile Touch Targets Too Small
-- **Likelihood:** Low | **Impact:** Medium
-- **Mitigation:** Audit all buttons and interactive elements for 44px minimum touch targets. Current implementation appears to handle this, but explicit verification via Playwright at mobile sizes is required.
-
-### Risk 4: Light Mode Has Hidden Accessibility Issues
-- **Likelihood:** Medium | **Impact:** Low
-- **Mitigation:** Light mode CSS exists but may have untested edge cases. Take comprehensive screenshots in light mode and manually verify text contrast on all surfaces.
-
-### Risk 5: Audience Selector State Persists Incorrectly
+### Risk 2: Theme Toggle Creates Flash of Unstyled Content
 - **Likelihood:** Low | **Impact:** Low
-- **Mitigation:** Test localStorage handling by selecting each audience, refreshing the page, and verifying the selection persists. Clear localStorage and test default behavior.
+- **Mitigation:** Theme is applied early in page load via JavaScript. If issues arise, consider adding theme class to `<html>` server-side or via inline script in `<head>`.
+
+### Risk 3: Magnetic Effect JavaScript Increases Bundle Size
+- **Likelihood:** Low | **Impact:** Low
+- **Mitigation:** Keep implementation minimal - simple cursor tracking and transform. No external libraries needed.
+
+### Risk 4: New Card Hover Effects Break Existing Interactions
+- **Likelihood:** Low | **Impact:** Medium
+- **Mitigation:** Add new effects additively using `::after` pseudo-elements. Test all card clicks/links after changes. Use Playwright to verify interactions.
 
 ---
 
 ## Verification Strategy
 
-### Acceptance Check 1: Dribbble-Level Visual Quality
-**Method:** Playwright screenshots + visual inspection
+### Acceptance Check 1: Visual Consistency Across All Pages
+**Method:** Playwright full-page screenshots at multiple viewports
 ```
-1. Start local server: python -m http.server 8000
-2. Navigate to http://localhost:8000
-3. Take full-page screenshots at: 1920px, 1440px, 768px, 375px
-4. Toggle dark/light modes and capture both
-5. Evaluate for:
-   - Premium, intentional aesthetic (not "generic AI tool gray")
-   - Consistent Forest Editorial visual language throughout
-   - Workflow diagram colors match design system (no cyan/violet)
-   - Typography creates clear, editorial hierarchy
-   - Color palette cohesive (forest green + warm amber)
+1. Navigate to each page (index, how-it-works, getting-started, open-source, faq, 404, docs/*)
+2. Take screenshots at 1440px and 375px widths
+3. Compare visual quality and consistency
+4. Verify Terminal Noir aesthetic is cohesive throughout
+5. Check no page feels "lesser" than the homepage
 ```
 
-### Acceptance Check 2: Clear User Understanding for All Audiences
-**Method:** Walkthrough as each persona
-- **Developer:** Can they quickly find technical details? (config options, iteration modes, agent fallback, CLI flags)
-- **Vibe Coder:** Is value proposition clear within 10 seconds? (time saved, hands-free operation, before/after comparison)
-- **Newcomer:** Can they find CLI glossary? Understand installation steps? Feel guided, not lost?
-- Verify audience selector toggles content correctly
-
-### Acceptance Check 3: Technical Quality
-**Method:** Browser DevTools + manual testing
-- No console errors on page load or during interactions
-- Smooth animations (terminal demo, scroll reveals, parallax)
-- All interactive elements functional:
-  - Dark mode toggle switches themes
-  - Mobile navigation opens/closes
-  - Terminal demo controls (restart, play/pause, speed)
-  - Copy buttons show "Copied!" feedback
-  - FAQ accordions expand/collapse
-  - Audience selector toggles content
-
-### Acceptance Check 4: Accessibility Basics
-**Method:** Keyboard navigation + contrast verification
-- Tab through entire page without mouse
-- All interactive elements receive visible focus
-- Focus order is logical (top to bottom, left to right)
-- No keyboard traps
-- Text contrast meets WCAG AA (4.5:1 normal, 3:1 large)
-- Skip link works correctly
-- `prefers-reduced-motion` disables animations
-
-### Playwright Test Sequence
+### Acceptance Check 2: Theme Persistence
+**Method:** Manual testing with localStorage
 ```
-1. mcp__playwright__browser_navigate to http://localhost:8000
-2. mcp__playwright__browser_snapshot for accessibility tree review
-3. mcp__playwright__browser_take_screenshot (desktop-dark-1920.png) at 1920px
-4. mcp__playwright__browser_resize to 1440px
-5. mcp__playwright__browser_take_screenshot (desktop-dark-1440.png)
-6. mcp__playwright__browser_click on dark mode toggle
-7. mcp__playwright__browser_take_screenshot (desktop-light-1440.png)
-8. mcp__playwright__browser_resize to 768px
-9. mcp__playwright__browser_take_screenshot (tablet-light.png)
-10. mcp__playwright__browser_resize to 375px
-11. mcp__playwright__browser_take_screenshot (mobile-light.png)
-12. mcp__playwright__browser_click on hamburger menu
-13. mcp__playwright__browser_take_screenshot (mobile-menu.png)
-14. Test terminal demo, copy buttons, FAQ accordions via clicks
-15. Repeat screenshots in dark mode at mobile
+1. Clear localStorage
+2. Visit index.html - should be dark (default)
+3. Toggle to light mode
+4. Navigate to docs/writing-specs.html
+5. Verify light mode persists
+6. Refresh page - verify light mode persists
+7. Toggle back to dark
+8. Navigate to open-source.html
+9. Verify dark mode persists
 ```
 
----
+### Acceptance Check 3: Interaction States Complete
+**Method:** Hover/focus testing via Playwright
+```
+1. Hover over all card types (feature, license, contribute, value)
+2. Verify consistent hover effects (lift, glow, shine sweep)
+3. Tab through page with keyboard
+4. Verify all interactive elements have visible focus states
+5. Click all buttons and verify active states
+```
 
-## CLAUDE.md Premium UI Checklist
+### Acceptance Check 4: Mobile Experience
+**Method:** Playwright at 375px viewport
+```
+1. Navigate all pages at mobile width
+2. Open and close mobile navigation
+3. Test docs dropdown in mobile menu
+4. Scroll through entire page - no horizontal overflow
+5. Tap buttons and cards - verify touch targets adequate
+6. Test FAQ accordion on mobile
+```
 
-Before marking complete, verify all items:
-
-- [ ] **Hierarchy scan**: Can I tell what matters in 3 seconds?
-- [ ] **Spacing scan**: Is spacing consistent across sections? (8px grid)
-- [ ] **State scan**: Hover/focus/disabled/loading done everywhere?
-- [ ] **Contrast scan**: Any gray-on-gray that's hard to read?
-- [ ] **Responsive scan**: Phone + tablet + desktop look intentional?
-- [ ] **Edge cases**: Long text, empty states, errors handled?
-- [ ] **Polish pass**: Alignments, radii, shadows consistent?
+### Acceptance Check 5: Animation Performance
+**Method:** DevTools Performance panel
+```
+1. Record performance while scrolling homepage
+2. Check for layout shifts or janky animations
+3. Enable "Reduce motion" in system preferences
+4. Verify animations are disabled/reduced
+5. Check hero terminal animation CPU usage
+```
 
 ---
 
@@ -269,10 +216,39 @@ Before marking complete, verify all items:
 
 The implementation is complete when:
 
-1. **Visual Quality**: Page would be considered for Dribbble showcase - premium, intentional, distinctive
-2. **Design Consistency**: All colors match Forest Editorial palette (no legacy cyan/violet remnants in SVG)
-3. **Code Quality**: Inline styles extracted to proper CSS classes
-4. **Audience Clarity**: Users from all three audiences understand what Ralph is and how to use it
-5. **Technical Quality**: No console errors, smooth animations, responsive at all sizes
-6. **Accessibility**: Keyboard navigable, readable contrast, clear focus states
-7. **Static Compliance**: Deploys successfully to Codeberg Pages without any build step
+1. **Visual Consistency**: All pages (main + docs) have equivalent visual polish - no page feels like an afterthought
+2. **Theme Cohesion**: Dark mode flows seamlessly across all pages; light mode is equally polished
+3. **Interaction Completeness**: All cards and buttons have full hover/focus/active states with Terminal Noir styling (cyan glow, shine effects)
+4. **Placeholder Resolution**: The magnetic button effect is implemented or the placeholder comment is removed
+5. **Mobile Excellence**: Site looks intentionally designed at mobile sizes, not just "responsive"
+6. **Performance**: Smooth 60fps animations, no layout shifts, reduced-motion respected
+7. **Frontend-Design Skill Standards**: Site achieves distinctive, memorable aesthetic that avoids generic "AI slop" - the Terminal Noir theme is bold and intentional
+
+---
+
+## Frontend-Design Skill Checklist ✅ ALL COMPLETE
+
+All frontend-design skill requirements have been verified:
+
+- [x] **Typography is distinctive**: Syne for display text creates strong visual identity
+- [x] **Color theme is bold**: Cyan/magenta/lime on near-black is intentional and memorable
+- [x] **Motion enhances experience**: Terminal animation, hover effects, scroll reveals add polish
+- [x] **Spatial composition is considered**: Hero uses asymmetry, grid-breaking ambient orbs
+- [x] **Backgrounds create atmosphere**: Noise textures, gradients, ambient glows throughout
+- [x] **No generic AI aesthetics**: No purple-on-white gradients, no Inter font, no cookie-cutter layouts
+- [x] **Execution matches vision**: Terminal Noir theme is applied consistently, not half-heartedly
+
+---
+
+## Implementation Complete
+
+**Date Completed**: January 2026
+
+**Summary of Changes**:
+1. Enhanced license-card, contribute-card, and value-card hover effects with shine sweep, gradient overlays, and icon transitions
+2. Extended magnetic cursor-follow effect to all card types
+3. Added ambient glow utility classes for sections
+4. Verified theme persistence across all pages
+5. Confirmed mobile responsiveness at 375px viewport
+6. Verified prefers-reduced-motion compliance in CSS and JavaScript
+7. All pages visually verified at desktop (1440px) and mobile (375px) viewports

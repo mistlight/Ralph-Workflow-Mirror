@@ -35,8 +35,8 @@
         });
 
         // === Extended Magnetic Effect for Cards ===
-        // Apply subtle magnetic effect to feature cards and audience cards
-        const magneticElements = document.querySelectorAll('.feature-card, .audience-card, .card');
+        // Apply subtle magnetic effect to feature cards, audience cards, and open source page cards
+        const magneticElements = document.querySelectorAll('.feature-card, .audience-card, .card, .license-card, .contribute-card, .value-card');
 
         magneticElements.forEach(card => {
             card.addEventListener('mousemove', function(e) {
