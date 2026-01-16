@@ -1,0 +1,39 @@
+# MERGE CONFLICT RESOLUTION
+
+There are merge conflicts that need to be resolved. Below are the files with conflicts, showing both versions of the conflicting changes.
+
+{{CONTEXT}}
+
+## Conflict Resolution Instructions
+
+For each conflicted file below:
+1. Review both versions of the changes (the 'ours' and 'theirs' sections)
+2. Intelligently merge the changes, considering:
+   - The task context above
+   - The implementation plan if available
+   - The intent of both versions
+   - Code correctness and consistency
+3. Produce the final merged file content WITHOUT conflict markers
+
+IMPORTANT: Your output must include the complete resolved file contents. Do not include conflict markers (<<<<<<<, =======, >>>>>>>) in your output.
+
+## Conflicted Files
+
+{{CONFLICTS}}
+
+## Output Format
+
+Provide your response as a JSON object with the following structure:
+
+```json
+{
+  "resolved_files": {
+    "path/to/file1": "<complete resolved file content>",
+    "path/to/file2": "<complete resolved file content>"
+  }
+}
+```
+
+Each resolved file should contain the COMPLETE file content, not just the changed sections. The content must be free of conflict markers.
+
+If you cannot resolve a particular conflict, you may mark it for manual resolution by omitting it from the resolved_files object. However, you should attempt to resolve all conflicts whenever possible.

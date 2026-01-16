@@ -11,7 +11,9 @@
 
 #![deny(unsafe_code)]
 
+use crate::prompts::template_engine::Template;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 
@@ -44,34 +46,91 @@ pub fn build_conflict_resolution_prompt(
     prompt_md_content: Option<&str>,
     plan_content: Option<&str>,
 ) -> String {
-    let mut prompt = String::new();
+    let template_content = include_str!("templates/conflict_resolution.txt");
+    let template = Template::new(template_content);
 
-    // Header - frame as "merge conflict resolution" without mentioning rebase
-    prompt.push_str("# MERGE CONFLICT RESOLUTION\n\n");
+    let context = format_context_section(prompt_md_content, plan_content);
+    let conflicts_section = format_conflicts_section(conflicts);
+
+    let variables = HashMap::from([("CONTEXT", context), ("CONFLICTS", conflicts_section)]);
+
+    template.render(&variables).unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to render conflict resolution template: {e}");
+        fallback_prompt(conflicts, prompt_md_content, plan_content)
+    })
+}
+
+/// Format the context section with PROMPT.md and PLAN.md content.
+///
+/// This helper builds the context section that gets injected into the
+/// {{CONTEXT}} template variable.
+fn format_context_section(prompt_md_content: Option<&str>, plan_content: Option<&str>) -> String {
+    let mut context = String::new();
+
+    // Add task context from PROMPT.md if available
+    if let Some(prompt_md) = prompt_md_content {
+        context.push_str("## Task Context\n\n");
+        context.push_str("The user was working on the following task:\n\n");
+        context.push_str("```\n");
+        context.push_str(prompt_md);
+        context.push_str("\n```\n\n");
+    }
+
+    // Add plan context from PLAN.md if available
+    if let Some(plan) = plan_content {
+        context.push_str("## Implementation Plan\n\n");
+        context.push_str("The following plan was being implemented:\n\n");
+        context.push_str("```\n");
+        context.push_str(plan);
+        context.push_str("\n```\n\n");
+    }
+
+    context
+}
+
+/// Format the conflicts section for all conflicted files.
+///
+/// This helper builds the conflicts section that gets injected into the
+/// {{CONFLICTS}} template variable.
+fn format_conflicts_section(conflicts: &HashMap<String, FileConflict>) -> String {
+    let mut section = String::new();
+
+    for (path, conflict) in conflicts {
+        writeln!(section, "### {path}\n\n").unwrap();
+        section.push_str("Current state (with conflict markers):\n\n");
+        section.push_str("```");
+        section.push_str(&get_language_marker(path));
+        section.push('\n');
+        section.push_str(&conflict.current_content);
+        section.push_str("\n```\n\n");
+
+        if !conflict.conflict_content.is_empty() {
+            section.push_str("Conflict sections:\n\n");
+            section.push_str("```\n");
+            section.push_str(&conflict.conflict_content);
+            section.push_str("\n```\n\n");
+        }
+    }
+
+    section
+}
+
+/// Fallback prompt in case template rendering fails.
+///
+/// This provides a minimal fallback to ensure the system continues to work
+/// even if the template system has issues.
+fn fallback_prompt(
+    conflicts: &HashMap<String, FileConflict>,
+    prompt_md_content: Option<&str>,
+    plan_content: Option<&str>,
+) -> String {
+    let mut prompt = String::from("# MERGE CONFLICT RESOLUTION\n\n");
     prompt.push_str(
         "There are merge conflicts that need to be resolved. Below are the files \
          with conflicts, showing both versions of the conflicting changes.\n\n",
     );
 
-    // Add task context from PROMPT.md if available
-    if let Some(prompt_md) = prompt_md_content {
-        prompt.push_str("## Task Context\n\n");
-        prompt.push_str("The user was working on the following task (from PROMPT.md):\n\n");
-        prompt.push_str("```\n");
-        prompt.push_str(prompt_md);
-        prompt.push_str("\n```\n\n");
-    }
-
-    // Add plan context from PLAN.md if available
-    if let Some(plan) = plan_content {
-        prompt.push_str("## Implementation Plan\n\n");
-        prompt.push_str("The following plan was being implemented (from PLAN.md):\n\n");
-        prompt.push_str("```\n");
-        prompt.push_str(plan);
-        prompt.push_str("\n```\n\n");
-    }
-
-    // Add conflict resolution instructions
+    prompt.push_str(&format_context_section(prompt_md_content, plan_content));
     prompt.push_str("## Conflict Resolution Instructions\n\n");
     prompt.push_str(
         "For each conflicted file below:\n\
@@ -89,27 +148,9 @@ pub fn build_conflict_resolution_prompt(
          Do not include conflict markers (<<<<<<<, =======, >>>>>>>) in your output.\n\n",
     );
 
-    // List all conflicted files
     prompt.push_str("## Conflicted Files\n\n");
-    for (path, conflict) in conflicts {
-        use std::fmt::Write;
-        writeln!(prompt, "### {path}\n\n").unwrap();
-        prompt.push_str("Current state (with conflict markers):\n\n");
-        prompt.push_str("```");
-        prompt.push_str(&get_language_marker(path));
-        prompt.push('\n');
-        prompt.push_str(&conflict.current_content);
-        prompt.push_str("\n```\n\n");
+    prompt.push_str(&format_conflicts_section(conflicts));
 
-        if !conflict.conflict_content.is_empty() {
-            prompt.push_str("Conflict sections:\n\n");
-            prompt.push_str("```\n");
-            prompt.push_str(&conflict.conflict_content);
-            prompt.push_str("\n```\n\n");
-        }
-    }
-
-    // Output format instructions
     prompt.push_str("## Output Format\n\n");
     prompt.push_str("Provide your response as a JSON object with the following structure:\n\n");
     prompt.push_str(
@@ -273,5 +314,76 @@ mod tests {
         assert_eq!(get_language_marker("file.md"), "markdown");
         assert_eq!(get_language_marker("file.yaml"), "yaml");
         assert_eq!(get_language_marker("file.unknown"), "");
+    }
+
+    #[test]
+    fn test_format_context_section_with_both() {
+        let prompt_md = "Test prompt";
+        let plan = "Test plan";
+        let context = format_context_section(Some(prompt_md), Some(plan));
+
+        assert!(context.contains("## Task Context"));
+        assert!(context.contains("Test prompt"));
+        assert!(context.contains("## Implementation Plan"));
+        assert!(context.contains("Test plan"));
+    }
+
+    #[test]
+    fn test_format_context_section_with_prompt_only() {
+        let prompt_md = "Test prompt";
+        let context = format_context_section(Some(prompt_md), None);
+
+        assert!(context.contains("## Task Context"));
+        assert!(context.contains("Test prompt"));
+        assert!(!context.contains("## Implementation Plan"));
+    }
+
+    #[test]
+    fn test_format_context_section_with_plan_only() {
+        let plan = "Test plan";
+        let context = format_context_section(None, Some(plan));
+
+        assert!(!context.contains("## Task Context"));
+        assert!(context.contains("## Implementation Plan"));
+        assert!(context.contains("Test plan"));
+    }
+
+    #[test]
+    fn test_format_context_section_empty() {
+        let context = format_context_section(None, None);
+        assert!(context.is_empty());
+    }
+
+    #[test]
+    fn test_format_conflicts_section() {
+        let mut conflicts = HashMap::new();
+        conflicts.insert(
+            "src/test.rs".to_string(),
+            FileConflict {
+                conflict_content: "<<<<<<< ours\nx\n=======\ny\n>>>>>>> theirs".to_string(),
+                current_content: "<<<<<<< ours\nx\n=======\ny\n>>>>>>> theirs".to_string(),
+            },
+        );
+
+        let section = format_conflicts_section(&conflicts);
+
+        assert!(section.contains("### src/test.rs"));
+        assert!(section.contains("Current state (with conflict markers)"));
+        assert!(section.contains("```rust"));
+        assert!(section.contains("<<<<<<< ours"));
+        assert!(section.contains("Conflict sections"));
+    }
+
+    #[test]
+    fn test_template_is_used() {
+        // Verify that the template-based approach produces valid output
+        let conflicts = HashMap::new();
+        let prompt = build_conflict_resolution_prompt(&conflicts, None, None);
+
+        // Should contain key sections from the template
+        assert!(prompt.contains("# MERGE CONFLICT RESOLUTION"));
+        assert!(prompt.contains("## Conflict Resolution Instructions"));
+        assert!(prompt.contains("## Output Format"));
+        assert!(prompt.contains("resolved_files"));
     }
 }
