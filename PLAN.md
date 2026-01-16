@@ -2,174 +2,195 @@
 
 ## Summary
 
-After visual diagnosis of all pages (index.html sections 1-7, getting-started.html, faq.html, docs/writing-specs.html), I've identified the fundamental causes of visual inconsistency between the baseline (Sections 1-3) and post-Section 3 content.
+This plan addresses a **critical design system gap**: the post-Section 3 pages (getting-started.html, how-it-works.html, faq.html, open-source.html, and all docs/*.html pages) use dozens of CSS classes that **do not exist** in styles.css. These pages render without their intended styling because the HTML references undefined selectors.
 
-**The good news:** The site has strong bones. The design system is well-defined, typography choices are excellent (Instrument Serif + Space Grotesk + IBM Plex Mono), and the color palette (forest green + warm amber) is cohesive. The issues are primarily about **application consistency**, not design system flaws.
+**Root cause confirmed**: Searching styles.css for classes like `.content-container`, `.page-header`, `.page-title`, `.prereq-grid`, `.install-steps`, `.safety-callout`, `.workflow-example`, `.license-grid`, `.faq-list`, `.cta-content`, and `.breadcrumb` returns **zero matches**. The HTML was written expecting these styles to exist, but they were never added.
+
+The fix requires adding comprehensive CSS definitions for all missing component classes while maintaining consistency with the established Terminal Noir design system from the index.html hero sections.
 
 ---
 
 ## Top 4 Fundamental Causes of Visual Inconsistency
 
-### 1. **Container Width & Reading Lane Inconsistency**
-- **Baseline (Sections 1-3):** Content uses `--container-xl` (1280px) with comfortable margins, creating a consistent reading lane
-- **Post-Section 3:** Some sections break this pattern with ad-hoc widths, particularly in:
-  - Section 05 (Features) - cards feel cramped within container
-  - Section 06 (Audience) - inconsistent card grid spacing
-  - FAQ items on index.html vs faq.html have different visual density
-  - Docs pages have narrower effective content width in places
+### 1. **Missing CSS Class Definitions**
+The subpages use approximately **60+ CSS class names** that have no corresponding styles in styles.css. This includes:
+- Layout classes: `.content-container`, `.page-header`, `.page-header-content`
+- Typography classes: `.page-title`, `.page-subtitle`, `.section-header--left`, `.section-number`
+- Component grids: `.prereq-grid`, `.safety-grid`, `.cost-grid`, `.license-grid`, `.contribute-grid`, `.values-grid`
+- Component cards: `.prereq-card`, `.safety-card`, `.cost-card`, `.value-card`, `.contribute-card`
+- Step components: `.install-steps`, `.install-step`, `.overnight-steps`, `.overnight-step`, `.workflow-steps-detailed`
+- Callout components: `.safety-callout`, `.troubleshooting-box`, `.config-tips`, `.license-clarification`
+- FAQ components: `.faq-list`, `.faq-item`, `.faq-summary`, `.faq-toggle`, `.faq-content`
+- CTA components: `.cta-section`, `.cta-content`, `.cta-buttons`
+- Navigation: `.breadcrumb`
 
-### 2. **Vertical Rhythm Breakdown**
-- **Baseline:** Sections 1-3 have generous, consistent spacing between elements (80-120px section padding, consistent element gaps)
-- **Post-Section 3:** Vertical spacing becomes erratic:
-  - Section 04 (Install) has tighter spacing than surrounding sections
-  - Section 07 (FAQ on index) feels compressed
-  - Getting-started.html step sequences have inconsistent inter-step spacing
-  - Docs pages have variable spacing between content blocks
+### 2. **Inconsistent Container Model**
+- index.html uses `.container` (defined, 1280px max-width)
+- Subpages use `.content-container` (undefined, no styles applied)
+- This creates width inconsistency between pages
 
-### 3. **Component Visual Weight Imbalance**
-- **Baseline:** Cards, code blocks, and callouts in Sections 1-3 have balanced visual weight with consistent border-radius, shadows, and padding
-- **Post-Section 3:**
-  - Feature cards (Section 05) feel lighter/less substantial than comparison cards
-  - Audience cards (Section 06) have different hover behavior than baseline cards
-  - Code blocks across pages have inconsistent padding and header treatment
-  - Troubleshooting boxes, tips boxes, and callouts vary in styling
-  - FAQ items on index vs dedicated FAQ page have different component treatment
+### 3. **Typography Hierarchy Not Applied**
+- Section numbers use `.section-number` class (undefined)
+- Page titles use `.page-title` class (undefined)
+- Left-aligned headers use `.section-header--left` modifier (undefined)
 
-### 4. **Typography Hierarchy Drift**
-- **Baseline:** Clear distinction between section numbers, headings, subheadings, body, and captions
-- **Post-Section 3:**
-  - Section headings in 04-07 don't have the same visual impact as 01-03
-  - Subheadings (h3, h4) compete with section headings in visual weight
-  - List item styling varies (bullet styles, spacing, indentation)
-  - Code block labels ("bash", "markdown") have inconsistent styling
+### 4. **Component Patterns Diverged**
+- Index.html hero sections have well-styled components
+- Subpage components reference different class names with no styles
 
 ---
 
 ## Implementation Passes
 
-### Pass A — Layout Model Unification
+### Pass A — Layout Model Unification (styles.css additions)
 
-**Goal:** Ensure all pages and sections share the same spatial DNA as Sections 1-3.
+**Goal**: Establish consistent page containers, section layouts, and content widths.
 
-**Targets:**
-1. Audit and normalize container widths across all sections (index.html 04-07)
-2. Standardize section padding to match baseline rhythm (80-100px top/bottom)
-3. Fix grid gutters on feature cards (Section 05) and audience cards (Section 06)
-4. Ensure subpages (getting-started, faq, docs/*) use consistent page container
-5. Normalize content container max-width for reading comfort (~1000px for prose)
+**CSS to add:**
+1. `.content-container` - Narrower reading-width container (~900px max-width), centered, with --space-6 padding
+2. `.page-header` - Hero-like section with --space-24 top padding, --space-16 bottom, --color-bg-alt background
+3. `.page-header-content` - Center-aligned content wrapper with max-width constraint
+4. `.page-header-badges` - Flex container for badges, centered, with margin-bottom
+5. `.page-title` - Display font, clamp(2rem, 6vw, 3.5rem), tight letter-spacing
+6. `.page-subtitle` - Muted color, --text-lg, max-width 600px
+7. `.section-header--left` - Left-aligned modifier (text-align: left, margin: 0)
+8. `.section-number` - Monospace, uppercase, --color-primary, tracking-widest, small size
+9. `.section--alt` - Alternate background (--color-bg-alt) with subtle top border gradient
 
-**Files affected:**
-- `styles.css` - Container/section spacing rules
-- `index.html` - Section wrapper classes (if needed)
-- `getting-started.html` - Container consistency
-- `faq.html` - Container consistency
-- `docs/*.html` - Container consistency
-
-**Verification:**
-- All sections flow with same visual rhythm when scrolling
-- No jarring width changes between sections
-- Subpages feel like part of the same site
+**Responsive additions:**
+- Mobile adjustments for page-header padding
+- Touch-friendly spacing for content-container
 
 ---
 
-### Pass B — Typography & Rhythm Restoration
+### Pass B — Typography & Rhythm Restoration (styles.css additions)
 
-**Goal:** Re-establish consistent heading scale, spacing ladder, and text hierarchy.
+**Goal**: Re-establish heading scale and consistent vertical rhythm.
 
-**Targets:**
-1. Ensure section number + heading combo (01, 02, etc.) has same treatment everywhere
-2. Normalize h2/h3/h4 sizing and spacing relationships
-3. Standardize paragraph margins and line-heights
-4. Fix list styling (bullets, spacing, indentation) to be consistent
-5. Ensure code block typography (size, padding, headers) is uniform
-
-**Files affected:**
-- `styles.css` - Typography scale, heading styles, list styles
-- Possibly HTML files if classes need adjustment
-
-**Verification:**
-- Headings create clear hierarchy across all pages
-- Body text is comfortable to read with consistent rhythm
-- Lists and code blocks have predictable, pleasant spacing
+**CSS to add:**
+1. `.lead-paragraph` - Larger body text (--text-lg or --text-xl), --color-text-primary
+2. `.step-note` - Muted helper text below steps
+3. `.step-success` - Success indicator with green/lime styling
+4. `.code-inline-block` - Inline code container styling
+5. Responsive typography adjustments for headings on mobile
 
 ---
 
-### Pass C — Component Normalization
+### Pass C — Component Normalization (styles.css additions)
 
-**Goal:** Ensure all UI components (cards, callouts, code blocks, FAQ items) share canonical styling.
+**Goal**: Create canonical styles for all shared components.
 
-**Targets:**
-1. Unify card styling (feature cards, audience cards, prereq cards) - same shadows, borders, hover states
-2. Standardize code block treatment (header bar, padding, border-radius, copy button position)
-3. Normalize callout/tip/troubleshooting boxes to single visual pattern
-4. Ensure FAQ items have consistent styling on index.html vs faq.html
-5. Unify step indicators (numbered circles) across pages
-6. Standardize link styling in different contexts
+**Getting-started.html components:**
+1. `.prereq-grid` - 3-column responsive grid
+2. `.prereq-card` - Card with icon, title, description, link
+3. `.prereq-icon` - Icon container with primary-dim background
+4. `.prereq-link` - Inline link with external icon
+5. `.prereq-list` - Styled bullet list
+6. `.install-steps` - Vertical step container
+7. `.install-step` - Individual step with header + content
+8. `.install-step-header` - Flex layout for number + heading
+9. `.install-step-number` - Circular number indicator with glow
+10. `.troubleshooting-box` - Callout box with icon heading
+11. `.troubleshooting-list` - Styled troubleshooting items
 
-**Files affected:**
-- `styles.css` - Card, code-block, callout, FAQ component styles
-- HTML files - May need class normalization
+**Overnight-runs.html components:**
+12. `.safety-callout` - Large callout with icon + content
+13. `.safety-grid` - 2x2 responsive grid
+14. `.safety-card` - Card with icon heading
+15. `.safety-icon` - Icon container
+16. `.safety-content` - Content area
+17. `.config-example` - Code example container
+18. `.config-tips` - Tips section with heading
+19. `.config-list` - Definition list (dt/dd) styling
+20. `.overnight-steps` - Vertical step flow
+21. `.overnight-step` - Step with number + content
+22. `.review-checklist` - Review item list
+23. `.review-item` - Icon + content layout
+24. `.review-icon` - Review icon container
+25. `.review-content` - Review content area
+26. `.cost-grid` - 3-column grid
+27. `.cost-card` - Cost info card
+28. `.cost-note` - Muted note text
 
-**Verification:**
-- Cards across all pages feel like the same component
-- Code blocks are visually identical everywhere
-- Callout-type elements share same visual language
+**Workflows.html components:**
+29. `.workflow-example` - Workflow example container
+30. `.workflow-intro` - Intro paragraph styling
+31. `.workflow-steps-detailed` - Detailed step container
+32. `.workflow-step-detailed` - Individual detailed step
+33. `.workflow-step-header` - Header with badge + title
+34. `.step-badge` - "Step 1" style badge
+35. `.workflow-command` - Command display section
+36. `.workflow-tips` - Tips box with list
+37. `.mode-reference` - Table container
+38. `.mode-table` - Styled data table with hover, alignment rules
+
+**Open-source.html components:**
+39. `.license-grid` - 2-column responsive layout
+40. `.license-content` - Main content area
+41. `.license-summary` - Summary section
+42. `.license-points` - Grid for CAN/MUST/CANNOT
+43. `.license-point` - Point card with variants (--can, --must, --cannot)
+44. `.license-sidebar` - Sidebar styling
+45. `.license-clarification` - Clarification callout
+46. `.license-link` - Link with icon
+47. `.contribute-intro` - Intro text
+48. `.contribute-grid` - 4-column responsive grid
+49. `.contribute-card` - Contribution card
+50. `.contribute-icon` - Large icon container
+51. `.contribute-link` - Card action link
+52. `.dev-setup` - Development setup section
+53. `.values-grid` - 4-column values grid
+54. `.value-card` - Simple value card
+55. `.acknowledgments-content` - Content container
+56. `.acknowledgments-list` - Styled acknowledgments
 
 ---
 
-### Pass D — Docs-Specific Polish (Optional)
+### Pass D — Docs-Specific Polish (styles.css additions)
 
-**Goal:** Improve docs page scannability without introducing new visual patterns.
+**Goal**: Add remaining documentation UI patterns.
 
-**Targets:**
-1. Ensure docs page breadcrumbs have proper visual weight
-2. Normalize section intros (01, 02, etc. pattern) on docs pages
-3. Verify checklist and tips grid styling matches baseline
-4. Ensure example spec blocks have consistent treatment
-5. Polish "What's Next" and CTA sections at page bottoms
+**CSS to add:**
+1. `.breadcrumb` - Navigation breadcrumb with separator styling
+2. `.cta-section` - Call-to-action section styling
+3. `.cta-content` - CTA content wrapper
+4. `.cta-buttons` - Button group with gap and centering
+5. `.faq-list` - FAQ container
+6. `.faq-item` - Details element styling with border
+7. `.faq-summary` - Summary with hover, cursor
+8. `.faq-toggle` - +/- indicator with rotation
+9. `.faq-content` - Answer content with animation
 
-**Files affected:**
-- `styles.css` - Docs-specific component refinements
-- `docs/writing-specs.html`
-- `docs/overnight-runs.html`
-- `docs/workflows.html`
-
-**Verification:**
-- Docs pages feel like polished documentation, not "late-stage appended"
-- Reading flow is comfortable with clear visual landmarks
-- Navigation cues (breadcrumbs, next links) are consistent
+**Responsive additions for all components:**
+- Grid collapses at 1024px and 640px breakpoints
+- Touch target minimum sizes
+- Mobile-friendly spacing
 
 ---
 
 ## Critical Files for Implementation
 
-| File | Role | Pass |
-|------|------|------|
-| `styles.css` | All styling changes | A, B, C, D |
-| `index.html` | Sections 04-07 class/structure fixes | A, B, C |
-| `getting-started.html` | Container/component normalization | A, C |
-| `faq.html` | Container/FAQ styling | A, C |
-| `docs/writing-specs.html` | Docs component styling | C, D |
-| `docs/overnight-runs.html` | Docs component styling | C, D |
-| `docs/workflows.html` | Docs component styling | C, D |
-| `how-it-works.html` | Container consistency | A |
-| `open-source.html` | Container consistency | A |
+| File | Purpose | Estimated Lines |
+|------|---------|-----------------|
+| `styles.css` | All new CSS classes | +400-500 lines |
+
+**HTML files require NO changes** - the class names are already correct; only CSS definitions are missing.
 
 ---
 
 ## Risks & Mitigations
 
-### Risk 1: Breaking Sections 1-3
-**Mitigation:** After each pass, visually verify Sections 1-3 are unchanged or improved. Use browser DevTools to compare before/after. Keep changes scoped to post-Section 3 selectors where possible.
+### Risk 1: Breaking index.html Sections 1-3
+**Mitigation:** All new classes are scoped to subpage components. No modifications to existing selectors. Verify hero sections after implementation.
 
-### Risk 2: Cascade effects from global CSS changes
-**Mitigation:** Prefer scoped class selectors over element selectors. Test all pages after each pass. Make changes incrementally within each pass.
+### Risk 2: Inconsistent styling within new components
+**Mitigation:** Use only existing design tokens (--space-*, --color-*, --radius-*, --shadow-*). Follow existing component patterns from feature-card, code-block, etc.
 
 ### Risk 3: Mobile/tablet regression
-**Mitigation:** Test responsive breakpoints after each pass. The existing responsive system is solid; maintain existing breakpoint logic.
+**Mitigation:** Add responsive breakpoints following existing 1024px/768px/640px pattern. Test at all breakpoints.
 
-### Risk 4: Over-engineering
-**Mitigation:** Stick to the 4-pass structure. Each pass has clear, limited scope. Avoid scope creep into "nice to have" improvements.
+### Risk 4: Light mode inconsistency
+**Mitigation:** Use CSS custom properties for all colors. Test light mode toggle after implementation.
 
 ---
 
@@ -177,17 +198,13 @@ After visual diagnosis of all pages (index.html sections 1-7, getting-started.ht
 
 After each pass, verify:
 
-1. **Visual parity:** Post-Section 3 pages match baseline quality (screenshot comparison)
-2. **Spacing consistency:** No jarring rhythm breaks when scrolling
-3. **Component consistency:** Same element types look identical across pages
-4. **Responsive behavior:** Mobile and tablet views remain clean
-5. **Functionality:**
-   - File:// protocol still works
-   - Dark mode toggle functions
-   - FAQ accordions work
-   - Code copy buttons work
-   - Skip links and keyboard navigation work
-   - Reduced motion preferences respected
+1. **Visual rendering:** Open each subpage and confirm components now display styled
+2. **Spacing consistency:** Verify vertical rhythm matches index.html sections
+3. **Component parity:** Cards, code blocks, callouts look consistent
+4. **Responsive behavior:** Test at 1440px, 1024px, 768px, 640px, 375px
+5. **Interactive states:** Hover, focus-visible, active states work
+6. **Theme toggle:** Light and dark modes work correctly
+7. **File compatibility:** Open via file:// protocol, no server needed
 
 ---
 
@@ -195,37 +212,11 @@ After each pass, verify:
 
 The task is complete when:
 
-- [x] All post-Section 3 sections feel cohesive with Sections 1-3
-- [x] Visual rhythm is consistent across all pages
-- [x] Typography hierarchy is clear and predictable
-- [x] Components (cards, code blocks, callouts, FAQs) are visually unified
-- [x] Docs pages feel like polished documentation, not afterthoughts
-- [x] Site reads as a single, intentionally designed product
-- [x] No "unstyled" or "appended late" feeling remains
-- [x] All functionality preserved (static file compatibility, dark mode, accessibility)
-
-## Implementation Summary
-
-All 4 passes have been completed:
-
-### Pass A - Layout Model Unification
-- Added missing `.section-number` styling
-- Added `.install-mode-toggle` and mode switch styling
-- Fixed `.install-code` to be container (was incorrectly styled as code block)
-- Added grid layouts to `.install-grid`, `.features-grid`, `.audience-grid`
-
-### Pass B - Typography & Rhythm Restoration
-- Normalized `.audience-card h3` to match `.feature-card h3` sizing
-- Added complete `.feature-expand-btn` and `.feature-expand-content` styling
-- Added list styling within expandable content
-
-### Pass C - Component Normalization
-- Unified card hover states (audience-card now matches feature-card)
-- Added comprehensive `.code-block` base component styling
-- Added unified `.callout` system with variants (success, warning, info)
-
-### Pass D - Docs-Specific Polish
-- Verified breadcrumb styling consistency
-- Verified section intro (01, 02, etc.) pattern across all docs pages
-- Verified CTA sections have consistent styling
-- All component classes used in HTML have corresponding CSS definitions
+- [ ] All CSS classes referenced in HTML have corresponding definitions in styles.css
+- [ ] Post-Section 3 pages render with full styling (no unstyled elements)
+- [ ] Visual rhythm matches index.html baseline
+- [ ] Typography hierarchy is consistent across all pages
+- [ ] All interactive components have proper state styling
+- [ ] Responsive layouts work at all breakpoints
+- [ ] Light and dark mode both render correctly
+- [ ] Pages work when opened directly as files

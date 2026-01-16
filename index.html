@@ -394,11 +394,11 @@
                     <!-- Visual Workflow Diagram -->
                     <div class="workflow-diagram">
                         <svg viewBox="0 0 600 200" class="workflow-svg" xmlns="http://www.w3.org/2000/svg">
-                            <!-- Background Glow - Forest Editorial amber gradient -->
+                            <!-- Background Glow - Terminal Noir cyan gradient -->
                             <defs>
                                 <radialGradient id="diagramGlow" cx="50%" cy="50%" r="50%">
-                                    <stop offset="0%" stop-color="rgba(212, 165, 116, 0.1)" stop-opacity="1" />
-                                    <stop offset="100%" stop-color="rgba(212, 165, 116, 0)" stop-opacity="0" />
+                                    <stop offset="0%" stop-color="rgba(0, 212, 255, 0.1)" stop-opacity="1" />
+                                    <stop offset="100%" stop-color="rgba(0, 212, 255, 0)" stop-opacity="0" />
                                 </radialGradient>
                                 <filter id="glow">
                                     <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
@@ -410,53 +410,53 @@
                             </defs>
                             <ellipse cx="300" cy="100" rx="280" ry="80" fill="url(#diagramGlow)"/>
 
-                            <!-- Connection Lines - Warm amber -->
-                            <line x1="120" y1="100" x2="200" y2="100" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
-                            <line x1="280" y1="100" x2="360" y2="100" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
-                            <line x1="440" y1="100" x2="520" y2="100" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
+                            <!-- Connection Lines - Electric cyan -->
+                            <line x1="120" y1="100" x2="200" y2="100" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
+                            <line x1="280" y1="100" x2="360" y2="100" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
+                            <line x1="440" y1="100" x2="520" y2="100" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
 
-                            <!-- Arrows - Warm amber -->
-                            <polygon points="195,95 205,100 195,105" fill="#d4a574" opacity="0.7"/>
-                            <polygon points="275,95 285,100 275,105" fill="#d4a574" opacity="0.7"/>
-                            <polygon points="355,95 365,100 355,105" fill="#d4a574" opacity="0.7"/>
-                            <polygon points="435,95 445,100 435,105" fill="#d4a574" opacity="0.7"/>
+                            <!-- Arrows - Electric cyan -->
+                            <polygon points="195,95 205,100 195,105" fill="#00d4ff" opacity="0.7"/>
+                            <polygon points="275,95 285,100 275,105" fill="#00d4ff" opacity="0.7"/>
+                            <polygon points="355,95 365,100 355,105" fill="#00d4ff" opacity="0.7"/>
+                            <polygon points="435,95 445,100 435,105" fill="#00d4ff" opacity="0.7"/>
 
-                            <!-- Step 1: User writes PROMPT.md - Warm amber -->
+                            <!-- Step 1: User writes PROMPT.md - Electric cyan -->
                             <g class="workflow-node">
-                                <rect x="40" y="60" width="80" height="80" rx="0" fill="#1a3a2f" stroke="#d4a574" stroke-width="2"/>
-                                <text x="80" y="90" text-anchor="middle" fill="#d4a574" font-size="20" font-weight="bold">📝</text>
-                                <text x="80" y="115" text-anchor="middle" fill="#f5f2ed" font-size="11" font-family="monospace">PROMPT.md</text>
-                                <text x="80" y="130" text-anchor="middle" fill="#8a8478" font-size="9">You write</text>
+                                <rect x="40" y="60" width="80" height="80" rx="8" fill="#151518" stroke="#00d4ff" stroke-width="2"/>
+                                <text x="80" y="90" text-anchor="middle" fill="#00d4ff" font-size="20" font-weight="bold">📝</text>
+                                <text x="80" y="115" text-anchor="middle" fill="#e4e4e7" font-size="11" font-family="monospace">PROMPT.md</text>
+                                <text x="80" y="130" text-anchor="middle" fill="#71717a" font-size="9">You write</text>
                             </g>
 
-                            <!-- Step 2: Developer Agent - Sage accent -->
+                            <!-- Step 2: Developer Agent - Hot magenta -->
                             <g class="workflow-node">
-                                <rect x="200" y="60" width="80" height="80" rx="0" fill="#1a3a2f" stroke="#7da58a" stroke-width="2"/>
-                                <text x="240" y="90" text-anchor="middle" fill="#7da58a" font-size="20" font-weight="bold">⚙️</text>
-                                <text x="240" y="115" text-anchor="middle" fill="#f5f2ed" font-size="11" font-family="monospace">DEV AGENT</text>
-                                <text x="240" y="130" text-anchor="middle" fill="#8a8478" font-size="9">Writes code</text>
+                                <rect x="200" y="60" width="80" height="80" rx="8" fill="#151518" stroke="#ff006e" stroke-width="2"/>
+                                <text x="240" y="90" text-anchor="middle" fill="#ff006e" font-size="20" font-weight="bold">⚙️</text>
+                                <text x="240" y="115" text-anchor="middle" fill="#e4e4e7" font-size="11" font-family="monospace">DEV AGENT</text>
+                                <text x="240" y="130" text-anchor="middle" fill="#71717a" font-size="9">Writes code</text>
                             </g>
 
-                            <!-- Step 3: Reviewer Agent - Dark sage -->
+                            <!-- Step 3: Reviewer Agent - Electric cyan -->
                             <g class="workflow-node">
-                                <rect x="360" y="60" width="80" height="80" rx="0" fill="#1a3a2f" stroke="#5d8c6c" stroke-width="2"/>
-                                <text x="400" y="90" text-anchor="middle" fill="#5d8c6c" font-size="20" font-weight="bold">🔍</text>
-                                <text x="400" y="115" text-anchor="middle" fill="#f5f2ed" font-size="11" font-family="monospace">REVIEWER</text>
-                                <text x="400" y="130" text-anchor="middle" fill="#8a8478" font-size="9">Validates</text>
+                                <rect x="360" y="60" width="80" height="80" rx="8" fill="#151518" stroke="#00d4ff" stroke-width="2"/>
+                                <text x="400" y="90" text-anchor="middle" fill="#00d4ff" font-size="20" font-weight="bold">🔍</text>
+                                <text x="400" y="115" text-anchor="middle" fill="#e4e4e7" font-size="11" font-family="monospace">REVIEWER</text>
+                                <text x="400" y="130" text-anchor="middle" fill="#71717a" font-size="9">Validates</text>
                             </g>
 
-                            <!-- Step 4: Git Commit - Forest emerald success -->
+                            <!-- Step 4: Git Commit - Electric lime success -->
                             <g class="workflow-node">
-                                <rect x="520" y="60" width="80" height="80" rx="0" fill="#1a3a2f" stroke="#5d9e73" stroke-width="2"/>
-                                <text x="560" y="90" text-anchor="middle" fill="#5d9e73" font-size="20" font-weight="bold">✓</text>
-                                <text x="560" y="115" text-anchor="middle" fill="#f5f2ed" font-size="11" font-family="monospace">COMMIT</text>
-                                <text x="560" y="130" text-anchor="middle" fill="#8a8478" font-size="9">Ready to push</text>
+                                <rect x="520" y="60" width="80" height="80" rx="8" fill="#151518" stroke="#a3ff12" stroke-width="2"/>
+                                <text x="560" y="90" text-anchor="middle" fill="#a3ff12" font-size="20" font-weight="bold">✓</text>
+                                <text x="560" y="115" text-anchor="middle" fill="#e4e4e7" font-size="11" font-family="monospace">COMMIT</text>
+                                <text x="560" y="130" text-anchor="middle" fill="#71717a" font-size="9">Ready to push</text>
                             </g>
 
-                            <!-- Loop Indicator - Sage accent -->
-                            <path d="M 240 150 Q 300 170 360 150" fill="none" stroke="#7da58a" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.6"/>
-                            <text x="300" y="168" text-anchor="middle" fill="#8a8478" font-size="9">iterate until approved</text>
-                            <polygon points="355,148 365,150 355,152" fill="#7da58a" opacity="0.6"/>
+                            <!-- Loop Indicator - Hot magenta -->
+                            <path d="M 240 150 Q 300 170 360 150" fill="none" stroke="#ff006e" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.6"/>
+                            <text x="300" y="168" text-anchor="middle" fill="#71717a" font-size="9">iterate until approved</text>
+                            <polygon points="355,148 365,150 355,152" fill="#ff006e" opacity="0.6"/>
                         </svg>
                     </div>
                 </div>

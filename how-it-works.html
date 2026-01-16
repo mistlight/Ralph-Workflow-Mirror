@@ -150,11 +150,11 @@
                 <!-- Large Workflow Diagram -->
                 <div class="workflow-diagram-large">
                     <svg viewBox="0 0 800 280" class="workflow-svg-large" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ralph workflow diagram showing the four stages">
-                        <!-- Background Glow -->
+                        <!-- Background Glow - Terminal Noir cyan -->
                         <defs>
                             <radialGradient id="diagramGlowLarge" cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stop-color="rgba(212, 165, 116, 0.08)" stop-opacity="1" />
-                                <stop offset="100%" stop-color="rgba(212, 165, 116, 0)" stop-opacity="0" />
+                                <stop offset="0%" stop-color="rgba(0, 212, 255, 0.08)" stop-opacity="1" />
+                                <stop offset="100%" stop-color="rgba(0, 212, 255, 0)" stop-opacity="0" />
                             </radialGradient>
                             <filter id="glowLarge">
                                 <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
@@ -166,59 +166,59 @@
                         </defs>
                         <ellipse cx="400" cy="120" rx="380" ry="100" fill="url(#diagramGlowLarge)"/>
 
-                        <!-- Connection Lines -->
-                        <line x1="160" y1="120" x2="260" y2="120" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
-                        <line x1="360" y1="120" x2="460" y2="120" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
-                        <line x1="560" y1="120" x2="660" y2="120" stroke="#d4a574" stroke-width="2" opacity="0.5"/>
+                        <!-- Connection Lines - Electric cyan -->
+                        <line x1="160" y1="120" x2="260" y2="120" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
+                        <line x1="360" y1="120" x2="460" y2="120" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
+                        <line x1="560" y1="120" x2="660" y2="120" stroke="#00d4ff" stroke-width="2" opacity="0.5"/>
 
-                        <!-- Arrows -->
-                        <polygon points="255,115 265,120 255,125" fill="#d4a574" opacity="0.7"/>
-                        <polygon points="355,115 365,120 355,125" fill="#d4a574" opacity="0.7"/>
-                        <polygon points="455,115 465,120 455,125" fill="#d4a574" opacity="0.7"/>
-                        <polygon points="555,115 565,120 555,125" fill="#d4a574" opacity="0.7"/>
-                        <polygon points="655,115 665,120 655,125" fill="#d4a574" opacity="0.7"/>
+                        <!-- Arrows - Electric cyan -->
+                        <polygon points="255,115 265,120 255,125" fill="#00d4ff" opacity="0.7"/>
+                        <polygon points="355,115 365,120 355,125" fill="#00d4ff" opacity="0.7"/>
+                        <polygon points="455,115 465,120 455,125" fill="#00d4ff" opacity="0.7"/>
+                        <polygon points="555,115 565,120 555,125" fill="#00d4ff" opacity="0.7"/>
+                        <polygon points="655,115 665,120 655,125" fill="#00d4ff" opacity="0.7"/>
 
-                        <!-- Stage 1: PROMPT.md -->
+                        <!-- Stage 1: PROMPT.md - Electric cyan -->
                         <g class="workflow-node">
-                            <rect x="60" y="70" width="100" height="100" rx="4" fill="#1a3a2f" stroke="#d4a574" stroke-width="2"/>
-                            <text x="110" y="105" text-anchor="middle" fill="#d4a574" font-size="28">📝</text>
-                            <text x="110" y="135" text-anchor="middle" fill="#f5f2ed" font-size="12" font-family="IBM Plex Mono, monospace">PROMPT.md</text>
-                            <text x="110" y="155" text-anchor="middle" fill="#8a8478" font-size="10">Your requirements</text>
+                            <rect x="60" y="70" width="100" height="100" rx="8" fill="#151518" stroke="#00d4ff" stroke-width="2"/>
+                            <text x="110" y="105" text-anchor="middle" fill="#00d4ff" font-size="28">📝</text>
+                            <text x="110" y="135" text-anchor="middle" fill="#e4e4e7" font-size="12" font-family="JetBrains Mono, monospace">PROMPT.md</text>
+                            <text x="110" y="155" text-anchor="middle" fill="#71717a" font-size="10">Your requirements</text>
                         </g>
 
-                        <!-- Stage 2: Developer Agent -->
+                        <!-- Stage 2: Developer Agent - Hot magenta -->
                         <g class="workflow-node">
-                            <rect x="260" y="70" width="100" height="100" rx="4" fill="#1a3a2f" stroke="#7da58a" stroke-width="2"/>
-                            <text x="310" y="105" text-anchor="middle" fill="#7da58a" font-size="28">⚙️</text>
-                            <text x="310" y="135" text-anchor="middle" fill="#f5f2ed" font-size="12" font-family="IBM Plex Mono, monospace">DEVELOPER</text>
-                            <text x="310" y="155" text-anchor="middle" fill="#8a8478" font-size="10">Writes code</text>
+                            <rect x="260" y="70" width="100" height="100" rx="8" fill="#151518" stroke="#ff006e" stroke-width="2"/>
+                            <text x="310" y="105" text-anchor="middle" fill="#ff006e" font-size="28">⚙️</text>
+                            <text x="310" y="135" text-anchor="middle" fill="#e4e4e7" font-size="12" font-family="JetBrains Mono, monospace">DEVELOPER</text>
+                            <text x="310" y="155" text-anchor="middle" fill="#71717a" font-size="10">Writes code</text>
                         </g>
 
-                        <!-- Stage 3: Reviewer Agent -->
+                        <!-- Stage 3: Reviewer Agent - Electric cyan -->
                         <g class="workflow-node">
-                            <rect x="460" y="70" width="100" height="100" rx="4" fill="#1a3a2f" stroke="#5d8c6c" stroke-width="2"/>
-                            <text x="510" y="105" text-anchor="middle" fill="#5d8c6c" font-size="28">🔍</text>
-                            <text x="510" y="135" text-anchor="middle" fill="#f5f2ed" font-size="12" font-family="IBM Plex Mono, monospace">REVIEWER</text>
-                            <text x="510" y="155" text-anchor="middle" fill="#8a8478" font-size="10">Validates quality</text>
+                            <rect x="460" y="70" width="100" height="100" rx="8" fill="#151518" stroke="#00d4ff" stroke-width="2"/>
+                            <text x="510" y="105" text-anchor="middle" fill="#00d4ff" font-size="28">🔍</text>
+                            <text x="510" y="135" text-anchor="middle" fill="#e4e4e7" font-size="12" font-family="JetBrains Mono, monospace">REVIEWER</text>
+                            <text x="510" y="155" text-anchor="middle" fill="#71717a" font-size="10">Validates quality</text>
                         </g>
 
-                        <!-- Stage 4: Git Commit -->
+                        <!-- Stage 4: Git Commit - Electric lime success -->
                         <g class="workflow-node">
-                            <rect x="660" y="70" width="100" height="100" rx="4" fill="#1a3a2f" stroke="#5d9e73" stroke-width="2"/>
-                            <text x="710" y="105" text-anchor="middle" fill="#5d9e73" font-size="28">✓</text>
-                            <text x="710" y="135" text-anchor="middle" fill="#f5f2ed" font-size="12" font-family="IBM Plex Mono, monospace">COMMIT</text>
-                            <text x="710" y="155" text-anchor="middle" fill="#8a8478" font-size="10">Ready to push</text>
+                            <rect x="660" y="70" width="100" height="100" rx="8" fill="#151518" stroke="#a3ff12" stroke-width="2"/>
+                            <text x="710" y="105" text-anchor="middle" fill="#a3ff12" font-size="28">✓</text>
+                            <text x="710" y="135" text-anchor="middle" fill="#e4e4e7" font-size="12" font-family="JetBrains Mono, monospace">COMMIT</text>
+                            <text x="710" y="155" text-anchor="middle" fill="#71717a" font-size="10">Ready to push</text>
                         </g>
 
-                        <!-- Loop Indicator -->
-                        <path d="M 310 180 Q 410 220 510 180" fill="none" stroke="#7da58a" stroke-width="2" stroke-dasharray="6,4" opacity="0.6"/>
-                        <text x="410" y="215" text-anchor="middle" fill="#8a8478" font-size="11">Iterate until approved</text>
-                        <polygon points="505,178 515,180 505,182" fill="#7da58a" opacity="0.6"/>
+                        <!-- Loop Indicator - Hot magenta -->
+                        <path d="M 310 180 Q 410 220 510 180" fill="none" stroke="#ff006e" stroke-width="2" stroke-dasharray="6,4" opacity="0.6"/>
+                        <text x="410" y="215" text-anchor="middle" fill="#71717a" font-size="11">Iterate until approved</text>
+                        <polygon points="505,178 515,180 505,182" fill="#ff006e" opacity="0.6"/>
 
-                        <!-- Loop back arrow -->
-                        <path d="M 460 90 Q 410 50 360 90" fill="none" stroke="#7da58a" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                        <polygon points="365,87 358,90 365,93" fill="#7da58a" opacity="0.4"/>
-                        <text x="410" y="55" text-anchor="middle" fill="#7da58a" font-size="9" opacity="0.7">Fix issues</text>
+                        <!-- Loop back arrow - Hot magenta -->
+                        <path d="M 460 90 Q 410 50 360 90" fill="none" stroke="#ff006e" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <polygon points="365,87 358,90 365,93" fill="#ff006e" opacity="0.4"/>
+                        <text x="410" y="55" text-anchor="middle" fill="#ff006e" font-size="9" opacity="0.7">Fix issues</text>
                     </svg>
                 </div>
 

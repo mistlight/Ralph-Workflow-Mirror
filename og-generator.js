@@ -1,6 +1,6 @@
 /**
  * Open Graph Image Generator for Ralph Workflow
- * Creates a 1200x630px social sharing image with Forest Editorial aesthetic
+ * Creates a 1200x630px social sharing image with Terminal Noir aesthetic
  */
 
 import fs from 'fs';
@@ -10,50 +10,50 @@ import { createCanvas } from 'canvas';
 const WIDTH = 1200;
 const HEIGHT = 630;
 
-// Forest Editorial color palette
+// Terminal Noir color palette
 const colors = {
-    background: '#0d1f18',
-    amber: '#d4a574',
-    sage: '#7da58a',
-    emerald: '#5d9e73',
-    rose: '#c97878',
-    white: '#f5f2ed',
-    gray: '#1a3a2f',
-    border: '#234f3d'
+    background: '#0a0a0b',
+    cyan: '#00d4ff',
+    magenta: '#ff006e',
+    lime: '#a3ff12',
+    white: '#e4e4e7',
+    gray: '#151518',
+    border: '#27272a',
+    muted: '#71717a'
 };
 
 function createOGImage() {
     const canvas = createCanvas(WIDTH, HEIGHT);
     const ctx = canvas.getContext('2d');
 
-    // 1. Deep forest background
+    // 1. Deep charcoal background
     ctx.fillStyle = colors.background;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
     // 2. Create gradient mesh effect with multiple radial gradients
-    // Top-left amber glow
+    // Top-left cyan glow
     const gradient1 = ctx.createRadialGradient(200, 200, 0, 200, 200, 400);
-    gradient1.addColorStop(0, 'rgba(212, 165, 116, 0.15)');
-    gradient1.addColorStop(1, 'rgba(212, 165, 116, 0)');
+    gradient1.addColorStop(0, 'rgba(0, 212, 255, 0.15)');
+    gradient1.addColorStop(1, 'rgba(0, 212, 255, 0)');
     ctx.fillStyle = gradient1;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    // Bottom-right sage glow
+    // Bottom-right magenta glow
     const gradient2 = ctx.createRadialGradient(1000, 430, 0, 1000, 430, 400);
-    gradient2.addColorStop(0, 'rgba(125, 165, 138, 0.12)');
-    gradient2.addColorStop(1, 'rgba(125, 165, 138, 0)');
+    gradient2.addColorStop(0, 'rgba(255, 0, 110, 0.12)');
+    gradient2.addColorStop(1, 'rgba(255, 0, 110, 0)');
     ctx.fillStyle = gradient2;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    // Center rose accent
+    // Center lime accent
     const gradient3 = ctx.createRadialGradient(600, 315, 0, 600, 315, 300);
-    gradient3.addColorStop(0, 'rgba(201, 120, 120, 0.08)');
-    gradient3.addColorStop(1, 'rgba(201, 120, 120, 0)');
+    gradient3.addColorStop(0, 'rgba(163, 255, 18, 0.08)');
+    gradient3.addColorStop(1, 'rgba(163, 255, 18, 0)');
     ctx.fillStyle = gradient3;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
     // 3. Add grid pattern overlay
-    ctx.strokeStyle = 'rgba(245, 242, 237, 0.03)';
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.03)';
     ctx.lineWidth = 1;
     const gridSize = 40;
 
@@ -72,12 +72,12 @@ function createOGImage() {
     }
 
     // 4. Draw editorial border frame
-    ctx.strokeStyle = colors.amber;
+    ctx.strokeStyle = colors.cyan;
     ctx.lineWidth = 4;
     ctx.strokeRect(30, 30, WIDTH - 60, HEIGHT - 60);
 
     // Inner border
-    ctx.strokeStyle = colors.sage;
+    ctx.strokeStyle = colors.magenta;
     ctx.lineWidth = 2;
     ctx.strokeRect(40, 40, WIDTH - 80, HEIGHT - 80);
 
@@ -87,9 +87,9 @@ function createOGImage() {
     ctx.textBaseline = 'middle';
 
     // Text shadow/glow effect
-    ctx.shadowColor = colors.amber;
+    ctx.shadowColor = colors.cyan;
     ctx.shadowBlur = 30;
-    ctx.fillStyle = colors.amber;
+    ctx.fillStyle = colors.cyan;
     ctx.fillText('RALPH', WIDTH / 2, HEIGHT / 2 - 40);
 
     // Reset shadow
@@ -98,39 +98,37 @@ function createOGImage() {
     // 6. Draw subtitle
     ctx.font = 'bold 48px "Arial", sans-serif';
     ctx.fillStyle = colors.white;
-    // Note: Canvas 2D doesn't support letterSpacing - simulate with wider spacing by drawing character by character
-    // For simplicity, we'll use the standard fillText without letter spacing
     ctx.fillText('YOUR IDEAS, SHIPPED BY AI', WIDTH / 2, HEIGHT / 2 + 70);
 
-    // 7. Draw tagline with sage
+    // 7. Draw tagline with magenta
     ctx.font = '32px "Arial", sans-serif';
-    ctx.fillStyle = colors.sage;
+    ctx.fillStyle = colors.magenta;
     ctx.fillText('FROM PROMPT.MD TO COMMITTED CODE', WIDTH / 2, HEIGHT / 2 + 130);
 
     // 8. Draw corner accents (editorial elements)
     // Top-left corner
-    ctx.fillStyle = colors.amber;
+    ctx.fillStyle = colors.cyan;
     ctx.fillRect(30, 30, 60, 6);
     ctx.fillRect(30, 30, 6, 60);
 
     // Top-right corner
-    ctx.fillStyle = colors.rose;
+    ctx.fillStyle = colors.magenta;
     ctx.fillRect(WIDTH - 90, 30, 60, 6);
     ctx.fillRect(WIDTH - 36, 30, 6, 60);
 
     // Bottom-left corner
-    ctx.fillStyle = colors.sage;
+    ctx.fillStyle = colors.magenta;
     ctx.fillRect(30, HEIGHT - 36, 60, 6);
     ctx.fillRect(30, HEIGHT - 90, 6, 60);
 
     // Bottom-right corner
-    ctx.fillStyle = colors.emerald;
+    ctx.fillStyle = colors.lime;
     ctx.fillRect(WIDTH - 90, HEIGHT - 36, 60, 6);
     ctx.fillRect(WIDTH - 36, HEIGHT - 90, 6, 60);
 
     // 9. Draw terminal-style command at bottom
     ctx.font = '24px "Courier New", monospace';
-    ctx.fillStyle = colors.gray;
+    ctx.fillStyle = colors.lime;
     ctx.textAlign = 'left';
     ctx.fillText('$ cargo install ralph-workflow', 200, HEIGHT - 80);
 
@@ -141,7 +139,7 @@ function createOGImage() {
     ctx.fillText('codeberg.org/ralph', WIDTH - 200, HEIGHT - 80);
 
     // 11. Add decorative diagonal line (editorial element)
-    ctx.strokeStyle = colors.rose;
+    ctx.strokeStyle = colors.magenta;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(WIDTH - 250, 80);
@@ -150,10 +148,10 @@ function createOGImage() {
 
     // 12. Add small decorative dots
     const dotPositions = [
-        { x: 150, y: 150, color: colors.amber },
-        { x: WIDTH - 180, y: 200, color: colors.sage },
-        { x: 180, y: HEIGHT - 200, color: colors.rose },
-        { x: WIDTH - 150, y: HEIGHT - 150, color: colors.emerald }
+        { x: 150, y: 150, color: colors.cyan },
+        { x: WIDTH - 180, y: 200, color: colors.magenta },
+        { x: 180, y: HEIGHT - 200, color: colors.magenta },
+        { x: WIDTH - 150, y: HEIGHT - 150, color: colors.lime }
     ];
 
     dotPositions.forEach(dot => {
