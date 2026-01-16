@@ -415,8 +415,7 @@ pub fn run_with_fallback(
             match result {
                 TrySingleAgentResult::Success => return Ok(0),
                 TrySingleAgentResult::Unrecoverable(exit_code) => return Ok(exit_code),
-                TrySingleAgentResult::Fallback => continue,
-                TrySingleAgentResult::NoRetry => {}
+                TrySingleAgentResult::Fallback | TrySingleAgentResult::NoRetry => {}
             }
         }
     }
