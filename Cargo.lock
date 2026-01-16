@@ -857,6 +857,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralph-workflow-tests"
+version = "0.1.0"
+dependencies = [
+ "ralph-workflow",
+ "serde_json",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

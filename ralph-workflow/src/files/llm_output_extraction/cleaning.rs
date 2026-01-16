@@ -563,6 +563,7 @@ fn remove_formatted_thinking_patterns(content: &str) -> String {
 /// # Examples
 ///
 /// ```
+/// # use ralph_workflow::files::llm_output_extraction::cleaning::unescape_json_strings;
 /// let input = "feat: add feature\\n\\nThis adds new functionality.";
 /// let result = unescape_json_strings(input);
 /// assert_eq!(result, "feat: add feature\n\nThis adds new functionality.");
@@ -600,6 +601,7 @@ pub fn unescape_json_strings(content: &str) -> String {
 /// # Examples
 ///
 /// ```
+/// # use ralph_workflow::files::llm_output_extraction::cleaning::unescape_json_strings_aggressive;
 /// let input = "feat: add feature\\\\n\\\\nDouble escaped";
 /// let result = unescape_json_strings_aggressive(input);
 /// assert_eq!(result, "feat: add feature\n\nDouble escaped");

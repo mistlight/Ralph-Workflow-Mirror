@@ -19,15 +19,16 @@ pub enum OutputFormat {
     Generic,
 }
 
-impl OutputFormat {
-    /// Parse format from string name
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for OutputFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "claude" | "ccs" | "qwen" => Self::Claude,
-            "codex" => Self::Codex,
-            "gemini" => Self::Gemini,
-            "opencode" => Self::OpenCode,
-            _ => Self::Generic,
+            "claude" | "ccs" | "qwen" => Ok(Self::Claude),
+            "codex" => Ok(Self::Codex),
+            "gemini" => Ok(Self::Gemini),
+            "opencode" => Ok(Self::OpenCode),
+            _ => Ok(Self::Generic),
         }
     }
 }
