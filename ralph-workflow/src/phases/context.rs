@@ -42,7 +42,7 @@ impl PhaseContext<'_> {}
 ///
 /// This function returns the name of the primary commit agent.
 /// If a commit-specific agent is configured, it uses that. Otherwise, it falls back
-/// to using the developer agent name (since commit messages should reflect development work).
+/// to using the reviewer chain (since commit generation is typically done after review).
 pub fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
     let fallback_config = ctx.registry.fallback_config();
 
@@ -53,12 +53,147 @@ pub fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
         return commit_agents.first().cloned();
     }
 
-    // Fallback to using developer agents for commit generation
-    let developer_agents = fallback_config.get_fallbacks(AgentRole::Developer);
-    if !developer_agents.is_empty() {
-        return developer_agents.first().cloned();
+    // Fallback to using reviewer agents for commit generation
+    let reviewer_agents = fallback_config.get_fallbacks(AgentRole::Reviewer);
+    if !reviewer_agents.is_empty() {
+        return reviewer_agents.first().cloned();
     }
 
-    // Last resort: use the current developer agent
-    Some(ctx.developer_agent.to_string())
+    // Last resort: use the current reviewer agent
+    Some(ctx.reviewer_agent.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::{Stats, Timer};
+
+    /// Test fixture for creating `PhaseContext` in tests.
+    struct TestFixture {
+        config: Config,
+        colors: Colors,
+        logger: Logger,
+        timer: Timer,
+        stats: Stats,
+    }
+
+    impl TestFixture {
+        fn new() -> Self {
+            let colors = Colors { enabled: false };
+            Self {
+                config: Config::default(),
+                colors,
+                logger: Logger::new(colors),
+                timer: Timer::new(),
+                stats: Stats::default(),
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_primary_commit_agent_uses_commit_chain_first() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        // Configure a commit chain
+        let toml_str = r#"
+            [agent_chain]
+            commit = ["commit-agent-1", "commit-agent-2"]
+            reviewer = ["reviewer-agent"]
+            developer = ["developer-agent"]
+        "#;
+        let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+        registry.apply_unified_config(&unified);
+
+        let mut fixture = TestFixture::new();
+        let ctx = PhaseContext {
+            config: &fixture.config,
+            registry: &registry,
+            logger: &fixture.logger,
+            colors: &fixture.colors,
+            timer: &mut fixture.timer,
+            stats: &mut fixture.stats,
+            developer_agent: "developer-agent",
+            reviewer_agent: "reviewer-agent",
+            review_guidelines: None,
+        };
+
+        let result = get_primary_commit_agent(&ctx);
+        assert_eq!(
+            result,
+            Some("commit-agent-1".to_string()),
+            "Should use first agent from commit chain when configured"
+        );
+    }
+
+    #[test]
+    fn test_get_primary_commit_agent_falls_back_to_reviewer_chain() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        // Configure reviewer chain but NO commit chain
+        let toml_str = r#"
+            [agent_chain]
+            reviewer = ["reviewer-agent-1", "reviewer-agent-2"]
+            developer = ["developer-agent"]
+        "#;
+        let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+        registry.apply_unified_config(&unified);
+
+        let mut fixture = TestFixture::new();
+        let ctx = PhaseContext {
+            config: &fixture.config,
+            registry: &registry,
+            logger: &fixture.logger,
+            colors: &fixture.colors,
+            timer: &mut fixture.timer,
+            stats: &mut fixture.stats,
+            developer_agent: "developer-agent",
+            reviewer_agent: "reviewer-agent-1",
+            review_guidelines: None,
+        };
+
+        let result = get_primary_commit_agent(&ctx);
+        assert_eq!(
+            result,
+            Some("reviewer-agent-1".to_string()),
+            "Should fall back to first agent from reviewer chain when commit chain is not configured"
+        );
+    }
+
+    #[test]
+    fn test_get_primary_commit_agent_uses_context_reviewer_as_last_resort() {
+        let registry = AgentRegistry::new().unwrap();
+        // Default registry with no custom chains configured
+
+        let mut fixture = TestFixture::new();
+        let ctx = PhaseContext {
+            config: &fixture.config,
+            registry: &registry,
+            logger: &fixture.logger,
+            colors: &fixture.colors,
+            timer: &mut fixture.timer,
+            stats: &mut fixture.stats,
+            developer_agent: "fallback-developer",
+            reviewer_agent: "fallback-reviewer",
+            review_guidelines: None,
+        };
+
+        let result = get_primary_commit_agent(&ctx);
+
+        // When no chains are configured, it should fall back to the context's reviewer_agent
+        // OR the default reviewer from the registry (if it has a default)
+        // The key point is it should NOT use developer agent
+        assert!(
+            result.is_some(),
+            "Should return Some agent even with no chains configured"
+        );
+
+        // Verify it's not using the developer agent
+        assert_ne!(
+            result.as_deref(),
+            Some("fallback-developer"),
+            "Should NOT fall back to developer agent - should use reviewer"
+        );
+    }
 }
