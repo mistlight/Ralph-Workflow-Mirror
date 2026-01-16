@@ -41,7 +41,13 @@
       "mcp__git__git_diff_unstaged",
       "mcp__git__git_log",
       "mcp__git__git_add",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "WebSearch",
+      "WebFetch(domain:clig.dev)",
+      "WebFetch(domain:evilmartians.com)",
+      "WebFetch(domain:www.atlassian.com)",
+      "WebFetch(domain:lucasfcosta.com)",
+      "WebFetch(domain:github.blog)"
     ]
   },
   "enableAllProjectMcpServers": true,
