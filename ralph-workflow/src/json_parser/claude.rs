@@ -44,6 +44,7 @@ use std::rc::Rc;
 use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
+use super::terminal::TerminalMode;
 use super::types::{
     format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock, ContentBlockDelta,
     ContentType, StreamInnerEvent,
@@ -62,6 +63,9 @@ pub struct ClaudeParser {
     /// Unified streaming session tracker
     /// Provides single source of truth for streaming state across all content types
     streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Terminal mode for output formatting
+    /// Detected at parse time and cached for performance
+    terminal_mode: RefCell<TerminalMode>,
 }
 
 impl ClaudeParser {
@@ -72,6 +76,7 @@ impl ClaudeParser {
             log_file: None,
             display_name: "Claude".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            terminal_mode: RefCell::new(TerminalMode::detect()),
         }
     }
 
@@ -82,6 +87,12 @@ impl ClaudeParser {
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_terminal_mode(self, mode: TerminalMode) -> Self {
+        *self.terminal_mode.borrow_mut() = mode;
         self
     }
 
@@ -520,10 +531,21 @@ impl ClaudeParser {
                     .unwrap_or("");
 
                 // Use TextDeltaRenderer for consistent rendering
+                let terminal_mode = *self.terminal_mode.borrow();
                 if show_prefix {
-                    TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
+                    TextDeltaRenderer::render_first_delta(
+                        accumulated_text,
+                        prefix,
+                        *c,
+                        terminal_mode,
+                    )
                 } else {
-                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
+                    TextDeltaRenderer::render_subsequent_delta(
+                        accumulated_text,
+                        prefix,
+                        *c,
+                        terminal_mode,
+                    )
                 }
             }
             ContentBlockDelta::ThinkingDelta {
@@ -592,12 +614,13 @@ impl ClaudeParser {
             .unwrap_or("");
 
         // Use TextDeltaRenderer for consistent rendering across all parsers
+        let terminal_mode = *self.terminal_mode.borrow();
         if show_prefix {
             // First delta - use the renderer with prefix
-            TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
+            TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c, terminal_mode)
         } else {
             // Subsequent delta - use renderer for in-place update
-            TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
+            TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c, terminal_mode)
         }
     }
 
@@ -613,7 +636,12 @@ impl ClaudeParser {
         let had_content = session.has_any_streamed_content();
         if was_in_block || had_content {
             // Use TextDeltaRenderer for completion - adds final newline
-            let completion = format!("{}{}", c.reset(), TextDeltaRenderer::render_completion());
+            let terminal_mode = *self.terminal_mode.borrow();
+            let completion = format!(
+                "{}{}",
+                c.reset(),
+                TextDeltaRenderer::render_completion(terminal_mode)
+            );
             // In debug mode, also show streaming quality metrics
             if self.verbosity.is_debug() && metrics.total_deltas > 0 {
                 format!("{}\n{}", completion, metrics.format(*c))

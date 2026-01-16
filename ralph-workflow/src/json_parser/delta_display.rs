@@ -37,6 +37,13 @@
 //! - Cursor positioning provides reliable in-place updates
 //! - Production-quality rendering used by major CLI libraries
 //!
+//! # Terminal Mode Detection
+//!
+//! The renderer automatically detects terminal capability and adjusts output:
+//! - **Full mode**: Uses cursor positioning for in-place updates (TTY with capable terminal)
+//! - **Basic mode**: Uses colors but no cursor positioning (e.g., `TERM=dumb`)
+//! - **None mode**: No ANSI sequences (pipes, redirects, CI environments)
+//!
 //! # Prefix Display Strategy
 //!
 //! The prefix (e.g., `[ccs-glm]`) is displayed on every delta update by default.
@@ -53,6 +60,7 @@
 //!
 //! The debouncer is opt-in; the default behavior shows prefix on every delta.
 
+use crate::json_parser::terminal::TerminalMode;
 use crate::logger::Colors;
 
 #[cfg(test)]
@@ -233,75 +241,96 @@ impl Default for PrefixDebouncer {
 ///
 /// - `render_first_delta()`: Called for the first delta of a content block
 ///   - Must include prefix
-///   - Must end with newline + cursor up (`\n\x1b[1A`)
+///   - Must end with newline + cursor up (`\n\x1b[1A`) for in-place updates (in Full mode)
 ///   - Shows the accumulated content so far
 ///
 /// - `render_subsequent_delta()`: Called for subsequent deltas
 ///   - Must include prefix (rewrite entire line)
-///   - Must use `\x1b[2K\r` to clear entire line and return to start
+///   - Must use `\x1b[2K\r` to clear entire line and return to start (in Full mode)
 ///   - Shows the full accumulated content (not just the new delta)
-///   - Must end with newline + cursor up (`\n\x1b[1A`)
+///   - Must end with newline + cursor up (`\n\x1b[1A`) (in Full mode)
 ///
 /// - `render_completion()`: Called when streaming completes
-///   - Returns cursor down + newline (`\x1b[1B\n`)
+///   - Returns cursor down + newline (`\x1b[1B\n`) in Full mode
+///   - Returns simple newline in Basic/None mode
+///
+/// # Terminal Mode Awareness
+///
+/// The renderer automatically adapts output based on terminal capability:
+/// - **Full mode**: Uses cursor positioning for in-place updates
+/// - **Basic mode**: Uses colors but simple line output (no cursor positioning)
+/// - **None mode**: Plain text output (no ANSI sequences)
 ///
 /// # Example
 ///
 /// ```ignore
 /// use crate::json_parser::delta_display::DeltaRenderer;
-/// use crate::colors::Colors;
+/// use crate::logger::Colors;
+/// use crate::json_parser::TerminalMode;
 ///
 /// let colors = Colors { enabled: true };
+/// let terminal_mode = TerminalMode::detect();
 ///
 /// // First chunk
 /// let output = DeltaRenderer::render_first_delta(
 ///     "Hello",
 ///     "ccs-glm",
-///     colors
+///     colors,
+///     terminal_mode
 /// );
-/// // Output: "[ccs-glm] Hello\n\x1b[1A" (newline + cursor up)
 ///
 /// // Second chunk
 /// let output = DeltaRenderer::render_subsequent_delta(
 ///     "Hello World",
 ///     "ccs-glm",
-///     colors
+///     colors,
+///     terminal_mode
 /// );
-/// // Output: "\x1b[2K\r[ccs-glm] Hello World\n\x1b[1A" (clear, rewrite, newline + cursor up)
 ///
 /// // Complete
-/// let output = DeltaRenderer::render_completion();
-/// // Output: "\x1b[1B\n" (cursor down + newline)
+/// let output = DeltaRenderer::render_completion(terminal_mode);
 /// ```
 pub trait DeltaRenderer {
     /// Render the first delta of a content block.
     ///
     /// This is called when streaming begins for a new content block.
-    /// The output should include the prefix and the accumulated content,
-    /// ending with newline + cursor up (`\n\x1b[1A`) for in-place updates.
+    /// The output should include the prefix and the accumulated content.
     ///
     /// # Arguments
     /// * `accumulated` - The full accumulated content so far
     /// * `prefix` - The agent prefix (e.g., "ccs-glm")
     /// * `colors` - Terminal colors
+    /// * `terminal_mode` - The detected terminal capability mode
     ///
     /// # Returns
-    /// A formatted string with prefix and content, ending with `\n\x1b[1A`.
-    fn render_first_delta(accumulated: &str, prefix: &str, colors: Colors) -> String;
+    /// A formatted string with prefix and content. In Full mode, ends with `\n\x1b[1A`.
+    fn render_first_delta(
+        accumulated: &str,
+        prefix: &str,
+        colors: Colors,
+        terminal_mode: TerminalMode,
+    ) -> String;
 
     /// Render a subsequent delta (in-place update).
     ///
     /// This is called for all deltas after the first. The output should
-    /// clear the entire line and rewrite with the prefix and accumulated content.
+    /// clear the entire line and rewrite with the prefix and accumulated content
+    /// in Full mode, or append content in Basic/None mode.
     ///
     /// # Arguments
     /// * `accumulated` - The full accumulated content so far
     /// * `prefix` - The agent prefix (e.g., "ccs-glm")
     /// * `colors` - Terminal colors
+    /// * `terminal_mode` - The detected terminal capability mode
     ///
     /// # Returns
-    /// A formatted string with `\x1b[2K\r` prefix, full line rewrite, ending with `\n\x1b[1A`.
-    fn render_subsequent_delta(accumulated: &str, prefix: &str, colors: Colors) -> String;
+    /// A formatted string with prefix and content.
+    fn render_subsequent_delta(
+        accumulated: &str,
+        prefix: &str,
+        colors: Colors,
+        terminal_mode: TerminalMode,
+    ) -> String;
 
     /// Render the completion of streaming.
     ///
@@ -311,18 +340,16 @@ pub trait DeltaRenderer {
     /// The streamed content is already visible on the terminal from previous deltas.
     /// This method simply positions the cursor correctly for subsequent output.
     ///
-    /// # Future Enhancement
-    ///
-    /// A `render_final_line()` method could be added to render clean output without
-    /// cursor control sequences, useful for:
-    /// - Log files or non-terminal destinations
-    /// - Re-rendering a clean final line after streaming
-    /// - Creating output suitable for capture or storage
+    /// # Arguments
+    /// * `terminal_mode` - The detected terminal capability mode
     ///
     /// # Returns
-    /// A string with cursor down + newline (`\x1b[1B\n`).
-    fn render_completion() -> String {
-        "\x1b[1B\n".to_string()
+    /// A string with appropriate cursor sequence for the terminal mode.
+    fn render_completion(terminal_mode: TerminalMode) -> String {
+        match terminal_mode {
+            TerminalMode::Full => "\x1b[1B\n".to_string(),
+            TerminalMode::Basic | TerminalMode::None => "\n".to_string(),
+        }
     }
 }
 
@@ -337,10 +364,20 @@ pub trait DeltaRenderer {
 ///
 /// # Output Pattern
 ///
+/// ## Full Mode (TTY with capable terminal)
+///
 /// ```text
 /// [ccs-glm] Hello\n\x1b[1A             <- First chunk: prefix + content + newline + cursor up
 /// \x1b[2K\r[ccs-glm] Hello World\n\x1b[1A  <- Second chunk: clear, rewrite, newline, cursor up
 /// [ccs-glm] Hello World\n\x1b[1B\n       <- Final: move cursor down + newline
+/// ```
+///
+/// ## Basic/None Mode (colors only or plain text)
+///
+/// ```text
+/// [ccs-glm] Hello\n                      <- First chunk: simple line output
+/// [ccs-glm] Hello World\n                <- Second chunk: full content (no in-place update)
+///                                       <- Final: just a newline
 /// ```
 ///
 /// The multi-line pattern is the industry standard used by Rich, Ink, Bubble Tea
@@ -348,38 +385,82 @@ pub trait DeltaRenderer {
 pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {
-    fn render_first_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
+    fn render_first_delta(
+        accumulated: &str,
+        prefix: &str,
+        colors: Colors,
+        terminal_mode: TerminalMode,
+    ) -> String {
         // Sanitize content: replace newlines with spaces and collapse multiple whitespace
         let sanitized = sanitize_for_display(accumulated);
 
-        // Multi-line pattern: end with newline + cursor up for in-place updates
-        // This forces terminal output flush and positions cursor for rewrite
-        format!(
-            "{}[{}]{} {}{}{}\n\x1b[1A",
-            colors.dim(),
-            prefix,
-            colors.reset(),
-            colors.white(),
-            sanitized,
-            colors.reset()
-        )
+        match terminal_mode {
+            TerminalMode::Full => {
+                // Multi-line pattern: end with newline + cursor up for in-place updates
+                // This forces terminal output flush and positions cursor for rewrite
+                format!(
+                    "{}[{}]{} {}{}{}\n\x1b[1A",
+                    colors.dim(),
+                    prefix,
+                    colors.reset(),
+                    colors.white(),
+                    sanitized,
+                    colors.reset()
+                )
+            }
+            TerminalMode::Basic | TerminalMode::None => {
+                // Simple line output without cursor positioning
+                format!(
+                    "{}[{}]{} {}{}{}\n",
+                    colors.dim(),
+                    prefix,
+                    colors.reset(),
+                    colors.white(),
+                    sanitized,
+                    colors.reset()
+                )
+            }
+        }
     }
 
-    fn render_subsequent_delta(accumulated: &str, prefix: &str, colors: Colors) -> String {
+    fn render_subsequent_delta(
+        accumulated: &str,
+        prefix: &str,
+        colors: Colors,
+        terminal_mode: TerminalMode,
+    ) -> String {
         // Sanitize content: replace newlines with spaces and collapse multiple whitespace
         let sanitized = sanitize_for_display(accumulated);
 
-        // Clear line, rewrite with prefix and accumulated content, end with newline + cursor up
-        // This creates in-place update using multi-line pattern
-        format!(
-            "{CLEAR_LINE}\r{}[{}]{} {}{}{}\n\x1b[1A",
-            colors.dim(),
-            prefix,
-            colors.reset(),
-            colors.white(),
-            sanitized,
-            colors.reset()
-        )
+        match terminal_mode {
+            TerminalMode::Full => {
+                // Clear line, rewrite with prefix and accumulated content, end with newline + cursor up
+                // This creates in-place update using multi-line pattern
+                format!(
+                    "{CLEAR_LINE}\r{}[{}]{} {}{}{}\n\x1b[1A",
+                    colors.dim(),
+                    prefix,
+                    colors.reset(),
+                    colors.white(),
+                    sanitized,
+                    colors.reset()
+                )
+            }
+            TerminalMode::Basic | TerminalMode::None => {
+                // Simple line output without cursor positioning
+                // Note: This will show each update as a new line, which is intentional
+                // for non-TTY or basic terminal output
+                format!(
+                    "{}[{}]{} {}{}{}\n",
+                    colors.dim(),
+                    prefix,
+                    colors.reset(),
+                    colors.white(),
+                    sanitized,
+                    colors.reset()
+                )
+            }
+        }
     }
 }
 
@@ -503,8 +584,13 @@ mod tests {
     // Tests for DeltaRenderer trait
 
     #[test]
-    fn test_text_delta_renderer_first_delta() {
-        let output = TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", test_colors());
+    fn test_text_delta_renderer_first_delta_full_mode() {
+        let output = TextDeltaRenderer::render_first_delta(
+            "Hello",
+            "ccs-glm",
+            test_colors(),
+            TerminalMode::Full,
+        );
         assert!(output.contains("[ccs-glm]"));
         assert!(output.contains("Hello"));
         // Multi-line pattern: ends with newline + cursor up
@@ -514,9 +600,49 @@ mod tests {
     }
 
     #[test]
-    fn test_text_delta_renderer_subsequent_delta() {
-        let output =
-            TextDeltaRenderer::render_subsequent_delta("Hello World", "ccs-glm", test_colors());
+    fn test_text_delta_renderer_first_delta_none_mode() {
+        let output = TextDeltaRenderer::render_first_delta(
+            "Hello",
+            "ccs-glm",
+            test_colors(),
+            TerminalMode::None,
+        );
+        assert!(output.contains("[ccs-glm]"));
+        assert!(output.contains("Hello"));
+        // No cursor positioning in None mode
+        assert!(!output.contains("\x1b[1A"));
+        assert!(!output.contains("\x1b[2K"));
+        // But should still have newline
+        assert!(output.contains('\n'));
+        assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_text_delta_renderer_first_delta_basic_mode() {
+        let output = TextDeltaRenderer::render_first_delta(
+            "Hello",
+            "ccs-glm",
+            test_colors(),
+            TerminalMode::Basic,
+        );
+        assert!(output.contains("[ccs-glm]"));
+        assert!(output.contains("Hello"));
+        // No cursor positioning in Basic mode
+        assert!(!output.contains("\x1b[1A"));
+        assert!(!output.contains("\x1b[2K"));
+        // But should still have newline
+        assert!(output.contains('\n'));
+        assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_text_delta_renderer_subsequent_delta_full_mode() {
+        let output = TextDeltaRenderer::render_subsequent_delta(
+            "Hello World",
+            "ccs-glm",
+            test_colors(),
+            TerminalMode::Full,
+        );
         assert!(output.contains(CLEAR_LINE));
         assert!(output.contains('\r'));
         assert!(output.contains("Hello World"));
@@ -527,9 +653,31 @@ mod tests {
     }
 
     #[test]
+    fn test_text_delta_renderer_subsequent_delta_none_mode() {
+        let output = TextDeltaRenderer::render_subsequent_delta(
+            "Hello World",
+            "ccs-glm",
+            test_colors(),
+            TerminalMode::None,
+        );
+        assert!(!output.contains(CLEAR_LINE));
+        assert!(!output.contains('\r'));
+        assert!(output.contains("Hello World"));
+        // No cursor positioning in None mode
+        assert!(!output.contains("\x1b[1A"));
+        // But should still have newline
+        assert!(output.contains('\n'));
+        assert!(output.ends_with('\n'));
+    }
+
+    #[test]
     fn test_text_delta_renderer_uses_full_line_clear() {
-        let output =
-            TextDeltaRenderer::render_subsequent_delta("Hello World", "ccs-glm", test_colors());
+        let output = TextDeltaRenderer::render_subsequent_delta(
+            "Hello World",
+            "ccs-glm",
+            test_colors(),
+            TerminalMode::Full,
+        );
         // Should use \x1b[2K (full line clear), not \x1b[0K (clear to end)
         assert!(output.contains("\x1b[2K"));
         // Should NOT contain \x1b[0K
@@ -537,8 +685,8 @@ mod tests {
     }
 
     #[test]
-    fn test_text_delta_renderer_completion() {
-        let output = TextDeltaRenderer::render_completion();
+    fn test_text_delta_renderer_completion_full_mode() {
+        let output = TextDeltaRenderer::render_completion(TerminalMode::Full);
         // Multi-line pattern: cursor down + newline
         assert!(output.contains("\x1b[1B"));
         assert!(output.contains('\n'));
@@ -546,9 +694,31 @@ mod tests {
     }
 
     #[test]
+    fn test_text_delta_renderer_completion_none_mode() {
+        let output = TextDeltaRenderer::render_completion(TerminalMode::None);
+        // Just a newline in None mode
+        assert!(!output.contains("\x1b[1B"));
+        assert!(output.contains('\n'));
+        assert_eq!(output, "\n");
+    }
+
+    #[test]
+    fn test_text_delta_renderer_completion_basic_mode() {
+        let output = TextDeltaRenderer::render_completion(TerminalMode::Basic);
+        // Just a newline in Basic mode
+        assert!(!output.contains("\x1b[1B"));
+        assert!(output.contains('\n'));
+        assert_eq!(output, "\n");
+    }
+
+    #[test]
     fn test_text_delta_renderer_sanitizes_newlines() {
-        let output =
-            TextDeltaRenderer::render_first_delta("Hello\nWorld", "ccs-glm", test_colors());
+        let output = TextDeltaRenderer::render_first_delta(
+            "Hello\nWorld",
+            "ccs-glm",
+            test_colors(),
+            TerminalMode::Full,
+        );
         // Newlines should be replaced with spaces
         assert!(!output.contains("Hello\nWorld"));
         assert!(output.contains("Hello World"));
@@ -559,21 +729,27 @@ mod tests {
         let colors = test_colors();
 
         // First chunk - multi-line pattern: ends with newline + cursor up
-        let out1 = TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", colors);
+        let out1 =
+            TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", colors, TerminalMode::Full);
         assert!(out1.contains("[ccs-glm]"));
         assert!(out1.ends_with("\x1b[1A"));
         assert!(out1.contains('\n'));
         assert!(out1.contains("\x1b[1A"));
 
         // Second chunk (in-place update with newline + cursor up)
-        let out2 = TextDeltaRenderer::render_subsequent_delta("Hello World", "ccs-glm", colors);
+        let out2 = TextDeltaRenderer::render_subsequent_delta(
+            "Hello World",
+            "ccs-glm",
+            colors,
+            TerminalMode::Full,
+        );
         assert!(out2.contains("\x1b[2K"));
         assert!(out2.contains('\r'));
         assert!(out2.contains("\x1b[1A")); // Cursor up in multi-line pattern
         assert!(out2.contains("[ccs-glm]")); // Prefix is rewritten
 
         // Completion
-        let out3 = TextDeltaRenderer::render_completion();
+        let out3 = TextDeltaRenderer::render_completion(TerminalMode::Full);
         assert!(out3.contains("\x1b[1B"));
         assert_eq!(out3, "\x1b[1B\n");
     }
@@ -583,9 +759,15 @@ mod tests {
         let colors = test_colors();
 
         // Simulate a full streaming sequence and verify no extra blank lines
-        let first = TextDeltaRenderer::render_first_delta("Hello", "agent", colors);
-        let second = TextDeltaRenderer::render_subsequent_delta("Hello World", "agent", colors);
-        let complete = TextDeltaRenderer::render_completion();
+        let first =
+            TextDeltaRenderer::render_first_delta("Hello", "agent", colors, TerminalMode::Full);
+        let second = TextDeltaRenderer::render_subsequent_delta(
+            "Hello World",
+            "agent",
+            colors,
+            TerminalMode::Full,
+        );
+        let complete = TextDeltaRenderer::render_completion(TerminalMode::Full);
 
         // First delta: ends with exactly one \n followed by cursor up
         assert!(first.ends_with("\n\x1b[1A"));
@@ -602,16 +784,46 @@ mod tests {
     }
 
     #[test]
+    fn test_non_tty_streaming_sequence_simple_output() {
+        let colors = test_colors();
+
+        // Simulate a full streaming sequence in None mode
+        let first =
+            TextDeltaRenderer::render_first_delta("Hello", "agent", colors, TerminalMode::None);
+        let second = TextDeltaRenderer::render_subsequent_delta(
+            "Hello World",
+            "agent",
+            colors,
+            TerminalMode::None,
+        );
+        let complete = TextDeltaRenderer::render_completion(TerminalMode::None);
+
+        // First delta: simple line ending with newline
+        assert!(first.contains("Hello"));
+        assert!(first.ends_with('\n'));
+        assert!(!first.contains('\x1b'));
+
+        // Second delta: simple line with full content (no in-place update)
+        assert!(second.contains("Hello World"));
+        assert!(second.ends_with('\n'));
+        assert!(!second.contains('\x1b'));
+
+        // Completion: just a newline
+        assert_eq!(complete, "\n");
+    }
+
+    #[test]
     fn test_prefix_displayed_on_all_deltas() {
         let colors = test_colors();
         let prefix = "my-agent";
 
         // First delta shows prefix
-        let first = TextDeltaRenderer::render_first_delta("A", prefix, colors);
+        let first = TextDeltaRenderer::render_first_delta("A", prefix, colors, TerminalMode::Full);
         assert!(first.contains(&format!("[{prefix}]")));
 
         // Subsequent delta also shows prefix (design decision: prefix on every delta)
-        let subsequent = TextDeltaRenderer::render_subsequent_delta("AB", prefix, colors);
+        let subsequent =
+            TextDeltaRenderer::render_subsequent_delta("AB", prefix, colors, TerminalMode::Full);
         assert!(subsequent.contains(&format!("[{prefix}]")));
     }
 
@@ -659,7 +871,12 @@ mod tests {
     #[test]
     fn test_delta_renderer_multiple_newlines_render_cleanly() {
         let colors = test_colors();
-        let output = TextDeltaRenderer::render_first_delta("Hello\n\n\nWorld", "agent", colors);
+        let output = TextDeltaRenderer::render_first_delta(
+            "Hello\n\n\nWorld",
+            "agent",
+            colors,
+            TerminalMode::Full,
+        );
         // Multiple newlines should render as single space
         assert!(output.contains("Hello World"));
         // Should NOT have multiple spaces
@@ -669,7 +886,12 @@ mod tests {
     #[test]
     fn test_delta_renderer_trailing_whitespace_trimmed() {
         let colors = test_colors();
-        let output = TextDeltaRenderer::render_first_delta("Hello World   ", "agent", colors);
+        let output = TextDeltaRenderer::render_first_delta(
+            "Hello World   ",
+            "agent",
+            colors,
+            TerminalMode::Full,
+        );
         // Trailing spaces should be trimmed
         assert!(output.contains("Hello World"));
         // Content should not end with space before escape sequences

@@ -41,6 +41,7 @@ use std::rc::Rc;
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 use super::streaming_state::StreamingSession;
+use super::terminal::TerminalMode;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType, GeminiEvent};
 
 /// Gemini event parser
@@ -51,6 +52,8 @@ pub struct GeminiParser {
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
+    /// Terminal mode for output formatting
+    terminal_mode: RefCell<TerminalMode>,
 }
 
 impl GeminiParser {
@@ -61,6 +64,7 @@ impl GeminiParser {
             log_file: None,
             display_name: "Gemini".to_string(),
             streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            terminal_mode: RefCell::new(TerminalMode::detect()),
         }
     }
 
@@ -71,6 +75,12 @@ impl GeminiParser {
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_terminal_mode(self, mode: TerminalMode) -> Self {
+        *self.terminal_mode.borrow_mut() = mode;
         self
     }
 
@@ -181,12 +191,23 @@ impl GeminiParser {
                 };
 
                 // Use TextDeltaRenderer for consistent rendering across all parsers
+                let terminal_mode = *self.terminal_mode.borrow();
                 if show_prefix {
                     // First delta: use renderer with prefix
-                    return TextDeltaRenderer::render_first_delta(&accumulated_text, prefix, *c);
+                    return TextDeltaRenderer::render_first_delta(
+                        &accumulated_text,
+                        prefix,
+                        *c,
+                        terminal_mode,
+                    );
                 }
                 // Subsequent deltas: use renderer for in-place update
-                return TextDeltaRenderer::render_subsequent_delta(&accumulated_text, prefix, *c);
+                return TextDeltaRenderer::render_subsequent_delta(
+                    &accumulated_text,
+                    prefix,
+                    *c,
+                    terminal_mode,
+                );
             } else if !is_delta && role_str == "assistant" {
                 // Non-delta message - check for duplicate using message ID or fallback to streaming content check
                 let session = self.streaming_session.borrow();
@@ -202,7 +223,8 @@ impl GeminiParser {
 
                 // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
                 if is_duplicate || was_streaming {
-                    return TextDeltaRenderer::render_completion();
+                    let terminal_mode = *self.terminal_mode.borrow();
+                    return TextDeltaRenderer::render_completion(terminal_mode);
                 }
 
                 // Otherwise, show the full content (non-streaming path)

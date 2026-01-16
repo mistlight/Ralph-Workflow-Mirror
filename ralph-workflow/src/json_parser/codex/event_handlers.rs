@@ -12,6 +12,7 @@ use std::rc::Rc;
 
 use crate::json_parser::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use crate::json_parser::streaming_state::StreamingSession;
+use crate::json_parser::terminal::TerminalMode;
 use crate::json_parser::types::{
     format_tool_input, CodexItem, CodexUsage, ContentType, DeltaAccumulator,
 };
@@ -23,6 +24,7 @@ pub struct EventHandlerContext<'a> {
     pub display_name: &'a str,
     pub streaming_session: &'a Rc<RefCell<StreamingSession>>,
     pub reasoning_accumulator: &'a Rc<RefCell<DeltaAccumulator>>,
+    pub terminal_mode: TerminalMode,
 }
 
 /// Handle `ItemStarted` event by delegating to type-specific handlers.
@@ -144,7 +146,7 @@ pub fn handle_turn_completed(ctx: &EventHandlerContext, usage: Option<CodexUsage
         (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0))
     });
     let completion = if was_in_block {
-        TextDeltaRenderer::render_completion()
+        TextDeltaRenderer::render_completion(ctx.terminal_mode)
     } else {
         String::new()
     };
@@ -168,7 +170,7 @@ pub fn handle_turn_completed(ctx: &EventHandlerContext, usage: Option<CodexUsage
 pub fn handle_turn_failed(ctx: &EventHandlerContext, error: Option<String>) -> String {
     let was_in_block = ctx.streaming_session.borrow_mut().on_message_stop();
     let completion = if was_in_block {
-        TextDeltaRenderer::render_completion()
+        TextDeltaRenderer::render_completion(ctx.terminal_mode)
     } else {
         String::new()
     };
@@ -203,12 +205,14 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
                 &accumulated_text,
                 ctx.display_name,
                 *ctx.colors,
+                ctx.terminal_mode,
             );
         }
         return TextDeltaRenderer::render_subsequent_delta(
             &accumulated_text,
             ctx.display_name,
             *ctx.colors,
+            ctx.terminal_mode,
         );
     }
     if ctx.verbosity.is_verbose() {
@@ -395,7 +399,7 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
     let _was_in_block = ctx.streaming_session.borrow_mut().on_message_stop();
 
     if is_duplicate || was_streaming {
-        return TextDeltaRenderer::render_completion();
+        return TextDeltaRenderer::render_completion(ctx.terminal_mode);
     }
 
     if let Some(text) = text {

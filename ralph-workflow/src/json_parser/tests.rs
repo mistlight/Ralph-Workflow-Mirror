@@ -3,6 +3,7 @@
 //! This module contains tests for cross-parser behavior, shared utilities,
 //! and streaming functionality that applies to multiple parsers.
 
+use super::terminal::TerminalMode;
 use super::*;
 use crate::config::Verbosity;
 use crate::logger::Colors;
@@ -30,7 +31,8 @@ fn test_verbosity_affects_output() {
 
 #[test]
 fn test_tool_use_shows_input_in_verbose_mode() {
-    let verbose_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+    let verbose_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose)
+        .with_terminal_mode(TerminalMode::Full);
     let json = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/test.rs"}}]}}"#;
     let output = verbose_parser.parse_event(json).unwrap();
     assert!(output.contains("Tool"));
@@ -41,7 +43,8 @@ fn test_tool_use_shows_input_in_verbose_mode() {
 #[test]
 fn test_tool_use_shows_input_in_normal_mode() {
     // Tool inputs are now shown at Normal level for better usability
-    let normal_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let normal_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
     let json = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/test.rs"}}]}}"#;
     let output = normal_parser.parse_event(json).unwrap();
     assert!(output.contains("Tool"));
@@ -65,6 +68,7 @@ fn test_tool_use_hides_input_in_quiet_mode() {
 #[test]
 fn test_parser_uses_custom_display_name_prefix() {
     let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full)
         .with_display_name("ccs-glm");
     let json = r#"{"type":"system","subtype":"init","session_id":"abc123"}"#;
     let output = parser.parse_event(json).unwrap();
@@ -73,7 +77,8 @@ fn test_parser_uses_custom_display_name_prefix() {
 
 #[test]
 fn test_debug_verbosity_is_recognized() {
-    let debug_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Debug);
+    let debug_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Debug)
+        .with_terminal_mode(TerminalMode::Full);
     // Debug mode should be detectable via is_debug()
     assert!(debug_parser.verbosity.is_debug());
 }
@@ -439,7 +444,8 @@ fn test_stream_classifies_error_as_control() {
 #[test]
 fn test_claude_parser_tracks_partial_events_in_health_monitoring() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Create a stream with mixed events: control, partial (delta), and complete
     let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
@@ -529,7 +535,8 @@ fn test_health_monitor_warning_only_for_parse_errors() {
 #[test]
 fn test_verbose_mode_streaming_no_duplicate_lines() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming content that arrives in multiple deltas
     // This mimics a diagnostic message like "warning: unused variable"
@@ -584,8 +591,10 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
 
 #[test]
 fn test_normal_and_verbose_mode_show_same_deltas() {
-    let normal_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
-    let verbose_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+    let normal_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
+    let verbose_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose)
+        .with_terminal_mode(TerminalMode::Full);
 
     let json = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
 
@@ -603,7 +612,8 @@ fn test_normal_and_verbose_mode_show_same_deltas() {
 
 #[test]
 fn test_delta_with_embedded_newline_displays_inline() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate a delta that contains a newline character within the text
     // For example: "Now I understand\n1. In src/..."
@@ -671,7 +681,8 @@ impl Write for FlushTrackingWriter {
 
 #[test]
 fn test_claude_streaming_flushes_after_write() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming deltas that produce output
     let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}}
@@ -692,7 +703,8 @@ fn test_claude_streaming_flushes_after_write() {
 
 #[test]
 fn test_codex_streaming_flushes_after_write() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming delta events
     let input = r#"{"type":"item.started","item":{"type":"reasoning","id":"item_1","text":"Thinking"}}
@@ -712,7 +724,8 @@ fn test_codex_streaming_flushes_after_write() {
 
 #[test]
 fn test_gemini_streaming_flushes_after_write() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming delta events
     let input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true,"timestamp":"2025-10-10T12:00:01.000Z"}
@@ -736,7 +749,8 @@ fn test_gemini_streaming_flushes_after_write() {
 #[test]
 fn test_streaming_accumulation_behavior() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming content arriving in multiple deltas
     let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
@@ -795,7 +809,8 @@ fn test_streaming_accumulation_behavior() {
 #[test]
 fn test_streaming_empty_delta_chunk() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming with an empty delta in the middle
     let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
@@ -826,7 +841,8 @@ fn test_streaming_empty_delta_chunk() {
 #[test]
 fn test_streaming_single_chunk() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Single chunk scenario - content arrives all at once
     let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Complete message"}}}
@@ -860,7 +876,8 @@ fn test_streaming_single_chunk() {
 #[test]
 fn test_streaming_very_long_text() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Create a very long text that would exceed terminal width
     let long_chunk = "a".repeat(200);
@@ -894,7 +911,8 @@ fn test_streaming_very_long_text() {
 /// Verifies that special characters (quotes, unicode, etc.) are handled correctly
 #[test]
 fn test_streaming_special_characters() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Text with various special characters
     let special_text = "Hello \"World\"! 'quotes' and $ymbols & unicode: 🌍 世界";
@@ -926,7 +944,8 @@ fn test_streaming_special_characters() {
 #[test]
 fn test_streaming_rapid_chunks() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate rapid streaming with many small chunks
     let mut input_lines = Vec::new();
@@ -971,7 +990,8 @@ fn test_streaming_rapid_chunks() {
 #[test]
 fn test_streaming_whitespace_only_chunks() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming with whitespace chunks
     let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"   "}}}
@@ -999,7 +1019,8 @@ fn test_streaming_whitespace_only_chunks() {
 #[test]
 fn test_streaming_content_block_reset() {
     use std::io::Cursor;
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // First content block, then start a new one
     let input = r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Initial"}}}
@@ -1026,7 +1047,8 @@ fn test_streaming_consistency_across_parsers() {
     use std::io::Cursor;
 
     // Test Claude parser
-    let claude_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let claude_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
     let claude_input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
 {"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
 {"type":"stream_event","event":{"type":"message_stop"}}"#;
@@ -1053,7 +1075,8 @@ fn test_streaming_consistency_across_parsers() {
     // Test Codex parser
     // Note: With StreamingSession, Codex shows prefix only on first item.started (1 prefix)
     // The completion just adds a newline without re-displaying content
-    let codex_parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let codex_parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
     let codex_input = r#"{"type":"item.started","item":{"type":"agent_message","id":"msg1","text":"Hello"}}
 {"type":"item.started","item":{"type":"agent_message","id":"msg1","text":" World"}}
 {"type":"item.completed","item":{"type":"agent_message","id":"msg1"}}"#;
@@ -1079,7 +1102,8 @@ fn test_streaming_consistency_across_parsers() {
     // Test Gemini parser
     // Note: With the single-line pattern, each delta includes the prefix
     // The final non-delta message is deduplicated and only adds a newline
-    let gemini_parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let gemini_parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
     let gemini_input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true}
 {"type":"message","role":"assistant","content":" World","delta":true}
 {"type":"message","role":"assistant","content":"Hello World"}"#;
@@ -1106,7 +1130,8 @@ fn test_streaming_consistency_across_parsers() {
     // Note: With the single-line pattern, each text event includes the prefix
     // The step_finish event also shows a prefix (different content)
     // 2 text events + 1 step_finish = 3 prefixes total
-    let opencode_parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let opencode_parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
     let opencode_input = r#"{"type":"text","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":"Hello"}}
 {"type":"text","timestamp":1768191347232,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":" World"}}
 {"type":"step_finish","timestamp":1768191347296,"sessionID":"ses_44f9562d4ffe","part":{"type":"step-finish","reason":"end_turn"}}"#;
@@ -1256,7 +1281,8 @@ fn test_mixed_small_and_large_deltas() {
 fn test_ccs_glm_streaming_no_duplicate_prefix() {
     use std::io::Cursor;
 
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate the problematic ccs-glm streaming pattern:
     // Many small deltas arriving one token at a time
@@ -1323,7 +1349,8 @@ fn test_ccs_glm_streaming_no_duplicate_prefix() {
 fn test_ccs_glm_complete_message_deduplication() {
     use std::io::Cursor;
 
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming followed by a complete message event
     let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
@@ -1414,7 +1441,8 @@ fn test_content_block_state_tracking() {
 fn test_finalize_without_deltas_no_output() {
     use std::io::Cursor;
 
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate message_start -> message_stop with no content
     let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
@@ -1451,7 +1479,8 @@ fn test_finalize_without_deltas_no_output() {
 fn test_repeated_content_block_start_no_duplicate_prefix() {
     use std::io::Cursor;
 
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate GLM sending ContentBlockStart before each delta
     let mut input_lines = Vec::new();
@@ -1518,7 +1547,8 @@ fn test_repeated_content_block_start_no_duplicate_prefix() {
 fn test_multiple_messages_with_proper_separation() {
     use std::io::Cursor;
 
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Stream two complete messages in sequence
     let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
