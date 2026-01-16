@@ -269,6 +269,257 @@ fn file_count_pattern_regex() -> &'static Regex {
     })
 }
 
+/// Check for JSON artifacts that indicate extraction failure.
+fn check_json_artifacts(content: &str) -> Result<(), String> {
+    let json_indicators = [
+        r#"{"type":"#,
+        r#"{"result":"#,
+        r#"{"content":"#,
+        r#"{"subject":"#, // Structured commit message JSON that wasn't parsed
+        r#"{"body":"#,    // Partial structured commit JSON
+        r#""session_id":"#,
+        r#""timestamp":"#,
+        "stream_event",
+        "content_block",
+    ];
+    for indicator in json_indicators {
+        if content.contains(indicator) {
+            return Err(format!(
+                "Commit message contains JSON artifacts: {}...",
+                &indicator[..indicator.len().min(20)]
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Check for literal escape sequences that indicate JSON unescaping failure.
+fn check_escape_sequences(content: &str) -> Result<(), String> {
+    // Pattern 1: Body starts with literal \n\n
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.len() >= 2 {
+        let second_line = lines[1].trim();
+        if second_line == "\\n" || second_line == "\\n\\n" || second_line.starts_with("\\n\\n") {
+            return Err(
+                "Commit message body appears to contain literal escape sequences (\\n\\n). \
+                 This indicates JSON was not properly unescaped."
+                    .to_string(),
+            );
+        }
+    }
+
+    // Pattern 2: JSON artifacts combined with escape sequences
+    let json_and_escape_patterns = [
+        (r#"{"type":"#, "\\n"),
+        (r#"{"result":"#, "\\n"),
+        (r#"{"content":"#, "\\n"),
+        (r#""session_id":"#, "\\n"),
+    ];
+    for (json_pattern, escape_pattern) in json_and_escape_patterns {
+        if content.contains(json_pattern) && content.contains(escape_pattern) {
+            return Err(format!(
+                "Commit message contains both JSON artifacts ({json_pattern}) and literal escape sequences. This indicates JSON parsing failure."
+            ));
+        }
+    }
+
+    // Pattern 3: Repeated literal escape sequences
+    if content.contains("\\n\\n\\n") || content.contains("\\n\\n\\n\\n") {
+        return Err(
+            "Commit message contains repeated literal escape sequences (\\n\\n\\n). \
+             This indicates JSON string values were not properly unescaped."
+                .to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+/// Check for error markers and agent error messages.
+fn check_error_patterns(_content: &str, content_lower: &str) -> Result<(), String> {
+    let error_markers = [
+        "error:",
+        "failed to",
+        "unable to",
+        "i cannot",
+        "i'm unable",
+        "as an ai",
+        "i don't have access",
+        "cannot generate",
+    ];
+    for marker in error_markers {
+        if content_lower.starts_with(marker) {
+            return Err(format!("Commit message starts with error marker: {marker}"));
+        }
+    }
+
+    let agent_error_patterns = [
+        "prompt is too long",
+        "token limit exceeded",
+        "context length exceeded",
+        "maximum context",
+        "input too large",
+        "invalid request",
+        "request failed",
+    ];
+    for pattern in &agent_error_patterns {
+        if content_lower.contains(pattern) {
+            return Err(format!(
+                "Output contains agent error message ({pattern}). Cannot use as commit message."
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Check for AI thought process leakage patterns.
+fn check_thought_process_leakage(content: &str, content_lower: &str) -> Result<(), String> {
+    let thought_process_prefixes = [
+        "looking at this diff",
+        "i can see",
+        "the main changes are",
+        "several distinct categories",
+        "key categories",
+        "based on the diff",
+        "analyzing the changes",
+        "this diff shows",
+        "looking at the changes",
+        "i've analyzed",
+        "after reviewing",
+        "based on the git diff",
+        "here are the changes",
+        "here's what changed",
+        "here is what changed",
+        "the following changes",
+        "changes include",
+        "after reviewing the diff",
+        "after reviewing the changes",
+        "after analyzing",
+        "i've analyzed the changes",
+        "i've analyzed the diff",
+        "key changes",
+        "several changes",
+        "distinct changes",
+        "key changes include",
+        "several changes include",
+        "this diff shows the following",
+    ];
+    for prefix in &thought_process_prefixes {
+        if content_lower.starts_with(prefix) {
+            return Err(format!(
+                "Commit message starts with AI thought process ({prefix})."
+            ));
+        }
+    }
+
+    // Check for numbered analysis at the start
+    if content.trim_start().starts_with("1. ")
+        || content.trim_start().starts_with("1)\n")
+        || content_lower.starts_with("- first")
+        || content_lower.starts_with("* first")
+    {
+        return Err(
+            "Commit message starts with numbered analysis. This indicates AI thought process leakage.".to_string()
+        );
+    }
+
+    // Check for formatted thinking output patterns
+    let formatted_thinking_patterns = [
+        "[claude] thinking:",
+        "[agent] thinking:",
+        "[assistant] thinking:",
+        "] thinking:",
+        "] Thinking:",
+    ];
+    for pattern in &formatted_thinking_patterns {
+        if content_lower.contains(pattern) {
+            return Err(format!(
+                "Commit message contains formatted thinking pattern ({pattern})."
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Check for placeholder content and bad patterns.
+fn check_placeholder_and_vague_patterns(content: &str, content_lower: &str) -> Result<(), String> {
+    let placeholders = [
+        "[commit message]",
+        "<commit message>",
+        "placeholder",
+        "your commit message here",
+        "[insert",
+        "<insert",
+    ];
+    for placeholder in placeholders {
+        if content_lower.contains(placeholder) {
+            return Err(format!(
+                "Commit message contains placeholder: {placeholder}"
+            ));
+        }
+    }
+
+    if file_count_pattern_regex().is_match(content_lower) {
+        return Err(format!(
+            "Commit message matches bad pattern (file count pattern): '{content}'. Use semantic description instead."
+        ));
+    }
+
+    let vague_patterns = [
+        ("chore: apply changes", "vague 'apply changes' pattern"),
+        ("chore: update code", "vague 'update code' pattern"),
+    ];
+    for (pattern, description) in vague_patterns {
+        if content_lower == pattern {
+            return Err(format!(
+                "Commit message matches bad pattern ({description}): {pattern}"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Check for file list patterns in commit messages.
+fn check_file_list_patterns(content: &str) -> Result<(), String> {
+    let first_line = content.lines().next().unwrap_or(content);
+    let first_line_lower = first_line.to_lowercase();
+
+    if first_line_lower.starts_with("chore: update ") || first_line_lower.starts_with("chore:") {
+        let subject = first_line_lower
+            .replacen("chore: update ", "", 1)
+            .replacen("chore:", "", 1)
+            .trim()
+            .to_string();
+
+        let code_extensions = [
+            ".rs", ".js", ".ts", ".py", ".go", ".java", ".c", ".cpp", ".h", ".cs", ".php", ".rb",
+            ".swift", ".kt",
+        ];
+
+        let looks_like_file_list = subject.contains('/')
+            || subject.contains('\\')
+            || code_extensions.iter().any(|ext| subject.ends_with(ext));
+
+        let has_comma_separated_files =
+            subject.contains(", ") && code_extensions.iter().any(|ext| subject.contains(ext));
+
+        let has_and_separated_files =
+            subject.contains(" and ") && code_extensions.iter().any(|ext| subject.contains(ext));
+
+        if looks_like_file_list || has_comma_separated_files || has_and_separated_files {
+            return Err(format!(
+                "Commit message appears to be a file list: '{}'. Use semantic description instead.",
+                first_line.trim()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Validate extracted content for use as a commit message.
 ///
 /// # Returns
@@ -298,273 +549,15 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
         ));
     }
 
-    // Check for JSON artifacts that indicate extraction failure
-    let json_indicators = [
-        r#"{"type":"#,
-        r#"{"result":"#,
-        r#"{"content":"#,
-        r#""session_id":"#,
-        r#""timestamp":"#,
-        "stream_event",
-        "content_block",
-    ];
-    for indicator in json_indicators {
-        if content.contains(indicator) {
-            return Err(format!(
-                "Commit message contains JSON artifacts: {}...",
-                &indicator[..indicator.len().min(20)]
-            ));
-        }
-    }
-
-    // Check for literal escape sequences that indicate JSON unescaping failure.
-    // These patterns suggest that JSON was partially decoded but escape sequences
-    // leaked through. We check for multiple patterns to catch different failure modes.
-
-    // Pattern 1: Body starts with literal \n\n (most common JSON escaping issue)
-    // After a subject line like "feat: add", the body should start with actual newlines,
-    // not literal "\n\n" characters. This indicates the JSON wasn't properly unescaped.
-    let lines: Vec<&str> = content.lines().collect();
-    if lines.len() >= 2 {
-        let second_line = lines[1].trim();
-        // Check if body starts with literal escape sequences
-        if second_line == "\\n" || second_line == "\\n\\n" || second_line.starts_with("\\n\\n") {
-            return Err(
-                "Commit message body appears to contain literal escape sequences (\\n\\n). \
-                 This indicates JSON was not properly unescaped. \
-                 Expected actual newlines after subject line."
-                    .to_string(),
-            );
-        }
-    }
-
-    // Pattern 2: Check for literal escape sequences COMBINED WITH JSON artifacts
-    // This is a safety check for cases where unescaping failed but only when
-    // combined with other JSON indicators that indicate actual parsing failure.
-    // Individual literal \n, \t, \r without JSON artifacts may be legitimate
-    // content in commit messages (e.g., "fix: handle \\n in filenames")
-    let json_and_escape_patterns = [
-        (r#"{"type":"#, "\\n"),
-        (r#"{"result":"#, "\\n"),
-        (r#"{"content":"#, "\\n"),
-        (r#""session_id":"#, "\\n"),
-    ];
-    for (json_pattern, escape_pattern) in json_and_escape_patterns {
-        if content.contains(json_pattern) && content.contains(escape_pattern) {
-            return Err(format!(
-                "Commit message contains both JSON artifacts ({json_pattern}) and literal escape sequences ({escape_pattern}). This indicates JSON parsing failure."
-            ));
-        }
-    }
-
-    // Pattern 3: Check for repeated literal escape sequences that suggest bulk unescaping failure
-    // This catches cases where \\n\\n\\n appears (multiple escaped newlines that weren't processed)
-    if content.contains("\\n\\n\\n") || content.contains("\\n\\n\\n\\n") {
-        return Err(
-            "Commit message contains repeated literal escape sequences (\\n\\n\\n). \
-             This indicates JSON string values were not properly unescaped."
-                .to_string(),
-        );
-    }
-
-    // Check for error markers
-    let error_markers = [
-        "error:",
-        "failed to",
-        "unable to",
-        "i cannot",
-        "i'm unable",
-        "as an ai",
-        "i don't have access",
-        "cannot generate",
-    ];
     let content_lower = content.to_lowercase();
-    for marker in error_markers {
-        if content_lower.starts_with(marker) {
-            return Err(format!("Commit message starts with error marker: {marker}"));
-        }
-    }
 
-    // Check for agent error messages that leaked into output
-    // This handles cases where agents output errors in their result field
-    // that bypassed the normal stderr error detection
-    let agent_error_patterns = [
-        "prompt is too long",
-        "token limit exceeded",
-        "context length exceeded",
-        "maximum context",
-        "input too large",
-        "invalid request",
-        "request failed",
-    ];
-    for pattern in &agent_error_patterns {
-        if content_lower.contains(pattern) {
-            return Err(format!(
-                "Output contains agent error message ({pattern}). Cannot use as commit message."
-            ));
-        }
-    }
-
-    // Check for AI thought process leakage at the start of the message
-    // This validation catches cases where the filtering in remove_thought_process_patterns
-    // failed to remove the AI analysis before the actual commit message
-    let thought_process_prefixes = [
-        "looking at this diff",
-        "i can see",
-        "the main changes are",
-        "several distinct categories",
-        "key categories",
-        "based on the diff",
-        "analyzing the changes",
-        "this diff shows",
-        "looking at the changes",
-        "i've analyzed",
-        "after reviewing",
-        // Additional patterns to catch more variations
-        "based on the git diff",
-        "here are the changes",
-        "here's what changed",
-        "here is what changed",
-        "the following changes",
-        "changes include",
-        "after reviewing the diff",
-        "after reviewing the changes",
-        "after analyzing",
-        "i've analyzed the changes",
-        "i've analyzed the diff",
-        "key changes",
-        "several changes",
-        "distinct changes",
-        "key changes include",
-        "several changes include",
-        "this diff shows the following",
-    ];
-    for prefix in &thought_process_prefixes {
-        if content_lower.starts_with(prefix) {
-            return Err(format!(
-                "Commit message starts with AI thought process ({prefix}). This indicates a bug in the thought process filtering."
-            ));
-        }
-    }
-
-    // Check for numbered analysis at the start (1., 2., 3., etc.)
-    if content.trim_start().starts_with("1. ")
-        || content.trim_start().starts_with("1)\n")
-        || content_lower.starts_with("- first")
-        || content_lower.starts_with("* first")
-    {
-        return Err(
-            "Commit message starts with numbered analysis. This indicates AI thought process leakage.".to_string()
-        );
-    }
-
-    // Check for formatted thinking output patterns (e.g., "[Claude] Thinking:")
-    // This catches formatted thinking output from CLI display that leaked into the log
-    let formatted_thinking_patterns = [
-        "[claude] thinking:",
-        "[claude] Thinking:",
-        "[agent] thinking:",
-        "[agent] Thinking:",
-        "[assistant] thinking:",
-        "[assistant] Thinking:",
-        "] thinking:",
-        "] Thinking:",
-    ];
-    for pattern in &formatted_thinking_patterns {
-        if content_lower.starts_with(pattern) || content.contains(pattern) {
-            return Err(format!(
-                "Commit message contains formatted thinking pattern ({pattern}). This indicates AI thinking output leaked into the commit message."
-            ));
-        }
-    }
-
-    // Check for placeholder content
-    let placeholders = [
-        "[commit message]",
-        "<commit message>",
-        "placeholder",
-        "your commit message here",
-        "[insert",
-        "<insert",
-    ];
-    for placeholder in placeholders {
-        if content_lower.contains(placeholder) {
-            return Err(format!(
-                "Commit message contains placeholder: {placeholder}"
-            ));
-        }
-    }
-
-    // Check for bad commit message patterns (vague, meaningless messages)
-    // Use regex to catch ALL variants, not just hardcoded numbers
-
-    // Pattern 1: "chore: N file(s) changed" for ANY number N
-    // Handles: "file(s) changed", "files changed", "file changed" variations
-    if file_count_pattern_regex().is_match(&content_lower) {
-        return Err(format!(
-            "Commit message matches bad pattern (file count pattern): '{content}'. Use semantic description instead."
-        ));
-    }
-
-    // Pattern 2: Generic vague patterns
-    let vague_patterns = [
-        ("chore: apply changes", "vague 'apply changes' pattern"),
-        ("chore: update code", "vague 'update code' pattern"),
-    ];
-    for (pattern, description) in vague_patterns {
-        if content_lower == pattern {
-            return Err(format!(
-                "Commit message matches bad pattern ({description}): {pattern}"
-            ));
-        }
-    }
-
-    // Check for filename list patterns like "chore: update src/file.rs" or "chore: src/file.rs, src/other.rs"
-    // These are bad because they just list filenames without semantic meaning
-    let first_line = content.lines().next().unwrap_or(content);
-    let first_line_lower = first_line.to_lowercase();
-
-    // Check both "chore: update <path>" and "chore: <path>" patterns
-    if first_line_lower.starts_with("chore: update ") || first_line_lower.starts_with("chore:") {
-        let subject = first_line_lower
-            .replacen("chore: update ", "", 1)
-            .replacen("chore:", "", 1)
-            .trim()
-            .to_string();
-
-        // Check if subject looks like a file path or list of file paths
-        // File paths contain '/' or end with common extensions
-        // We need to check for multiple patterns:
-        // 1. Single file path: "src/file.rs"
-        // 2. Multiple files with commas: "src/a.rs, src/b.rs"
-        // 3. Multiple files with "and": "src/a.rs and src/b.rs"
-
-        // Common code file extensions
-        let code_extensions = [
-            ".rs", ".js", ".ts", ".py", ".go", ".java", ".c", ".cpp", ".h", ".cs", ".php", ".rb",
-            ".swift", ".kt",
-        ];
-
-        // Check if subject looks like a file path or list of file paths
-        let looks_like_file_list = subject.contains('/')
-            || subject.contains('\\') || // Windows paths
-            code_extensions.iter().any(|ext| subject.ends_with(ext));
-
-        // Additional check: if there are commas and file extensions, it's definitely a file list
-        let has_comma_separated_files =
-            subject.contains(", ") && code_extensions.iter().any(|ext| subject.contains(ext));
-
-        // Check for "and" separated files
-        let has_and_separated_files =
-            subject.contains(" and ") && code_extensions.iter().any(|ext| subject.contains(ext));
-
-        if looks_like_file_list || has_comma_separated_files || has_and_separated_files {
-            return Err(format!(
-                "Commit message appears to be a file list: '{}'. Use semantic description instead.",
-                first_line.trim()
-            ));
-        }
-    }
+    // Run all validation checks
+    check_json_artifacts(content)?;
+    check_escape_sequences(content)?;
+    check_error_patterns(content, &content_lower)?;
+    check_thought_process_leakage(content, &content_lower)?;
+    check_placeholder_and_vague_patterns(content, &content_lower)?;
+    check_file_list_patterns(content)?;
 
     Ok(())
 }
@@ -1581,5 +1574,103 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         let result = render_final_commit_message(input);
         // Whitespace cleanup removes blank lines and trims each line
         assert_eq!(result, "feat: add feature\nBody with spaces");
+    }
+
+    // =========================================================================
+    // Tests for try_extract_structured_commit
+    // =========================================================================
+
+    #[test]
+    fn test_try_extract_structured_commit_direct_json() {
+        // Test that direct JSON with subject and body is extracted correctly
+        let json = r#"{"subject":"fix(commit): try simpler prompts after agent errors","body":"When all agents fail for a prompt variant, keep iterating through progressively simpler prompt strategies instead of aborting the retry loop."}"#;
+        let result = try_extract_structured_commit(json);
+        assert!(result.is_some(), "Should extract commit from direct JSON");
+        let msg = result.unwrap();
+        assert!(msg.starts_with("fix(commit):"), "Should start with type");
+        assert!(msg.contains("try simpler prompts after agent errors"));
+        assert!(msg.contains("When all agents fail"));
+    }
+
+    #[test]
+    fn test_try_extract_structured_commit_json_no_body() {
+        // Test JSON with subject only
+        let json = r#"{"subject":"feat: add new feature"}"#;
+        let result = try_extract_structured_commit(json);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "feat: add new feature");
+    }
+
+    #[test]
+    fn test_try_extract_structured_commit_code_fence() {
+        // Test JSON inside markdown code fence
+        let content = r#"Here is the commit message:
+```json
+{"subject":"fix: resolve bug","body":"Details about the fix."}
+```
+"#;
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some());
+        let msg = result.unwrap();
+        assert!(msg.starts_with("fix: resolve bug"));
+        assert!(msg.contains("Details about the fix"));
+    }
+
+    #[test]
+    fn test_try_extract_structured_commit_with_preamble() {
+        // Test JSON with some preamble text
+        let content = r#"Based on the diff, here is my commit:
+{"subject":"refactor: simplify logic","body":"Removed unnecessary complexity."}"#;
+        let result = try_extract_structured_commit(content);
+        assert!(result.is_some());
+        let msg = result.unwrap();
+        assert!(msg.starts_with("refactor:"));
+    }
+
+    #[test]
+    fn test_try_extract_structured_commit_invalid_type() {
+        // Test JSON with invalid conventional commit type
+        let json = r#"{"subject":"invalid: not a real type","body":"Body"}"#;
+        let result = try_extract_structured_commit(json);
+        assert!(result.is_none(), "Should reject invalid commit type");
+    }
+
+    #[test]
+    fn test_try_extract_structured_commit_from_ndjson() {
+        // Test extraction from NDJSON stream with result type
+        let ndjson = r#"{"type":"stream_event","data":"..."}
+{"type":"result","result":"{\"subject\":\"docs: update readme\",\"body\":\"Add usage examples.\"}"}
+"#;
+        let result = try_extract_structured_commit(ndjson);
+        assert!(result.is_some(), "Should extract from NDJSON result field");
+        let msg = result.unwrap();
+        assert!(msg.starts_with("docs: update readme"));
+    }
+
+    // =========================================================================
+    // Tests for validate_commit_message - JSON artifact detection
+    // =========================================================================
+
+    #[test]
+    fn test_validate_commit_message_raw_json_structure() {
+        // Test that raw JSON commit structure is rejected
+        let raw_json = r#"{"subject":"fix: something","body":"Details"}"#;
+        let result = validate_commit_message(raw_json);
+        assert!(result.is_err(), "Raw JSON should be rejected");
+        assert!(
+            result.unwrap_err().contains("JSON"),
+            "Error should mention JSON"
+        );
+    }
+
+    #[test]
+    fn test_validate_commit_message_json_with_subject_key() {
+        // Regression test: {"subject":...} pattern should be detected as JSON artifact
+        let bad_msg = r#"{"subject":"feat: add feature","body":"Some body"}"#;
+        let result = validate_commit_message(bad_msg);
+        assert!(
+            result.is_err(),
+            "Commit message containing {{\"subject\":}} should be rejected"
+        );
     }
 }

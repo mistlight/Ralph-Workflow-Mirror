@@ -2,84 +2,11 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
-/// Generate fix prompt (applies to either role).
-///
-/// This prompt is agent-agnostic and works with any AI coding assistant.
-/// Instructions for NOTES.md are intentionally vague to avoid creating
-/// overly-specific context that could contaminate future runs.
-///
-/// # Agent-Orchestrator Separation
-///
-/// The fix agent reads ISSUES.md (written by the orchestrator after extracting
-/// from the reviewer's JSON output) and modifies source code files to fix issues.
-/// The agent returns structured output (completion status) that the orchestrator
-/// captures via JSON logging.
-///
-/// ISSUES.md is an orchestrator-managed file - the agent should NOT modify it.
-/// The orchestrator writes ISSUES.md before invoking the fix agent and may
-/// delete it after fix cycles (e.g., in isolation mode).
-pub fn prompt_fix() -> String {
-    r#"You are in FIX MODE. Address issues found during review.
-
-INPUTS TO READ:
-- .agent/ISSUES.md - Issues to address (if it exists)
-
-YOUR TASK:
-1. Read .agent/ISSUES.md to understand any issues (if it exists)
-2. Fix issues found, prioritizing by severity
-3. Verify fixes work
-
-AFTER FIXING:
-Return your completion status as structured output:
-- "All issues addressed." (if you believe everything is fixed)
-- "Issues remain." (if you believe issues still exist)
-- "No issues found." (if ISSUES.md didn't exist or was empty)
-
-DO NOT modify ISSUES.md - the orchestrator manages this file.
-You SHOULD modify source code files to fix the issues.
-
-GUIDELINES:
-- Fix issues properly, don't just suppress warnings
-- Ensure fixes don't introduce new issues"#
-        .to_string()
-}
-
-/// Generate prompt for creating commit message from provided diff.
-///
-/// This is used by the orchestrator (not agents) to generate commit messages.
-/// The diff is provided directly in the prompt, so the LLM doesn't need to
-/// run git commands or access files.
-///
-/// # Arguments
-///
-/// * `diff` - The git diff to generate a commit message for. If empty or
-///   whitespace-only, the prompt will indicate no changes were detected.
-///
-/// # Note
-///
-/// This function includes a defensive check for empty diffs - if an empty diff
-/// is passed, it returns an error prompt that will fail validation in the caller
-/// and trigger fallback commit message generation. Callers should still check for
-/// meaningful changes before calling this function for efficiency.
-pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
-    // Check if diff is empty or whitespace-only
-    let diff_content = diff.trim();
-    let has_changes = !diff_content.is_empty();
-
-    if !has_changes {
-        // Return an error message instead of a placeholder
-        // This will be caught by validation in commit_with_auto_message
-        // and trigger fallback commit message generation
-        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
-                meaningful changes should be checked before requesting a commit message."
-            .to_string();
-    }
-
-    format!(
-        r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
+/// Template for commit message prompt with diff placeholder.
+const COMMIT_MESSAGE_PROMPT_TEMPLATE: &str = r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
 
 DIFF:
-{diff_content}
+__DIFF_CONTENT__
 
 ---
 
@@ -182,8 +109,8 @@ CRITICAL JSON RULES:
 - No markdown fences around the JSON
 - `subject` is required, must be valid conventional commit format (max 72 chars)
 - `body` is optional (use null if no body needed)
-- **JSON STRING ESCAPING**: Use \\n for newlines, \\t for tabs within JSON strings
-  - ✅ CORRECT: {{"subject": "feat: add feature", "body": "First line\\nSecond line"}}
+- **JSON STRING ESCAPING**: Use \n for newlines, \t for tabs within JSON strings
+  - ✅ CORRECT: {{"subject": "feat: add feature", "body": "First line\nSecond line"}}
   - ❌ WRONG: {{"subject": "feat: add feature", "body": "First line
 Second line"}}
   - The body value must be a valid JSON string - use escape sequences, NOT literal newlines
@@ -213,9 +140,76 @@ Second line"}}
 CORRECT:
 {{"subject": "feat: add feature", "body": null}}
 
-CORRECT (with body using \\n for newline):
-{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\\nAdd session management for OAuth tokens."}}"#
-    )
+CORRECT (with body using \n for newline):
+{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\nAdd session management for OAuth tokens."}}"#;
+
+/// Generate fix prompt (applies to either role).
+///
+/// This prompt is agent-agnostic and works with any AI coding assistant.
+/// Instructions for NOTES.md are intentionally vague to avoid creating
+/// overly-specific context that could contaminate future runs.
+///
+/// # Agent-Orchestrator Separation
+///
+/// The fix agent reads ISSUES.md (written by the orchestrator after extracting
+/// from the reviewer's JSON output) and modifies source code files to fix issues.
+/// The agent returns structured output (completion status) that the orchestrator
+/// captures via JSON logging.
+///
+/// ISSUES.md is an orchestrator-managed file - the agent should NOT modify it.
+/// The orchestrator writes ISSUES.md before invoking the fix agent and may
+/// delete it after fix cycles (e.g., in isolation mode).
+pub fn prompt_fix() -> String {
+    r#"You are in FIX MODE. Address issues found during review.
+
+INPUTS TO READ:
+- .agent/ISSUES.md - Issues to address (if it exists)
+
+YOUR TASK:
+1. Read .agent/ISSUES.md to understand any issues (if it exists)
+2. Fix issues found, prioritizing by severity
+3. Verify fixes work
+
+AFTER FIXING:
+Return your completion status as structured output:
+- "All issues addressed." (if you believe everything is fixed)
+- "Issues remain." (if you believe issues still exist)
+- "No issues found." (if ISSUES.md didn't exist or was empty)
+
+DO NOT modify ISSUES.md - the orchestrator manages this file.
+You SHOULD modify source code files to fix the issues.
+
+GUIDELINES:
+- Fix issues properly, don't just suppress warnings
+- Ensure fixes don't introduce new issues"#
+        .to_string()
+}
+
+/// Generate prompt for creating commit message from provided diff.
+///
+/// This is used by the orchestrator (not agents) to generate commit messages.
+/// The diff is provided directly in the prompt, so the LLM doesn't need to
+/// run git commands or access files.
+///
+/// # Arguments
+///
+/// * `diff` - The git diff to generate a commit message for. If empty or
+///   whitespace-only, the prompt will indicate no changes were detected.
+///
+/// # Note
+///
+/// This function includes a defensive check for empty diffs - if an empty diff
+/// is passed, it returns an error prompt that will fail validation in the caller
+/// and trigger fallback commit message generation. Callers should still check for
+/// meaningful changes before calling this function for efficiency.
+pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
+    let diff_content = diff.trim();
+    if diff_content.is_empty() {
+        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
+                meaningful changes should be checked before requesting a commit message."
+            .to_string();
+    }
+    COMMIT_MESSAGE_PROMPT_TEMPLATE.replace("__DIFF_CONTENT__", diff_content)
 }
 
 /// Generate strict JSON-only prompt for commit message retry.
@@ -250,38 +244,36 @@ Example:
 /// This is the second-level re-prompt used when the strict prompt also fails.
 /// It includes explicit examples of what NOT to output to prevent common mistakes.
 pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r#"Your response MUST be ONLY a JSON object. No other text.
+    r#"Your response MUST be ONLY a JSON object. No other text.
 
 DIFF:
-{diff_content}
+__DIFF_CONTENT__
 
 REQUIRED OUTPUT:
-{{"subject": "feat: brief description", "body": null}}
+{"subject": "feat: brief description", "body": null}
 
 WHAT NOT TO OUTPUT (these are WRONG):
 ❌ "Here is the commit message:"
 ❌ "Looking at the diff, I can see..."
 ❌ "Based on the changes above..."
 ❌ ```json
-   {{"subject": "..."}}
+   {"subject": "..."}
    ```
 ❌ Any explanation or analysis before the JSON
-❌ Literal newlines in JSON strings (use \\n instead)
+❌ Literal newlines in JSON strings (use \n instead)
 
 CORRECT OUTPUT (copy this format):
-{{"subject": "fix: prevent null pointer", "body": null}}
+{"subject": "fix: prevent null pointer", "body": null}
 
 RULES:
-1. Start with {{"subject":
-2. End with }}
-3. Nothing before the opening {{
-4. Nothing after the closing }}
+1. Start with {"subject":
+2. End with }
+3. Nothing before the opening {
+4. Nothing after the closing }
 5. subject must be: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
 6. Keep subject under 72 characters
 7. Keep all text on ONE LINE - no literal newlines in JSON strings"#
-    )
+        .replace("__DIFF_CONTENT__", diff.trim())
 }
 
 /// Generate ultra-minimal commit prompt.
@@ -289,16 +281,14 @@ RULES:
 /// This is the third-level re-prompt with bare minimum instructions.
 /// Removes all explanatory context to reduce chance of verbose responses.
 pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r#"DIFF:
-{diff_content}
+    r#"DIFF:
+__DIFF_CONTENT__
 
 OUTPUT ONLY:
-{{"subject": "feat: description", "body": null}}
+{"subject": "feat: description", "body": null}
 
 Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"#
-    )
+        .replace("__DIFF_CONTENT__", diff.trim())
 }
 
 /// Generate ultra-minimal V2 commit prompt.
@@ -306,12 +296,10 @@ Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"#
 /// This is an even shorter variant that only provides the subject line template.
 /// Used when `UltraMinimal` still produces too much output.
 pub fn prompt_ultra_minimal_commit_v2(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r#"{diff_content}
+    r#"__DIFF_CONTENT__
 
-{{"subject": "fix: ", "body": null}}"#
-    )
+{"subject": "fix: ", "body": null}"#
+        .replace("__DIFF_CONTENT__", diff.trim())
 }
 
 /// Generate file-list-only commit prompt.
@@ -354,12 +342,10 @@ pub fn prompt_file_list_only_commit(diff: &str) -> String {
 /// This is the final re-prompt attempt before falling back to the next agent.
 /// It provides the absolute minimum context to elicit a JSON response.
 pub fn prompt_emergency_commit(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r#"{diff_content}
+    r#"__DIFF_CONTENT__
 
-{{"subject": "fix: ", "body": null}}"#
-    )
+{"subject": "fix: ", "body": null}"#
+        .replace("__DIFF_CONTENT__", diff.trim())
 }
 
 /// Generate file-list-summary-only commit prompt.
