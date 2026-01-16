@@ -1114,18 +1114,44 @@ fn run_ai_conflict_resolution(
         config,
     };
 
-    // Output validator: checks if agent produced valid output after exit_code=0
-    let validate_output: OutputValidator =
-        |log_dir_path: &Path, validation_logger: &crate::logger::Logger| -> io::Result<bool> {
-            match extract_last_result(log_dir_path) {
-                Ok(Some(_)) => Ok(true), // Valid output exists
-                Ok(None) => Ok(false),   // No output found - trigger fallback
-                Err(e) => {
-                    validation_logger.warn(&format!("Output validation check failed: {e}"));
-                    Ok(false) // Treat validation errors as missing output
+    // Output validator: checks if agent produced valid output OR resolved conflicts
+    // Agents may edit files without returning JSON, so we verify conflicts are resolved.
+    let validate_output: OutputValidator = |log_dir_path: &Path,
+                                            validation_logger: &crate::logger::Logger|
+     -> io::Result<bool> {
+        match extract_last_result(log_dir_path) {
+            Ok(Some(_)) => {
+                // Valid JSON output exists
+                Ok(true)
+            }
+            Ok(None) => {
+                // No JSON output - check if conflicts were resolved anyway
+                // (agent may have edited files without returning JSON)
+                match crate::git_helpers::get_conflicted_files() {
+                    Ok(conflicts) if conflicts.is_empty() => {
+                        validation_logger
+                            .info("Agent resolved conflicts without JSON output (file edits only)");
+                        Ok(true) // Conflicts resolved, consider success
+                    }
+                    Ok(conflicts) => {
+                        validation_logger.warn(&format!(
+                            "{} conflict(s) remain unresolved",
+                            conflicts.len()
+                        ));
+                        Ok(false) // Conflicts remain
+                    }
+                    Err(e) => {
+                        validation_logger.warn(&format!("Failed to check for conflicts: {e}"));
+                        Ok(false) // Error checking conflicts
+                    }
                 }
             }
-        };
+            Err(e) => {
+                validation_logger.warn(&format!("Output validation check failed: {e}"));
+                Ok(false) // Treat validation errors as missing output
+            }
+        }
+    };
 
     let exit_code = run_with_fallback_and_validator(
         crate::agents::AgentRole::Reviewer,

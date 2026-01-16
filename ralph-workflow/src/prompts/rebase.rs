@@ -387,7 +387,7 @@ mod tests {
         // Should contain key sections from the template
         assert!(prompt.contains("# MERGE CONFLICT RESOLUTION"));
         assert!(prompt.contains("## Conflict Resolution Instructions"));
-        assert!(prompt.contains("## Output Format"));
+        assert!(prompt.contains("## Optional JSON Output Format"));
         assert!(prompt.contains("resolved_files"));
     }
 
