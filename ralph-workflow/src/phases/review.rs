@@ -400,6 +400,18 @@ fn run_fix_pass(
         None,
     );
 
+    // Log the fix prompt details for debugging (when verbose)
+    if ctx.config.verbosity.is_debug() {
+        ctx.logger.info(&format!(
+            "Fix prompt length: {} characters",
+            fix_prompt.len()
+        ));
+        ctx.logger.info(&format!(
+            "Fix prompt contains constraints: {}",
+            fix_prompt.contains("MUST NOT") && fix_prompt.contains("CRITICAL CONSTRAINTS")
+        ));
+    }
+
     let _ = {
         let mut runtime = PipelineRuntime {
             timer: ctx.timer,

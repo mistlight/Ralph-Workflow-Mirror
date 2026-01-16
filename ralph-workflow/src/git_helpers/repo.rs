@@ -464,19 +464,22 @@ pub fn git_commit(
     // This implements the full priority chain with proper fallbacks.
     let GitIdentity { name, email } = resolve_commit_identity(&repo, git_user_name, git_user_email);
 
-    // Log the resolved identity source for visibility
-    let identity_source = if git_user_name.is_some() || git_user_email.is_some() {
-        "CLI/config override"
-    } else if std::env::var("RALPH_GIT_USER_NAME").is_ok()
-        || std::env::var("RALPH_GIT_USER_EMAIL").is_ok()
-    {
-        "environment variable"
-    } else if repo.signature().is_ok() {
-        "git config"
-    } else {
-        "system/default"
-    };
-    eprintln!("Git identity: {name} <{email}> (source: {identity_source})");
+    // Debug logging: identity resolution source
+    // Only log if RALPH_DEBUG or similar debug mode is enabled
+    if std::env::var("RALPH_DEBUG").is_ok() {
+        let identity_source = if git_user_name.is_some() || git_user_email.is_some() {
+            "CLI/config override"
+        } else if std::env::var("RALPH_GIT_USER_NAME").is_ok()
+            || std::env::var("RALPH_GIT_USER_EMAIL").is_ok()
+        {
+            "environment variable"
+        } else if repo.signature().is_ok() {
+            "git config"
+        } else {
+            "system/default"
+        };
+        eprintln!("Git identity: {name} <{email}> (source: {identity_source})");
+    }
 
     // Create the signature with the resolved identity
     let sig = git2::Signature::now(&name, &email).map_err(|e| git2_to_io_error(&e))?;

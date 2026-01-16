@@ -1,0 +1,31 @@
+*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+
+REVIEW TASK
+
+CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
+
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+- DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
+
+Review for quality and correctness.
+
+DIFF TO REVIEW:
+```diff
+{{DIFF}}
+```
+
+OUTPUT FORMAT
+
+Return your findings using this format:
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description
+
+If no issues found in the changed files, return exactly: "No issues found."
