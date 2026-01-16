@@ -21,6 +21,7 @@ mod rebase;
 mod reviewer;
 mod template_engine;
 mod template_macros;
+pub mod template_registry;
 mod template_validator;
 mod types;
 

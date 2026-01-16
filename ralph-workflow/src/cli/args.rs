@@ -167,7 +167,24 @@ pub struct TemplateListFlag {
 
 /// Template management subcommands.
 #[derive(Parser, Debug, Default)]
+// CLI flags are naturally boolean - these represent independent user choices
+#[allow(clippy::struct_excessive_bools)]
 pub struct TemplateCommands {
+    /// Initialize user templates directory
+    #[arg(
+        long,
+        help = "Create ~/.config/ralph/templates/ with default templates"
+    )]
+    pub init: bool,
+
+    /// Force overwrite existing templates when initializing
+    #[arg(
+        long,
+        requires = "init",
+        help = "Overwrite existing templates during init"
+    )]
+    pub force: bool,
+
     /// Validate all templates for syntax errors
     #[arg(long, help = "Validate all templates for syntax errors")]
     pub validate: bool,

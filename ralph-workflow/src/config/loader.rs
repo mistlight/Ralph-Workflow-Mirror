@@ -127,6 +127,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
             .prompt_path
             .as_ref()
             .map_or_else(|| PathBuf::from(".agent/last_prompt.txt"), PathBuf::from),
+        user_templates_dir: general.templates_dir.as_ref().map(PathBuf::from),
         developer_context: general.developer_context,
         reviewer_context: general.reviewer_context,
         verbosity: Verbosity::from(general.verbosity),
@@ -167,6 +168,7 @@ fn default_config() -> Config {
             strict_validation: false,
         },
         prompt_path: PathBuf::from(".agent/last_prompt.txt"),
+        user_templates_dir: None,
         developer_context: 1,
         reviewer_context: 0,
         verbosity: Verbosity::Verbose,
@@ -367,6 +369,12 @@ fn apply_review_depth_env(config: &mut Config, warnings: &mut Vec<String>) {
 fn apply_paths_env(config: &mut Config) {
     if let Ok(val) = env::var("RALPH_PROMPT_PATH") {
         config.prompt_path = PathBuf::from(val);
+    }
+    if let Ok(val) = env::var("RALPH_TEMPLATES_DIR") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            config.user_templates_dir = Some(PathBuf::from(trimmed));
+        }
     }
 }
 

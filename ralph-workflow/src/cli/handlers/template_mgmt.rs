@@ -1,6 +1,7 @@
 //! Template management CLI handler.
 //!
 //! Provides commands for:
+//! - Initializing user templates directory
 //! - Listing all templates with metadata
 //! - Showing template content and variables
 //! - Validating templates for syntax errors
@@ -8,10 +9,12 @@
 //! - Rendering templates for testing
 
 use std::collections::HashMap;
+use std::fs;
 
 use crate::cli::args::TemplateCommands;
 use crate::logger::Colors;
 use crate::prompts::partials::get_shared_partials;
+use crate::prompts::template_registry::TemplateRegistry;
 use crate::prompts::{
     extract_metadata, extract_partials, extract_variables, validate_template, Template,
 };
@@ -579,9 +582,133 @@ fn format_warning(warning: &crate::prompts::ValidationWarning) -> String {
     }
 }
 
+/// Handle template initialization command.
+///
+/// Creates the user templates directory and copies all default templates.
+fn handle_template_init(force: bool, colors: Colors) -> anyhow::Result<()> {
+    let templates_dir = TemplateRegistry::default_user_templates_dir()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory for templates"))?;
+
+    // Create a registry instance to validate the directory structure
+    let registry = TemplateRegistry::new(Some(templates_dir.clone()));
+
+    // Check if we're using user templates or embedded templates
+    let source = registry.template_source("commit_message_xml");
+    let has_user = registry.has_user_template("commit_message_xml");
+
+    // Use the variables to avoid dead code warnings
+    let _ = (source, has_user);
+
+    println!(
+        "{}Initializing user templates directory...{}",
+        colors.bold(),
+        colors.reset()
+    );
+    println!(
+        "  Location: {}{}{}",
+        colors.cyan(),
+        templates_dir.display(),
+        colors.reset()
+    );
+    println!();
+
+    // Check if directory already exists
+    if templates_dir.exists() {
+        if force {
+            println!(
+                "{}Warning: {}Directory already exists. Overwriting...{}",
+                colors.yellow(),
+                colors.reset(),
+                colors.reset()
+            );
+        } else {
+            println!(
+                "{}Error: {}Directory already exists. Use --force to overwrite.{}",
+                colors.red(),
+                colors.reset(),
+                colors.reset()
+            );
+            println!();
+            println!("To reinitialize with defaults, run:");
+            println!("  ralph --template-init --force");
+            return Err(anyhow::anyhow!("Templates directory already exists"));
+        }
+    }
+
+    // Create directory structure
+    fs::create_dir_all(&templates_dir)?;
+
+    let shared_dir = templates_dir.join("shared");
+    fs::create_dir_all(&shared_dir)?;
+
+    let reviewer_dir = templates_dir.join("reviewer");
+    fs::create_dir_all(&reviewer_dir)?;
+
+    // Copy all templates from the embedded templates
+    let templates = get_all_templates();
+    let mut copied = 0;
+    let mut skipped = 0;
+
+    for (name, (content, _)) in &templates {
+        let target_path = if name.starts_with("reviewer/") {
+            let parts: Vec<&str> = name.split('/').collect();
+            if parts.len() == 2 {
+                templates_dir
+                    .join("reviewer")
+                    .join(format!("{}.txt", parts[1]))
+            } else {
+                continue;
+            }
+        } else {
+            templates_dir.join(format!("{name}.txt"))
+        };
+
+        // Skip if file exists and not forcing
+        if target_path.exists() && !force {
+            skipped += 1;
+            continue;
+        }
+
+        fs::write(&target_path, content)?;
+        copied += 1;
+    }
+
+    // Copy shared partials
+    let partials = get_shared_partials();
+    for (name, content) in &partials {
+        let target_path = templates_dir.join(format!("{name}.txt"));
+        if target_path.exists() && !force {
+            skipped += 1;
+            continue;
+        }
+        fs::write(&target_path, content)?;
+        copied += 1;
+    }
+
+    println!(
+        "{}Successfully initialized user templates!{}",
+        colors.green(),
+        colors.reset()
+    );
+    println!();
+    println!("  {copied} templates copied");
+    if skipped > 0 {
+        println!("  {skipped} templates skipped (already exists)");
+    }
+    println!();
+    println!("You can now edit templates in:");
+    println!("  {}", templates_dir.display());
+    println!();
+    println!("Changes to user templates will override the built-in templates.");
+
+    Ok(())
+}
+
 /// Handle all template commands.
 pub fn handle_template_commands(commands: &TemplateCommands, colors: Colors) -> anyhow::Result<()> {
-    if commands.validate {
+    if commands.init {
+        handle_template_init(commands.force, colors)?;
+    } else if commands.validate {
         handle_template_validate(colors);
     } else if let Some(ref name) = commands.show {
         handle_template_show(name, colors)?;
