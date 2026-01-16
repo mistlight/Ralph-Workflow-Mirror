@@ -4,11 +4,27 @@
   "description": "Ralph Workflow - Multi-Agent AI Orchestration Website",
   "type": "module",
   "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint:css": "stylelint \"src/styles/**/*.css\"",
     "screenshots": "node capture-screenshots.js",
     "screenshots:baseline": "node capture-screenshots.js baseline",
     "screenshots:final": "node capture-screenshots.js final"
   },
   "devDependencies": {
-    "playwright": "^1.48.0"
+    "@types/node": "^25.0.9",
+    "cssnano": "file:../../../../tmp/cssnano-7.1.2.tgz",
+    "playwright": "^1.48.0",
+    "postcss": "file:../../../../tmp/postcss-8.5.6.tgz",
+    "postcss-custom-media": "file:../../../../tmp/postcss-custom-media-12.0.0.tgz",
+    "postcss-import": "file:../../../../tmp/postcss-import-16.1.1.tgz",
+    "postcss-nesting": "file:../../../../tmp/postcss-nesting-14.0.0.tgz",
+    "postcss-preset-env": "file:../../../../tmp/postcss-preset-env-11.1.1.tgz",
+    "stylelint": "^17.0.0",
+    "stylelint-config-standard": "^40.0.0",
+    "stylelint-order": "^7.0.1",
+    "typescript": "file:../../../../tmp/typescript-5.9.3.tgz",
+    "vite": "file:../../../../tmp/vite-7.3.1.tgz"
   }
 }

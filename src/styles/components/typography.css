@@ -1,0 +1,599 @@
+/* ========================================
+   TYPOGRAPHY
+   ========================================
+   Headings, text styles, lists, and typography elements
+   ======================================== */
+
+/* === HEADINGS === */
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: var(--font-bold);
+    line-height: var(--leading-tight);
+    color: var(--color-text);
+    letter-spacing: var(--tracking-tight);
+}
+
+h1, .h1 {
+    font-size: clamp(2.5rem, 8vw, var(--text-7xl));
+    letter-spacing: var(--tracking-tighter);
+    font-weight: var(--font-extrabold);
+}
+
+h2, .h2 {
+    font-size: clamp(1.875rem, 5vw, var(--text-5xl));
+    margin-bottom: var(--space-6);
+}
+
+h3, .h3 {
+    font-size: var(--text-2xl);
+    margin-bottom: var(--space-4);
+}
+
+h4, .h4 {
+    font-size: var(--text-xl);
+    margin-bottom: var(--space-3);
+}
+
+/* === PARAGRAPHS === */
+
+p {
+    margin-bottom: var(--space-4);
+    max-width: 65ch;
+    color: var(--color-text-muted);
+}
+
+.lead {
+    font-size: var(--text-lg);
+    line-height: var(--leading-relaxed);
+    color: var(--color-text-primary);
+}
+
+.lead-paragraph {
+    font-size: var(--text-lg);
+    line-height: var(--leading-relaxed);
+    color: var(--color-text);
+}
+
+/* === TEXT EMPHASIS === */
+
+strong, b {
+    font-weight: var(--font-semibold);
+    color: var(--color-text);
+}
+
+em, i {
+    font-style: italic;
+}
+
+/* === INLINE CODE === */
+
+code, .inline-code, .inline {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background-color: var(--color-bg-card);
+    color: var(--color-primary);
+    padding: 0.2em 0.5em;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-soft);
+    font-weight: var(--font-medium);
+}
+
+/* === LISTS === */
+
+/* Requirements list in installation section */
+.requirements-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 var(--space-5) 0;
+}
+
+.requirement {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
+.requirement-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: var(--color-primary);
+}
+
+/* === GLOSSARY ITEMS === */
+
+.glossary-term {
+    padding: var(--space-4);
+    background-color: var(--color-bg-elevated);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-subtle);
+    transition: border-color var(--duration-150) var(--ease-out);
+}
+
+.glossary-term:hover {
+    border-color: var(--border-soft);
+}
+
+.glossary-term-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.glossary-term-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-primary-dim);
+    border-radius: var(--radius-md);
+    color: var(--color-primary);
+}
+
+.glossary-term-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.glossary-term-name {
+    font-family: var(--font-heading);
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    color: var(--color-text);
+}
+
+.glossary-term-content {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: var(--leading-relaxed);
+}
+
+.glossary-term-content strong {
+    color: var(--color-primary);
+    font-weight: var(--font-medium);
+}
+
+.glossary-term-content code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    background-color: var(--color-bg-card);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+}
+
+.glossary-note {
+    padding: var(--space-4) var(--space-6);
+    background-color: var(--color-bg-elevated);
+    border-top: 1px solid var(--border-soft);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
+.glossary-note strong {
+    color: var(--color-lime);
+}
+
+/* === FAQ TYPOGRAPHY === */
+
+.faq-category {
+    font-family: var(--font-heading);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    color: var(--color-text);
+    margin-top: var(--space-10);
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-3);
+    border-bottom: 2px solid var(--border-soft);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.faq-category:first-child {
+    margin-top: 0;
+}
+
+.faq-category--primary::before {
+    content: '';
+    width: 4px;
+    height: 24px;
+    background-color: var(--color-primary);
+    border-radius: var(--radius-full);
+}
+
+.faq-category--accent::before {
+    content: '';
+    width: 4px;
+    height: 24px;
+    background-color: var(--color-accent);
+    border-radius: var(--radius-full);
+}
+
+.faq-category--developer::before {
+    content: '';
+    width: 4px;
+    height: 24px;
+    background-color: var(--color-lime);
+    border-radius: var(--radius-full);
+}
+
+.faq-category--violet::before {
+    content: '';
+    width: 4px;
+    height: 24px;
+    background-color: #a78bfa;
+    border-radius: var(--radius-full);
+}
+
+/* === FAQ SUMMARY === */
+
+.faq-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-5) var(--space-6);
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    font-weight: var(--font-medium);
+    color: var(--color-text);
+    list-style: none;
+    transition: background-color var(--duration-150) var(--ease-out);
+}
+
+.faq-summary::-webkit-details-marker {
+    display: none;
+}
+
+.faq-summary::marker {
+    display: none;
+}
+
+.faq-summary:hover {
+    background-color: var(--color-bg-hover);
+}
+
+/* Colored summary variants */
+.faq-summary--accent {
+    border-left: 3px solid var(--color-accent);
+}
+
+.faq-summary--developer {
+    border-left: 3px solid var(--color-lime);
+}
+
+.faq-summary--violet {
+    border-left: 3px solid #a78bfa;
+}
+
+/* === FAQ TOGGLE === */
+
+.faq-toggle {
+    font-family: var(--font-mono);
+    font-size: var(--text-xl);
+    font-weight: var(--font-light);
+    color: var(--color-text-dim);
+    line-height: 1;
+    transition: all var(--duration-300) var(--ease-expo-out);
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    background-color: transparent;
+}
+
+.faq-item:hover .faq-toggle {
+    color: var(--color-primary);
+    background-color: var(--color-primary-dim);
+}
+
+.faq-item[open] .faq-toggle {
+    transform: rotate(45deg);
+    color: var(--color-bg);
+    background-color: var(--color-primary);
+}
+
+/* === FAQ CONTENT === */
+
+.faq-content {
+    padding: 0 var(--space-6) var(--space-5);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+    border-top: 1px solid var(--border-subtle);
+    background-color: var(--color-bg-elevated);
+}
+
+.faq-content p {
+    margin: 0;
+    max-width: none;
+}
+
+.faq-content p + p {
+    margin-top: var(--space-4);
+}
+
+/* === LEGACY FAQ STYLES === */
+
+/* Legacy grid support */
+.faq-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-6);
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.faq-question {
+    width: 100%;
+    padding: var(--space-5) var(--space-6);
+    background-color: transparent;
+    border: none;
+    text-align: left;
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    font-weight: var(--font-medium);
+    color: var(--color-text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    transition: all var(--duration-150) var(--ease-out);
+}
+
+.faq-question:hover {
+    background-color: var(--color-bg-hover);
+}
+
+.faq-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--color-text-dim);
+    transition: transform var(--duration-200) var(--ease-out);
+    flex-shrink: 0;
+}
+
+.faq-item.open .faq-icon {
+    transform: rotate(45deg);
+    color: var(--color-primary);
+}
+
+.faq-answer {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height var(--duration-300) var(--ease-out);
+}
+
+.faq-item.open .faq-answer {
+    max-height: 500px;
+}
+
+.faq-answer-content {
+    padding: 0 var(--space-6) var(--space-5);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+}
+
+/* === GLOSSARY DETAILS === */
+
+.glossary-details {
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+}
+
+.glossary-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-5) var(--space-6);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--color-primary);
+    background-color: var(--color-bg-elevated);
+    border-bottom: 1px solid var(--border-soft);
+    transition: background-color var(--duration-150) var(--ease-out);
+    list-style: none;
+}
+
+.glossary-summary::-webkit-details-marker {
+    display: none;
+}
+
+.glossary-summary:hover {
+    background-color: var(--color-bg-hover);
+}
+
+.glossary-summary svg {
+    width: 18px;
+    height: 18px;
+    transition: transform var(--duration-200) var(--ease-out);
+}
+
+.glossary-details[open] .glossary-summary svg:last-child {
+    transform: rotate(180deg);
+}
+
+.glossary-summary-text {
+    flex: 1;
+}
+
+.glossary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-5);
+    padding: var(--space-6);
+}
+
+.glossary-item {
+    background-color: var(--color-bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+.glossary-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.glossary-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-lg);
+    background-color: var(--color-primary-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-primary);
+}
+
+.glossary-item h3 {
+    font-family: var(--font-heading);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    margin: 0;
+}
+
+.glossary-item p {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: var(--leading-relaxed);
+    margin: 0;
+}
+
+.glossary-item strong {
+    color: var(--color-text);
+}
+
+/* === CLI REFERENCE === */
+
+.cli-reference {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.cli-reference dt {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--color-primary);
+    padding: var(--space-2) 0;
+}
+
+.cli-reference dd {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: var(--space-2);
+}
+
+.cli-reference dd:last-of-type {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+
+/* === SIDEBAR LINKS === */
+
+.sidebar-links {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.sidebar-links li {
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-links li:last-child {
+    border-bottom: none;
+}
+
+.sidebar-links a {
+    display: block;
+    padding: var(--space-3) 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    text-decoration: none;
+    transition: color var(--duration-150) var(--ease-out);
+}
+
+.sidebar-links a:hover {
+    color: var(--color-primary);
+}
+
+/* === PROMPT EXPLANATION === */
+
+.prompt-explanation {
+    padding-top: var(--space-4);
+}
+
+.prompt-explanation-title {
+    font-family: var(--font-heading);
+    font-size: var(--text-2xl);
+    margin-bottom: var(--space-6);
+}
+
+.prompt-explanation-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.prompt-explanation-item {
+    display: flex;
+    gap: var(--space-4);
+    align-items: start;
+}
+
+.prompt-explanation-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-primary-dim);
+    border: 1px solid var(--border-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--color-primary);
+}
+
+.prompt-explanation-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.prompt-explanation-text h4 {
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    margin-bottom: var(--space-1);
+}
+
+.prompt-explanation-text p {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+}

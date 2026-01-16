@@ -1,0 +1,263 @@
+/* ========================================
+   BUTTONS
+   ========================================
+   All button styles, variants, and states
+   ======================================== */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    line-height: 1;
+    text-decoration: none;
+    padding: var(--space-3) var(--space-6);
+    border-radius: var(--radius-lg);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--duration-200) var(--ease-out);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wider);
+    white-space: nowrap;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity var(--duration-150) var(--ease-out);
+}
+
+.btn:hover::before {
+    opacity: 1;
+}
+
+/* === BUTTON VARIANTS === */
+
+/* Primary Button - Electric Cyan */
+.btn-primary {
+    background-color: var(--color-primary);
+    color: var(--color-bg);
+    box-shadow: var(--shadow-glow-sm);
+}
+
+.btn-primary:hover {
+    background-color: var(--color-primary-light);
+    box-shadow: var(--shadow-glow-md);
+    transform: translateY(-2px);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+/* Secondary Button - Outline */
+.btn-secondary {
+    background-color: transparent;
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.btn-secondary:hover {
+    background-color: var(--color-primary-dim);
+    border-color: var(--color-primary-light);
+    box-shadow: var(--shadow-glow-sm);
+    transform: translateY(-2px);
+}
+
+/* Ghost Button */
+.btn-ghost {
+    background-color: transparent;
+    color: var(--color-text-muted);
+    border-color: var(--border-soft);
+}
+
+.btn-ghost:hover {
+    color: var(--color-text);
+    background-color: var(--color-bg-hover);
+    border-color: var(--border-medium);
+}
+
+/* Accent Button - Magenta */
+.btn-accent {
+    background-color: var(--color-accent);
+    color: var(--color-text);
+    box-shadow: var(--shadow-glow-accent);
+}
+
+.btn-accent:hover {
+    background-color: var(--color-accent-light);
+    box-shadow: var(--shadow-glow-accent), 0 8px 16px rgba(255, 0, 110, 0.4);
+    transform: translateY(-2px);
+}
+
+/* === BUTTON SIZES === */
+
+.btn-sm {
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-xs);
+}
+
+.btn-lg {
+    padding: var(--space-4) var(--space-8);
+    font-size: var(--text-base);
+}
+
+.btn-xl {
+    padding: var(--space-5) var(--space-10);
+    font-size: var(--text-lg);
+    border-radius: var(--radius-xl);
+}
+
+/* === BUTTON WITH ICON === */
+
+.btn svg,
+.btn-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.btn-lg svg,
+.btn-lg .btn-icon {
+    width: 20px;
+    height: 20px;
+}
+
+/* === ICON-ONLY BUTTON === */
+
+.btn-icon-only {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+}
+
+.btn-icon-only.btn-sm {
+    width: 36px;
+    height: 36px;
+}
+
+/* === BUTTON STATES === */
+
+/* Disabled state */
+.btn:disabled,
+.btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* Loading state */
+.btn.loading {
+    color: transparent;
+    pointer-events: none;
+}
+
+.btn.loading::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+/* === BUTTON WITH ARROW === */
+
+.btn-arrow {
+    display: inline-block;
+    margin-left: var(--space-2);
+    transition: transform var(--duration-150) var(--ease-out);
+}
+
+.btn:hover .btn-arrow {
+    transform: translateX(4px);
+}
+
+/* === DARK MODE TOGGLE BUTTON === */
+
+.dark-mode-toggle {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-soft);
+    background-color: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--duration-150) var(--ease-out);
+    position: relative;
+}
+
+.dark-mode-toggle:hover {
+    color: var(--color-primary);
+    border-color: var(--border-accent);
+    background-color: var(--color-primary-dim);
+}
+
+.dark-mode-toggle .sun-icon,
+.dark-mode-toggle .moon-icon {
+    position: absolute;
+    transition: opacity var(--duration-200) var(--ease-out),
+                transform var(--duration-200) var(--ease-out);
+}
+
+.dark-mode-toggle .sun-icon {
+    opacity: 0;
+    transform: rotate(180deg) scale(0);
+}
+
+.dark-mode-toggle .moon-icon {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+}
+
+[data-theme="light"] .dark-mode-toggle .sun-icon,
+.light-mode .dark-mode-toggle .sun-icon {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+}
+
+[data-theme="light"] .dark-mode-toggle .moon-icon,
+.light-mode .dark-mode-toggle .moon-icon {
+    opacity: 0;
+    transform: rotate(-180deg) scale(0);
+}
+
+/* === THEME TOGGLE BUTTON === */
+
+.theme-toggle {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-soft);
+    background-color: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--duration-150) var(--ease-out);
+}
+
+.theme-toggle:hover {
+    color: var(--color-primary);
+    border-color: var(--border-accent);
+    background-color: var(--color-primary-dim);
+}
+
+.theme-toggle svg {
+    width: 20px;
+    height: 20px;
+}

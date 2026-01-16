@@ -1,0 +1,190 @@
+/* ========================================
+   FORMS
+   ========================================
+   Input, textarea, select, and all form element styles
+   ======================================== */
+
+/* === FORM INPUTS === */
+
+input[type="text"],
+input[type="email"],
+input[type="url"],
+input[type="tel"],
+input[type="number"],
+input[type="search"],
+input[type="password"],
+textarea,
+select {
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    color: var(--color-text);
+    background-color: var(--color-bg-input);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
+    transition: all var(--duration-200) var(--ease-out);
+    width: 100%;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="url"]:focus,
+input[type="tel"]:focus,
+input[type="number"]:focus,
+input[type="search"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-dim);
+}
+
+input[type="text"]:disabled,
+input[type="email"]:disabled,
+input[type="url"]:disabled,
+input[type="tel"]:disabled,
+input[type="number"]:disabled,
+input[type="search"]:disabled,
+input[type="password"]:disabled,
+textarea:disabled,
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* === TEXTAREA === */
+
+textarea {
+    resize: vertical;
+    min-height: 120px;
+    line-height: var(--leading-relaxed);
+}
+
+/* === SELECT === */
+
+select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23a1a1aa' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--space-3) center;
+    padding-right: var(--space-10);
+}
+
+select:focus {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%2300d4ff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+/* === CHECKBOX & RADIO === */
+
+input[type="checkbox"],
+input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+}
+
+/* === SEARCH INPUT === */
+
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button {
+    appearance: none;
+}
+
+/* === INPUT GROUPS === */
+
+.input-group {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.input-group input {
+    flex: 1;
+}
+
+/* === FORM LABELS === */
+
+label {
+    display: block;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    color: var(--color-text);
+    margin-bottom: var(--space-2);
+}
+
+label.required::after {
+    content: ' *';
+    color: var(--color-accent);
+}
+
+/* === FORM HELP TEXT === */
+
+.form-help {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    margin-top: var(--space-2);
+}
+
+/* === FORM ERROR STATES === */
+
+input.error,
+textarea.error,
+select.error {
+    border-color: var(--color-error);
+}
+
+input.error:focus,
+textarea.error:focus,
+select.error:focus {
+    box-shadow: 0 0 0 3px rgba(255, 0, 110, 0.1);
+}
+
+.form-error {
+    font-size: var(--text-sm);
+    color: var(--color-error);
+    margin-top: var(--space-2);
+}
+
+/* === FORM SUCCESS STATES === */
+
+input.success,
+textarea.success,
+select.success {
+    border-color: var(--color-success);
+}
+
+input.success:focus,
+textarea.success:focus,
+select.success:focus {
+    box-shadow: 0 0 0 3px rgba(163, 255, 18, 0.1);
+}
+
+.form-success {
+    font-size: var(--text-sm);
+    color: var(--color-success);
+    margin-top: var(--space-2);
+}
+
+/* === FORM GROUP === */
+
+.form-group {
+    margin-bottom: var(--space-6);
+}
+
+/* === CODE INLINE BLOCK === */
+
+.code-inline-block {
+    display: inline-block;
+    margin-top: var(--space-3);
+}
+
+.code-inline-block code {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    background-color: var(--code-bg);
+    color: var(--color-primary);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-soft);
+}
