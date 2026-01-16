@@ -140,55 +140,7 @@ pub fn run_development_phase(
         } else {
             ctx.logger.success("Repository modified");
             ctx.stats.changes_detected += 1;
-
-            // Create a commit with auto-generated message
-            // This is done by the orchestrator, not the agent
-            // Note: We use fallback-aware commit generation which tries multiple agents
-            // Get the primary commit agent from the registry
-            let commit_agent = get_primary_commit_agent(ctx);
-
-            if let Some(agent) = commit_agent {
-                ctx.logger.info(&format!(
-                    "Creating commit with auto-generated message (agent: {agent})..."
-                ));
-
-                // Get the diff for commit message generation
-                let diff = match crate::git_helpers::git_diff() {
-                    Ok(d) => d,
-                    Err(e) => {
-                        ctx.logger
-                            .error(&format!("Failed to get diff for commit: {e}"));
-                        return Err(anyhow::anyhow!(e));
-                    }
-                };
-
-                // Get git identity from config
-                let git_name = ctx.config.git_user_name.as_deref();
-                let git_email = ctx.config.git_user_email.as_deref();
-
-                match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
-                    CommitResultFallback::Success(oid) => {
-                        ctx.logger
-                            .success(&format!("Commit created successfully: {oid}"));
-                        ctx.stats.commits_created += 1;
-                    }
-                    CommitResultFallback::NoChanges => {
-                        // No meaningful changes to commit (already handled by has_meaningful_changes)
-                        ctx.logger.info("No commit created (no meaningful changes)");
-                    }
-                    CommitResultFallback::Failed(err) => {
-                        // Actual git operation failed - this is critical
-                        ctx.logger.error(&format!(
-                            "Failed to create commit (git operation failed): {err}"
-                        ));
-                        // Don't continue - this is a real error that needs attention
-                        return Err(anyhow::anyhow!(err));
-                    }
-                }
-            } else {
-                ctx.logger
-                    .warn("Unable to get primary commit agent for commit");
-            }
+            handle_commit_after_development(ctx)?;
         }
         prev_snap = snap;
 
@@ -397,6 +349,61 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
         ctx.logger.success("Fast check passed");
     } else {
         ctx.logger.warn("Fast check had issues (non-blocking)");
+    }
+
+    Ok(())
+}
+
+/// Handle commit creation after development changes are detected.
+///
+/// Creates a commit with an auto-generated message using the primary commit agent.
+/// This is done by the orchestrator, not the agent, using fallback-aware commit
+/// generation which tries multiple agents if needed.
+fn handle_commit_after_development(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
+    // Get the primary commit agent from the registry
+    let commit_agent = get_primary_commit_agent(ctx);
+
+    if let Some(agent) = commit_agent {
+        ctx.logger.info(&format!(
+            "Creating commit with auto-generated message (agent: {agent})..."
+        ));
+
+        // Get the diff for commit message generation
+        let diff = match crate::git_helpers::git_diff() {
+            Ok(d) => d,
+            Err(e) => {
+                ctx.logger
+                    .error(&format!("Failed to get diff for commit: {e}"));
+                return Err(anyhow::anyhow!(e));
+            }
+        };
+
+        // Get git identity from config
+        let git_name = ctx.config.git_user_name.as_deref();
+        let git_email = ctx.config.git_user_email.as_deref();
+
+        match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
+            CommitResultFallback::Success(oid) => {
+                ctx.logger
+                    .success(&format!("Commit created successfully: {oid}"));
+                ctx.stats.commits_created += 1;
+            }
+            CommitResultFallback::NoChanges => {
+                // No meaningful changes to commit (already handled by has_meaningful_changes)
+                ctx.logger.info("No commit created (no meaningful changes)");
+            }
+            CommitResultFallback::Failed(err) => {
+                // Actual git operation failed - this is critical
+                ctx.logger.error(&format!(
+                    "Failed to create commit (git operation failed): {err}"
+                ));
+                // Don't continue - this is a real error that needs attention
+                return Err(anyhow::anyhow!(err));
+            }
+        }
+    } else {
+        ctx.logger
+            .warn("Unable to get primary commit agent for commit");
     }
 
     Ok(())
