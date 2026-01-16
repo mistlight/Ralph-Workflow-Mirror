@@ -93,9 +93,9 @@ mod tests {
 
         let suspicious_patterns = [
             // Multi-line raw string literals with prompt-like content
-            r#"You are a"#,
-            r#"Please review"#,
-            r#"Generate a"#,
+            r"You are a",
+            r"Please review",
+            r"Generate a",
             // Long format strings that look like prompts
             "## Instructions",
             "### Task",

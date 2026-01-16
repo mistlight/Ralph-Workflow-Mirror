@@ -163,26 +163,24 @@ impl Template {
         while let Some(start) = result.find("{% if ") {
             // Find the end of the if condition
             let if_end_start = start + 6; // "{% if " is 6 chars
-            let if_end = match result[if_end_start..].find("%}") {
-                Some(pos) => if_end_start + pos + 2,
-                None => {
-                    // Unclosed if tag - skip it
-                    result = result[start + 1..].to_string();
-                    continue;
-                }
+            let if_end = if let Some(pos) = result[if_end_start..].find("%}") {
+                if_end_start + pos + 2
+            } else {
+                // Unclosed if tag - skip it
+                result = result[start + 1..].to_string();
+                continue;
             };
 
             // Extract the condition
             let condition = result[if_end_start..if_end - 2].trim().to_string();
 
             // Find the matching {% endif %}
-            let endif_start = match result[if_end..].find("{% endif %}") {
-                Some(pos) => if_end + pos,
-                None => {
-                    // Unclosed if block - skip it
-                    result = result[start + 1..].to_string();
-                    continue;
-                }
+            let endif_start = if let Some(pos) = result[if_end..].find("{% endif %}") {
+                if_end + pos
+            } else {
+                // Unclosed if block - skip it
+                result = result[start + 1..].to_string();
+                continue;
             };
 
             let endif_end = endif_start + 11; // "{% endif %}" is 11 chars
@@ -217,7 +215,7 @@ impl Template {
         if let Some(rest) = condition.strip_prefix('!') {
             let var_name = rest.trim();
             let value = variables.get(var_name);
-            return value.map_or(true, |v| v.is_empty());
+            return value.is_none_or(String::is_empty);
         }
 
         // Normal condition - check if variable exists and is non-empty
@@ -238,13 +236,12 @@ impl Template {
         while let Some(start) = result.find("{% for ") {
             // Find the end of the for condition
             let for_end_start = start + 7; // "{% for " is 7 chars
-            let for_end = match result[for_end_start..].find("%}") {
-                Some(pos) => for_end_start + pos + 2,
-                None => {
-                    // Unclosed for tag - skip it
-                    result = result[start + 1..].to_string();
-                    continue;
-                }
+            let for_end = if let Some(pos) = result[for_end_start..].find("%}") {
+                for_end_start + pos + 2
+            } else {
+                // Unclosed for tag - skip it
+                result = result[start + 1..].to_string();
+                continue;
             };
 
             // Parse "item in ITEMS"
@@ -260,13 +257,12 @@ impl Template {
             let list_var = parts[1].trim();
 
             // Find the matching {% endfor %}
-            let endfor_start = match result[for_end..].find("{% endfor %}") {
-                Some(pos) => for_end + pos,
-                None => {
-                    // Unclosed for block - skip it
-                    result = result[start + 1..].to_string();
-                    continue;
-                }
+            let endfor_start = if let Some(pos) = result[for_end..].find("{% endfor %}") {
+                for_end + pos
+            } else {
+                // Unclosed for block - skip it
+                result = result[start + 1..].to_string();
+                continue;
             };
 
             let endfor_end = endfor_start + 12; // "{% endfor %}" is 12 chars
@@ -307,7 +303,7 @@ impl Template {
     }
 
     /// Substitute variables in content (simple version without partials or conditionals).
-    /// Returns (result, missing_vars) where missing_vars is a list of variable names
+    /// Returns `(result, missing_vars)` where `missing_vars` is a list of variable names
     /// that were referenced but not found (and had no default).
     fn substitute_variables(
         content: &str,
@@ -361,51 +357,53 @@ impl Template {
                     }
 
                     // Check for default value syntax: {{VAR|default="value"}}
-                    let (var_name, default_value) = if let Some(pipe_pos) = var_spec.find('|') {
-                        let name = var_spec[..pipe_pos].trim();
-                        let rest = &var_spec[pipe_pos + 1..];
-                        // Parse default="value"
-                        if let Some(eq_pos) = rest.find('=') {
-                            let key = rest[..eq_pos].trim();
-                            if key == "default" {
-                                let value = rest[eq_pos + 1..].trim();
-                                // Remove quotes if present (both single and double)
-                                let value = if (value.starts_with('"') && value.ends_with('"'))
-                                    || (value.starts_with('\'') && value.ends_with('\''))
-                                {
-                                    &value[1..value.len() - 1]
+                    let (var_name, default_value) = var_spec
+                        .find('|')
+                        .map_or((trimmed_var, None), |pipe_pos| {
+                            let name = var_spec[..pipe_pos].trim();
+                            let rest = &var_spec[pipe_pos + 1..];
+                            // Parse default="value"
+                            rest.find('=').map_or((name, None), |eq_pos| {
+                                let key = rest[..eq_pos].trim();
+                                if key == "default" {
+                                    let value = rest[eq_pos + 1..].trim();
+                                    // Remove quotes if present (both single and double)
+                                    let value = if (value.starts_with('"') && value.ends_with('"'))
+                                        || (value.starts_with('\'') && value.ends_with('\''))
+                                    {
+                                        &value[1..value.len() - 1]
+                                    } else {
+                                        value
+                                    };
+                                    (name, Some(value.to_string()))
                                 } else {
-                                    value
-                                };
-                                (name, Some(value.to_string()))
-                            } else {
-                                (name, None)
-                            }
-                        } else {
-                            (trimmed_var, None)
-                        }
-                    } else {
-                        (trimmed_var, None)
-                    };
+                                    (name, None)
+                                }
+                            })
+                        });
 
                     // Look up the variable
-                    let (replacement, should_replace) = if let Some(value) = variables.get(var_name)
-                    {
-                        if !value.is_empty() {
-                            (value.clone(), true)
-                        } else if let Some(default) = &default_value {
-                            (default.clone(), true)
-                        } else {
-                            // Variable exists but is empty, and no default - keep placeholder
-                            (String::new(), false)
-                        }
-                    } else if let Some(default) = &default_value {
-                        (default.clone(), true)
-                    } else {
-                        // Variable not found and no default - track as missing
-                        missing_vars.push(var_name.to_string());
-                        (String::new(), false)
-                    };
+                    let (replacement, should_replace) = variables
+                        .get(var_name)
+                        .map_or_else(
+                            || {
+                                default_value.as_ref().map_or_else(|| {
+                                    // Track as missing
+                                    missing_vars.push(var_name.to_string());
+                                    (String::new(), false)
+                                }, |default| (default.clone(), true))
+                            },
+                            |value| {
+                                if !value.is_empty() {
+                                    (value.clone(), true)
+                                } else if let Some(default) = &default_value {
+                                    (default.clone(), true)
+                                } else {
+                                    // Variable exists but is empty, and no default - keep placeholder
+                                    (String::new(), false)
+                                }
+                            },
+                        );
 
                     if should_replace {
                         replacements.push((start, end, replacement));
@@ -475,7 +473,7 @@ impl Template {
             // Check for circular reference
             if visited.contains(&partial_name) {
                 let mut chain = visited.clone();
-                chain.push(partial_name.clone());
+                chain.push(partial_name);
                 return Err(TemplateError::CircularReference(chain));
             }
 
@@ -951,7 +949,7 @@ DIFF:
     #[test]
     fn test_conditional_with_empty_variable() {
         let template = Template::new("{% if NAME %}Hello {{NAME}}{% endif %}");
-        let variables = HashMap::from([("NAME", "".to_string())]);
+        let variables = HashMap::from([("NAME", String::new())]);
         let rendered = template.render(&variables).unwrap();
         assert_eq!(rendered, "");
     }
@@ -1005,7 +1003,7 @@ DIFF:
     #[test]
     fn test_default_value_with_empty_variable() {
         let template = Template::new("Hello {{NAME|default=\"Guest\"}}");
-        let variables = HashMap::from([("NAME", "".to_string())]);
+        let variables = HashMap::from([("NAME", String::new())]);
         let rendered = template.render(&variables).unwrap();
         assert_eq!(rendered, "Hello Guest");
     }
@@ -1041,7 +1039,7 @@ DIFF:
     #[test]
     fn test_loop_with_empty_list() {
         let template = Template::new("{% for item in ITEMS %}{{item}} {% endfor %}");
-        let variables = HashMap::from([("ITEMS", "".to_string())]);
+        let variables = HashMap::from([("ITEMS", String::new())]);
         let rendered = template.render(&variables).unwrap();
         assert_eq!(rendered, "");
     }

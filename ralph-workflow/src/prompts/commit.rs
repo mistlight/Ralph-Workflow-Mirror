@@ -57,8 +57,7 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
                 .unwrap_or_else(|_| {
                     // Last resort emergency fallback
                     format!(
-                        "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{}\n\nPLAN:\n{}\n",
-                        prompt_content, plan_content
+                        "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n"
                     )
                 })
         })
@@ -140,9 +139,8 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
             .unwrap_or_else(|_| {
                 // Last resort emergency fallback
                 format!(
-                    "Generate a conventional commit message for this diff:\n\n{}\n\n\
-                     Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>",
-                    diff_content
+                    "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
+                     Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
                 )
             })
     })
