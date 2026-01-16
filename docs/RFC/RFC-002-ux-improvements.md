@@ -260,6 +260,24 @@ This section tracks the implementation status of RFC-002 proposals against the a
 
 **Rationale**: Addresses critical "Is it stuck?" friction point
 
+**Implementation Notes**:
+- **Location**: `ralph-workflow/src/app/mod.rs:81-100` (main `run()` function)
+- **Pattern**: Add `logger.info()` call immediately after agent resolution (line ~99)
+- **Example**:
+  ```rust
+  let developer_agent = validated.developer_agent;
+  let reviewer_agent = validated.reviewer_agent;
+
+  // ADD HERE: Immediate feedback
+  logger.info(&format!(
+      "Starting pipeline with {} (dev) → {} (review)...",
+      developer_agent, reviewer_agent
+  ));
+  ```
+- **Existing Pattern**: Use the same `Logger::info()` pattern already used throughout the codebase
+- **Test**: Verify output appears before first agent call (may need manual testing)
+- **Dependencies**: None (uses existing Logger infrastructure)
+
 ---
 
 #### ⏳ Phase 1.2: Pipeline Phase Indicator - P0
@@ -270,6 +288,31 @@ This section tracks the implementation status of RFC-002 proposals against the a
 
 **Suggested Implementation**: Use `indicatif` crate (cargo's progress library)
 
+**Implementation Notes**:
+- **Add Dependency**: Add `indicatif = "0.17"` to `Cargo.toml`
+- **Location**: Create new module `ralph-workflow/src/logger/progress.rs` (pattern exists at line 29)
+- **Integration Points**:
+  - `ralph-workflow/src/phases/mod.rs`: Phase execution entry points
+  - `ralph-workflow/src/app/mod.rs`: Main pipeline orchestration
+- **Existing Foundation**: `print_progress()` already exists at `logger/mod.rs:29`
+- **Key Functions to Hook**:
+  - `run_development_phase()` - wrap with progress bar
+  - `run_review_phase()` - wrap with progress bar
+  - Iteration loops within each phase
+- **Example Pattern** (similar to existing `print_progress`):
+  ```rust
+  use indicatif::{ProgressBar, ProgressStyle};
+
+  let total_iters = config.general.developer_iters;
+  let pb = ProgressBar::new(total_iters);
+  pb.set_style(ProgressStyle::with_template(
+      "[{prefix}] {bar:40.cyan/dim} {pos}/{len} {elapsed_precise}"
+  ).unwrap());
+  pb.set_prefix(format!("Development {}", agent));
+  ```
+- **Accessibility**: Use `TerminalMode::Basic` from existing `terminal.rs` to disable animations
+- **Dependencies**: Phase 1.1 (for consistent feedback pattern)
+
 ---
 
 #### ⏳ Phase 2.1: First-Run Detection - P0
@@ -279,6 +322,32 @@ This section tracks the implementation status of RFC-002 proposals against the a
 **Proposal**: Auto-detect first run and offer guided setup
 
 **Current Behavior**: Requires manual `--init-global` + `--init-prompt`
+
+**Implementation Notes**:
+- **Detection Location**: `ralph-workflow/src/app/mod.rs:86` (after `initialize_config()`)
+- **Detection Logic**:
+  ```rust
+  let config_path = unified_config_path();
+  let is_first_run = !config_path.exists()
+      || !legacy_config_path().exists()
+      || !prompt_path.exists();
+  ```
+- **Existing Functions to Reference**:
+  - `handle_init_global()` at `cli/init.rs:27-67` - config creation pattern
+  - `prompt_template_selection()` at `cli/handlers/template_selection.rs` - interactive selection
+  - `list_templates()` at `templates/mod.rs:113` - available templates
+- **Flow Integration**: Insert between lines 86-99 in `app/mod.rs`
+- **Interactive Check**: Use `std::io::stdin().is_terminal()` to detect interactive mode
+- **Example**:
+  ```rust
+  if is_first_run && std::io::stdin().is_terminal() {
+      println!("Welcome to Ralph Workflow!");
+      println!("It looks like this is your first time running Ralph.");
+      println!("Would you like to run the setup wizard? [Y/n]");
+      // ... read input and optionally call setup wizard
+  }
+  ```
+- **Dependencies**: None (can use existing template selection infrastructure)
 
 ---
 
@@ -300,6 +369,40 @@ This section tracks the implementation status of RFC-002 proposals against the a
 
 **Current State**: Error classification exists (`agents/error.rs`) but advice is prose, not actionable commands
 
+**Implementation Notes**:
+- **Location**: `ralph-workflow/src/agents/error.rs:36-65` (existing `AgentErrorKind` enum)
+- **Existing Pattern**: `recovery_advice()` method already exists but returns prose
+- **Extension Strategy**: Add `actionable_advice()` method returning structured commands
+- **Example Implementation**:
+  ```rust
+  pub struct ActionableAdvice {
+      pub message: &'static str,
+      pub fix_commands: Vec<(&'static str, &'static str)>, // (description, command)
+      pub docs_link: Option<&'static str>,
+      pub diagnostic_command: Option<&'static str>,
+  }
+
+  impl AgentErrorKind {
+      pub fn actionable_advice(&self) -> ActionableAdvice {
+          match self {
+              Self::CommandNotFound => ActionableAdvice {
+                  message: "Agent binary not found",
+                  fix_commands: vec![
+                      ("Install Claude Code", "npm install -g @anthropic-ai/claude-code"),
+                      ("Verify PATH", "echo $PATH"),
+                  ],
+                  docs_link: Some("docs/agents.md#installation"),
+                  diagnostic_command: Some("ralph --list-available-agents"),
+              },
+              // ... other cases
+          }
+      }
+  }
+  ```
+- **Display Pattern**: Use existing `Logger::error()` and format with `Colors` for structure
+- **Integration Point**: Where errors are displayed in pipeline execution
+- **Dependencies**: None (extends existing error classification)
+
 ---
 
 #### ⏳ Phase 3.2: "Did You Mean?" Suggestions - P1
@@ -317,6 +420,34 @@ This section tracks the implementation status of RFC-002 proposals against the a
 **Status**: Not Started
 
 **Proposal**: Feedback for every user action (agent starts, completes, phase changes, etc.)
+
+**Implementation Notes**:
+- **Location**: `ralph-workflow/src/app/mod.rs` (main pipeline orchestration)
+- **Pattern**: Use existing `Logger` methods (`info()`, `success()`, `warn()`, `error()`)
+- **Key Integration Points**:
+  - **Agent Start**: Before each phase call (~line 100+)
+  - **Iteration Complete**: After each agent iteration
+  - **Phase Changes**: Between development and review phases
+  - **Completion**: At successful pipeline finish
+- **Example**:
+  ```rust
+  // Before agent call
+  logger.info(&format!("Starting development iteration {}/{} with {}...",
+      current_iter, total_iters, agent_name));
+
+  // After agent completion
+  logger.success(&format!("✓ Iteration {} complete ({} files changed)",
+      current_iter, changed_files_count));
+
+  // Phase transition
+  logger.info("Switching to review phase...");
+  ```
+- **Color Scheme**: Use existing `Colors` from `logger/mod.rs:79-194`
+  - Success: `colors.green()`
+  - Warning: `colors.yellow()`
+  - Info: `colors.blue()`
+  - Error: `colors.red()`
+- **Dependencies**: Phase 1.1 (for consistent feedback pattern)
 
 ---
 
@@ -416,6 +547,20 @@ ralph --completions fish > ~/.config/fish/completions/ralph.fish
 **Status**: Not Started
 
 **Proposal**: Display "Press Ctrl+C to cancel" during long operations
+
+**Implementation Notes**:
+- **Location**: `ralph-workflow/src/app/mod.rs` (main pipeline execution)
+- **Display Point**: After initial feedback message (Phase 1.1 implementation)
+- **Pattern**: Add `logger.warn()` or `logger.info()` with hint
+- **Example**:
+  ```rust
+  logger.info("Starting pipeline with claude (dev) → codex (rev)...");
+  logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+  ```
+- **Alternative**: Display once at start of long-running phases
+- **Check**: Use `std::io::stdin().is_terminal()` to only show in interactive mode
+- **Existing Pattern**: Similar to how errors show actionable next steps
+- **Dependencies**: Phase 1.1 (to display alongside initial feedback)
 
 ---
 
@@ -1348,23 +1493,83 @@ Starting: claude (dev) → codex (rev)
 
 ### Recommended Implementation Order
 
-**Sprint 1 (P0 - Foundation)**:
-1. Immediate feedback before agent calls (100ms rule)
-2. Action-reaction feedback for all operations
-3. Cancellation hint display
-4. First-run detection with setup offer
+**✅ COMPLETED** - Infrastructure Foundation (32% complete):
+- Phase 5: Color & Terminal Standards ✅
+- Phase 1.3: Heartbeat with Accessibility Mode ✅
+- Phase 7.3: Streaming Quality Metrics ✅
+- Phase 6.1: Enhanced Diagnostics ✅
+- Phase 5.0: Color Standardization ✅ (partial)
+- Phase 5.1: Full Environment Variable Compliance ✅
+- Phase 8: Template Listing ✅
 
-**Sprint 2 (P0 + P1 Core)**:
-5. Pipeline phase indicator with progress bar
-6. Actionable error messages with commands
-7. "Did you mean?" suggestions
-8. Color environment variable compliance
+**Sprint 1 (P0 - Foundation - Highest Priority)**:
+1. **Phase 1.1**: Immediate feedback before agent calls (100ms rule)
+   - File: `app/mod.rs:99`
+   - Effort: 15 minutes
+   - Impact: Eliminates "Is it stuck?" friction
 
-**Sprint 3 (P1 Polish)**:
-9. `ralph setup` wizard
-10. `ralph status` and `ralph clean`
-11. Shell completions
-12. Accessibility mode for progress
+2. **Phase 4.0**: Action-reaction feedback for all operations
+   - File: `app/mod.rs` (multiple locations)
+   - Effort: 1-2 hours
+   - Impact: Users always know what's happening
+
+3. **Phase 8.3**: Cancellation hint display
+   - File: `app/mod.rs:99`
+   - Effort: 15 minutes
+   - Impact: Clear way out for long operations
+
+4. **Phase 2.1**: First-run detection with setup offer
+   - File: `app/mod.rs:86`
+   - Effort: 2-3 hours
+   - Impact: Reduces first-run failure rate
+
+**Sprint 2 (P0 + P1 Core - High Value)**:
+5. **Phase 3.1**: Actionable error messages with commands
+   - File: `agents/error.rs:36-65`
+   - Effort: 3-4 hours
+   - Impact: Cuts error resolution time by 50%
+
+6. **Phase 1.2**: Pipeline phase indicator with progress bar
+   - New dependency: `indicatif` crate
+   - Effort: 4-6 hours
+   - Impact: Clear progress visibility
+
+7. **Phase 3.2**: "Did you mean?" suggestions
+   - File: `agents/error.rs` (add Levenshtein distance)
+   - Effort: 2-3 hours
+   - Impact: Better typo recovery
+
+**Sprint 3 (P1 Polish - Quality of Life)**:
+8. **Phase 2.2**: `ralph setup` wizard
+   - File: `cli/` (add new subcommand)
+   - Effort: 4-6 hours
+   - Impact: Better onboarding experience
+
+9. **Phase 8.1**: `ralph status` command
+   - File: `cli/handlers/` (add new handler)
+   - Effort: 2-3 hours
+   - Impact: Better state visibility
+
+10. **Phase 8.2**: `ralph clean` command
+    - File: `cli/handlers/` (add new handler)
+    - Effort: 2-3 hours
+    - Impact: Easier cleanup
+
+11. **Phase 6.1**: Shell completions
+    - Add `clap_complete` dependency
+    - Effort: 2-3 hours
+    - Impact: Better discoverability
+
+**Parallel Work Opportunities**:
+- Sprint 1 items (1-4) can be done in parallel by different contributors
+- Sprint 2 items (5-7) have minimal dependencies
+- Sprint 3 items (8-11) are largely independent
+
+**Updated Rationale**:
+- Completed infrastructure (terminal standards, diagnostics, color support) provides solid foundation
+- Focus now on user-facing features that directly address the "Top 5 Gaps" from Executive Summary
+- All P0 features can be implemented in ~15 hours total
+- Quick wins (items 1, 3) take <30 minutes combined
 
 ---
 
@@ -1443,6 +1648,618 @@ Starting: claude (dev) → codex (rev)
 4. Should token tracking require agent cooperation, or should Ralph parse agent output?
 5. Should history be stored globally (`~/.ralph/history.json`) or per-repo (`.agent/history.json`)?
 6. Should shell completions be installed automatically during `ralph setup`?
+
+---
+
+## Cross-Feature Dependencies
+
+This section documents which features depend on others to help plan implementation order.
+
+### Dependency Graph
+
+```
+Phase 1.1 (Immediate Feedback)
+    ├── Phase 8.3 (Cancellation Hint) - builds on initial feedback
+    ├── Phase 4.0 (Action-Reaction) - uses same feedback pattern
+    └── Phase 1.2 (Progress Indicator) - assumes feedback exists
+
+Phase 2.1 (First-Run Detection)
+    ├── Phase 2.2 (Setup Command) - can be called from first-run flow
+    └── Uses existing template selection infrastructure
+
+Phase 3.1 (Actionable Errors)
+    ├── Builds on existing error.rs classification
+    ├── Phase 3.2 (Did You Mean) - shares error handling code
+    └── No dependencies
+
+Phase 1.2 (Progress Indicator)
+    ├── Uses existing terminal.rs for mode detection
+    ├── Builds on existing print_progress() function
+    └── Phase 1.4 (ETA) - requires progress tracking first
+
+Phase 5.0/5.1 (Color Standards)
+    ├── Fully implemented - foundation for other features
+    ├── Phase 1.3 (Heartbeat) - uses accessibility mode
+    └── All UI features depend on this
+```
+
+### Can Be Implemented in Parallel
+
+The following feature groups have **no dependencies** on each other and can be worked on simultaneously:
+
+**Group A: Feedback Features**
+- Phase 1.1: Immediate Feedback
+- Phase 4.0: Action-Reaction Feedback
+- Phase 8.3: Cancellation Hint
+
+**Group B: Onboarding Features**
+- Phase 2.1: First-Run Detection
+- Phase 2.2: Setup Command
+
+**Group C: Error Handling**
+- Phase 3.1: Actionable Error Messages
+- Phase 3.2: "Did You Mean?" Suggestions
+
+**Group D: Progress Visualization**
+- Phase 1.2: Pipeline Phase Indicator
+- Phase 1.3: Heartbeat with Accessibility
+- Phase 1.4: Estimated Time Remaining
+
+**Group E: Quality-of-Life**
+- Phase 4.1: Watch Mode
+- Phase 4.2: Post-Run Actions Menu
+- Phase 4.3: Confirmation for Destructive Operations
+
+**Group F: Status & Diagnostics**
+- Phase 8.1: `ralph status` Command
+- Phase 8.2: `ralph clean` Command
+- Phase 6.1: Shell Completions
+
+### Recommended First Steps
+
+For maximum impact with minimum dependencies:
+
+1. **Start with Group A** (Feedback Features) - no dependencies, immediate user value
+2. **Then Group C** (Error Handling) - builds on existing error.rs
+3. **Then Group D** (Progress) - requires Group A patterns first
+4. **Then Group B** (Onboarding) - independent but higher complexity
+
+### Feature Synergies
+
+Some features work better when implemented together:
+
+| Feature Pair | Synergy |
+|-------------|---------|
+| Phase 1.1 + 1.2 | Immediate feedback + sustained progress visibility |
+| Phase 3.1 + 3.2 | Actionable errors + fuzzy matching for comprehensive UX |
+| Phase 2.1 + 2.2 | First-run detection + setup wizard for complete onboarding |
+| Phase 4.0 + 4.2 | Action-reaction + post-run menu for full workflow |
+| Phase 8.1 + 8.2 | Status + clean commands for state management |
+
+### Blocking Dependencies
+
+| Feature | Blocked By | Rationale |
+|---------|-----------|-----------|
+| Phase 8.3 (Ctrl+C hint) | Phase 1.1 | Should display alongside initial feedback |
+| Phase 4.0 (Full feedback) | Phase 1.1 | Uses same feedback pattern |
+| Phase 1.2 (Progress bar) | Phase 1.1 | Assumes feedback pattern established |
+| Phase 1.4 (ETA) | Phase 1.2 | Requires progress tracking infrastructure |
+| Phase 7.3 (Token tracking) | None | Independent but lower priority |
+
+---
+
+## Quick-Start Implementation Guide for Contributors
+
+This section provides a condensed guide for contributors who want to implement RFC-002 features.
+
+### Easiest Wins (Can be done in 1-2 hours each)
+
+#### 1. Phase 8.3: Cancellation Hint (Ctrl+C)
+**File**: `ralph-workflow/src/app/mod.rs` (~line 99)
+
+```rust
+// Add after agent resolution (line ~99)
+logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+```
+
+**Why it's easy**: Single line addition, uses existing Logger infrastructure, no dependencies.
+
+#### 2. Phase 1.1: Immediate Feedback (100ms Rule)
+**File**: `ralph-workflow/src/app/mod.rs` (~line 99)
+
+```rust
+let developer_agent = validated.developer_agent;
+let reviewer_agent = validated.reviewer_agent;
+
+// ADD HERE
+logger.info(&format!(
+    "Starting pipeline with {} (dev) → {} (review)...",
+    developer_agent, reviewer_agent
+));
+```
+
+**Why it's easy**: Single statement, uses existing patterns, immediately visible impact.
+
+#### 3. Phase 4.0: Basic Action-Reaction Feedback
+**File**: `ralph-workflow/src/app/mod.rs` (multiple locations)
+
+Add feedback messages at key points:
+- After phase completion: `logger.success("✓ Development phase complete")`
+- Before phase transitions: `logger.info("Switching to review phase...")`
+
+**Why it's easy**: Leverages existing Logger methods, multiple small wins, no new infrastructure.
+
+### Medium-Effort High-Impact Features
+
+#### Phase 1.2: Pipeline Phase Indicator
+**Effort**: 4-6 hours
+
+**Steps**:
+1. Add `indicatif = "0.17"` to `Cargo.toml` dependencies
+2. Create `ralph-workflow/src/logger/progress_indicator.rs`
+3. Wrap phase execution in `app/mod.rs` with progress bars
+
+**Example PR Title**: `feat(progress): add pipeline phase indicator with progress bar`
+
+#### Phase 2.1: First-Run Detection
+**Effort**: 3-4 hours
+
+**Steps**:
+1. Add detection logic in `app/mod.rs` after `initialize_config()`
+2. Create interactive prompt using `dialoguer` crate
+3. Call existing `handle_init_global()` and `prompt_template_selection()`
+
+**Example PR Title**: `feat(onboarding): add first-run detection and setup wizard`
+
+#### Phase 3.1: Actionable Error Messages
+**Effort**: 4-6 hours
+
+**Steps**:
+1. Add `ActionableAdvice` struct to `agents/error.rs`
+2. Implement `actionable_advice()` method for each error kind
+3. Update error display to use structured advice
+
+**Example PR Title**: `feat(errors): add actionable fix commands to error messages`
+
+### Key File Locations Reference
+
+| Purpose | File | Key Lines |
+|---------|------|-----------|
+| Main pipeline | `ralph-workflow/src/app/mod.rs` | 81-100 (entry), 100+ (orchestration) |
+| Error types | `ralph-workflow/src/agents/error.rs` | 36-65 (enum), 67-100+ (methods) |
+| CLI args | `ralph-workflow/src/cli/args.rs` | 1-100+ (flag definitions) |
+| Logger | `ralph-workflow/src/logger/mod.rs` | 35-194 (colors), 29+ (progress) |
+| Terminal modes | `ralph-workflow/src/json_parser/terminal.rs` | 1-325 (mode detection) |
+| Templates | `ralph-workflow/src/templates/mod.rs` | 113+ (listing) |
+| Init handlers | `ralph-workflow/src/cli/init.rs` | 27-67 (global init) |
+
+### Testing Strategy
+
+For each feature:
+1. **Unit tests**: Test new functions in isolation
+2. **Integration tests**: Test pipeline flow with feature enabled
+3. **Manual testing**: Run `ralph` and verify visual output
+4. **Accessibility testing**: Test with `TERM=dumb` and `NO_COLOR=1`
+
+### Common Patterns to Follow
+
+#### Adding a new CLI flag:
+```rust
+// In cli/args.rs
+#[arg(long, help = "Your flag description")]
+pub your_flag: bool,
+```
+
+#### Adding a new logger message:
+```rust
+// Use existing Colors and Logger
+logger.info("Informational message");
+logger.success("✓ Success message");
+logger.warn("Warning message");
+logger.error("✗ Error message");
+```
+
+#### Checking terminal capabilities:
+```rust
+// Use existing terminal mode detection
+use crate::json_parser::terminal::TerminalMode;
+let mode = TerminalMode::detect();
+
+if mode == TerminalMode::Basic {
+    // Static output for screen readers
+} else {
+    // Animated output
+}
+```
+
+### Example PR Workflow
+
+1. **Branch**: `git checkout -b rfc-002/phase-X.Y-description`
+2. **Implement**: Make changes following patterns above
+3. **Test**: `cargo test --all-features && cargo clippy --all-targets`
+4. **Document**: Update RFC-002 status section with "In Progress"
+5. **PR**: Use title like `feat(ux): [RFC-002] Phase X.Y: Description`
+
+---
+
+## Code Examples for Key Remaining Features
+
+This section provides detailed code examples for implementing the highest-priority remaining features in RFC-002.
+
+### Phase 1.1: Immediate Feedback (100ms Rule)
+
+**File**: `ralph-workflow/src/app/mod.rs`
+**Location**: After line 99 (after agent resolution)
+
+```rust
+// EXISTING CODE (lines ~97-99)
+let validated = resolve_required_agents(&config)?;
+let developer_agent = validated.developer_agent;
+let reviewer_agent = validated.reviewer_agent;
+
+// ADD THIS: Immediate feedback within 100ms
+logger.info(&format!(
+    "Starting pipeline with {} (development) → {} (review)...",
+    developer_agent, reviewer_agent
+));
+logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+```
+
+**Testing**: Run `ralph` and verify the message appears before any agent calls.
+
+---
+
+### Phase 4.0: Action-Reaction Feedback
+
+**File**: `ralph-workflow/src/app/mod.rs`
+**Multiple locations** in the main pipeline flow
+
+```rust
+// BEFORE PHASE EXECUTION
+logger.info(&format!(
+    "Starting {} phase with {}...",
+    phase_name, agent_name
+));
+
+// AFTER ITERATION COMPLETE
+logger.success(&format!(
+    "✓ Iteration {}/{} complete ({} files changed)",
+    iteration, total_iterations, file_count
+));
+
+// PHASE TRANSITION
+logger.info("Switching from development to review phase...");
+
+// PIPELINE COMPLETE
+logger.success(&format!(
+    "✓ Pipeline completed successfully in {}",
+    format_duration(total_time)
+));
+```
+
+---
+
+### Phase 3.1: Actionable Error Messages
+
+**File**: `ralph-workflow/src/agents/error.rs`
+
+**Step 1: Add struct after `AgentErrorKind` enum (after line 65)**
+
+```rust
+/// Structured actionable advice for error recovery
+pub struct ActionableAdvice {
+    /// Human-readable error description
+    pub message: &'static str,
+    /// List of (description, command) pairs for fixes
+    pub fix_commands: Vec<(&'static str, &'static str)>,
+    /// Optional link to documentation
+    pub docs_link: Option<&'static str>,
+    /// Optional diagnostic command to run
+    pub diagnostic_command: Option<&'static str>,
+}
+
+impl ActionableAdvice {
+    /// Format the advice for terminal display
+    pub fn display(&self, colors: &crate::logger::Colors) -> String {
+        let mut output = String::new();
+
+        output.push_str(&format!("{}{}{}\n", colors.red(), self.message, colors.reset()));
+
+        if !self.fix_commands.is_empty() {
+            output.push_str(&format!("\n{}Fix options:{}\n", colors.bold(), colors.reset()));
+            for (desc, cmd) in &self.fix_commands {
+                output.push_str(&format!("  {}: {}\n", desc, cmd));
+            }
+        }
+
+        if let Some(cmd) = self.diagnostic_command {
+            output.push_str(&format!("\n{}Diagnose:{} {}\n", colors.bold(), colors.reset(), cmd));
+        }
+
+        if let Some(link) = self.docs_link {
+            output.push_str(&format!("\n{}Docs:{} {}\n", colors.bold(), colors.reset(), link));
+        }
+
+        output
+    }
+}
+```
+
+**Step 2: Add method to `AgentErrorKind` impl (after line 100+)**
+
+```rust
+impl AgentErrorKind {
+    // ... existing methods ...
+
+    /// Get actionable advice for this error
+    pub fn actionable_advice(&self) -> ActionableAdvice {
+        match self {
+            Self::CommandNotFound => ActionableAdvice {
+                message: "✗ Agent binary not found in PATH",
+                fix_commands: vec![
+                    ("Install Claude Code", "npm install -g @anthropic-ai/claude-code"),
+                    ("Verify PATH", "echo $PATH"),
+                ],
+                docs_link: Some("docs/agents.md#installation"),
+                diagnostic_command: Some("ralph --list-available-agents"),
+            },
+            Self::AuthFailure => ActionableAdvice {
+                message: "✗ Authentication failed for agent",
+                fix_commands: vec![
+                    ("Authenticate Claude", "claude /login"),
+                    ("Set API key", "export ANTHROPIC_API_KEY=sk-..."),
+                ],
+                docs_link: Some("docs/agents.md#authentication"),
+                diagnostic_command: Some("ralph --diagnose"),
+            },
+            Self::RateLimited => ActionableAdvice {
+                message: "✗ API rate limit exceeded",
+                fix_commands: vec![
+                    ("Wait 60 seconds", "sleep 60"),
+                    ("Add fallback agent", "edit ~/.config/ralph-workflow.toml"),
+                ],
+                docs_link: Some("docs/rate-limiting.md"),
+                diagnostic_command: None,
+            },
+            // ... handle other error types
+            _ => ActionableAdvice {
+                message: "✗ An error occurred",
+                fix_commands: vec![
+                    ("Check diagnostics", "ralph --diagnose"),
+                    ("Check logs", "cat .agent/logs/pipeline.log"),
+                ],
+                docs_link: Some("docs/troubleshooting.md"),
+                diagnostic_command: Some("ralph --diagnose"),
+            },
+        }
+    }
+}
+```
+
+**Step 3: Use in error handling (where errors are displayed)**
+
+```rust
+// When displaying an error:
+let advice = error_kind.actionable_advice();
+eprintln!("{}", advice.display(&colors));
+```
+
+---
+
+### Phase 1.2: Pipeline Phase Indicator
+
+**Step 1: Add to `Cargo.toml` dependencies**
+
+```toml
+[dependencies]
+indicatif = "0.17"
+```
+
+**Step 2: Create `ralph-workflow/src/logger/progress_indicator.rs`**
+
+```rust
+use crate::logger::Colors;
+use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
+use std::time::Duration;
+
+/// Manages progress display for pipeline execution
+pub struct PipelineProgress {
+    multi: MultiProgress,
+    phase_bar: ProgressBar,
+    spinner: ProgressBar,
+    colors: Colors,
+}
+
+impl PipelineProgress {
+    pub fn new(total_iterations: u64, colors: Colors) -> Self {
+        let multi = MultiProgress::new();
+
+        // Main phase progress bar
+        let phase_bar = multi.add(ProgressBar::new(total_iteration));
+        phase_bar.set_style(
+            ProgressStyle::with_template(
+                "{prefix:.bold} {bar:40.cyan/dim} {pos}/{len} {elapsed_precise}"
+            )
+            .unwrap()
+        );
+
+        // Activity spinner
+        let spinner = multi.add(ProgressBar::new_spinner());
+        spinner.set_style(
+            ProgressStyle::with_template("{spinner:.cyan} {msg}")
+                .unwrap()
+        );
+        spinner.enable_steady_tick(Duration::from_millis(100));
+
+        Self { multi, phase_bar, spinner, colors }
+    }
+
+    pub fn set_phase(&self, phase: &str, agent: &str) {
+        self.phase_bar.set_prefix(format!("{} [{}]", phase, agent));
+        self.phase_bar.reset();
+    }
+
+    pub fn tick(&self, message: &str) {
+        self.spinner.set_message(message.to_string());
+    }
+
+    pub fn increment(&self) {
+        self.phase_bar.inc(1);
+    }
+
+    pub fn finish(&self) {
+        self.phase_bar.finish();
+        self.spinner.finish();
+    }
+}
+```
+
+**Step 3: Integrate into phase execution**
+
+```rust
+// In app/mod.rs or phases/mod.rs
+use crate::logger::progress_indicator::PipelineProgress;
+
+pub fn run_development_phase(
+    config: &Config,
+    context: &PhaseContext,
+) -> anyhow::Result<PhaseResult> {
+    let colors = Colors::new();
+    let progress = PipelineProgress::new(config.general.developer_iters, colors);
+
+    progress.set_phase("Development", &context.agent_name);
+
+    for iteration in 1..=config.general.developer_iters {
+        progress.tick(&format!("Running iteration {}...", iteration));
+
+        // ... run agent ...
+
+        progress.increment();
+    }
+
+    progress.finish();
+    Ok(result)
+}
+```
+
+---
+
+### Phase 2.1: First-Run Detection
+
+**File**: `ralph-workflow/src/app/mod.rs`
+**Location**: After line 86 (after `initialize_config()`)
+
+```rust
+// EXISTING CODE (lines ~86-88)
+let Some(init_result) = initialize_config(&args, colors, &logger)? else {
+    return Ok(()); // Early exit
+};
+
+// ADD THIS: First-run detection
+let config_init::ConfigInitResult { config_path, .. } = &init_result;
+
+let is_first_run = !config_path.exists()
+    || !prompt_path.exists()
+    || !std::path::Path::new(".agent").exists();
+
+if is_first_run && std::io::stdin().is_terminal() {
+    println!("{}", colors.bold());
+    println!("Welcome to Ralph Workflow!");
+    println!("{}", colors.reset());
+    println!();
+    println!("It looks like this is your first time running Ralph.");
+    println!();
+    println!("Ralph requires some initial setup:");
+    println!("  1. Configuration file (~/.config/ralph-workflow.toml)");
+    println!("  2. PROMPT.md in your project directory");
+    println!();
+
+    print!("Would you like to run the setup wizard? [Y/n]: ");
+    use std::io::Write;
+    std::io::stdout().flush()?;
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+
+    if input.trim().is_empty() || input.trim().eq_ignore_ascii_case("y") {
+        // Run setup wizard (call Phase 2.2 implementation)
+        return run_setup_wizard(&args, colors);
+    }
+
+    println!();
+    println!("Skipping setup. You can initialize manually:");
+    println!("  ralph --init        # Create config file");
+    println!("  ralph --init-prompt # Create PROMPT.md");
+    println!();
+}
+```
+
+---
+
+### Phase 8.1: `ralph status` Command
+
+**File**: `ralph-workflow/src/cli/handlers/status.rs` (new file)
+
+```rust
+use crate::logger::Colors;
+use std::path::Path;
+
+pub fn handle_status(colors: Colors) -> anyhow::Result<()> {
+    println!("{}Ralph Status{}", colors.bold(), colors.reset());
+    println!("─".repeat(50));
+
+    // Check PROMPT.md
+    let prompt_path = Path::new("PROMPT.md");
+    match prompt_path.exists() {
+        true => {
+            let metadata = std::fs::metadata(prompt_path)?;
+            println!("  Prompt:     PROMPT.md exists ({} bytes)", metadata.len());
+        }
+        false => println!("  Prompt:     {}PROMPT.md not found{}", colors.yellow(), colors.reset()),
+    }
+
+    // Check checkpoint
+    let checkpoint_path = Path::new(".agent/checkpoint.json");
+    match checkpoint_path.exists() {
+        true => {
+            let content = std::fs::read_to_string(checkpoint_path)?;
+            println!("  Checkpoint: Available");
+            // Parse and show phase/iteration if desired
+        }
+        false => println!("  Checkpoint: None (clean state)"),
+    }
+
+    // Check .agent directory contents
+    let agent_dir = Path::new(".agent");
+    if agent_dir.exists() {
+        let entries = std::fs::read_dir(agent_dir)?
+            .filter_map(|e| e.ok())
+            .count();
+        println!("  .agent/:     {} files/directories", entries);
+    } else {
+        println!("  .agent/:     Not created yet");
+    }
+
+    // Check logs
+    let logs_dir = Path::new(".agent/logs");
+    if logs_dir.exists() {
+        let log_files: Vec<_> = std::fs::read_dir(logs_dir)?
+            .filter_map(|e| e.ok().map(|e| e.file_name()))
+            .collect();
+        println!("  Logs:        {} file(s)", log_files.len());
+    }
+
+    Ok(())
+}
+```
+
+**Wire up in `cli/mod.rs`**:
+
+```rust
+pub fn handle_status(colors: Colors) -> anyhow::Result<()> {
+    handlers::status::handle_status(colors)
+}
+```
 
 ---
 
