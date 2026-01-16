@@ -1610,7 +1610,7 @@ mod tests {
         // Both sessions should accumulate content correctly
         // (All 3 deltas are accumulated since they're treated as genuine deltas)
         let single_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
-        let expected = format!("{}{}{}", single_delta, single_delta, single_delta);
+        let expected = format!("{single_delta}{single_delta}{single_delta}");
         assert_eq!(
             session_verbose.get_accumulated(ContentType::Text, "0"),
             Some(expected.as_str())

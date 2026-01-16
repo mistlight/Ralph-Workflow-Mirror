@@ -480,7 +480,7 @@ cargo test -p ralph-workflow json_parser::tests
 ### Medium-Term (Next Quarter)
 - [x] Terminal mode detection implemented
 - [x] Warnings conditional on verbosity
-- [ ] Non-TTY output clean (no escape leakage)
+- [x] Non-TTY output clean (no escape leakage)
 
 ### Long-Term (Ongoing)
 - [ ] Zero streaming-related bug reports per release
@@ -567,6 +567,7 @@ Emit structured events (JSON) and rely on external renderer.
 |------|--------|
 | 2026-01-16 | Initial draft |
 | 2026-01-16 | **Area 2 (Conditional Warning Emission) completed**: Added `verbose_warnings` field to `StreamingSession`, implemented `with_verbose_warnings()` builder, updated all four `eprintln!` calls to respect verbosity, added parser integration for `Verbosity::Debug` mode, added comprehensive tests |
+| 2026-01-16 | **Area 1 (Terminal Mode Detection) completed**: Implemented terminal capability detection with three modes (Full, Basic, None), added environment variable support (`NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE`, `TERM`), integrated with all parsers (Claude, Codex, Gemini, OpenCode), added comprehensive unit and integration tests for non-full terminal modes, verified clean output without escape sequences in non-TTY scenarios |
 
 ---
 

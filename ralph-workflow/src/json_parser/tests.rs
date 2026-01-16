@@ -1602,3 +1602,296 @@ fn test_multiple_messages_with_proper_separation() {
         "Second message should appear exactly once. Found {second_count} times. Output: {output:?}"
     );
 }
+
+// Integration tests for non-full terminal modes (Basic and None)
+// These tests verify that parser-level behavior works correctly when
+// terminal capabilities are limited (Basic: colors only, None: plain text)
+
+/// Test streaming with `TerminalMode::None` (non-TTY output)
+///
+/// Verifies that when output is piped or redirected (non-TTY), the parser
+/// produces clean output without escape sequences for cursor positioning.
+#[test]
+fn test_streaming_with_terminal_mode_none() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should contain the accumulated content
+    assert!(
+        output.contains("Hello World!"),
+        "Should contain complete accumulated text. Output: {output:?}"
+    );
+
+    // Should NOT contain cursor positioning escape sequences
+    assert!(
+        !output.contains("\x1b[1A"), // Cursor up
+        "Should NOT contain cursor up sequence in None mode. Output: {output:?}"
+    );
+    assert!(
+        !output.contains("\x1b[1B"), // Cursor down
+        "Should NOT contain cursor down sequence in None mode. Output: {output:?}"
+    );
+    assert!(
+        !output.contains("\x1b[2K"), // Clear line
+        "Should NOT contain clear line sequence in None mode. Output: {output:?}"
+    );
+
+    // Should NOT contain carriage returns for in-place updates
+    assert!(
+        !output.contains('\r'),
+        "Should NOT contain carriage returns in None mode. Output: {output:?}"
+    );
+
+    // Should end with newline
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline after message_stop. Output: {output:?}"
+    );
+}
+
+/// Test streaming with `TerminalMode::Basic` (colors without cursor positioning)
+///
+/// Verifies that when terminal supports colors but not cursor positioning,
+/// the parser produces output with colors but without in-place updates.
+#[test]
+fn test_streaming_with_terminal_mode_basic() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Basic);
+
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should contain the accumulated content
+    assert!(
+        output.contains("Hello World!"),
+        "Should contain complete accumulated text. Output: {output:?}"
+    );
+
+    // Should NOT contain cursor positioning escape sequences
+    assert!(
+        !output.contains("\x1b[1A"), // Cursor up
+        "Should NOT contain cursor up sequence in Basic mode. Output: {output:?}"
+    );
+    assert!(
+        !output.contains("\x1b[1B"), // Cursor down
+        "Should NOT contain cursor down sequence in Basic mode. Output: {output:?}"
+    );
+    assert!(
+        !output.contains("\x1b[2K"), // Clear line
+        "Should NOT contain clear line sequence in Basic mode. Output: {output:?}"
+    );
+
+    // Should NOT contain carriage returns for in-place updates
+    assert!(
+        !output.contains('\r'),
+        "Should NOT contain carriage returns in Basic mode. Output: {output:?}"
+    );
+
+    // Should end with newline
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline after message_stop. Output: {output:?}"
+    );
+}
+
+/// Test completion in `TerminalMode::None`
+///
+/// Verifies that message completion produces just a newline without
+/// cursor positioning in None mode.
+#[test]
+fn test_completion_with_terminal_mode_none() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should NOT contain cursor down sequence
+    assert!(
+        !output.contains("\x1b[1B"),
+        "Should NOT contain cursor down sequence in None mode. Output: {output:?}"
+    );
+
+    // Should end with plain newline
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline in None mode. Output: {output:?}"
+    );
+}
+
+/// Test completion in `TerminalMode::Basic`
+///
+/// Verifies that message completion produces just a newline without
+/// cursor positioning in Basic mode.
+#[test]
+fn test_completion_with_terminal_mode_basic() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Basic);
+
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Should NOT contain cursor down sequence
+    assert!(
+        !output.contains("\x1b[1B"),
+        "Should NOT contain cursor down sequence in Basic mode. Output: {output:?}"
+    );
+
+    // Should end with plain newline
+    assert!(
+        output.ends_with('\n'),
+        "Should end with newline in Basic mode. Output: {output:?}"
+    );
+}
+
+/// Test multiple deltas in None mode produce multiple lines
+///
+/// Verifies that without cursor positioning, each delta appears on its
+/// own line (no in-place updates).
+#[test]
+fn test_multiple_deltas_none_mode_produces_multiple_lines() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+
+    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Each delta should produce output (no in-place updates)
+    // The output should contain both intermediate states
+    assert!(
+        output.contains("Hello"),
+        "Should contain first delta. Output: {output:?}"
+    );
+
+    // Count newlines - should be at least 2 (first delta + message_stop)
+    let newline_count = output.matches('\n').count();
+    assert!(
+        newline_count >= 2,
+        "Should have at least 2 newlines in None mode. Found {newline_count}. Output: {output:?}"
+    );
+}
+
+/// Test consistency across all parsers in `TerminalMode::None`
+///
+/// Verifies that all parsers (Claude, Codex, Gemini, `OpenCode`) produce
+/// clean output without escape sequences in None mode.
+#[test]
+fn test_all_parsers_clean_output_in_none_mode() {
+    use std::io::Cursor;
+
+    // Test Claude parser
+    let claude_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+    let claude_input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+    let claude_reader = Cursor::new(claude_input);
+    let mut claude_writer = Vec::new();
+    claude_parser
+        .parse_stream(claude_reader, &mut claude_writer)
+        .unwrap();
+    let claude_output = String::from_utf8(claude_writer).unwrap();
+
+    assert!(
+        !claude_output.contains("\x1b["),
+        "Claude should have no escape sequences in None mode. Output: {claude_output:?}"
+    );
+
+    // Test Codex parser
+    let codex_parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+    let codex_input = r#"{"type":"item.started","item":{"type":"agent_message","id":"msg1","text":"Hello"}}
+{"type":"item.completed","item":{"type":"agent_message","id":"msg1"}}"#;
+    let codex_reader = Cursor::new(codex_input);
+    let mut codex_writer = Vec::new();
+    codex_parser
+        .parse_stream(codex_reader, &mut codex_writer)
+        .unwrap();
+    let codex_output = String::from_utf8(codex_writer).unwrap();
+
+    assert!(
+        !codex_output.contains("\x1b["),
+        "Codex should have no escape sequences in None mode. Output: {codex_output:?}"
+    );
+
+    // Test Gemini parser
+    let gemini_parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+    let gemini_input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true}
+{"type":"result","status":"success"}"#;
+    let gemini_reader = Cursor::new(gemini_input);
+    let mut gemini_writer = Vec::new();
+    gemini_parser
+        .parse_stream(gemini_reader, &mut gemini_writer)
+        .unwrap();
+    let gemini_output = String::from_utf8(gemini_writer).unwrap();
+
+    assert!(
+        !gemini_output.contains("\x1b["),
+        "Gemini should have no escape sequences in None mode. Output: {gemini_output:?}"
+    );
+
+    // Test OpenCode parser
+    let opencode_parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None);
+    let opencode_input = r#"{"type":"text","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":"Hello"}}
+{"type":"step_finish","timestamp":1768191347296,"sessionID":"ses_44f9562d4ffe","part":{"type":"step-finish","reason":"end_turn"}}"#;
+    let opencode_reader = Cursor::new(opencode_input);
+    let mut opencode_writer = Vec::new();
+    opencode_parser
+        .parse_stream(opencode_reader, &mut opencode_writer)
+        .unwrap();
+    let opencode_output = String::from_utf8(opencode_writer).unwrap();
+
+    assert!(
+        !opencode_output.contains("\x1b["),
+        "OpenCode should have no escape sequences in None mode. Output: {opencode_output:?}"
+    );
+}
