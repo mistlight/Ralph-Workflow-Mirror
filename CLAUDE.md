@@ -4,219 +4,401 @@ You are an expert frontend designer + engineer. Your job is to produce UI that l
 
 This repo prioritizes **design quality** as much as correctness. When you ship UI, it should look “portfolio-grade” without saying so. Every screen should feel cohesive, premium, and deliberate.
 
----
+Use `frontend-design` skill if you are in ever in doubt about visual design. 
 
-## North Star
+# Modern Static Site Style Guide
 
-Build interfaces that are:
-- **Purposeful** (every element earns its place)
-- **Cohesive** (one visual language across the entire app)
-- **Readable** (typography + contrast + hierarchy are crystal clear)
-- **Tactile** (hover/focus/pressed states feel good)
-- **Responsive** (looks great from small phones to large monitors)
-- **Accessible by default** (keyboard, focus, ARIA, contrast)
-- **Polished** (alignment, spacing, and micro-interactions are consistent)
+*(HTML · CSS · JavaScript — SSG-friendly)*
 
-If a UI looks “generic template,” it’s not done.
+## 1. Core Principles
 
----
+* Prefer **clarity over cleverness**
+* **HTML-first** development
+* Progressive enhancement
+* Minimal JavaScript
+* Predictable structure
+* Static output only
 
-## Design System Rules (Non-Negotiable)
+**SSG RULE (MANDATORY)**
+➡ **Ensure all generated files (HTML, CSS, JS, assets) are committed to the source code repository**.
+This project assumes:
 
-### 1) Layout & Spacing Discipline
-Use a consistent spacing scale and align everything to it.
-- Prefer an 8px base scale (e.g., 4/8/12/16/24/32/48/64).
-- Avoid “random” padding/margins (like 13px, 19px) unless justified for optical alignment.
-- Use clear page structure:
-  - **Page container** with max width (e.g., 1040–1200px) and generous outer padding.
-  - **Section rhythm**: consistent vertical spacing between major blocks.
-- Apply optical alignment:
-  - Icons often need slight nudges to look centered.
-  - Headings may need slightly tighter leading than body.
-
-**Why:** Consistent rhythm is what separates polished UI from “assembled” UI.
-
-### 2) Typography: Hierarchy First
-Typography should do most of the work.
-- Use a restrained type scale (example):
-  - Display: 32–40 / 1.1
-  - H1: 28–32 / 1.15
-  - H2: 20–24 / 1.2
-  - Body: 14–16 / 1.5–1.7
-  - Caption: 12–13 / 1.4
-- Use **weight sparingly**: regular for body, medium/semibold for headings and key labels.
-- Avoid long line lengths:
-  - Body text: aim ~60–80 characters per line.
-- Increase letter-spacing only for tiny labels or all-caps microcopy.
-
-**Why:** Clean hierarchy reads as “designed,” not “styled.”
-
-### 3) Color & Contrast: Fewer, Better
-- Use a minimal palette:
-  - Neutral scale + one primary accent + semantic colors (success/warn/error).
-- Avoid “muddy” neutrals and low contrast text.
-- Ensure text contrast passes WCAG AA where applicable.
-- Use color to communicate state, not decoration.
-
-**Why:** Premium UI uses restraint; color is a tool, not confetti.
-
-### 4) Elevation & Depth: Subtle, Consistent
-- Prefer soft shadows, low blur, low opacity.
-- Use borders + subtle background shifts more than heavy shadows.
-- Cards and surfaces should have a consistent elevation model:
-  - Base surface
-  - Raised surface (cards/menus)
-  - Overlay (dialogs)
-
-**Why:** Overdone depth cheapens the UI; consistency upgrades it.
-
-### 5) Components Must Have Full States
-Every interactive element must ship with:
-- default
-- hover
-- active/pressed
-- focus-visible (keyboard)
-- disabled
-- loading (when applicable)
-- error/success (when applicable)
-
-**Why:** Missing states is the #1 tell of unfinished UI.
-
-### 6) Motion: Tasteful and Functional
-- Keep transitions short and crisp:
-  - 120–180ms for simple hover
-  - 180–260ms for surface transitions (dialogs/drawers)
-- Prefer easing like ease-out / standard curves.
-- Motion should clarify:
-  - state changes
-  - hierarchy (what’s on top)
-  - continuity (where something came from)
-
-**Why:** Good motion makes interfaces feel “built,” not “rendered.”
+* No runtime rendering
+* No server-side execution
+* The deployed site is fully static
+* The build step is reproducible but **not required at runtime**
 
 ---
 
-## Visual Quality Bar (What “Done” Looks Like)
+## 2. HTML Style Guide
 
-### Alignment & Geometry
-- No wobbly edges: columns align, baselines align, icons align.
-- Consistent corner radius strategy:
-  - Use 2–3 radius sizes max (e.g., 8 / 12 / 16).
-- Consistent border thickness (typically 1px).
+### General Rules
 
-### Density & Breathing Room
-- Default to *slightly* more whitespace than you think.
-- Avoid cramped forms and stacked controls.
-- Use separators sparingly; whitespace is the separator.
+* Use **semantic HTML** exclusively
+* Lowercase tags and attributes
+* Double quotes only
+* One `<main>` per page
+* No inline styles or inline JavaScript
 
-### Microcopy
-- Use short, confident labels.
-- Avoid overly technical text in UI.
-- Empty states are friendly, actionable, and visually considered.
+### Document Structure
 
-### Data & Tables
-- Tables must have:
-  - clear header hierarchy
-  - row hover
-  - alignment rules (numbers right, text left)
-  - truncation with tooltip when needed
-  - responsive strategy (stack, horizontal scroll, or column priority)
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Page Title</title>
+  </head>
 
-### Icons
-- Use one icon family consistently.
-- Icon size consistent (often 16 or 20).
-- Align icons optically with text.
+  <body>
+    <header class="site-header">
+      <nav aria-label="Main navigation"></nav>
+    </header>
 
----
+    <main id="main-content">
+      <section>
+        <h1>Primary Heading</h1>
+        <p>Page content.</p>
+      </section>
+    </main>
 
-## Implementation Expectations
-
-### Styling Approach
-- Prefer **design tokens**: spacing, radii, typography, colors.
-- No one-off hex codes scattered through components.
-- Components should be composable and reusable.
-
-### Responsiveness
-- Design mobile-first and enhance upward.
-- Define breakpoints intentionally (not arbitrary).
-- Touch targets: minimum ~44px height for primary touch controls.
+    <footer class="site-footer"></footer>
+  </body>
+</html>
+```
 
 ### Accessibility
-- Keyboard navigation works everywhere.
-- Focus-visible states are obvious and beautiful (not default outline only).
-- Use semantic HTML first; ARIA only when needed.
-- Error messages are connected to inputs.
 
-### Performance & Perceived Performance
-- Avoid layout shift.
-- Use skeletons/spinners appropriately.
-- Keep animations GPU-friendly (opacity/transform).
+* Always include `lang`
+* Never skip heading levels
+* Always provide `alt` text
+* Use native elements (`button`, `a`, `input`)
+* Use ARIA only when semantic HTML is insufficient
 
 ---
 
-## The “Premium UI” Checklist (Run Before You Finish)
+## 3. CSS Style Guide
 
-1. **Hierarchy scan**: Can I tell what matters in 3 seconds?
-2. **Spacing scan**: Is spacing consistent across sections and components?
-3. **State scan**: Hover/focus/disabled/loading done everywhere?
-4. **Contrast scan**: Any gray-on-gray that’s hard to read?
-5. **Responsive scan**: Phone + tablet + desktop look intentional (not just “fits”)?
-6. **Edge cases**: Long text, empty states, errors, slow networks, no data.
-7. **Polish pass**:
-   - alignments
-   - radii consistency
-   - shadows consistent
-   - icon sizing
-   - microcopy tightened
+### Architecture
 
-If any of these fail, iterate.
+* Separate concerns clearly
+* Avoid global leakage
+* Favor composition over inheritance
+
+```
+styles/
+├─ base.css        /* reset, tokens */
+├─ layout.css      /* grids, wrappers */
+├─ components.css  /* UI components */
+├─ utilities.css   /* helpers */
+```
+
+### Naming Convention
+
+* BEM-style, simplified
+
+```css
+.component {}
+.component__element {}
+.component--modifier {}
+```
+
+### CSS Variables (Required)
+
+```css
+:root {
+  --color-primary: hsl(220 90% 56%);
+  --color-text: hsl(220 15% 20%);
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --radius-md: 0.5rem;
+}
+```
+
+### Formatting Rules
+
+* One selector per line
+* One declaration per line
+* Trailing semicolons
+* No `!important` (unless documented)
+
+```css
+.card {
+  display: grid;
+  gap: var(--space-md);
+  border-radius: var(--radius-md);
+}
+```
+
+### Layout
+
+* Use Flexbox and Grid
+* Mobile-first media queries
+* No floats for layout
+
+```css
+@media (min-width: 768px) {
+  .layout {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+```
 
 ---
 
-## How to Iterate (Required Workflow)
+## 4. JavaScript Style Guide
 
-When building UI:
-1. Start with wireframe structure (layout + hierarchy).
-2. Apply typography scale + spacing rhythm.
-3. Add surfaces (cards, panels) and primary actions.
-4. Add states and validation.
-5. Add motion + micro-interactions.
-6. Do a final optical alignment and density pass.
+### Philosophy
 
-**Do not** jump straight to styling without structure. The structure is the design.
+* JavaScript **enhances** HTML
+* No framework assumptions
+* No client-side routing
+* No global state
+
+### File Structure
+
+```
+js/
+├─ main.js
+├─ modules/
+│  ├─ menu.js
+│  └─ modal.js
+```
+
+### Module Pattern (ESM only)
+
+```js
+// modules/menu.js
+export function initMenu() {
+  const button = document.querySelector('[data-menu-toggle]');
+  if (!button) return;
+
+  button.addEventListener('click', () => {
+    document.body.classList.toggle('menu-open');
+  });
+}
+```
+
+```js
+// main.js
+import { initMenu } from './modules/menu.js';
+
+document.addEventListener('DOMContentLoaded', () => {
+  initMenu();
+});
+```
+
+### Rules
+
+* `const` by default
+* `let` only when reassigned
+* Never use `var`
+* Early returns preferred
+* Arrow functions for callbacks
+
+### DOM Access
+
+* Use `data-*` attributes as JS hooks
+* Never bind JS to CSS class names
+
+```html
+<button data-modal-open>Open</button>
+```
 
 ---
 
-## Output Requirements for Claude
+## 5. Formatting & Consistency
 
-When you implement a UI change:
-- Provide the final code.
-- Include a short “Design Notes” section describing:
-  - hierarchy choices
-  - spacing system used
-  - component states implemented
-  - responsive behavior
-  - accessibility considerations
+### HTML
 
-If you are unsure, choose the more restrained, cleaner option.
+* 2-space indentation
+* Self-closing tags for void elements
+* Attributes on one line
 
----
+### CSS
 
-## Example Token Guidance (Use/Adapt)
+* Alphabetical property order (recommended)
+* Avoid deep nesting (> 3 levels)
 
-Define tokens like:
-- `--space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;`
-- `--radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;`
-- `--shadow-1: subtle; --shadow-2: overlay;`
-- `--text-1` (primary), `--text-2` (secondary), `--text-3` (muted)
-- `--surface-1`, `--surface-2`, `--border`
+### JavaScript
 
-Keep the system tight: fewer tokens, used consistently.
+* Semicolons required
+* Max line length: 100 chars
+* No unused variables
 
 ---
 
-## Final Rule
+## 6. Performance Rules
 
-If the UI doesn’t feel like a thoughtfully designed product surface—iterate until it does.
-No “good enough.” Only “looks intentional.”
+* Use `type="module"` for JS
+* Avoid blocking scripts
+* Lazy-load images
 
+```html
+<script type="module" src="/js/main.js"></script>
+<img src="image.jpg" loading="lazy" alt="" />
+```
+
+---
+
+## 7. Static Site Generation Rules
+
+* Vite and postcss is recommended but not strictly needed
+* Output must be **pure HTML, CSS, JS**
+* No runtime templating
+* No hydration unless explicitly justified
+* **Generated files must be checked into the repository**
+* Build tools are allowed **only if they render static output**
+
+---
+
+## 8. Prohibited Practices
+
+* Inline styles
+* Inline scripts
+* jQuery
+* CSS-in-JS
+* Client-side routing
+* Hidden build complexity
+* Uncommitted generated assets
+
+---
+
+## 9. Definition of Done
+
+* HTML validates
+* No console errors
+* Works without JavaScript
+* Accessible via keyboard
+* Fully static and deployable via CDN
+
+---
+
+If you want next:
+
+* Convert this into a **formal RFC**
+* Enforce it via **lint configs**
+* Adapt it for **Astro or Eleventy**
+* Create a **PR checklist** based on this
+
+Just say the word.
+
+# IMPORTANT YOU MUST USE THESE RULES!!!!!
+
+### 1) Must-have plugins
+
+* **`postcss-import`**: allow `@import` in source CSS (bundles into one output).
+* **`postcss-nesting`** (or `postcss-nested`): allow CSS nesting (keep it shallow).
+* **`postcss-custom-media`**: define reusable breakpoints via `@custom-media`.
+* **`postcss-preset-env`**: use modern CSS features safely (and optionally autoprefix).
+* **`cssnano`** (production only): minify output.
+
+### 2) House rules to enforce (team conventions)
+
+* **Nesting max depth: 2–3**
+* **No ID selectors**
+* **No `!important`**
+* **Colors/spacing/fonts must be CSS variables**
+* **One breakpoint system** via `@custom-media` (no random `@media (min-width: 783px)`)
+
+---
+
+## `postcss.config.cjs` (baseline)
+
+```js
+// postcss.config.cjs
+module.exports = ({ env }) => {
+  const isProd = env === 'production';
+
+  return {
+    plugins: [
+      require('postcss-import'),
+
+      // Reusable breakpoints
+      require('postcss-custom-media')({
+        importFrom: ['src/styles/tokens.css'], // where @custom-media lives
+      }),
+
+      // Nesting (keep shallow, see stylelint section)
+      require('postcss-nesting'),
+
+      // Modern CSS features + optional prefixing
+      require('postcss-preset-env')({
+        stage: 2,
+        autoprefixer: { grid: false },
+        features: {
+          'nesting-rules': false, // we already use postcss-nesting
+        },
+      }),
+
+      // Minify only in production
+      ...(isProd ? [require('cssnano')({ preset: 'default' })] : []),
+    ],
+  };
+};
+```
+
+---
+
+## `tokens.css` (where you define your “rules”)
+
+```css
+/* src/styles/tokens.css */
+
+@custom-media --sm (min-width: 480px);
+@custom-media --md (min-width: 768px);
+@custom-media --lg (min-width: 1024px);
+
+:root {
+  --color-text: hsl(220 15% 20%);
+  --color-primary: hsl(220 90% 56%);
+
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+}
+```
+
+Usage:
+
+```css
+@media (--md) {
+  .layout {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+```
+
+---
+
+## Stylelint rules (this is where “enforcement” really lives)
+
+PostCSS transforms; **Stylelint enforces**. Here’s a ruleset that matches what you asked for:
+
+```js
+// .stylelintrc.cjs
+module.exports = {
+  extends: ['stylelint-config-standard'],
+  plugins: ['stylelint-order'],
+  rules: {
+    'max-nesting-depth': 3,
+    'selector-max-id': 0,
+    'declaration-no-important': true,
+    'selector-max-compound-selectors': 3,
+
+    // Encourage variables for colors (best-effort)
+    'color-named': 'never',
+    'function-disallowed-list': [],
+
+    // Optional: consistent ordering
+    'order/properties-alphabetical-order': true,
+  },
+};
+```
+
+---

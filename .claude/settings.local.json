@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_press_key",
+      "Bash(grep:*)",
+      "Bash(comm:*)",
+      "mcp__playwright__browser_evaluate"
+    ]
+  }
+}
