@@ -68,12 +68,14 @@ pub struct CodexParser {
 
 impl CodexParser {
     pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
+        let verbose_warnings = matches!(verbosity, Verbosity::Debug);
+        let streaming_session = StreamingSession::new().with_verbose_warnings(verbose_warnings);
         Self {
             colors,
             verbosity,
             log_file: None,
             display_name: "Codex".to_string(),
-            streaming_session: Rc::new(RefCell::new(StreamingSession::new())),
+            streaming_session: Rc::new(RefCell::new(streaming_session)),
             reasoning_accumulator: Rc::new(RefCell::new(super::types::DeltaAccumulator::new())),
             turn_counter: Rc::new(RefCell::new(0)),
             terminal_mode: RefCell::new(TerminalMode::detect()),

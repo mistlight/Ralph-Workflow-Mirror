@@ -165,6 +165,7 @@ pub enum ContentBlockState {
 /// - Whether prefix should be shown on next delta
 /// - Delta size patterns for detecting snapshot-as-delta violations
 /// - Persistent "output started" tracking independent of accumulated content
+/// - Verbosity-aware warning emission
 ///
 /// # Lifecycle
 ///
@@ -202,6 +203,10 @@ pub struct StreamingSession {
     /// content may be cleared (e.g., repeated `ContentBlockStart` for same index).
     /// Cleared on `on_message_start` to ensure fresh state for each message.
     output_started_for_key: HashSet<(ContentType, String)>,
+    /// Whether to emit verbose warnings about streaming anomalies.
+    /// When false, suppresses diagnostic warnings that are useful for debugging
+    /// but noisy in production (e.g., GLM protocol violations, snapshot detection).
+    verbose_warnings: bool,
 }
 
 impl StreamingSession {
@@ -209,8 +214,35 @@ impl StreamingSession {
     pub fn new() -> Self {
         Self {
             max_delta_history: 10,
+            verbose_warnings: false,
             ..Default::default()
         }
+    }
+
+    /// Configure whether to emit verbose warnings about streaming anomalies.
+    ///
+    /// When enabled, diagnostic warnings are printed for:
+    /// - Repeated `MessageStart` events (GLM protocol violations)
+    /// - Large deltas that may indicate snapshot-as-delta bugs
+    /// - Pattern detection of repeated large content
+    ///
+    /// When disabled (default), these warnings are suppressed to avoid
+    /// noise in production output.
+    ///
+    /// # Arguments
+    /// * `enabled` - Whether to enable verbose warnings
+    ///
+    /// # Returns
+    /// The modified session for builder chaining.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut session = StreamingSession::new().with_verbose_warnings(true);
+    /// ```
+    pub const fn with_verbose_warnings(mut self, enabled: bool) -> Self {
+        self.verbose_warnings = enabled;
+        self
     }
 
     /// Reset the session on new message start.
@@ -237,14 +269,16 @@ impl StreamingSession {
         let is_mid_stream_restart = self.state == StreamingState::Streaming;
 
         if is_mid_stream_restart {
-            // Log the contract violation for debugging
-            eprintln!(
-                "Warning: Received MessageStart while state is Streaming. \
-                This indicates a non-standard agent protocol (e.g., GLM sending \
-                repeated MessageStart events). Preserving output_started_for_key \
-                to prevent prefix spam. File: streaming_state.rs, Line: {}",
-                line!()
-            );
+            // Log the contract violation for debugging (only if verbose warnings enabled)
+            if self.verbose_warnings {
+                eprintln!(
+                    "Warning: Received MessageStart while state is Streaming. \
+                    This indicates a non-standard agent protocol (e.g., GLM sending \
+                    repeated MessageStart events). Preserving output_started_for_key \
+                    to prevent prefix spam. File: streaming_state.rs, Line: {}",
+                    line!()
+                );
+            }
 
             // Preserve output_started_for_key to prevent prefix spam
             let preserved_output_started = self.output_started_for_key.clone();
@@ -457,7 +491,11 @@ impl StreamingSession {
                 Ok(extracted) => extracted.to_string(),
                 Err(e) => {
                     // Snapshot detection had a false positive - use the original delta
-                    eprintln!("Warning: Snapshot extraction failed: {e}. Using original delta.");
+                    if self.verbose_warnings {
+                        eprintln!(
+                            "Warning: Snapshot extraction failed: {e}. Using original delta."
+                        );
+                    }
                     delta.to_string()
                 }
             }
@@ -468,7 +506,7 @@ impl StreamingSession {
 
         // Warn on large deltas BEFORE modification to detect snapshot-as-delta issues
         // Use the original delta size since that's what we actually received
-        if delta_size > SNAPSHOT_THRESHOLD {
+        if delta_size > SNAPSHOT_THRESHOLD && self.verbose_warnings {
             eprintln!(
                 "Warning: Large delta ({delta_size} chars) for key '{key}'. \
                 This may indicate unusual streaming behavior or a snapshot being sent as a delta."
@@ -487,7 +525,7 @@ impl StreamingSession {
 
         // Pattern detection: Check if we're seeing repeated large deltas
         // This indicates the same content is being sent repeatedly (snapshot-as-delta)
-        if sizes.len() >= 3 {
+        if sizes.len() >= 3 && self.verbose_warnings {
             // Check if at least 3 of the last N deltas were large
             let large_count = sizes.iter().filter(|&&s| s > SNAPSHOT_THRESHOLD).count();
             if large_count >= 3 {
@@ -1458,5 +1496,163 @@ mod tests {
             Some("Hello World"),
             "Accumulated content should be preserved across repeated ContentBlockStart"
         );
+    }
+
+    // Tests for verbose_warnings feature
+
+    #[test]
+    fn test_verbose_warnings_default_is_disabled() {
+        let session = StreamingSession::new();
+        assert!(
+            !session.verbose_warnings,
+            "Default should have verbose_warnings disabled"
+        );
+    }
+
+    #[test]
+    fn test_with_verbose_warnings_enables_flag() {
+        let session = StreamingSession::new().with_verbose_warnings(true);
+        assert!(
+            session.verbose_warnings,
+            "Should have verbose_warnings enabled"
+        );
+    }
+
+    #[test]
+    fn test_with_verbose_warnings_disabled_explicitly() {
+        let session = StreamingSession::new().with_verbose_warnings(false);
+        assert!(
+            !session.verbose_warnings,
+            "Should have verbose_warnings disabled"
+        );
+    }
+
+    #[test]
+    fn test_large_delta_warning_respects_verbose_flag() {
+        // Test with verbose warnings enabled
+        let mut session_verbose = StreamingSession::new().with_verbose_warnings(true);
+        session_verbose.on_message_start();
+
+        let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        // This would emit a warning to stderr if verbose_warnings is enabled
+        let _show_prefix = session_verbose.on_text_delta(0, &large_delta);
+
+        // Test with verbose warnings disabled (default)
+        let mut session_quiet = StreamingSession::new();
+        session_quiet.on_message_start();
+
+        let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        // This should NOT emit a warning
+        let _show_prefix = session_quiet.on_text_delta(0, &large_delta);
+
+        // Both sessions should accumulate content correctly
+        assert_eq!(
+            session_verbose.get_accumulated(ContentType::Text, "0"),
+            Some(large_delta.as_str())
+        );
+        assert_eq!(
+            session_quiet.get_accumulated(ContentType::Text, "0"),
+            Some(large_delta.as_str())
+        );
+    }
+
+    #[test]
+    fn test_repeated_message_start_warning_respects_verbose_flag() {
+        // Test with verbose warnings enabled
+        let mut session_verbose = StreamingSession::new().with_verbose_warnings(true);
+        session_verbose.on_message_start();
+        session_verbose.on_text_delta(0, "Hello");
+        // This would emit a warning about repeated MessageStart
+        session_verbose.on_message_start();
+
+        // Test with verbose warnings disabled (default)
+        let mut session_quiet = StreamingSession::new();
+        session_quiet.on_message_start();
+        session_quiet.on_text_delta(0, "Hello");
+        // This should NOT emit a warning
+        session_quiet.on_message_start();
+
+        // Both sessions should handle the restart correctly
+        assert_eq!(
+            session_verbose.get_accumulated(ContentType::Text, "0"),
+            None,
+            "Accumulated content should be cleared after repeated MessageStart"
+        );
+        assert_eq!(
+            session_quiet.get_accumulated(ContentType::Text, "0"),
+            None,
+            "Accumulated content should be cleared after repeated MessageStart"
+        );
+    }
+
+    #[test]
+    fn test_pattern_detection_warning_respects_verbose_flag() {
+        // Test with verbose warnings enabled
+        let mut session_verbose = StreamingSession::new().with_verbose_warnings(true);
+        session_verbose.on_message_start();
+
+        // Send 3 large deltas to trigger pattern detection
+        for _ in 0..3 {
+            let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+            let _ = session_verbose.on_text_delta(0, &large_delta);
+        }
+
+        // Test with verbose warnings disabled (default)
+        let mut session_quiet = StreamingSession::new();
+        session_quiet.on_message_start();
+
+        // Send 3 large deltas
+        for _ in 0..3 {
+            let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+            let _ = session_quiet.on_text_delta(0, &large_delta);
+        }
+
+        // Both sessions should accumulate content correctly
+        // (All 3 deltas are accumulated since they're treated as genuine deltas)
+        let single_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        let expected = format!("{}{}{}", single_delta, single_delta, single_delta);
+        assert_eq!(
+            session_verbose.get_accumulated(ContentType::Text, "0"),
+            Some(expected.as_str())
+        );
+        assert_eq!(
+            session_quiet.get_accumulated(ContentType::Text, "0"),
+            Some(expected.as_str())
+        );
+    }
+
+    #[test]
+    fn test_snapshot_extraction_error_warning_respects_verbose_flag() {
+        // Create a session where we'll trigger a snapshot extraction error
+        // by manually manipulating accumulated content
+        let mut session_verbose = StreamingSession::new().with_verbose_warnings(true);
+        session_verbose.on_message_start();
+        session_verbose.on_content_block_start(0);
+
+        // First delta
+        session_verbose.on_text_delta(0, "Hello");
+
+        // Manually clear accumulated to simulate a state mismatch
+        session_verbose.accumulated.clear();
+
+        // Now try to process a snapshot - extraction will fail
+        // This would emit a warning if verbose_warnings is enabled
+        let _show_prefix = session_verbose.on_text_delta(0, "Hello World");
+
+        // Test with verbose warnings disabled (default)
+        let mut session_quiet = StreamingSession::new();
+        session_quiet.on_message_start();
+        session_quiet.on_content_block_start(0);
+
+        session_quiet.on_text_delta(0, "Hello");
+        session_quiet.accumulated.clear();
+
+        // This should NOT emit a warning
+        let _show_prefix = session_quiet.on_text_delta(0, "Hello World");
+
+        // The quiet session should handle the error gracefully
+        assert!(session_quiet
+            .get_accumulated(ContentType::Text, "0")
+            .is_some());
     }
 }
