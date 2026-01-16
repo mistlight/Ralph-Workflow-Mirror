@@ -309,4 +309,69 @@ Medium:
         assert!(!looks_like_file_path("abc"));
         assert!(!looks_like_file_path("noextension"));
     }
+
+    #[test]
+    fn test_handles_files_with_numbers() {
+        let content = r"
+# Issues
+- [ ] [src/main2.rs:42] Numbered file
+- [ ] [test/v1.2.3/test.rs:10] Versioned path
+- [ ] [file123.go:5] Numbered extension
+";
+        let files = extract_file_paths_from_issues(content);
+        assert!(files.contains(&"src/main2.rs".to_string()));
+        assert!(files.contains(&"test/v1.2.3/test.rs".to_string()));
+        assert!(files.contains(&"file123.go".to_string()));
+    }
+
+    #[test]
+    fn test_handles_paths_with_dots() {
+        let content = r"
+# Issues
+- [ ] [src/lib.v1.rs:42] Dotted file
+- [ ] [build/script.min.js:10] Minified file
+";
+        let files = extract_file_paths_from_issues(content);
+        assert!(files.contains(&"src/lib.v1.rs".to_string()));
+        assert!(files.contains(&"build/script.min.js".to_string()));
+    }
+
+    #[test]
+    fn test_handles_special_characters_in_paths() {
+        let content = r"
+# Issues
+- [ ] [src/utils_helper.rs:42] Underscored file
+- [ ] [src/my-file.rs:10] Dashed file
+- [ ] [src/my.file.rs:5] Multiple dots
+";
+        let files = extract_file_paths_from_issues(content);
+        assert!(files.contains(&"src/utils_helper.rs".to_string()));
+        assert!(files.contains(&"src/my-file.rs".to_string()));
+        assert!(files.contains(&"src/my.file.rs".to_string()));
+    }
+
+    #[test]
+    fn test_ignores_markdown_links_with_colons() {
+        let content = r"
+# Issues
+- [ ] [src/main.rs:42] Bug in main
+- [ ] See [this link](https://example.com:8080/path) for details
+- [ ] Another [link](http://localhost:3000) reference
+- [ ] [src/lib.rs:10] Style issue
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(files, vec!["src/lib.rs", "src/main.rs"]);
+    }
+
+    #[test]
+    fn test_handles_windows_style_paths() {
+        let content = r"
+# Issues
+- [ ] [src\\main.rs:42] Windows style path
+- [ ] [src/lib.rs:10] Unix style path
+";
+        let files = extract_file_paths_from_issues(content);
+        // Should handle both styles (though we normalize to forward slashes)
+        assert!(files.contains(&"src/lib.rs".to_string()));
+    }
 }
