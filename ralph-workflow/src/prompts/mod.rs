@@ -20,6 +20,7 @@ mod partials;
 mod rebase;
 mod reviewer;
 mod template_engine;
+mod template_macros;
 mod types;
 
 // Re-export all public items for backward compatibility

@@ -1,0 +1,32 @@
+{# ============================================================================ #}
+{# Template: planning_fallback.txt                                               #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Fallback prompt for planning mode when main template fails.                #}
+{#   This is a minimal fallback to ensure the system continues working.         #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   During planning mode when planning.txt template fails.                     #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Template rendering error in prompt_plan().                                  #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   PROMPT - Requirements from PROMPT.md or provided directly                  #}
+{#                                                                             #}
+{# OUTPUT:                                                                     #}
+{#   Structured implementation plan                                              #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   This is a GRACEFUL FALLBACK when template system has issues              #}
+{# ============================================================================ #}
+
+PLANNING MODE
+
+Create an implementation plan for:
+
+{{PROMPT}}
+
+Identify critical files and implementation steps.

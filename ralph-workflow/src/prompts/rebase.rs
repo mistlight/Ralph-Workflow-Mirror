@@ -52,11 +52,24 @@ pub fn build_conflict_resolution_prompt(
     let context = format_context_section(prompt_md_content, plan_content);
     let conflicts_section = format_conflicts_section(conflicts);
 
-    let variables = HashMap::from([("CONTEXT", context), ("CONFLICTS", conflicts_section)]);
+    let variables = HashMap::from([
+        ("CONTEXT", context),
+        ("CONFLICTS", conflicts_section.clone()),
+    ]);
 
     template.render(&variables).unwrap_or_else(|e| {
         eprintln!("Warning: Failed to render conflict resolution template: {e}");
-        fallback_prompt(conflicts, prompt_md_content, plan_content)
+        // Use fallback template
+        let fallback_template_content = include_str!("templates/conflict_resolution_fallback.txt");
+        let fallback_template = Template::new(fallback_template_content);
+        fallback_template.render(&variables).unwrap_or_else(|e| {
+            eprintln!("Critical: Failed to render fallback template: {e}");
+            // Last resort: minimal emergency prompt - conflicts_section is captured from closure
+            format!(
+                "# MERGE CONFLICT RESOLUTION\n\nResolve these conflicts:\n\n{}",
+                &conflicts_section
+            )
+        })
     })
 }
 
@@ -113,69 +126,6 @@ fn format_conflicts_section(conflicts: &HashMap<String, FileConflict>) -> String
     }
 
     section
-}
-
-/// Fallback prompt in case template rendering fails.
-///
-/// This provides a minimal fallback to ensure the system continues to work
-/// even if the template system has issues.
-fn fallback_prompt(
-    conflicts: &HashMap<String, FileConflict>,
-    prompt_md_content: Option<&str>,
-    plan_content: Option<&str>,
-) -> String {
-    let mut prompt = String::from("# MERGE CONFLICT RESOLUTION\n\n");
-    prompt.push_str(
-        "There are merge conflicts that need to be resolved. Below are the files \
-         with conflicts, showing both versions of the conflicting changes.\n\n",
-    );
-
-    prompt.push_str(&format_context_section(prompt_md_content, plan_content));
-    prompt.push_str("## Conflict Resolution Instructions\n\n");
-    prompt.push_str(
-        "For each conflicted file below:\n\
-         1. Review both versions of the changes (the 'ours' and 'theirs' sections)\n\
-         2. Intelligently merge the changes, considering:\n\
-         - The task context from PROMPT.md above\n\
-         - The implementation plan from PLAN.md if available\n\
-         - The intent of both versions\n\
-         - Code correctness and consistency\n\
-         3. Produce the final merged file content WITHOUT conflict markers\n\n",
-    );
-
-    prompt.push_str(
-        "IMPORTANT: Your output must include the complete resolved file contents. \
-         Do not include conflict markers (<<<<<<<, =======, >>>>>>>) in your output.\n\n",
-    );
-
-    prompt.push_str("## Conflicted Files\n\n");
-    prompt.push_str(&format_conflicts_section(conflicts));
-
-    prompt.push_str("## Output Format\n\n");
-    prompt.push_str("Provide your response as a JSON object with the following structure:\n\n");
-    prompt.push_str(
-        "```json\n\
-         {\n\
-           \"resolved_files\": {\n\
-             \"path/to/file1\": \"<complete resolved file content>\",\n\
-             \"path/to/file2\": \"<complete resolved file content>\"\n\
-           }\n\
-         }\n\
-         ```\n\n",
-    );
-
-    prompt.push_str(
-        "Each resolved file should contain the COMPLETE file content, not just \
-         the changed sections. The content must be free of conflict markers.\n\n",
-    );
-
-    prompt.push_str(
-        "If you cannot resolve a particular conflict, you may mark it for manual \
-         resolution by omitting it from the resolved_files object. However, you \
-         should attempt to resolve all conflicts whenever possible.\n",
-    );
-
-    prompt
 }
 
 /// Get a language marker for syntax highlighting based on file extension.
