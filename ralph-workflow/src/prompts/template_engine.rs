@@ -159,4 +159,48 @@ mod tests {
         let rendered = template.render(&variables).unwrap();
         assert_eq!(rendered, "Value: 42.");
     }
+
+    #[test]
+    fn test_unclosed_opening_braces() {
+        // Unclosed {{ should be ignored (no placeholder extracted)
+        let template = Template::from_str("Hello {{NAME and some text".to_string());
+        let rendered = template.render(&HashMap::new()).unwrap();
+        // The unclosed braces are treated as literal text
+        assert_eq!(rendered, "Hello {{NAME and some text");
+    }
+
+    #[test]
+    fn test_empty_variable_name() {
+        // Empty variable name {{}} should be ignored (no placeholder extracted)
+        let template = Template::from_str("Value: {{}}.".to_string());
+        let rendered = template.render(&HashMap::new()).unwrap();
+        // Empty placeholder is treated as literal text
+        assert_eq!(rendered, "Value: {{}}.");
+    }
+
+    #[test]
+    fn test_whitespace_only_variable_name() {
+        // Whitespace-only variable name {{   }} should be ignored
+        let template = Template::from_str("Value: {{   }}.".to_string());
+        let rendered = template.render(&HashMap::new()).unwrap();
+        // Whitespace-only placeholder is treated as literal text
+        assert_eq!(rendered, "Value: {{   }}.");
+    }
+
+    #[test]
+    fn test_multiple_unclosed_braces() {
+        // Multiple unclosed {{ should all be ignored
+        let template = Template::from_str("{{A text {{B text".to_string());
+        let rendered = template.render(&HashMap::new()).unwrap();
+        assert_eq!(rendered, "{{A text {{B text");
+    }
+
+    #[test]
+    fn test_partial_closing_brace() {
+        // Single closing brace without the second should not close the placeholder
+        let template = Template::from_str("Hello {{NAME}} and {{VAR}} text".to_string());
+        let variables = HashMap::from([("NAME", "Alice".to_string()), ("VAR", "Bob".to_string())]);
+        let rendered = template.render(&variables).unwrap();
+        assert_eq!(rendered, "Hello Alice and Bob text");
+    }
 }
