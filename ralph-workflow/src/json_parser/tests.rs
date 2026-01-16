@@ -11,6 +11,9 @@ use std::cell::RefCell;
 use std::io::{self, Cursor, Write};
 use std::rc::Rc;
 
+#[cfg(feature = "test-utils")]
+use crate::json_parser::printer::{SharedPrinter, TestPrinter};
+
 // Cross-parser behavior tests
 
 #[test]
@@ -442,6 +445,7 @@ fn test_stream_classifies_error_as_control() {
 }
 
 // Tests for health monitoring
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_claude_parser_tracks_partial_events_in_health_monitoring() {
     use std::io::Cursor;
@@ -554,7 +558,7 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // After the fix, streaming should show accumulated text on a single line using in-place updates:
     // [Claude] warning: unu\r                    (first chunk with prefix)
@@ -762,7 +766,7 @@ fn test_streaming_accumulation_behavior() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Should contain carriage returns for overwriting previous content
     assert!(
@@ -827,8 +831,8 @@ fn test_streaming_empty_delta_chunk() {
         "Empty delta chunks should be handled gracefully"
     );
 
-    let output = "".to_string() // TODO: Fix test to use printer API;
-    // Should still contain the final accumulated text
+    let output = "".to_string(); // TODO: Fix test to use printer API
+                                 // Should still contain the final accumulated text
     assert!(
         output.contains("Hello World"),
         "Should contain accumulated text despite empty chunk"
@@ -850,7 +854,7 @@ fn test_streaming_single_chunk() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // With single chunk, there should be exactly one prefix (first delta only)
     let prefix_count = output.matches("[Claude]").count();
@@ -897,9 +901,9 @@ fn test_streaming_very_long_text() {
         "Should handle very long text without errors"
     );
 
-    let output = "".to_string() // TODO: Fix test to use printer API;
-    // In Full mode, long text is NO LONGER truncated during streaming
-    // The output should contain the full accumulated text
+    let output = "".to_string(); // TODO: Fix test to use printer API
+                                 // In Full mode, long text is NO LONGER truncated during streaming
+                                 // The output should contain the full accumulated text
     assert!(
         output.contains(&long_chunk),
         "Output should contain the full first chunk"
@@ -971,7 +975,7 @@ fn test_streaming_rapid_chunks() {
     let result = parser.parse_stream(reader);
     assert!(result.is_ok(), "Should handle rapid consecutive chunks");
 
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // With the single-line pattern, each delta rewrites the entire line including prefix
     // 10 deltas = 10 prefixes in output string, but visually only one is shown
@@ -1014,8 +1018,8 @@ fn test_streaming_whitespace_only_chunks() {
     let result = parser.parse_stream(reader);
     assert!(result.is_ok(), "Should handle whitespace-only chunks");
 
-    let output = "".to_string() // TODO: Fix test to use printer API;
-    // Should contain the actual non-whitespace content
+    let output = "".to_string(); // TODO: Fix test to use printer API
+                                 // Should contain the actual non-whitespace content
     assert!(
         output.contains("Hello"),
         "Should contain non-whitespace content"
@@ -1038,7 +1042,7 @@ fn test_streaming_content_block_reset() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Should contain the content from the block
     assert!(
@@ -1313,7 +1317,7 @@ fn test_ccs_glm_streaming_no_duplicate_prefix() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Verify the fix:
     // 1. With the single-line pattern, each delta includes the prefix
@@ -1366,7 +1370,7 @@ fn test_ccs_glm_complete_message_deduplication() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // The complete message should NOT be displayed because streaming already showed it
     // Count how many times the full text appears
@@ -1453,7 +1457,7 @@ fn test_finalize_without_deltas_no_output() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Should have NO prefix since no content was streamed
     let prefix_count = output.matches("[Claude]").count();
@@ -1511,7 +1515,7 @@ fn test_repeated_content_block_start_no_duplicate_prefix() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // With the single-line pattern, each delta includes the prefix
     // 3 deltas = 3 prefixes in output string (but visually only one is shown)
@@ -1563,7 +1567,7 @@ fn test_multiple_messages_with_proper_separation() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // With the single-line pattern, each delta includes the prefix
     // 2 messages x 2 deltas each = 4 prefixes in output string
@@ -1625,7 +1629,7 @@ fn test_streaming_with_terminal_mode_none() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Should contain the accumulated content
     assert!(
@@ -1679,7 +1683,7 @@ fn test_streaming_with_terminal_mode_basic() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Should contain the accumulated content
     assert!(
@@ -1731,7 +1735,7 @@ fn test_completion_with_terminal_mode_none() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Should NOT contain cursor down sequence
     assert!(
@@ -1763,7 +1767,7 @@ fn test_completion_with_terminal_mode_basic() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Should NOT contain cursor down sequence
     assert!(
@@ -1796,7 +1800,7 @@ fn test_multiple_deltas_none_mode_produces_multiple_lines() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Each delta should produce output (no in-place updates)
     // The output should contain both intermediate states
@@ -2016,7 +2020,7 @@ fn test_identical_accumulated_content_skips_rendering() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // The empty deltas should not produce output (rendering is skipped)
     // Count non-empty lines in output
@@ -2226,7 +2230,7 @@ fn test_identical_deltas_produce_output_once() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Count how many times "Hello" appears in the output
     let hello_count = output.matches("Hello").count();
@@ -2257,7 +2261,7 @@ fn test_different_deltas_produce_output() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // All deltas should contribute to the final output
     assert!(
@@ -2288,7 +2292,7 @@ fn test_empty_deltas_marked_as_processed() {
     let result = parser.parse_stream(reader);
     assert!(result.is_ok(), "Empty deltas should be handled gracefully");
 
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Empty deltas should not produce visible content
     let non_empty_lines: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -2331,7 +2335,7 @@ fn test_ccs_glm_duplicate_output_bug_fix() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // All 4 deltas should be processed because they're not consecutive duplicates
     // The output contains all intermediate renders due to in-place updates
@@ -2406,7 +2410,7 @@ fn test_ccs_glm_repeated_message_start_preserves_processed_deltas() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // After MessageStart, the consecutive duplicate counter resets
     // So non-consecutive duplicates are still processed
@@ -2481,7 +2485,7 @@ fn test_consecutive_duplicate_detection_drops_resend_glitch() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // The delta should appear exactly 2 times (not 5), since occurrences 3, 4, and 5 are dropped
     let delta_count = output.matches("Repeated delta").count();
@@ -2527,7 +2531,7 @@ fn test_consecutive_duplicate_counter_resets_on_different_delta() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // Trace through the consecutive duplicate behavior:
     // 1. "First" processed (count=1, accumulated="First")
@@ -2595,7 +2599,7 @@ fn test_consecutive_duplicate_allows_legitimate_repetition() {
     let reader = Cursor::new(input);
 
     parser.parse_stream(reader).unwrap();
-    let output = "".to_string() // TODO: Fix test to use printer API;
+    let output = "".to_string(); // TODO: Fix test to use printer API
 
     // All content should be present
     assert!(

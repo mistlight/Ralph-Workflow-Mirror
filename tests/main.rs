@@ -3,7 +3,6 @@
 mod cli_smoke;
 mod commit_message_generation;
 mod git_workflow;
-mod parsing_test_corpus;
 mod test_prompt_backup;
 mod workflow_cleanup_tests;
 mod workflow_commit_tests;

@@ -11,8 +11,7 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
-mod test_support;
-use test_support::init_git_repo;
+use test_helpers::init_git_repo;
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")

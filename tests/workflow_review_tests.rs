@@ -2,7 +2,7 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
-use test_helpers::{init_git_repo};
+use test_helpers::init_git_repo;
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
@@ -138,10 +138,7 @@ exit 0
         .trim()
         .parse()
         .unwrap();
-    assert_eq!(
-        count, 2,
-        "Expected 2 reviewer calls (1 × (review + fix))"
-    );
+    assert_eq!(count, 2, "Expected 2 reviewer calls (1 × (review + fix))");
 }
 
 #[test]
@@ -201,10 +198,7 @@ exit 0
         .trim()
         .parse()
         .unwrap();
-    assert_eq!(
-        count, 6,
-        "Expected 6 reviewer calls (3 × (review + fix))"
-    );
+    assert_eq!(count, 6, "Expected 6 reviewer calls (3 × (review + fix))");
 }
 
 #[test]
@@ -657,7 +651,10 @@ exit 0
         .trim()
         .parse()
         .unwrap();
-    assert!(count >= 4, "Expected at least 4 reviewer calls for 2 cycles");
+    assert!(
+        count >= 4,
+        "Expected at least 4 reviewer calls for 2 cycles"
+    );
 
     // Verify the state log shows correct ISSUES.md lifecycle
     let state_log = fs::read_to_string(&issues_state_log).unwrap();

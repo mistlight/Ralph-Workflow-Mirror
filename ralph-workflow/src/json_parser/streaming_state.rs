@@ -1038,6 +1038,7 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - This exact content has been rendered before
     /// * `false` - This exact content has not been rendered
+    #[cfg(feature = "test-utils")]
     pub fn is_content_rendered(&self, content_type: ContentType, index: &str) -> bool {
         let content_key = (content_type, index.to_string());
 
@@ -1083,6 +1084,7 @@ impl StreamingSession {
     /// # Arguments
     /// * `content_type` - The type of content
     /// * `index` - The content index (as string for flexibility)
+    #[cfg(feature = "test-utils")]
     pub fn mark_content_rendered(&mut self, content_type: ContentType, index: &str) {
         // Also update last_rendered for compatibility
         self.mark_rendered(content_type, index);
@@ -1095,6 +1097,60 @@ impl StreamingSession {
             let hash = hasher.finish();
             self.rendered_content_hashes.insert(hash);
         }
+    }
+
+    /// Mark content as rendered using pre-sanitized content.
+    ///
+    /// This method uses the sanitized content (with whitespace normalized)
+    /// for hash-based deduplication, which prevents duplicates when the
+    /// accumulated content differs only by whitespace.
+    ///
+    /// # Arguments
+    /// * `content_type` - The type of content
+    /// * `index` - The content index (as string for flexibility)
+    /// * `sanitized_content` - The sanitized content to hash
+    pub fn mark_content_rendered_sanitized(
+        &mut self,
+        content_type: ContentType,
+        index: &str,
+        sanitized_content: &str,
+    ) {
+        // Also update last_rendered for compatibility
+        self.mark_rendered(content_type, index);
+
+        // Add the hash of the sanitized content to the rendered set
+        let mut hasher = DefaultHasher::new();
+        sanitized_content.hash(&mut hasher);
+        let hash = hasher.finish();
+        self.rendered_content_hashes.insert(hash);
+    }
+
+    /// Check if sanitized content has already been rendered.
+    ///
+    /// This method checks the hash of the sanitized content against the
+    /// rendered set to prevent duplicate rendering.
+    ///
+    /// # Arguments
+    /// * `_content_type` - The type of content (kept for API consistency)
+    /// * `_index` - The content index (kept for API consistency)
+    /// * `sanitized_content` - The sanitized content to check
+    ///
+    /// # Returns
+    /// * `true` - This sanitized content has been rendered before
+    /// * `false` - This sanitized content has not been rendered
+    pub fn is_content_rendered_sanitized(
+        &self,
+        _content_type: ContentType,
+        _index: &str,
+        sanitized_content: &str,
+    ) -> bool {
+        // Compute hash of sanitized content
+        let mut hasher = DefaultHasher::new();
+        sanitized_content.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Check if this hash has been rendered before
+        self.rendered_content_hashes.contains(&hash)
     }
 
     /// Check if incoming text is likely a snapshot (full accumulated content) rather than a delta.

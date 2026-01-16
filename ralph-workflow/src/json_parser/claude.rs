@@ -172,8 +172,8 @@ impl ClaudeParser {
 
     /// Get a shared reference to the printer.
     ///
-    /// This allows tests and other code to access the printer after parsing
-    /// to verify output content, check for duplicates, etc.
+    /// This allows tests, monitoring, and other code to access the printer after parsing
+    /// to verify output content, check for duplicates, or capture output for analysis.
     ///
     /// # Returns
     ///
@@ -202,8 +202,13 @@ impl ClaudeParser {
 
     /// Get streaming quality metrics from the current session.
     ///
-    /// This allows tests to verify that deduplication logic actually triggered
-    /// (e.g., snapshot repairs occurred, consecutive duplicates were filtered).
+    /// This provides insight into the deduplication and streaming quality of the
+    /// parsing session, including:
+    /// - Number of snapshot repairs (when the agent sent accumulated content as a delta)
+    /// - Number of large deltas (potential protocol violations)
+    /// - Total deltas processed
+    ///
+    /// Useful for testing, monitoring, and debugging streaming behavior.
     ///
     /// # Returns
     ///
@@ -771,9 +776,19 @@ impl ClaudeParser {
                     .get_accumulated(ContentType::Text, &index_str)
                     .unwrap_or("");
 
-                // Check if this exact content has already been rendered using prefix trie
-                // This prevents duplicate content from being rendered multiple times
-                if session.is_content_rendered(ContentType::Text, &index_str) {
+                // Sanitize the accumulated text to match what will actually be rendered
+                // This is needed for deduplication to work correctly since trailing whitespace
+                // is stripped during rendering
+                use super::delta_display::sanitize_for_display;
+                let sanitized_text = sanitize_for_display(accumulated_text);
+
+                // Check if this sanitized content has already been rendered
+                // This prevents duplicates when accumulated content differs only by whitespace
+                if session.is_content_rendered_sanitized(
+                    ContentType::Text,
+                    &index_str,
+                    &sanitized_text,
+                ) {
                     return String::new();
                 }
 
@@ -805,7 +820,11 @@ impl ClaudeParser {
 
                 // Mark this content as rendered in both systems for future duplicate detection
                 session.mark_rendered(ContentType::Text, &index_str);
-                session.mark_content_rendered(ContentType::Text, &index_str);
+                session.mark_content_rendered_sanitized(
+                    ContentType::Text,
+                    &index_str,
+                    &sanitized_text,
+                );
 
                 output
             }
@@ -879,9 +898,19 @@ impl ClaudeParser {
             .get_accumulated(ContentType::Text, default_index_str)
             .unwrap_or("");
 
-        // Check if this exact content has already been rendered using prefix trie
-        // This prevents duplicate content from being rendered multiple times
-        if session.is_content_rendered(ContentType::Text, default_index_str) {
+        // Sanitize the accumulated text to match what will actually be rendered
+        // This is needed for deduplication to work correctly since trailing whitespace
+        // is stripped during rendering
+        use super::delta_display::sanitize_for_display;
+        let sanitized_text = sanitize_for_display(accumulated_text);
+
+        // Check if this sanitized content has already been rendered
+        // This prevents duplicates when accumulated content differs only by whitespace
+        if session.is_content_rendered_sanitized(
+            ContentType::Text,
+            default_index_str,
+            &sanitized_text,
+        ) {
             return String::new();
         }
 
@@ -903,7 +932,11 @@ impl ClaudeParser {
 
         // Mark this content as rendered in both systems
         session.mark_rendered(ContentType::Text, default_index_str);
-        session.mark_content_rendered(ContentType::Text, default_index_str);
+        session.mark_content_rendered_sanitized(
+            ContentType::Text,
+            default_index_str,
+            &sanitized_text,
+        );
 
         output
     }
