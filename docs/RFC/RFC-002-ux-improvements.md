@@ -594,6 +594,104 @@ ralph --completions fish > ~/.config/fish/completions/ralph.fish
 
 ---
 
+### Codebase Analysis: Logger Usage Patterns
+
+**Analysis Date**: 2026-01-17
+
+Comprehensive analysis of logger usage across the codebase reveals extensive feedback infrastructure already in place:
+
+#### Logger Call Statistics (337 total calls across 21 files)
+
+| File | Logger Calls | Notes |
+|------|--------------|-------|
+| `phases/commit.rs` | 78 | High - Commit phase feedback |
+| `phases/review/validation.rs` | 35 | Medium - Validation feedback |
+| `phases/review/prompt.rs` | 12 | Low - Prompt construction |
+| `phases/development.rs` | 18 | Medium - Development iteration feedback |
+| `phases/review.rs` | 24 | Medium - Review phase feedback |
+| `phases/integrity.rs` | 7 | Low - Integrity checks |
+| `app/mod.rs` | 71 | **High** - Main orchestration |
+| `pipeline/runner.rs` | 10 | Low - Pipeline execution |
+| `pipeline/fallback.rs` | 10 | Low - Fallback handling |
+| `pipeline/prompt.rs` | 14 | Low - Pipeline prompts |
+| `app/resume.rs` | 6 | Low - Resume functionality |
+| `app/plumbing.rs` | 11 | Low - Plumbing commands |
+| `app/detection.rs` | 2 | Minimal - Agent detection |
+| `app/config_init.rs` | 1 | Minimal - Config initialization |
+| `app/finalization.rs` | 2 | Minimal - Finalization |
+| `cli/handlers/dry_run.rs` | 15 | Low - Dry run feedback |
+| `git_helpers/wrapper.rs` | 2 | Minimal - Git wrapper |
+| `git_helpers/hooks.rs` | 5 | Low - Git hooks |
+| `files/io/context.rs` | 9 | Low - File I/O context |
+| `banner.rs` | 1 | Minimal - Banner display |
+| `logger/mod.rs` | 4 | Minimal - Internal logger |
+
+#### Progress Bar Integration Points
+
+**Current Usage**:
+- `logger/progress.rs:16-66` - `print_progress()` function
+- `phases/development.rs:63` - Development iteration progress
+- `phases/review.rs:114` - Review cycle progress
+
+**Function Signature**:
+```rust
+pub fn print_progress(current: u32, total: u32, label: &str)
+```
+
+**Output Format**:
+```
+Overall: [████████████░░░░░░░░░] 60% (3/5)
+```
+
+**Implementation Details**:
+- Bar width: 20 characters
+- Uses block characters (`█` for filled, `░` for empty)
+- Handles edge cases (zero total, overflow protection)
+- Automatic color application via `Colors` infrastructure
+
+#### Display Name Registry Usage
+
+**Current Usage** (8 locations):
+- `app/mod.rs:103-104` - Developer/reviewer agent display names
+- `pipeline/runner.rs:312` - Agent display in pipeline
+- `diagnostics/agents.rs:39` - Agent diagnostics
+- `cli/handlers/list.rs:29, 41, 67, 76` - Agent listing
+- `cli/handlers/diagnose.rs:201` - Diagnostics output
+
+**Registry Method**:
+```rust
+registry.display_name(&agent_name) // Returns human-readable name
+```
+
+**Examples**:
+- `"claude"` → `"claude"`
+- `"ccs/glm"` → `"ccs-glm"`
+- `"unknown"` → `"unknown"`
+
+#### Key Integration Points for RFC-002 Features
+
+**Phase 1.1 & 8.3 (Immediate Feedback + Ctrl+C Hint)**:
+- **File**: `app/mod.rs:103-104` (after display names retrieved)
+- **Existing Pattern**: Logger methods already used throughout
+- **Integration**: Add `logger.info()` and `logger.warn()` calls
+
+**Phase 4.0 (Action-Reaction Feedback)**:
+- **Files**: Multiple locations in `app/mod.rs`, `phases/development.rs`, `phases/review.rs`
+- **Existing Pattern**: 71 logger calls in `app/mod.rs` alone
+- **Integration**: Add phase transition messages using existing patterns
+
+**Phase 1.2 (Enhanced Progress Bar)**:
+- **File**: `logger/progress.rs` (existing function)
+- **Current Usage**: 2 locations (development, review phases)
+- **Enhancement**: Add `indicatif` crate for time tracking and agent names
+
+**Phase 3.1 (Actionable Error Messages)**:
+- **File**: `agents/error.rs:36-188` (existing error classification)
+- **Existing Pattern**: `recovery_advice()` method returns prose
+- **Enhancement**: Add `actionable_advice()` method with structured commands
+
+---
+
 ### Summary Statistics
 
 | Priority Level | Total Items | Completed | In Progress | Partial | Not Started |
@@ -612,6 +710,28 @@ ralph --completions fish > ~/.config/fish/completions/ralph.fish
 - Phase 4.0 (Action-Reaction Feedback) - has iteration feedback in development phase, missing pipeline start/transition feedback
 
 **Note**: The completed features are substantial infrastructure improvements (terminal standards, diagnostics, streaming metrics) that provide a solid foundation for remaining user-facing features. Two P0 items have partial implementation that can be enhanced with relatively small effort.
+
+### Recent Documentation Updates
+
+**2026-01-16**: Status update and date refresh
+- Updated "Last Updated" timestamps to current date (2026-01-16)
+- Verified completion percentages remain accurate at 32% overall completion
+- Confirmed 7 fully completed features and 2 partially completed features
+- All implementation notes and code references remain current
+
+**2026-01-17**: Enhanced codebase analysis and implementation guidance
+- Added comprehensive "Codebase Analysis: Logger Usage Patterns" section documenting **337 logger calls** across 21 files
+- Updated "Quick-Start Implementation Guide" with accurate file locations and call counts
+- Enhanced "Key File Locations Reference" with detailed logger call statistics
+- Documented progress bar integration points and display name registry usage
+- Added specific line numbers for all integration points
+
+This analysis provides contributors with:
+1. **Exact file locations** for all RFC-002 integration points
+2. **Logger call counts** by file (helps identify high-feedback areas)
+3. **Existing patterns** already in use (71 calls in app/mod.rs alone)
+4. **Progress bar usage** at 2 locations with enhancement path
+5. **Display name registry** usage at 8 locations
 
 ---
 
@@ -1780,19 +1900,34 @@ This section provides a condensed guide for contributors who want to implement R
 ### Current Codebase Patterns (Observed)
 
 **Logger Usage**: The codebase extensively uses logger methods for feedback:
-- 150+ logger calls across the codebase (info, success, warn, error)
+- **337 logger calls** across the codebase (info, success, warn, error, subheader, debug)
 - Pattern: `ctx.logger.info()`, `logger.success()`, `logger.warn()`, `logger.error()`
 - Colors automatically applied via the Colors infrastructure
 - Examples in `phases/development.rs:80`, `phases/review/prompt.rs:109`, `app/mod.rs:134`
+- **Top usage files**:
+  - `phases/commit.rs`: 78 calls (highest - commit phase feedback)
+  - `app/mod.rs`: 71 calls (main orchestration)
+  - `phases/review/validation.rs`: 35 calls (validation feedback)
+  - `phases/review.rs`: 24 calls (review phase feedback)
 
 **Progress Bar**: Already exists in `logger/progress.rs`:
 - Function: `print_progress(current: u32, total: u32, label: &str)`
 - Format: `[████████░░░░░░░░░] 60% (3/5)`
-- Used in development phase at `phases/development.rs:63`
+- Bar width: 20 characters with block characters (`█` filled, `░` empty)
+- Handles edge cases (zero total, overflow protection)
+- Used in 2 locations:
+  - `phases/development.rs:63` - Development iteration progress
+  - `phases/review.rs:114` - Review cycle progress
 
 **Display Names**: Registry provides agent display names:
-- `registry.display_name(&agent_name)` already used at `app/mod.rs:103-104`
+- `registry.display_name(&agent_name)` used at **8 locations** across codebase
 - Returns human-readable names like "Claude Code" instead of "claude"
+- Key locations:
+  - `app/mod.rs:103-104` - Developer/reviewer agent display names
+  - `pipeline/runner.rs:312` - Agent display in pipeline
+  - `diagnostics/agents.rs:39` - Agent diagnostics
+  - `cli/handlers/list.rs` - Agent listing (multiple)
+  - `cli/handlers/diagnose.rs:201` - Diagnostics output
 
 ### Easiest Wins (Can be done in 1-2 hours each)
 
@@ -1873,15 +2008,18 @@ Add feedback messages at key points:
 
 | Purpose | File | Key Lines/Notes |
 |---------|------|-----------------|
-| Main pipeline entry | `ralph-workflow/src/app/mod.rs` | 81-210 (config/validation), 210+ (orchestration) |
+| Main pipeline entry | `ralph-workflow/src/app/mod.rs` | 81-210 (config/validation), 210+ (orchestration), **71 logger calls** |
 | Agent resolution | `ralph-workflow/src/app/mod.rs` | 97-100 (where Phase 1.1 should go) |
 | Display names | `ralph-workflow/src/app/mod.rs` | 103-104 (developer_display, reviewer_display) |
 | Error types | `ralph-workflow/src/agents/error.rs` | 36-65 (enum), 147-188 (recovery_advice) |
 | Logger infrastructure | `ralph-workflow/src/logger/mod.rs` | 35-77 (color detection), 29+ (progress) |
 | Progress bar | `ralph-workflow/src/logger/progress.rs` | 1-123 (print_progress function) |
 | Terminal modes | `ralph-workflow/src/json_parser/terminal.rs` | 1-325 (mode detection) |
-| Development phase | `ralph-workflow/src/phases/development.rs` | 58-63 (iteration feedback) |
-| Review phase | `ralph-workflow/src/phases/review/` | 60+ logger calls in prompt.rs and validation.rs |
+| Development phase | `ralph-workflow/src/phases/development.rs` | 58-63 (iteration feedback), **18 logger calls** |
+| Review phase | `ralph-workflow/src/phases/review/` | **71 logger calls** (12 in prompt.rs, 35 in validation.rs, 24 in review.rs) |
+| Commit phase | `ralph-workflow/src/phases/commit.rs` | **78 logger calls** (highest feedback density) |
+| Pipeline runner | `ralph-workflow/src/pipeline/runner.rs` | 10 logger calls, agent display at 312 |
+| Agent registry | `ralph-workflow/src/agents/registry.rs` | display_name() method, 8 usage locations |
 
 ### Testing Strategy
 
