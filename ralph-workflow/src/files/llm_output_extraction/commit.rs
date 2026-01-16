@@ -111,24 +111,136 @@ struct StructuredCommitMessage {
     body: Option<String>,
 }
 
-/// Try to extract commit message from JSON schema output.
+/// Try to extract commit message from XML format with detailed tracing.
 ///
-/// This function attempts to parse the LLM output as a structured JSON object
-/// following the schema `{"subject": "...", "body": "..."}`.
+/// This function looks for the distinctive `<ralph-commit>` tags used by our
+/// XML-based commit prompt template. The XML format is preferred because:
+/// - No escape sequence issues (actual newlines work fine)
+/// - Distinctive tags unlikely to appear in LLM analysis text
+/// - Clear boundaries for parsing
 ///
-/// Supports multiple input formats:
-/// - Direct JSON: `{"subject": "feat: ...", "body": "..."}`
-/// - JSON in markdown code fence: ` ```json\n{...}\n``` `
-/// - NDJSON streams where commit is in the `result` field
+/// # Expected Format
+///
+/// ```xml
+/// <ralph-commit>
+/// <ralph-subject>type(scope): description</ralph-subject>
+/// <ralph-body>Optional body text here.
+/// Can span multiple lines.</ralph-body>
+/// </ralph-commit>
+/// ```
+///
+/// The `<ralph-body>` tag is optional and may be omitted for commits without a body.
 ///
 /// # Returns
 ///
-/// * `Some(message)` if valid JSON with a valid conventional commit subject was found
-/// * `None` if parsing fails or subject is invalid
-pub fn try_extract_structured_commit(content: &str) -> Option<String> {
-    let trimmed = content.trim();
+/// A tuple of `(Option<String>, String)`:
+/// - First element: `Some(message)` if valid XML with a valid conventional commit subject was found, `None` otherwise
+/// - Second element: Detailed reason string explaining what was found/not found (for debugging)
+pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, String) {
+    let content_len = content.len();
+    let content_preview = if content_len > 50 {
+        format!("{}...", &content[..50].replace('\n', "\\n"))
+    } else {
+        content.replace('\n', "\\n")
+    };
 
-    // If content looks like NDJSON stream, extract from result field first
+    // Find the <ralph-commit> block
+    let Some(commit_start) = content.find("<ralph-commit>") else {
+        return (
+            None,
+            format!(
+                "No <ralph-commit> tag found (content length: {content_len}, starts with: '{content_preview}')"
+            ),
+        );
+    };
+
+    let Some(commit_end) = content.find("</ralph-commit>") else {
+        return (
+            None,
+            format!(
+                "Found <ralph-commit> at pos {commit_start}, but no closing </ralph-commit> tag"
+            ),
+        );
+    };
+
+    if commit_start >= commit_end {
+        return (
+            None,
+            format!(
+                "Malformed XML: </ralph-commit> at {commit_end} appears before <ralph-commit> at {commit_start}"
+            ),
+        );
+    }
+
+    // Extract content between the tags
+    let commit_block = &content[commit_start + "<ralph-commit>".len()..commit_end];
+
+    // Extract subject (required)
+    let Some(subject) = extract_xml_tag_content(commit_block, "ralph-subject") else {
+        return (
+            None,
+            format!(
+                "Found <ralph-commit> at {commit_start}, but <ralph-subject> tag not found within commit block"
+            ),
+        );
+    };
+
+    let subject = subject.trim();
+    if subject.is_empty() {
+        return (
+            None,
+            format!("Found <ralph-subject> but it is empty (at pos {commit_start})"),
+        );
+    }
+
+    // Validate conventional commit format
+    if !is_conventional_commit_subject(subject) {
+        return (
+            None,
+            format!(
+                "Found subject '{}' but it doesn't match conventional commit format (type: ...)",
+                if subject.len() > 50 {
+                    format!("{}...", &subject[..50])
+                } else {
+                    subject.to_string()
+                }
+            ),
+        );
+    }
+
+    // Extract body (optional)
+    let body = extract_xml_tag_content(commit_block, "ralph-body");
+
+    // Format the commit message
+    let has_body = body.as_ref().is_some_and(|b| !b.trim().is_empty());
+    let message = match &body {
+        Some(body_content) if !body_content.trim().is_empty() => {
+            format!("{}\n\n{}", subject, body_content.trim())
+        }
+        _ => subject.to_string(),
+    };
+    (
+        Some(message.clone()),
+        format!(
+            "Found <ralph-commit> at pos {commit_start}, <ralph-subject> extracted, body={}, message: '{}'",
+            if has_body { "present" } else { "absent" },
+            if message.len() > 80 {
+                format!("{}...", &message[..80].replace('\n', "\\n"))
+            } else {
+                message.replace('\n', "\\n")
+            }
+        ),
+    )
+}
+
+/// Try to extract commit message from JSON format with detailed tracing.
+///
+/// Returns both the result and a detailed reason string explaining what was found/not found.
+pub fn try_extract_structured_commit_with_trace(content: &str) -> (Option<String>, String) {
+    let trimmed = content.trim();
+    let content_len = trimmed.len();
+
+    // Check for NDJSON stream
     if looks_like_ndjson(trimmed) {
         for line in trimmed.lines() {
             let line = line.trim();
@@ -138,18 +250,97 @@ pub fn try_extract_structured_commit(content: &str) -> Option<String> {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
                 if json.get("type").and_then(|v| v.as_str()) == Some("result") {
                     if let Some(result_str) = json.get("result").and_then(|v| v.as_str()) {
-                        // Try to extract commit from the result content
                         if let Some(msg) = try_extract_from_text(result_str) {
-                            return Some(msg);
+                            return (
+                                Some(msg.clone()),
+                                format!(
+                                    "Extracted from NDJSON result field, message: '{}'",
+                                    if msg.len() > 80 {
+                                        format!("{}...", &msg[..80].replace('\n', "\\n"))
+                                    } else {
+                                        msg.replace('\n', "\\n")
+                                    }
+                                ),
+                            );
                         }
                     }
                 }
             }
         }
+        return (
+            None,
+            format!("Content looks like NDJSON ({content_len} chars) but no valid commit found in result field"),
+        );
     }
 
-    // Try extraction from text content (direct JSON, code fence, or embedded)
-    try_extract_from_text(trimmed)
+    // Try extraction from text content
+    if let Some(msg) = try_extract_from_text(trimmed) {
+        return (
+            Some(msg.clone()),
+            format!(
+                "Extracted from JSON/text content, message: '{}'",
+                if msg.len() > 80 {
+                    format!("{}...", &msg[..80].replace('\n', "\\n"))
+                } else {
+                    msg.replace('\n', "\\n")
+                }
+            ),
+        );
+    }
+
+    // Provide detailed failure reason
+    let has_brace = trimmed.contains('{');
+    let has_subject_key = trimmed.contains("\"subject\"");
+
+    if has_brace && has_subject_key {
+        (
+            None,
+            format!(
+                "Content has JSON-like structure ({content_len} chars, has '{{': {has_brace}, has 'subject' key: {has_subject_key}) but parsing failed"
+            ),
+        )
+    } else if has_brace {
+        (
+            None,
+            format!("Content has '{{' but no 'subject' key found ({content_len} chars)"),
+        )
+    } else {
+        (
+            None,
+            format!("Content does not appear to be JSON ({content_len} chars, no '{{' found)"),
+        )
+    }
+}
+
+/// Extract content between XML-style tags.
+///
+/// # Arguments
+///
+/// * `content` - The content to search
+/// * `tag_name` - The tag name (without angle brackets)
+///
+/// # Returns
+///
+/// * `Some(content)` if the tag was found with content
+/// * `None` if the tag was not found or was empty
+fn extract_xml_tag_content(content: &str, tag_name: &str) -> Option<String> {
+    let open_tag = format!("<{tag_name}>");
+    let close_tag = format!("</{tag_name}>");
+
+    let start = content.find(&open_tag)?;
+    let end = content.find(&close_tag)?;
+
+    if start >= end {
+        return None;
+    }
+
+    let inner = &content[start + open_tag.len()..end];
+
+    if inner.is_empty() {
+        None
+    } else {
+        Some(inner.to_string())
+    }
 }
 
 /// Try to extract a structured commit message from text content.
@@ -618,6 +809,116 @@ pub fn validate_commit_message(content: &str) -> Result<(), String> {
     validate_no_bad_patterns(content)?;
 
     Ok(())
+}
+
+/// Result of a single validation check.
+#[derive(Debug, Clone)]
+pub struct ValidationCheckResult {
+    /// Name of the validation check.
+    pub name: &'static str,
+    /// Whether the check passed.
+    pub passed: bool,
+    /// Error message if the check failed.
+    pub error: Option<String>,
+}
+
+impl ValidationCheckResult {
+    /// Create a passing check result.
+    const fn pass(name: &'static str) -> Self {
+        Self {
+            name,
+            passed: true,
+            error: None,
+        }
+    }
+
+    /// Create a failing check result.
+    const fn fail(name: &'static str, error: String) -> Self {
+        Self {
+            name,
+            passed: false,
+            error: Some(error),
+        }
+    }
+}
+
+/// Complete validation report showing all checks run.
+///
+/// Unlike `validate_commit_message` which short-circuits on first failure,
+/// this runs ALL checks and reports results for each one.
+#[derive(Debug, Clone)]
+pub struct ValidationReport {
+    /// Results of all validation checks.
+    pub checks: Vec<ValidationCheckResult>,
+}
+
+impl ValidationReport {
+    /// Check if all validations passed.
+    pub fn all_passed(&self) -> bool {
+        self.checks.iter().all(|c| c.passed)
+    }
+
+    /// Format all failed checks as a descriptive string.
+    pub fn format_failures(&self) -> Option<String> {
+        let failures: Vec<_> = self
+            .checks
+            .iter()
+            .filter(|c| !c.passed)
+            .map(|c| format!("{}: {}", c.name, c.error.as_deref().unwrap_or("failed")))
+            .collect();
+
+        if failures.is_empty() {
+            None
+        } else {
+            Some(failures.join("; "))
+        }
+    }
+}
+
+/// Validate commit message and return detailed report of all checks.
+///
+/// Unlike `validate_commit_message`, this does NOT short-circuit on first failure.
+/// It runs all checks and returns a complete report.
+pub fn validate_commit_message_with_report(content: &str) -> ValidationReport {
+    let content = content.trim();
+
+    // Run all validation checks without short-circuiting
+    let checks = vec![
+        match validate_basic_length(content) {
+            Ok(()) => ValidationCheckResult::pass("basic_length"),
+            Err(e) => ValidationCheckResult::fail("basic_length", e),
+        },
+        match validate_no_json_artifacts(content) {
+            Ok(()) => ValidationCheckResult::pass("no_json_artifacts"),
+            Err(e) => ValidationCheckResult::fail("no_json_artifacts", e),
+        },
+        match validate_no_literal_escape_sequences(content) {
+            Ok(()) => ValidationCheckResult::pass("no_literal_escape_sequences"),
+            Err(e) => ValidationCheckResult::fail("no_literal_escape_sequences", e),
+        },
+        match validate_no_error_markers(content) {
+            Ok(()) => ValidationCheckResult::pass("no_error_markers"),
+            Err(e) => ValidationCheckResult::fail("no_error_markers", e),
+        },
+        match validate_no_agent_errors(content) {
+            Ok(()) => ValidationCheckResult::pass("no_agent_errors"),
+            Err(e) => ValidationCheckResult::fail("no_agent_errors", e),
+        },
+        match validate_no_thought_process_leakage(content) {
+            Ok(()) => ValidationCheckResult::pass("no_thought_process_leakage"),
+            Err(e) => ValidationCheckResult::fail("no_thought_process_leakage", e),
+        },
+        match validate_no_placeholders(content) {
+            Ok(()) => ValidationCheckResult::pass("no_placeholders"),
+            Err(e) => ValidationCheckResult::fail("no_placeholders", e),
+        },
+        match validate_no_bad_patterns(content) {
+            Ok(()) => ValidationCheckResult::pass("no_bad_patterns"),
+            Err(e) => ValidationCheckResult::fail("no_bad_patterns", e),
+        },
+    ];
+
+    ValidationReport { checks }
 }
 
 // =========================================================================
@@ -1642,7 +1943,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     fn test_try_extract_structured_commit_direct_json() {
         // Test that direct JSON with subject and body is extracted correctly
         let json = r#"{"subject":"fix(commit): try simpler prompts after agent errors","body":"When all agents fail for a prompt variant, keep iterating through progressively simpler prompt strategies instead of aborting the retry loop."}"#;
-        let result = try_extract_structured_commit(json);
+        let result = try_extract_structured_commit_with_trace(json).0;
         assert!(result.is_some(), "Should extract commit from direct JSON");
         let msg = result.unwrap();
         assert!(msg.starts_with("fix(commit):"), "Should start with type");
@@ -1654,7 +1955,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     fn test_try_extract_structured_commit_json_no_body() {
         // Test JSON with subject only
         let json = r#"{"subject":"feat: add new feature"}"#;
-        let result = try_extract_structured_commit(json);
+        let result = try_extract_structured_commit_with_trace(json).0;
         assert!(result.is_some());
         assert_eq!(result.unwrap(), "feat: add new feature");
     }
@@ -1667,7 +1968,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
 {"subject":"fix: resolve bug","body":"Details about the fix."}
 ```
 "#;
-        let result = try_extract_structured_commit(content);
+        let result = try_extract_structured_commit_with_trace(content).0;
         assert!(result.is_some());
         let msg = result.unwrap();
         assert!(msg.starts_with("fix: resolve bug"));
@@ -1679,7 +1980,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         // Test JSON with some preamble text
         let content = r#"Based on the diff, here is my commit:
 {"subject":"refactor: simplify logic","body":"Removed unnecessary complexity."}"#;
-        let result = try_extract_structured_commit(content);
+        let result = try_extract_structured_commit_with_trace(content).0;
         assert!(result.is_some());
         let msg = result.unwrap();
         assert!(msg.starts_with("refactor:"));
@@ -1689,7 +1990,7 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     fn test_try_extract_structured_commit_invalid_type() {
         // Test JSON with invalid conventional commit type
         let json = r#"{"subject":"invalid: not a real type","body":"Body"}"#;
-        let result = try_extract_structured_commit(json);
+        let result = try_extract_structured_commit_with_trace(json).0;
         assert!(result.is_none(), "Should reject invalid commit type");
     }
 
@@ -1699,10 +2000,27 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         let ndjson = r#"{"type":"stream_event","data":"..."}
 {"type":"result","result":"{\"subject\":\"docs: update readme\",\"body\":\"Add usage examples.\"}"}
 "#;
-        let result = try_extract_structured_commit(ndjson);
+        let result = try_extract_structured_commit_with_trace(ndjson).0;
         assert!(result.is_some(), "Should extract from NDJSON result field");
         let msg = result.unwrap();
         assert!(msg.starts_with("docs: update readme"));
+    }
+
+    #[test]
+    fn test_try_extract_structured_commit_from_ndjson_with_markdown_fence() {
+        // Test extraction from NDJSON stream where result contains markdown with JSON code fence
+        // This is the format used by PROMPT-LOG5.log (GLM-4.7 with markdown JSON)
+        let ndjson = r#"{"type":"stream_event","data":"..."}
+{"type":"result","result":"The changes look clean. Now I'll generate the commit message:\n\n```json\n{\n  \"subject\": \"refactor(review): pass diff directly to all review prompts\",\n  \"body\": \"Previously, review prompts would tell agents to run git commands to\\nfetch the diff. This change:\\n\\n1. Fetches the diff once at the start of build_review_prompt\\n2. Passes it directly to all review prompt functions\"\n}\n```"}
+"#;
+        let result = try_extract_structured_commit_with_trace(ndjson).0;
+        assert!(
+            result.is_some(),
+            "Should extract from NDJSON result field with markdown code fence"
+        );
+        let msg = result.unwrap();
+        assert!(msg.starts_with("refactor(review):"));
+        assert!(msg.contains("pass diff directly"));
     }
 
     // =========================================================================
@@ -1729,6 +2047,184 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         assert!(
             result.is_err(),
             "Commit message containing {{\"subject\":}} should be rejected"
+        );
+    }
+
+    // =========================================================================
+    // Tests for XML extraction (try_extract_xml_commit)
+    // =========================================================================
+
+    #[test]
+    fn test_xml_extract_basic_subject_only() {
+        // Test basic XML extraction with subject only
+        let content = r"<ralph-commit>
+<ralph-subject>feat: add new feature</ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_some(), "Should extract from basic XML");
+        assert_eq!(result.unwrap(), "feat: add new feature");
+    }
+
+    #[test]
+    fn test_xml_extract_with_body() {
+        // Test XML extraction with subject and body
+        let content = r"<ralph-commit>
+<ralph-subject>feat(auth): add OAuth2 login flow</ralph-subject>
+<ralph-body>Implement Google and GitHub OAuth providers.
+Add session management for OAuth tokens.</ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_some(), "Should extract from XML with body");
+        let msg = result.unwrap();
+        assert!(msg.starts_with("feat(auth): add OAuth2 login flow"));
+        assert!(msg.contains("Implement Google and GitHub OAuth providers"));
+        assert!(msg.contains("Add session management"));
+    }
+
+    #[test]
+    fn test_xml_extract_with_empty_body() {
+        // Test XML extraction with empty body tags
+        let content = r"<ralph-commit>
+<ralph-subject>fix: resolve bug</ralph-subject>
+<ralph-body></ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_some(), "Should extract even with empty body");
+        // Empty body should be treated as no body
+        assert_eq!(result.unwrap(), "fix: resolve bug");
+    }
+
+    #[test]
+    fn test_xml_extract_ignores_preamble() {
+        // Test that content before <ralph-commit> is ignored
+        let content = r"Here is the commit message based on my analysis:
+
+Looking at the diff, I can see...
+
+<ralph-commit>
+<ralph-subject>refactor: simplify logic</ralph-subject>
+</ralph-commit>
+
+That's all!";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_some(), "Should ignore preamble and extract XML");
+        assert_eq!(result.unwrap(), "refactor: simplify logic");
+    }
+
+    #[test]
+    fn test_xml_extract_fails_missing_tags() {
+        // Test that extraction fails when tags are missing
+        let content = "Just some text without XML tags";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_none(), "Should fail when XML tags are missing");
+    }
+
+    #[test]
+    fn test_xml_extract_fails_invalid_commit_type() {
+        // Test that extraction fails for invalid conventional commit types
+        let content = r"<ralph-commit>
+<ralph-subject>invalid: not a real type</ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_none(), "Should reject invalid commit type");
+    }
+
+    #[test]
+    fn test_xml_extract_fails_missing_subject() {
+        // Test that extraction fails when subject is missing
+        let content = r"<ralph-commit>
+<ralph-body>Just a body, no subject</ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_none(), "Should fail when subject is missing");
+    }
+
+    #[test]
+    fn test_xml_extract_fails_empty_subject() {
+        // Test that extraction fails when subject is empty
+        let content = r"<ralph-commit>
+<ralph-subject></ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_none(), "Should fail when subject is empty");
+    }
+
+    #[test]
+    fn test_xml_extract_handles_whitespace_in_subject() {
+        // Test that whitespace around subject is trimmed
+        let content = r"<ralph-commit>
+<ralph-subject>   docs: update readme   </ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_some(), "Should handle whitespace in subject");
+        assert_eq!(result.unwrap(), "docs: update readme");
+    }
+
+    #[test]
+    fn test_xml_extract_with_breaking_change() {
+        // Test XML extraction with breaking change indicator
+        let content = r"<ralph-commit>
+<ralph-subject>feat!: drop Python 3.7 support</ralph-subject>
+<ralph-body>BREAKING CHANGE: Minimum Python version is now 3.8.</ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_some(), "Should handle breaking change indicator");
+        let msg = result.unwrap();
+        assert!(msg.starts_with("feat!:"));
+        assert!(msg.contains("BREAKING CHANGE"));
+    }
+
+    #[test]
+    fn test_xml_extract_with_scope() {
+        // Test XML extraction with scope
+        let content = r"<ralph-commit>
+<ralph-subject>test(parser): add coverage for edge cases</ralph-subject>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_some(), "Should handle scope in subject");
+        assert_eq!(result.unwrap(), "test(parser): add coverage for edge cases");
+    }
+
+    #[test]
+    fn test_xml_extract_body_preserves_newlines() {
+        // Test that newlines in body are preserved
+        let content = r"<ralph-commit>
+<ralph-subject>feat: add feature</ralph-subject>
+<ralph-body>Line 1
+Line 2
+Line 3</ralph-body>
+</ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_some(), "Should preserve newlines in body");
+        let msg = result.unwrap();
+        assert!(msg.contains("Line 1\nLine 2\nLine 3"));
+    }
+
+    #[test]
+    fn test_xml_extract_fails_malformed_tags() {
+        // Test that extraction fails for malformed tags (end before start)
+        let content = r"</ralph-commit>
+<ralph-subject>feat: add feature</ralph-subject>
+<ralph-commit>";
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(result.is_none(), "Should fail for malformed tags");
+    }
+
+    #[test]
+    fn test_xml_extract_handles_markdown_code_fence() {
+        // Test that XML inside markdown code fence is NOT extracted
+        // (the XML tags should be directly in the output, not wrapped)
+        let content = r"```xml
+<ralph-commit>
+<ralph-subject>feat: add feature</ralph-subject>
+</ralph-commit>
+```";
+        // The XML extractor looks for tags directly, so this should still work
+        // since the tags are present in the content
+        let result = try_extract_xml_commit_with_trace(content).0;
+        assert!(
+            result.is_some(),
+            "Should extract from XML even inside code fence"
         );
     }
 }

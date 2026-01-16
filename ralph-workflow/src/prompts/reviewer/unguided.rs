@@ -14,88 +14,52 @@
 //! - **Universal review**: Simplified prompt for agent compatibility
 
 use super::super::types::ContextLevel;
+use super::super::Template;
+use std::collections::HashMap;
 
-/// Generate a simple/vague reviewer review prompt (without guidelines).
+/// Load and render a template from a string with the given variables.
 ///
-/// This prompt is intentionally vague to preserve "fresh eyes" perspective
-/// and avoid context pollution. For detailed actionable output, use
-/// `prompt_detailed_review_without_guidelines` instead.
-///
-/// The reviewer returns structured issues data (captured by JSON parser)
-/// and the orchestrator writes it to .agent/ISSUES.md.
-pub fn prompt_reviewer_review(context: ContextLevel) -> String {
-    match context {
-        ContextLevel::Minimal => r#"You are in REVIEW MODE with fresh eyes perspective.
-
-YOUR TASK:
-Evaluate the codebase changes. Focus on:
-1) Code quality and correctness
-2) Bugs, error handling, tests, security
-3) Code style and idiomatic usage
-
-OUTPUT:
-Return your findings as structured output.
-If no issues found, return "No issues found.""#
-            .to_string(),
-        ContextLevel::Normal => r#"You are in REVIEW MODE.
-
-YOUR TASK:
-Review the codebase for:
-- Code quality and correctness
-- Bugs, error handling, tests
-- Security issues
-
-OUTPUT:
-Return your findings as structured output.
-If no issues, return "No issues found.""#
-            .to_string(),
+/// If template rendering fails, returns a minimal fallback prompt that still
+/// includes the diff to ensure the review phase can proceed with content.
+fn load_template_str(template_content: &str, diff: &str) -> String {
+    let variables = HashMap::from([("DIFF", diff.to_string())]);
+    let template = Template::new(template_content);
+    match template.render(&variables) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            // Fallback to a minimal prompt that still includes the diff
+            // This ensures the review phase can proceed even if template rendering fails
+            eprintln!("Warning: Failed to render template: {e}");
+            format!(
+                "Review the following code changes and identify any issues:\n\n```diff\n{diff}\n```"
+            )
+        }
     }
 }
 
-/// Generate detailed reviewer review prompt without language-specific guidelines.
+/// Generate detailed reviewer review prompt without language-specific guidelines,
+/// including the diff directly in the prompt.
 ///
-/// Use this when the review needs to produce actionable issues output
-/// even if stack detection did not produce `ReviewGuidelines`.
+/// This version receives the diff as a parameter instead of telling the agent
+/// to run git commands. This keeps agents isolated from git operations and
+/// ensures they only review the changes made since the pipeline started.
 ///
 /// The reviewer returns structured issues data (captured by JSON parser)
 /// and the orchestrator writes it to .agent/ISSUES.md.
-pub fn prompt_detailed_review_without_guidelines(context: ContextLevel) -> String {
-    match context {
-        ContextLevel::Minimal => r#"You are in DETAILED REVIEW MODE with fresh eyes perspective.
-
-INPUTS TO READ:
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md (you need unbiased perspective)
-
-YOUR TASK:
-Produce actionable issues:
-1) Code quality and correctness
-2) Bugs, security, tests
-3) Code style and maintainability
-
-OUTPUT (prioritized checklist):
-- [ ] Critical: [file:line] Description (blocks merge)
-- [ ] High: [file:line] Description (should fix before merge)
-- [ ] Medium: [file:line] Description (should address)
-- [ ] Low: [file:line] Description (nice to have)
-
-If no issues found, return "No issues found.""#
-            .to_string(),
-        ContextLevel::Normal => r#"You are in DETAILED REVIEW MODE.
-
-YOUR TASK:
-Review for quality and correctness:
-- Bugs, security, tests
-- Code style and maintainability
-
-OUTPUT (prioritized checklist):
-- [ ] Critical: [file:line] Blocks merge
-- [ ] High: [file:line] Should fix before merge
-- [ ] Medium: [file:line] Should address
-- [ ] Low: [file:line] Nice to have
-
-If no issues found, return "No issues found.""#
-            .to_string(),
-    }
+///
+/// # Arguments
+///
+/// * `context` - The context level (minimal or normal)
+/// * `diff` - The git diff to review (changes since pipeline start)
+pub fn prompt_detailed_review_without_guidelines_with_diff(
+    context: ContextLevel,
+    diff: &str,
+) -> String {
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/detailed_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/detailed_review_normal.txt"),
+    };
+    load_template_str(template_content, diff)
 }
 
 /// Generate incremental review prompt with diff included directly.
@@ -111,100 +75,34 @@ If no issues found, return "No issues found.""#
 /// * `context` - The context level (minimal or normal)
 /// * `diff` - The git diff to review (changes since pipeline start)
 pub fn prompt_incremental_review_with_diff(context: ContextLevel, diff: &str) -> String {
-    match context {
-        ContextLevel::Minimal => format!(
-            "You are in INCREMENTAL REVIEW MODE with fresh eyes.
-
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Focus on:
-1) Code quality and correctness
-2) Bugs, error handling, tests
-3) Security regressions (inputs validated, outputs escaped)
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found, return \"No issues found in changed files.\""
-        ),
-        ContextLevel::Normal => format!(
-            "You are in INCREMENTAL REVIEW MODE.
-
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-
-DIFF TO REVIEW:
-```diff
-{diff}
-```
-
-OUTPUT (prioritized checklist):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"
-        ),
-    }
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/incremental_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/incremental_review_normal.txt"),
+    };
+    load_template_str(template_content, diff)
 }
 
-/// Generate a universal/simplified review prompt for maximum agent compatibility.
+/// Generate a universal/simplified review prompt for maximum agent compatibility,
+/// including the diff directly in the prompt.
 ///
 /// This prompt is designed to work with a wide range of AI agents, including
 /// those with weaker instruction-following capabilities. It:
 /// - Uses simpler, more direct language
 /// - Provides explicit output templates
 /// - Minimizes complex structured instructions
+/// - Includes the diff directly to keep agents isolated from git operations
 ///
 /// The reviewer returns structured issues data (captured by JSON parser)
 /// and the orchestrator writes it to .agent/ISSUES.md.
 ///
-/// Use this for agents like GLM, `ZhipuAI`, and other models that may struggle
-/// with more complex prompts.
-pub fn prompt_universal_review(context: ContextLevel) -> String {
-    match context {
-        ContextLevel::Minimal => r#"REVIEW TASK
-
-Review the codebase for:
-- Bugs, errors, security issues
-- Missing tests
-- Code quality and style
-
-OUTPUT FORMAT
-
-Return your findings using this format:
-
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found, return exactly: "No issues found."
-
-IMPORTANT: Use the format [file:line] for each issue."#
-            .to_string(),
-        ContextLevel::Normal => r#"REVIEW TASK
-
-Review the codebase for quality and correctness.
-
-OUTPUT FORMAT
-
-Return your findings using this format:
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found, return exactly: "No issues found.""#
-            .to_string(),
-    }
+/// # Arguments
+///
+/// * `context` - The context level (minimal or normal)
+/// * `diff` - The git diff to review (changes since pipeline start)
+pub fn prompt_universal_review_with_diff(context: ContextLevel, diff: &str) -> String {
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/universal_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/universal_review_normal.txt"),
+    };
+    load_template_str(template_content, diff)
 }

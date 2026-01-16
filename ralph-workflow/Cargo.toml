@@ -11,6 +11,10 @@ homepage = "https://codeberg.org/mistlight/RalphWithReviewer"
 keywords = ["ai", "agent", "git", "workflow", "automation"]
 categories = ["command-line-utilities", "development-tools"]
 
+[lib]
+name = "ralph_workflow"
+path = "src/lib.rs"
+
 [[bin]]
 name = "ralph"
 path = "src/main.rs"

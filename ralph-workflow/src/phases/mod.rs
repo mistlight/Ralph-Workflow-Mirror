@@ -17,6 +17,7 @@
 //! - [`commit`] - Automated commit message generation with fallback
 
 pub mod commit;
+pub mod commit_logging;
 mod context;
 mod development;
 mod integrity;

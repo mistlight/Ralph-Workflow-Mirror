@@ -12,146 +12,115 @@
 //!   security checks
 
 use super::super::types::ContextLevel;
+use super::super::Template;
 use crate::guidelines::ReviewGuidelines;
+use std::collections::HashMap;
 
-/// Generate reviewer review prompt with language-specific guidelines.
+/// Load and render a template from a string with the given variables.
+fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
+    let template = Template::new(template_content);
+    match template.render(variables) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            // Fallback to empty string if template rendering fails
+            eprintln!("Warning: Failed to render template: {e}");
+            String::new()
+        }
+    }
+}
+
+/// Generate reviewer review prompt with language-specific guidelines,
+/// including the diff directly in the prompt.
+///
+/// This version receives the diff as a parameter instead of telling the agent
+/// to run git commands. This keeps agents isolated from git operations and
+/// ensures they only review the changes made since the pipeline started.
 ///
 /// The reviewer returns structured issues data (captured by JSON parser)
 /// and the orchestrator writes it to .agent/ISSUES.md.
-pub fn prompt_reviewer_review_with_guidelines(
+///
+/// # Arguments
+///
+/// * `context` - The context level (minimal or normal)
+/// * `guidelines` - The language-specific review guidelines
+/// * `diff` - The git diff to review (changes since pipeline start)
+pub fn prompt_reviewer_review_with_guidelines_and_diff(
     context: ContextLevel,
     guidelines: &ReviewGuidelines,
+    diff: &str,
 ) -> String {
     let guidelines_section = guidelines.format_for_prompt();
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/standard_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/standard_review_normal.txt"),
+    };
 
-    match context {
-        ContextLevel::Minimal => format!(
-            "You are in REVIEW MODE with fresh eyes perspective.
+    let variables = HashMap::from([
+        ("DIFF", diff.to_string()),
+        ("GUIDELINES", guidelines_section),
+    ]);
 
-INPUTS TO READ:
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md
-
-YOUR TASK:
-Evaluate the codebase, then apply language-specific checks:
-
-Language-Specific checks:
-{guidelines_section}
-
-OUTPUT (prioritized checklist):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues found, return \"No issues found.\""
-        ),
-        ContextLevel::Normal => format!(
-            "You are in REVIEW MODE.
-
-Language-Specific checks:
-{guidelines_section}
-
-OUTPUT (prioritized checklist):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description
-
-If no issues, return \"No issues found.\""
-        ),
-    }
+    load_template_str(template_content, &variables)
 }
 
-/// Generate comprehensive review prompt with priority-based guidelines.
+/// Generate comprehensive review prompt with priority-based guidelines,
+/// including the diff directly in the prompt.
+///
+/// This version receives the diff as a parameter instead of telling the agent
+/// to run git commands. This keeps agents isolated from git operations and
+/// ensures they only review the changes made since the pipeline started.
 ///
 /// The reviewer returns structured issues data (captured by JSON parser)
 /// and the orchestrator writes it to .agent/ISSUES.md.
-pub fn prompt_comprehensive_review(context: ContextLevel, guidelines: &ReviewGuidelines) -> String {
-    let priority_section = guidelines.format_for_prompt_with_priorities();
-
-    match context {
-        ContextLevel::Minimal => format!(
-            "You are in COMPREHENSIVE REVIEW MODE with fresh eyes perspective.
-
-INPUTS TO READ:
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md
-
-YOUR TASK:
-Perform a thorough review:
-1) Code quality and correctness
-2) Security (injection, auth, secrets)
-3) Performance/resources (bottlenecks, leaks)
-4) Maintainability (error handling, tests)
-
-LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
-{priority_section}
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"
-        ),
-        ContextLevel::Normal => format!(
-            "You are in COMPREHENSIVE REVIEW MODE.
-
-LANGUAGE-SPECIFIC CHECKS (Priority-Ordered):
-{priority_section}
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Description
-- [ ] High: [file:line] Description
-- [ ] Medium: [file:line] Description
-- [ ] Low: [file:line] Description"
-        ),
-    }
-}
-
-/// Generate security-focused review prompt with security-oriented guidelines.
 ///
-/// The reviewer returns structured issues data (captured by JSON parser)
-/// and the orchestrator writes it to .agent/ISSUES.md.
-pub fn prompt_security_focused_review(
+/// # Arguments
+///
+/// * `context` - The context level (minimal or normal)
+/// * `guidelines` - The language-specific review guidelines
+/// * `diff` - The git diff to review (changes since pipeline start)
+pub fn prompt_comprehensive_review_with_diff(
     context: ContextLevel,
     guidelines: &ReviewGuidelines,
+    diff: &str,
+) -> String {
+    let priority_section = guidelines.format_for_prompt_with_priorities();
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/comprehensive_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/comprehensive_review_normal.txt"),
+    };
+
+    let variables = HashMap::from([("DIFF", diff.to_string()), ("GUIDELINES", priority_section)]);
+
+    load_template_str(template_content, &variables)
+}
+
+/// Generate security-focused review prompt with security-oriented guidelines,
+/// including the diff directly in the prompt.
+///
+/// This version receives the diff as a parameter instead of telling the agent
+/// to run git commands. This keeps agents isolated from git operations and
+/// ensures they only review the changes made since the pipeline started.
+///
+/// The reviewer returns structured issues data (captured by JSON parser)
+/// and the orchestrator writes it to .agent/ISSUES.md.
+///
+/// # Arguments
+///
+/// * `context` - The context level (minimal or normal)
+/// * `guidelines` - The language-specific review guidelines
+/// * `diff` - The git diff to review (changes since pipeline start)
+pub fn prompt_security_focused_review_with_diff(
+    context: ContextLevel,
+    guidelines: &ReviewGuidelines,
+    diff: &str,
 ) -> String {
     let security_section = guidelines.format_for_prompt();
+    let template_content = match context {
+        ContextLevel::Minimal => include_str!("templates/security_review_minimal.txt"),
+        ContextLevel::Normal => include_str!("templates/security_review_normal.txt"),
+    };
 
-    match context {
-        ContextLevel::Minimal => format!(
-            "You are in SECURITY REVIEW MODE with fresh eyes perspective.
+    let variables = HashMap::from([("DIFF", diff.to_string()), ("GUIDELINES", security_section)]);
 
-INPUTS TO READ:
-- DO NOT read .agent/STATUS.md or .agent/NOTES.md
-
-SECURITY FOCUS (OWASP TOP 10):
-- Broken Access Control
-- Injection
-- Cryptographic Failures
-- Security Misconfiguration
-
-LANGUAGE-SPECIFIC SECURITY:
-{security_section}
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] SECURITY - Immediate fix required
-- [ ] High: [file:line] SECURITY - Fix before merge
-- [ ] Medium: [file:line] SECURITY - Address as needed
-- [ ] Low: [file:line] SECURITY - Nice to have
-
-If no issues found, return \"No security issues found.\""
-        ),
-        ContextLevel::Normal => format!(
-            "You are in SECURITY REVIEW MODE.
-
-LANGUAGE-SPECIFIC SECURITY:
-{security_section}
-
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] SECURITY - Description
-- [ ] High: [file:line] SECURITY - Description
-- [ ] Medium: [file:line] SECURITY - Description
-- [ ] Low: [file:line] SECURITY - Description"
-        ),
-    }
+    load_template_str(template_content, &variables)
 }

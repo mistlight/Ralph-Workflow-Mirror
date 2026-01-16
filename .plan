@@ -1,0 +1,456 @@
+# Implementation Plan: Harden Commit Process
+
+## Summary
+
+This plan addresses persistent commit message parsing failures by implementing comprehensive per-attempt logging, verbose parsing diagnostics, and enhanced template documentation. The current system already uses XML tags (`<ralph-commit>`, `<ralph-subject>`, `<ralph-body>`) which is a significant improvement over JSON (implemented in commit 673bab9), but lacks sufficient observability into parsing failures. Each commit attempt will now generate a separate, numbered log file that persists across attempts, showing exactly what the LLM returned, what parsing was attempted, and why it failed. This enables debugging of the ~200+ commit failures that have occurred historically.
+
+**Current State (Already Implemented):**
+- XML-based output format with `<ralph-commit>`, `<ralph-subject>`, `<ralph-body>` tags
+- Template-based prompt system using `Template::new()` from `template_engine.rs`
+- 9-stage retry strategy (Initial → StrictJson → StrictJsonV2 → ... → EmergencyNoDiff)
+- Multi-agent fallback support
+- Basic logging to `.agent/logs/commit_generation/`
+
+**What This Plan Addresses:**
+1. Per-attempt logging that doesn't overwrite previous attempts
+2. Detailed parsing trace showing exactly what extraction methods were tried
+3. Verbose validation failure logging showing which check failed and why
+4. User-visible parsing diagnostics in terminal output
+5. Template comment support for documentation
+
+## Implementation Steps
+
+### Step 1: Create Commit Attempt Logger Module
+
+**Purpose**: Create a dedicated logging infrastructure for commit generation that tracks each attempt independently.
+
+**File to create**: `ralph-workflow/src/phases/commit_logging.rs`
+
+**Details**:
+1. Define `CommitAttemptLog` struct with fields:
+   ```rust
+   pub struct CommitAttemptLog {
+       pub attempt_number: u32,
+       pub agent_name: String,
+       pub strategy: String,  // e.g., "initial", "strict_json", "emergency"
+       pub timestamp: String,
+       pub raw_llm_output: String,
+       pub preprocessing_steps: Vec<PreprocessingStep>,
+       pub extraction_attempts: Vec<ExtractionAttempt>,
+       pub validation_results: Vec<ValidationResult>,
+       pub final_outcome: AttemptOutcome,
+   }
+   ```
+
+2. Define supporting structs:
+   ```rust
+   pub struct PreprocessingStep {
+       pub name: String,           // e.g., "escape_sequence_cleanup"
+       pub input_preview: String,  // First 200 chars
+       pub output_preview: String, // First 200 chars
+       pub changed: bool,
+   }
+
+   pub struct ExtractionAttempt {
+       pub method: String,         // "xml", "json", "salvage"
+       pub success: bool,
+       pub error_message: Option<String>,
+       pub extracted_content: Option<String>,
+       pub details: String,        // e.g., "Found <ralph-commit> at pos 42"
+   }
+
+   pub struct ValidationResult {
+       pub check_name: String,     // e.g., "no_json_artifacts"
+       pub passed: bool,
+       pub error_message: Option<String>,
+   }
+
+   pub enum AttemptOutcome {
+       Success(String),            // The extracted commit message
+       Fallback(String),           // Fallback message used
+       AgentError(String),         // Error type from agent
+       ValidationFailed(String),   // Failed validation after extraction
+   }
+   ```
+
+3. Implement `CommitAttemptLog::write_to_file(&self, log_dir: &Path) -> io::Result<PathBuf>`:
+   - Create filename: `attempt_{attempt_number:03}_{agent}_{strategy}_{timestamp}.log`
+   - Write human-readable format with clear section headers:
+     ```
+     === COMMIT GENERATION ATTEMPT ===
+     Attempt: 3
+     Agent: claude
+     Strategy: strict_json
+     Timestamp: 2025-01-16T12:34:56
+
+     === RAW LLM OUTPUT (2,345 bytes) ===
+     <full output here>
+
+     === PREPROCESSING ===
+     [1] escape_sequence_cleanup: CHANGED
+         Input:  "feat: add\n\nBody wit..."
+         Output: "feat: add\n\nBody wit..."
+
+     === EXTRACTION ATTEMPTS ===
+     [1] XML extraction: FAILED
+         Error: Opening tag <ralph-commit> not found
+         Details: Searched from position 0, content starts with "Looking at..."
+
+     [2] JSON extraction: FAILED
+         Error: No valid JSON object found
+         Details: Content does not start with { or contain valid commit JSON
+
+     [3] Salvage: SUCCESS
+         Extracted: "feat: add new feature\n\nImplementation details..."
+
+     === VALIDATION ===
+     [1] basic_length: PASSED
+     [2] no_json_artifacts: PASSED
+     [3] no_literal_escape_sequences: PASSED
+     [4] no_error_markers: PASSED
+     [5] no_agent_errors: PASSED
+     [6] no_thought_process_leakage: PASSED
+     [7] no_placeholders: PASSED
+     [8] no_bad_patterns: PASSED
+
+     === OUTCOME ===
+     SUCCESS: "feat: add new feature"
+     ```
+
+### Step 2: Create Parsing Trace Infrastructure
+
+**Purpose**: Add detailed tracing throughout the extraction pipeline to show exactly what was tried and why it failed.
+
+**Files to modify**:
+- `ralph-workflow/src/files/llm_output_extraction/commit.rs`
+
+**Details**:
+1. Add `ExtractionTrace` struct (can be simpler than the log version):
+   ```rust
+   pub struct ExtractionTrace {
+       pub attempts: Vec<(String, Result<String, String>)>,
+   }
+
+   impl ExtractionTrace {
+       pub fn new() -> Self { Self { attempts: Vec::new() } }
+       pub fn record(&mut self, method: &str, result: Result<String, String>) {
+           self.attempts.push((method.to_string(), result));
+       }
+   }
+   ```
+
+2. Modify `try_extract_xml_commit()` to return `(Option<String>, String)`:
+   - Second element is a detailed reason string explaining what was found/not found
+   - Examples:
+     - "Found <ralph-commit> at pos 0, <ralph-subject> at pos 15, extracted valid message"
+     - "Found <ralph-commit> at pos 0, but <ralph-subject> tag not found within commit block"
+     - "No <ralph-commit> tag found in content (length: 1234 chars, starts with: 'Looking at...')"
+
+3. Modify `try_extract_structured_commit()` similarly:
+   - Return detailed reason for success/failure
+   - Include what JSON parsing was attempted
+
+4. Create wrapper function `extract_commit_with_trace(content: &str) -> (Option<CommitExtractionResult>, ExtractionTrace)`:
+   - Tries each method in order, building trace
+   - Returns both the result and the full trace
+
+### Step 3: Modify Validation to Return Detailed Results
+
+**Purpose**: Instead of just pass/fail, capture which check failed and why.
+
+**Files to modify**:
+- `ralph-workflow/src/files/llm_output_extraction/commit.rs`
+
+**Details**:
+1. Create `ValidationReport` struct:
+   ```rust
+   pub struct ValidationReport {
+       pub checks: Vec<ValidationCheckResult>,
+   }
+
+   pub struct ValidationCheckResult {
+       pub name: &'static str,
+       pub passed: bool,
+       pub error: Option<String>,
+   }
+   ```
+
+2. Create `validate_commit_message_with_report(content: &str) -> ValidationReport`:
+   - Runs all existing validation functions
+   - Captures result of each check
+   - Does NOT short-circuit on first failure (runs all checks for complete report)
+
+3. Keep existing `validate_commit_message()` as a thin wrapper that returns `Result<(), String>` for backward compatibility
+
+### Step 4: Integrate Attempt Logging into Commit Generation
+
+**Purpose**: Wire up the new logging to the commit generation pipeline.
+
+**Files to modify**:
+- `ralph-workflow/src/phases/commit.rs`
+- `ralph-workflow/src/phases/mod.rs` (add `mod commit_logging;`)
+
+**Details**:
+1. Add import: `use super::commit_logging::*;` or `mod commit_logging;`
+
+2. In `generate_commit_message()`:
+   - Add `let mut attempt_counter: u32 = 0;`
+   - Create log directory: `.agent/logs/commit_generation/run_{timestamp}/`
+   - Each run gets its own subdirectory to prevent overwrites
+
+3. In `run_commit_attempt_with_agent()`:
+   - Create `CommitAttemptLog` at start
+   - After reading agent output, set `log.raw_llm_output = content`
+   - Pass trace/log to extraction function
+   - Capture validation report
+   - Write attempt log to file BEFORE returning
+   - Log path to terminal: `"Attempt log: {path}"`
+
+4. Modify `extract_commit_message_from_logs()`:
+   - Accept `&mut CommitAttemptLog` parameter
+   - Populate preprocessing steps, extraction attempts, validation results
+   - Call new trace-returning extraction functions
+
+### Step 5: Add User-Visible Parsing Log Output
+
+**Purpose**: Show the user what went wrong during parsing in the terminal output.
+
+**Files to modify**:
+- `ralph-workflow/src/phases/commit.rs`
+- `ralph-workflow/src/logger/mod.rs` (optional - add parsing_detail method)
+
+**Details**:
+1. Add `parsing_detail` method to Logger (optional, could use existing info/warn):
+   ```rust
+   pub fn parsing_detail(&self, msg: &str) {
+       // Uses dim/indented style to distinguish from main log
+       println!("{}    │ {}{}", self.colors.dim(), msg, self.colors.reset());
+   }
+   ```
+
+2. After each extraction attempt in the loop:
+   - Log: `"  │ XML extraction: {success/failed} - {reason}"`
+   - Log: `"  │ JSON extraction: {success/failed} - {reason}"`
+   - etc.
+
+3. After validation:
+   - Log: `"  │ Validation: {passed/failed}"`
+   - If failed: `"  │   Failed check: {check_name} - {error}"`
+
+4. At end of run (success or exhaust all attempts):
+   - Log: `"Commit logs: .agent/logs/commit_generation/run_{timestamp}/"`
+   - Log: `"Total attempts: {count}"`
+
+### Step 6: Add Template Comment Support
+
+**Purpose**: Enable template comments for documentation without affecting output.
+
+**Files to modify**:
+- `ralph-workflow/src/prompts/template_engine.rs`
+
+**Details**:
+1. Add comment stripping in `Template::new()`:
+   ```rust
+   fn strip_comments(content: &str) -> String {
+       let mut result = String::new();
+       let mut in_comment = false;
+       let mut chars = content.chars().peekable();
+
+       while let Some(c) = chars.next() {
+           if !in_comment && c == '{' && chars.peek() == Some(&'#') {
+               in_comment = true;
+               chars.next(); // consume '#'
+               continue;
+           }
+           if in_comment && c == '#' && chars.peek() == Some(&'}') {
+               in_comment = false;
+               chars.next(); // consume '}'
+               continue;
+           }
+           if !in_comment {
+               result.push(c);
+           }
+       }
+       result
+   }
+   ```
+
+2. Call `strip_comments()` on content before extracting variables
+
+3. Add tests:
+   - `{# This is a comment #}` is removed
+   - Multi-line comments work
+   - Variables inside comments are NOT expanded
+   - Nested `{# {# #} #}` handled (or documented as unsupported)
+
+### Step 7: Add Template Documentation Comments
+
+**Purpose**: Document the commit message template with explanations for future customization.
+
+**Files to modify**:
+- `ralph-workflow/src/prompts/templates/commit_message_xml.txt`
+
+**Details**:
+1. Add header comment block:
+   ```
+   {# ============================================================
+      COMMIT MESSAGE GENERATION TEMPLATE
+
+      Purpose: Generate conventional commit messages from git diffs
+
+      Variables:
+        {{DIFF}} - The git diff content to analyze
+
+      Expected LLM Output Format:
+        <ralph-commit>
+        <ralph-subject>type(scope): description</ralph-subject>
+        <ralph-body>Optional body text</ralph-body>
+        </ralph-commit>
+
+      Why XML?
+        - No escape sequence issues (newlines work naturally)
+        - Distinctive tags unlikely to appear in LLM analysis
+        - Clear boundaries for parsing
+
+      Customization Notes:
+        - Edit type guidelines to match your project's conventions
+        - Add project-specific examples in the GOOD EXAMPLES section
+        - Negative examples help prevent common LLM mistakes
+   ============================================================ #}
+   ```
+
+2. Add inline comments before major sections explaining their purpose
+
+### Step 8: Create Commit Log Summary Command (Optional Enhancement)
+
+**Purpose**: Add a command to view recent commit generation logs for debugging.
+
+**Files to create/modify**:
+- `ralph-workflow/src/cli/handlers/commit_logs.rs` (NEW)
+- `ralph-workflow/src/cli/handlers/mod.rs` (add module)
+- `ralph-workflow/src/cli/args.rs` (add subcommand)
+
+**Details**:
+1. Add `ralph commit-logs` subcommand:
+   - Lists recent commit generation runs
+   - Shows: run timestamp, attempt count, final outcome
+
+2. Add flags:
+   - `--latest` - Show most recent run
+   - `--show <RUN>` - Show details of specific run
+   - `--attempts <RUN>` - List attempts in a run
+
+3. This is a lower priority enhancement - can be added in follow-up
+
+### Step 9: Add Regression Tests for Logging
+
+**Purpose**: Ensure the new logging works correctly.
+
+**Files to create/modify**:
+- Add tests in `ralph-workflow/src/phases/commit.rs`
+
+**Details**:
+1. Test `CommitAttemptLog` serialization:
+   - Log is written correctly
+   - All sections are present
+   - File naming is correct
+
+2. Test extraction trace:
+   - All methods are traced
+   - Failure reasons are captured
+
+3. Test validation report:
+   - All checks are run
+   - No short-circuit on failure
+
+## Critical Files for Implementation
+
+| File | Action | Description |
+|------|--------|-------------|
+| `ralph-workflow/src/phases/commit_logging.rs` | CREATE | New module for per-attempt logging structures and I/O |
+| `ralph-workflow/src/phases/commit.rs` | MODIFY | Integrate logging into generation pipeline, add attempt counter |
+| `ralph-workflow/src/files/llm_output_extraction/commit.rs` | MODIFY | Add trace-returning extraction functions, validation report |
+| `ralph-workflow/src/prompts/template_engine.rs` | MODIFY | Add comment stripping support |
+| `ralph-workflow/src/prompts/templates/commit_message_xml.txt` | MODIFY | Add documentation comments |
+
+## Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| Log files consume excessive disk space | Medium | Low | Each run gets its own directory; old runs can be cleaned up. Add cleanup of runs older than N days in future. |
+| Parsing trace adds performance overhead | Low | Low | String operations are fast. Trace is only built once per attempt. |
+| Template comment syntax conflicts with existing content | Very Low | Medium | `{# #}` is unlikely to appear in prompts. Add escape sequence if needed. |
+| Breaking existing commit message tests | Low | Medium | Keep existing function signatures, add new tracing versions alongside. |
+| Log file I/O errors | Low | Low | Wrap in Result, log warning but don't fail commit generation on logging errors. |
+
+## Verification Strategy
+
+### Automated Verification (Required)
+
+```bash
+# 1. Verify no allow/expect attributes (CRITICAL - per CLAUDE.md)
+rg -n -U --pcre2 '(?x)
+  \#\s*!?\[\s*
+  (allow|expect)
+  \s*\(
+    [^()\]]*
+    (?:\([^()\]]*\)[^()\]]*)*
+  \)
+  \s*\]
+' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+
+rg -n -U --pcre2 '(?x)
+  \#\s*!?\[\s*cfg_attr\s*\(
+    [^()]*?
+    \b(allow|expect)\s*\(
+  ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+
+# 2. Format check
+cargo fmt --all
+
+# 3. Clippy
+cargo clippy --all-targets --all-features -- -D warnings
+
+# 4. Tests
+cargo test --all-features
+```
+
+### Manual Verification
+
+1. **Attempt Log Creation**:
+   - Make a code change in a test repo
+   - Run ralph with a commit agent
+   - Verify `.agent/logs/commit_generation/run_*/` directory created
+   - Verify `attempt_001_*.log` file exists with correct format
+
+2. **Multiple Attempts Don't Overwrite**:
+   - Force multiple retries (e.g., use mock agent that produces invalid output)
+   - Verify `attempt_001_*.log`, `attempt_002_*.log`, etc. all exist
+   - Verify content differs between files
+
+3. **Log Content Verification**:
+   - Open an attempt log file
+   - Verify sections: RAW LLM OUTPUT, EXTRACTION ATTEMPTS, VALIDATION, OUTCOME
+   - Verify extraction attempts show detailed failure reasons
+   - Verify validation shows all checks run
+
+4. **User-Visible Output**:
+   - Run ralph with normal verbosity
+   - Verify terminal shows parsing attempt summaries for failed attempts
+   - Verify "Commit logs:" message appears at end
+
+5. **Template Comments**:
+   - Add `{# test comment #}` to commit_message_xml.txt
+   - Verify the comment doesn't appear in rendered prompt
+   - Verify the template still works correctly
+
+### Acceptance Checks Mapping
+
+| Requirement | Step | Verification |
+|-------------|------|--------------|
+| Every commit attempt logged | Steps 1, 4 | Check for attempt_*.log files |
+| Separate log files per attempt | Step 4 | Verify sequential numbering, no overwrites |
+| Parsing log shows attempts/failures | Steps 2, 3, 5 | Check log content and terminal output |
+| User sees commit log path | Step 5 | Verify "Commit logs:" message |
+| Templates use templating system | Already done | N/A |
+| Templates support comments | Steps 6, 7 | Verify comments stripped |

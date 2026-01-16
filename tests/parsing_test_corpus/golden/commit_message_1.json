@@ -1,0 +1,4 @@
+{
+  "subject": "refactor: reorganize auto-rebase functionality for improved modularity",
+  "body": "Restructured the auto-rebase codebase to improve separation of concerns and maintainability."
+}

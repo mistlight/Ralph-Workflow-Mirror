@@ -33,8 +33,7 @@ use std::time::Duration;
 /// # Example
 ///
 /// ```no_run
-/// use crate::files::monitoring::PromptMonitor;
-///
+/// # use ralph_workflow::files::protection::monitoring::PromptMonitor;
 /// let mut monitor = PromptMonitor::new().unwrap();
 /// monitor.start().unwrap();
 ///
@@ -46,6 +45,7 @@ use std::time::Duration;
 /// }
 ///
 /// monitor.stop();
+/// # Ok::<(), std::io::Error>(())
 /// ```
 pub struct PromptMonitor {
     /// Flag indicating if PROMPT.md was deleted and restored
@@ -290,7 +290,7 @@ impl PromptMonitor {
     /// # Example
     ///
     /// ```no_run
-    /// # use crate::files::monitoring::PromptMonitor;
+    /// # use ralph_workflow::files::protection::monitoring::PromptMonitor;
     /// # let mut monitor = PromptMonitor::new().unwrap();
     /// # monitor.start().unwrap();
     /// // After running some agent code

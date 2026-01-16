@@ -11,15 +11,6 @@
 /// - `logger`: The logger to use for output
 /// - `phase`: The phase name (e.g., "development", "review") for logging
 /// - `iteration`: The iteration/cycle number for logging
-///
-/// # Example
-/// ```no_run
-/// use crate::logger::Logger;
-/// use crate::phases::integrity::ensure_prompt_integrity;
-///
-/// # let logger = Logger::new();
-/// ensure_prompt_integrity(&logger, "development", 1);
-/// ```
 pub fn ensure_prompt_integrity(logger: &crate::logger::Logger, phase: &str, iteration: u32) {
     match crate::files::restore_prompt_if_needed() {
         Ok(true) => {

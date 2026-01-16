@@ -1,0 +1,13 @@
+[package]
+name = "ralph-workflow-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "ralph_workflow_tests"
+path = "lib.rs"
+
+[dependencies]
+ralph-workflow = { path = "../ralph-workflow" }
+serde_json = "1"
