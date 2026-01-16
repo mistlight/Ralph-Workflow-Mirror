@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 /// Load and render a template from a string with the given variables.
 fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
-    let template = Template::new(template_content.to_string());
+    let template = Template::new(template_content);
     match template.render(variables) {
         Ok(rendered) => rendered,
         Err(e) => {
