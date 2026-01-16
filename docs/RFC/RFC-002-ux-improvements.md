@@ -46,7 +46,7 @@ This RFC proposes UX improvements for Ralph Workflow based on industry-standard 
 
 **Last Updated**: 2026-01-16
 **Current Completion**: 32% (7/22 items)
-**Active Contributors**: TBD
+**Active Contributors**: mistlight (author + implementation)
 
 ### Visual Progress Bar
 
@@ -134,6 +134,7 @@ Phase 8 (Commands)    [██░░░░░░░░░░░░░░░░]  
 | Phase 1.2 requires new dependency | Low | Not Started | `indicatif` adds ~150 KB to binary |
 | Phase 4.1 file system watcher | Low | Not Started | `notify` crate, ~5 MB memory footprint |
 | Phase 3.2 Levenshtein distance | Low | Not Started | `strsim` crate, minimal impact |
+| IncrementalNdjsonParser health integration | Medium | Not Started | Streaming health monitoring integration point documented |
 | No known blockers | - | - | All features can proceed independently |
 
 ### Contributor Opportunities

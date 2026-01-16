@@ -232,7 +232,10 @@ pub struct Config {
     pub(crate) git_user_name: Option<String>,
     /// Git user email for commits (optional, falls back to git config)
     pub(crate) git_user_email: Option<String>,
-    /// Show streaming quality metrics at the end of agent output
+    /// Show streaming quality metrics at the end of agent output.
+    ///
+    /// This field is `pub(crate)` as streaming metrics are an internal concern.
+    /// External access is not required; metrics are displayed via CLI flag.
     pub(crate) show_streaming_metrics: bool,
 }
 
