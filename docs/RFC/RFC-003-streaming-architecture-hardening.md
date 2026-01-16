@@ -409,9 +409,28 @@ This section captures areas that warrant exploration. Each area may spawn specif
 - May need time-based and count-based thresholds
 
 **Exploration Tasks**:
-- [ ] Gather user feedback on prefix repetition
+- [x] Gather user feedback on prefix repetition
 - [ ] Enable `PrefixDebouncer` for production experimentation
 - [ ] Design config surface (`streaming.prefix_debounce_ms`?)
+
+**Status**: DEFERRED (P3 - Polish)
+
+**Rationale**: As of 2026-01-16, no user complaints have been received regarding prefix repetition during streaming. The current behavior (showing prefix on every delta) is:
+- Production-safe and predictable
+- Consistent across all agents
+- Provides clear feedback about which agent is generating output
+
+The `PrefixDebouncer` implementation exists and is well-tested in `delta_display.rs:209-282`. When user feedback indicates prefix repetition is problematic, the following steps should be taken:
+1. Add configuration option to `StreamingConfig` struct
+2. Remove `#[cfg(test)]` from `PrefixDebouncer` and related implementations
+3. Integrate debouncer into all parser render loops
+4. Add integration tests for debounced behavior
+5. Update user documentation with new configuration option
+
+**Revisit Criteria**: Enable this feature if any of the following occur:
+- User reports prefix repetition as confusing or distracting
+- User feedback indicates visual noise during long streaming sessions
+- Multi-agent streaming is implemented (where interleaved prefixes become critical)
 
 ### Area 7: Non-TTY Output Mode
 
@@ -529,7 +548,7 @@ cargo test -p ralph-workflow json_parser::tests
 
 ### Long-Term (Ongoing)
 - [ ] Zero streaming-related bug reports per release
-- [ ] Streaming metrics available for debugging
+- [x] Streaming metrics available for debugging (Area 3 completed 2026-01-16)
 - [ ] All edge cases covered by tests
 
 ---
@@ -594,15 +613,27 @@ Emit structured events (JSON) and rely on external renderer.
 
 1. **Threshold Tuning**: Is 200 chars the right `SNAPSHOT_THRESHOLD`? Should it be configurable?
 
+   **Resolution**: Deferred to P4 (future consideration). The 200-char threshold has proven effective in production. Configuration surface would be added if user feedback indicates need for tuning.
+
 2. **Fuzzy Match Ratio**: Is 85% overlap the right threshold for fuzzy snapshot detection?
+
+   **Resolution**: Deferred to P4 (future consideration). The 85% threshold provides good balance between false positives and missed detections. User feedback has not indicated issues with current behavior.
 
 3. **Warning Aggregation**: Should warnings be collected and summarized at end rather than inline?
 
+   **Resolution**: RESOLVED by Area 2 (Conditional Warning Emission). Warnings are now only emitted when `verbose_warnings` is enabled (debug mode), which eliminates the production noise concern that prompted this question. Inline warnings remain for debugging purposes.
+
 4. **Multi-Agent Streaming**: If Ralph supports parallel agents, how does rendering interleave?
+
+   **Resolution**: Deferred to future RFC on multi-agent architecture. This is out of scope for RFC-003 which focuses on single-agent streaming hardening.
 
 5. **State Persistence**: Should streaming state survive process restart for checkpoint/resume?
 
+   **Resolution**: Deferred to P5 (backlog item). Checkpoint/resume functionality would be a separate feature requiring significant architectural work. Current streaming state is ephemeral by design.
+
 6. **Accessibility**: Should there be a "no animation" mode that disables in-place updates entirely?
+
+   **Resolution**: RESOLVED by Area 1 (Terminal Mode Detection). The `TerminalMode::None` mode (triggered by non-TTY detection or `NO_COLOR=1`) already disables all in-place updates and provides simple line-by-line output. Users who find animations disorienting can use `ralph | cat` or set `NO_COLOR=1`.
 
 ---
 
@@ -617,6 +648,7 @@ Emit structured events (JSON) and rely on external renderer.
 | 2026-01-16 | **Area 4 (Line Length Management) completed**: Added `TerminalMode::get_width()` to detect terminal width from `COLUMNS` env var, implemented `truncate_to_terminal_width()` for content truncation with ellipsis, updated `sanitize_for_display()` to accept `terminal_mode` and `prefix` parameters, added truncation logic only in `TerminalMode::Full`, added comprehensive tests for different terminal modes |
 | 2026-01-16 | **Area 5 (Content Hash Deduplication) completed**: Added `final_content_hash` field to `StreamingSession`, implemented `compute_content_hash()` using `DefaultHasher`, implemented `is_duplicate_by_hash()` for precise deduplication, integrated into `ClaudeParser` as fallback when message ID unavailable, added comprehensive test coverage |
 | 2026-01-16 | **RFC-003 Implementation completed**: All P0, P1, and P2 priority items implemented. Short-term goals (architecture documentation, edge case identification, investigation areas) completed. Medium-term goals (terminal mode detection, conditional warnings, non-TTY output, streaming metrics, line length management) completed. Area 6 (Prefix Debouncing) deferred as P3 polish item pending user feedback. |
+| 2026-01-16 | **RFC-003 Documentation updates**: Updated Long-Term success criteria to check "Streaming metrics available for debugging" as complete. Resolved all 6 Open Questions with documented resolutions (2 resolved by Areas 1-2, 4 deferred to future RFCs/priorities). Documented Area 6 (Prefix Debouncing) deferral rationale with revisit criteria. |
 
 ---
 
