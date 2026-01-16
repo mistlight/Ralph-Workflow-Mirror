@@ -11,7 +11,6 @@
 
 #![deny(unsafe_code)]
 
-#[cfg(test)]
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;
@@ -43,6 +42,7 @@ pub struct FileConflict {
 /// # Returns
 ///
 /// Returns a formatted prompt string for the AI agent.
+#[cfg(test)]
 pub fn build_conflict_resolution_prompt(
     conflicts: &HashMap<String, FileConflict>,
     prompt_md_content: Option<&str>,
@@ -86,7 +86,6 @@ pub fn build_conflict_resolution_prompt(
 /// * `conflicts` - Map of file paths to their conflict information
 /// * `prompt_md_content` - Optional content from PROMPT.md for task context
 /// * `plan_content` - Optional content from PLAN.md for additional context
-#[cfg(test)]
 pub fn build_conflict_resolution_prompt_with_context(
     context: &TemplateContext,
     conflicts: &HashMap<String, FileConflict>,

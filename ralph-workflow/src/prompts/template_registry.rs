@@ -11,13 +11,11 @@
 //! 2. Embedded template: Compiled-in fallback
 //! 3. Error: Template not found
 
-#[cfg(test)]
 use std::fs;
 use std::path::PathBuf;
 
 /// Error type for template loading operations.
 #[derive(Debug, Clone, thiserror::Error)]
-#[cfg(test)]
 pub enum TemplateError {
     /// Template not found in user directory or embedded catalog
     #[error("Template '{name}' not found")]
@@ -112,7 +110,6 @@ impl TemplateRegistry {
     ///
     /// * `Ok(String)` - Template content
     /// * `Err(TemplateError)` - Template not found or read error
-    #[cfg(test)]
     pub fn get_template(&self, name: &str) -> Result<String, TemplateError> {
         use crate::prompts::template_catalog;
 
@@ -144,8 +141,8 @@ impl TemplateRegistry {
     ///
     /// A vector of all embedded template names, sorted alphabetically.
     #[must_use]
-    #[cfg(test)]
     #[allow(clippy::unused_self)]
+    #[cfg(test)]
     pub fn all_template_names(&self) -> Vec<String> {
         use crate::prompts::template_catalog;
         template_catalog::list_all_templates()

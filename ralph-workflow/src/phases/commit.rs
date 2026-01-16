@@ -25,10 +25,11 @@ use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
-    prompt_emergency_commit, prompt_emergency_no_diff_commit, prompt_file_list_only_commit,
-    prompt_file_list_summary_only_commit, prompt_generate_commit_message_with_diff,
-    prompt_strict_json_commit, prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
-    prompt_ultra_minimal_commit_v2,
+    prompt_emergency_commit_with_context, prompt_emergency_no_diff_commit_with_context,
+    prompt_file_list_only_commit_with_context, prompt_file_list_summary_only_commit_with_context,
+    prompt_generate_commit_message_with_diff_with_context,
+    prompt_strict_json_commit_v2_with_context, prompt_strict_json_commit_with_context,
+    prompt_ultra_minimal_commit_v2_with_context, prompt_ultra_minimal_commit_with_context,
 };
 use std::fmt;
 use std::fs::{self, File};
@@ -422,19 +423,39 @@ fn check_and_pre_truncate_diff(
 }
 
 /// Generate the appropriate prompt for the current retry strategy.
-fn generate_prompt_for_strategy(strategy: CommitRetryStrategy, working_diff: &str) -> String {
+fn generate_prompt_for_strategy(
+    strategy: CommitRetryStrategy,
+    working_diff: &str,
+    template_context: &crate::prompts::TemplateContext,
+) -> String {
     match strategy {
-        CommitRetryStrategy::Initial => prompt_generate_commit_message_with_diff(working_diff),
-        CommitRetryStrategy::StrictJson => prompt_strict_json_commit(working_diff),
-        CommitRetryStrategy::StrictJsonV2 => prompt_strict_json_commit_v2(working_diff),
-        CommitRetryStrategy::UltraMinimal => prompt_ultra_minimal_commit(working_diff),
-        CommitRetryStrategy::UltraMinimalV2 => prompt_ultra_minimal_commit_v2(working_diff),
-        CommitRetryStrategy::FileListOnly => prompt_file_list_only_commit(working_diff),
-        CommitRetryStrategy::FileListSummaryOnly => {
-            prompt_file_list_summary_only_commit(working_diff)
+        CommitRetryStrategy::Initial => {
+            prompt_generate_commit_message_with_diff_with_context(template_context, working_diff)
         }
-        CommitRetryStrategy::Emergency => prompt_emergency_commit(working_diff),
-        CommitRetryStrategy::EmergencyNoDiff => prompt_emergency_no_diff_commit(working_diff),
+        CommitRetryStrategy::StrictJson => {
+            prompt_strict_json_commit_with_context(template_context, working_diff)
+        }
+        CommitRetryStrategy::StrictJsonV2 => {
+            prompt_strict_json_commit_v2_with_context(template_context, working_diff)
+        }
+        CommitRetryStrategy::UltraMinimal => {
+            prompt_ultra_minimal_commit_with_context(template_context, working_diff)
+        }
+        CommitRetryStrategy::UltraMinimalV2 => {
+            prompt_ultra_minimal_commit_v2_with_context(template_context, working_diff)
+        }
+        CommitRetryStrategy::FileListOnly => {
+            prompt_file_list_only_commit_with_context(template_context, working_diff)
+        }
+        CommitRetryStrategy::FileListSummaryOnly => {
+            prompt_file_list_summary_only_commit_with_context(template_context, working_diff)
+        }
+        CommitRetryStrategy::Emergency => {
+            prompt_emergency_commit_with_context(template_context, working_diff)
+        }
+        CommitRetryStrategy::EmergencyNoDiff => {
+            prompt_emergency_no_diff_commit_with_context(template_context, working_diff)
+        }
     }
 }
 
@@ -572,6 +593,8 @@ struct CommitAttemptContext<'a> {
     log_dir: &'a str,
     /// Whether the diff was pre-truncated
     diff_was_truncated: bool,
+    /// Template context for user template overrides
+    template_context: &'a crate::prompts::TemplateContext,
 }
 
 /// Run a single commit attempt with the given strategy and agent.
@@ -589,7 +612,7 @@ fn run_commit_attempt_with_agent(
     last_extraction: &mut Option<CommitExtractionResult>,
     session: &mut CommitLogSession,
 ) -> Option<anyhow::Result<CommitMessageResult>> {
-    let prompt = generate_prompt_for_strategy(strategy, ctx.working_diff);
+    let prompt = generate_prompt_for_strategy(strategy, ctx.working_diff, ctx.template_context);
     let prompt_size_kb = prompt.len() / 1024;
 
     // Create attempt log
@@ -680,6 +703,7 @@ fn try_progressive_truncation_recovery(
     runtime: &mut PipelineRuntime,
     registry: &AgentRegistry,
     commit_agent: &str,
+    template_context: &crate::prompts::TemplateContext,
 ) -> anyhow::Result<CommitMessageResult> {
     runtime
         .logger
@@ -703,7 +727,7 @@ fn try_progressive_truncation_recovery(
         ));
 
         let truncated_diff = truncate_diff_if_large(diff, size_kb);
-        let prompt = prompt_emergency_commit(&truncated_diff);
+        let prompt = prompt_emergency_commit_with_context(template_context, &truncated_diff);
 
         runtime.logger.info(&format!(
             "Truncated diff attempt ({}): prompt size {} KB",
@@ -752,7 +776,15 @@ fn try_progressive_truncation_recovery(
     }
 
     // All truncation stages failed - try emergency no-diff
-    try_emergency_no_diff_recovery(diff, log_dir, log_file, runtime, registry, commit_agent)
+    try_emergency_no_diff_recovery(
+        diff,
+        log_dir,
+        log_file,
+        runtime,
+        registry,
+        commit_agent,
+        template_context,
+    )
 }
 
 /// Try further truncation recovery when already pre-truncated and still got `TokenExhausted`.
@@ -763,6 +795,7 @@ fn try_further_truncation_recovery(
     runtime: &mut PipelineRuntime,
     registry: &AgentRegistry,
     commit_agent: &str,
+    template_context: &crate::prompts::TemplateContext,
 ) -> anyhow::Result<CommitMessageResult> {
     runtime
         .logger
@@ -782,7 +815,7 @@ fn try_further_truncation_recovery(
         ));
 
         let truncated_diff = truncate_diff_if_large(diff, size_kb);
-        let prompt = prompt_emergency_commit(&truncated_diff);
+        let prompt = prompt_emergency_commit_with_context(template_context, &truncated_diff);
 
         let exit_code = run_with_fallback(
             AgentRole::Commit,
@@ -862,12 +895,14 @@ fn try_emergency_no_diff_recovery(
     runtime: &mut PipelineRuntime,
     registry: &AgentRegistry,
     commit_agent: &str,
+    template_context: &crate::prompts::TemplateContext,
 ) -> anyhow::Result<CommitMessageResult> {
     runtime
         .logger
         .warn("All truncation stages failed. Trying emergency no-diff prompt...");
     let working_diff = diff; // Use original diff for no-diff prompt
-    let no_diff_prompt = prompt_emergency_no_diff_commit(working_diff);
+    let no_diff_prompt =
+        prompt_emergency_no_diff_commit_with_context(template_context, working_diff);
 
     let exit_code = run_with_fallback(
         AgentRole::Commit,
@@ -953,6 +988,7 @@ pub fn generate_commit_message(
     registry: &AgentRegistry,
     runtime: &mut PipelineRuntime,
     commit_agent: &str,
+    template_context: &crate::prompts::TemplateContext,
 ) -> anyhow::Result<CommitMessageResult> {
     let log_dir = ".agent/logs/commit_generation";
     let log_file = format!("{log_dir}/final.log");
@@ -975,6 +1011,7 @@ pub fn generate_commit_message(
         working_diff: &working_diff,
         log_dir,
         diff_was_truncated: diff_was_pre_truncated,
+        template_context,
     };
 
     // Try each agent with all prompt variants
@@ -998,6 +1035,7 @@ pub fn generate_commit_message(
         log_file: &log_file,
         commit_agent,
         diff_was_pre_truncated,
+        template_context,
     };
     handle_commit_fallbacks(
         &fallback_ctx,
@@ -1120,6 +1158,7 @@ struct CommitFallbackContext<'a> {
     log_file: &'a str,
     commit_agent: &'a str,
     diff_was_pre_truncated: bool,
+    template_context: &'a crate::prompts::TemplateContext,
 }
 
 /// Handle fallback cases after all agents exhausted.
@@ -1174,6 +1213,7 @@ fn handle_commit_fallbacks(
             runtime,
             registry,
             ctx.commit_agent,
+            ctx.template_context,
         );
     }
 
@@ -1193,6 +1233,7 @@ fn handle_commit_fallbacks(
             runtime,
             registry,
             ctx.commit_agent,
+            ctx.template_context,
         );
     }
 
@@ -1313,7 +1354,13 @@ pub fn commit_with_generated_message(
     };
 
     // Generate commit message using the standard pipeline
-    let result = match generate_commit_message(diff, ctx.registry, &mut runtime, commit_agent) {
+    let result = match generate_commit_message(
+        diff,
+        ctx.registry,
+        &mut runtime,
+        commit_agent,
+        ctx.template_context,
+    ) {
         Ok(r) => r,
         Err(e) => {
             return CommitResultFallback::Failed(format!("Failed to generate commit message: {e}"));

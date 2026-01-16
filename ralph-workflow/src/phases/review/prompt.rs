@@ -12,10 +12,18 @@ use crate::config::ReviewDepth;
 use crate::git_helpers::get_git_diff_from_start;
 use crate::guidelines::ReviewGuidelines;
 use crate::prompts::{
-    prompt_comprehensive_review_with_diff, prompt_detailed_review_without_guidelines_with_diff,
-    prompt_incremental_review_with_diff, prompt_reviewer_review_with_guidelines_and_diff,
-    prompt_security_focused_review_with_diff, prompt_universal_review_with_diff, ContextLevel,
+    prompt_comprehensive_review_with_diff_with_context,
+    prompt_detailed_review_without_guidelines_with_diff_with_context,
+    prompt_incremental_review_with_diff_with_context,
+    prompt_reviewer_review_with_guidelines_and_diff_with_context,
+    prompt_security_focused_review_with_diff_with_context,
+    prompt_universal_review_with_diff_with_context, ContextLevel,
 };
+
+#[cfg(test)]
+use crate::prompts::reviewer::prompt_reviewer_review_with_guidelines_and_diff;
+#[cfg(test)]
+use crate::prompts::TemplateContext;
 
 use super::super::context::PhaseContext;
 
@@ -113,7 +121,8 @@ fn build_universal_prompt(
     let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
         Ok(Some(diff)) => {
-            let prompt = prompt_universal_review_with_diff(
+            let prompt = prompt_universal_review_with_diff_with_context(
+                ctx.template_context,
                 reviewer_context,
                 &diff,
                 &prompt_content,
@@ -147,7 +156,8 @@ fn build_security_prompt(
                     std::sync::OnceLock::new();
                 DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
             });
-            let prompt = prompt_security_focused_review_with_diff(
+            let prompt = prompt_security_focused_review_with_diff_with_context(
+                ctx.template_context,
                 reviewer_context,
                 guidelines_ref,
                 &diff,
@@ -173,7 +183,8 @@ fn build_incremental_prompt(
         Ok(Some(diff)) => {
             ctx.logger
                 .info("Using incremental review (changed files only)");
-            let prompt = prompt_incremental_review_with_diff(
+            let prompt = prompt_incremental_review_with_diff_with_context(
+                ctx.template_context,
                 reviewer_context,
                 &diff,
                 &prompt_content,
@@ -207,7 +218,8 @@ fn build_comprehensive_prompt(
                     std::sync::OnceLock::new();
                 DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
             });
-            let prompt = prompt_comprehensive_review_with_diff(
+            let prompt = prompt_comprehensive_review_with_diff_with_context(
+                ctx.template_context,
                 reviewer_context,
                 guidelines_ref,
                 &diff,
@@ -242,7 +254,8 @@ fn build_standard_prompt(
             });
             guidelines.map_or_else(
                 || {
-                    let prompt = prompt_detailed_review_without_guidelines_with_diff(
+                    let prompt = prompt_detailed_review_without_guidelines_with_diff_with_context(
+                        ctx.template_context,
                         reviewer_context,
                         &diff,
                         &prompt_content,
@@ -252,7 +265,8 @@ fn build_standard_prompt(
                     ("review (standard)".to_string(), prompt)
                 },
                 |g| {
-                    let prompt = prompt_reviewer_review_with_guidelines_and_diff(
+                    let prompt = prompt_reviewer_review_with_guidelines_and_diff_with_context(
+                        ctx.template_context,
                         reviewer_context,
                         g,
                         &diff,
@@ -385,7 +399,9 @@ mod tests {
             "Prompt should explicitly forbid running git commands"
         );
 
-        let comprehensive_prompt = prompt_comprehensive_review_with_diff(
+        let template_context = TemplateContext::default();
+        let comprehensive_prompt = prompt_comprehensive_review_with_diff_with_context(
+            &template_context,
             ContextLevel::Normal,
             &guidelines,
             sample_diff,
@@ -397,7 +413,8 @@ mod tests {
             "Comprehensive prompt should include diff"
         );
 
-        let security_prompt = prompt_security_focused_review_with_diff(
+        let security_prompt = prompt_security_focused_review_with_diff_with_context(
+            &template_context,
             ContextLevel::Minimal,
             &guidelines,
             sample_diff,
@@ -410,7 +427,8 @@ mod tests {
         );
 
         // Test unguided prompts (without guidelines)
-        let detailed_prompt = prompt_detailed_review_without_guidelines_with_diff(
+        let detailed_prompt = prompt_detailed_review_without_guidelines_with_diff_with_context(
+            &template_context,
             ContextLevel::Normal,
             sample_diff,
             "",
@@ -421,15 +439,25 @@ mod tests {
             "Detailed prompt should include diff"
         );
 
-        let incremental_prompt =
-            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff, "", "");
+        let incremental_prompt = prompt_incremental_review_with_diff_with_context(
+            &template_context,
+            ContextLevel::Minimal,
+            sample_diff,
+            "",
+            "",
+        );
         assert!(
             incremental_prompt.contains(sample_diff),
             "Incremental prompt should include diff"
         );
 
-        let universal_prompt =
-            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff, "", "");
+        let universal_prompt = prompt_universal_review_with_diff_with_context(
+            &template_context,
+            ContextLevel::Normal,
+            sample_diff,
+            "",
+            "",
+        );
         assert!(
             universal_prompt.contains(sample_diff),
             "Universal prompt should include diff"
@@ -440,37 +468,54 @@ mod tests {
     #[test]
     fn test_prompts_constrain_agent_from_exploring() {
         let sample_diff = "+ new line";
+        let template_context = TemplateContext::default();
 
         let prompts_to_check = vec![
-            prompt_reviewer_review_with_guidelines_and_diff(
+            prompt_reviewer_review_with_guidelines_and_diff_with_context(
+                &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_comprehensive_review_with_diff(
+            prompt_comprehensive_review_with_diff_with_context(
+                &template_context,
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_security_focused_review_with_diff(
+            prompt_security_focused_review_with_diff_with_context(
+                &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_detailed_review_without_guidelines_with_diff(
+            prompt_detailed_review_without_guidelines_with_diff_with_context(
+                &template_context,
                 ContextLevel::Normal,
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff, "", ""),
-            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff, "", ""),
+            prompt_incremental_review_with_diff_with_context(
+                &template_context,
+                ContextLevel::Minimal,
+                sample_diff,
+                "",
+                "",
+            ),
+            prompt_universal_review_with_diff_with_context(
+                &template_context,
+                ContextLevel::Normal,
+                sample_diff,
+                "",
+                "",
+            ),
         ];
 
         let forbidden_patterns = [
@@ -497,9 +542,15 @@ mod tests {
     #[test]
     fn test_prompts_forbid_specific_commands() {
         let sample_diff = "+ new line";
+        let template_context = TemplateContext::default();
 
-        let universal_prompt =
-            prompt_universal_review_with_diff(ContextLevel::Minimal, sample_diff, "", "");
+        let universal_prompt = prompt_universal_review_with_diff_with_context(
+            &template_context,
+            ContextLevel::Minimal,
+            sample_diff,
+            "",
+            "",
+        );
         // Universal prompt should explicitly forbid running commands like ls, find, git, cat
         assert!(
             universal_prompt.contains("ls")
@@ -538,37 +589,54 @@ mod tests {
     #[test]
     fn test_prompts_contain_closed_book_constraint() {
         let sample_diff = "+ new line";
+        let template_context = TemplateContext::default();
 
         let prompts_to_check = vec![
-            prompt_reviewer_review_with_guidelines_and_diff(
+            prompt_reviewer_review_with_guidelines_and_diff_with_context(
+                &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_comprehensive_review_with_diff(
+            prompt_comprehensive_review_with_diff_with_context(
+                &template_context,
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_security_focused_review_with_diff(
+            prompt_security_focused_review_with_diff_with_context(
+                &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_detailed_review_without_guidelines_with_diff(
+            prompt_detailed_review_without_guidelines_with_diff_with_context(
+                &template_context,
                 ContextLevel::Normal,
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff, "", ""),
-            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff, "", ""),
+            prompt_incremental_review_with_diff_with_context(
+                &template_context,
+                ContextLevel::Minimal,
+                sample_diff,
+                "",
+                "",
+            ),
+            prompt_universal_review_with_diff_with_context(
+                &template_context,
+                ContextLevel::Normal,
+                sample_diff,
+                "",
+                "",
+            ),
         ];
 
         for prompt in prompts_to_check {
@@ -589,37 +657,54 @@ mod tests {
     #[test]
     fn test_actual_diff_content_is_substituted_not_placeholder() {
         let sample_diff = "+ new line\n- old line";
+        let template_context = TemplateContext::default();
 
         let prompts_to_check = vec![
-            prompt_reviewer_review_with_guidelines_and_diff(
+            prompt_reviewer_review_with_guidelines_and_diff_with_context(
+                &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_comprehensive_review_with_diff(
+            prompt_comprehensive_review_with_diff_with_context(
+                &template_context,
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_security_focused_review_with_diff(
+            prompt_security_focused_review_with_diff_with_context(
+                &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_detailed_review_without_guidelines_with_diff(
+            prompt_detailed_review_without_guidelines_with_diff_with_context(
+                &template_context,
                 ContextLevel::Normal,
                 sample_diff,
                 "",
                 "",
             ),
-            prompt_incremental_review_with_diff(ContextLevel::Minimal, sample_diff, "", ""),
-            prompt_universal_review_with_diff(ContextLevel::Normal, sample_diff, "", ""),
+            prompt_incremental_review_with_diff_with_context(
+                &template_context,
+                ContextLevel::Minimal,
+                sample_diff,
+                "",
+                "",
+            ),
+            prompt_universal_review_with_diff_with_context(
+                &template_context,
+                ContextLevel::Normal,
+                sample_diff,
+                "",
+                "",
+            ),
         ];
 
         for prompt in prompts_to_check {

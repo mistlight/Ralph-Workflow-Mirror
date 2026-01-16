@@ -18,10 +18,9 @@ mod commit;
 mod developer;
 pub mod partials;
 mod rebase;
-mod reviewer;
+pub mod reviewer;
 pub mod template_catalog;
-#[cfg(test)]
-mod template_context;
+pub mod template_context;
 mod template_engine;
 mod template_macros;
 pub mod template_registry;
@@ -30,18 +29,31 @@ mod types;
 
 // Re-export all public items for backward compatibility
 pub use commit::{
-    prompt_emergency_commit, prompt_emergency_no_diff_commit, prompt_file_list_only_commit,
-    prompt_file_list_summary_only_commit, prompt_fix, prompt_generate_commit_message_with_diff,
-    prompt_strict_json_commit, prompt_strict_json_commit_v2, prompt_ultra_minimal_commit,
-    prompt_ultra_minimal_commit_v2,
+    prompt_emergency_commit_with_context, prompt_emergency_no_diff_commit_with_context,
+    prompt_file_list_only_commit_with_context, prompt_file_list_summary_only_commit_with_context,
+    prompt_fix_with_context, prompt_generate_commit_message_with_diff_with_context,
+    prompt_strict_json_commit_v2_with_context, prompt_strict_json_commit_with_context,
+    prompt_ultra_minimal_commit_v2_with_context, prompt_ultra_minimal_commit_with_context,
 };
-pub use developer::{prompt_developer_iteration, prompt_plan};
-pub use rebase::{build_conflict_resolution_prompt, collect_conflict_info, FileConflict};
+pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
+pub use rebase::{
+    build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
+};
 pub use reviewer::{
-    prompt_comprehensive_review_with_diff, prompt_detailed_review_without_guidelines_with_diff,
-    prompt_incremental_review_with_diff, prompt_reviewer_review_with_guidelines_and_diff,
-    prompt_security_focused_review_with_diff, prompt_universal_review_with_diff,
+    prompt_comprehensive_review_with_diff_with_context,
+    prompt_detailed_review_without_guidelines_with_diff_with_context,
+    prompt_incremental_review_with_diff_with_context,
+    prompt_reviewer_review_with_guidelines_and_diff_with_context,
+    prompt_security_focused_review_with_diff_with_context,
+    prompt_universal_review_with_diff_with_context,
 };
+
+// Re-export non-context variants for test compatibility
+#[cfg(test)]
+pub use commit::{prompt_fix, prompt_generate_commit_message_with_diff};
+#[cfg(test)]
+pub use developer::{prompt_developer_iteration, prompt_plan};
+pub use template_context::TemplateContext;
 pub use template_engine::Template;
 pub use template_validator::{
     extract_metadata, extract_partials, extract_variables, validate_template, ValidationError,
@@ -123,19 +135,31 @@ impl PromptConfig {
 /// - Language-specific review guidance when the project stack has been detected
 /// - PROMPT.md content for planning prompts
 /// - PROMPT.md and PLAN.md content for developer iteration prompts
+///
+/// # Arguments
+///
+/// * `role` - The agent role (Developer, Reviewer, etc.)
+/// * `action` - The action to perform (Plan, Iterate, Fix, etc.)
+/// * `context` - The context level (minimal or normal)
+/// * `template_context` - Template context for user template overrides
+/// * `config` - Prompt configuration with content variables
 pub fn prompt_for_agent(
     role: Role,
     action: Action,
     context: ContextLevel,
+    template_context: &TemplateContext,
     config: PromptConfig,
 ) -> String {
     match (role, action) {
-        (_, Action::Plan) => prompt_plan(config.prompt_md_content.as_deref()),
+        (_, Action::Plan) => {
+            prompt_plan_with_context(template_context, config.prompt_md_content.as_deref())
+        }
         (Role::Developer | Role::Reviewer, Action::Iterate) => {
             let (prompt_content, plan_content) = config
                 .prompt_and_plan
                 .unwrap_or((String::new(), String::new()));
-            prompt_developer_iteration(
+            prompt_developer_iteration_with_context(
+                template_context,
                 config.iteration.unwrap_or(1),
                 config.total_iterations.unwrap_or(1),
                 context,
@@ -147,7 +171,12 @@ pub fn prompt_for_agent(
             let (prompt_content, plan_content, issues_content) = config
                 .prompt_plan_and_issues
                 .unwrap_or((String::new(), String::new(), String::new()));
-            prompt_fix(&prompt_content, &plan_content, &issues_content)
+            prompt_fix_with_context(
+                template_context,
+                &prompt_content,
+                &plan_content,
+                &issues_content,
+            )
         }
     }
 }
@@ -155,13 +184,19 @@ pub fn prompt_for_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prompts::template_context::TemplateContext;
+
+    // Import non-context variants for test compatibility
+    use crate::prompts::reviewer::prompt_detailed_review_without_guidelines_with_diff;
 
     #[test]
     fn test_prompt_for_agent_developer() {
+        let template_context = TemplateContext::default();
         let result = prompt_for_agent(
             Role::Developer,
             Action::Iterate,
             ContextLevel::Normal,
+            &template_context,
             PromptConfig::new()
                 .with_iterations(3, 10)
                 .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
@@ -186,10 +221,12 @@ mod tests {
 
     #[test]
     fn test_prompt_for_agent_plan() {
+        let template_context = TemplateContext::default();
         let result = prompt_for_agent(
             Role::Developer,
             Action::Plan,
             ContextLevel::Normal,
+            &template_context,
             PromptConfig::new().with_prompt_md("test requirements".to_string()),
         );
         // Plan is now returned as structured output, not written to file
@@ -206,7 +243,7 @@ mod tests {
             "amazon-q", "gpt", "copilot",
         ];
 
-        let prompts_to_check = vec![
+        let prompts_to_check: Vec<String> = vec![
             prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
             prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
             prompt_detailed_review_without_guidelines_with_diff(
@@ -241,10 +278,12 @@ mod tests {
 
     #[test]
     fn test_prompt_for_agent_fix() {
+        let template_context = TemplateContext::default();
         let result = prompt_for_agent(
             Role::Developer,
             Action::Fix,
             ContextLevel::Normal,
+            &template_context,
             PromptConfig::new().with_prompt_plan_and_issues(
                 "test prompt".to_string(),
                 "test plan".to_string(),
@@ -260,10 +299,12 @@ mod tests {
 
     #[test]
     fn test_prompt_for_agent_fix_with_empty_context() {
+        let template_context = TemplateContext::default();
         let result = prompt_for_agent(
             Role::Developer,
             Action::Fix,
             ContextLevel::Normal,
+            &template_context,
             PromptConfig::new(),
         );
         assert!(result.contains("FIX MODE"));
@@ -274,10 +315,12 @@ mod tests {
     #[test]
     fn test_reviewer_can_use_iterate_action() {
         // Edge case: Reviewer using Iterate action (fallback behavior)
+        let template_context = TemplateContext::default();
         let result = prompt_for_agent(
             Role::Reviewer,
             Action::Iterate,
             ContextLevel::Normal,
+            &template_context,
             PromptConfig::new()
                 .with_iterations(1, 3)
                 .with_prompt_and_plan(String::new(), String::new()),
@@ -345,7 +388,7 @@ mod tests {
             "execute git",
         ];
 
-        let prompts_to_check = vec![
+        let prompts_to_check: Vec<String> = vec![
             prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
             prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
             prompt_detailed_review_without_guidelines_with_diff(

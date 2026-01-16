@@ -40,7 +40,7 @@ impl TemplateContext {
     /// This is the recommended way to create a `TemplateContext` as it
     /// respects the user's configured templates directory.
     #[must_use]
-    pub fn from_user_templates_dir(user_templates_dir: Option<PathBuf>) -> Self {
+    pub const fn from_user_templates_dir(user_templates_dir: Option<PathBuf>) -> Self {
         Self::new(TemplateRegistry::new(user_templates_dir))
     }
 

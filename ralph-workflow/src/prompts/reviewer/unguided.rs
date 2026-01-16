@@ -16,6 +16,7 @@
 use super::super::partials::get_shared_partials;
 use super::super::types::ContextLevel;
 use super::super::Template;
+use crate::prompts::template_context::TemplateContext;
 use std::collections::HashMap;
 
 /// Load and render a template from a string with the given variables.
@@ -57,6 +58,7 @@ fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) 
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+#[cfg(test)]
 pub fn prompt_detailed_review_without_guidelines_with_diff(
     context: ContextLevel,
     diff: &str,
@@ -76,71 +78,131 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
     load_template_str(template_content, &variables)
 }
 
-/// Generate incremental review prompt with diff included directly.
+/// Generate detailed reviewer review prompt without language-specific guidelines,
+/// including the diff directly in the prompt, using template registry.
 ///
-/// This version receives the diff as a parameter instead of telling the agent
-/// to run git commands. This keeps agents isolated from git operations.
-///
-/// The reviewer returns structured issues data (captured by JSON parser)
-/// and the orchestrator writes it to .agent/ISSUES.md.
+/// This version uses the template registry which supports user template overrides.
 ///
 /// # Arguments
 ///
+/// * `template_context` - Template context containing the template registry
 /// * `context` - The context level (minimal or normal)
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
-pub fn prompt_incremental_review_with_diff(
+pub fn prompt_detailed_review_without_guidelines_with_diff_with_context(
+    template_context: &TemplateContext,
     context: ContextLevel,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
-    let template_content = match context {
-        ContextLevel::Minimal => include_str!("templates/incremental_review_minimal.txt"),
-        ContextLevel::Normal => include_str!("templates/incremental_review_normal.txt"),
+    let template_name = match context {
+        ContextLevel::Minimal => "detailed_review_minimal",
+        ContextLevel::Normal => "detailed_review_normal",
     };
+
+    let tmpl_content = template_context
+        .registry()
+        .get_template(template_name)
+        .unwrap_or_else(|_| {
+            match context {
+                ContextLevel::Minimal => include_str!("templates/detailed_review_minimal.txt"),
+                ContextLevel::Normal => include_str!("templates/detailed_review_normal.txt"),
+            }
+            .to_string()
+        });
+
+    let variables = HashMap::from([
+        ("MODE", "DETAILED REVIEW MODE".to_string()),
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("DIFF", diff.to_string()),
+    ]);
+    load_template_str(&tmpl_content, &variables)
+}
+
+/// Generate incremental review prompt with diff included directly, using template registry.
+///
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `template_context` - Template context containing the template registry
+/// * `context` - The context level (minimal or normal)
+/// * `diff` - The git diff to review (changes since pipeline start)
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+pub fn prompt_incremental_review_with_diff_with_context(
+    template_context: &TemplateContext,
+    context: ContextLevel,
+    diff: &str,
+    prompt_content: &str,
+    plan_content: &str,
+) -> String {
+    let template_name = match context {
+        ContextLevel::Minimal => "incremental_review_minimal",
+        ContextLevel::Normal => "incremental_review_normal",
+    };
+
+    let tmpl_content = template_context
+        .registry()
+        .get_template(template_name)
+        .unwrap_or_else(|_| {
+            match context {
+                ContextLevel::Minimal => include_str!("templates/incremental_review_minimal.txt"),
+                ContextLevel::Normal => include_str!("templates/incremental_review_normal.txt"),
+            }
+            .to_string()
+        });
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
     ]);
-    load_template_str(template_content, &variables)
+    load_template_str(&tmpl_content, &variables)
 }
 
 /// Generate a universal/simplified review prompt for maximum agent compatibility,
-/// including the diff directly in the prompt.
+/// including the diff directly in the prompt, using template registry.
 ///
-/// This prompt is designed to work with a wide range of AI agents, including
-/// those with weaker instruction-following capabilities. It:
-/// - Uses simpler, more direct language
-/// - Provides explicit output templates
-/// - Minimizes complex structured instructions
-/// - Includes the diff directly to keep agents isolated from git operations
-///
-/// The reviewer returns structured issues data (captured by JSON parser)
-/// and the orchestrator writes it to .agent/ISSUES.md.
+/// This version uses the template registry which supports user template overrides.
 ///
 /// # Arguments
 ///
+/// * `template_context` - Template context containing the template registry
 /// * `context` - The context level (minimal or normal)
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
-pub fn prompt_universal_review_with_diff(
+pub fn prompt_universal_review_with_diff_with_context(
+    template_context: &TemplateContext,
     context: ContextLevel,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
-    let template_content = match context {
-        ContextLevel::Minimal => include_str!("templates/universal_review_minimal.txt"),
-        ContextLevel::Normal => include_str!("templates/universal_review_normal.txt"),
+    let template_name = match context {
+        ContextLevel::Minimal => "universal_review_minimal",
+        ContextLevel::Normal => "universal_review_normal",
     };
+
+    let tmpl_content = template_context
+        .registry()
+        .get_template(template_name)
+        .unwrap_or_else(|_| {
+            match context {
+                ContextLevel::Minimal => include_str!("templates/universal_review_minimal.txt"),
+                ContextLevel::Normal => include_str!("templates/universal_review_normal.txt"),
+            }
+            .to_string()
+        });
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
     ]);
-    load_template_str(template_content, &variables)
+    load_template_str(&tmpl_content, &variables)
 }

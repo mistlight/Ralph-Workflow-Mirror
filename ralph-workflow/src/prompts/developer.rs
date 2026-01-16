@@ -4,11 +4,9 @@
 
 use std::collections::HashMap;
 
+use super::template_context::TemplateContext;
 use super::template_engine::Template;
 use super::types::ContextLevel;
-
-#[cfg(test)]
-use super::template_context::TemplateContext;
 
 /// Generate developer iteration prompt.
 ///
@@ -27,6 +25,7 @@ use super::template_context::TemplateContext;
 /// * `context` - The context level (minimal or normal) (accepted for API compatibility, not used in template)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+#[cfg(test)]
 pub fn prompt_developer_iteration(
     iteration: u32,
     total: u32,
@@ -81,6 +80,7 @@ pub fn prompt_developer_iteration(
 /// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
 ///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
 ///   which prevents accidental deletion.
+#[cfg(test)]
 pub fn prompt_plan(prompt_content: Option<&str>) -> String {
     let template_content = include_str!("templates/planning.txt");
     let template = Template::new(template_content);
@@ -115,7 +115,6 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
 /// * `ctx_level` - The context level (minimal or normal) (accepted for API compatibility, not used in template)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
-#[cfg(test)]
 pub fn prompt_developer_iteration_with_context(
     context: &TemplateContext,
     iteration: u32,
@@ -173,7 +172,6 @@ pub fn prompt_developer_iteration_with_context(
 /// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
 ///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
 ///   which prevents accidental deletion.
-#[cfg(test)]
 pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Option<&str>) -> String {
     let template_content = context
         .registry()

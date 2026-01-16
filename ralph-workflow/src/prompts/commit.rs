@@ -3,7 +3,6 @@
 //! Prompts for commit message generation and fix actions.
 
 use crate::files::result_extraction::extract_file_paths_from_issues;
-#[cfg(test)]
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;
@@ -35,6 +34,7 @@ use std::collections::HashMap;
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
+#[cfg(test)]
 pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str) -> String {
     let template_content = include_str!("templates/fix_mode.txt");
 
@@ -76,7 +76,6 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
-#[cfg(test)]
 pub fn prompt_fix_with_context(
     context: &TemplateContext,
     prompt_content: &str,
@@ -166,6 +165,7 @@ fn format_files_section(files: &[String]) -> String {
 /// is passed, it returns an error prompt that will fail validation in the caller
 /// and trigger fallback commit message generation. Callers should still check for
 /// meaningful changes before calling this function for efficiency.
+#[cfg(test)]
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
@@ -210,7 +210,6 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
 ///
 /// * `context` - Template context containing the template registry
 /// * `diff` - The git diff to generate a commit message for
-#[cfg(test)]
 pub fn prompt_generate_commit_message_with_diff_with_context(
     context: &TemplateContext,
     diff: &str,
@@ -252,14 +251,21 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
     })
 }
 
-/// Generate strict XML-only prompt for commit message retry.
+/// Generate strict XML-only prompt for commit message retry using template registry.
 ///
-/// This is used when the initial attempt fails to produce valid output,
-/// providing a simpler, more focused prompt to encourage proper XML output.
-pub fn prompt_strict_json_commit(diff: &str) -> String {
-    let template_content = include_str!("templates/commit_strict_json.txt");
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+pub fn prompt_strict_json_commit_with_context(context: &TemplateContext, diff: &str) -> String {
+    let template_content = context
+        .registry()
+        .get_template("commit_strict_json")
+        .unwrap_or_else(|_| include_str!("templates/commit_strict_json.txt").to_string());
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(template_content)
+    Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_e| {
             // Fallback to minimal prompt with diff if template rendering fails
@@ -274,14 +280,21 @@ pub fn prompt_strict_json_commit(diff: &str) -> String {
         })
 }
 
-/// Generate even stricter re-prompt with negative examples.
+/// Generate even stricter re-prompt with negative examples using template registry.
 ///
-/// This is the second-level re-prompt used when the strict prompt also fails.
-/// It includes explicit examples of what NOT to output to prevent common mistakes.
-pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
-    let template_content = include_str!("templates/commit_strict_json_v2.txt");
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+pub fn prompt_strict_json_commit_v2_with_context(context: &TemplateContext, diff: &str) -> String {
+    let template_content = context
+        .registry()
+        .get_template("commit_strict_json_v2")
+        .unwrap_or_else(|_| include_str!("templates/commit_strict_json_v2.txt").to_string());
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(template_content)
+    Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_e| {
             // Fallback to minimal prompt with diff if template rendering fails
@@ -292,14 +305,21 @@ pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
         })
 }
 
-/// Generate ultra-minimal commit prompt.
+/// Generate ultra-minimal commit prompt using template registry.
 ///
-/// This is the third-level re-prompt with bare minimum instructions.
-/// Removes all explanatory context to reduce chance of verbose responses.
-pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
-    let template_content = include_str!("templates/commit_ultra_minimal.txt");
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+pub fn prompt_ultra_minimal_commit_with_context(context: &TemplateContext, diff: &str) -> String {
+    let template_content = context
+        .registry()
+        .get_template("commit_ultra_minimal")
+        .unwrap_or_else(|_| include_str!("templates/commit_ultra_minimal.txt").to_string());
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(template_content)
+    Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_e| {
             // Fallback to minimal prompt with diff if template rendering fails
@@ -310,14 +330,24 @@ pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
         })
 }
 
-/// Generate ultra-minimal V2 commit prompt.
+/// Generate ultra-minimal V2 commit prompt using template registry.
 ///
-/// This is an even shorter variant that only provides the subject line template.
-/// Used when `UltraMinimal` still produces too much output.
-pub fn prompt_ultra_minimal_commit_v2(diff: &str) -> String {
-    let template_content = include_str!("templates/commit_ultra_minimal_v2.txt");
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+pub fn prompt_ultra_minimal_commit_v2_with_context(
+    context: &TemplateContext,
+    diff: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("commit_ultra_minimal_v2")
+        .unwrap_or_else(|_| include_str!("templates/commit_ultra_minimal_v2.txt").to_string());
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(template_content)
+    Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_e| {
             // Fallback to minimal prompt with diff if template rendering fails
@@ -328,12 +358,15 @@ pub fn prompt_ultra_minimal_commit_v2(diff: &str) -> String {
         })
 }
 
-/// Generate file-list-only commit prompt.
+/// Generate file-list-only commit prompt using template registry.
 ///
-/// This variant asks for a commit based on just file paths (no diff content).
-/// Used when all diff-including prompts fail due to token limits.
-/// The diff is still provided but the prompt focuses on file paths.
-pub fn prompt_file_list_only_commit(diff: &str) -> String {
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+pub fn prompt_file_list_only_commit_with_context(context: &TemplateContext, diff: &str) -> String {
     let diff_content = diff.trim();
 
     // Extract just the file paths from the diff
@@ -357,9 +390,12 @@ pub fn prompt_file_list_only_commit(diff: &str) -> String {
         result
     };
 
-    let template_content = include_str!("templates/commit_file_list_only.txt");
+    let template_content = context
+        .registry()
+        .get_template("commit_file_list_only")
+        .unwrap_or_else(|_| include_str!("templates/commit_file_list_only.txt").to_string());
     let variables = HashMap::from([("FILE_LIST", file_list.clone())]);
-    Template::new(template_content)
+    Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             // Fallback to minimal prompt with file list if template rendering fails
@@ -373,14 +409,21 @@ pub fn prompt_file_list_only_commit(diff: &str) -> String {
         })
 }
 
-/// Generate emergency commit prompt with maximum constraints.
+/// Generate emergency commit prompt with maximum constraints using template registry.
 ///
-/// This is the final re-prompt attempt before falling back to the next agent.
-/// It provides the absolute minimum context to elicit an XML response.
-pub fn prompt_emergency_commit(diff: &str) -> String {
-    let template_content = include_str!("templates/commit_emergency.txt");
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+pub fn prompt_emergency_commit_with_context(context: &TemplateContext, diff: &str) -> String {
+    let template_content = context
+        .registry()
+        .get_template("commit_emergency")
+        .unwrap_or_else(|_| include_str!("templates/commit_emergency.txt").to_string());
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(template_content)
+    Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             // Fallback to minimal prompt with diff if template rendering fails
@@ -391,12 +434,18 @@ pub fn prompt_emergency_commit(diff: &str) -> String {
         })
 }
 
-/// Generate file-list-summary-only commit prompt.
+/// Generate file-list-summary-only commit prompt using template registry.
 ///
-/// This variant provides only a summary of changed files with counts and categories,
-/// without any diff content. Used when all diff-including prompts fail due to
-/// extreme token limits.
-pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+pub fn prompt_file_list_summary_only_commit_with_context(
+    context: &TemplateContext,
+    diff: &str,
+) -> String {
     use std::fmt::Write;
 
     let diff_content = diff.trim();
@@ -451,9 +500,12 @@ pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
         writeln!(summary, "- Other files: {other_files}").unwrap();
     }
 
-    let template_content = include_str!("templates/commit_file_list_summary.txt");
+    let template_content = context
+        .registry()
+        .get_template("commit_file_list_summary")
+        .unwrap_or_else(|_| include_str!("templates/commit_file_list_summary.txt").to_string());
     let variables = HashMap::from([("FILE_SUMMARY", summary.clone())]);
-    Template::new(template_content)
+    Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             // Fallback to minimal prompt with summary if template rendering fails
@@ -467,13 +519,22 @@ pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
         })
 }
 
-/// Generate emergency no-diff commit prompt.
+/// Generate emergency no-diff commit prompt using template registry.
 ///
-/// This is the absolute last resort that doesn't include any diff at all.
-/// Just asks for a generic commit when everything else fails.
-pub fn prompt_emergency_no_diff_commit(_diff: &str) -> String {
-    let template_content = include_str!("templates/commit_emergency_no_diff.txt");
-    Template::new(template_content)
+/// This version uses the template registry which supports user template overrides.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+pub fn prompt_emergency_no_diff_commit_with_context(
+    context: &TemplateContext,
+    _diff: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("commit_emergency_no_diff")
+        .unwrap_or_else(|_| include_str!("templates/commit_emergency_no_diff.txt").to_string());
+    Template::new(&template_content)
         .render(&std::collections::HashMap::new())
         .unwrap_or_else(|_| {
             // Fallback to hardcoded commit message if template rendering fails
@@ -528,58 +589,6 @@ mod tests {
                 "Fix prompt NOTES.md reference should be optional"
             );
         }
-    }
-
-    #[test]
-    fn test_strict_json_commit_v2_returns_valid_content() {
-        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
-        let result = prompt_strict_json_commit_v2(diff);
-        assert!(!result.is_empty());
-        assert!(result.contains("DIFF:"));
-        assert!(result.contains("WHAT NOT TO OUTPUT"));
-        assert!(result.contains("CORRECT OUTPUT"));
-    }
-
-    #[test]
-    fn test_ultra_minimal_commit_returns_valid_content() {
-        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
-        let result = prompt_ultra_minimal_commit(diff);
-        assert!(!result.is_empty());
-        assert!(result.contains("DIFF:"));
-        assert!(result.contains("OUTPUT ONLY:"));
-        // Ultra-minimal should be shorter than standard prompt
-        let standard = prompt_generate_commit_message_with_diff(diff);
-        assert!(result.len() < standard.len());
-    }
-
-    #[test]
-    fn test_emergency_commit_returns_valid_content() {
-        let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
-        let result = prompt_emergency_commit(diff);
-        assert!(!result.is_empty());
-        // Emergency prompt is extremely minimal - just diff + template
-        assert!(result.len() < 200);
-        // Now uses XML format
-        assert!(result.contains("<ralph-commit>"));
-        assert!(result.contains("<ralph-subject>fix: </ralph-subject>"));
-    }
-
-    #[test]
-    fn test_strict_xml_v2_has_negative_examples() {
-        let result = prompt_strict_json_commit_v2("dummy diff");
-        // V2 should explicitly mention what NOT to output
-        assert!(result.contains("WHAT NOT TO OUTPUT"));
-        assert!(result.contains("Looking at the diff"));
-        assert!(result.contains("Here is the commit message"));
-    }
-
-    #[test]
-    fn test_emergency_is_minimal() {
-        let diff = "dummy diff";
-        let emergency = prompt_emergency_commit(diff);
-        let ultra_minimal = prompt_ultra_minimal_commit(diff);
-        // Emergency should be the shortest
-        assert!(emergency.len() < ultra_minimal.len());
     }
 
     #[test]

@@ -7,6 +7,7 @@ use crate::cli::Args;
 use crate::config::Config;
 use crate::logger::Colors;
 use crate::logger::Logger;
+use crate::prompts::template_context::TemplateContext;
 
 /// Context for running the pipeline.
 ///
@@ -23,4 +24,5 @@ pub struct PipelineContext {
     pub repo_root: std::path::PathBuf,
     pub logger: Logger,
     pub colors: Colors,
+    pub template_context: TemplateContext,
 }

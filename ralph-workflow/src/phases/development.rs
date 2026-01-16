@@ -106,6 +106,7 @@ pub fn run_development_phase(
             Role::Developer,
             Action::Iterate,
             developer_context,
+            ctx.template_context,
             PromptConfig::new()
                 .with_iterations(i, ctx.config.developer_iters)
                 .with_prompt_and_plan(prompt_md, plan_md),
@@ -199,6 +200,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         Role::Developer,
         Action::Plan,
         ContextLevel::Normal,
+        ctx.template_context,
         prompt_md_content
             .map(|content| PromptConfig::new().with_prompt_md(content))
             .unwrap_or_default(),

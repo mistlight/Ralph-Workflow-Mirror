@@ -248,6 +248,12 @@ impl Config {
         self.commit_msg = msg;
         self
     }
+
+    /// Get the user templates directory.
+    #[must_use]
+    pub const fn user_templates_dir(&self) -> Option<&std::path::PathBuf> {
+        self.user_templates_dir.as_ref()
+    }
 }
 
 impl Default for Config {

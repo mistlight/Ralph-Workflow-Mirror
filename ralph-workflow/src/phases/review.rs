@@ -400,6 +400,7 @@ fn run_fix_pass(
         Role::Reviewer,
         Action::Fix,
         reviewer_context,
+        ctx.template_context,
         PromptConfig::new().with_prompt_plan_and_issues(
             prompt_content,
             plan_content,

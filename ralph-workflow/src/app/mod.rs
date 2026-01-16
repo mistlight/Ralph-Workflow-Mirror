@@ -49,6 +49,7 @@ use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
+use crate::prompts::template_context::TemplateContext;
 use std::env;
 use std::process::Command;
 
@@ -79,6 +80,7 @@ use validation::{
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
+#[allow(clippy::too_many_lines)]
 pub fn run(args: Args) -> anyhow::Result<()> {
     let colors = Colors::new();
     let mut logger = Logger::new(colors);
@@ -157,9 +159,13 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         return Ok(());
     };
 
+    // Create template context for user template overrides (needed for rebase-only)
+    let template_context =
+        TemplateContext::from_user_templates_dir(config.user_templates_dir().cloned());
+
     // Handle --rebase-only
     if args.rebase_flags.rebase_only {
-        return handle_rebase_only(&args, &config, &logger, colors);
+        return handle_rebase_only(&args, &config, &template_context, &logger, colors);
     }
 
     ensure_files(config.isolation_mode)?;
@@ -187,6 +193,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     if args.commit_plumbing.generate_commit_msg {
         return handle_generate_commit_msg(
             &config,
+            &template_context,
             &registry,
             &logger,
             colors,
@@ -207,6 +214,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         repo_root,
         logger,
         colors,
+        template_context,
     };
     run_pipeline(&ctx)
 }
@@ -360,7 +368,13 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     save_start_commit_or_warn(ctx);
 
     // Run pre-development rebase
-    run_initial_rebase(&ctx.args, &ctx.config, &ctx.logger, ctx.colors)?;
+    run_initial_rebase(
+        &ctx.args,
+        &ctx.config,
+        &ctx.template_context,
+        &ctx.logger,
+        ctx.colors,
+    )?;
 
     // Run pipeline phases
     run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
@@ -371,7 +385,13 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     check_prompt_restoration(ctx, &mut prompt_monitor, "review");
 
     // Run post-review rebase
-    run_post_review_rebase(&ctx.args, &ctx.config, &ctx.logger, ctx.colors)?;
+    run_post_review_rebase(
+        &ctx.args,
+        &ctx.config,
+        &ctx.template_context,
+        &ctx.logger,
+        ctx.colors,
+    )?;
 
     update_status("In progress.", ctx.config.isolation_mode)?;
 
@@ -503,6 +523,7 @@ fn create_phase_context<'ctx>(
         developer_agent: &ctx.developer_agent,
         reviewer_agent: &ctx.reviewer_agent,
         review_guidelines,
+        template_context: &ctx.template_context,
     }
 }
 
@@ -706,6 +727,7 @@ fn run_final_validation(
 fn handle_rebase_only(
     _args: &Args,
     config: &crate::config::Config,
+    template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
@@ -744,7 +766,13 @@ fn handle_rebase_only(
             ));
 
             // Attempt to resolve conflicts with AI
-            match try_resolve_conflicts_with_fallback(&conflicted_files, config, logger, colors) {
+            match try_resolve_conflicts_with_fallback(
+                &conflicted_files,
+                config,
+                template_context,
+                logger,
+                colors,
+            ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
                     logger.info("Continuing rebase after conflict resolution");
@@ -813,6 +841,7 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 fn run_initial_rebase(
     _args: &Args,
     config: &crate::config::Config,
+    template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
@@ -842,7 +871,13 @@ fn run_initial_rebase(
             ));
 
             // Attempt to resolve conflicts with AI
-            match try_resolve_conflicts_with_fallback(&conflicted_files, config, logger, colors) {
+            match try_resolve_conflicts_with_fallback(
+                &conflicted_files,
+                config,
+                template_context,
+                logger,
+                colors,
+            ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
                     logger.info("Continuing rebase after conflict resolution");
@@ -885,6 +920,7 @@ fn run_initial_rebase(
 fn run_post_review_rebase(
     _args: &Args,
     config: &crate::config::Config,
+    template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
@@ -914,7 +950,13 @@ fn run_post_review_rebase(
             ));
 
             // Attempt to resolve conflicts with AI
-            match try_resolve_conflicts_with_fallback(&conflicted_files, config, logger, colors) {
+            match try_resolve_conflicts_with_fallback(
+                &conflicted_files,
+                config,
+                template_context,
+                logger,
+                colors,
+            ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
                     logger.info("Continuing rebase after conflict resolution");
@@ -957,6 +999,7 @@ fn run_post_review_rebase(
 fn try_resolve_conflicts_with_fallback(
     conflicted_files: &[String],
     config: &crate::config::Config,
+    template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<bool> {
@@ -970,7 +1013,7 @@ fn try_resolve_conflicts_with_fallback(
     ));
 
     let conflicts = collect_conflict_info_or_error(conflicted_files, logger)?;
-    let resolution_prompt = build_resolution_prompt(&conflicts);
+    let resolution_prompt = build_resolution_prompt(&conflicts, template_context);
 
     let resolved_content = run_ai_conflict_resolution(&resolution_prompt, config, logger, colors)?;
     let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
@@ -1009,14 +1052,16 @@ fn collect_conflict_info_or_error(
 /// Build the conflict resolution prompt from context files.
 fn build_resolution_prompt(
     conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
+    template_context: &TemplateContext,
 ) -> String {
-    use crate::prompts::build_conflict_resolution_prompt;
+    use crate::prompts::build_conflict_resolution_prompt_with_context;
     use std::fs;
 
     let prompt_md_content = fs::read_to_string("PROMPT.md").ok();
     let plan_content = fs::read_to_string(".agent/PLAN.md").ok();
 
-    build_conflict_resolution_prompt(
+    build_conflict_resolution_prompt_with_context(
+        template_context,
         conflicts,
         prompt_md_content.as_deref(),
         plan_content.as_deref(),
