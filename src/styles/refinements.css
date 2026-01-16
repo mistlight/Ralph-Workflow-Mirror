@@ -66,20 +66,38 @@ h2::after {
     0% {
         box-shadow: var(--shadow-glow-sm), 0 0 0 transparent;
     }
+
     50% {
         box-shadow: var(--shadow-glow-md), 0 0 40px var(--color-primary-glow);
     }
+
     100% {
         box-shadow: var(--shadow-glow-md), 0 0 30px var(--color-primary-glow);
     }
 }
 
+/* Enhanced secondary button hover */
+.btn-secondary:hover {
+    box-shadow: var(--shadow-glow-sm), 0 0 25px var(--color-primary-glow),
+                inset 0 1px 0 rgb(255 255 255 / 10%);
+}
+
+/* Ghost button refinement */
+.btn-ghost:hover {
+    background: linear-gradient(135deg,
+                var(--color-bg-hover) 0%,
+                var(--color-bg-card) 100%);
+    border-color: var(--border-accent);
+    box-shadow: 0 0 20px var(--color-primary-dim);
+}
+
 /* === TERMINAL WINDOW POLISH === */
 
-/* Subtle terminal cursor blink animation */
+/* Enhanced terminal cursor with glow */
 .terminal-cursor {
     animation: cursor-blink 1s step-end infinite;
     background-color: var(--color-primary);
+    box-shadow: 0 0 10px var(--color-primary-glow);
     display: inline-block;
     height: 1.2em;
     width: 2px;
@@ -89,6 +107,7 @@ h2::after {
     0%, 100% {
         opacity: 1;
     }
+
     50% {
         opacity: 0;
     }
@@ -102,20 +121,59 @@ h2::after {
                 transform var(--duration-300) var(--ease-out);
 }
 
+/* Terminal typing effect polish */
+.terminal-line {
+    animation: typeIn 0.3s ease-out forwards;
+    opacity: 0;
+}
+
+@keyframes typeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
 /* === CARD IMPROVEMENTS === */
 
-/* Subtle card lift on hover */
+/* Enhanced card depth and hover */
 .feature-card,
 .install-card,
 .comparison-card {
-    transition: transform var(--duration-200) var(--ease-out),
-                box-shadow var(--duration-200) var(--ease-out);
+    transition: transform var(--duration-300) var(--ease-out),
+                box-shadow var(--duration-300) var(--ease-out);
 }
 
 .feature-card:hover,
 .install-card:hover,
 .comparison-card:hover {
-    transform: translateY(-4px);
+    box-shadow: var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim);
+    transform: translateY(-6px);
+}
+
+/* Inner glow for card hover */
+.feature-card::before,
+.install-card::before {
+    background: linear-gradient(135deg,
+                rgb(0 212 255 / 5%) 0%,
+                transparent 50%);
+    border-radius: inherit;
+    content: '';
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transition: opacity var(--duration-300) var(--ease-out);
+}
+
+.feature-card:hover::before,
+.install-card:hover::before {
+    opacity: 1;
 }
 
 /* === AUDIENCE SELECTION BUTTONS === */
@@ -138,20 +196,40 @@ h2::after {
 
 /* === FAQ ACCORDION POLISH === */
 
-/* Smooth accordion transitions */
+/* Enhanced accordion interactions */
 .faq-summary {
-    transition: background-color var(--duration-150) var(--ease-out),
-                border-color var(--duration-150) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-out);
+}
+
+.faq-summary:hover {
+    background-color: var(--color-bg-hover);
+    border-color: var(--border-accent);
+}
+
+.faq-summary[aria-expanded="true"] {
+    background-color: var(--color-primary-dim);
+    border-color: var(--border-accent);
 }
 
 .faq-details {
-    transition: max-height var(--duration-300) var(--ease-out),
-                opacity var(--duration-300) var(--ease-out);
+    animation: accordionExpand 0.3s ease-out;
+}
+
+@keyframes accordionExpand {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* === MOBILE RESPONSIVENESS === */
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
     /* Adjust spacing for mobile */
     .hero {
         padding: var(--space-20) 0 var(--space-16);
@@ -174,8 +252,8 @@ h2::after {
 
     /* Stack grid on mobile */
     .hero-grid {
-        grid-template-columns: 1fr;
         gap: var(--space-12);
+        grid-template-columns: 1fr;
     }
 
     /* Adjust terminal for mobile */
@@ -192,14 +270,14 @@ h2::after {
     *,
     *::before,
     *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms;
+        animation-iteration-count: 1;
+        transition-duration: 0.01ms;
     }
 }
 
-/* High contrast mode support */
-@media (prefers-contrast: high) {
+/* High contrast mode support - use more instead of high for compatibility */
+@media (prefers-contrast: more) {
     .btn {
         border-width: 2px;
     }
@@ -216,23 +294,27 @@ html {
     scroll-behavior: smooth;
 }
 
-/* Link underline animation */
-a {
-    background-image: linear-gradient(var(--color-primary), var(--color-primary));
+/* Enhanced link hover with gradient */
+a:not(.btn) {
+    background-image: linear-gradient(135deg,
+                var(--color-primary) 0%,
+                var(--color-accent) 100%);
     background-position: 0% 100%;
     background-repeat: no-repeat;
     background-size: 0% 2px;
+    position: relative;
     transition: background-size var(--duration-200) var(--ease-out);
 }
 
-a:hover {
+a:not(.btn):hover {
     background-size: 100% 2px;
 }
 
-/* Code inline hover effect */
-code:hover {
+/* Enhanced code inline hover */
+code:not(pre code):hover {
     background-color: var(--color-primary-dim);
     border-color: var(--color-primary);
+    box-shadow: 0 0 15px var(--color-primary-glow);
     cursor: help;
     transition: all var(--duration-150) var(--ease-out);
 }
@@ -256,10 +338,52 @@ code:hover {
     padding: var(--space-20) 0;
 }
 
-@media (min-width: 1024px) {
+@media (width >= 1024px) {
     .section {
         padding: var(--space-28) 0;
     }
+}
+
+/* === NAVIGATION ENHANCEMENTS === */
+
+/* Navigation active state */
+.nav-link.active {
+    background-color: var(--color-primary-dim);
+    color: var(--color-primary);
+}
+
+.nav-link:hover {
+    background-color: var(--color-bg-hover);
+    color: var(--color-primary);
+}
+
+/* Enhanced dropdown menu */
+.dropdown-menu {
+    animation: dropdownFadeIn 0.2s ease-out;
+    box-shadow: var(--shadow-xl), var(--shadow-glow-md);
+}
+
+@keyframes dropdownFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* === HERO BADGE ENHANCEMENTS === */
+
+.badge {
+    transition: all var(--duration-200) var(--ease-out);
+}
+
+.badge:hover {
+    box-shadow: 0 0 20px currentcolor;
+    transform: translateY(-1px);
 }
 
 /* === BORDER RADIUS CONSISTENCY === */
@@ -306,6 +430,7 @@ code:hover {
     0%, 100% {
         background-position: 0% 50%;
     }
+
     50% {
         background-position: 100% 50%;
     }
@@ -346,6 +471,7 @@ code:hover {
         opacity: 0;
         transform: scaleX(0);
     }
+
     to {
         opacity: 1;
         transform: scaleX(1);
@@ -364,10 +490,50 @@ code:hover {
         opacity: 0;
         transform: translateY(4px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* === SCROLL INDICATOR ENHANCEMENT === */
+
+.scroll-indicator {
+    animation: fadeInUp 1s var(--ease-expo-out) 1.5s forwards, float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateX(-50%) translateY(0);
+    }
+
+    50% {
+        transform: translateX(-50%) translateY(-10px);
+    }
+}
+
+/* === FOOTER ENHANCEMENTS === */
+
+footer a:hover {
+    color: var(--color-primary);
+    text-shadow: 0 0 10px var(--color-primary-glow);
+}
+
+/* === STEP/WORKFLOW VISUALIZATION === */
+
+.step-connector {
+    background: linear-gradient(180deg,
+                var(--border-soft) 0%,
+                var(--border-accent) 50%,
+                var(--border-soft) 100%);
+    transition: all var(--duration-300) var(--ease-out);
+}
+
+.step-item:hover .step-connector {
+    background: linear-gradient(180deg,
+                var(--color-primary) 0%,
+                var(--color-accent) 100%);
 }
 
 /* === PRINT STYLES === */
@@ -379,8 +545,8 @@ code:hover {
     }
 
     .terminal-window {
-        box-shadow: none;
         border: 1px solid #ccc;
+        box-shadow: none;
     }
 
     a {
