@@ -8,7 +8,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Get output directory from command line argument (default: 'baseline')
-const outputDir = process.argv[2] || 'baseline';
+// Validate against path traversal attacks
+const rawOutputDir = process.argv[2] || 'baseline';
+const outputDir = /^[\w-]+$/.test(rawOutputDir) ? rawOutputDir : 'baseline';
+
+if (rawOutputDir !== outputDir) {
+    console.error(`Invalid output directory name: "${rawOutputDir}". Using "baseline" instead.`);
+}
 
 (async () => {
     const browser = await chromium.launch();

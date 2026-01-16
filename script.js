@@ -644,7 +644,15 @@
     copyButtons.forEach(btn => {
         btn.addEventListener('click', async function() {
             const codeBlock = this.closest('.code-block');
-            const code = codeBlock.querySelector('code').textContent;
+            const codeElement = codeBlock?.querySelector('code');
+
+            // Validate code element exists
+            if (!codeElement) {
+                console.warn('Copy button clicked but no code element found');
+                return;
+            }
+
+            const code = codeElement.textContent;
 
             // Store original content to restore later
             const originalContent = this.cloneNode(true);
@@ -657,10 +665,8 @@
                     await navigator.clipboard.writeText(code);
                     success = true;
                 } catch (err) {
-                    console.error('Copy failed:', err);
+                    // Silent fail - clipboard errors are not actionable for users
                 }
-            } else {
-                console.warn('Clipboard API unavailable. Copying requires a secure context (HTTPS or localhost).');
             }
 
             if (success) {
@@ -1517,6 +1523,12 @@ impl AuthService {
             const targetId = btn.dataset.expand;
             const targetContent = document.getElementById(targetId);
             const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+
+            // Validate targetContent exists before manipulation
+            if (!targetContent) {
+                console.warn(`Expand button references missing element: ${targetId}`);
+                return;
+            }
 
             // Toggle expanded state
             btn.setAttribute('aria-expanded', !isExpanded);
