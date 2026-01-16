@@ -452,21 +452,27 @@ fn handle_commit_extraction_result(
         Ok(Some(extraction)) => {
             let error_kind = extraction.error_kind();
             if extraction.is_agent_error() {
-                if error_kind == Some(AgentErrorKind::TokenExhausted) {
-                    runtime.logger.warn(&format!(
-                        "TokenExhausted detected with {}. Trying smaller prompt variant.",
-                        strategy.description()
+                let error_desc = error_kind.map_or("unknown", AgentErrorKind::description);
+
+                // Only abort for truly unrecoverable errors (DiskFull, Permanent)
+                // All other errors should try simpler prompts before giving up
+                if error_kind.is_some_and(AgentErrorKind::is_unrecoverable) {
+                    runtime.logger.error(&format!(
+                        "Unrecoverable agent error: {error_desc}. Cannot continue."
                     ));
                     *last_extraction = Some(extraction);
-                    None // Continue to next strategy
-                } else {
-                    let error_desc = error_kind.map_or("unknown", AgentErrorKind::description);
-                    runtime.logger.warn(&format!(
-                        "Agent error detected: {error_desc}. Skipping remaining prompt variants."
-                    ));
-                    *last_extraction = Some(extraction);
-                    Some(Err(anyhow::anyhow!("Agent error: {error_desc}")))
+                    return Some(Err(anyhow::anyhow!(
+                        "Unrecoverable agent error: {error_desc}"
+                    )));
                 }
+
+                // For recoverable errors, try simpler prompts
+                runtime.logger.warn(&format!(
+                    "{error_desc} detected with {}. Trying smaller prompt variant.",
+                    strategy.description()
+                ));
+                *last_extraction = Some(extraction);
+                None // Continue to next strategy
             } else if extraction.is_fallback() {
                 runtime.logger.warn(&format!(
                     "Extraction produced fallback message with {strategy}"
@@ -703,7 +709,7 @@ fn try_further_truncation_recovery(
 fn return_hardcoded_fallback(log_file: &str, runtime: &PipelineRuntime) -> CommitMessageResult {
     runtime.logger.warn("");
     runtime.logger.warn("All recovery methods failed:");
-    runtime.logger.warn("  - All 8 prompt variants exhausted");
+    runtime.logger.warn("  - All 9 prompt variants exhausted");
     runtime
         .logger
         .warn("  - All agents in fallback chain exhausted");
