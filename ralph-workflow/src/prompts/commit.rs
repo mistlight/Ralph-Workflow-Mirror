@@ -2,84 +2,14 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
-/// Generate fix prompt (applies to either role).
+/// Template for the commit message generation prompt.
 ///
-/// This prompt is agent-agnostic and works with any AI coding assistant.
-/// Instructions for NOTES.md are intentionally vague to avoid creating
-/// overly-specific context that could contaminate future runs.
-///
-/// # Agent-Orchestrator Separation
-///
-/// The fix agent reads ISSUES.md (written by the orchestrator after extracting
-/// from the reviewer's JSON output) and modifies source code files to fix issues.
-/// The agent returns structured output (completion status) that the orchestrator
-/// captures via JSON logging.
-///
-/// ISSUES.md is an orchestrator-managed file - the agent should NOT modify it.
-/// The orchestrator writes ISSUES.md before invoking the fix agent and may
-/// delete it after fix cycles (e.g., in isolation mode).
-pub fn prompt_fix() -> String {
-    r#"You are in FIX MODE. Address issues found during review.
-
-INPUTS TO READ:
-- .agent/ISSUES.md - Issues to address (if it exists)
-
-YOUR TASK:
-1. Read .agent/ISSUES.md to understand any issues (if it exists)
-2. Fix issues found, prioritizing by severity
-3. Verify fixes work
-
-AFTER FIXING:
-Return your completion status as structured output:
-- "All issues addressed." (if you believe everything is fixed)
-- "Issues remain." (if you believe issues still exist)
-- "No issues found." (if ISSUES.md didn't exist or was empty)
-
-DO NOT modify ISSUES.md - the orchestrator manages this file.
-You SHOULD modify source code files to fix the issues.
-
-GUIDELINES:
-- Fix issues properly, don't just suppress warnings
-- Ensure fixes don't introduce new issues"#
-        .to_string()
-}
-
-/// Generate prompt for creating commit message from provided diff.
-///
-/// This is used by the orchestrator (not agents) to generate commit messages.
-/// The diff is provided directly in the prompt, so the LLM doesn't need to
-/// run git commands or access files.
-///
-/// # Arguments
-///
-/// * `diff` - The git diff to generate a commit message for. If empty or
-///   whitespace-only, the prompt will indicate no changes were detected.
-///
-/// # Note
-///
-/// This function includes a defensive check for empty diffs - if an empty diff
-/// is passed, it returns an error prompt that will fail validation in the caller
-/// and trigger fallback commit message generation. Callers should still check for
-/// meaningful changes before calling this function for efficiency.
-pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
-    // Check if diff is empty or whitespace-only
-    let diff_content = diff.trim();
-    let has_changes = !diff_content.is_empty();
-
-    if !has_changes {
-        // Return an error message instead of a placeholder
-        // This will be caught by validation in commit_with_auto_message
-        // and trigger fallback commit message generation
-        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
-                meaningful changes should be checked before requesting a commit message."
-            .to_string();
-    }
-
-    format!(
-        r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
+/// This template instructs the LLM to generate high-quality Conventional Commits
+/// messages from a provided git diff.
+const COMMIT_PROMPT_TEMPLATE: &str = r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
 
 DIFF:
-{diff_content}
+{{diff}}
 
 ---
 
@@ -214,8 +144,82 @@ CORRECT:
 {{"subject": "feat: add feature", "body": null}}
 
 CORRECT (with body using \\n for newline):
-{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\\nAdd session management for OAuth tokens."}}"#
-    )
+{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\\nAdd session management for OAuth tokens."}}"#;
+
+/// Generate fix prompt (applies to either role).
+///
+/// This prompt is agent-agnostic and works with any AI coding assistant.
+/// Instructions for NOTES.md are intentionally vague to avoid creating
+/// overly-specific context that could contaminate future runs.
+///
+/// # Agent-Orchestrator Separation
+///
+/// The fix agent reads ISSUES.md (written by the orchestrator after extracting
+/// from the reviewer's JSON output) and modifies source code files to fix issues.
+/// The agent returns structured output (completion status) that the orchestrator
+/// captures via JSON logging.
+///
+/// ISSUES.md is an orchestrator-managed file - the agent should NOT modify it.
+/// The orchestrator writes ISSUES.md before invoking the fix agent and may
+/// delete it after fix cycles (e.g., in isolation mode).
+pub fn prompt_fix() -> String {
+    r#"You are in FIX MODE. Address issues found during review.
+
+INPUTS TO READ:
+- .agent/ISSUES.md - Issues to address (if it exists)
+
+YOUR TASK:
+1. Read .agent/ISSUES.md to understand any issues (if it exists)
+2. Fix issues found, prioritizing by severity
+3. Verify fixes work
+
+AFTER FIXING:
+Return your completion status as structured output:
+- "All issues addressed." (if you believe everything is fixed)
+- "Issues remain." (if you believe issues still exist)
+- "No issues found." (if ISSUES.md didn't exist or was empty)
+
+DO NOT modify ISSUES.md - the orchestrator manages this file.
+You SHOULD modify source code files to fix the issues.
+
+GUIDELINES:
+- Fix issues properly, don't just suppress warnings
+- Ensure fixes don't introduce new issues"#
+        .to_string()
+}
+
+/// Generate prompt for creating commit message from provided diff.
+///
+/// This is used by the orchestrator (not agents) to generate commit messages.
+/// The diff is provided directly in the prompt, so the LLM doesn't need to
+/// run git commands or access files.
+///
+/// # Arguments
+///
+/// * `diff` - The git diff to generate a commit message for. If empty or
+///   whitespace-only, the prompt will indicate no changes were detected.
+///
+/// # Note
+///
+/// This function includes a defensive check for empty diffs - if an empty diff
+/// is passed, it returns an error prompt that will fail validation in the caller
+/// and trigger fallback commit message generation. Callers should still check for
+/// meaningful changes before calling this function for efficiency.
+pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
+    // Check if diff is empty or whitespace-only
+    let diff_content = diff.trim();
+    let has_changes = !diff_content.is_empty();
+
+    if !has_changes {
+        // Return an error message instead of a placeholder
+        // This will be caught by validation in commit_with_auto_message
+        // and trigger fallback commit message generation
+        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
+                meaningful changes should be checked before requesting a commit message."
+            .to_string();
+    }
+
+    COMMIT_PROMPT_TEMPLATE.replace("{{diff}}", diff_content)
 }
 
 /// Generate strict JSON-only prompt for commit message retry.
