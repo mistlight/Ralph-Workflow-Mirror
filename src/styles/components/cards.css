@@ -133,7 +133,7 @@
 .key-point:hover {
     border-color: var(--color-primary);
     box-shadow: 0 8px 24px rgb(0 212 255 / 10%);
-    transform: translateY(-2px);
+    transform: translateY(-4px);
 }
 
 .key-point h4 {
@@ -158,12 +158,12 @@
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     position: relative;
-    transition: border-color var(--duration-200) var(--ease-out),
-                box-shadow var(--duration-200) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-out);
 }
 
 .comparison-card:hover {
     border-color: var(--border-medium);
+    transform: translateY(-4px);
 }
 
 .comparison-card--after {
@@ -416,13 +416,12 @@
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-6);
-    transition: border-color var(--duration-200) var(--ease-out),
-                transform var(--duration-200) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-out);
 }
 
 .quick-benefit-card:hover {
     border-color: var(--border-medium);
-    transform: translateY(-2px);
+    transform: translateY(-4px);
 }
 
 .quick-benefit-header {
