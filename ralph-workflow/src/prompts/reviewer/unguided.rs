@@ -33,7 +33,7 @@ fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) 
         .unwrap_or_else(|_e| {
             // Fallback to minimal prompt that still includes the diff
             // This ensures the review phase can proceed even if template rendering fails
-            let diff = variables.get("DIFF").map(|s| s.as_str()).unwrap_or("");
+            let diff = variables.get("DIFF").map_or("", String::as_str);
             format!(
                 "Review the following changes:\n\n{diff}\n\n\
              Provide feedback on any issues found."

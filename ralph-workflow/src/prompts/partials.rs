@@ -23,10 +23,10 @@
 
 use std::collections::HashMap;
 
-/// Get all shared partials as a HashMap.
+/// Get all shared partials as a `HashMap`.
 ///
 /// Partials are loaded at compile time via `include_str!` for efficiency.
-/// The HashMap uses partial name (without .txt extension) as the key.
+/// The `HashMap` uses partial name (without .txt extension) as the key.
 #[must_use]
 pub fn get_shared_partials() -> HashMap<String, String> {
     HashMap::from([

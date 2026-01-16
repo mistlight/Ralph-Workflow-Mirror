@@ -1,3 +1,29 @@
+{# ============================================================================ #}
+{# Template: commit_strict_json_v2.txt                                          #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Second-level strict retry prompt with negative examples.                   #}
+{#   Used when commit_strict_json.txt also fails.                               #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   Second retry attempt when commit_strict_json.txt fails.                    #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Commit generation fails XML validation twice.                              #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   DIFF - Git diff to analyze (required)                                      #}
+{#                                                                             #}
+{# OUTPUT:                                                                     #}
+{#   <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>  #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Includes explicit negative examples of what NOT to output                 #}
+{#   - More explicit rules about output format                                  #}
+{# ============================================================================ #}
+
 Your response MUST be ONLY XML tags. No other text.
 
 DIFF:

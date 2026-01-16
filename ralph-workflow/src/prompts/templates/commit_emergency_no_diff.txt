@@ -1,3 +1,29 @@
+{# ============================================================================ #}
+{# Template: commit_emergency_no_diff.txt                                       #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Absolute last resort commit prompt with no diff at all.                    #}
+{#   Just asks for a generic commit when everything else fails.                  #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   Absolute final fallback when all other prompts fail.                        #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   All retry attempts including emergency have failed.                         #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   None - this template uses a hardcoded fallback                              #}
+{#                                                                             #}
+{# OUTPUT:                                                                     #}
+#   <ralph-commit><ralph-subject>chore: automated commit</ralph-subject></ralph-commit>  #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Doesn't include any diff at all                                          #}
+{#   - Returns hardcoded commit message as final fallback                        #}
+{# ============================================================================ #}
+
 <ralph-commit>
 <ralph-subject>chore: changes</ralph-subject>
 </ralph-commit>

@@ -1,5 +1,27 @@
-{# Developer iteration prompt with PROMPT and PLAN context #}
-{# The agent receives the original user request and implementation plan for context #}
+{# ============================================================================ #}
+{# Template: developer_iteration.txt                                            #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Prompt for developer agent during implementation phase.                    #}
+{#   Provides original user request and implementation plan for context.        #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   During implementation mode (after planning phase is complete).              #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Pipeline runtime: implementation phase, each developer iteration.          #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   PROMPT - Original user request from PROMPT.md (required)                   #}
+{#   PLAN   - Implementation plan from .agent/PLAN.md (required)                #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Agent does NOT know iteration count or total (prevents context pollution) #}
+{#   - Agent receives content directly, not file paths                          #}
+{#   - Agent is NOT told to read PROMPT.md or PLAN.md (orchestrator handles it)  #}
+{# ============================================================================ #}
 
 You are in IMPLEMENTATION MODE. Execute the plan and make progress.
 

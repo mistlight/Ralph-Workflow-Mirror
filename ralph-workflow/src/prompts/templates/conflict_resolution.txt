@@ -1,3 +1,31 @@
+{# ============================================================================ #}
+{# Template: conflict_resolution.txt                                            #}
+{# Version: 1.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Prompt for resolving merge conflicts during rebase operations.             #}
+{#   Agent receives conflicted files and must produce merged versions.          #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   During rebase operations when merge conflicts occur.                       #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Git operation: rebase encounters conflicts.                                #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   CONTEXT   - Formatted section with PROMPT.md and PLAN.md content           #}
+{#   CONFLICTS - Formatted section showing conflicted files                     #}
+{#                                                                             #}
+{# OUTPUT:                                                                     #}
+{#   JSON object with "resolved_files" mapping paths to resolved content.       #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Agent MUST NOT know we're in a rebase (security requirement)             #}
+{#   - Prompt frames conflicts as "merge conflicts" not rebase conflicts         #}
+{#   - Each resolved file must contain COMPLETE content, not just diffs         #}
+{# ============================================================================ #}
+
 # MERGE CONFLICT RESOLUTION
 
 There are merge conflicts that need to be resolved. Below are the files with conflicts, showing both versions of the conflicting changes.

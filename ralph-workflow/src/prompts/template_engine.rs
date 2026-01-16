@@ -25,7 +25,7 @@
 //! - Provides clear error messages for missing partials
 //! - Supports hierarchical naming (dot notation or path-style)
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Error type for template operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +49,7 @@ impl std::fmt::Display for TemplateError {
                 write!(f, "Circular reference detected in partials: ")?;
                 let mut sep = "";
                 for partial in chain {
-                    write!(f, "{sep}{{{{> {partial}}}}}", sep = sep)?;
+                    write!(f, "{sep}{{{{> {partial}}}}}")?;
                     sep = " -> ";
                 }
                 Ok(())
@@ -244,15 +244,16 @@ impl Template {
         variables: &HashMap<&str, String>,
         partials: &HashMap<String, String>,
     ) -> Result<String, TemplateError> {
-        self.render_with_partials_recursive(variables, partials, &mut HashSet::new())
+        self.render_with_partials_recursive(variables, partials, &mut Vec::new())
     }
 
     /// Internal recursive rendering with circular reference detection.
+    /// `visited` is a Vec that tracks the order of partials visited for proper error reporting.
     fn render_with_partials_recursive(
         &self,
         variables: &HashMap<&str, String>,
         partials: &HashMap<String, String>,
-        visited: &mut HashSet<String>,
+        visited: &mut Vec<String>,
     ) -> Result<String, TemplateError> {
         // First, extract and resolve all partials in this template
         let mut result = self.content.clone();
@@ -264,7 +265,7 @@ impl Template {
         for (full_match, partial_name) in partial_refs.into_iter().rev() {
             // Check for circular reference
             if visited.contains(&partial_name) {
-                let mut chain: Vec<String> = visited.iter().cloned().collect();
+                let mut chain = visited.clone();
                 chain.push(partial_name.clone());
                 return Err(TemplateError::CircularReference(chain));
             }
@@ -275,11 +276,11 @@ impl Template {
                 .ok_or_else(|| TemplateError::PartialNotFound(partial_name.clone()))?;
 
             // Create a template from the partial and render it recursively
-            let partial_template = Template::new(partial_content);
-            visited.insert(partial_name.clone());
+            let partial_template = Self::new(partial_content);
+            visited.push(partial_name.clone());
             let rendered_partial =
                 partial_template.render_with_partials_recursive(variables, partials, visited)?;
-            visited.remove(&partial_name);
+            visited.pop();
 
             // Replace the partial reference with rendered content
             result = result.replace(&full_match, &rendered_partial);
