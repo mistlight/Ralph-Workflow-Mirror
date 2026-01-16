@@ -991,6 +991,18 @@ fn run_post_review_rebase(
     }
 }
 
+/// Result type for conflict resolution attempts.
+///
+/// Represents the different ways conflict resolution can succeed or fail.
+enum ConflictResolutionResult {
+    /// Agent provided JSON output with resolved file contents
+    WithJson(String),
+    /// Agent resolved conflicts by editing files directly (no JSON output)
+    FileEditsOnly,
+    /// Resolution failed completely
+    Failed,
+}
+
 /// Attempt to resolve rebase conflicts with AI fallback.
 ///
 /// This is a helper function that creates a minimal `PhaseContext`
@@ -1015,7 +1027,8 @@ fn try_resolve_conflicts_with_fallback(
     let resolution_prompt = build_resolution_prompt(&conflicts, template_context);
 
     match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
-        Ok(resolved_content) => {
+        Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
+            // Agent provided JSON output - parse and write files
             let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
             write_resolved_files(&resolved_files, logger)?;
 
@@ -1029,6 +1042,39 @@ fn try_resolve_conflicts_with_fallback(
                     remaining_conflicts.len()
                 ));
                 Ok(false)
+            }
+        }
+        Ok(ConflictResolutionResult::FileEditsOnly) => {
+            // Agent resolved conflicts by editing files directly
+            logger.info("Agent resolved conflicts via file edits (no JSON output)");
+
+            // Verify all conflicts are resolved
+            let remaining_conflicts = get_conflicted_files()?;
+            if remaining_conflicts.is_empty() {
+                logger.success("All conflicts resolved via file edits");
+                Ok(true)
+            } else {
+                logger.warn(&format!(
+                    "{} conflicts remain after AI resolution",
+                    remaining_conflicts.len()
+                ));
+                Ok(false)
+            }
+        }
+        Ok(ConflictResolutionResult::Failed) => {
+            logger.warn("AI conflict resolution failed");
+            logger.info("Attempting to continue rebase anyway...");
+
+            // Try to continue rebase - user may have manually resolved conflicts
+            match crate::git_helpers::continue_rebase() {
+                Ok(()) => {
+                    logger.info("Successfully continued rebase");
+                    Ok(true)
+                }
+                Err(rebase_err) => {
+                    logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
+                    Ok(false) // Conflicts remain
+                }
             }
         }
         Err(e) => {
@@ -1087,15 +1133,18 @@ fn build_resolution_prompt(
 }
 
 /// Run AI agent to resolve conflicts with fallback mechanism.
+///
+/// Returns `ConflictResolutionResult` indicating whether the agent provided
+/// JSON output, resolved conflicts via file edits, or failed completely.
 fn run_ai_conflict_resolution(
     resolution_prompt: &str,
     config: &crate::config::Config,
     logger: &Logger,
     colors: Colors,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<ConflictResolutionResult> {
     use crate::agents::AgentRegistry;
     use crate::files::result_extraction::extract_last_result;
-    use crate::pipeline::{run_with_fallback_and_validator, OutputValidator, PipelineRuntime};
+    use crate::pipeline::{FallbackConfig, run_with_fallback_and_validator, OutputValidator, PipelineRuntime};
     use std::io;
     use std::path::Path;
 
@@ -1153,37 +1202,53 @@ fn run_ai_conflict_resolution(
         }
     };
 
-    let exit_code = run_with_fallback_and_validator(
-        crate::agents::AgentRole::Reviewer,
-        "conflict resolution",
-        resolution_prompt,
-        log_dir,
-        &mut runtime,
-        &registry,
-        reviewer_agent,
-        Some(validate_output),
-    )?;
-
-    if exit_code != 0 {
-        anyhow::bail!("Agent failed to resolve conflicts");
-    }
-
-    // Extract the result from the log file.
-    // The log file is created as {log_dir}_{agent}_{index}.log in the parent directory.
-    // Since log_dir is a directory path, we pass it directly to extract_last_result
-    // which will use it as a prefix to find matching log files.
-    let resolved_content = match extract_last_result(Path::new(log_dir)) {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            anyhow::bail!("No output found from agent");
-        }
-        Err(e) => {
-            logger.error(&format!("Failed to extract agent output: {e}"));
-            anyhow::bail!("Failed to extract agent output");
-        }
+    let mut fallback_config = FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "conflict resolution",
+        prompt: resolution_prompt,
+        logfile_prefix: log_dir,
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: reviewer_agent,
+        output_validator: Some(validate_output),
     };
 
-    Ok(resolved_content)
+    let exit_code = run_with_fallback_and_validator(&mut fallback_config)?;
+
+    if exit_code != 0 {
+        return Ok(ConflictResolutionResult::Failed);
+    }
+
+    // Check if conflicts are resolved after agent run
+    // The validator already checked this, but we verify again to determine the result type
+    let remaining_conflicts = crate::git_helpers::get_conflicted_files()?;
+
+    if remaining_conflicts.is_empty() {
+        // Conflicts are resolved - check if agent provided JSON output
+        match extract_last_result(Path::new(log_dir)) {
+            Ok(Some(content)) => {
+                logger.info("Agent provided JSON output with resolved files");
+                Ok(ConflictResolutionResult::WithJson(content))
+            }
+            Ok(None) => {
+                logger.info("Agent resolved conflicts via file edits (no JSON output)");
+                Ok(ConflictResolutionResult::FileEditsOnly)
+            }
+            Err(e) => {
+                // Extraction failed but conflicts are resolved - treat as file edits only
+                logger.warn(&format!(
+                    "Failed to extract JSON output but conflicts are resolved: {e}"
+                ));
+                Ok(ConflictResolutionResult::FileEditsOnly)
+            }
+        }
+    } else {
+        logger.warn(&format!(
+            "{} conflict(s) remain after agent attempted resolution",
+            remaining_conflicts.len()
+        ));
+        Ok(ConflictResolutionResult::Failed)
+    }
 }
 
 /// Parse and validate the resolved files from AI output.

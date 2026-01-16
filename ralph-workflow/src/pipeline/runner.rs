@@ -404,28 +404,13 @@ pub fn run_with_fallback(
 ///
 /// Includes an optional output validator callback that checks if the agent
 /// produced valid output after `exit_code=0`. If validation fails, triggers fallback.
-#[allow(clippy::too_many_arguments)]
+///
+/// This variant takes a `FallbackConfig` directly for cases where you need
+/// to specify an output validator.
 pub fn run_with_fallback_and_validator(
-    role: AgentRole,
-    base_label: &str,
-    prompt: &str,
-    logfile_prefix: &str,
-    runtime: &mut PipelineRuntime<'_>,
-    registry: &AgentRegistry,
-    primary_agent: &str,
-    output_validator: Option<crate::pipeline::fallback::OutputValidator>,
+    config: &mut FallbackConfig<'_, '_>,
 ) -> std::io::Result<i32> {
-    let mut config = FallbackConfig {
-        role,
-        base_label,
-        prompt,
-        logfile_prefix,
-        runtime,
-        registry,
-        primary_agent,
-        output_validator,
-    };
-    run_with_fallback_internal(&mut config)
+    run_with_fallback_internal(config)
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
