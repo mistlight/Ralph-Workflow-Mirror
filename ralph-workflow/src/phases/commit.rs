@@ -14,8 +14,9 @@ use super::context::PhaseContext;
 use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole};
 use crate::files::llm_output_extraction::{
     detect_agent_errors_in_output, extract_llm_output, generate_fallback_commit_message,
-    preprocess_raw_content, try_extract_structured_commit, try_extract_xml_commit,
-    try_salvage_commit_message, validate_commit_message, CommitExtractionResult, OutputFormat,
+    preprocess_raw_content, try_extract_structured_commit_with_trace,
+    try_extract_xml_commit_with_trace, try_salvage_commit_message, validate_commit_message,
+    validate_commit_message_with_report, CommitExtractionResult, OutputFormat,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
@@ -549,7 +550,7 @@ fn run_commit_attempt_with_agent(
     };
 
     // Build the command for this agent
-    let cmd_str = agent_config.build_cmd_with_model(true, true, false, None);
+    let cmd_str = agent_config.build_cmd(true, true, false);
     let logfile = format!("{log_dir}/{}_latest.log", agent.replace('/', "-"));
 
     // Run the agent directly (without fallback)
@@ -1108,11 +1109,9 @@ fn extract_commit_message_from_logs(
     }
 
     // PRE-PROCESS: Apply aggressive escape sequence unescaping BEFORE any other processing
-    // This handles cases where agents output JSON with improperly escaped strings
     content = preprocess_raw_content(&content);
 
     // FIRST: Detect agent errors in the output stream BEFORE attempting extraction
-    // This handles cases where agents output errors in their result field instead of stderr
     if let Some(error_kind) = detect_agent_errors_in_output(&content) {
         logger.warn(&format!(
             "Detected agent error in output: {}. This should trigger fallback.",
@@ -1121,26 +1120,62 @@ fn extract_commit_message_from_logs(
         return Ok(Some(CommitExtractionResult::AgentError(error_kind)));
     }
 
-    // SECOND: Try XML extraction (new primary method)
-    // This is the preferred method because XML tags are distinctive and don't
-    // require escape sequences for newlines
-    if let Some(message) = try_extract_xml_commit(&content) {
+    // SECOND: Try XML extraction (new primary method) - with tracing
+    let (xml_result, xml_detail) = try_extract_xml_commit_with_trace(&content);
+    logger.info(&format!("XML extraction: {xml_detail}"));
+
+    if let Some(message) = xml_result {
         logger.info("Successfully extracted commit message from XML format");
-        return Ok(Some(CommitExtractionResult::Extracted(message)));
+
+        // Validate
+        let report = validate_commit_message_with_report(&message);
+        if report.all_passed() {
+            return Ok(Some(CommitExtractionResult::Extracted(message)));
+        }
+        // Fall through to try other methods if validation failed
+        logger.warn(&format!(
+            "XML extraction succeeded but validation failed: {}",
+            report
+                .format_failures()
+                .as_deref()
+                .unwrap_or("unknown error")
+        ));
     }
 
     logger.info("XML extraction failed, trying JSON schema extraction...");
 
-    // THIRD: Try structured JSON extraction (fallback for older prompts)
-    if let Some(message) = try_extract_structured_commit(&content) {
+    // THIRD: Try structured JSON extraction - with tracing
+    let (json_result, json_detail) = try_extract_structured_commit_with_trace(&content);
+    logger.info(&format!("JSON extraction: {json_detail}"));
+
+    if let Some(message) = json_result {
         logger.info("Successfully extracted commit message from JSON schema");
-        return Ok(Some(CommitExtractionResult::Extracted(message)));
+
+        // Validate
+        let report = validate_commit_message_with_report(&message);
+        if report.all_passed() {
+            return Ok(Some(CommitExtractionResult::Extracted(message)));
+        }
+        logger.warn(&format!(
+            "JSON extraction succeeded but validation failed: {}",
+            report
+                .format_failures()
+                .as_deref()
+                .unwrap_or("unknown error")
+        ));
     }
 
     logger.info("JSON schema extraction failed, falling back to pattern-based extraction");
 
-    // Detect format hint from agent command
-    let format_hint = agent_cmd
+    // Pattern-based extraction with recovery layers
+    Ok(try_pattern_extraction_with_recovery(
+        &content, diff, agent_cmd, logger,
+    ))
+}
+
+/// Detect output format hint from agent command string.
+fn detect_format_hint_from_agent(agent_cmd: &str) -> Option<OutputFormat> {
+    agent_cmd
         .split_whitespace()
         .find_map(|tok| {
             let tok = tok.to_lowercase();
@@ -1156,10 +1191,18 @@ fn extract_commit_message_from_logs(
                 None
             }
         })
-        .and_then(|s| OutputFormat::from_str(s).ok());
+        .and_then(|s| OutputFormat::from_str(s).ok())
+}
 
-    // Extract the commit message using the standard extraction
-    let extraction = extract_llm_output(&content, format_hint);
+/// Try pattern-based extraction with recovery layers.
+fn try_pattern_extraction_with_recovery(
+    content: &str,
+    diff: &str,
+    agent_cmd: &str,
+    logger: &Logger,
+) -> Option<CommitExtractionResult> {
+    let format_hint = detect_format_hint_from_agent(agent_cmd);
+    let extraction = extract_llm_output(content, format_hint);
 
     // Log extraction metadata for debugging
     logger.info(&format!(
@@ -1177,37 +1220,44 @@ fn extract_commit_message_from_logs(
     match validate_commit_message(&extracted) {
         Ok(()) => {
             logger.info("Successfully extracted and validated commit message");
-            Ok(Some(CommitExtractionResult::Extracted(extracted)))
+            Some(CommitExtractionResult::Extracted(extracted))
         }
-        Err(e) => {
-            logger.warn(&format!("Commit message validation failed: {e}"));
-
-            // Recovery Layer 1: Attempt to salvage valid commit message from raw content
-            logger.info("Attempting to salvage commit message from output...");
-            if let Some(salvaged) = try_salvage_commit_message(&content) {
-                logger.info("Successfully salvaged commit message");
-                return Ok(Some(CommitExtractionResult::Salvaged(salvaged)));
-            }
-            logger.warn("Salvage attempt failed");
-
-            // Recovery Layer 2: Generate deterministic fallback from diff metadata
-            // Note: We return Fallback variant to signal the caller should try re-prompting
-            logger.info("Generating fallback commit message from diff...");
-            let fallback = generate_fallback_commit_message(diff);
-
-            // Defensive validation (should always pass, but be safe)
-            if validate_commit_message(&fallback).is_ok() {
-                logger.info(&format!(
-                    "Generated fallback: {}",
-                    fallback.lines().next().unwrap_or(&fallback)
-                ));
-                return Ok(Some(CommitExtractionResult::Fallback(fallback)));
-            }
-
-            logger.error("Fallback commit message failed validation - this is a bug");
-            Ok(None)
-        }
+        Err(e) => try_recovery_layers(content, diff, &e, logger),
     }
+}
+
+/// Attempt recovery layers when extraction fails validation.
+fn try_recovery_layers(
+    content: &str,
+    diff: &str,
+    error: &str,
+    logger: &Logger,
+) -> Option<CommitExtractionResult> {
+    logger.warn(&format!("Commit message validation failed: {error}"));
+
+    // Recovery Layer 1: Attempt to salvage valid commit message from raw content
+    logger.info("Attempting to salvage commit message from output...");
+    if let Some(salvaged) = try_salvage_commit_message(content) {
+        logger.info("Successfully salvaged commit message");
+        return Some(CommitExtractionResult::Salvaged(salvaged));
+    }
+    logger.warn("Salvage attempt failed");
+
+    // Recovery Layer 2: Generate deterministic fallback from diff metadata
+    logger.info("Generating fallback commit message from diff...");
+    let fallback = generate_fallback_commit_message(diff);
+
+    // Defensive validation (should always pass, but be safe)
+    if validate_commit_message(&fallback).is_ok() {
+        logger.info(&format!(
+            "Generated fallback: {}",
+            fallback.lines().next().unwrap_or(&fallback)
+        ));
+        return Some(CommitExtractionResult::Fallback(fallback));
+    }
+
+    logger.error("Fallback commit message failed validation - this is a bug");
+    None
 }
 
 /// Find the most recently modified log file matching a pattern.

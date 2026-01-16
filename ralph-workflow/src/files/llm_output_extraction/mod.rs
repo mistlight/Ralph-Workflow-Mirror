@@ -31,8 +31,9 @@ pub use cleaning::preprocess_raw_content;
 
 // Re-export public functions from commit module
 pub use commit::{
-    detect_agent_errors_in_output, generate_fallback_commit_message, try_extract_structured_commit,
-    try_extract_xml_commit, try_salvage_commit_message, validate_commit_message,
+    detect_agent_errors_in_output, generate_fallback_commit_message,
+    try_extract_structured_commit_with_trace, try_extract_xml_commit_with_trace,
+    try_salvage_commit_message, validate_commit_message, validate_commit_message_with_report,
     CommitExtractionResult,
 };
 
