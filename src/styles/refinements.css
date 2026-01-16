@@ -563,3 +563,117 @@ footer a:hover {
         text-decoration: underline;
     }
 }
+
+/* === ADDITIONAL VISUAL POLISH === */
+
+/* Subtle glow enhancement for step numbers */
+.step-number {
+    background: linear-gradient(135deg,
+                var(--color-primary-dim) 0%,
+                var(--color-bg-card) 100%);
+    border: 1px solid var(--border-accent);
+    box-shadow: 0 0 20px var(--color-primary-dim);
+    transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+.step-number:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 30px var(--color-primary-glow);
+    transform: scale(1.05);
+}
+
+/* Enhanced glossary card hover */
+.glossary-card {
+    transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+.glossary-card:hover {
+    border-color: var(--border-accent);
+    box-shadow: var(--shadow-lg), 0 0 20px var(--color-primary-dim);
+    transform: translateY(-2px);
+}
+
+/* Improved workflow diagram connector animation */
+.workflow-connector {
+    background: linear-gradient(90deg,
+                var(--border-soft) 0%,
+                var(--border-accent) 50%,
+                var(--border-soft) 100%);
+    background-size: 200% 100%;
+    transition: all var(--duration-500) var(--ease-out);
+}
+
+.workflow-step:hover ~ .workflow-connector {
+    animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Subtle pulse for iteration badge */
+.iteration-badge {
+    animation: subtle-pulse 3s ease-in-out infinite;
+}
+
+@keyframes subtle-pulse {
+    0%, 100% {
+        box-shadow: 0 0 10px var(--color-primary-dim);
+    }
+
+    50% {
+        box-shadow: 0 0 20px var(--color-primary-glow);
+    }
+}
+
+/* Enhanced table row hover */
+.table-row:hover {
+    background-color: var(--color-bg-hover);
+    transition: background-color var(--duration-150) var(--ease-out);
+}
+
+/* Improved copy button feedback */
+.copy-btn:active {
+    transform: scale(0.95);
+    transition: transform var(--duration-100) var(--ease-out);
+}
+
+.copy-btn.copied {
+    background-color: var(--color-lime-dim);
+    border-color: var(--color-lime);
+    color: var(--color-lime);
+}
+
+/* Subtle gradient text enhancement for key headings */
+.gradient-heading {
+    background: linear-gradient(135deg,
+                var(--color-primary) 0%,
+                var(--color-accent) 100%);
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Enhanced comparison card accent */
+.comparison-card.before {
+    border-left: 3px solid var(--color-error);
+}
+
+.comparison-card.after {
+    border-left: 3px solid var(--color-lime);
+}
+
+/* Improved mobile tap feedback */
+@media (--lg) {
+    .btn:active,
+    .audience-btn:active,
+    .faq-summary:active {
+        background-color: var(--color-bg-hover);
+        transform: scale(0.98);
+    }
+}
