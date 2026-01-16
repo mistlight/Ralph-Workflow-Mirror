@@ -870,6 +870,7 @@ impl ClaudeParser {
                         &line,
                         c.reset()
                     )?;
+                    writer.flush()?;
                 }
 
                 // Parse the event once - parse_event handles malformed JSON by returning None

@@ -666,6 +666,7 @@ Emit structured events (JSON) and rely on external renderer.
   - Integrated into all four parsers (Claude, Codex, Gemini, OpenCode) replacing `reader.lines()` with `fill_buf()`/`consume()` loop
 
   This achieves the ChatGPT-like real-time streaming experience where characters appear as they're generated, not all at once at the end. The improvement is especially noticeable for Codex and other agents that buffer their stdout. |
+| 2026-01-16 | **Bug Fix: Debug output flush in all parsers**: Fixed critical bug where debug output (`[DEBUG]` prefix) was not flushed immediately, causing it to appear truncated or missing during streaming. The issue occurred because debug JSON was written with `writeln!` but not flushed, while the actual event output was flushed. This mismatch caused debug output to be buffered and potentially overwritten by subsequent event output. Added `writer.flush()?` after all debug `writeln!` calls in all four parsers (Claude, Codex, Gemini, OpenCode). Added comprehensive test coverage `test_all_parsers_flush_debug_output_immediately()` to verify debug output completeness. |
 
 ---
 
