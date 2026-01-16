@@ -375,7 +375,10 @@ impl StreamingSession {
                 );
             }
 
-            // Preserve output_started_for_key to prevent prefix spam
+            // Preserve output_started_for_key to prevent prefix spam.
+            // std::mem::take replaces the HashSet with an empty one and returns the old values,
+            // which we restore after clearing other state. This ensures repeated MessageStart
+            // events don't reset output tracking, preventing duplicate prefix display.
             let preserved_output_started = std::mem::take(&mut self.output_started_for_key);
 
             self.state = StreamingState::Idle;
