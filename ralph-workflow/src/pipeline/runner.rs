@@ -191,7 +191,6 @@ pub fn run_with_fallback(
     let fallback_config = registry.fallback_config();
     let fallbacks = registry.available_fallbacks(role);
     if fallback_config.has_fallbacks(role) {
-        // Log the configured agent chain for visibility
         runtime.logger.info(&format!(
             "Agent fallback chain for {role}: {}",
             fallbacks.join(", ")
@@ -202,13 +201,9 @@ pub fn run_with_fallback(
         ));
     }
 
-    // Build the list of agents to try
     let agents_to_try = build_agents_to_try(&fallbacks, primary_agent);
-
-    // Get the CLI model and provider overrides based on role (if any)
     let (cli_model_override, cli_provider_override) = get_cli_overrides(role, runtime);
 
-    // Cycle through all agents with exponential backoff
     for cycle in 0..fallback_config.max_cycles {
         if cycle > 0 {
             let backoff_ms = fallback_config.calculate_backoff(cycle - 1);
@@ -229,10 +224,7 @@ pub fn run_with_fallback(
                 continue;
             };
 
-            // Get display name for this agent (used throughout user-facing output)
             let display_name = registry.display_name(agent_name);
-
-            // Build the list of model flags to try for this agent
             let ctx = ModelFlagBuildContext {
                 agent_index,
                 cli_model_override: cli_model_override.as_ref(),
@@ -245,7 +237,6 @@ pub fn run_with_fallback(
             };
             let model_flags_to_try = build_model_flags_list(&ctx);
 
-            // Validate model flags and emit warnings (only on first try to avoid spam)
             if agent_index == 0 && cycle == 0 {
                 for model_flag in model_flags_to_try.iter().flatten() {
                     for warning in validate_model_flag(model_flag) {
@@ -254,16 +245,12 @@ pub fn run_with_fallback(
                 }
             }
 
-            // Try each model flag
             for (model_index, model_flag) in model_flags_to_try.iter().enumerate() {
                 let mut parser_type = agent_config.json_parser;
 
-                // Apply parser override for reviewer if configured
-                // CLI/env var override takes precedence over agent config
                 if role == AgentRole::Reviewer {
                     if let Some(ref parser_override) = runtime.config.reviewer_json_parser {
                         parser_type = JsonParserType::parse(parser_override);
-                        // Only log on first try to avoid spam
                         if agent_index == 0 && cycle == 0 && model_index == 0 {
                             runtime.logger.info(&format!(
                                 "Using JSON parser override '{parser_override}' for reviewer"
@@ -272,7 +259,6 @@ pub fn run_with_fallback(
                     }
                 }
 
-                // Build command with model override
                 let cmd_str = build_command_for_model(
                     agent_index,
                     cycle,
@@ -283,7 +269,6 @@ pub fn run_with_fallback(
                     runtime,
                 );
 
-                // GLM-specific diagnostic output for print flag validation
                 validate_glm_print_flag(
                     agent_name,
                     &agent_config,
@@ -303,7 +288,6 @@ pub fn run_with_fallback(
                     model_index,
                 );
 
-                // Try this agent/model configuration with retries
                 let attempt_config = crate::pipeline::fallback::AgentAttemptConfig {
                     agent_name,
                     model_flag: model_flag.as_deref(),
@@ -324,19 +308,13 @@ pub fn run_with_fallback(
                 match result {
                     TryAgentResult::Success => return Ok(0),
                     TryAgentResult::Unrecoverable(exit_code) => return Ok(exit_code),
-                    TryAgentResult::Fallback => {
-                        // Break to next model/agent
-                        break;
-                    }
-                    TryAgentResult::NoRetry => {
-                        // Non-retriable error - continue to next model/agent
-                    }
+                    TryAgentResult::Fallback => break,
+                    TryAgentResult::NoRetry => {}
                 }
             }
         }
     }
 
-    // All cycles exhausted
     runtime.logger.error(&format!(
         "All agents exhausted after {} cycles with exponential backoff",
         fallback_config.max_cycles
