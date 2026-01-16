@@ -463,21 +463,39 @@ impl ClaudeParser {
         message: Option<&crate::json_parser::types::AssistantMessage>,
     ) -> bool {
         let session = self.streaming_session.borrow();
-        let text_content_for_hash = Self::extract_text_content_for_hash(message);
 
-        session.get_current_message_id().map_or_else(
-            || {
-                // Try hash-based deduplication first (more precise)
-                if let Some(text_content) = text_content_for_hash {
-                    if !text_content.is_empty() {
-                        return session.is_duplicate_by_hash(&text_content);
-                    }
+        // Extract message_id from the assistant message
+        let assistant_msg_id = message.and_then(|m| m.id.as_ref());
+
+        // Check if this assistant event has a message_id that matches the current streaming message
+        // If it does, and we have streamed content, then this assistant event is a duplicate
+        // because the content was already streamed via deltas.
+        if let Some(ast_msg_id) = assistant_msg_id {
+            // Check if message was already marked as displayed (after message_stop)
+            if session.is_duplicate_final_message(ast_msg_id) {
+                return true;
+            }
+
+            // Check if the assistant message_id matches the current streaming message_id
+            if session.get_current_message_id() == Some(ast_msg_id) {
+                // Same message - check if we have streamed any content
+                // If yes, the assistant event is a duplicate
+                if session.has_any_streamed_content() {
+                    return true;
                 }
-                // Fallback to coarse check
-                session.has_any_streamed_content()
-            },
-            |message_id| session.is_duplicate_final_message(message_id),
-        )
+            }
+        }
+
+        // If no message_id match, fall back to hash-based deduplication
+        let text_content_for_hash = Self::extract_text_content_for_hash(message);
+        if let Some(ref text_content) = text_content_for_hash {
+            if !text_content.is_empty() {
+                return session.is_duplicate_by_hash(text_content);
+            }
+        }
+
+        // Fallback to coarse check
+        session.has_any_streamed_content()
     }
 
     /// Format a text content block for assistant output.

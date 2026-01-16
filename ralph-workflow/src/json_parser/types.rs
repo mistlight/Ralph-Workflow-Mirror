@@ -286,6 +286,8 @@ impl DeltaAccumulator {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AssistantMessage {
+    #[serde(default)]
+    pub(crate) id: Option<String>,
     pub(crate) content: Option<Vec<ContentBlock>>,
 }
 
