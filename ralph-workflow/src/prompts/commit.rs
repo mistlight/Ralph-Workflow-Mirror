@@ -101,29 +101,14 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
 /// This is used when the initial attempt fails to produce valid output,
 /// providing a simpler, more focused prompt to encourage proper XML output.
 pub fn prompt_strict_json_commit(diff: &str) -> String {
-    let diff_content = diff.trim();
-    format!(
-        r"Your previous response was not valid. Return ONLY the XML tags below.
-
-DIFF:
-{diff_content}
-
-REQUIRED OUTPUT (nothing else):
-<ralph-commit>
-<ralph-subject>type: description</ralph-subject>
-</ralph-commit>
-
-RULES:
-- Start IMMEDIATELY with <ralph-commit>
-- No text before or after the XML
-- subject must start with: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
-- Keep subject under 72 characters
-
-Example:
-<ralph-commit>
-<ralph-subject>fix: correct null pointer in user lookup</ralph-subject>
-</ralph-commit>"
-    )
+    let template_content = include_str!("templates/commit_strict_json.txt");
+    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
+    Template::new(template_content)
+        .render(&variables)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render strict JSON template: {e}");
+            String::new()
+        })
 }
 
 /// Generate even stricter re-prompt with negative examples.
@@ -131,36 +116,14 @@ Example:
 /// This is the second-level re-prompt used when the strict prompt also fails.
 /// It includes explicit examples of what NOT to output to prevent common mistakes.
 pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
-    r#"Your response MUST be ONLY XML tags. No other text.
-
-DIFF:
-__DIFF_CONTENT__
-
-REQUIRED OUTPUT:
-<ralph-commit>
-<ralph-subject>feat: brief description</ralph-subject>
-</ralph-commit>
-
-WHAT NOT TO OUTPUT (these are WRONG):
-- "Here is the commit message:"
-- "Looking at the diff, I can see..."
-- "Based on the changes above..."
-- Any markdown code fences
-- Any explanation or analysis before the XML
-
-CORRECT OUTPUT (copy this format exactly):
-<ralph-commit>
-<ralph-subject>fix: prevent null pointer</ralph-subject>
-</ralph-commit>
-
-RULES:
-1. Start with <ralph-commit>
-2. End with </ralph-commit>
-3. Nothing before <ralph-commit>
-4. Nothing after </ralph-commit>
-5. subject must be: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
-6. Keep subject under 72 characters"#
-        .replace("__DIFF_CONTENT__", diff.trim())
+    let template_content = include_str!("templates/commit_strict_json_v2.txt");
+    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
+    Template::new(template_content)
+        .render(&variables)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render strict JSON v2 template: {e}");
+            String::new()
+        })
 }
 
 /// Generate ultra-minimal commit prompt.
@@ -168,16 +131,14 @@ RULES:
 /// This is the third-level re-prompt with bare minimum instructions.
 /// Removes all explanatory context to reduce chance of verbose responses.
 pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
-    r"DIFF:
-__DIFF_CONTENT__
-
-OUTPUT ONLY:
-<ralph-commit>
-<ralph-subject>feat: description</ralph-subject>
-</ralph-commit>
-
-Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"
-        .replace("__DIFF_CONTENT__", diff.trim())
+    let template_content = include_str!("templates/commit_ultra_minimal.txt");
+    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
+    Template::new(template_content)
+        .render(&variables)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render ultra minimal template: {e}");
+            String::new()
+        })
 }
 
 /// Generate ultra-minimal V2 commit prompt.
@@ -185,12 +146,14 @@ Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"
 /// This is an even shorter variant that only provides the subject line template.
 /// Used when `UltraMinimal` still produces too much output.
 pub fn prompt_ultra_minimal_commit_v2(diff: &str) -> String {
-    r"__DIFF_CONTENT__
-
-<ralph-commit>
-<ralph-subject>fix: </ralph-subject>
-</ralph-commit>"
-        .replace("__DIFF_CONTENT__", diff.trim())
+    let template_content = include_str!("templates/commit_ultra_minimal_v2.txt");
+    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
+    Template::new(template_content)
+        .render(&variables)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render ultra minimal v2 template: {e}");
+            String::new()
+        })
 }
 
 /// Generate file-list-only commit prompt.
@@ -222,12 +185,14 @@ pub fn prompt_file_list_only_commit(diff: &str) -> String {
         result
     };
 
-    format!(
-        r"{file_list}
-<ralph-commit>
-<ralph-subject>chore: update files</ralph-subject>
-</ralph-commit>"
-    )
+    let template_content = include_str!("templates/commit_file_list_only.txt");
+    let variables = HashMap::from([("FILE_LIST", file_list)]);
+    Template::new(template_content)
+        .render(&variables)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render file list only template: {e}");
+            String::new()
+        })
 }
 
 /// Generate emergency commit prompt with maximum constraints.
@@ -235,12 +200,14 @@ pub fn prompt_file_list_only_commit(diff: &str) -> String {
 /// This is the final re-prompt attempt before falling back to the next agent.
 /// It provides the absolute minimum context to elicit an XML response.
 pub fn prompt_emergency_commit(diff: &str) -> String {
-    r"__DIFF_CONTENT__
-
-<ralph-commit>
-<ralph-subject>fix: </ralph-subject>
-</ralph-commit>"
-        .replace("__DIFF_CONTENT__", diff.trim())
+    let template_content = include_str!("templates/commit_emergency.txt");
+    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
+    Template::new(template_content)
+        .render(&variables)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render emergency template: {e}");
+            String::new()
+        })
 }
 
 /// Generate file-list-summary-only commit prompt.
@@ -303,13 +270,14 @@ pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
         writeln!(summary, "- Other files: {other_files}").unwrap();
     }
 
-    format!(
-        r"{summary}
-Generate a conventional commit message for these changes.
-<ralph-commit>
-<ralph-subject>chore: update files</ralph-subject>
-</ralph-commit>"
-    )
+    let template_content = include_str!("templates/commit_file_list_summary.txt");
+    let variables = HashMap::from([("FILE_SUMMARY", summary)]);
+    Template::new(template_content)
+        .render(&variables)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render file list summary template: {e}");
+            String::new()
+        })
 }
 
 /// Generate emergency no-diff commit prompt.
@@ -317,10 +285,13 @@ Generate a conventional commit message for these changes.
 /// This is the absolute last resort that doesn't include any diff at all.
 /// Just asks for a generic commit when everything else fails.
 pub fn prompt_emergency_no_diff_commit(_diff: &str) -> String {
-    r"<ralph-commit>
-<ralph-subject>chore: changes</ralph-subject>
-</ralph-commit>"
-        .to_string()
+    let template_content = include_str!("templates/commit_emergency_no_diff.txt");
+    Template::new(template_content)
+        .render(&std::collections::HashMap::new())
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to render emergency no diff template: {e}");
+            String::new()
+        })
 }
 
 #[cfg(test)]

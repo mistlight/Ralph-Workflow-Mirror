@@ -1,0 +1,29 @@
+Your response MUST be ONLY XML tags. No other text.
+
+DIFF:
+{{DIFF}}
+
+REQUIRED OUTPUT:
+<ralph-commit>
+<ralph-subject>feat: brief description</ralph-subject>
+</ralph-commit>
+
+WHAT NOT TO OUTPUT (these are WRONG):
+- "Here is the commit message:"
+- "Looking at the diff, I can see..."
+- "Based on the changes above..."
+- Any markdown code fences
+- Any explanation or analysis before the XML
+
+CORRECT OUTPUT (copy this format exactly):
+<ralph-commit>
+<ralph-subject>fix: prevent null pointer</ralph-subject>
+</ralph-commit>
+
+RULES:
+1. Start with <ralph-commit>
+2. End with </ralph-commit>
+3. Nothing before <ralph-commit>
+4. Nothing after </ralph-commit>
+5. subject must be: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
+6. Keep subject under 72 characters
