@@ -63,17 +63,21 @@ This section tracks when each feature was last verified against the codebase.
 - Line number verification for all referenced files
 - Manual testing of documented integration points
 - Cross-reference with existing test coverage
+- Direct verification against source files (e.g., `templates/prompts/*.md`)
 
 **Verification Notes**:
 - All completed features have been verified against current codebase
 - Line numbers in code references are current as of 2026-01-16
-- No discrepancies found between documentation and implementation
 - Logger call counts verified via codebase analysis (337 total calls)
+- **Template listing verified** against `templates/prompts/` directory (6 templates: feature-spec, bug-fix, refactor, test, docs, quick)
+- **Correction made**: Removed references to non-existent "blank" and "context" templates
+- No discrepancies found between documentation and implementation for completed features
 
 **Caveats**:
 - Line numbers may drift over time as code evolves
 - Always verify integration points before implementing
 - Refer to function names in addition to line numbers for accuracy
+- Template availability may change; run `ralph --list-templates` for current list
 
 This section tracks the implementation status of RFC-002 proposals against the actual codebase.
 
@@ -230,7 +234,13 @@ This section tracks the implementation status of RFC-002 proposals against the a
 - `list_templates()` function returns available templates with descriptions
 - `handle_list_templates()` displays formatted template list
 - Usage: `ralph --list-templates`
-- Templates include: feature-spec, bug-fix, refactor, blank, context
+- Templates include (6 total):
+  - **feature-spec**: For implementing new features with design and acceptance criteria
+  - **bug-fix**: For quick bug fixes
+  - **refactor**: For code improvements and restructuring
+  - **test**: For adding or improving test coverage
+  - **docs**: For writing or improving documentation
+  - **quick**: For small, straightforward changes
 
 **Integration**:
 - Referenced in error messages when PROMPT.md is missing
@@ -905,6 +915,17 @@ registry.display_name(&agent_name) // Returns human-readable name
 
 ### Recent Documentation Updates
 
+**2026-01-16**: Template listing verification and accuracy improvements
+- **Corrected template count**: Updated from 5 templates to 6 templates
+- **Verified actual templates** against `templates/prompts/` directory: feature-spec, bug-fix, refactor, test, docs, quick
+- **Removed outdated references**: Eliminated mentions of non-existent "blank" and "context" templates from 2 locations
+- **Updated Phase 8 implementation details**: Corrected template list in "Template Listing" section
+- **Updated Phase 2.2 proposal**: Corrected setup wizard template list to reflect actual available templates
+- **Enhanced verification methodology**: Added note about direct verification against source files
+- **Added caveat**: Template availability may change; users should run `ralph --list-templates` for current list
+
+This update ensures RFC-002 accurately reflects the actual codebase state, reducing confusion for implementers who may reference the proposed templates in setup flows or error messages.
+
 **2026-01-16**: Verification status and documentation improvements
 - Added new "Verification Status" subsection with methodology notes
 - Verified all completed features against current codebase (commit 8d4f3965)
@@ -1273,10 +1294,12 @@ Step 3/4: Verification
 Step 4/4: Create First Prompt?
   Would you like to create a PROMPT.md in the current directory? [Y/n]
   Available templates:
-    1. feature-spec (Recommended for new features)
-    2. bug-fix (Quick bug fixes)
-    3. refactor (Code improvements)
-    4. blank (Empty template)
+    1. feature-spec (For new features with design and acceptance criteria)
+    2. bug-fix (For quick bug fixes)
+    3. refactor (For code improvements and restructuring)
+    4. test (For adding or improving test coverage)
+    5. docs (For writing or improving documentation)
+    6. quick (For small, straightforward changes)
   Select template [1]:
 
 Setup complete! Run 'ralph' to start.
