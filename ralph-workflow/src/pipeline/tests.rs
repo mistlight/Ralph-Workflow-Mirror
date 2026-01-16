@@ -85,6 +85,7 @@ fn run_with_fallback_does_not_retry_problematic_glm_reviewer() {
 
     let registry = setup_test_registry(&fail_script, &ok_script);
 
+    // Set up runtime components inline (lifetime issues prevent extracting this)
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();

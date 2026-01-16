@@ -8,10 +8,10 @@
 //!
 //! # Priority Chain
 //!
-//! The identity is resolved in the following order (for overrides to git config):
-//! 1. Git config (via libgit2) - primary source, checked first by caller
-//! 2. Explicit CLI args (highest priority override)
-//! 3. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`)
+//! The identity is resolved in the following order (matches standard git behavior):
+//! 1. Git config (via libgit2) - primary source (local .git/config, then global ~/.gitconfig)
+//! 2. Explicit CLI args - only used when git config is missing
+//! 3. Environment variables (`RALPH_GIT_USER_NAME`, `RALPH_GIT_USER_EMAIL`) - fallback
 //! 4. Ralph config file (`[general]` section with `git_user_name`, `git_user_email`)
 //! 5. System username + derived email (sane fallback)
 //! 6. Default values ("Ralph Workflow", "ralph@localhost") - last resort

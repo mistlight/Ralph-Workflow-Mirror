@@ -47,6 +47,7 @@ Do **not** replace it with other blanket `allow(...)` attributes unless explicit
 
 ---
 
+# DO NOT OVERRIDE UNLESS THE PROMPT IS ABOUT CLIPPY
 ## Required verification (before considering work complete) - This overrides the PROMPT if any issues exist
 
 Ensure you run git rebase on the main branch if working on a feature branch and resolve any merge conflicts AND:

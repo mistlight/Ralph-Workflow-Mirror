@@ -260,7 +260,20 @@ impl FallbackConfig {
         match role {
             AgentRole::Developer => &self.developer,
             AgentRole::Reviewer => &self.reviewer,
-            AgentRole::Commit => &self.commit,
+            AgentRole::Commit => self.get_effective_commit_fallbacks(),
+        }
+    }
+
+    /// Get effective fallback agents for commit role.
+    ///
+    /// Falls back to reviewer chain if commit chain is empty.
+    /// This ensures commit message generation can use the same agents
+    /// configured for code review when no dedicated commit agents are specified.
+    fn get_effective_commit_fallbacks(&self) -> &[String] {
+        if self.commit.is_empty() {
+            &self.reviewer
+        } else {
+            &self.commit
         }
     }
 
@@ -407,5 +420,35 @@ mod tests {
         assert_eq!(config.max_retries, 5);
         assert_eq!(config.retry_delay_ms, 2000);
         assert_eq!(config.get_provider_fallbacks("opencode").len(), 2);
+    }
+
+    #[test]
+    fn test_commit_uses_reviewer_chain_when_empty() {
+        // When commit chain is empty, it should fall back to reviewer chain
+        let config = FallbackConfig {
+            commit: vec![],
+            reviewer: vec!["agent1".to_string(), "agent2".to_string()],
+            ..Default::default()
+        };
+
+        // Commit role should use reviewer chain when commit chain is empty
+        assert_eq!(
+            config.get_fallbacks(AgentRole::Commit),
+            &["agent1", "agent2"]
+        );
+        assert!(config.has_fallbacks(AgentRole::Commit));
+    }
+
+    #[test]
+    fn test_commit_uses_own_chain_when_configured() {
+        // When commit chain is configured, it should use its own chain
+        let config = FallbackConfig {
+            commit: vec!["commit-agent".to_string()],
+            reviewer: vec!["reviewer-agent".to_string()],
+            ..Default::default()
+        };
+
+        // Commit role should use its own chain
+        assert_eq!(config.get_fallbacks(AgentRole::Commit), &["commit-agent"]);
     }
 }
