@@ -5,8 +5,11 @@
 //! changing their core logic.
 
 use std::cell::RefCell;
-use std::io::{self, IsTerminal, Stderr, Stdout};
+use std::io::{self, IsTerminal, Stdout};
 use std::rc::Rc;
+
+#[cfg(feature = "test-utils")]
+use std::io::Stderr;
 
 /// Trait for output destinations in parsers.
 ///
@@ -63,11 +66,13 @@ impl Printable for StdoutPrinter {
 
 /// Printer that writes to stderr.
 #[derive(Debug)]
+#[cfg(feature = "test-utils")]
 pub struct StderrPrinter {
     stderr: Stderr,
     is_terminal: bool,
 }
 
+#[cfg(feature = "test-utils")]
 impl StderrPrinter {
     /// Create a new stderr printer.
     pub fn new() -> Self {
@@ -79,12 +84,14 @@ impl StderrPrinter {
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl Default for StderrPrinter {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl std::io::Write for StderrPrinter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.stderr.write(buf)
@@ -95,6 +102,7 @@ impl std::io::Write for StderrPrinter {
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl Printable for StderrPrinter {
     fn is_terminal(&self) -> bool {
         self.is_terminal
@@ -106,6 +114,7 @@ impl Printable for StderrPrinter {
 /// This printer stores all output in memory for testing purposes.
 /// It provides methods to retrieve and inspect the captured output.
 #[derive(Debug, Default)]
+#[cfg(feature = "test-utils")]
 pub struct TestPrinter {
     /// Captured output lines.
     output: RefCell<Vec<String>>,
@@ -113,6 +122,7 @@ pub struct TestPrinter {
     buffer: RefCell<String>,
 }
 
+#[cfg(feature = "test-utils")]
 impl TestPrinter {
     /// Create a new test printer.
     pub fn new() -> Self {
@@ -179,8 +189,40 @@ impl TestPrinter {
         }
         duplicates
     }
+
+    /// Count occurrences of a prefix pattern in output lines.
+    ///
+    /// Useful for detecting duplicate message prefixes, tool blocks, etc.
+    pub fn count_prefix_occurrences(&self, prefix: &str) -> usize {
+        self.get_lines()
+            .iter()
+            .filter(|l| l.trim().starts_with(prefix))
+            .count()
+    }
+
+    /// Find all lines that match a pattern.
+    ///
+    /// Returns the line numbers and content for all matching lines.
+    pub fn find_lines_with_pattern(&self, pattern: &str) -> Vec<(usize, String)> {
+        self.get_lines()
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.contains(pattern))
+            .map(|(i, l)| (i, l.clone()))
+            .collect()
+    }
+
+    /// Get statistics about the output.
+    ///
+    /// Returns a tuple of (line_count, char_count).
+    pub fn get_stats(&self) -> (usize, usize) {
+        let lines = self.get_lines();
+        let char_count: usize = lines.iter().map(String::len).sum();
+        (lines.len(), char_count)
+    }
 }
 
+#[cfg(feature = "test-utils")]
 impl std::io::Write for TestPrinter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s =
@@ -208,6 +250,7 @@ impl std::io::Write for TestPrinter {
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl Printable for TestPrinter {
     fn is_terminal(&self) -> bool {
         // Test printer is never a terminal
@@ -227,11 +270,13 @@ pub fn shared_stdout() -> SharedPrinter {
 }
 
 /// Create a shared stderr printer.
+#[cfg(feature = "test-utils")]
 pub fn shared_stderr() -> SharedPrinter {
     Rc::new(RefCell::new(StderrPrinter::new()))
 }
 
 /// Create a shared test printer.
+#[cfg(feature = "test-utils")]
 pub fn shared_test() -> SharedPrinter {
     Rc::new(RefCell::new(TestPrinter::new()))
 }
@@ -248,6 +293,16 @@ mod tests {
         let result = printer.write_all(b"test\n");
         assert!(result.is_ok());
         assert!(printer.flush().is_ok());
+
+        // Verify is_terminal() method is accessible
+        let _is_term = printer.is_terminal();
+    }
+
+    #[test]
+    fn test_printable_trait_is_terminal() {
+        let printer = StdoutPrinter::new();
+        // Test that the Printable trait's is_terminal method works
+        let _should_use_colors = printer.is_terminal();
     }
 
     #[test]

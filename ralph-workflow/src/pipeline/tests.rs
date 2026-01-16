@@ -179,7 +179,7 @@ fn contract_qwen_stream_json_parses_with_claude_parser() {
     let mut out = Vec::new();
     let colors = Colors { enabled: false };
     let parser = crate::json_parser::ClaudeParser::new(colors, Verbosity::Normal);
-    parser.parse_stream(reader, &mut out).unwrap();
+    parser.parse_stream(reader).unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("Hello from qwen"));

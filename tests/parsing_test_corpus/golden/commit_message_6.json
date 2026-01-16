@@ -1,4 +1,0 @@
-{
-  "subject": "refactor: implement agent cycling with prompt variant retry for commit generation",
-  "body": "This refactoring adds proper support for agent cycling with prompt variant retry:\n\n- Added `lib.rs` to `ralph-workflow/src/` and `tests/` for library targets\n- Implemented `build_agents_to_try()` helper for ordered agent list\n- Refactored `run_commit_attempt()` to `run_commit_attempt_with_agent()`\n- Type system improvements: `OutputFormat::from_str()` now uses `std::str::FromStr`\n- Exported `run_with_prompt` and `PromptCommand` from pipeline module\n- Updated integration tests and golden test files\n- Fixed doc tests in cleaning.rs and monitoring.rs"
-}

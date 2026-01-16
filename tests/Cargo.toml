@@ -13,7 +13,7 @@ name = "ralph-workflow-tests"
 path = "main.rs"
 
 [dependencies]
-ralph-workflow = { path = "../ralph-workflow" }
+ralph-workflow = { path = "../ralph-workflow", features = ["test-utils"] }
 serde_json = "1"
 test-helpers = { path = "../test-helpers" }
 tempfile = "3.10"

@@ -63,8 +63,6 @@ pub use claude::ClaudeParser;
 pub use codex::CodexParser;
 pub use gemini::GeminiParser;
 pub use opencode::OpenCodeParser;
-#[allow(unused_imports)]
-pub use printer::{Printable, SharedPrinter, StderrPrinter, StdoutPrinter, TestPrinter};
 
 #[cfg(test)]
 mod tests;
