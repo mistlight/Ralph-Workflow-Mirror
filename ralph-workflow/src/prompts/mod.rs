@@ -19,6 +19,7 @@ mod developer;
 pub mod partials;
 mod rebase;
 mod reviewer;
+pub mod template_catalog;
 mod template_engine;
 mod template_macros;
 pub mod template_registry;
