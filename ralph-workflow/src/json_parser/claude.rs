@@ -614,6 +614,11 @@ impl ClaudeParser {
                     &text
                 };
 
+                // Check for empty delta after snapshot extraction
+                if text_to_process.is_empty() {
+                    return String::new();
+                }
+
                 // Use StreamingSession to track state and determine prefix display
                 let show_prefix = session.on_text_delta(index, text_to_process);
 
@@ -622,14 +627,21 @@ impl ClaudeParser {
                     .get_accumulated(ContentType::Text, &index_str)
                     .unwrap_or("");
 
-                // Skip rendering if accumulated content is unchanged (prevents visual repetition)
-                if session.should_skip_render(ContentType::Text, &index_str) {
+                // Check if this exact content has already been rendered using prefix trie
+                // This prevents duplicate content from being rendered multiple times
+                if session.is_content_rendered(ContentType::Text, &index_str) {
                     return String::new();
                 }
 
                 // Use TextDeltaRenderer for consistent rendering
                 let terminal_mode = *self.terminal_mode.borrow();
-                let output = if show_prefix {
+
+                // Use prefix trie to detect if new content extends previously rendered content
+                // If yes, we do an in-place update (carriage return + new content)
+                let has_prefix = session.has_rendered_prefix(ContentType::Text, &index_str);
+
+                let output = if show_prefix && !has_prefix {
+                    // First delta with no prefix match - use the renderer with prefix
                     TextDeltaRenderer::render_first_delta(
                         accumulated_text,
                         prefix,
@@ -637,6 +649,8 @@ impl ClaudeParser {
                         terminal_mode,
                     )
                 } else {
+                    // Either continuation OR prefix match - use renderer for in-place update
+                    // This handles the case where "Hello" becomes "Hello World" - we REPLACE
                     TextDeltaRenderer::render_subsequent_delta(
                         accumulated_text,
                         prefix,
@@ -645,8 +659,9 @@ impl ClaudeParser {
                     )
                 };
 
-                // Mark this content as rendered
+                // Mark this content as rendered in both systems for future duplicate detection
                 session.mark_rendered(ContentType::Text, &index_str);
+                session.mark_content_rendered(ContentType::Text, &index_str);
 
                 output
             }
@@ -710,28 +725,41 @@ impl ClaudeParser {
             text
         };
 
+        // Check for empty delta after snapshot extraction
+        if text_to_process.is_empty() {
+            return String::new();
+        }
+
         let show_prefix = session.on_text_delta(default_index, text_to_process);
         let accumulated_text = session
             .get_accumulated(ContentType::Text, default_index_str)
             .unwrap_or("");
 
-        // Skip rendering if accumulated content is unchanged (prevents visual repetition)
-        if session.should_skip_render(ContentType::Text, default_index_str) {
+        // Check if this exact content has already been rendered using prefix trie
+        // This prevents duplicate content from being rendered multiple times
+        if session.is_content_rendered(ContentType::Text, default_index_str) {
             return String::new();
         }
 
         // Use TextDeltaRenderer for consistent rendering across all parsers
         let terminal_mode = *self.terminal_mode.borrow();
-        let output = if show_prefix {
-            // First delta - use the renderer with prefix
+
+        // Use prefix trie to detect if new content extends previously rendered content
+        // If yes, we do an in-place update (carriage return + new content)
+        let has_prefix = session.has_rendered_prefix(ContentType::Text, default_index_str);
+
+        let output = if show_prefix && !has_prefix {
+            // First delta with no prefix match - use the renderer with prefix
             TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c, terminal_mode)
         } else {
-            // Subsequent delta - use renderer for in-place update
+            // Either continuation OR prefix match - use renderer for in-place update
+            // This handles the case where "Hello" becomes "Hello World" - we REPLACE
             TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c, terminal_mode)
         };
 
-        // Mark this content as rendered
+        // Mark this content as rendered in both systems
         session.mark_rendered(ContentType::Text, default_index_str);
+        session.mark_content_rendered(ContentType::Text, default_index_str);
 
         output
     }

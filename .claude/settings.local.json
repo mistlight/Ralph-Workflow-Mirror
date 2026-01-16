@@ -49,7 +49,8 @@
       "WebFetch(domain:lucasfcosta.com)",
       "WebFetch(domain:github.blog)",
       "Bash(git reset:*)",
-      "Bash(git worktree:*)"
+      "Bash(git worktree:*)",
+      "mcp__filesystem__read_multiple_files"
     ]
   },
   "enableAllProjectMcpServers": true,

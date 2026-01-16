@@ -2065,44 +2065,57 @@ fn test_identical_accumulated_content_skips_rendering() {
     );
 }
 
-/// Test that `StreamingSession`'s `should_skip_render` works correctly.
+/// Test that `StreamingSession`'s `is_content_rendered` works correctly with prefix trie.
 #[test]
-fn test_streaming_session_should_skip_render() {
+fn test_streaming_session_is_content_rendered() {
     use crate::json_parser::streaming_state::StreamingSession;
 
     let mut session = StreamingSession::new();
     session.on_message_start();
 
-    // First delta - should not skip
+    // First delta - should not skip (not rendered yet)
     session.on_text_delta(0, "Hello");
     assert!(
-        !session.should_skip_render(super::types::ContentType::Text, "0"),
-        "First delta should not skip rendering"
+        !session.is_content_rendered(super::types::ContentType::Text, "0"),
+        "First delta should not be detected as rendered"
     );
 
-    // Mark as rendered
-    session.mark_rendered(super::types::ContentType::Text, "0");
+    // Mark as rendered using trie
+    session.mark_content_rendered(super::types::ContentType::Text, "0");
 
-    // Second delta that changes content - should not skip
+    // Now should skip (exact match in trie)
+    assert!(
+        session.is_content_rendered(super::types::ContentType::Text, "0"),
+        "Same content should be detected as already rendered"
+    );
+
+    // Second delta that changes content - should not skip (new content)
     session.on_text_delta(0, " World");
+    // "Hello World" is not an exact match for "Hello" in trie
     assert!(
-        !session.should_skip_render(super::types::ContentType::Text, "0"),
-        "Delta with changed content should not skip rendering"
+        !session.is_content_rendered(super::types::ContentType::Text, "0"),
+        "Changed content should not be detected as rendered"
     );
 
-    // Mark as rendered
-    session.mark_rendered(super::types::ContentType::Text, "0");
-
-    // Now check again with same content - should skip
+    // But it should detect prefix match
     assert!(
-        session.should_skip_render(super::types::ContentType::Text, "0"),
-        "Unchanged content should skip rendering"
+        session.has_rendered_prefix(super::types::ContentType::Text, "0"),
+        "Changed content should have prefix match (starts with 'Hello')"
+    );
+
+    // Mark new content as rendered
+    session.mark_content_rendered(super::types::ContentType::Text, "0");
+
+    // Now exact match should work
+    assert!(
+        session.is_content_rendered(super::types::ContentType::Text, "0"),
+        "Marked content should be detected as rendered"
     );
 }
 
-/// Test that `mark_rendered` updates the tracking correctly.
+/// Test that `mark_content_rendered` updates the prefix trie correctly.
 #[test]
-fn test_streaming_session_mark_rendered() {
+fn test_streaming_session_mark_content_rendered() {
     use crate::json_parser::streaming_state::StreamingSession;
 
     let mut session = StreamingSession::new();
@@ -2111,34 +2124,40 @@ fn test_streaming_session_mark_rendered() {
     // First delta
     session.on_text_delta(0, "Hello");
 
-    // Initially, should not skip (nothing rendered yet)
+    // Initially, should not skip (nothing in trie yet)
     assert!(
-        !session.should_skip_render(super::types::ContentType::Text, "0"),
+        !session.is_content_rendered(super::types::ContentType::Text, "0"),
         "Should not skip before first render"
     );
 
-    // Mark as rendered
-    session.mark_rendered(super::types::ContentType::Text, "0");
+    // Mark as rendered using trie
+    session.mark_content_rendered(super::types::ContentType::Text, "0");
 
-    // Now should skip (content unchanged)
+    // Now should skip (exact match in trie)
     assert!(
-        session.should_skip_render(super::types::ContentType::Text, "0"),
+        session.is_content_rendered(super::types::ContentType::Text, "0"),
         "Should skip after marking same content as rendered"
     );
 
     // Add more content
     session.on_text_delta(0, " World");
 
-    // Should not skip anymore (content changed)
+    // Should not skip anymore (content is different - "Hello World" != "Hello")
     assert!(
-        !session.should_skip_render(super::types::ContentType::Text, "0"),
+        !session.is_content_rendered(super::types::ContentType::Text, "0"),
         "Should not skip after content changes"
+    );
+
+    // But prefix match should detect that "Hello World" starts with "Hello"
+    assert!(
+        session.has_rendered_prefix(super::types::ContentType::Text, "0"),
+        "Should detect prefix match (Hello World starts with Hello)"
     );
 }
 
-/// Test that `message_start` clears `last_rendered` tracking.
+/// Test that `message_start` clears the rendered content trie.
 #[test]
-fn test_message_start_clears_last_rendered() {
+fn test_message_start_clears_rendered_content() {
     use crate::json_parser::streaming_state::StreamingSession;
 
     let mut session = StreamingSession::new();
@@ -2146,25 +2165,289 @@ fn test_message_start_clears_last_rendered() {
 
     // First delta and mark as rendered
     session.on_text_delta(0, "Hello");
-    session.mark_rendered(super::types::ContentType::Text, "0");
+    session.mark_content_rendered(super::types::ContentType::Text, "0");
 
-    // Should skip (same content)
+    // Should skip (exact match in trie)
     assert!(
-        session.should_skip_render(super::types::ContentType::Text, "0"),
-        "Should skip before message_start"
+        session.is_content_rendered(super::types::ContentType::Text, "0"),
+        "Should detect rendered content before message_start"
     );
 
-    // New message
+    // New message - should clear trie
     session.on_message_start();
 
-    // After message_start, last_rendered should be cleared
-    // But accumulated is also cleared, so there's no content to compare
-    // Add new content
-    session.on_text_delta(0, "New");
+    // Add same content again
+    session.on_text_delta(0, "Hello");
 
-    // Should not skip (fresh start)
+    // Should not skip (trie was cleared)
     assert!(
-        !session.should_skip_render(super::types::ContentType::Text, "0"),
-        "Should not skip after message_start with new content"
+        !session.is_content_rendered(super::types::ContentType::Text, "0"),
+        "Should not skip after message_start clears trie"
+    );
+}
+
+// Tests for delta-level deduplication (hash-based)
+
+/// Test that identical deltas are detected as duplicates using hash.
+#[test]
+fn test_delta_hash_deduplication_identical_deltas() {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let delta1 = "Hello";
+    let delta2 = "Hello";
+
+    // Compute hashes
+    let mut hasher1 = DefaultHasher::new();
+    delta1.hash(&mut hasher1);
+    let hash1 = hasher1.finish();
+
+    let mut hasher2 = DefaultHasher::new();
+    delta2.hash(&mut hasher2);
+    let hash2 = hasher2.finish();
+
+    // Identical content should produce identical hashes
+    assert_eq!(hash1, hash2, "Identical deltas should have same hash");
+}
+
+/// Test that different deltas produce different hashes.
+#[test]
+fn test_delta_hash_deduplication_different_deltas() {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let delta1 = "Hello";
+    let delta2 = "World";
+
+    // Compute hashes
+    let mut hasher1 = DefaultHasher::new();
+    delta1.hash(&mut hasher1);
+    let hash1 = hasher1.finish();
+
+    let mut hasher2 = DefaultHasher::new();
+    delta2.hash(&mut hasher2);
+    let hash2 = hasher2.finish();
+
+    // Different content should produce different hashes (with high probability)
+    assert_ne!(
+        hash1, hash2,
+        "Different deltas should have different hashes"
+    );
+}
+
+/// Test that identical deltas only produce output once (integration test).
+#[test]
+fn test_identical_deltas_produce_output_once() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
+
+    // Simulate sending the same delta multiple times (a common bug pattern)
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Count how many times "Hello" appears in the output
+    let hello_count = output.matches("Hello").count();
+
+    // Should only appear once (first occurrence), subsequent identical deltas are skipped
+    assert_eq!(
+        hello_count, 1,
+        "Identical deltas should only produce output once. Found {hello_count} occurrences. Output: {output:?}"
+    );
+}
+
+/// Test that different deltas each produce output.
+#[test]
+fn test_different_deltas_produce_output() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
+
+    // Simulate sending different deltas
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // All deltas should contribute to the final output
+    assert!(
+        output.contains("Hello World!"),
+        "All different deltas should be accumulated. Output: {output:?}"
+    );
+}
+
+/// Test that empty deltas are marked as processed and don't cause repeated processing.
+#[test]
+fn test_empty_deltas_marked_as_processed() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
+
+    // Simulate sending multiple empty deltas
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    // Should not panic or cause excessive processing
+    let result = parser.parse_stream(reader, &mut writer);
+    assert!(result.is_ok(), "Empty deltas should be handled gracefully");
+
+    let output = String::from_utf8(writer).unwrap();
+
+    // Empty deltas should not produce visible content
+    let non_empty_lines: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert!(
+        non_empty_lines.is_empty(),
+        "Empty deltas should not produce non-empty output. Found {} non-empty lines. Output: {output:?}",
+        non_empty_lines.len()
+    );
+}
+
+/// Test for the ccs-glm duplicate output bug scenario.
+///
+/// This test simulates the exact scenario from the bug report where identical
+/// deltas are sent repeatedly, causing duplicate output. With the hash-based
+/// deduplication fix, identical deltas should only produce output once.
+#[test]
+fn test_ccs_glm_duplicate_output_bug_fix() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
+
+    // Simulate the ccs-glm scenario where the same content is sent repeatedly
+    // The test sends the first delta, then the second delta, then repeats the first delta
+    // The expected behavior is:
+    // 1. First delta "First delta" is displayed
+    // 2. Second delta "Second delta" is accumulated and displayed
+    // 3. Duplicate of first delta is filtered out (no output)
+    // 4. Duplicate of second delta is filtered out (no output)
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"First delta"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Second delta"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"First delta"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Second delta"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // The output should show:
+    // 1. "First delta" (first render)
+    // 2. "First deltaSecond delta" (accumulated after second delta)
+    // The duplicates should not produce additional output
+
+    // Check that "First delta" appears twice (once standalone, once in accumulated)
+    let first_count = output.matches("First delta").count();
+    assert_eq!(
+        first_count, 2,
+        "First delta should appear twice (once standalone, once in accumulated). Found {first_count} occurrences. Output: {output:?}"
+    );
+
+    // Check that "Second delta" appears once (only in accumulated)
+    let second_count = output.matches("Second delta").count();
+    assert_eq!(
+        second_count, 1,
+        "Second delta should appear once (only in accumulated). Found {second_count} occurrences. Output: {output:?}"
+    );
+
+    // Most importantly: verify that the duplicates didn't cause the accumulated
+    // content to be displayed multiple times. The output should only have 2 render calls:
+    // - First render: "First delta"
+    // - Second render: "First deltaSecond delta"
+    // No additional renders should occur from the duplicate deltas.
+    let render_count = output.matches("[Claude]").count();
+    assert_eq!(
+        render_count, 2,
+        "Should have exactly 2 renders (first delta + accumulated). Found {render_count} renders. Output: {output:?}"
+    );
+}
+
+/// Test for the ccs-glm repeated `MessageStart` bug scenario.
+///
+/// This test simulates the bug where GLM/ccs-glm sends repeated `MessageStart`
+/// events during streaming, and the same delta appears multiple times.
+/// The fix preserves `processed_deltas` during repeated `MessageStart` to prevent
+/// the same delta from being processed again.
+#[test]
+fn test_ccs_glm_repeated_message_start_preserves_processed_deltas() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
+
+    // Simulate the ccs-glm scenario with repeated `MessageStart` events
+    let input_lines = vec![
+        // First `MessageStart`
+        r#"{"type":"stream_event","event":{"type":"message_start"}}"#.to_string(),
+        // Content block start
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#.to_string(),
+        // Send first delta
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"First delta"}}}"#.to_string(),
+        // GLM sends another `MessageStart` during streaming (protocol violation)
+        r#"{"type":"stream_event","event":{"type":"message_start"}}"#.to_string(),
+        // Send the same delta again (this should be filtered out)
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"First delta"}}}"#.to_string(),
+        // Send a new delta
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Second delta"}}}"#.to_string(),
+        // GLM sends yet another `MessageStart`
+        r#"{"type":"stream_event","event":{"type":"message_start"}}"#.to_string(),
+        // Send the first delta again (should still be filtered)
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"First delta"}}}"#.to_string(),
+        // Send the second delta again (should also be filtered)
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Second delta"}}}"#.to_string(),
+        // Message stop
+        r#"{"type":"stream_event","event":{"type":"message_stop"}}"#.to_string(),
+    ];
+
+    let input = input_lines.join("\n");
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // Each unique delta should only appear once in the output
+    let first_count = output.matches("First delta").count();
+    let second_count = output.matches("Second delta").count();
+
+    assert_eq!(
+        first_count, 1,
+        "First delta should only appear once despite repeated MessageStart. Found {first_count} occurrences. Output: {output:?}"
+    );
+    assert_eq!(
+        second_count, 1,
+        "Second delta should only appear once despite repeated MessageStart. Found {second_count} occurrences. Output: {output:?}"
     );
 }

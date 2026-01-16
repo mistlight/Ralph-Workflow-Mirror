@@ -99,6 +99,140 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
+/// Prefix trie node for duplicate content detection.
+///
+/// Each node represents a character in the trie and contains
+/// references to child nodes for the next character.
+#[derive(Debug, Default, Clone)]
+struct PrefixTrieNode {
+    /// Map from character to child node
+    children: HashMap<char, Self>,
+    /// Whether this node marks the end of a complete content string
+    is_end: bool,
+}
+
+/// Prefix trie for efficient duplicate content detection.
+///
+/// This data structure stores all rendered content and provides O(k)
+/// lookup time where k is the content length. It's used to detect
+/// duplicate streaming content before rendering to prevent visual
+/// repetition.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut trie = PrefixTrie::new();
+///
+/// // Insert rendered content
+/// trie.insert("Hello World");
+///
+/// // Check if content has been rendered
+/// assert!(trie.contains("Hello World"));
+/// assert!(!trie.contains("Goodbye"));
+///
+/// // Clear for new message
+/// trie.clear();
+/// assert!(!trie.contains("Hello World"));
+/// ```
+#[derive(Debug, Default, Clone)]
+pub struct PrefixTrie {
+    /// Root node of the trie
+    root: PrefixTrieNode,
+}
+
+impl PrefixTrie {
+    /// Insert content into the trie.
+    ///
+    /// This marks the content as having been rendered, so future
+    /// occurrences can be detected as duplicates.
+    ///
+    /// # Arguments
+    /// * `content` - The content string to insert
+    pub fn insert(&mut self, content: &str) {
+        let mut current = &mut self.root;
+
+        for ch in content.chars() {
+            current = current.children.entry(ch).or_default();
+        }
+
+        current.is_end = true;
+    }
+
+    /// Check if content has been inserted into the trie (exact match).
+    ///
+    /// # Arguments
+    /// * `content` - The content string to check
+    ///
+    /// # Returns
+    /// * `true` - The exact content has been rendered before
+    /// * `false` - The exact content has not been rendered
+    pub fn contains(&self, content: &str) -> bool {
+        let mut current = &self.root;
+
+        for ch in content.chars() {
+            match current.children.get(&ch) {
+                Some(node) => current = node,
+                None => return false,
+            }
+        }
+
+        current.is_end
+    }
+
+    /// Check if content starts with any previously rendered content (prefix match).
+    ///
+    /// This is the key deduplication method. It detects when new content
+    /// begins with something we've already rendered, indicating we should
+    /// do an in-place update (replace "Hello" with "Hello World").
+    ///
+    /// # Arguments
+    /// * `content` - The content string to check
+    ///
+    /// # Returns
+    /// * `true` - Content starts with previously rendered content
+    /// * `false` - Content is completely new
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut trie = PrefixTrie::new();
+    /// trie.insert("Hello");
+    ///
+    /// // "Hello World" starts with "Hello" which was rendered
+    /// assert!(trie.has_prefix_match("Hello World"));
+    ///
+    /// // "Goodbye" doesn't start with anything rendered
+    /// assert!(!trie.has_prefix_match("Goodbye"));
+    /// ```
+    pub fn has_prefix_match(&self, content: &str) -> bool {
+        let mut current = &self.root;
+
+        for ch in content.chars() {
+            // If we've reached a node marking end of rendered content,
+            // then the new content starts with previously rendered content
+            if current.is_end {
+                return true;
+            }
+
+            match current.children.get(&ch) {
+                Some(node) => current = node,
+                None => return false,
+            }
+        }
+
+        // Also return true if we've traversed the entire content
+        // and ended at a node marking end of rendered content (exact match)
+        current.is_end
+    }
+
+    /// Clear all content from the trie.
+    ///
+    /// This should be called at message boundaries to prevent
+    /// false positives across different messages.
+    pub fn clear(&mut self) {
+        self.root = PrefixTrieNode::default();
+    }
+}
+
 // Streaming configuration constants
 
 /// Default threshold for detecting snapshot-as-delta violations (in characters).
@@ -339,6 +473,10 @@ pub struct StreamingSession {
     /// would produce identical output (prevents visual repetition).
     /// Maps `(content_type, key)` → the last accumulated content that was rendered.
     last_rendered: HashMap<(ContentType, String), String>,
+    /// Prefix trie tracking all rendered content for duplicate detection.
+    /// This provides O(k) lookup for detecting duplicates across all content,
+    /// not just per-key. Cleared on message boundaries to prevent false positives.
+    rendered_content: PrefixTrie,
 }
 
 impl StreamingSession {
@@ -427,6 +565,7 @@ impl StreamingSession {
             self.key_order.clear();
             self.delta_sizes.clear();
             self.last_rendered.clear();
+            self.rendered_content.clear();
 
             // Restore preserved state
             self.output_started_for_key = preserved_output_started;
@@ -440,6 +579,7 @@ impl StreamingSession {
             self.delta_sizes.clear();
             self.output_started_for_key.clear();
             self.last_rendered.clear();
+            self.rendered_content.clear();
         }
         // Note: We don't reset current_message_id here - it's set by a separate method
         // This allows for more flexible message ID handling
@@ -936,37 +1076,9 @@ impl StreamingSession {
             .map(std::string::String::as_str)
     }
 
-    /// Check if rendering should be skipped because accumulated content is unchanged.
+    /// Mark content as having been rendered (HashMap-based tracking).
     ///
-    /// This prevents visual repetition where the same accumulated content is rendered
-    /// multiple times, creating the appearance of "stuttering" output. When a delta
-    /// doesn't change the accumulated content (e.g., empty delta, duplicate delta),
-    /// rendering would produce identical output, which we skip.
-    ///
-    /// # Arguments
-    /// * `content_type` - The type of content
-    /// * `index` - The content index (as string for flexibility)
-    ///
-    /// # Returns
-    /// * `true` - Skip rendering (accumulated content is same as last rendered)
-    /// * `false` - Render (accumulated content has changed or this is first render)
-    pub fn should_skip_render(&self, content_type: ContentType, index: &str) -> bool {
-        let content_key = (content_type, index.to_string());
-
-        // Get current accumulated content
-        let Some(current) = self.accumulated.get(&content_key) else {
-            return false; // No content yet, don't skip
-        };
-
-        // Check if we've rendered this content before
-        self.last_rendered.get(&content_key) == Some(current)
-    }
-
-    /// Mark content as having been rendered.
-    ///
-    /// This should be called after rendering to update the tracking that prevents
-    /// visual repetition. The next call to `should_skip_render` will compare against
-    /// this value.
+    /// This should be called after rendering to update the per-key tracking.
     ///
     /// # Arguments
     /// * `content_type` - The type of content
@@ -977,6 +1089,72 @@ impl StreamingSession {
         // Store the current accumulated content as last rendered
         if let Some(current) = self.accumulated.get(&content_key) {
             self.last_rendered.insert(content_key, current.clone());
+        }
+    }
+
+    /// Check if content has been rendered before using the prefix trie (exact match).
+    ///
+    /// This provides global duplicate detection across all content, not just
+    /// per-key comparison. The prefix trie tracks all rendered content and
+    /// provides O(k) lookup where k is the content length.
+    ///
+    /// # Arguments
+    /// * `content_type` - The type of content
+    /// * `index` - The content index (as string for flexibility)
+    ///
+    /// # Returns
+    /// * `true` - This exact content has been rendered before
+    /// * `false` - This exact content has not been rendered
+    pub fn is_content_rendered(&self, content_type: ContentType, index: &str) -> bool {
+        let content_key = (content_type, index.to_string());
+
+        // Check if we have accumulated content for this key
+        if let Some(current) = self.accumulated.get(&content_key) {
+            return self.rendered_content.contains(current);
+        }
+
+        false
+    }
+
+    /// Check if content starts with previously rendered content (prefix match).
+    ///
+    /// This is the key method for detecting when new content extends previously
+    /// rendered content. When true, we should do an in-place update (replace
+    /// "Hello" with "Hello World" using carriage return).
+    ///
+    /// # Arguments
+    /// * `content_type` - The type of content
+    /// * `index` - The content index (as string for flexibility)
+    ///
+    /// # Returns
+    /// * `true` - Content starts with previously rendered content (do in-place update)
+    /// * `false` - Content is completely new
+    pub fn has_rendered_prefix(&self, content_type: ContentType, index: &str) -> bool {
+        let content_key = (content_type, index.to_string());
+
+        // Check if we have accumulated content for this key
+        if let Some(current) = self.accumulated.get(&content_key) {
+            return self.rendered_content.has_prefix_match(current);
+        }
+
+        false
+    }
+
+    /// Mark content as rendered using the prefix trie.
+    ///
+    /// This should be called after rendering to track the content in the trie.
+    /// Future calls to `is_content_rendered()` will return true for exact matches,
+    /// and `has_rendered_prefix()` will return true for content that extends this.
+    ///
+    /// # Arguments
+    /// * `content_type` - The type of content
+    /// * `index` - The content index (as string for flexibility)
+    pub fn mark_content_rendered(&mut self, content_type: ContentType, index: &str) {
+        let content_key = (content_type, index.to_string());
+
+        // Insert the current accumulated content into the trie
+        if let Some(current) = self.accumulated.get(&content_key) {
+            self.rendered_content.insert(current);
         }
     }
 

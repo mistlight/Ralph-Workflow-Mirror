@@ -42,6 +42,7 @@ mod claude_tests;
 mod codex;
 #[cfg(test)]
 mod codex_tests;
+pub mod deduplication;
 pub mod delta_display;
 mod gemini;
 #[cfg(test)]
