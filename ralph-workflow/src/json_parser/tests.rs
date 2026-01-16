@@ -901,16 +901,20 @@ fn test_streaming_very_long_text() {
     );
 
     let output = String::from_utf8(writer).unwrap();
-    // In Full mode, long text should be truncated with ellipsis
-    // The output should be much shorter than the input due to truncation
+    // In Full mode, long text is NO LONGER truncated during streaming
+    // The output should contain the full accumulated text
     assert!(
-        output.len() < long_chunk.len(),
-        "Output should be truncated in Full terminal mode"
+        output.contains(&long_chunk),
+        "Output should contain the full first chunk"
     );
-    // Should contain ellipsis indicating truncation
     assert!(
-        output.contains("..."),
-        "Truncated output should contain ellipsis"
+        output.contains(&long_chunk2),
+        "Output should contain the full second chunk"
+    );
+    // Should NOT contain ellipsis since we no longer truncate during streaming
+    assert!(
+        !output.contains("..."),
+        "Output should NOT contain ellipsis (no truncation during streaming)"
     );
 }
 

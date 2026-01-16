@@ -66,12 +66,14 @@ mod tests {
         assert_eq!(Verbosity::Quiet.truncate_limit("tool_input"), 40);
 
         // Normal has increased limits for better usability
+        // NOTE: tool_input is unlimited in Normal mode to show full tool input
         assert_eq!(Verbosity::Normal.truncate_limit("text"), 400);
-        assert_eq!(Verbosity::Normal.truncate_limit("tool_input"), 200);
+        assert_eq!(Verbosity::Normal.truncate_limit("tool_input"), 999_999);
 
         // Verbose (default) has generous limits for understanding agent behavior
+        // NOTE: tool_input is unlimited in Verbose mode for maximum visibility
         assert_eq!(Verbosity::Verbose.truncate_limit("text"), 800);
-        assert_eq!(Verbosity::Verbose.truncate_limit("tool_input"), 500);
+        assert_eq!(Verbosity::Verbose.truncate_limit("tool_input"), 999_999);
 
         // Full and Debug have unlimited
         assert_eq!(Verbosity::Full.truncate_limit("text"), 999_999);

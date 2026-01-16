@@ -46,38 +46,6 @@ pub enum TerminalMode {
 }
 
 impl TerminalMode {
-    /// Get the terminal width in columns.
-    ///
-    /// This checks:
-    /// 1. `COLUMNS` environment variable (common in shells)
-    /// 2. Returns a reasonable default (80) if unable to detect
-    ///
-    /// # Returns
-    ///
-    /// Terminal width in columns, or 80 if unable to detect.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// use ralph::json_parser::TerminalMode;
-    ///
-    /// let width = TerminalMode::get_width();
-    /// println!("Terminal width: {} columns", width);
-    /// ```
-    pub fn get_width() -> usize {
-        // Check COLUMNS environment variable first (set by most shells)
-        if let Ok(cols_str) = std::env::var("COLUMNS") {
-            if let Ok(cols) = cols_str.parse::<usize>() {
-                if cols > 0 {
-                    return cols;
-                }
-            }
-        }
-
-        // Fallback to reasonable default
-        80
-    }
-
     /// Detect the current terminal mode from environment.
     ///
     /// This checks:
@@ -252,73 +220,5 @@ mod tests {
         assert_ne!(TerminalMode::Full, TerminalMode::Basic);
         assert_ne!(TerminalMode::Full, TerminalMode::None);
         assert_ne!(TerminalMode::Basic, TerminalMode::None);
-    }
-
-    #[test]
-    fn test_terminal_mode_get_width_from_columns_env() {
-        // Save original COLUMNS value
-        let original = std::env::var("COLUMNS");
-
-        // Set COLUMNS=120
-        std::env::set_var("COLUMNS", "120");
-        assert_eq!(TerminalMode::get_width(), 120);
-
-        // Set COLUMNS=40
-        std::env::set_var("COLUMNS", "40");
-        assert_eq!(TerminalMode::get_width(), 40);
-
-        // Restore original value (or remove if not set)
-        match original {
-            Ok(val) => std::env::set_var("COLUMNS", val),
-            Err(_) => std::env::remove_var("COLUMNS"),
-        }
-    }
-
-    #[test]
-    fn test_terminal_mode_get_width_default_when_not_set() {
-        // Save original COLUMNS value
-        let original = std::env::var("COLUMNS");
-
-        // Remove COLUMNS to ensure default is used
-        std::env::remove_var("COLUMNS");
-        assert_eq!(
-            TerminalMode::get_width(),
-            80,
-            "Should default to 80 when COLUMNS not set"
-        );
-
-        // Restore original value (or remove if not set)
-        if let Ok(val) = original {
-            std::env::set_var("COLUMNS", val);
-        }
-    }
-
-    #[test]
-    fn test_terminal_mode_get_width_invalid_value() {
-        // Save original COLUMNS value and ensure it's removed for this test
-        let original = std::env::var("COLUMNS");
-        std::env::remove_var("COLUMNS");
-
-        // Set invalid COLUMNS value
-        std::env::set_var("COLUMNS", "invalid");
-        assert_eq!(
-            TerminalMode::get_width(),
-            80,
-            "Should default to 80 for invalid value"
-        );
-
-        // Set COLUMNS=0 (should use default)
-        std::env::set_var("COLUMNS", "0");
-        assert_eq!(
-            TerminalMode::get_width(),
-            80,
-            "Should default to 80 for zero value"
-        );
-
-        // Restore original value (or remove if not set)
-        match original {
-            Ok(val) => std::env::set_var("COLUMNS", val),
-            Err(_) => std::env::remove_var("COLUMNS"),
-        }
     }
 }

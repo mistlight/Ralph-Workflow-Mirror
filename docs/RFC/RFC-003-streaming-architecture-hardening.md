@@ -2,7 +2,7 @@
 
 **RFC Number**: RFC-003
 **Title**: AI Agent Streaming Architecture Hardening
-**Status**: Implemented
+**Status**: Maintained (post-implementation fixes)
 **Author**: Architecture Analysis
 **Created**: 2026-01-16
 
@@ -668,6 +668,22 @@ Emit structured events (JSON) and rely on external renderer.
   This achieves the ChatGPT-like real-time streaming experience where characters appear as they're generated, not all at once at the end. The improvement is especially noticeable for Codex and other agents that buffer their stdout. |
 | 2026-01-16 | **Bug Fix: Debug output flush in all parsers**: Fixed critical bug where debug output (`[DEBUG]` prefix) was not flushed immediately, causing it to appear truncated or missing during streaming. The issue occurred because debug JSON was written with `writeln!` but not flushed, while the actual event output was flushed. This mismatch caused debug output to be buffered and potentially overwritten by subsequent event output. Added `writer.flush()?` after all debug `writeln!` calls in all four parsers (Claude, Codex, Gemini, OpenCode). Added comprehensive test coverage `test_all_parsers_flush_debug_output_immediately()` to verify debug output completeness. |
 | 2026-01-16 | **Bug Fix: Line truncation with "..." in full terminal mode**: Fixed bug in `truncate_to_terminal_width()` where content was being truncated prematurely with "..." even when it fit within the terminal width. The root cause was `ANSI_ESCAPE_OVERHEAD = 20` which incorrectly reduced available width by 20 characters. ANSI escape sequences (e.g., `\x1b[2m...\x1b[0m`) don't consume visual terminal width, so the overhead should be 0. Changed `ANSI_ESCAPE_OVERHEAD` from 20 to 0, fixing the width calculation: `available_width = terminal_width - prefix_len - 0 - ellipsis_len`. Updated test `test_sanitize_truncates_long_content_in_full_mode` to use a string that actually exceeds terminal width (80 - 8 - 3 = 69 chars available). This fix prevents false truncation of content that would otherwise fit within the terminal. |
+| 2026-01-16 | **Bug Fix: Removed streaming truncation that caused cut-off output**: Fixed two critical issues causing output to be cut off with "..." during streaming:
+  1. **Terminal width truncation during streaming**: Removed `truncate_to_terminal_width()` call from `sanitize_for_display()` in `delta_display.rs`. Terminal width truncation was being applied to EVERY delta during streaming, causing visible "..." cut-offs as content accumulated. The `sanitize_for_display()` function now only sanitizes whitespace (newlines → spaces, collapse multiple spaces, trim) without any truncation.
+  2. **Tool input truncation in Normal/Verbose modes**: Changed `TOOL_INPUT` truncation limits from 200/500 chars to unlimited (999,999) in Normal/Verbose modes in `truncation.rs`. Tool input provides crucial context for understanding agent behavior, and truncating it made it hard to understand what the agent was doing. Tool input is now only truncated in Quiet mode (40 chars).
+
+  **Root causes**:
+  - Issue 1: `sanitize_for_display()` applied terminal width truncation in Full mode (lines 112-116), causing every delta to be truncated to ~65 characters during streaming
+  - Issue 2: `truncate_text()` with verbosity-based limits cut off tool input like "todos=[6 items" at 200 chars in Normal mode
+
+  **Files modified**:
+  - `ralph-workflow/src/json_parser/delta_display.rs`: Removed terminal width truncation from `sanitize_for_display()`, removed unused `truncate_to_terminal_width()` function
+  - `ralph-workflow/src/config/truncation.rs`: Set `TOOL_INPUT` to unlimited (999,999) in Normal/Verbose modes
+  - `ralph-workflow/src/json_parser/terminal.rs`: Removed unused `get_width()` function and its tests
+  - `ralph-workflow/src/config/mod.rs`: Updated `test_truncate_limits` to reflect new limits
+  - `ralph-workflow/src/json_parser/tests.rs`: Updated `test_streaming_very_long_text` to expect no truncation during streaming
+
+  **Impact**: Streaming deltas now show full content without mid-stream truncation. Long tool input (like complex JSON parameters) is now fully visible in Normal/Verbose modes, making it much easier to understand agent behavior. |
 
 ---
 

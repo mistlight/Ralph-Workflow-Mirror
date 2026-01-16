@@ -72,22 +72,23 @@ use std::time::{Duration, Instant};
 /// Using `\x1b[2K` ensures the entire line is cleared during in-place updates.
 pub const CLEAR_LINE: &str = "\x1b[2K";
 
-/// Sanitize content for single-line display.
+/// Sanitize content for single-line display during streaming.
 ///
 /// This function prepares streamed content for in-place terminal display by:
 /// - Replacing newlines with spaces (to prevent artificial line breaks)
 /// - Collapsing multiple consecutive whitespace characters into single spaces
 /// - Trimming leading and trailing whitespace
-/// - Optionally truncating to fit within terminal width (in Full mode only)
+///
+/// NOTE: This function does NOT truncate to terminal width. Truncation during
+/// streaming causes visible "..." cut-offs as content accumulates. Terminal width
+/// truncation should only be applied for final/non-streaming display.
 ///
 /// # Arguments
 /// * `content` - The raw content to sanitize
-/// * `terminal_mode` - The terminal mode (determines if truncation is applied)
-/// * `prefix` - The prefix that will be displayed (needed for width calculation)
 ///
 /// # Returns
-/// A sanitized string suitable for single-line display, possibly truncated.
-fn sanitize_for_display(content: &str, terminal_mode: TerminalMode, prefix: &str) -> String {
+/// A sanitized string suitable for single-line display, without truncation.
+fn sanitize_for_display(content: &str) -> String {
     // Replace all whitespace (including \n, \r, \t) with spaces, then collapse multiple spaces
     let mut result = String::with_capacity(content.len());
     let mut prev_was_whitespace = false;
@@ -106,57 +107,7 @@ fn sanitize_for_display(content: &str, terminal_mode: TerminalMode, prefix: &str
     }
 
     // Trim leading and trailing whitespace
-    let sanitized = result.trim().to_string();
-
-    // Apply truncation only in Full mode (where cursor positioning is used)
-    if terminal_mode == TerminalMode::Full {
-        truncate_to_terminal_width(&sanitized, prefix)
-    } else {
-        sanitized
-    }
-}
-
-/// Truncate content to fit within terminal width, accounting for prefix.
-///
-/// This calculates the available width by subtracting:
-/// - Prefix length (e.g., "[agent] ")
-/// - ANSI escape sequence length (estimated)
-/// - Ellipsis length ("...")
-///
-/// # Arguments
-/// * `content` - The content to potentially truncate
-/// * `prefix` - The prefix that will be displayed
-///
-/// # Returns
-/// The content, possibly truncated with "..." appended if truncated.
-fn truncate_to_terminal_width(content: &str, prefix: &str) -> String {
-    // ANSI escape sequences don't consume visual terminal width
-    // Colors add escape sequences like \x1b[2m...\x1b[0m which are zero-width
-    const ANSI_ESCAPE_OVERHEAD: usize = 0;
-
-    // Reserve space for ellipsis
-    const ELLIPSIS: &str = "...";
-    const ELLIPSIS_LEN: usize = 3;
-
-    // Get terminal width
-    let terminal_width = TerminalMode::get_width();
-
-    // Calculate prefix length: "[prefix] " format
-    let prefix_len = prefix.len() + 3; // +3 for brackets and space: "[" + prefix + "] "
-
-    // Calculate available width for content
-    let available_width =
-        terminal_width.saturating_sub(prefix_len + ANSI_ESCAPE_OVERHEAD + ELLIPSIS_LEN);
-
-    // If content fits, return as-is
-    if content.chars().count() <= available_width {
-        return content.to_string();
-    }
-
-    // Truncate to available width and add ellipsis
-    let truncated: String = content.chars().take(available_width).collect();
-
-    format!("{truncated}{ELLIPSIS}")
+    result.trim().to_string()
 }
 
 /// Configuration for streaming display behavior.
@@ -445,7 +396,8 @@ impl DeltaRenderer for TextDeltaRenderer {
         terminal_mode: TerminalMode,
     ) -> String {
         // Sanitize content: replace newlines with spaces and collapse multiple whitespace
-        let sanitized = sanitize_for_display(accumulated, terminal_mode, prefix);
+        // NOTE: No truncation here - allow full content to accumulate during streaming
+        let sanitized = sanitize_for_display(accumulated);
 
         match terminal_mode {
             TerminalMode::Full => {
@@ -483,7 +435,8 @@ impl DeltaRenderer for TextDeltaRenderer {
         terminal_mode: TerminalMode,
     ) -> String {
         // Sanitize content: replace newlines with spaces and collapse multiple whitespace
-        let sanitized = sanitize_for_display(accumulated, terminal_mode, prefix);
+        // NOTE: No truncation here - allow full content to accumulate during streaming
+        let sanitized = sanitize_for_display(accumulated);
 
         match terminal_mode {
             TerminalMode::Full => {
@@ -884,68 +837,49 @@ mod tests {
 
     #[test]
     fn test_sanitize_collapses_multiple_newlines() {
-        let result = sanitize_for_display("Hello\n\nWorld", TerminalMode::None, "agent");
+        let result = sanitize_for_display("Hello\n\nWorld");
         // Multiple newlines should become a single space
         assert_eq!(result, "Hello World");
     }
 
     #[test]
     fn test_sanitize_collapses_multiple_spaces() {
-        let result = sanitize_for_display("Hello   World", TerminalMode::None, "agent");
+        let result = sanitize_for_display("Hello   World");
         assert_eq!(result, "Hello World");
     }
 
     #[test]
     fn test_sanitize_mixed_whitespace() {
-        let result = sanitize_for_display("Hello\n\n  \t\t  World", TerminalMode::None, "agent");
+        let result = sanitize_for_display("Hello\n\n  \t\t  World");
         // All whitespace (newlines, spaces, tabs) collapsed to single space
         assert_eq!(result, "Hello World");
     }
 
     #[test]
     fn test_sanitize_trims_leading_trailing_whitespace() {
-        let result = sanitize_for_display("  Hello World  ", TerminalMode::None, "agent");
+        let result = sanitize_for_display("  Hello World  ");
         assert_eq!(result, "Hello World");
     }
 
     #[test]
     fn test_sanitize_only_whitespace() {
-        let result = sanitize_for_display("   \n\n   ", TerminalMode::None, "agent");
+        let result = sanitize_for_display("   \n\n   ");
         // Only whitespace content becomes empty string
         assert_eq!(result, "");
     }
 
     #[test]
     fn test_sanitize_preserves_single_spaces() {
-        let result = sanitize_for_display("Hello World Test", TerminalMode::None, "agent");
+        let result = sanitize_for_display("Hello World Test");
         assert_eq!(result, "Hello World Test");
     }
 
     #[test]
-    fn test_sanitize_truncates_long_content_in_full_mode() {
-        // String that is definitely longer than terminal width (80 - 8 - 3 = 69 chars available)
-        let long_content =
-            "This is a very long string that should be truncated when displayed with more text";
-        let result = sanitize_for_display(long_content, TerminalMode::Full, "agent");
-        // Should be truncated with ellipsis in Full mode
-        assert!(result.contains("..."));
-        assert!(result.len() < long_content.len());
-    }
-
-    #[test]
-    fn test_sanitize_does_not_truncate_in_none_mode() {
-        let long_content = "This is a very long string that should NOT be truncated in None mode";
-        let result = sanitize_for_display(long_content, TerminalMode::None, "agent");
-        // Should NOT be truncated in None mode
-        assert_eq!(result, long_content);
-        assert!(!result.contains("..."));
-    }
-
-    #[test]
-    fn test_sanitize_does_not_truncate_in_basic_mode() {
-        let long_content = "This is a very long string that should NOT be truncated in Basic mode";
-        let result = sanitize_for_display(long_content, TerminalMode::Basic, "agent");
-        // Should NOT be truncated in Basic mode
+    fn test_sanitize_does_not_truncate() {
+        // sanitize_for_display no longer truncates - it just sanitizes whitespace
+        let long_content = "This is a very long string that should NOT be truncated anymore";
+        let result = sanitize_for_display(long_content);
+        // Should NOT be truncated
         assert_eq!(result, long_content);
         assert!(!result.contains("..."));
     }
