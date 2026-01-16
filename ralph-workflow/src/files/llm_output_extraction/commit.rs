@@ -692,23 +692,101 @@ fn validate_no_thought_process_leakage(content: &str) -> Result<(), String> {
 }
 
 /// Validate that content does not contain placeholder text.
+///
+/// This function uses word boundary checks to prevent false positives
+/// from log metadata or other technical content that may contain words
+/// like "placeholder" in valid contexts (e.g., "placeholder element",
+/// "placeholder attribute").
+///
+/// Template variables like `{{PROMPT}}`, `{{PLAN}}`, `{{DIFF}}` are
+/// explicitly excluded from being flagged as placeholders since they
+/// are valid template syntax that gets substituted before use.
 fn validate_no_placeholders(content: &str) -> Result<(), String> {
-    let placeholders = [
-        "[commit message]",
-        "<commit message>",
-        "placeholder",
-        "your commit message here",
-        "[insert",
-        "<insert",
-    ];
+    // Valid template variables that should NOT be flagged as placeholders
+    let valid_template_vars = ["{{prompt}}", "{{plan}}", "{{diff}}"];
     let content_lower = content.to_lowercase();
-    for placeholder in placeholders {
-        if content_lower.contains(placeholder) {
-            return Err(format!(
-                "Commit message contains placeholder: {placeholder}"
-            ));
+
+    // First, check if the content only contains valid template variables
+    // If so, skip the placeholder check entirely
+    for valid_var in &valid_template_vars {
+        if content_lower == *valid_var {
+            return Ok(());
         }
     }
+
+    // Placeholder patterns with word boundary checks
+    // These patterns must appear as complete phrases, not as substrings
+    let placeholder_patterns = [
+        r"(?i)\[commit message\]",           // [commit message]
+        r"(?i)<commit message>",             // <commit message>
+        r"(?i)\byour commit message here\b", // your commit message here (as standalone phrase)
+        r"(?i)\[commit\s*\]",                // [commit] or [commit  ]
+        r"(?i)<commit\s*>",                  // <commit> or <commit  >
+        r"(?i)\[insert\b",                   // [insert (but not [inserted])
+        r"(?i)<insert\b",                    // <insert (but not <inserted>)
+    ];
+
+    // Build a regex that matches any of the placeholder patterns
+    let combined_pattern = placeholder_patterns.join("|");
+    if let Ok(re) = regex::Regex::new(&combined_pattern) {
+        if re.is_match(content) {
+            return Err(
+                "Commit message contains placeholder text (e.g., '[commit message]', '<commit message>', or similar)".to_string()
+            );
+        }
+    }
+
+    // For "placeholder" specifically, only flag it if it appears as a standalone
+    // word that isn't part of a valid technical term like "placeholder attribute"
+    // We check for phrases like "is a placeholder", "placeholder for", etc.
+    let placeholder_context_patterns = [
+        r"(?i)\bplaceholder\s+for\b",     // "placeholder for"
+        r"(?i)\bplaceholder\s+text\b",    // "placeholder text"
+        r"(?i)\bplaceholder\s+value\b",   // "placeholder value"
+        r"(?i)\bplaceholder\s+here\b",    // "placeholder here"
+        r"(?i)\bplaceholder\s*\)",        // "placeholder)"
+        r"(?i)is\s+a\s+placeholder\b",    // "is a placeholder"
+        r"(?i)this\s+is\s+placeholder\b", // "this is placeholder" (grammatically incorrect, likely placeholder)
+    ];
+
+    let combined_placeholder_context = placeholder_context_patterns.join("|");
+    if let Ok(re) = regex::Regex::new(&combined_placeholder_context) {
+        if re.is_match(content) {
+            return Err(
+                "Commit message contains placeholder text (e.g., 'placeholder for', 'placeholder text', or similar)".to_string()
+            );
+        }
+    }
+
+    // Also check for bare "placeholder" word with word boundaries, but exclude
+    // common valid technical uses like "placeholder attribute", "placeholder element"
+    let bare_placeholder = regex::Regex::new(r"(?i)\bplaceholder\b").unwrap();
+    if bare_placeholder.is_match(content) {
+        // Check if it's in a valid technical context
+        let valid_contexts = [
+            "placeholder attribute",
+            "placeholder element",
+            "placeholder div",
+            "placeholder span",
+            "placeholder class",
+        ];
+
+        let content_lower_for_ctx = content.to_lowercase();
+        let mut in_valid_context = false;
+        for valid_ctx in &valid_contexts {
+            if content_lower_for_ctx.contains(valid_ctx) {
+                in_valid_context = true;
+                break;
+            }
+        }
+
+        if !in_valid_context {
+            return Err(
+                "Commit message contains 'placeholder'. If this refers to HTML/UI attributes, use more specific language like 'placeholder attribute'".to_string()
+            );
+        }
+    }
+
     Ok(())
 }
 

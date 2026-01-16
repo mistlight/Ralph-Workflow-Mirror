@@ -912,11 +912,16 @@ fn try_emergency_no_diff_recovery(
 ///
 /// # Agent Cycling Behavior
 ///
-/// This function implements proper agent cycling by trying all prompt variants
-/// on each agent before falling back to the next agent in the chain:
-/// - Agent 1: Prompt 1 → Prompt 2 → ... → Prompt 9
-/// - Agent 2: Prompt 1 → Prompt 2 → ... → Prompt 9
-/// - Agent 3: etc.
+/// This function implements proper strategy-first cycling by trying each strategy
+/// with all agents before moving to the next strategy:
+/// - Strategy 1 (initial): Agent 1 → Agent 2 → Agent 3
+/// - Strategy 2 (strict JSON): Agent 1 → Agent 2 → Agent 3
+/// - Strategy 3 (strict JSON V2): Agent 1 → Agent 2 → Agent 3
+/// - etc.
+///
+/// This approach is more efficient because if a particular strategy works well
+/// with any agent, we succeed quickly rather than exhausting all strategies
+/// on the first agent before trying others.
 ///
 /// # Arguments
 ///
@@ -1011,6 +1016,15 @@ fn create_commit_log_session(log_dir: &str, runtime: &mut PipelineRuntime) -> Co
 }
 
 /// Try all agents with their strategy variants.
+///
+/// This function implements the correct cycling order:
+/// - Outer loop: Iterate through strategies (9 total)
+/// - Inner loop: Try each agent with the current strategy
+/// - Only advance to next strategy if ALL agents failed with current strategy
+///
+/// This ensures we try the current strategy with ALL agents before moving
+/// to the next strategy, which is more efficient than trying all strategies
+/// with one agent before moving to the next.
 fn try_agents_with_strategies(
     agents: &[&str],
     ctx: &CommitAttemptContext<'_>,
@@ -1020,15 +1034,17 @@ fn try_agents_with_strategies(
     session: &mut CommitLogSession,
     total_attempts: &mut usize,
 ) -> Option<anyhow::Result<CommitMessageResult>> {
-    for (idx, agent) in agents.iter().enumerate() {
-        runtime.logger.info(&format!(
-            "Trying agent {}/{}: {agent}",
-            idx + 1,
-            agents.len()
-        ));
+    let mut strategy = CommitRetryStrategy::Initial;
+    loop {
+        runtime
+            .logger
+            .info(&format!("Trying strategy: {}", strategy.description()));
 
-        let mut strategy = CommitRetryStrategy::Initial;
-        loop {
+        for (idx, agent) in agents.iter().enumerate() {
+            runtime
+                .logger
+                .info(&format!("  - Agent {}/{}: {agent}", idx + 1, agents.len()));
+
             *total_attempts += 1;
             if let Some(result) = run_commit_attempt_with_agent(
                 strategy,
@@ -1041,16 +1057,16 @@ fn try_agents_with_strategies(
             ) {
                 return Some(result);
             }
-            match strategy.next() {
-                Some(next) => strategy = next,
-                None => break,
-            }
         }
 
-        if idx + 1 < agents.len() {
-            runtime.logger.warn(&format!(
-                "All prompt variants exhausted for '{agent}', falling back to next agent..."
-            ));
+        runtime.logger.warn(&format!(
+            "All agents failed with strategy '{}', moving to next strategy...",
+            strategy.description()
+        ));
+
+        match strategy.next() {
+            Some(next) => strategy = next,
+            None => break,
         }
     }
     None
@@ -1469,6 +1485,10 @@ fn validate_and_record_extraction(
 ///
 /// Similar to `extract_commit_message_from_logs` but records all extraction
 /// attempts in the provided `CommitAttemptLog` for debugging.
+///
+/// This function also creates and writes a `ParsingTraceLog` that captures
+/// detailed information about each extraction step, including the exact
+/// content being processed and validation results.
 fn extract_commit_message_from_logs_with_trace(
     log_dir: &str,
     diff: &str,
@@ -1476,10 +1496,22 @@ fn extract_commit_message_from_logs_with_trace(
     logger: &Logger,
     attempt_log: &mut CommitAttemptLog,
 ) -> anyhow::Result<Option<CommitExtractionResult>> {
+    use crate::phases::commit_logging::{ParsingTraceLog, ParsingTraceStep};
+
+    // Create parsing trace log
+    let mut parsing_trace = ParsingTraceLog::new(
+        attempt_log.attempt_number,
+        &attempt_log.agent,
+        &attempt_log.strategy,
+    );
+
     // Read and preprocess log content
     let Some(content) = read_log_content_with_trace(log_dir, logger, attempt_log)? else {
         return Ok(None);
     };
+
+    // Set raw output in parsing trace
+    parsing_trace.set_raw_output(&content);
 
     // Detect agent errors in the output stream
     if let Some(error_kind) = detect_agent_errors_in_output(&content) {
@@ -1491,16 +1523,41 @@ fn extract_commit_message_from_logs_with_trace(
             "ErrorDetection",
             format!("Agent error detected: {}", error_kind.description()),
         ));
+
+        // Add to parsing trace
+        parsing_trace.add_step(
+            ParsingTraceStep::new(1, "Agent Error Detection")
+                .with_input(&content[..content.len().min(1000)])
+                .with_success(false)
+                .with_details(&format!("Agent error: {}", error_kind.description())),
+        );
+        parsing_trace.set_final_message("[AGENT ERROR]");
+        let _ = parsing_trace.write_to_file(std::path::Path::new(log_dir));
+
         return Ok(Some(CommitExtractionResult::AgentError(error_kind)));
     }
+
+    let mut step_number = 1;
 
     // Try XML extraction
     let (xml_result, xml_detail) = try_extract_xml_commit_with_trace(&content);
     logger.info(&format!("  ✓ XML extraction: {xml_detail}"));
+
+    parsing_trace.add_step(
+        ParsingTraceStep::new(step_number, "XML Extraction")
+            .with_input(&content[..content.len().min(1000)])
+            .with_result(xml_result.as_deref().unwrap_or("[No XML found]"))
+            .with_success(xml_result.is_some())
+            .with_details(&xml_detail),
+    );
+    step_number += 1;
+
     if let Some(message) = xml_result {
         if let Some(result) =
             validate_and_record_extraction(&message, "XML", xml_detail, logger, attempt_log)
         {
+            parsing_trace.set_final_message(&message);
+            let _ = parsing_trace.write_to_file(std::path::Path::new(log_dir));
             return Ok(Some(result));
         }
     } else {
@@ -1511,10 +1568,22 @@ fn extract_commit_message_from_logs_with_trace(
     // Try JSON extraction
     let (json_result, json_detail) = try_extract_structured_commit_with_trace(&content);
     logger.info(&format!("  ✓ JSON extraction: {json_detail}"));
+
+    parsing_trace.add_step(
+        ParsingTraceStep::new(step_number, "JSON Schema Extraction")
+            .with_input(&content[..content.len().min(1000)])
+            .with_result(json_result.as_deref().unwrap_or("[No JSON found]"))
+            .with_success(json_result.is_some())
+            .with_details(&json_detail),
+    );
+    step_number += 1;
+
     if let Some(message) = json_result {
         if let Some(result) =
             validate_and_record_extraction(&message, "JSON", json_detail, logger, attempt_log)
         {
+            parsing_trace.set_final_message(&message);
+            let _ = parsing_trace.write_to_file(std::path::Path::new(log_dir));
             return Ok(Some(result));
         }
     } else {
@@ -1523,13 +1592,32 @@ fn extract_commit_message_from_logs_with_trace(
     logger.info("  ✗ JSON schema extraction failed, falling back to pattern-based extraction");
 
     // Pattern-based extraction with recovery layers
-    Ok(try_pattern_extraction_with_recovery_traced(
-        &content,
-        diff,
-        agent_cmd,
-        logger,
-        attempt_log,
-    ))
+    let pattern_result =
+        try_pattern_extraction_with_recovery_traced(&content, diff, agent_cmd, logger, attempt_log);
+
+    // Add pattern extraction step to parsing trace
+    if let Some(ref result) = pattern_result {
+        if let CommitExtractionResult::Extracted(msg) = result {
+            parsing_trace.add_step(
+                ParsingTraceStep::new(step_number, "Pattern-based Extraction")
+                    .with_input(&content[..content.len().min(1000)])
+                    .with_result(msg)
+                    .with_success(true)
+                    .with_details("Successfully extracted via pattern matching"),
+            );
+            parsing_trace.set_final_message(msg);
+        }
+    } else {
+        parsing_trace.add_step(
+            ParsingTraceStep::new(step_number, "Pattern-based Extraction")
+                .with_input(&content[..content.len().min(1000)])
+                .with_success(false)
+                .with_details("Pattern extraction failed or validation failed"),
+        );
+    }
+
+    let _ = parsing_trace.write_to_file(std::path::Path::new(log_dir));
+    Ok(pattern_result)
 }
 
 /// Read and preprocess log content for extraction.
