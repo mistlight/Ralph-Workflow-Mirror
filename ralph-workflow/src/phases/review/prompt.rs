@@ -81,60 +81,7 @@ pub fn build_review_prompt(
             );
             ("review (security)".to_string(), prompt)
         }
-        ReviewDepth::Incremental => {
-            ctx.logger
-                .info("Using incremental review (changed files only)");
-
-            // Get the diff from the starting commit to pass directly to the reviewer
-            // This keeps agents isolated from git operations
-            let diff = match get_git_diff_from_start() {
-                Ok(d) if !d.trim().is_empty() => {
-                    let original_size = d.len();
-                    // For reviewer, use truncation for very large diffs (not chunking)
-                    // The limit is 1MB which provides substantial context for review
-                    // Chunking is only for commit message generation where we need to combine results
-                    let (truncated_diff, was_truncated) =
-                        crate::git_helpers::validate_and_truncate_diff(d);
-                    if was_truncated {
-                        ctx.logger.warn(&format!(
-                            "Review diff truncated from {} to {} bytes for LLM processing",
-                            original_size,
-                            truncated_diff.len()
-                        ));
-                    }
-                    truncated_diff
-                }
-                Ok(_) => {
-                    ctx.logger.warn(
-                        "No diff found from starting commit; review will be skipped for this cycle",
-                    );
-                    // Return empty prompt to signal no review should be done
-                    return ("review (incremental - skipped)".to_string(), String::new());
-                }
-                Err(e) => {
-                    // Diff retrieval failed - this is a more serious issue
-                    // Return an error result to signal the caller should skip this cycle
-                    ctx.logger.error(&format!(
-                        "Failed to get diff from starting commit: {e}; skipping review cycle"
-                    ));
-                    ctx.logger.info(
-                        "This may indicate a git repository issue. The review cycle will be skipped.",
-                    );
-                    // Return empty prompt to signal no review should be done
-                    return ("review (incremental - error)".to_string(), String::new());
-                }
-            };
-
-            if ctx.config.verbosity.is_debug() {
-                ctx.logger
-                    .info(&format!("Diff size for review: {} bytes", diff.len()));
-            }
-
-            (
-                "review (incremental)".to_string(),
-                prompt_incremental_review_with_diff(reviewer_context, &diff),
-            )
-        }
+        ReviewDepth::Incremental => build_incremental_review_prompt(ctx, reviewer_context),
         ReviewDepth::Comprehensive => guidelines.map_or_else(
             || {
                 ctx.logger.info("Using comprehensive review");
@@ -187,4 +134,64 @@ pub fn build_review_prompt(
 /// This function detects those agents for which alternative handling may be needed.
 fn is_problematic_prompt_target(agent: &str, model_flag: Option<&str>) -> bool {
     is_glm_like_agent(agent) || model_flag.is_some_and(is_glm_like_agent)
+}
+
+/// Build the incremental review prompt by fetching and validating the git diff.
+///
+/// Returns a tuple of (label, prompt) where label describes the review type
+/// and prompt contains the actual review prompt with the diff.
+fn build_incremental_review_prompt(
+    ctx: &PhaseContext<'_>,
+    reviewer_context: ContextLevel,
+) -> (String, String) {
+    ctx.logger
+        .info("Using incremental review (changed files only)");
+
+    // Get the diff from the starting commit to pass directly to the reviewer
+    // This keeps agents isolated from git operations
+    let diff = match get_git_diff_from_start() {
+        Ok(d) if !d.trim().is_empty() => {
+            let original_size = d.len();
+            // For reviewer, use truncation for very large diffs (not chunking)
+            // The limit is 1MB which provides substantial context for review
+            // Chunking is only for commit message generation where we need to combine results
+            let (truncated_diff, was_truncated) = crate::git_helpers::validate_and_truncate_diff(d);
+            if was_truncated {
+                ctx.logger.warn(&format!(
+                    "Review diff truncated from {} to {} bytes for LLM processing",
+                    original_size,
+                    truncated_diff.len()
+                ));
+            }
+            truncated_diff
+        }
+        Ok(_) => {
+            ctx.logger
+                .warn("No diff found from starting commit; review will be skipped for this cycle");
+            // Return empty prompt to signal no review should be done
+            return ("review (incremental - skipped)".to_string(), String::new());
+        }
+        Err(e) => {
+            // Diff retrieval failed - this is a more serious issue
+            // Return an error result to signal the caller should skip this cycle
+            ctx.logger.error(&format!(
+                "Failed to get diff from starting commit: {e}; skipping review cycle"
+            ));
+            ctx.logger.info(
+                "This may indicate a git repository issue. The review cycle will be skipped.",
+            );
+            // Return empty prompt to signal no review should be done
+            return ("review (incremental - error)".to_string(), String::new());
+        }
+    };
+
+    if ctx.config.verbosity.is_debug() {
+        ctx.logger
+            .info(&format!("Diff size for review: {} bytes", diff.len()));
+    }
+
+    (
+        "review (incremental)".to_string(),
+        prompt_incremental_review_with_diff(reviewer_context, &diff),
+    )
 }
