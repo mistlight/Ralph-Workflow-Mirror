@@ -2873,10 +2873,72 @@ pre code {
     box-shadow: var(--shadow-xl);
 }
 
+.demo-header {
+    display: flex;
+    align-items: stretch;
+    background-color: var(--color-bg-elevated);
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.demo-run-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+    margin: var(--space-2) var(--space-3) var(--space-2) auto;
+    background-color: var(--color-primary);
+    color: var(--color-bg);
+    border: none;
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    cursor: pointer;
+    transition: all var(--duration-150) var(--ease-out);
+    white-space: nowrap;
+}
+
+.demo-run-btn:hover {
+    background-color: var(--color-primary-hover);
+    box-shadow: var(--shadow-glow-sm);
+}
+
+.demo-run-btn:active {
+    transform: scale(0.98);
+}
+
+.demo-run-btn svg {
+    flex-shrink: 0;
+}
+
+/* Mobile responsive for demo header */
+@media (max-width: 768px) {
+    .demo-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .demo-tabs {
+        order: 2;
+        border-top: 1px solid var(--border-soft);
+    }
+
+    .demo-run-btn {
+        order: 1;
+        margin: var(--space-3);
+        justify-content: center;
+    }
+
+    .demo-tab {
+        min-width: auto;
+        padding: var(--space-3) var(--space-4);
+        font-size: var(--text-xs);
+    }
+}
+
 .demo-tabs {
     display: flex;
-    border-bottom: 1px solid var(--border-soft);
-    background-color: var(--color-bg-elevated);
+    flex: 1;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
 }
@@ -3309,6 +3371,39 @@ pre code {
 }
 
 .audience-content.active {
+    display: block;
+}
+
+/* Audience-specific content visibility
+   These classes are used for content that should only show for specific audience types.
+   By default, all audience-specific content is hidden.
+   When a user selects an audience, their content becomes visible. */
+
+.audience-developer-content,
+.audience-vibe-coder-content,
+.audience-newcomer-content {
+    display: none;
+    animation: fadeIn 0.3s var(--ease-out);
+}
+
+/* Show content for selected audience */
+body[data-audience="developer"] .audience-developer-content {
+    display: block;
+}
+
+body[data-audience="vibe-coder"] .audience-vibe-coder-content {
+    display: block;
+}
+
+body[data-audience="newcomer"] .audience-newcomer-content {
+    display: block;
+}
+
+/* When no audience is selected, show all audience-specific content
+   This ensures content is visible by default before a selection is made */
+body:not([data-audience]) .audience-developer-content,
+body:not([data-audience]) .audience-vibe-coder-content,
+body:not([data-audience]) .audience-newcomer-content {
     display: block;
 }
 
