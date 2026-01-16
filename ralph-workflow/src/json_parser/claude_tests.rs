@@ -67,3 +67,101 @@ fn test_claude_parser_empty_line_ignored() {
     let output2 = parser.parse_event("   ");
     assert!(output2.is_none());
 }
+
+/// Test that `content_block_stop` events don't produce blank lines
+///
+/// This test verifies the fix for ccs-glm blank line issue where
+/// `content_block_stop` events were being treated as Unknown events
+/// and producing blank output.
+#[test]
+fn test_content_block_stop_no_output() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let json = r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#;
+    let output = parser.parse_event(json);
+    assert!(
+        output.is_none(),
+        "content_block_stop should produce no output"
+    );
+}
+
+/// Test that `message_delta` events don't produce blank lines
+///
+/// This test verifies the fix for ccs-glm blank line issue where
+/// `message_delta` events were being treated as Unknown events
+/// and producing blank output.
+#[test]
+fn test_message_delta_no_output() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let json = r#"{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":100,"output_tokens":50}}}"#;
+    let output = parser.parse_event(json);
+    assert!(output.is_none(), "message_delta should produce no output");
+}
+
+/// Test that `content_block_stop` with no index is handled
+#[test]
+fn test_content_block_stop_no_index() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    let json = r#"{"type":"stream_event","event":{"type":"content_block_stop"}}"#;
+    let output = parser.parse_event(json);
+    assert!(
+        output.is_none(),
+        "content_block_stop without index should produce no output"
+    );
+}
+
+/// Test complete ccs-glm event sequence
+///
+/// This test verifies that a typical ccs-glm streaming sequence
+/// doesn't produce blank lines from control events.
+#[test]
+fn test_ccs_glm_event_sequence() {
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+
+    // System init
+    let json1 = r#"{"type":"system","subtype":"init","session_id":"test123"}"#;
+    let output1 = parser.parse_event(json1);
+    assert!(output1.is_some());
+
+    // Message start
+    let json2 = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant"}}}"#;
+    let output2 = parser.parse_event(json2);
+    assert!(output2.is_none(), "message_start should produce no output");
+
+    // Content block start
+    let json3 = r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#;
+    let output3 = parser.parse_event(json3);
+    assert!(
+        output3.is_none(),
+        "content_block_start should produce no output"
+    );
+
+    // Content block delta with text
+    let json4 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
+    let output4 = parser.parse_event(json4);
+    assert!(
+        output4.is_some(),
+        "content_block_delta with text should produce output"
+    );
+
+    // Content block stop - should not produce blank line
+    let json5 = r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#;
+    let output5 = parser.parse_event(json5);
+    assert!(
+        output5.is_none(),
+        "content_block_stop should produce no output"
+    );
+
+    // Message delta - should not produce blank line
+    let json6 = r#"{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":100,"output_tokens":5}}}"#;
+    let output6 = parser.parse_event(json6);
+    assert!(output6.is_none(), "message_delta should produce no output");
+
+    // Message stop
+    let json7 = r#"{"type":"stream_event","event":{"type":"message_stop"}}"#;
+    let output7 = parser.parse_event(json7);
+    // Message stop should produce output (final newline) since we had content
+    assert!(
+        output7.is_some(),
+        "message_stop should produce output after content"
+    );
+}

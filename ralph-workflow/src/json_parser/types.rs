@@ -105,6 +105,13 @@ pub enum StreamInnerEvent {
     },
     /// Text delta - incremental text content update
     TextDelta { text: Option<String> },
+    /// Content block stop - completion of a content block
+    ContentBlockStop { index: Option<u64> },
+    /// Message delta - final message metadata (`stop_reason`, usage, etc.)
+    MessageDelta {
+        delta: Option<MessageDeltaData>,
+        usage: Option<MessageUsage>,
+    },
     /// Message stop - completion of the message stream
     MessageStop,
     /// Error event during streaming
@@ -137,6 +144,34 @@ pub enum ContentBlockDelta {
 pub struct StreamError {
     pub(crate) message: Option<String>,
     pub(crate) code: Option<String>,
+}
+
+/// Message delta data for `message_delta` events
+///
+/// Contains final message metadata like `stop_reason` and `stop_sequence`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MessageDeltaData {
+    pub(crate) stop_reason: Option<String>,
+    pub(crate) stop_sequence: Option<u64>,
+}
+
+/// Message usage information for `message_delta` events
+///
+/// Contains token usage statistics for the completed message.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MessageUsage {
+    /// Number of input tokens
+    #[serde(alias = "input_tokens")]
+    pub(crate) input: Option<u64>,
+    /// Number of output tokens
+    #[serde(alias = "output_tokens")]
+    pub(crate) output: Option<u64>,
+    /// Number of cache read input tokens
+    #[serde(alias = "cache_read_input_tokens")]
+    pub(crate) cache_read: Option<u64>,
+    /// Number of cache creation input tokens
+    #[serde(alias = "cache_creation_input_tokens")]
+    pub(crate) cache_creation: Option<u64>,
 }
 
 /// Content type for delta accumulation

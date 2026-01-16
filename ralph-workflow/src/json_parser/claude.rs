@@ -175,6 +175,8 @@ impl ClaudeParser {
     /// - MessageStart/Stop: Manage session state
     /// - `ContentBlockStart`: Initialize new content blocks
     /// - ContentBlockDelta/TextDelta: Accumulate and display incrementally
+    /// - `ContentBlockStop`: Finalize content blocks
+    /// - `MessageDelta`: Process message metadata without output
     /// - Error: Display appropriately
     ///
     /// Returns String for display content, empty String for control events.
@@ -236,6 +238,18 @@ impl ClaudeParser {
             } => self.handle_content_block_delta(&mut session, index, delta),
             StreamInnerEvent::TextDelta { text: Some(text) } => {
                 self.handle_text_delta(&mut session, &text)
+            }
+            StreamInnerEvent::ContentBlockStop { .. } => {
+                // Content block completion event - no output needed
+                // This event marks the end of a content block but doesn't produce
+                // any displayable content. It's a control event for state management.
+                String::new()
+            }
+            StreamInnerEvent::MessageDelta { .. } => {
+                // Message delta event with usage/metadata - no output needed
+                // This event contains final message metadata (stop_reason, usage stats)
+                // but is used for tracking/monitoring purposes only, not display.
+                String::new()
             }
             StreamInnerEvent::ContentBlockDelta { .. }
             | StreamInnerEvent::Ping
@@ -804,6 +818,8 @@ impl ClaudeParser {
                 event,
                 StreamInnerEvent::MessageStart { .. }
                     | StreamInnerEvent::ContentBlockStart { .. }
+                    | StreamInnerEvent::ContentBlockStop { .. }
+                    | StreamInnerEvent::MessageDelta { .. }
                     | StreamInnerEvent::MessageStop
                     | StreamInnerEvent::Ping
             ),
