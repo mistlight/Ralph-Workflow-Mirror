@@ -1,453 +1,231 @@
-# Ralph Workflow Website - Implementation Plan
+# Design Stabilization Implementation Plan
 
 ## Summary
 
-The Ralph Workflow website has a solid existing foundation with a "Forest Editorial" design system (~3,800 lines CSS, ~1,450 lines JS, ~1,550 lines HTML). After thorough exploration of the codebase, current screenshots, design documentation, and the source product (Ralph Workflow CLI), this plan outlines targeted refinements needed to achieve commercial-grade, Dribbble-level polish while maintaining clarity for all three target audiences (software developers, vibe coders, and CLI newcomers).
+After visual diagnosis of all pages (index.html sections 1-7, getting-started.html, faq.html, docs/writing-specs.html), I've identified the fundamental causes of visual inconsistency between the baseline (Sections 1-3) and post-Section 3 content.
 
-**Current State Assessment:**
-- ✅ Strong design foundation: Forest Editorial theme with distinctive typography (Instrument Serif, Space Grotesk, IBM Plex Mono)
-- ✅ Comprehensive content covering all audience segments with audience selector
-- ✅ Full static site compatible with Codeberg Pages (no build step required)
-- ✅ Accessibility features: skip links, ARIA labels, keyboard navigation, reduced motion support
-- ✅ Interactive features: terminal demo, dark/light mode, copy buttons, audience selector
-- ⚠️ Logo SVG uses off-palette colors (#CCFF00, #FF00AA, #9D4EDD) not matching Forest Editorial design system
-- ⚠️ Installation instructions need verification (current repo URL vs. PROMPT.md specification)
-- ⚠️ Some visual refinements needed for pixel-perfect polish
-
-**Approach:** Targeted iteration and refinement, not a rebuild. The existing work is substantial and high-quality. Focus on:
-1. Design system consistency (fix off-palette colors)
-2. Content alignment with product truth (correct installation commands)
-3. Visual polish passes (responsive edge cases, interaction states)
-4. Accessibility verification
+**The good news:** The site has strong bones. The design system is well-defined, typography choices are excellent (Instrument Serif + Space Grotesk + IBM Plex Mono), and the color palette (forest green + warm amber) is cohesive. The issues are primarily about **application consistency**, not design system flaws.
 
 ---
 
-## Implementation Steps
+## Top 4 Fundamental Causes of Visual Inconsistency
 
-### Phase 1: Critical Content & Branding Fixes
+### 1. **Container Width & Reading Lane Inconsistency**
+- **Baseline (Sections 1-3):** Content uses `--container-xl` (1280px) with comfortable margins, creating a consistent reading lane
+- **Post-Section 3:** Some sections break this pattern with ad-hoc widths, particularly in:
+  - Section 05 (Features) - cards feel cramped within container
+  - Section 06 (Audience) - inconsistent card grid spacing
+  - FAQ items on index.html vs faq.html have different visual density
+  - Docs pages have narrower effective content width in places
 
-**Step 1.1: Update Logo Assets to Forest Editorial Palette**
-- Current `assets/logo-icon.svg` uses legacy "Noir" colors (#CCFF00, #FF00AA, #9D4EDD, #00FFF0)
-- Replace with Forest Editorial palette:
-  - Gradient: `--color-primary` (#d4a574) → `--color-accent` (#7da58a)
-  - Remove off-palette magenta/purple dots
-- Update any inline SVG logos in `index.html` to match
-- Recreate favicon with Forest Editorial colors
-- **Files:** `assets/logo-icon.svg`, `assets/logo.svg`, `index.html` (favicon data URI), `404.html` (favicon)
+### 2. **Vertical Rhythm Breakdown**
+- **Baseline:** Sections 1-3 have generous, consistent spacing between elements (80-120px section padding, consistent element gaps)
+- **Post-Section 3:** Vertical spacing becomes erratic:
+  - Section 04 (Install) has tighter spacing than surrounding sections
+  - Section 07 (FAQ on index) feels compressed
+  - Getting-started.html step sequences have inconsistent inter-step spacing
+  - Docs pages have variable spacing between content blocks
 
-**Step 1.2: Verify and Correct Installation Instructions**
-- PROMPT.md specifies: `git clone ssh://git@codeberg.org/mistlight/Ralph-Workflow.git` and cargo name `ralph-workflow`
-- Codeberg shows actual repo: `https://codeberg.org/mistlight/RalphWithReviewer.git` and CLI is `ralph`
-- **Resolution needed:** Confirm correct repository URL and cargo package name
-- Ensure all installation code blocks use the correct commands:
-  ```bash
-  git clone https://codeberg.org/mistlight/RalphWithReviewer.git
-  cd RalphWithReviewer
-  cargo install --path .
-  ```
-- Update prerequisite requirements (Rust/cargo, Claude Code/Codex)
-- **Files:** `index.html` (install section), potentially all code-block content
+### 3. **Component Visual Weight Imbalance**
+- **Baseline:** Cards, code blocks, and callouts in Sections 1-3 have balanced visual weight with consistent border-radius, shadows, and padding
+- **Post-Section 3:**
+  - Feature cards (Section 05) feel lighter/less substantial than comparison cards
+  - Audience cards (Section 06) have different hover behavior than baseline cards
+  - Code blocks across pages have inconsistent padding and header treatment
+  - Troubleshooting boxes, tips boxes, and callouts vary in styling
+  - FAQ items on index vs dedicated FAQ page have different component treatment
 
-**Step 1.3: Verify PROMPT.md Feature Section Accuracy**
-- Ensure code examples in the website match actual PROMPT.md format from the Ralph Workflow repo
-- Update if any syntax or structure has changed
-- **Files:** `index.html` (PROMPT.md section)
+### 4. **Typography Hierarchy Drift**
+- **Baseline:** Clear distinction between section numbers, headings, subheadings, body, and captions
+- **Post-Section 3:**
+  - Section headings in 04-07 don't have the same visual impact as 01-03
+  - Subheadings (h3, h4) compete with section headings in visual weight
+  - List item styling varies (bullet styles, spacing, indentation)
+  - Code block labels ("bash", "markdown") have inconsistent styling
 
-### Phase 2: Design System Consistency Audit
+---
 
-**Step 2.1: Search and Replace Off-Palette Colors**
-- Audit `index.html` for any hardcoded hex colors not in the CSS variable system
-- Check for legacy Noir colors (#00D4FF electric cyan, #CCFF00 neon lime, etc.)
-- Replace all with CSS variables
-- Verify workflow diagram SVG (if any) uses design system colors
-- **Files:** `index.html`, `styles.css`
+## Implementation Passes
 
-**Step 2.2: Inline Style Extraction Audit**
-- PLAN.md notes ~300+ lines of inline styles were identified
-- Verify these have been extracted or extract remaining inline styles
-- Focus on comparison section, glossary, FAQ areas
-- Convert to proper CSS component classes in `styles.css`
-- **Files:** `index.html`, `styles.css`
+### Pass A — Layout Model Unification
 
-**Step 2.3: Typography Consistency Check**
-- Verify all text uses proper CSS variable references (`--font-display`, `--font-body`, `--font-mono`)
-- Check for any hardcoded font-family declarations
-- Verify type hierarchy creates clear visual impact
-- **Files:** `styles.css`, `index.html`
+**Goal:** Ensure all pages and sections share the same spatial DNA as Sections 1-3.
 
-### Phase 3: Visual Polish Pass
+**Targets:**
+1. Audit and normalize container widths across all sections (index.html 04-07)
+2. Standardize section padding to match baseline rhythm (80-100px top/bottom)
+3. Fix grid gutters on feature cards (Section 05) and audience cards (Section 06)
+4. Ensure subpages (getting-started, faq, docs/*) use consistent page container
+5. Normalize content container max-width for reading comfort (~1000px for prose)
 
-**Step 3.1: Hero Section Enhancement**
-- Verify page load animation orchestration is smooth and impressive
-- Check staggered entrance timing (badges → title → description → CTA)
-- Test terminal demo animation quality
-- Ensure parallax/blob effects are subtle, not distracting
-- **Files:** `styles.css`, `script.js`
+**Files affected:**
+- `styles.css` - Container/section spacing rules
+- `index.html` - Section wrapper classes (if needed)
+- `getting-started.html` - Container consistency
+- `faq.html` - Container consistency
+- `docs/*.html` - Container consistency
 
-**Step 3.2: Interactive States Completeness Audit**
-- Audit all buttons for complete states: default, hover, active/pressed, focus-visible, disabled, loading
-- Audit all cards for hover lift and shadow transitions
-- Verify magnetic effects are enabled only for pointer devices
-- Check copy button success/error feedback states
-- **Files:** `styles.css`, `script.js`
+**Verification:**
+- All sections flow with same visual rhythm when scrolling
+- No jarring width changes between sections
+- Subpages feel like part of the same site
 
-**Step 3.3: Section-by-Section Visual Review**
-For each section, verify:
-- Typography hierarchy (passes "3-second scan test")
-- Spacing consistency (8px grid alignment)
-- Card/component styling consistency
-- Scroll reveal animations trigger correctly
+---
 
-Sections to audit:
-1. Hero (terminal demo, CTAs)
-2. "What is Ralph" (workflow explanation)
-3. Before/After Comparison
-4. How It Works (step cards)
-5. PROMPT.md Feature (code example)
-6. Comparison Table
-7. Interactive Demo (tabs, terminal output, generated code)
-8. Install Section (tabs, code blocks, copy buttons, simple/advanced toggle)
-9. Features Grid (expandable cards)
-10. Audience Personas (three cards)
-11. Glossary (for CLI newcomers)
-12. FAQ (accordion)
-13. Footer
+### Pass B — Typography & Rhythm Restoration
 
-**Files:** `index.html`, `styles.css`, `script.js`
+**Goal:** Re-establish consistent heading scale, spacing ladder, and text hierarchy.
 
-### Phase 4: Responsive & Mobile Polish
+**Targets:**
+1. Ensure section number + heading combo (01, 02, etc.) has same treatment everywhere
+2. Normalize h2/h3/h4 sizing and spacing relationships
+3. Standardize paragraph margins and line-heights
+4. Fix list styling (bullets, spacing, indentation) to be consistent
+5. Ensure code block typography (size, padding, headers) is uniform
 
-**Step 4.1: Mobile Navigation Testing**
-- Verify hamburger menu animation is smooth
-- Ensure menu items meet 44px touch target minimum
-- Test dark mode toggle accessibility on mobile
-- Check menu close behavior (outside click, escape key, link click)
-- **Files:** `styles.css`, `script.js`
+**Files affected:**
+- `styles.css` - Typography scale, heading styles, list styles
+- Possibly HTML files if classes need adjustment
 
-**Step 4.2: Responsive Breakpoint Verification**
-- Test at key viewport widths:
-  - Desktop: 1920px, 1440px, 1280px
-  - Tablet: 768px
-  - Mobile: 375px (iPhone SE), 414px (iPhone 12/13)
-- Verify all layouts are intentional (not just "fits")
-- Check terminal demo usability on small screens
-- Verify audience selector wraps gracefully
-- **Files:** `styles.css`
+**Verification:**
+- Headings create clear hierarchy across all pages
+- Body text is comfortable to read with consistent rhythm
+- Lists and code blocks have predictable, pleasant spacing
 
-**Step 4.3: Touch Device Optimization**
-- Disable magnetic button effects on touch devices (verify `pointer: fine` check)
-- Reduce parallax complexity on mobile for performance
-- Ensure all interactive elements have sufficient touch targets
-- **Files:** `script.js`, `styles.css`
+---
 
-### Phase 5: Accessibility Verification
+### Pass C — Component Normalization
 
-**Step 5.1: Keyboard Navigation Testing**
-- Tab through entire site and verify logical focus order
-- Ensure all interactive elements are keyboard accessible
-- Verify focus states are visible and beautiful
-- Test FAQ accordion keyboard operation
-- Test demo tab panel keyboard navigation
-- **Files:** `index.html`, `script.js`
+**Goal:** Ensure all UI components (cards, callouts, code blocks, FAQ items) share canonical styling.
 
-**Step 5.2: Screen Reader Testing**
-- Verify all ARIA labels are correct and complete
-- Ensure dynamic content updates (terminal demo, copy button feedback) are announced
-- Check for any missing alt text on decorative vs. meaningful elements
-- **Files:** `index.html`
+**Targets:**
+1. Unify card styling (feature cards, audience cards, prereq cards) - same shadows, borders, hover states
+2. Standardize code block treatment (header bar, padding, border-radius, copy button position)
+3. Normalize callout/tip/troubleshooting boxes to single visual pattern
+4. Ensure FAQ items have consistent styling on index.html vs faq.html
+5. Unify step indicators (numbered circles) across pages
+6. Standardize link styling in different contexts
 
-**Step 5.3: Color Contrast Verification**
-- Verify all text meets WCAG AA contrast requirements
-- Check both dark mode and light mode
-- Pay attention to:
-  - `--color-text-muted` on background
-  - `--color-text-dim` (should be decorative only)
-  - Disabled button states
-- **Files:** `styles.css`
+**Files affected:**
+- `styles.css` - Card, code-block, callout, FAQ component styles
+- HTML files - May need class normalization
 
-**Step 5.4: Reduced Motion Verification**
-- Test site with `prefers-reduced-motion: reduce` enabled
-- Verify all animations are disabled/minimized
-- Confirm smooth scroll becomes instant
-- Ensure site is fully usable without motion
-- **Files:** `styles.css`, `script.js`
+**Verification:**
+- Cards across all pages feel like the same component
+- Code blocks are visually identical everywhere
+- Callout-type elements share same visual language
 
-### Phase 6: Performance Audit
+---
 
-**Step 6.1: Animation Performance**
-- Verify animations use GPU-accelerated properties (transform, opacity only)
-- Check for any animations using width/height/top/left that cause layout thrashing
-- Ensure parallax scroll handlers use requestAnimationFrame throttling
-- **Files:** `styles.css`, `script.js`
+### Pass D — Docs-Specific Polish (Optional)
 
-**Step 6.2: Asset Loading**
-- Verify font preconnect/preload is optimal
-- Check if critical CSS could be inlined
-- Ensure no render-blocking resources
-- **Files:** `index.html`
+**Goal:** Improve docs page scannability without introducing new visual patterns.
 
-**Step 6.3: File Size Check**
-- Review final CSS size (~3,800 lines = ~85KB unminified)
-- Review final JS size (~1,450 lines = ~55KB unminified)
-- Consider minification for production (can be done locally, committed minified)
-- **Files:** `styles.css`, `script.js`
+**Targets:**
+1. Ensure docs page breadcrumbs have proper visual weight
+2. Normalize section intros (01, 02, etc. pattern) on docs pages
+3. Verify checklist and tips grid styling matches baseline
+4. Ensure example spec blocks have consistent treatment
+5. Polish "What's Next" and CTA sections at page bottoms
 
-### Phase 7: Final Visual Verification (Playwright)
+**Files affected:**
+- `styles.css` - Docs-specific component refinements
+- `docs/writing-specs.html`
+- `docs/overnight-runs.html`
+- `docs/workflows.html`
 
-**Step 7.1: Desktop Screenshots**
-- Navigate to local site (serve via `python -m http.server` or `npx serve .`)
-- Take full-page screenshot at 1920px width (dark mode)
-- Toggle to light mode and take full-page screenshot
-- Take targeted screenshots of key sections
-- **Verification:** Look for alignment issues, spacing inconsistencies, off-palette colors
-
-**Step 7.2: Mobile Screenshots**
-- Resize to 375px width
-- Take full-page mobile screenshot
-- Open hamburger menu and take screenshot
-- Verify touch targets appear adequate
-
-**Step 7.3: Tablet Screenshots**
-- Resize to 768px width
-- Take full-page tablet screenshot
-- Verify intermediate layouts
-
-**Step 7.4: Interactive Feature Testing**
-- Test terminal demo play/pause/restart/speed controls
-- Test copy-to-clipboard buttons
-- Test FAQ accordion expand/collapse
-- Test feature card expansion
-- Test audience selector content filtering
-- Test dark/light mode toggle
-- Test simple/advanced install toggle
-
-**Step 7.5: Premium UI Checklist (per CLAUDE.md)**
-- [ ] Hierarchy scan: Can I tell what matters in 3 seconds?
-- [ ] Spacing scan: Consistent 8px grid across sections?
-- [ ] State scan: All interactive states implemented?
-- [ ] Contrast scan: No hard-to-read text?
-- [ ] Responsive scan: Intentional at all sizes?
-- [ ] Edge cases: Long text, empty states handled?
-- [ ] Polish pass: Alignments, radii, shadows consistent?
+**Verification:**
+- Docs pages feel like polished documentation, not "late-stage appended"
+- Reading flow is comfortable with clear visual landmarks
+- Navigation cues (breadcrumbs, next links) are consistent
 
 ---
 
 ## Critical Files for Implementation
 
-| File | Size | Purpose | Priority |
-|------|------|---------|----------|
-| `index.html` | ~1,550 lines | Main website structure, content, semantic markup | Critical |
-| `styles.css` | ~3,800 lines | Complete design system, components, animations, responsive | Critical |
-| `script.js` | ~1,450 lines | All interactions, terminal demo, navigation, effects | Critical |
-| `assets/logo-icon.svg` | ~20 lines | Logo mark - needs palette update | High |
-| `assets/logo.svg` | ~40 lines | Full logo - needs palette update | High |
-| `404.html` | ~550 lines | Error page - consistent with main theme | Medium |
-
-### Key Areas in Each File
-
-**index.html:**
-- Lines ~1-50: Meta tags, OG tags, favicon (check favicon colors)
-- Lines ~100-300: Hero section with terminal demo
-- Lines ~400-600: What is Ralph section
-- Lines ~700-900: How it works, PROMPT.md feature
-- Lines ~1000-1200: Install section (verify URLs)
-- Lines ~1200-1500: Features, audience, FAQ, footer
-
-**styles.css:**
-- Lines 1-250: CSS custom properties (design tokens) - verify completeness
-- Lines 250-500: Base styles, typography
-- Lines 500-1000: Navigation, buttons
-- Lines 1000-1600: Hero section, terminal
-- Lines 1600-2500: Content sections
-- Lines 2500-3800: Components, utilities, animations, responsive
-
-**script.js:**
-- Lines 1-100: Magnetic effects, parallax
-- Lines 100-250: Navigation, scroll effects
-- Lines 250-500: Terminal demo controls
-- Lines 500-750: Mobile nav, install tabs
-- Lines 750-1000: Copy buttons, smooth scroll
-- Lines 1000-1456: Demo simulation, audience selector, reduced motion
+| File | Role | Pass |
+|------|------|------|
+| `styles.css` | All styling changes | A, B, C, D |
+| `index.html` | Sections 04-07 class/structure fixes | A, B, C |
+| `getting-started.html` | Container/component normalization | A, C |
+| `faq.html` | Container/FAQ styling | A, C |
+| `docs/writing-specs.html` | Docs component styling | C, D |
+| `docs/overnight-runs.html` | Docs component styling | C, D |
+| `docs/workflows.html` | Docs component styling | C, D |
+| `how-it-works.html` | Container consistency | A |
+| `open-source.html` | Container consistency | A |
 
 ---
 
 ## Risks & Mitigations
 
-### Risk 1: Repository URL Mismatch
-**Likelihood:** High | **Impact:** High
-**Issue:** PROMPT.md specifies `ssh://git@codeberg.org/mistlight/Ralph-Workflow.git` but actual repo appears to be `RalphWithReviewer`
-**Mitigation:**
-- Verify correct URL with user before updating
-- If URL changed, update all instances in install section
+### Risk 1: Breaking Sections 1-3
+**Mitigation:** After each pass, visually verify Sections 1-3 are unchanged or improved. Use browser DevTools to compare before/after. Keep changes scoped to post-Section 3 selectors where possible.
 
-### Risk 2: Breaking Existing Functionality During Refinement
-**Likelihood:** Medium | **Impact:** Medium
-**Mitigation:**
-- Make incremental changes, test after each
-- Keep backup of working state
-- Use Playwright screenshots to verify visual consistency
+### Risk 2: Cascade effects from global CSS changes
+**Mitigation:** Prefer scoped class selectors over element selectors. Test all pages after each pass. Make changes incrementally within each pass.
 
-### Risk 3: Logo/Branding Color Changes Affect OG Image
-**Likelihood:** Medium | **Impact:** Low
-**Mitigation:**
-- After updating logo colors, regenerate `og-image.png`
-- Use `og-generator.js` or `og-image.html` to create new version
+### Risk 3: Mobile/tablet regression
+**Mitigation:** Test responsive breakpoints after each pass. The existing responsive system is solid; maintain existing breakpoint logic.
 
-### Risk 4: Animation Performance Issues on Mobile
-**Likelihood:** Low | **Impact:** Medium
-**Mitigation:**
-- Test on throttled CPU in DevTools
-- Verify touch device detection disables complex effects
-- Use `will-change` sparingly and appropriately
-
-### Risk 5: Accessibility Regression During Visual Changes
-**Likelihood:** Low | **Impact:** High
-**Mitigation:**
-- Run accessibility audit before and after changes
-- Maintain focus states and ARIA labels
-- Test with keyboard-only navigation
+### Risk 4: Over-engineering
+**Mitigation:** Stick to the 4-pass structure. Each pass has clear, limited scope. Avoid scope creep into "nice to have" improvements.
 
 ---
 
 ## Verification Strategy
 
-### Acceptance Check 1: Visual Quality at Dribbble Level
-**How to verify:**
-1. Serve site locally and take Playwright screenshots
-2. Visual inspection for:
-   - Premium, intentional aesthetic (not "template-y")
-   - Consistent visual language throughout
-   - Distinctive typography (Instrument Serif stands out)
-   - Atmospheric depth (gradient orbs, noise texture)
-   - Smooth, meaningful animations
-3. Compare to Dribbble shots of similar products
+After each pass, verify:
 
-### Acceptance Check 2: Clear for All Audiences
-**How to verify:**
-1. Read through site as a software developer:
-   - Can I quickly understand CLI options (-Q, -S, -T, -L)?
-   - Are installation steps clear and complete?
-   - Is PROMPT.md format explained?
-2. Read through as a vibe coder:
-   - Is the value proposition ("let AI cook overnight") clear?
-   - Is setup approachable?
-3. Read through as CLI newcomer:
-   - Is glossary helpful?
-   - Are terminal concepts explained?
-4. User should NOT leave with unanswered questions about what Ralph does
-
-### Acceptance Check 3: No Design Flaws
-**How to verify:**
-- Run CLAUDE.md Premium UI Checklist
-- Check alignment (all on 8px grid)
-- Check spacing consistency between similar elements
-- Check interaction states are complete
-- Check contrast passes WCAG AA
-- Check responsive layouts are intentional
-
-### Acceptance Check 4: Static Site Compatibility
-**How to verify:**
-1. Open `index.html` directly in browser (file:// protocol)
-2. Navigate through all sections
-3. Test all interactive features
-4. Verify no console errors about missing resources
-5. Confirm no build step required
-
-### Acceptance Check 5: Installation Instructions Correct
-**How to verify:**
-1. Follow installation instructions exactly as written
-2. Verify repository clones successfully
-3. Verify cargo install works
-4. Verify ralph CLI is available
-5. Compare with actual Ralph Workflow README
-
-### Playwright Test Sequence
-```
-1. python -m http.server 8000 (in project directory)
-2. mcp__playwright__browser_navigate to http://localhost:8000
-3. mcp__playwright__browser_snapshot (accessibility tree)
-4. mcp__playwright__browser_take_screenshot (desktop-dark-full.png, fullPage=true)
-5. Click dark mode toggle
-6. mcp__playwright__browser_take_screenshot (desktop-light-full.png, fullPage=true)
-7. mcp__playwright__browser_resize to 768x1024
-8. mcp__playwright__browser_take_screenshot (tablet.png)
-9. mcp__playwright__browser_resize to 375x812
-10. mcp__playwright__browser_take_screenshot (mobile.png)
-11. Click hamburger menu
-12. mcp__playwright__browser_take_screenshot (mobile-menu.png)
-13. Click terminal "Run Full Demo" button
-14. Wait for demo completion
-15. Test copy button on install code block
-16. Click through FAQ accordion items
-17. Test audience selector buttons
-```
+1. **Visual parity:** Post-Section 3 pages match baseline quality (screenshot comparison)
+2. **Spacing consistency:** No jarring rhythm breaks when scrolling
+3. **Component consistency:** Same element types look identical across pages
+4. **Responsive behavior:** Mobile and tablet views remain clean
+5. **Functionality:**
+   - File:// protocol still works
+   - Dark mode toggle functions
+   - FAQ accordions work
+   - Code copy buttons work
+   - Skip links and keyboard navigation work
+   - Reduced motion preferences respected
 
 ---
 
-## Design Notes
+## Completion Criteria
 
-### Current Aesthetic: Forest Editorial
-- **Deep forest green** (#0d1f18 to #1a3a2f) creates sophisticated, premium feel
-- **Warm amber** (#d4a574) provides distinctive accent that's not typical "tech blue"
-- **Sage green secondary** (#7da58a) adds natural, calming complement
-- **Instrument Serif** headings create editorial gravitas
-- **Space Grotesk** body maintains excellent readability
-- **IBM Plex Mono** code has humanist feel for terminal demos
+The task is complete when:
 
-### Visual Differentiators
-1. Terminal visualization as hero centerpiece (immediate product context)
-2. Before/After comparison showing transformation
-3. Audience-adaptive content with selector
-4. Dark mode default with rich atmospheric depth
-5. Warm amber accent instead of typical tech-blue
+- [x] All post-Section 3 sections feel cohesive with Sections 1-3
+- [x] Visual rhythm is consistent across all pages
+- [x] Typography hierarchy is clear and predictable
+- [x] Components (cards, code blocks, callouts, FAQs) are visually unified
+- [x] Docs pages feel like polished documentation, not afterthoughts
+- [x] Site reads as a single, intentionally designed product
+- [x] No "unstyled" or "appended late" feeling remains
+- [x] All functionality preserved (static file compatibility, dark mode, accessibility)
 
-### What Must NOT Change
-- Forest Editorial color palette (signature identity)
-- Static-only implementation (Codeberg Pages compatible)
-- AGPL-3.0 license notice in footer
-- Three-audience content strategy
-- Terminal demo as hero focus
+## Implementation Summary
 
-### What Should Be Enhanced
-- Logo assets (update to Forest Editorial palette)
-- Installation URL accuracy
-- Any remaining off-palette colors
-- Visual polish edge cases
+All 4 passes have been completed:
 
----
+### Pass A - Layout Model Unification
+- Added missing `.section-number` styling
+- Added `.install-mode-toggle` and mode switch styling
+- Fixed `.install-code` to be container (was incorrectly styled as code block)
+- Added grid layouts to `.install-grid`, `.features-grid`, `.audience-grid`
 
-## Success Criteria
+### Pass B - Typography & Rhythm Restoration
+- Normalized `.audience-card h3` to match `.feature-card h3` sizing
+- Added complete `.feature-expand-btn` and `.feature-expand-content` styling
+- Added list styling within expandable content
 
-Implementation is complete when:
+### Pass C - Component Normalization
+- Unified card hover states (audience-card now matches feature-card)
+- Added comprehensive `.code-block` base component styling
+- Added unified `.callout` system with variants (success, warning, info)
 
-1. **Brand Consistency:** All logo/branding uses Forest Editorial palette (#d4a574, #7da58a, #1a3a2f)
-2. **Content Accuracy:** Installation instructions verified against actual repository
-3. **Visual Quality:** Would be considered for Dribbble showcase
-4. **Audience Clarity:** Users from all three audiences understand Ralph without confusion
-5. **Technical Quality:** No console errors, smooth animations, responsive at all sizes
-6. **Accessibility:** WCAG AA compliance, keyboard navigation works, reduced motion respected
-7. **Cross-Browser:** Works in Chrome, Firefox, Safari, Edge
-8. **Static Compatibility:** Works when opened directly as file:// without server
-9. **Manual Review:** Passes CLAUDE.md Premium UI Checklist
-
----
-
-## Questions for User Clarification
-
-Before implementation, clarification needed on:
-
-1. **Repository URL:** The PROMPT.md specifies `ssh://git@codeberg.org/mistlight/Ralph-Workflow.git` but Codeberg shows `https://codeberg.org/mistlight/RalphWithReviewer.git`. Which is correct for the website?
-
-2. **Cargo Package Name:** PROMPT.md says `ralph-workflow` but the CLI appears to be just `ralph`. Which should be documented?
-
-3. **Logo Design Direction:** The current logo uses a stylized "R" with agent dots in off-palette colors. Should we:
-   - A) Keep the design concept but update colors to Forest Editorial (amber/sage gradient)
-   - B) Create a simpler logo mark that better fits the refined aesthetic
-   - C) Use text-only logo "Ralph" in Instrument Serif
-
----
-
-**Plan Status:** Ready for User Approval
-**Estimated Files Modified:** 5-7
-**Major Changes:** Logo palette, installation URLs, visual polish
-**Approach:** Refinement iteration, not rebuild
+### Pass D - Docs-Specific Polish
+- Verified breadcrumb styling consistency
+- Verified section intro (01, 02, etc.) pattern across all docs pages
+- Verified CTA sections have consistent styling
+- All component classes used in HTML have corresponding CSS definitions

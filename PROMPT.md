@@ -1,243 +1,115 @@
-# [Feature Name] — Ralph Workflow Website (Static, Codeberg Pages)
+## Design Stabilization (Frontend-Design Required)
 
-Create a **commercial-grade** marketing + docs website for **Ralph Workflow** (open source, **AGPL**) that works as a **fully static** site and can be hosted on **Codeberg Pages**. The site must be useful beyond a README: it should **teach**, **orient**, and **get users to success** without creating new questions.
+### Mandatory tool usage
 
----
+You **must use the `claude` skill `frontend-design`** for this task.
 
-## Core Goal
+This task is fundamentally about **visual system correction, layout coherence, and design consistency**, not code correctness alone. All decisions must be validated against **rendered visual output**, not abstract reasoning.
 
-You **must use the `claude` skill `frontend-design`** to design and implement this website for Ralph Workflow.
-
-**Quality bar:** Dribbble-level polish, professional micro-details, consistent typography, spacing, and interaction states across **every page and section**—not only the hero.
-
-**Conceptual anchor:** Ralph Workflow is inspired by Geoffrey Huntley’s “Ralph” concept: a structured loop that lets an AI agent work autonomously while you step away (e.g., overnight). Users must provide a **detailed product specification** for good results.
-Reference: [https://ghuntley.com/ralph/](https://ghuntley.com/ralph/)
+Failure to use `frontend-design` for diagnosis and implementation is considered a failure of the task.
 
 ---
 
-## Non-Negotiable Requirements (Read Carefully)
+### Context
 
-### 1) Whole-site quality and defect-free execution
+All sections **after Section 3 (Getting Started)** currently look visually “off” in rendered output. Treat this as a **system-level design problem**, not a set of isolated bugs.
 
-You must audit and iterate on **every section** of **every page**:
-
-* No “small” defects: alignment, spacing rhythm, inconsistent radii, mismatched icon weights, awkward line breaks, broken hover/focus, visual jitter, inconsistent shadows, off-by-one padding, etc.
-* The design must remain cohesive across:
-
-  * Desktop, tablet, mobile
-  * Light/dark (if implemented)
-  * Keyboard-only navigation
-  * Reduced motion preference
-
-### 2) Audience clarity (3 personas)
-
-The website must be crystal clear for:
-
-* **Software developers** (care about architecture, reproducibility, CLI accuracy)
-* **New to the command line** (need handholding and safe defaults)
-* **“Vibe coders”** (want quick wins, examples, approachable language)
-
-### 3) Static-only + zero runtime build dependency on hosting
-
-* Site must be **fully static**, compatible with **Codeberg Pages**
-* Repository must contain **final compiled output only** (HTML/CSS/JS/images/fonts)
-* **No server-side code**
-* **No runtime build step required** on Codeberg Pages
-* Must work when opened as a file: **`index.html` opened directly** (no dev server)
-
-### 4) Installation instructions are tightly constrained
-
-If you include installation instructions, they must:
-
-* Use **only** cloning from: `ssh://git@codeberg.org/mistlight/Ralph-Workflow.git`
-* Use the cargo name: **`ralph-workflow`**
-* Avoid alternative install methods (no brew, no curl pipe, no cargo install from crates.io unless the repo explicitly supports it—assume it does not)
-* Be correct, copy/paste-ready, and OS-aware where appropriate
+Earlier sections (1–3) establish the intended quality bar and serve as the **reference baseline**.
 
 ---
 
-## Deliverable Scope
+### Objective
 
-### Pages to build (minimum)
+Using the `frontend-design` skill, bring **all post–Section 3 sections/pages** to the same visual and interaction quality as Sections 1–3 by fixing **fundamental design issues**, including (but not limited to):
 
-1. **Home** (marketing + concept + outcomes)
-2. **How it Works** (the “Ralph loop” explained with a simple visual + step flow)
-3. **Getting Started** (install + first run + “your first spec” guide)
-4. **Docs / Guides**
-
-   * Writing a great product spec (templates + examples)
-   * Running “overnight” safely (timeouts, cost control guidance, logs)
-   * Common workflows (examples)
-5. **Open Source / AGPL**
-
-   * License summary (plain language)
-   * Contribution guidelines link/section
-   * Project values and community expectations
-6. **FAQ / Troubleshooting**
-7. **Changelog or Releases link-out** (if available) + repo CTA
-
-> If you believe a different IA is better, you may revise it—but you must still cover these information needs.
+* Layout model inconsistencies
+* Broken vertical rhythm and spacing cadence
+* Typography hierarchy collapse or drift
+* Component inconsistency across pages
+* Docs pages lacking a coherent reading layout
+* Visual density issues (too cramped or too loose)
+* Inconsistent use of color, accents, or emphasis
 
 ---
 
-## Content Requirements (Do not skip)
+### Guardrails
 
-### Explain the product in plain language
+* Keep the site **fully static**, file-open compatible, and Codeberg Pages compatible.
+* Do not rewrite Sections 1–3 unless a **system-level correction** requires it.
+* Global changes are allowed **only** if they:
 
-* What Ralph Workflow is
-* What problem it solves (“walk away for 8 hours; come back to progress”)
-* Why specs matter (quality depends on input spec)
-* What you can expect it to do (and what it won’t do)
-
-### Teach users how to succeed
-
-* Provide a **Product Spec Template**
-* Provide **two examples**:
-
-  * A developer-oriented spec (technical)
-  * A “vibe coder” spec (plain language with guardrails)
-* Provide a “spec checklist” (must-haves vs nice-to-haves)
-
-### Distinguish website vs README
-
-The site must not simply rephrase README content. It should add:
-
-* Better onboarding
-* Better mental model
-* Real examples and templates
-* Troubleshooting and “next steps”
-
-### Project identity assets (logo/favicon)
-
-You do not have an existing logo. You must:
-
-* Create a simple, clean **text-first brand** (typographic mark)
-* Use a minimal generated icon (e.g., a stylized “R” loop/arrow) as favicon
-* Ensure the chosen mark is consistent across nav, footer, social preview (if added)
+  * Fix a root cause affecting post–Section 3 pages, and
+  * Do not degrade Sections 1–3 when re-rendered.
 
 ---
 
-## Design & UX Requirements (Commercial-grade)
+### Required approach (design-first, not surgical)
 
-### Visual system
+Using `frontend-design`, follow this flow:
 
-* Establish a clear design system:
+#### 1. Rendered diagnosis (required)
 
-  * Type scale
-  * Spacing scale
-  * Color tokens
-  * Elevation/shadows
-  * Border radii
-  * Component library (buttons, cards, callouts, code blocks, tabs)
-* Use consistent, high-quality iconography (one set)
+Visually review post–Section 3 pages and explicitly identify the **top 2–4 fundamental causes** of the “off” feeling. Examples:
 
-### Interaction details
+* Inconsistent container widths / gutters vs earlier pages
+* Section spacing that breaks established rhythm
+* Headings, body text, and code blocks lacking clear hierarchy
+* Ad-hoc components instead of shared canonical ones
+* Docs content missing a consistent reading pattern
 
-* Hover/active/focus states for all interactives
-* Smooth but respectful motion (honor `prefers-reduced-motion`)
-* Scroll behavior should not break opening as file (avoid route-dependent JS assumptions)
-
-### Accessibility basics (required)
-
-* WCAG-ish contrast (practical, readable)
-* Keyboard navigability end-to-end
-* Visible focus rings (not removed)
-* Semantic headings and landmarks
-* Responsive layouts (no horizontal scrolling, no tiny tap targets)
+You must name these causes before fixing anything.
 
 ---
 
-## Technical Constraints & Implementation Guidance
+#### 2. Fundamental correction passes (limited, cohesive)
 
-### Static architecture
+Make **cohesive, system-level fixes** in **no more than 3–4 passes**:
 
-* Must run from file system:
+**Pass A — Layout model unification**
+Standardize page containers, section padding, reading widths, and grid usage to match Sections 1–3.
 
-  * Avoid SPA routers that rely on server rewrites
-  * Use either:
+**Pass B — Typography & rhythm restoration**
+Re-establish heading scale, spacing ladder, line-length, and code readability across all post–Section 3 pages.
 
-    * Multi-page static (`/index.html`, `/getting-started.html`, etc.), **or**
-    * Hash-based navigation if truly needed (prefer multi-page for reliability)
-* All links must work in both:
+**Pass C — Component normalization**
+Ensure cards, callouts, code blocks, lists, steps, FAQs, etc. use the same canonical styles everywhere.
 
-  * Codeberg Pages hosting
-  * Local “open index.html” mode
+**Pass D (optional) — Docs-specific polish**
+Improve scannability and flow (intros, callouts, examples, checklists, next-steps blocks) without introducing new visual styles.
 
-### Assets
-
-* Self-host fonts if used (or system font stack to keep it simple)
-* Optimize images and include proper `alt` text
-* Include a lightweight CSS strategy (compiled Tailwind is allowed **only** as committed output)
+Avoid unbounded tweaking. Each pass should clearly reduce visible inconsistency.
 
 ---
 
-## Implementation Process (Must Follow)
+### Verification (required after each pass)
 
-1. **Information architecture + wire-level plan**
-   Decide page list, nav structure, and per-page sections tailored to the 3 personas.
+Using rendered output, confirm:
 
-2. **Design system first**
-   Lock tokens/components, then apply consistently across all pages.
-
-3. **Build page-by-page**
-   Validate in rendered output at common breakpoints.
-
-4. **Polish pass across the entire site**
-   You must do a full-site QA pass:
-
-   * Typography rhythm
-   * Spacing consistency
-   * Code block styling and readability
-   * Contrast and focus
-   * Mobile nav behavior
-   * Footer and secondary sections (not neglected)
-
-5. **Final acceptance verification**
-   Explicitly confirm each acceptance check is met.
+* Post–Section 3 pages now visually match Sections 1–3
+* Spacing, typography, and components are consistent
+* Mobile and tablet layouts are clean and readable
+* Focus states, keyboard navigation, and reduced motion still work
+* All pages still function when opened directly as files
 
 ---
 
-## Canonical Resources (Use These)
+### Reporting format (agent)
 
-* Concept article: [https://ghuntley.com/ralph/](https://ghuntley.com/ralph/)
-* Repository: [https://codeberg.org/mistlight/Ralph-Workflow](https://codeberg.org/mistlight/Ralph-Workflow)
+After each pass, report:
 
----
-
-## Acceptance Checks (Strict)
-
-* **Commercial-grade** visual quality (Dribbble-level polish)
-* Decisions validated from **rendered output**, not code aesthetics
-* Users can navigate and understand:
-
-  * what Ralph Workflow is
-  * how it works
-  * how to install
-  * how to write a strong spec
-  * what to do next
-* Clear to:
-
-  * developers
-  * CLI newcomers
-  * vibe coders
-* Accessibility basics:
-
-  * readable contrast
-  * keyboard navigation
-  * focus states
-  * responsive behavior
-* Fully static:
-
-  * works on Codeberg Pages
-  * works from local file open (`index.html`)
-  * repo contains compiled assets only
+* **Diagnosis:** underlying design issues identified
+* **Changes made:** system-level corrections applied
+* **Visual impact:** what now looks correct
+* **Regression check:** confirmation Sections 1–3 are unchanged or improved
+* **Remaining issues:** if any, and which pass addresses them
 
 ---
 
-## Extra Credit (If it improves clarity without adding bloat)
+### Completion criteria
 
-* Social preview meta tags (OpenGraph)
-* “Copy” buttons for code blocks (must still work offline)
-* Printable “Spec Template” page
-* Lightweight search (pure client-side, no build reliance; optional)
+You are finished only when:
 
+* All post–Section 3 sections feel like part of the same product
+* Visual rhythm, hierarchy, and components are consistent site-wide
+* The site reads as a polished documentation + marketing experience
+* No “late-stage appended” or “unstyled docs” feeling remains
