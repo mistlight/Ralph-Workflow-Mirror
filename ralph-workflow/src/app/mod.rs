@@ -695,14 +695,18 @@ fn handle_rebase_only(
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
-    // Check if rebase is enabled
-    if !args.rebase_flags.skip_rebase && !config.features.auto_rebase_enabled {
-        logger.info("Auto-rebase is disabled in configuration");
+    // Check if rebase is explicitly skipped
+    if args.rebase_flags.skip_rebase {
+        logger.info("--skip-rebase flag set, skipping rebase");
         return Ok(());
     }
 
-    if args.rebase_flags.skip_rebase {
-        logger.info("--skip-rebase flag set, skipping rebase");
+    // Check if we're on main/master branch
+    if is_main_or_master_branch()? {
+        logger.info("Already on main/master branch");
+        logger.info("Tip: Use git worktrees to work on feature branches in parallel:");
+        logger.info("  git worktree add ../feature-branch feature-branch");
+        logger.info("This allows multiple AI agents to work on different features simultaneously.");
         return Ok(());
     }
 
@@ -714,7 +718,7 @@ fn handle_rebase_only(
             Ok(())
         }
         Ok(RebaseResult::NoOp) => {
-            logger.info("No rebase needed (already up-to-date or on main branch)");
+            logger.info("No rebase needed (already up-to-date)");
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
@@ -810,8 +814,8 @@ fn run_initial_rebase(
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
-    // Check if auto-rebase is enabled and not skipped
-    if args.rebase_flags.skip_rebase || !config.features.auto_rebase_enabled {
+    // Check if rebase is explicitly skipped
+    if args.rebase_flags.skip_rebase {
         return Ok(());
     }
 
@@ -887,8 +891,8 @@ fn run_post_review_rebase(
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
-    // Check if auto-rebase is enabled and not skipped
-    if args.rebase_flags.skip_rebase || !config.features.auto_rebase_enabled {
+    // Check if rebase is explicitly skipped
+    if args.rebase_flags.skip_rebase {
         return Ok(());
     }
 

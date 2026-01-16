@@ -85,8 +85,6 @@ pub struct GeneralBehaviorFlags {
 pub struct GeneralWorkflowFlags {
     /// Enable checkpoint/resume functionality.
     pub checkpoint_enabled: bool,
-    /// Enable automatic rebase before and after pipeline.
-    pub auto_rebase_enabled: bool,
 }
 
 /// General configuration execution behavior flags.
@@ -151,7 +149,6 @@ impl Default for GeneralConfig {
             },
             workflow: GeneralWorkflowFlags {
                 checkpoint_enabled: true,
-                auto_rebase_enabled: true,
             },
             execution: GeneralExecutionFlags {
                 force_universal_prompt: false,
