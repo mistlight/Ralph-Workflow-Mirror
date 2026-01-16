@@ -4,18 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Page not found - Ralph Workflow">
-    <meta name="theme-color" content="#0d1f18">
+    <meta name="theme-color" content="#0a0a0b">
     <title>404 - Page Not Found | Ralph Workflow</title>
 
     <!-- Preconnect Critical Assets -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <!-- Fonts: Instrument Serif (display/headings), Space Grotesk (body), IBM Plex Mono (code) -->
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Fonts: Syne (display), DM Sans (body), JetBrains Mono (code) -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-    <!-- Favicon - Forest editorial with amber accent -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%231a3a2f'/%3E%3Cstop offset='100%25' stop-color='%230d1f18'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg)' rx='16'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%23d4a574' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%23d4a574'/%3E%3C/svg%3E">
+    <!-- Favicon - Terminal Noir with cyan accent -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%2300d4ff'/%3E%3Cstop offset='100%25' stop-color='%2300a8cc'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' fill='url(%23bg)' rx='16'/%3E%3Cpath d='M20 18h16c4 0 6 2 6 6v8c0 2.5-1.5 4-3.5 4.5S34 39 32 44h-6l3-10c-2 0-4.5-.5-6-2V18z' fill='none' stroke='%230a0a0b' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M26 24h8c1.5 0 2 .5 2 2v4c0 1-.5 2-2 2h-8' fill='%230a0a0b'/%3E%3C/svg%3E">
 
     <style>
         *, *::before, *::after {
@@ -25,51 +25,54 @@
         }
 
         :root {
-            /* Forest Editorial Color System */
-            --color-bg: #0d1f18;
-            --color-bg-alt: #122820;
-            --color-bg-elevated: #173025;
-            --color-bg-card: #1a3a2f;
-            --color-bg-hover: #234f3d;
+            /* Terminal Noir Color System */
+            --color-bg: #0a0a0b;
+            --color-bg-alt: #111113;
+            --color-bg-elevated: #18181b;
+            --color-bg-card: #1c1c1f;
+            --color-bg-hover: #252529;
 
             /* Text Colors */
-            --color-text: #f5f2ed;
-            --color-text-primary: #e8e4dd;
-            --color-text-muted: #b8b2a6;
-            --color-text-dim: #8a8478;
+            --color-text: #fafafa;
+            --color-text-primary: #e4e4e7;
+            --color-text-muted: #a1a1aa;
+            --color-text-dim: #71717a;
 
-            /* Primary Accent - Warm Amber */
-            --color-primary: #d4a574;
-            --color-primary-hover: #e3be94;
-            --color-primary-glow: rgba(212, 165, 116, 0.3);
+            /* Primary Accent - Electric Cyan */
+            --color-primary: #00d4ff;
+            --color-primary-hover: #33ddff;
+            --color-primary-glow: rgba(0, 212, 255, 0.4);
 
-            /* Secondary Accent - Sage Green */
-            --color-accent: #7da58a;
-            --color-accent-hover: #9dbba7;
+            /* Secondary Accent - Hot Magenta */
+            --color-accent: #ff006e;
+            --color-accent-hover: #ff3d8c;
+
+            /* Tertiary - Electric Lime */
+            --color-lime: #a3ff12;
 
             /* Semantic Colors */
-            --color-error: #c97878;
-            --color-warning: #d4a574;
-            --color-success: #5d9e73;
+            --color-error: #ff006e;
+            --color-warning: #ffbe0b;
+            --color-success: #a3ff12;
 
             /* Borders */
-            --border-subtle: rgba(245, 242, 237, 0.06);
-            --border-soft: rgba(245, 242, 237, 0.1);
-            --border-medium: rgba(245, 242, 237, 0.15);
-            --border-glow: rgba(212, 165, 116, 0.3);
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-soft: rgba(255, 255, 255, 0.1);
+            --border-medium: rgba(255, 255, 255, 0.15);
+            --border-glow: rgba(0, 212, 255, 0.3);
 
             /* Typography */
-            --font-display: 'Instrument Serif', 'Playfair Display', Georgia, serif;
-            --font-body: 'Space Grotesk', 'Inter', -apple-system, system-ui, sans-serif;
-            --font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', monospace;
+            --font-display: 'Syne', 'Inter', -apple-system, system-ui, sans-serif;
+            --font-body: 'DM Sans', 'Inter', -apple-system, system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
 
             /* Shadows */
-            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-            --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
-            --shadow-glow-sm: 0 0 10px rgba(212, 165, 116, 0.25);
-            --shadow-glow-md: 0 0 20px rgba(212, 165, 116, 0.35);
-            --shadow-glow-lg: 0 0 40px rgba(212, 165, 116, 0.3), 0 0 80px rgba(212, 165, 116, 0.15);
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
+            --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.7);
+            --shadow-glow-sm: 0 0 10px rgba(0, 212, 255, 0.25);
+            --shadow-glow-md: 0 0 20px rgba(0, 212, 255, 0.35);
+            --shadow-glow-lg: 0 0 40px rgba(0, 212, 255, 0.3), 0 0 80px rgba(0, 212, 255, 0.15);
 
             /* Radii */
             --radius-sm: 6px;
@@ -103,7 +106,7 @@
             inset: 0;
             pointer-events: none;
             z-index: 9999;
-            opacity: 0.03;
+            opacity: 0.02;
             background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
         }
 
@@ -113,7 +116,7 @@
             pointer-events: none;
             z-index: 0;
             border-radius: 50%;
-            filter: blur(100px);
+            filter: blur(120px);
         }
 
         .ambient-glow--cyan {
@@ -123,19 +126,19 @@
             height: 60%;
             background: radial-gradient(
                 ellipse at center,
-                rgba(0, 212, 255, 0.08) 0%,
+                rgba(0, 212, 255, 0.12) 0%,
                 transparent 70%
             );
         }
 
-        .ambient-glow--violet {
+        .ambient-glow--magenta {
             bottom: -20%;
             left: -10%;
             width: 40%;
             height: 50%;
             background: radial-gradient(
                 ellipse at center,
-                rgba(167, 139, 250, 0.06) 0%,
+                rgba(255, 0, 110, 0.08) 0%,
                 transparent 70%
             );
         }
@@ -159,7 +162,7 @@
         .error-code {
             font-family: var(--font-display);
             font-size: clamp(100px, 20vw, 180px);
-            font-weight: 600;
+            font-weight: 800;
             color: var(--color-bg-elevated);
             line-height: 1;
             letter-spacing: -0.04em;
@@ -179,8 +182,8 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            opacity: 0.15;
-            filter: blur(2px);
+            opacity: 0.2;
+            filter: blur(3px);
         }
 
         .content {
@@ -199,30 +202,30 @@
         .logo-mark {
             width: 44px;
             height: 44px;
-            background: var(--color-bg-card);
-            border: 1px solid var(--border-soft);
+            background: var(--color-primary);
+            border: none;
             border-radius: var(--radius-md);
-            color: var(--color-primary);
+            color: var(--color-bg);
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: var(--shadow-sm), var(--shadow-glow-sm);
+            box-shadow: var(--shadow-glow-sm);
         }
 
         .logo-text {
             font-family: var(--font-display);
-            font-weight: 500;
+            font-weight: 700;
             font-size: 1.5rem;
-            letter-spacing: 0.02em;
+            letter-spacing: -0.02em;
             color: var(--color-text);
         }
 
         .error-title {
             font-family: var(--font-display);
             font-size: clamp(2rem, 5vw, 3.5rem);
-            font-weight: 500;
+            font-weight: 700;
             margin-bottom: 1rem;
-            letter-spacing: -0.02em;
+            letter-spacing: -0.03em;
             line-height: 1.15;
             color: var(--color-text);
         }
@@ -264,9 +267,8 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
-            opacity: 0.5;
+            height: 2px;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-accent), var(--color-primary));
         }
 
         .terminal-line {
@@ -298,8 +300,7 @@
         }
 
         .terminal-prompt {
-            color: var(--color-primary);
-            text-shadow: 0 0 8px var(--color-primary-glow);
+            color: var(--color-text-dim);
         }
 
         .terminal-error {
@@ -355,14 +356,16 @@
             align-items: center;
             gap: 0.5rem;
             padding: 0.875rem 1.75rem;
-            font-family: var(--font-body);
-            font-size: 0.9375rem;
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
             font-weight: 500;
             cursor: pointer;
             text-decoration: none;
             transition: all 0.2s ease;
             border: none;
             border-radius: var(--radius-lg);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .btn--primary {
@@ -382,14 +385,15 @@
         }
 
         .btn--secondary {
-            background: var(--color-bg-elevated);
+            background: transparent;
             color: var(--color-text);
             border: 1px solid var(--border-medium);
         }
 
         .btn--secondary:hover {
             background: var(--color-bg-hover);
-            border-color: var(--color-text-dim);
+            border-color: var(--color-primary);
+            color: var(--color-primary);
         }
 
         footer {
@@ -425,8 +429,10 @@
             color: var(--color-bg);
             text-decoration: none;
             font-weight: 600;
-            font-family: var(--font-body);
+            font-family: var(--font-mono);
             font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
             border-radius: var(--radius-md);
             z-index: 9999;
             transition: top 0.15s ease;
@@ -480,7 +486,7 @@
 
     <!-- Ambient glow effects -->
     <div class="ambient-glow ambient-glow--cyan" aria-hidden="true"></div>
-    <div class="ambient-glow ambient-glow--violet" aria-hidden="true"></div>
+    <div class="ambient-glow ambient-glow--magenta" aria-hidden="true"></div>
 
     <main role="main">
         <div class="container">
