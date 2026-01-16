@@ -39,6 +39,7 @@ occurrences if encountered.
 
 Dead code must be handled by one of the following:
 - Making it used
+- Implement the feature that you will use it on, but just implement it **now**
 - Gating it behind a feature flag
 - Moving it to `examples/` or `benches/`
 - Deleting it

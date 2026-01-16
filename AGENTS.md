@@ -21,6 +21,8 @@ For design principles, testing philosophy, and dead code policy, see **[CODE_STY
 # DO NOT OVERRIDE UNLESS THE PROMPT IS ABOUT CLIPPY
 ## Build & test expectations
 
+Dead code must either be removed or you implement the feature that it needs the dead code
+
 Ensure you run git rebase on the main branch if working on a feature branch and resolve any merge conflicts AND:
 
 Before opening a PR (or marking work “done”), run:
