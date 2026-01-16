@@ -43,6 +43,8 @@ pub struct AgentAttemptConfig<'a> {
     pub prompt: &'a str,
     /// Log file path
     pub logfile: &'a str,
+    /// Log file prefix (used for output validation)
+    pub logfile_prefix: &'a str,
     /// JSON parser type
     pub parser_type: JsonParserType,
     /// Environment variables to pass
@@ -196,14 +198,13 @@ fn log_retry_message(
 /// or `None` if no validator is configured.
 fn validate_agent_output(
     config: &AgentAttemptConfig<'_>,
-    runtime: &mut PipelineRuntime<'_>,
+    runtime: &PipelineRuntime<'_>,
 ) -> Option<bool> {
     let validator = config.output_validator?;
 
-    let log_path = Path::new(config.logfile);
-    let log_dir = log_path.parent().unwrap_or_else(|| Path::new("."));
+    let log_prefix_path = Path::new(config.logfile_prefix);
 
-    match validator(log_dir, runtime.logger) {
+    match validator(log_prefix_path, runtime.logger) {
         Ok(true) => Some(true),
         Ok(false) => {
             runtime.logger.warn(&format!(
@@ -275,7 +276,28 @@ pub fn try_agent_with_retries(
         if result.exit_code == 0 {
             // Validate output if a validator is provided
             match validate_agent_output(config, runtime) {
-                Some(false) => return Ok(TryAgentResult::Fallback),
+                Some(false) => {
+                    // Validation failed - log and retry if retries remain
+                    runtime
+                        .logger
+                        .warn("Agent exited successfully but produced no valid output");
+                    if retry + 1 < config.fallback_config.max_retries {
+                        // Retry with the same agent
+                        runtime.logger.info("Retrying due to validation failure...");
+                        log_retry_message(
+                            config.display_name,
+                            &model_suffix,
+                            retry + 1,
+                            config.fallback_config.max_retries,
+                            AgentErrorKind::ToolExecutionFailed, // Use a retriable error kind
+                            config.fallback_config.retry_delay_ms,
+                            runtime.logger,
+                        );
+                        continue;
+                    }
+                    // All retries exhausted
+                    return Ok(TryAgentResult::Fallback);
+                }
                 Some(true) | None => return Ok(TryAgentResult::Success),
             }
         }

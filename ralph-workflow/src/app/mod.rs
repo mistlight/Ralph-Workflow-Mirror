@@ -1014,20 +1014,39 @@ fn try_resolve_conflicts_with_fallback(
     let conflicts = collect_conflict_info_or_error(conflicted_files, logger)?;
     let resolution_prompt = build_resolution_prompt(&conflicts, template_context);
 
-    let resolved_content = run_ai_conflict_resolution(&resolution_prompt, config, logger, colors)?;
-    let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
-    write_resolved_files(&resolved_files, logger)?;
+    match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
+        Ok(resolved_content) => {
+            let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
+            write_resolved_files(&resolved_files, logger)?;
 
-    // Verify all conflicts are resolved
-    let remaining_conflicts = get_conflicted_files()?;
-    if remaining_conflicts.is_empty() {
-        Ok(true)
-    } else {
-        logger.warn(&format!(
-            "{} conflicts remain after AI resolution",
-            remaining_conflicts.len()
-        ));
-        Ok(false)
+            // Verify all conflicts are resolved
+            let remaining_conflicts = get_conflicted_files()?;
+            if remaining_conflicts.is_empty() {
+                Ok(true)
+            } else {
+                logger.warn(&format!(
+                    "{} conflicts remain after AI resolution",
+                    remaining_conflicts.len()
+                ));
+                Ok(false)
+            }
+        }
+        Err(e) => {
+            logger.warn(&format!("AI conflict resolution failed: {e}"));
+            logger.info("Attempting to continue rebase anyway...");
+
+            // Try to continue rebase - user may have manually resolved conflicts
+            match crate::git_helpers::continue_rebase() {
+                Ok(()) => {
+                    logger.info("Successfully continued rebase");
+                    Ok(true)
+                }
+                Err(rebase_err) => {
+                    logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
+                    Ok(false) // Conflicts remain
+                }
+            }
+        }
     }
 }
 

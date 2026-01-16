@@ -263,6 +263,7 @@ fn try_single_model(
         cmd_str: &cmd_str,
         prompt: ctx.prompt,
         logfile: &logfile,
+        logfile_prefix: ctx.logfile_prefix,
         parser_type,
         env_vars: &ctx.agent_config.env_vars,
         model_index: ctx.model_index,
@@ -386,7 +387,7 @@ pub fn run_with_fallback(
     registry: &AgentRegistry,
     primary_agent: &str,
 ) -> std::io::Result<i32> {
-    run_with_fallback_internal(FallbackConfig {
+    let mut config = FallbackConfig {
         role,
         base_label,
         prompt,
@@ -395,7 +396,8 @@ pub fn run_with_fallback(
         registry,
         primary_agent,
         output_validator: None,
-    })
+    };
+    run_with_fallback_internal(&mut config)
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
@@ -413,7 +415,7 @@ pub fn run_with_fallback_and_validator(
     primary_agent: &str,
     output_validator: Option<crate::pipeline::fallback::OutputValidator>,
 ) -> std::io::Result<i32> {
-    run_with_fallback_internal(FallbackConfig {
+    let mut config = FallbackConfig {
         role,
         base_label,
         prompt,
@@ -422,14 +424,15 @@ pub fn run_with_fallback_and_validator(
         registry,
         primary_agent,
         output_validator,
-    })
+    };
+    run_with_fallback_internal(&mut config)
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
 ///
 /// Includes an optional output validator callback that checks if the agent
 /// produced valid output after `exit_code=0`. If validation fails, triggers fallback.
-fn run_with_fallback_internal(config: FallbackConfig<'_, '_>) -> std::io::Result<i32> {
+fn run_with_fallback_internal(config: &mut FallbackConfig<'_, '_>) -> std::io::Result<i32> {
     let fallback_config = config.registry.fallback_config();
     let fallbacks = config.registry.available_fallbacks(config.role);
     if fallback_config.has_fallbacks(config.role) {

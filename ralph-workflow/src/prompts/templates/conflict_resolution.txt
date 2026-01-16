@@ -43,6 +43,11 @@ For each conflicted file below:
    - Code correctness and consistency
 3. Produce the final merged file content WITHOUT conflict markers
 
+CRITICAL: You must EDIT THE FILES ON DISK to resolve these conflicts.
+- Use the Edit tool to modify each conflicted file
+- Remove ALL conflict markers (<<<<<<<, =======, >>>>>>>)
+- After editing all files, return JSON confirming what was resolved
+
 IMPORTANT: Your output must include the complete resolved file contents. Do not include conflict markers (<<<<<<<, =======, >>>>>>>) in your output.
 
 ## Conflicted Files
