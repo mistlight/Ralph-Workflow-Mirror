@@ -690,24 +690,18 @@ fn run_final_validation(
 /// This function performs a rebase to the default branch with AI conflict resolution and exits,
 /// without running the full pipeline.
 fn handle_rebase_only(
-    args: &Args,
+    _args: &Args,
     config: &crate::config::Config,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
-    // Check if rebase is explicitly skipped
-    if args.rebase_flags.skip_rebase {
-        logger.info("--skip-rebase flag set, skipping rebase");
-        return Ok(());
-    }
-
     // Check if we're on main/master branch
     if is_main_or_master_branch()? {
-        logger.info("Already on main/master branch");
+        logger.warn("Already on main/master branch - rebasing on main is not recommended");
         logger.info("Tip: Use git worktrees to work on feature branches in parallel:");
         logger.info("  git worktree add ../feature-branch feature-branch");
         logger.info("This allows multiple AI agents to work on different features simultaneously.");
-        return Ok(());
+        logger.info("Proceeding with rebase anyway as requested...");
     }
 
     logger.header("Rebase to default branch", Colors::cyan);
@@ -774,23 +768,17 @@ fn handle_rebase_only(
 
 /// Run rebase to the default branch.
 ///
-/// This function performs a rebase from the current feature branch to the
+/// This function performs a rebase from the current branch to the
 /// default branch (main/master). It handles all edge cases including:
-/// - Already on main/master (skips rebase)
-/// - Empty repository (skips rebase)
+/// - Already on main/master (proceeds with rebase attempt)
+/// - Empty repository (returns `NoOp`)
 /// - Upstream branch not found (error)
-/// - Conflicts during rebase (returns Conflicts result)
+/// - Conflicts during rebase (returns `Conflicts` result)
 ///
 /// # Returns
 ///
 /// Returns `RebaseResult` indicating the outcome.
 fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<RebaseResult> {
-    // Check if we're on main/master
-    if is_main_or_master_branch()? {
-        logger.info("Already on default branch, skipping rebase");
-        return Ok(RebaseResult::NoOp);
-    }
-
     // Get the default branch
     let default_branch = get_default_branch()?;
     logger.info(&format!(
@@ -809,16 +797,11 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 /// This function is called before the development phase starts to ensure
 /// the feature branch is up-to-date with the default branch.
 fn run_initial_rebase(
-    args: &Args,
+    _args: &Args,
     config: &crate::config::Config,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
-    // Check if rebase is explicitly skipped
-    if args.rebase_flags.skip_rebase {
-        return Ok(());
-    }
-
     logger.header("Pre-development rebase", Colors::cyan);
 
     match run_rebase_to_default(logger, colors) {
@@ -886,16 +869,11 @@ fn run_initial_rebase(
 /// This function is called after the review phase completes to ensure
 /// the feature branch is still up-to-date with the default branch.
 fn run_post_review_rebase(
-    args: &Args,
+    _args: &Args,
     config: &crate::config::Config,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
-    // Check if rebase is explicitly skipped
-    if args.rebase_flags.skip_rebase {
-        return Ok(());
-    }
-
     logger.header("Post-review rebase", Colors::cyan);
 
     match run_rebase_to_default(logger, colors) {

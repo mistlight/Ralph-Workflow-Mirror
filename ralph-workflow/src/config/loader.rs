@@ -303,7 +303,6 @@ fn apply_boolean_flags_env(config: &mut Config) {
         "RALPH_CHECKPOINT_ENABLED",
         "RALPH_STRICT_VALIDATION",
         "RALPH_ISOLATION_MODE",
-        "RALPH_AUTO_REBASE_ENABLED",
     ]
     .iter()
     .filter_map(|&name| env::var(name).ok().map(|v| (name, v)))
