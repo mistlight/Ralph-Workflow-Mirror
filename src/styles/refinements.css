@@ -119,10 +119,12 @@ h2::after {
 
 /* Enhanced terminal window hover effect */
 .terminal-window:hover {
+    border-color: var(--border-accent);
     box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 40px var(--color-primary-dim);
     transform: translateY(-2px);
-    transition: box-shadow var(--duration-300) var(--ease-out),
-                transform var(--duration-300) var(--ease-out);
+    transition: box-shadow var(--duration-300) var(--ease-expo-out),
+                transform var(--duration-300) var(--ease-expo-out),
+                border-color var(--duration-300) var(--ease-expo-out);
 }
 
 /* Terminal typing effect polish */
@@ -151,12 +153,13 @@ h2::after {
 .comparison-card {
     transition: transform var(--duration-300) var(--ease-expo-out),
                 box-shadow var(--duration-300) var(--ease-expo-out),
-                border-color var(--duration-200) var(--ease-out);
+                border-color var(--duration-200) var(--ease-expo-out);
 }
 
 .feature-card:hover,
 .install-card:hover,
 .comparison-card:hover {
+    border-color: var(--border-accent);
     box-shadow: var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim);
     transform: translateY(-6px);
 }
@@ -203,7 +206,7 @@ h2::after {
 
 /* Enhanced accordion interactions */
 .faq-summary {
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 .faq-summary:hover {
@@ -216,8 +219,17 @@ h2::after {
     border-color: var(--border-accent);
 }
 
+/* Smoother accordion icon rotation */
+.faq-summary .accordion-icon {
+    transition: transform var(--duration-300) var(--ease-expo-out);
+}
+
+.faq-summary[aria-expanded="true"] .accordion-icon {
+    transform: rotate(180deg);
+}
+
 .faq-details {
-    animation: accordionExpand 0.3s ease-out;
+    animation: accordionExpand 0.3s var(--ease-expo-out);
 }
 
 @keyframes accordionExpand {
@@ -308,8 +320,8 @@ a:not(.btn) {
     background-repeat: no-repeat;
     background-size: 0% 2px;
     position: relative;
-    transition: background-size var(--duration-300) var(--ease-expo-out),
-                color var(--duration-150) var(--ease-out);
+    transition: background-size var(--duration-400) var(--ease-expo-out),
+                color var(--duration-200) var(--ease-expo-out);
 }
 
 a:not(.btn):hover {
@@ -338,6 +350,15 @@ code:not(pre code):hover {
     line-height: 1.7;
 }
 
+/* Enhanced code block visual polish */
+.code-block {
+    transition: all var(--duration-200) var(--ease-expo-out);
+}
+
+.code-block:hover {
+    border-color: var(--border-accent);
+}
+
 /* === SPACING CONSISTENCY === */
 
 /* Consistent section spacing */
@@ -356,7 +377,7 @@ code:not(pre code):hover {
 /* Navigation active state with subtle glow */
 .nav-link.active {
     background-color: var(--color-primary-dim);
-    box-shadow: 0 0 0 2px transparent;
+    box-shadow: 0 0 0 2px transparent, inset 0 0 20px var(--color-primary-dim);
     color: var(--color-primary);
     transition: all var(--duration-200) var(--ease-expo-out);
 }
@@ -578,7 +599,9 @@ footer a:hover {
 
 .step-number:hover {
     border-color: var(--color-primary);
-    box-shadow: 0 0 30px var(--color-primary-glow);
+    box-shadow: 0 0 0 2px var(--color-bg),
+                0 0 0 4px var(--color-primary),
+                0 0 30px var(--color-primary-glow);
     transform: scale(1.05);
 }
 
@@ -589,7 +612,9 @@ footer a:hover {
 
 .glossary-card:hover {
     border-color: var(--border-accent);
-    box-shadow: var(--shadow-lg), 0 0 20px var(--color-primary-dim);
+    box-shadow: var(--shadow-lg),
+                0 0 30px var(--color-primary-dim),
+                inset 0 1px 0 rgb(255 255 255 / 5%);
     transform: translateY(-2px);
 }
 
@@ -600,7 +625,7 @@ footer a:hover {
                 var(--border-accent) 50%,
                 var(--border-soft) 100%);
     background-size: 200% 100%;
-    transition: all var(--duration-500) var(--ease-out);
+    transition: all var(--duration-400) var(--ease-expo-out);
 }
 
 .workflow-step:hover ~ .workflow-connector {
@@ -620,6 +645,7 @@ footer a:hover {
 /* Subtle pulse for iteration badge */
 .iteration-badge {
     animation: subtle-pulse 3s ease-in-out infinite;
+    transition: all var(--duration-500) var(--ease-expo-out);
 }
 
 @keyframes subtle-pulse {
