@@ -97,6 +97,7 @@ use crate::json_parser::types::ContentType;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::sync::OnceLock;
 
 /// Ralph enforces a **delta contract** for all streaming content.
 ///
@@ -112,7 +113,7 @@ use std::hash::{Hash, Hasher};
 /// # Validation Threshold
 ///
 /// Deltas are expected to be small chunks (typically < 100 chars). If a single
-/// "delta" exceeds `SNAPSHOT_THRESHOLD` characters, it may indicate a snapshot
+/// "delta" exceeds `snapshot_threshold()` characters, it may indicate a snapshot
 /// being treated as a delta.
 ///
 /// # Pattern Detection
@@ -120,7 +121,59 @@ use std::hash::{Hash, Hasher};
 /// In addition to size threshold, we track patterns of repeated large content
 /// which may indicate a snapshot-as-delta bug where the same content is being
 /// sent repeatedly as if it were incremental.
-const SNAPSHOT_THRESHOLD: usize = 200;
+///
+/// # Environment Variables
+///
+/// The following environment variables can be set to configure streaming behavior:
+///
+/// - `RALPH_STREAMING_SNAPSHOT_THRESHOLD`: Threshold for detecting snapshot-as-delta
+///   violations (default: 200). Deltas exceeding this size trigger warnings.
+/// - `RALPH_STREAMING_FUZZY_MATCH_RATIO`: Ratio (0-100) for fuzzy snapshot detection
+///   (default: 85). Higher values make fuzzy detection more strict.
+///
+/// Get the snapshot threshold from environment variable or use default.
+///
+/// Reads `RALPH_STREAMING_SNAPSHOT_THRESHOLD` env var.
+/// Valid range: 50-1000 characters.
+/// Falls back to default of 200 if not set or out of range.
+fn snapshot_threshold() -> usize {
+    static THRESHOLD: OnceLock<usize> = OnceLock::new();
+    *THRESHOLD.get_or_init(|| {
+        std::env::var("RALPH_STREAMING_SNAPSHOT_THRESHOLD")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|v| {
+                if (50..=1000).contains(&v) {
+                    Some(v)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(200)
+    })
+}
+
+/// Get the fuzzy match ratio from environment variable or use default.
+///
+/// Reads `RALPH_STREAMING_FUZZY_MATCH_RATIO` env var.
+/// Valid range: 50-95 (percentage).
+/// Falls back to default of 85 if not set or out of range.
+fn fuzzy_match_ratio() -> usize {
+    static RATIO: OnceLock<usize> = OnceLock::new();
+    *RATIO.get_or_init(|| {
+        std::env::var("RALPH_STREAMING_FUZZY_MATCH_RATIO")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|v| {
+                if (50..=95).contains(&v) {
+                    Some(v)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(85)
+    })
+}
 
 /// Streaming state for the current message lifecycle.
 ///
@@ -484,7 +537,7 @@ impl StreamingSession {
     ///
     /// This method validates that incoming content appears to be a genuine delta
     /// (small chunk) rather than a snapshot (full accumulated content). Large "deltas"
-    /// that exceed `SNAPSHOT_THRESHOLD` trigger a warning as they may indicate a
+    /// that exceed `snapshot_threshold()` trigger a warning as they may indicate a
     /// contract violation.
     ///
     /// Additionally, we track patterns of delta sizes to detect repeated large
@@ -533,7 +586,7 @@ impl StreamingSession {
 
         // Warn on large deltas BEFORE modification to detect snapshot-as-delta issues
         // Use the original delta size since that's what we actually received
-        if delta_size > SNAPSHOT_THRESHOLD {
+        if delta_size > snapshot_threshold() {
             self.large_delta_count += 1;
             if self.verbose_warnings {
                 eprintln!(
@@ -557,7 +610,7 @@ impl StreamingSession {
         // This indicates the same content is being sent repeatedly (snapshot-as-delta)
         if sizes.len() >= 3 && self.verbose_warnings {
             // Check if at least 3 of the last N deltas were large
-            let large_count = sizes.iter().filter(|&&s| s > SNAPSHOT_THRESHOLD).count();
+            let large_count = sizes.iter().filter(|&&s| s > snapshot_threshold()).count();
             if large_count >= 3 {
                 eprintln!(
                     "Warning: Detected pattern of {large_count} large deltas for key '{key}'. \
@@ -863,12 +916,13 @@ impl StreamingSession {
         // Check if previous is contained within text
         if text.contains(previous) {
             // Calculate overlap ratio using integer arithmetic to avoid precision loss
-            // Check: previous.len() * 100 > text.len() * 85 (equivalent to previous/text > 0.85)
+            // Check: previous.len() * 100 > text.len() * ratio (equivalent to previous/text > ratio/100)
             // This avoids f64 precision issues for large usize values
             let prev_len = previous.len();
             let text_len = text.len();
+            let ratio = fuzzy_match_ratio();
             // Use saturating multiplication to avoid overflow for extremely large strings
-            prev_len.saturating_mul(100) > text_len.saturating_mul(85)
+            prev_len.saturating_mul(100) > text_len.saturating_mul(ratio)
         } else {
             false
         }
@@ -1054,8 +1108,8 @@ mod tests {
         let mut session = StreamingSession::new();
         session.on_message_start();
 
-        // Create a delta larger than SNAPSHOT_THRESHOLD
-        let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        // Create a delta larger than snapshot_threshold()
+        let large_delta = "x".repeat(snapshot_threshold() + 1);
 
         // This should trigger a warning but still work
         let show_prefix = session.on_text_delta(0, &large_delta);
@@ -1653,7 +1707,7 @@ mod tests {
         let mut session_verbose = StreamingSession::new().with_verbose_warnings(true);
         session_verbose.on_message_start();
 
-        let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        let large_delta = "x".repeat(snapshot_threshold() + 1);
         // This would emit a warning to stderr if verbose_warnings is enabled
         let _show_prefix = session_verbose.on_text_delta(0, &large_delta);
 
@@ -1661,7 +1715,7 @@ mod tests {
         let mut session_quiet = StreamingSession::new();
         session_quiet.on_message_start();
 
-        let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        let large_delta = "x".repeat(snapshot_threshold() + 1);
         // This should NOT emit a warning
         let _show_prefix = session_quiet.on_text_delta(0, &large_delta);
 
@@ -1713,7 +1767,7 @@ mod tests {
 
         // Send 3 large deltas to trigger pattern detection
         for _ in 0..3 {
-            let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+            let large_delta = "x".repeat(snapshot_threshold() + 1);
             let _ = session_verbose.on_text_delta(0, &large_delta);
         }
 
@@ -1723,13 +1777,13 @@ mod tests {
 
         // Send 3 large deltas
         for _ in 0..3 {
-            let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+            let large_delta = "x".repeat(snapshot_threshold() + 1);
             let _ = session_quiet.on_text_delta(0, &large_delta);
         }
 
         // Both sessions should accumulate content correctly
         // (All 3 deltas are accumulated since they're treated as genuine deltas)
-        let single_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        let single_delta = "x".repeat(snapshot_threshold() + 1);
         let expected = format!("{single_delta}{single_delta}{single_delta}");
         assert_eq!(
             session_verbose.get_accumulated(ContentType::Text, "0"),
@@ -1805,7 +1859,7 @@ mod tests {
 
         // Send 3 large deltas
         for _ in 0..3 {
-            let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+            let large_delta = "x".repeat(snapshot_threshold() + 1);
             let _ = session.on_text_delta(0, &large_delta);
         }
 
@@ -1855,7 +1909,7 @@ mod tests {
         session.on_text_delta(0, "Hello");
 
         // Large delta
-        let large_delta = "x".repeat(SNAPSHOT_THRESHOLD + 1);
+        let large_delta = "x".repeat(snapshot_threshold() + 1);
         let _ = session.on_text_delta(0, &large_delta);
 
         // Snapshot repair (note: the snapshot is also large, so it counts as another large delta)
@@ -2129,5 +2183,27 @@ mod tests {
             !session.output_started_for_key.contains(&thinking_key),
             "Thinking output_started should be cleared for index 0"
         );
+    }
+
+    // Tests for environment variable configuration
+
+    #[test]
+    fn test_snapshot_threshold_default() {
+        // Ensure no env var is set for this test
+        std::env::remove_var("RALPH_STREAMING_SNAPSHOT_THRESHOLD");
+        // Note: Since we use OnceLock, we can't reset the value in tests.
+        // This test documents the default behavior.
+        let threshold = snapshot_threshold();
+        assert_eq!(threshold, 200, "Default threshold should be 200");
+    }
+
+    #[test]
+    fn test_fuzzy_match_ratio_default() {
+        // Ensure no env var is set for this test
+        std::env::remove_var("RALPH_STREAMING_FUZZY_MATCH_RATIO");
+        // Note: Since we use OnceLock, we can't reset the value in tests.
+        // This test documents the default behavior.
+        let ratio = fuzzy_match_ratio();
+        assert_eq!(ratio, 85, "Default ratio should be 85");
     }
 }
