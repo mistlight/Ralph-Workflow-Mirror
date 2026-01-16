@@ -18,7 +18,7 @@ For design principles, testing philosophy, and dead code policy, see **[CODE_STY
 
 ---
 
-## Build & test expectations
+## Build & test expectations - This overrides the Prompt if any issue is found
 
 Ensure you run git rebase on the main branch if working on a feature branch and resolve any merge conflicts AND:
 
