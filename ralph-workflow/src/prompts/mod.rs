@@ -40,7 +40,7 @@ pub use types::{Action, ContextLevel, Role};
 /// Configuration for prompt generation.
 ///
 /// Groups related parameters to reduce function argument count.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[must_use]
 pub struct PromptConfig {
     /// The current iteration number (for developer iteration prompts).

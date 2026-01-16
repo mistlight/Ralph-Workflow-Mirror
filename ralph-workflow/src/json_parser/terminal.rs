@@ -55,6 +55,18 @@ impl TerminalMode {
     /// 4. `TERM` environment variable for capability detection
     /// 5. Whether stdout is a terminal using `IsTerminal` trait
     ///
+    /// # Environment Variables
+    ///
+    /// - `NO_COLOR=1`: Disables all ANSI output
+    /// - `NO_COLOR=0` or unset: No effect
+    /// - `CLICOLOR_FORCE=1`: Forces colors even in non-TTY
+    /// - `CLICOLOR_FORCE=0` or unset: No effect
+    /// - `CLICOLOR=0`: Disables colors on macOS
+    /// - `CLICOLOR=1` or unset: No effect on macOS
+    /// - `TERM=xterm-256color`: Full ANSI support
+    /// - `TERM=dumb`: Basic TTY with colors but no cursor positioning
+    /// - `TERM=vt100`, `TERM=screen`: Full ANSI support
+    ///
     /// # Returns
     ///
     /// - `Full`: stdout is TTY with capable terminal

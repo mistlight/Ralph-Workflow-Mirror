@@ -2,9 +2,10 @@
 //!
 //! Prompts for developer agent actions including iteration and planning.
 
+use std::collections::HashMap;
+
 use super::template_engine::Template;
 use super::types::ContextLevel;
-use std::collections::HashMap;
 
 /// Generate developer iteration prompt.
 ///
