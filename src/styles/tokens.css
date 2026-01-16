@@ -3,13 +3,14 @@
    ======================================== */
 
 /* === CUSTOM MEDIA BREAKPOINTS === */
+
 /* Mobile-first responsive breakpoints matching existing media queries */
 @custom-media --xs (max-width: 375px);
 @custom-media --sm (max-width: 480px);
 @custom-media --md (max-width: 640px);
 @custom-media --lg (max-width: 768px);
 @custom-media --xl (max-width: 900px);
-@custom-media --2xl (max-width: 1024px);
+@custom-media --xxl (max-width: 1024px);
 
 /* === CSS CUSTOM PROPERTIES === */
 :root {
@@ -36,30 +37,30 @@
     --color-primary: #00d4ff;
     --color-primary-light: #4de4ff;
     --color-primary-dark: #00a8cc;
-    --color-primary-dim: rgba(0, 212, 255, 0.12);
-    --color-primary-glow: rgba(0, 212, 255, 0.25);
-    --color-primary-intense: rgba(0, 212, 255, 0.4);
+    --color-primary-dim: rgb(0 212 255 / 12%);
+    --color-primary-glow: rgb(0 212 255 / 25%);
+    --color-primary-intense: rgb(0 212 255 / 40%);
 
     /* Secondary Accent - Hot Magenta */
     --color-accent: #ff006e;
     --color-accent-light: #ff4d94;
     --color-accent-dark: #cc0058;
-    --color-accent-dim: rgba(255, 0, 110, 0.12);
-    --color-accent-glow: rgba(255, 0, 110, 0.25);
+    --color-accent-dim: rgb(255 0 110 / 12%);
+    --color-accent-glow: rgb(255 0 110 / 25%);
 
     /* Tertiary - Lime Green */
     --color-lime: #a3ff12;
     --color-lime-light: #c4ff5c;
     --color-lime-dark: #82cc0e;
-    --color-lime-dim: rgba(163, 255, 18, 0.12);
-    --color-lime-glow: rgba(163, 255, 18, 0.25);
+    --color-lime-dim: rgb(163 255 18 / 12%);
+    --color-lime-glow: rgb(163 255 18 / 25%);
 
     /* Quaternary - Violet */
     --color-violet: #a78bfa;
     --color-violet-light: #c4b5fd;
     --color-violet-dark: #8b5cf6;
-    --color-violet-dim: rgba(167, 139, 250, 0.12);
-    --color-violet-glow: rgba(167, 139, 250, 0.25);
+    --color-violet-dim: rgb(167 139 250 / 12%);
+    --color-violet-glow: rgb(167 139 250 / 25%);
 
     /* Semantic Colors */
     --color-success: #a3ff12;
@@ -96,14 +97,14 @@
     --code-border: #27272a;
 
     /* Borders & Lines */
-    --border-subtle: rgba(244, 244, 245, 0.04);
-    --border-soft: rgba(244, 244, 245, 0.08);
-    --border-medium: rgba(244, 244, 245, 0.12);
-    --border-strong: rgba(244, 244, 245, 0.18);
-    --border-accent: rgba(0, 212, 255, 0.25);
-    --border-glow: rgba(0, 212, 255, 0.5);
-    --border-lime: rgba(163, 255, 18, 0.25);
-    --border-accent-color: rgba(255, 0, 110, 0.25);
+    --border-subtle: rgb(244 244 245 / 4%);
+    --border-soft: rgb(244 244 245 / 8%);
+    --border-medium: rgb(244 244 245 / 12%);
+    --border-strong: rgb(244 244 245 / 18%);
+    --border-accent: rgb(0 212 255 / 25%);
+    --border-glow: rgb(0 212 255 / 50%);
+    --border-lime: rgb(163 255 18 / 25%);
+    --border-accent-color: rgb(255 0 110 / 25%);
 
     /* === TYPOGRAPHY: Futuristic Precision === */
 
@@ -221,25 +222,25 @@
     --radius-full: 9999px;
 
     /* === SHADOWS: Neon Glow === */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --shadow-md: 0 4px 8px -1px rgba(0, 0, 0, 0.6), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.65), 0 6px 8px -4px rgba(0, 0, 0, 0.5);
-    --shadow-xl: 0 24px 40px -8px rgba(0, 0, 0, 0.7), 0 10px 16px -6px rgba(0, 0, 0, 0.55);
-    --shadow-2xl: 0 32px 64px -12px rgba(0, 0, 0, 0.75);
-    --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 50%);
+    --shadow-md: 0 4px 8px -1px rgb(0 0 0 / 60%), 0 2px 4px -2px rgb(0 0 0 / 50%);
+    --shadow-lg: 0 12px 24px -4px rgb(0 0 0 / 65%), 0 6px 8px -4px rgb(0 0 0 / 50%);
+    --shadow-xl: 0 24px 40px -8px rgb(0 0 0 / 70%), 0 10px 16px -6px rgb(0 0 0 / 55%);
+    --shadow-2xl: 0 32px 64px -12px rgb(0 0 0 / 75%);
+    --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 40%);
 
     /* Neon Glow shadows - Cyan */
-    --shadow-glow-sm: 0 0 12px rgba(0, 212, 255, 0.3);
-    --shadow-glow-md: 0 0 24px rgba(0, 212, 255, 0.35), 0 0 8px rgba(0, 212, 255, 0.2);
-    --shadow-glow-lg: 0 0 48px rgba(0, 212, 255, 0.4), 0 0 16px rgba(0, 212, 255, 0.25);
-    --shadow-glow-xl: 0 0 80px rgba(0, 212, 255, 0.35), 0 0 32px rgba(0, 212, 255, 0.2);
+    --shadow-glow-sm: 0 0 12px rgb(0 212 255 / 30%);
+    --shadow-glow-md: 0 0 24px rgb(0 212 255 / 35%), 0 0 8px rgb(0 212 255 / 20%);
+    --shadow-glow-lg: 0 0 48px rgb(0 212 255 / 40%), 0 0 16px rgb(0 212 255 / 25%);
+    --shadow-glow-xl: 0 0 80px rgb(0 212 255 / 35%), 0 0 32px rgb(0 212 255 / 20%);
 
     /* Magenta Glow */
-    --shadow-glow-accent: 0 0 24px rgba(255, 0, 110, 0.35), 0 0 8px rgba(255, 0, 110, 0.2);
-    --shadow-glow-accent-strong: 0 8px 16px rgba(255, 0, 110, 0.4);
+    --shadow-glow-accent: 0 0 24px rgb(255 0 110 / 35%), 0 0 8px rgb(255 0 110 / 20%);
+    --shadow-glow-accent-strong: 0 8px 16px rgb(255 0 110 / 40%);
 
     /* Lime Glow */
-    --shadow-glow-success: 0 0 24px rgba(163, 255, 18, 0.35), 0 0 8px rgba(163, 255, 18, 0.2);
+    --shadow-glow-success: 0 0 24px rgb(163 255 18 / 35%), 0 0 8px rgb(163 255 18 / 20%);
 
     /* === TRANSITIONS === */
     --duration-75: 75ms;
@@ -280,30 +281,26 @@
 .light-mode {
     --color-bg: #fafafa;
     --color-bg-alt: #f4f4f5;
-    --color-bg-elevated: #ffffff;
-    --color-bg-card: #ffffff;
+    --color-bg-elevated: #fff;
+    --color-bg-card: #fff;
     --color-bg-subtle: #e4e4e7;
     --color-bg-hover: #d4d4d8;
-
     --color-text: #0a0a0b;
     --color-text-primary: #18181b;
     --color-text-muted: #52525b;
     --color-text-dim: #71717a;
     --color-text-faint: #a1a1aa;
-
     --color-primary: #0891b2;
     --color-primary-light: #22d3ee;
     --color-primary-dark: #0e7490;
-    --color-primary-dim: rgba(8, 145, 178, 0.1);
-    --color-primary-glow: rgba(8, 145, 178, 0.2);
-
+    --color-primary-dim: rgb(8 145 178 / 10%);
+    --color-primary-glow: rgb(8 145 178 / 20%);
     --color-accent: #be185d;
     --color-accent-light: #ec4899;
     --color-accent-dark: #9d174d;
-
-    --border-subtle: rgba(10, 10, 11, 0.04);
-    --border-soft: rgba(10, 10, 11, 0.08);
-    --border-medium: rgba(10, 10, 11, 0.12);
-    --border-strong: rgba(10, 10, 11, 0.18);
-    --border-accent: rgba(8, 145, 178, 0.25);
+    --border-subtle: rgb(10 10 11 / 4%);
+    --border-soft: rgb(10 10 11 / 8%);
+    --border-medium: rgb(10 10 11 / 12%);
+    --border-strong: rgb(10 10 11 / 18%);
+    --border-accent: rgb(8 145 178 / 25%);
 }

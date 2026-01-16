@@ -1,25 +1,29 @@
 /* ========================================
    MAIN STYLESHEET ENTRY POINT
    ======================================== */
+
 /* Imports all modular stylesheets using postcss-import */
 
 /* Design tokens - must be first */
-@import './tokens.css';
+@import url('./tokens.css');
 
 /* Base styles - reset and element defaults */
-@import './base/base.css';
+@import url('./base/base.css');
 
 /* Component styles */
-@import './components/animations.css';
-@import './components/buttons.css';
-@import './components/cards.css';
-@import './components/forms.css';
-@import './components/header.css';
-@import './components/hero.css';
-@import './components/navigation.css';
-@import './components/sections.css';
-@import './components/terminal.css';
-@import './components/typography.css';
+@import url('./components/animations.css');
+@import url('./components/buttons.css');
+@import url('./components/cards.css');
+@import url('./components/forms.css');
+@import url('./components/header.css');
+@import url('./components/hero.css');
+@import url('./components/navigation.css');
+@import url('./components/sections.css');
+@import url('./components/terminal.css');
+@import url('./components/typography.css');
 
 /* Utility classes */
-@import './utilities/utilities.css';
+@import url('./utilities/utilities.css');
+
+/* Design refinements - visual polish and micro-interactions */
+@import url('./refinements.css');

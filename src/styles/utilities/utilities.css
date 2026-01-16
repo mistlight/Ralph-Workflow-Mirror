@@ -37,7 +37,10 @@
 .mt-4 { margin-top: var(--space-4); }
 .mt-8 { margin-top: var(--space-8); }
 
-.mx-auto { margin-left: auto; margin-right: auto; }
+.mx-auto {
+    margin-left: auto;
+    margin-right: auto;
+}
 
 /* === DISPLAY UTILITIES === */
 
@@ -81,24 +84,23 @@
 /* === VISIBILITY === */
 
 .sr-only {
-    position: absolute;
-    width: 1px;
+    border: 0;
     height: 1px;
-    padding: 0;
     margin: -1px;
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+    padding: 0;
+    position: absolute;
     white-space: nowrap;
-    border: 0;
+    width: 1px;
 }
 
 /* === CONTAINER UTILITIES === */
 
 .container {
-    width: 100%;
-    max-width: 1280px;
     margin: 0 auto;
+    max-width: 1280px;
     padding: 0 var(--space-6);
+    width: 100%;
 }
 
 .container-narrow {
@@ -132,6 +134,7 @@
     .grid-4 {
         grid-template-columns: repeat(2, 1fr);
     }
+
     .grid-3 {
         grid-template-columns: repeat(2, 1fr);
     }

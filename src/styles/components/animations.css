@@ -14,21 +14,23 @@
 /* Pulse Glow Animation */
 @keyframes pulse-glow {
     0%, 100% {
+        box-shadow: 0 0 8px currentcolor;
         opacity: 1;
-        box-shadow: 0 0 8px currentColor;
     }
+
     50% {
+        box-shadow: 0 0 16px currentcolor;
         opacity: 0.6;
-        box-shadow: 0 0 16px currentColor;
     }
 }
 
 /* Slide Up Animation */
-@keyframes slideUp {
+@keyframes slide-up {
     from {
         opacity: 0;
         transform: translateY(30px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -36,11 +38,12 @@
 }
 
 /* Fade In Up Animation */
-@keyframes fadeInUp {
+@keyframes fade-in-up {
     from {
         opacity: 0;
         transform: translateY(20px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -48,11 +51,12 @@
 }
 
 /* Fade In Left Animation */
-@keyframes fadeInLeft {
+@keyframes fade-in-left {
     from {
         opacity: 0;
         transform: translateX(-20px);
     }
+
     to {
         opacity: 1;
         transform: translateX(0);
@@ -60,11 +64,12 @@
 }
 
 /* Fade In Right Animation */
-@keyframes fadeInRight {
+@keyframes fade-in-right {
     from {
         opacity: 0;
         transform: translateX(20px);
     }
+
     to {
         opacity: 1;
         transform: translateX(0);
@@ -72,9 +77,16 @@
 }
 
 /* Fade In Animation */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Float Slow Animation */
@@ -89,32 +101,36 @@
     0%, 100% {
         transform: translate(0, 0) scale(1);
     }
+
     33% {
         transform: translate(30px, -20px) scale(1.1);
     }
+
     66% {
         transform: translate(-20px, 15px) scale(0.95);
     }
 }
 
 /* Scroll Wheel Animation */
-@keyframes scrollWheel {
+@keyframes scroll-wheel {
     0%, 100% {
-        transform: translateY(0);
         opacity: 1;
+        transform: translateY(0);
     }
+
     50% {
-        transform: translateY(8px);
         opacity: 0.3;
+        transform: translateY(8px);
     }
 }
 
 /* Fade In Up Animation (with translateX) */
-@keyframes fadeInUpX {
+@keyframes fade-in-up-x {
     from {
         opacity: 0;
         transform: translateX(-50%) translateY(20px);
     }
+
     to {
         opacity: 1;
         transform: translateX(-50%) translateY(0);
@@ -128,9 +144,16 @@
 }
 
 /* Count Up Animation */
-@keyframes countUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+@keyframes count-up {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Typing Animation */
@@ -149,20 +172,23 @@
 /* Blob Morph Animation */
 @keyframes blob-morph {
     0%, 100% {
-        transform: translate(0, 0) scale(1) rotate(0deg);
         border-radius: 50%;
+        transform: translate(0, 0) scale(1) rotate(0deg);
     }
+
     25% {
-        transform: translate(20px, -20px) scale(1.05) rotate(90deg);
         border-radius: 45% 55% 50% 50%;
+        transform: translate(20px, -20px) scale(1.05) rotate(90deg);
     }
+
     50% {
+        border-radius: 55% 45%;
         transform: translate(-10px, 15px) scale(0.95) rotate(180deg);
-        border-radius: 55% 45% 55% 45%;
     }
+
     75% {
+        border-radius: 48% 52%;
         transform: translate(15px, 10px) scale(1.02) rotate(270deg);
-        border-radius: 48% 52% 48% 52%;
     }
 }
 
@@ -170,21 +196,21 @@
 
 /* Fade In Animations */
 .fade-in-up {
+    animation: fade-in-up 0.6s var(--ease-out) forwards;
     opacity: 0;
     transform: translateY(20px);
-    animation: fadeInUp 0.6s var(--ease-out) forwards;
 }
 
 .fade-in-left {
+    animation: fade-in-left 0.6s var(--ease-out) forwards;
     opacity: 0;
     transform: translateX(-20px);
-    animation: fadeInLeft 0.6s var(--ease-out) forwards;
 }
 
 .fade-in-right {
+    animation: fade-in-right 0.6s var(--ease-out) forwards;
     opacity: 0;
     transform: translateX(20px);
-    animation: fadeInRight 0.6s var(--ease-out) forwards;
 }
 
 /* Scroll reveal animations */
@@ -233,8 +259,8 @@
 
 /* Animated gradient */
 .animated-gradient {
-    background-size: 200% 200%;
     animation: gradient-shift 8s ease infinite;
+    background-size: 200% 200%;
 }
 
 /* Hover glow effect */
@@ -243,15 +269,15 @@
 }
 
 .glow-hover::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: inherit;
     background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-    opacity: 0;
-    z-index: -1;
+    border-radius: inherit;
+    content: '';
     filter: blur(8px);
+    inset: -2px;
+    opacity: 0;
+    position: absolute;
     transition: opacity var(--duration-300) var(--ease-out);
+    z-index: -1;
 }
 
 .glow-hover:hover::before {

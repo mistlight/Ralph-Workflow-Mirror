@@ -1,0 +1,389 @@
+/* ========================================
+   DESIGN REFINEMENTS - Terminal Noir
+   ========================================
+   Visual polish and micro-interaction improvements
+   ======================================== */
+
+/* === FOCUS STATE ENHANCEMENTS === */
+
+/* Enhanced focus visibility for keyboard navigation */
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Skip link focus improvement */
+.skip-link:focus {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    inset: var(--space-4) auto auto var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    z-index: var(--z-tooltip);
+}
+
+/* === TYPOGRAPHY REFINEMENTS === */
+
+/* Improve line-height for better readability */
+p {
+    line-height: var(--leading-relaxed);
+}
+
+/* Enhance heading hierarchy with subtle visual cues */
+h1 {
+    text-shadow: 0 0 40px var(--color-primary-dim);
+}
+
+h2 {
+    position: relative;
+}
+
+h2::after {
+    background: linear-gradient(90deg, var(--color-primary) 0%, transparent 100%);
+    bottom: -8px;
+    content: '';
+    height: 2px;
+    left: 0;
+    opacity: 0.5;
+    position: absolute;
+    width: 60px;
+}
+
+/* === BUTTON ENHANCEMENTS === */
+
+/* Improved button press feedback */
+.btn:active {
+    transform: translateY(1px) scale(0.98);
+}
+
+/* Enhanced button glow on hover */
+.btn-primary:hover {
+    animation: button-glow 0.6s ease-out;
+}
+
+@keyframes button-glow {
+    0% {
+        box-shadow: var(--shadow-glow-sm), 0 0 0 transparent;
+    }
+    50% {
+        box-shadow: var(--shadow-glow-md), 0 0 40px var(--color-primary-glow);
+    }
+    100% {
+        box-shadow: var(--shadow-glow-md), 0 0 30px var(--color-primary-glow);
+    }
+}
+
+/* === TERMINAL WINDOW POLISH === */
+
+/* Subtle terminal cursor blink animation */
+.terminal-cursor {
+    animation: cursor-blink 1s step-end infinite;
+    background-color: var(--color-primary);
+    display: inline-block;
+    height: 1.2em;
+    width: 2px;
+}
+
+@keyframes cursor-blink {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0;
+    }
+}
+
+/* Enhanced terminal window hover effect */
+.terminal-window:hover {
+    box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 40px var(--color-primary-dim);
+    transform: translateY(-2px);
+    transition: box-shadow var(--duration-300) var(--ease-out),
+                transform var(--duration-300) var(--ease-out);
+}
+
+/* === CARD IMPROVEMENTS === */
+
+/* Subtle card lift on hover */
+.feature-card,
+.install-card,
+.comparison-card {
+    transition: transform var(--duration-200) var(--ease-out),
+                box-shadow var(--duration-200) var(--ease-out);
+}
+
+.feature-card:hover,
+.install-card:hover,
+.comparison-card:hover {
+    transform: translateY(-4px);
+}
+
+/* === AUDIENCE SELECTION BUTTONS === */
+
+/* Enhanced audience button states */
+.audience-btn {
+    transition: all var(--duration-200) var(--ease-out);
+}
+
+.audience-btn:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 20px var(--color-primary-dim);
+}
+
+.audience-btn.active {
+    background-color: var(--color-primary-dim);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 30px var(--color-primary-glow);
+}
+
+/* === FAQ ACCORDION POLISH === */
+
+/* Smooth accordion transitions */
+.faq-summary {
+    transition: background-color var(--duration-150) var(--ease-out),
+                border-color var(--duration-150) var(--ease-out);
+}
+
+.faq-details {
+    transition: max-height var(--duration-300) var(--ease-out),
+                opacity var(--duration-300) var(--ease-out);
+}
+
+/* === MOBILE RESPONSIVENESS === */
+
+@media (max-width: 768px) {
+    /* Adjust spacing for mobile */
+    .hero {
+        padding: var(--space-20) 0 var(--space-16);
+    }
+
+    /* Improve touch target sizes */
+    .btn {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    /* Better mobile typography */
+    h1 {
+        font-size: clamp(2rem, 10vw, 3rem);
+    }
+
+    h2 {
+        font-size: clamp(1.5rem, 6vw, 2.25rem);
+    }
+
+    /* Stack grid on mobile */
+    .hero-grid {
+        grid-template-columns: 1fr;
+        gap: var(--space-12);
+    }
+
+    /* Adjust terminal for mobile */
+    .terminal-body {
+        font-size: var(--text-xs);
+        padding: var(--space-4);
+    }
+}
+
+/* === ACCESSIBILITY IMPROVEMENTS === */
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .btn {
+        border-width: 2px;
+    }
+
+    .terminal-window {
+        border-width: 2px;
+    }
+}
+
+/* === MICRO-INTERACTION ENHANCEMENTS === */
+
+/* Smooth scroll behavior */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Link underline animation */
+a {
+    background-image: linear-gradient(var(--color-primary), var(--color-primary));
+    background-position: 0% 100%;
+    background-repeat: no-repeat;
+    background-size: 0% 2px;
+    transition: background-size var(--duration-200) var(--ease-out);
+}
+
+a:hover {
+    background-size: 100% 2px;
+}
+
+/* Code inline hover effect */
+code:hover {
+    background-color: var(--color-primary-dim);
+    border-color: var(--color-primary);
+    cursor: help;
+    transition: all var(--duration-150) var(--ease-out);
+}
+
+/* === COLOR CONTRAST FIXES === */
+
+/* Ensure sufficient contrast for muted text */
+.color-text-muted {
+    color: var(--color-text-muted);
+}
+
+/* Enhance code readability */
+.code-block code {
+    line-height: 1.7;
+}
+
+/* === SPACING CONSISTENCY === */
+
+/* Consistent section spacing */
+.section {
+    padding: var(--space-20) 0;
+}
+
+@media (min-width: 1024px) {
+    .section {
+        padding: var(--space-28) 0;
+    }
+}
+
+/* === BORDER RADIUS CONSISTENCY === */
+
+/* Ensure consistent border radius across components */
+.input,
+.textarea,
+.select {
+    border-radius: var(--radius-lg);
+}
+
+.terminal-window,
+.card,
+.code-block {
+    border-radius: var(--radius-2xl);
+}
+
+/* === SHADOW CONSISTENCY === */
+
+/* Elevated shadow for interactive elements */
+.interactive-elevated {
+    box-shadow: var(--shadow-lg);
+}
+
+.interactive-elevated:hover {
+    box-shadow: var(--shadow-xl), var(--shadow-glow-md);
+}
+
+/* === LOADING STATES === */
+
+/* Skeleton loading animation */
+.skeleton {
+    animation: skeleton-pulse 2s ease-in-out infinite;
+    background: linear-gradient(
+        90deg,
+        var(--color-bg-card) 0%,
+        var(--color-bg-hover) 50%,
+        var(--color-bg-card) 100%
+    );
+    background-size: 200% 100%;
+}
+
+@keyframes skeleton-pulse {
+    0%, 100% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+/* === ERROR STATES === */
+
+/* Enhanced error visibility */
+.error-message {
+    background-color: rgb(255 0 110 / 10%);
+    border: 1px solid var(--color-accent);
+    border-left-width: 4px;
+    color: var(--color-accent-light);
+    padding: var(--space-4);
+}
+
+/* === SUCCESS STATES === */
+
+/* Subtle success indication */
+.success-message {
+    background-color: rgb(163 255 18 / 10%);
+    border: 1px solid var(--color-lime);
+    border-left-width: 4px;
+    color: var(--color-lime);
+    padding: var(--space-4);
+}
+
+/* === PROGRESS INDICATORS === */
+
+/* Smooth progress bar animation */
+.progress-bar {
+    animation: progress-fill 0.3s ease-out;
+    transition: width var(--duration-300) var(--ease-out);
+}
+
+@keyframes progress-fill {
+    from {
+        opacity: 0;
+        transform: scaleX(0);
+    }
+    to {
+        opacity: 1;
+        transform: scaleX(1);
+    }
+}
+
+/* === TOOLTIP ENHANCEMENTS === */
+
+/* Smooth tooltip fade in */
+.tooltip {
+    animation: tooltip-fade-in 0.2s ease-out;
+}
+
+@keyframes tooltip-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* === PRINT STYLES === */
+
+@media print {
+    .hero-bg,
+    .hero-orb {
+        display: none;
+    }
+
+    .terminal-window {
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+
+    a {
+        text-decoration: underline;
+    }
+}

@@ -15,12 +15,12 @@ input[type="search"],
 input[type="password"],
 textarea,
 select {
-    font-family: var(--font-body);
-    font-size: var(--text-base);
-    color: var(--color-text);
     background-color: var(--color-bg-input);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-lg);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-size: var(--text-base);
     padding: var(--space-3) var(--space-4);
     transition: all var(--duration-200) var(--ease-out);
     width: 100%;
@@ -35,9 +35,9 @@ input[type="search"]:focus,
 input[type="password"]:focus,
 textarea:focus,
 select:focus {
-    outline: none;
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px var(--color-primary-dim);
+    outline: none;
 }
 
 input[type="text"]:disabled,
@@ -49,16 +49,16 @@ input[type="search"]:disabled,
 input[type="password"]:disabled,
 textarea:disabled,
 select:disabled {
-    opacity: 0.5;
     cursor: not-allowed;
+    opacity: 0.5;
 }
 
 /* === TEXTAREA === */
 
 textarea {
-    resize: vertical;
-    min-height: 120px;
     line-height: var(--leading-relaxed);
+    min-height: 120px;
+    resize: vertical;
 }
 
 /* === SELECT === */
@@ -66,8 +66,8 @@ textarea {
 select {
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23a1a1aa' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
     background-position: right var(--space-3) center;
+    background-repeat: no-repeat;
     padding-right: var(--space-10);
 }
 
@@ -79,10 +79,10 @@ select:focus {
 
 input[type="checkbox"],
 input[type="radio"] {
-    width: 18px;
-    height: 18px;
     accent-color: var(--color-primary);
     cursor: pointer;
+    height: 18px;
+    width: 18px;
 }
 
 /* === SEARCH INPUT === */
@@ -106,23 +106,23 @@ input[type="search"]::-webkit-search-cancel-button {
 /* === FORM LABELS === */
 
 label {
+    color: var(--color-text);
     display: block;
     font-size: var(--text-sm);
     font-weight: var(--font-medium);
-    color: var(--color-text);
     margin-bottom: var(--space-2);
 }
 
 label.required::after {
-    content: ' *';
     color: var(--color-accent);
+    content: ' *';
 }
 
 /* === FORM HELP TEXT === */
 
 .form-help {
-    font-size: var(--text-sm);
     color: var(--color-text-muted);
+    font-size: var(--text-sm);
     margin-top: var(--space-2);
 }
 
@@ -137,12 +137,12 @@ select.error {
 input.error:focus,
 textarea.error:focus,
 select.error:focus {
-    box-shadow: 0 0 0 3px rgba(255, 0, 110, 0.1);
+    box-shadow: 0 0 0 3px rgb(255 0 110 / 10%);
 }
 
 .form-error {
-    font-size: var(--text-sm);
     color: var(--color-error);
+    font-size: var(--text-sm);
     margin-top: var(--space-2);
 }
 
@@ -157,12 +157,12 @@ select.success {
 input.success:focus,
 textarea.success:focus,
 select.success:focus {
-    box-shadow: 0 0 0 3px rgba(163, 255, 18, 0.1);
+    box-shadow: 0 0 0 3px rgb(163 255 18 / 10%);
 }
 
 .form-success {
-    font-size: var(--text-sm);
     color: var(--color-success);
+    font-size: var(--text-sm);
     margin-top: var(--space-2);
 }
 
@@ -180,11 +180,11 @@ select.success:focus {
 }
 
 .code-inline-block code {
+    background-color: var(--code-bg);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    color: var(--color-primary);
     font-family: var(--font-mono);
     font-size: var(--text-sm);
-    background-color: var(--code-bg);
-    color: var(--color-primary);
     padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-soft);
 }
