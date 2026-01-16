@@ -37,26 +37,31 @@ fn get_cli_overrides(
     }
 }
 
-/// Build the list of model flags to try for an agent.
-fn build_model_flags_list(
+/// Context for building model flags.
+struct ModelFlagBuildContext<'a> {
     agent_index: usize,
-    cli_model_override: &Option<String>,
-    cli_provider_override: &Option<String>,
-    agent_config: &AgentConfig,
-    agent_name: &str,
-    fallback_config: &crate::agents::fallback::FallbackConfig,
-    display_name: &str,
-    runtime: &PipelineRuntime<'_>,
-) -> Vec<Option<String>> {
+    cli_model_override: Option<&'a String>,
+    cli_provider_override: Option<&'a String>,
+    agent_config: &'a AgentConfig,
+    agent_name: &'a str,
+    fallback_config: &'a crate::agents::fallback::FallbackConfig,
+    display_name: &'a str,
+    runtime: &'a PipelineRuntime<'a>,
+}
+
+/// Build the list of model flags to try for an agent.
+fn build_model_flags_list(ctx: &ModelFlagBuildContext<'_>) -> Vec<Option<String>> {
     let mut model_flags_to_try: Vec<Option<String>> = Vec::new();
 
     // CLI override takes highest priority for primary agent
     // Provider override can modify the model's provider prefix
-    if agent_index == 0 && (cli_model_override.is_some() || cli_provider_override.is_some()) {
+    if ctx.agent_index == 0
+        && (ctx.cli_model_override.is_some() || ctx.cli_provider_override.is_some())
+    {
         let resolved = resolve_model_with_provider(
-            cli_provider_override.as_deref(),
-            cli_model_override.as_deref(),
-            agent_config.model_flag.as_deref(),
+            ctx.cli_provider_override.map(std::string::String::as_str),
+            ctx.cli_model_override.map(std::string::String::as_str),
+            ctx.agent_config.model_flag.as_deref(),
         );
         if resolved.is_some() {
             model_flags_to_try.push(resolved);
@@ -69,10 +74,11 @@ fn build_model_flags_list(
     }
 
     // Add provider fallback models for this agent
-    if fallback_config.has_provider_fallbacks(agent_name) {
-        let provider_fallbacks = fallback_config.get_provider_fallbacks(agent_name);
-        runtime.logger.info(&format!(
-            "Agent '{display_name}' has {} provider fallback(s) configured",
+    if ctx.fallback_config.has_provider_fallbacks(ctx.agent_name) {
+        let provider_fallbacks = ctx.fallback_config.get_provider_fallbacks(ctx.agent_name);
+        ctx.runtime.logger.info(&format!(
+            "Agent '{}' has {} provider fallback(s) configured",
+            ctx.display_name,
             provider_fallbacks.len()
         ));
         for model in provider_fallbacks {
@@ -155,17 +161,14 @@ fn validate_glm_print_flag(
 
 /// Build label and logfile paths for execution.
 fn build_execution_metadata(
-    model_flag: &Option<String>,
+    model_flag: Option<&String>,
     display_name: &str,
     base_label: &str,
     agent_name: &str,
     logfile_prefix: &str,
     model_index: usize,
 ) -> (String, String, String) {
-    let model_suffix = model_flag
-        .as_ref()
-        .map(|m| format!(" [{m}]"))
-        .unwrap_or_default();
+    let model_suffix = model_flag.map(|m| format!(" [{m}]")).unwrap_or_default();
     let display_name_with_suffix = format!("{display_name}{model_suffix}");
     let label = format!("{base_label} ({display_name_with_suffix})");
     // Sanitize agent name for log file path - replace "/" with "-" to avoid
@@ -230,16 +233,17 @@ pub fn run_with_fallback(
             let display_name = registry.display_name(agent_name);
 
             // Build the list of model flags to try for this agent
-            let model_flags_to_try = build_model_flags_list(
+            let ctx = ModelFlagBuildContext {
                 agent_index,
-                &cli_model_override,
-                &cli_provider_override,
-                &agent_config,
+                cli_model_override: cli_model_override.as_ref(),
+                cli_provider_override: cli_provider_override.as_ref(),
+                agent_config: &agent_config,
                 agent_name,
                 fallback_config,
-                &display_name,
+                display_name: &display_name,
                 runtime,
-            );
+            };
+            let model_flags_to_try = build_model_flags_list(&ctx);
 
             // Validate model flags and emit warnings (only on first try to avoid spam)
             if agent_index == 0 && cycle == 0 {
@@ -291,7 +295,7 @@ pub fn run_with_fallback(
                 );
 
                 let (label, logfile, display_name_with_suffix) = build_execution_metadata(
-                    model_flag,
+                    model_flag.as_ref(),
                     &display_name,
                     base_label,
                     agent_name,
