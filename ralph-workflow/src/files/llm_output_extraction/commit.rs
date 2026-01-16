@@ -758,10 +758,35 @@ fn validate_no_placeholders(content: &str) -> Result<(), String> {
     }
 
     // Also check for bare "placeholder" word with word boundaries, but exclude
-    // common valid technical uses like "placeholder attribute", "template placeholders"
+    // common valid technical uses like "placeholder attribute", "template placeholders",
+    // or valid operations like "remove placeholder from UI", "delete placeholder", etc.
     let bare_placeholder = regex::Regex::new(r"(?i)\bplaceholder\b").unwrap();
     if bare_placeholder.is_match(content) {
-        // Check if it's in a valid technical context
+        let content_lower_for_ctx = content.to_lowercase();
+
+        // Check for common valid action verbs that clearly indicate this is about
+        // manipulating existing placeholders (not creating placeholder text)
+        // These are "destructive" or "fixing" actions that clearly indicate real work
+        let valid_action_patterns = [
+            r"(?i)\bremove\s+.*?\bplaceholder\b",
+            r"(?i)\bdelete\s+.*?\bplaceholder\b",
+            r"(?i)\bfix\s+.*?\bplaceholder\b",
+            r"(?i)\bclear\s+.*?\bplaceholder\b",
+            // Specific UI context patterns
+            r"(?i)\bplaceholder\s+in\s+(?:the\s+)?(?:ui|form|input|field)\b",
+            r"(?i)\bfrom\s+(?:the\s+)?(?:ui|form|input|field).*\bplaceholder\b",
+            r"(?i)\bplaceholder\s+(?:text|value|content)\b",
+        ];
+
+        // First check action patterns - if any match, this is valid
+        let combined_actions = valid_action_patterns.join("|");
+        if let Ok(action_re) = regex::Regex::new(&combined_actions) {
+            if action_re.is_match(content) {
+                return Ok(());
+            }
+        }
+
+        // Check if it's in a valid technical context (legacy check)
         let valid_contexts = [
             // HTML/UI attribute contexts
             "placeholder attribute",
@@ -783,7 +808,6 @@ fn validate_no_placeholders(content: &str) -> Result<(), String> {
             "replacing placeholder",
         ];
 
-        let content_lower_for_ctx = content.to_lowercase();
         let mut in_valid_context = false;
         for valid_ctx in &valid_contexts {
             if content_lower_for_ctx.contains(valid_ctx) {
@@ -2447,6 +2471,46 @@ Line 3</ralph-body>
         assert!(
             result.is_err(),
             "Should reject bare 'placeholder' without technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_remove_placeholder_from_ui() {
+        // "remove placeholder from UI" should be accepted - it's a real commit about placeholders
+        let result = validate_commit_message("fix: remove placeholder from UI");
+        assert!(
+            result.is_ok(),
+            "Should accept 'remove placeholder from UI' as it describes a real change to placeholder functionality"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_delete_placeholder() {
+        // "delete placeholder" should be accepted
+        let result = validate_commit_message("refactor: delete placeholder from login form");
+        assert!(
+            result.is_ok(),
+            "Should accept 'delete placeholder' as it describes a real change"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_placeholder_at_beginning() {
+        // "placeholder" at the beginning with valid context should be accepted
+        let result = validate_commit_message("placeholder attribute added to input field");
+        assert!(
+            result.is_ok(),
+            "Should accept 'placeholder' at beginning with valid technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_placeholder_at_end() {
+        // "placeholder" at the end with valid context should be accepted
+        let result = validate_commit_message("fix: clear input placeholder");
+        assert!(
+            result.is_ok(),
+            "Should accept 'placeholder' at end with valid action"
         );
     }
 }
