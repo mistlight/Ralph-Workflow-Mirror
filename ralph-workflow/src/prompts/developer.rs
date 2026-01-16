@@ -18,18 +18,22 @@ use std::collections::HashMap;
 ///
 /// # Arguments
 ///
-/// * `_iteration` - The current iteration number (unused, for API compatibility)
-/// * `_total` - The total number of iterations (unused, for API compatibility)
-/// * `context` - The context level (minimal or normal)
+/// * `iteration` - The current iteration number (accepted for API compatibility, not exposed to agent)
+/// * `total` - The total number of iterations (accepted for API compatibility, not exposed to agent)
+/// * `context` - The context level (minimal or normal) (accepted for API compatibility, not used in template)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_developer_iteration(
-    _iteration: u32,
-    _total: u32,
-    _context: ContextLevel,
+    iteration: u32,
+    total: u32,
+    context: ContextLevel,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
+    // Note: iteration, total, and context are accepted for API compatibility
+    // but are intentionally not exposed to the agent to prevent context pollution.
+    let _ = (iteration, total, context);
+
     let template_content = include_str!("templates/developer_iteration.txt");
     let template = Template::new(template_content);
     let variables = HashMap::from([
@@ -37,9 +41,12 @@ pub fn prompt_developer_iteration(
         ("PLAN", plan_content.to_string()),
     ]);
 
-    template.render(&variables).unwrap_or_else(|e| {
-        eprintln!("Warning: Failed to render developer iteration template: {e}");
-        String::new()
+    template.render(&variables).unwrap_or_else(|_| {
+        // Fallback to minimal prompt if template rendering fails
+        format!(
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{}\n\nIMPLEMENTATION PLAN:\n{}\n\nExecute the next steps from the plan above.\n",
+            prompt_content, plan_content
+        )
     })
 }
 
@@ -70,9 +77,12 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
     let prompt_md = prompt_content.unwrap_or("No requirements provided");
     let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
 
-    template.render(&variables).unwrap_or_else(|e| {
-        eprintln!("Warning: Failed to render planning template: {e}");
-        String::new()
+    template.render(&variables).unwrap_or_else(|_| {
+        // Fallback to minimal prompt if template rendering fails
+        format!(
+            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{}\n\nIdentify critical files and implementation steps.\n",
+            prompt_md
+        )
     })
 }
 

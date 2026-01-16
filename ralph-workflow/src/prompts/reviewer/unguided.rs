@@ -21,14 +21,16 @@ use std::collections::HashMap;
 ///
 /// Templates are embedded at compile time via `include_str!`, so any failure
 /// indicates a programming error (missing template file or malformed template).
-/// This function panics with a clear error message to make such issues visible.
+/// Returns a minimal fallback prompt on failure to ensure the review phase can proceed.
 fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
     let template = Template::new(template_content);
     template.render(variables).unwrap_or_else(|e| {
-        panic!(
-            "Failed to render template: {e}. \
-            This indicates a programming error - templates are embedded at compile time. \
-            Please check that the template file exists and all variables are properly defined."
+        // Fallback to minimal prompt that still includes the diff
+        // This ensures the review phase can proceed even if template rendering fails
+        let diff = variables.get("DIFF").map(|s| s.as_str()).unwrap_or("");
+        format!(
+            "Review the following changes:\n\n{diff}\n\n\
+             Provide feedback on any issues found."
         )
     })
 }

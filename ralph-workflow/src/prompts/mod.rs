@@ -41,6 +41,7 @@ pub use types::{Action, ContextLevel, Role};
 ///
 /// Groups related parameters to reduce function argument count.
 #[derive(Debug, Clone, Default)]
+#[must_use]
 pub struct PromptConfig {
     /// The current iteration number (for developer iteration prompts).
     pub iteration: Option<u32>,

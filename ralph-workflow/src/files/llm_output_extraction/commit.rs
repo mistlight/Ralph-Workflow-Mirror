@@ -693,14 +693,30 @@ fn validate_no_thought_process_leakage(content: &str) -> Result<(), String> {
 
 /// Validate that content does not contain placeholder text.
 ///
-/// This function uses word boundary checks to prevent false positives
-/// from log metadata or other technical content that may contain words
-/// like "placeholder" in valid contexts (e.g., "placeholder element",
-/// "placeholder attribute").
+/// This function uses regex-based validation with word boundary checks to prevent
+/// false positives from legitimate technical content that may contain words like
+/// "placeholder" in valid contexts (e.g., "placeholder attribute", "template placeholders").
 ///
-/// Template variables like `{{PROMPT}}`, `{{PLAN}}`, `{{DIFF}}` are
-/// explicitly excluded from being flagged as placeholders since they
-/// are valid template syntax that gets substituted before use.
+/// # Why this is complex
+///
+/// We need to distinguish between:
+/// 1. Actual placeholder text that should be rejected: "[commit message]", "placeholder for"
+/// 2. Valid technical uses that should be allowed: "placeholder attribute", "template placeholders"
+///
+/// Simple substring matching would reject legitimate commits. The regex patterns with
+/// word boundaries (\b) and context-specific patterns allow us to be precise.
+///
+/// # Template variables
+///
+/// Template variables like `{{PROMPT}}`, `{{PLAN}}`, `{{DIFF}}` are explicitly excluded
+/// from being flagged as placeholders since they are valid template syntax that gets
+/// substituted before use.
+///
+/// # Valid technical contexts
+///
+/// The `valid_contexts` list contains phrases where "placeholder" appears in legitimate
+/// technical documentation. This list is intentionally conservative - when in doubt,
+/// we prefer to reject and let the user clarify rather than accept an ambiguous commit.
 fn validate_no_placeholders(content: &str) -> Result<(), String> {
     // Valid template variables that should NOT be flagged as placeholders
     let valid_template_vars = ["{{prompt}}", "{{plan}}", "{{diff}}"];

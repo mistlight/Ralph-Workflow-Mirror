@@ -23,9 +23,24 @@ use super::super::context::PhaseContext;
 ///
 /// Returns (`prompt_content`, `plan_content`). If files don't exist or can't be read,
 /// returns empty strings to allow templates to render without errors.
+///
+/// Note: This logs warnings when expected files are missing, as this may indicate
+/// a workflow issue (e.g., running review before planning phase completes).
 fn read_prompt_and_plan() -> (String, String) {
-    let prompt = fs::read_to_string("PROMPT.md").unwrap_or_default();
-    let plan = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
+    let prompt = match fs::read_to_string("PROMPT.md") {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Warning: Could not read PROMPT.md: {e}. Using empty context.");
+            String::new()
+        }
+    };
+    let plan = match fs::read_to_string(".agent/PLAN.md") {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Warning: Could not read .agent/PLAN.md: {e}. Using empty context.");
+            String::new()
+        }
+    };
     (prompt, plan)
 }
 

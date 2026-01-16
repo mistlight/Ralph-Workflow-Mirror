@@ -39,9 +39,12 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str) -> String {
     ]);
     Template::new(template_content)
         .render(&variables)
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render fix template: {e}");
-            String::new()
+        .unwrap_or_else(|_| {
+            // Fallback to minimal prompt if template rendering fails
+            format!(
+                "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{}\n\nPLAN:\n{}\n",
+                prompt_content, plan_content
+            )
         })
 }
 
@@ -106,8 +109,15 @@ pub fn prompt_strict_json_commit(diff: &str) -> String {
     Template::new(template_content)
         .render(&variables)
         .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render strict JSON template: {e}");
-            String::new()
+            // Fallback to minimal prompt with diff if template rendering fails
+            format!(
+                "Generate a conventional commit message. Output ONLY:\n\n\
+                 <ralph-commit>\n\
+                 <ralph-subject>type: description</ralph-subject>\n\
+                 </ralph-commit>\n\n\
+                 Diff:\n{}\n",
+                diff.trim()
+            )
         })
 }
 
@@ -121,8 +131,11 @@ pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
     Template::new(template_content)
         .render(&variables)
         .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render strict JSON v2 template: {e}");
-            String::new()
+            // Fallback to minimal prompt with diff if template rendering fails
+            format!(
+                "OUTPUT ONLY:\n\n<ralph-commit>\n<ralph-subject>type: description</ralph-subject>\n</ralph-commit>\n\nDiff:\n{}\n",
+                diff.trim()
+            )
         })
 }
 
@@ -136,8 +149,11 @@ pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
     Template::new(template_content)
         .render(&variables)
         .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render ultra minimal template: {e}");
-            String::new()
+            // Fallback to minimal prompt with diff if template rendering fails
+            format!(
+                "OUTPUT ONLY:\n<ralph-commit>\n<ralph-subject>fix: </ralph-subject>\n</ralph-commit>\n\n{}\n",
+                diff.trim()
+            )
         })
 }
 
@@ -151,8 +167,11 @@ pub fn prompt_ultra_minimal_commit_v2(diff: &str) -> String {
     Template::new(template_content)
         .render(&variables)
         .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render ultra minimal v2 template: {e}");
-            String::new()
+            // Fallback to minimal prompt with diff if template rendering fails
+            format!(
+                "OUTPUT:\n<ralph-subject>fix: </ralph-subject>\n\n{}\n",
+                diff.trim()
+            )
         })
 }
 
@@ -189,9 +208,16 @@ pub fn prompt_file_list_only_commit(diff: &str) -> String {
     let variables = HashMap::from([("FILE_LIST", file_list)]);
     Template::new(template_content)
         .render(&variables)
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render file list only template: {e}");
-            String::new()
+        .unwrap_or_else(|_| {
+            // Fallback to minimal prompt with file list if template rendering fails
+            format!(
+                "Generate commit message. Output ONLY:\n\n\
+                 <ralph-commit>\n\
+                 <ralph-subject>type: description</ralph-subject>\n\
+                 </ralph-commit>\n\n\
+                 Files changed:\n{}\n",
+                file_list
+            )
         })
 }
 
@@ -204,9 +230,12 @@ pub fn prompt_emergency_commit(diff: &str) -> String {
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
     Template::new(template_content)
         .render(&variables)
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render emergency template: {e}");
-            String::new()
+        .unwrap_or_else(|_| {
+            // Fallback to minimal prompt with diff if template rendering fails
+            format!(
+                "<ralph-commit>\n<ralph-subject>fix: </ralph-subject>\n</ralph-commit>\n\n{}\n",
+                diff.trim()
+            )
         })
 }
 
@@ -274,9 +303,16 @@ pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
     let variables = HashMap::from([("FILE_SUMMARY", summary)]);
     Template::new(template_content)
         .render(&variables)
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render file list summary template: {e}");
-            String::new()
+        .unwrap_or_else(|_| {
+            // Fallback to minimal prompt with summary if template rendering fails
+            format!(
+                "Generate commit message. Output ONLY:\n\n\
+                 <ralph-commit>\n\
+                 <ralph-subject>chore: changes</ralph-subject>\n\
+                 </ralph-commit>\n\n\
+                 {}\n",
+                summary
+            )
         })
 }
 
@@ -288,9 +324,9 @@ pub fn prompt_emergency_no_diff_commit(_diff: &str) -> String {
     let template_content = include_str!("templates/commit_emergency_no_diff.txt");
     Template::new(template_content)
         .render(&std::collections::HashMap::new())
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to render emergency no diff template: {e}");
-            String::new()
+        .unwrap_or_else(|_| {
+            // Fallback to hardcoded commit message if template rendering fails
+            "<ralph-commit>\n<ralph-subject>chore: automated commit</ralph-subject>\n</ralph-commit>".to_string()
         })
 }
 
