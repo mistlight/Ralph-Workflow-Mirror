@@ -290,42 +290,34 @@ impl ClaudeParser {
         }
     }
 
-    /// Format an assistant event
-    #[allow(clippy::too_many_lines)]
-    fn format_assistant_event(
+    /// Extract text content from a message for hash-based deduplication.
+    fn extract_text_content_for_hash(
+        message: Option<&crate::json_parser::types::AssistantMessage>,
+    ) -> Option<String> {
+        message?.content.as_ref().map(|content| {
+            content
+                .iter()
+                .filter_map(|block| {
+                    if let ContentBlock::Text { text } = block {
+                        text.as_deref()
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        })
+    }
+
+    /// Check if this assistant message is a duplicate of already-streamed content.
+    fn is_duplicate_assistant_message(
         &self,
-        message: Option<crate::json_parser::types::AssistantMessage>,
-    ) -> String {
-        let c = &self.colors;
-        let prefix = &self.display_name;
-
-        // CRITICAL FIX: When ANY content has been streamed via deltas,
-        // the Assistant event should NOT display it again.
-        // The Assistant event represents the "complete" message, but if we've
-        // already shown the streaming deltas, showing it again causes duplication.
+        message: Option<&crate::json_parser::types::AssistantMessage>,
+    ) -> bool {
         let session = self.streaming_session.borrow();
+        let text_content_for_hash = Self::extract_text_content_for_hash(message);
 
-        // Extract text content for hash-based deduplication BEFORE the move
-        let text_content_for_hash = message.as_ref().and_then(|msg| {
-            msg.content.as_ref().map(|content| {
-                content
-                    .iter()
-                    .filter_map(|block| {
-                        if let ContentBlock::Text { text } = block {
-                            text.as_deref()
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("")
-            })
-        });
-
-        // Check for duplicate using message ID if available
-        // If no message ID, try hash-based deduplication for more precision
-        // Fall back to coarse "has_any_streamed_content" check
-        let is_duplicate = session.get_current_message_id().map_or_else(
+        session.get_current_message_id().map_or_else(
             || {
                 // Try hash-based deduplication first (more precise)
                 if let Some(text_content) = text_content_for_hash {
@@ -337,98 +329,145 @@ impl ClaudeParser {
                 session.has_any_streamed_content()
             },
             |message_id| session.is_duplicate_final_message(message_id),
+        )
+    }
+
+    /// Format a text content block for assistant output.
+    fn format_text_block(&self, out: &mut String, text: &str, prefix: &str, colors: Colors) {
+        let limit = self.verbosity.truncate_limit("text");
+        let preview = truncate_text(text, limit);
+        let _ = writeln!(
+            out,
+            "{}[{}]{} {}{}{}",
+            colors.dim(),
+            prefix,
+            colors.reset(),
+            colors.white(),
+            preview,
+            colors.reset()
+        );
+    }
+
+    /// Format a tool use content block for assistant output.
+    fn format_tool_use_block(
+        &self,
+        out: &mut String,
+        tool: Option<&String>,
+        input: Option<&serde_json::Value>,
+        prefix: &str,
+        colors: Colors,
+    ) {
+        let tool_name = tool.cloned().unwrap_or_else(|| "unknown".to_string());
+        let _ = writeln!(
+            out,
+            "{}[{}]{} {}Tool{}: {}{}{}",
+            colors.dim(),
+            prefix,
+            colors.reset(),
+            colors.magenta(),
+            colors.reset(),
+            colors.bold(),
+            tool_name,
+            colors.reset(),
         );
 
-        // If this is a duplicate message, skip the entire display
-        // This prevents duplicate text AND duplicate tool use events
-        drop(session);
-        if is_duplicate {
-            String::new()
-        } else {
-            let mut out = String::new();
-            if let Some(msg) = message {
-                if let Some(content) = msg.content {
-                    for block in content {
-                        match block {
-                            ContentBlock::Text { text } => {
-                                if let Some(text) = text {
-                                    let limit = self.verbosity.truncate_limit("text");
-                                    let preview = truncate_text(&text, limit);
-                                    let _ = writeln!(
-                                        out,
-                                        "{}[{}]{} {}{}{}",
-                                        c.dim(),
-                                        prefix,
-                                        c.reset(),
-                                        c.white(),
-                                        preview,
-                                        c.reset()
-                                    );
-                                }
-                            }
-                            ContentBlock::ToolUse { name: tool, input } => {
-                                let tool_name = tool.unwrap_or_else(|| "unknown".to_string());
-                                let _ = writeln!(
-                                    out,
-                                    "{}[{}]{} {}Tool{}: {}{}{}",
-                                    c.dim(),
-                                    prefix,
-                                    c.reset(),
-                                    c.magenta(),
-                                    c.reset(),
-                                    c.bold(),
-                                    tool_name,
-                                    c.reset(),
-                                );
-                                // Show tool input details at Normal and above (not just Verbose)
-                                // Tool inputs provide crucial context for understanding agent actions
-                                if self.verbosity.show_tool_input() {
-                                    if let Some(ref input_val) = input {
-                                        let input_str = format_tool_input(input_val);
-                                        let limit = self.verbosity.truncate_limit("tool_input");
-                                        let preview = truncate_text(&input_str, limit);
-                                        if !preview.is_empty() {
-                                            let _ = writeln!(
-                                                out,
-                                                "{}[{}]{} {}  └─ {}{}",
-                                                c.dim(),
-                                                prefix,
-                                                c.reset(),
-                                                c.dim(),
-                                                preview,
-                                                c.reset()
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            ContentBlock::ToolResult { content } => {
-                                if let Some(content) = content {
-                                    let content_str = match content {
-                                        serde_json::Value::String(s) => s,
-                                        other => other.to_string(),
-                                    };
-                                    let limit = self.verbosity.truncate_limit("tool_result");
-                                    let preview = truncate_text(&content_str, limit);
-                                    let _ = writeln!(
-                                        out,
-                                        "{}[{}]{} {}Result:{} {}",
-                                        c.dim(),
-                                        prefix,
-                                        c.reset(),
-                                        c.dim(),
-                                        c.reset(),
-                                        preview
-                                    );
-                                }
-                            }
-                            ContentBlock::Unknown => {}
-                        }
-                    }
+        // Show tool input details at Normal and above (not just Verbose)
+        // Tool inputs provide crucial context for understanding agent actions
+        if self.verbosity.show_tool_input() {
+            if let Some(input_val) = input {
+                let input_str = format_tool_input(input_val);
+                let limit = self.verbosity.truncate_limit("tool_input");
+                let preview = truncate_text(&input_str, limit);
+                if !preview.is_empty() {
+                    let _ = writeln!(
+                        out,
+                        "{}[{}]{} {}  └─ {}{}",
+                        colors.dim(),
+                        prefix,
+                        colors.reset(),
+                        colors.dim(),
+                        preview,
+                        colors.reset()
+                    );
                 }
             }
-            out
         }
+    }
+
+    /// Format a tool result content block for assistant output.
+    fn format_tool_result_block(
+        &self,
+        out: &mut String,
+        content: &serde_json::Value,
+        prefix: &str,
+        colors: Colors,
+    ) {
+        let content_str = match content {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        let limit = self.verbosity.truncate_limit("tool_result");
+        let preview = truncate_text(&content_str, limit);
+        let _ = writeln!(
+            out,
+            "{}[{}]{} {}Result:{} {}",
+            colors.dim(),
+            prefix,
+            colors.reset(),
+            colors.dim(),
+            colors.reset(),
+            preview
+        );
+    }
+
+    /// Format all content blocks from an assistant message.
+    fn format_content_blocks(
+        &self,
+        out: &mut String,
+        content: &[ContentBlock],
+        prefix: &str,
+        colors: Colors,
+    ) {
+        for block in content {
+            match block {
+                ContentBlock::Text { text } => {
+                    if let Some(text) = text {
+                        self.format_text_block(out, text, prefix, colors);
+                    }
+                }
+                ContentBlock::ToolUse { name, input } => {
+                    self.format_tool_use_block(out, name.as_ref(), input.as_ref(), prefix, colors);
+                }
+                ContentBlock::ToolResult { content } => {
+                    if let Some(content) = content {
+                        self.format_tool_result_block(out, content, prefix, colors);
+                    }
+                }
+                ContentBlock::Unknown => {}
+            }
+        }
+    }
+
+    /// Format an assistant event
+    fn format_assistant_event(
+        &self,
+        message: Option<crate::json_parser::types::AssistantMessage>,
+    ) -> String {
+        // CRITICAL FIX: When ANY content has been streamed via deltas,
+        // the Assistant event should NOT display it again.
+        // The Assistant event represents the "complete" message, but if we've
+        // already shown the streaming deltas, showing it again causes duplication.
+        if self.is_duplicate_assistant_message(message.as_ref()) {
+            return String::new();
+        }
+
+        let mut out = String::new();
+        if let Some(msg) = message {
+            if let Some(content) = msg.content {
+                self.format_content_blocks(&mut out, &content, &self.display_name, self.colors);
+            }
+        }
+        out
     }
 
     /// Format a user event

@@ -751,38 +751,37 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - The content hash matches the previously streamed content
     /// * `false` - The content is different or no content was streamed
-    #[allow(clippy::option_if_let_else)]
     pub fn is_duplicate_by_hash(&self, content: &str) -> bool {
-        if let Some(_streamed_hash) = self.final_content_hash {
-            // For text content, we need to hash only the text portions
-            // to match how the final message content is structured
-            let mut hasher = DefaultHasher::new();
+        let Some(_streamed_hash) = self.final_content_hash else {
+            return false;
+        };
 
-            // Collect only text content from accumulated (in order)
-            let mut text_keys: Vec<_> = self
-                .accumulated
-                .keys()
-                .filter(|(ct, _)| *ct == ContentType::Text)
-                .collect();
-            text_keys.sort_by_key(|k| format!("{:?}-{}", k.0, k.1));
+        // For text content, we need to hash only the text portions
+        // to match how the final message content is structured
+        let mut hasher = DefaultHasher::new();
 
-            for key in text_keys {
-                if let Some(text) = self.accumulated.get(key) {
-                    text.hash(&mut hasher);
-                }
+        // Collect only text content from accumulated (in order)
+        let mut text_keys: Vec<_> = self
+            .accumulated
+            .keys()
+            .filter(|(ct, _)| *ct == ContentType::Text)
+            .collect();
+        text_keys.sort_by_key(|k| format!("{:?}-{}", k.0, k.1));
+
+        for key in text_keys {
+            if let Some(text) = self.accumulated.get(key) {
+                text.hash(&mut hasher);
             }
-
-            let combined_text_hash = hasher.finish();
-
-            // Also hash the input content
-            let mut content_hasher = DefaultHasher::new();
-            content.hash(&mut content_hasher);
-            let content_hash = content_hasher.finish();
-
-            content_hash == combined_text_hash
-        } else {
-            false
         }
+
+        let combined_text_hash = hasher.finish();
+
+        // Also hash the input content
+        let mut content_hasher = DefaultHasher::new();
+        content.hash(&mut content_hasher);
+        let content_hash = content_hasher.finish();
+
+        content_hash == combined_text_hash
     }
 
     /// Get accumulated content for a specific type and index.
