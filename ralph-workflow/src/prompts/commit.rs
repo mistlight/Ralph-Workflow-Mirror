@@ -3,150 +3,7 @@
 //! Prompts for commit message generation and fix actions.
 
 use crate::prompts::template_engine::Template;
-
-/// Template for the commit message generation prompt.
-///
-/// This template instructs the LLM to generate high-quality Conventional Commits
-/// messages from a provided git diff.
-const COMMIT_PROMPT_TEMPLATE: &str = r#"You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
-
-DIFF:
-{{diff}}
-
----
-
-## CRITICAL: DO NOT PRODUCE THESE BAD COMMIT MESSAGES
-
-These are WRONG - they are vague, meaningless, and unhelpful:
-❌ chore: apply changes
-❌ chore: update code
-❌ chore: 6 file(s) changed
-❌ chore: update src/files/result_extraction.rs
-❌ chore: update src/git_helpers/repo.rs, src/prompts/commit.rs, tests/commit_message_generation.rs
-❌ fix: fixed bug
-❌ feat: Add New Feature.
-
-NEVER say "apply changes", "update code", "update [filename]", "N files changed", or just list filenames.
-ALWAYS describe WHAT changed and WHY.
-
-**When analyzing multi-file changes:**
-- Look for the SEMANTIC RELATIONSHIP between files
-- Are they all part of one feature? Use a single message with the feature's purpose
-- Are they unrelated changes? Use the highest-priority type with a descriptive subject
-- Examples:
-  - ❌ "chore: update src/auth.rs, src/auth_test.rs, docs/auth.md"
-  - ✅ "feat(auth): add OAuth2 login flow with tests and docs"
-  - ❌ "chore: 3 file(s) changed"
-  - ✅ "refactor: extract validation logic into shared module"
-
----
-
-## COMMIT MESSAGE FORMAT
-
-<type>[optional scope][!]: <subject>
-
-[optional body]
-
-[optional footer]
-
-## TYPE GUIDELINES
-
-- **feat**: A new feature (user-visible change)
-- **fix**: A bug fix (correcting incorrect behavior)
-- **docs**: Documentation changes only
-- **style**: Code style changes (formatting, semicolons, etc.) - no logic change
-- **refactor**: Code restructuring without changing behavior
-- **perf**: Performance improvement
-- **test**: Adding or updating tests
-- **build**: Build system or dependency changes
-- **ci**: CI/CD configuration changes
-- **chore**: Other changes that don't modify src/test files
-
-## SUBJECT LINE RULES (CRITICAL)
-
-- Use **imperative mood** ("add" not "added", "fix" not "fixed")
-- Use **lowercase** (except for proper nouns)
-- **No period** at the end
-- **Maximum 50 characters**
-- **Be specific**: describe WHAT changed, not THAT something changed
-- For multi-file changes: describe the OVERALL PURPOSE, not just "update files"
-
-## GOOD EXAMPLES
-
-feat(auth): add OAuth2 login flow
-fix: prevent null pointer in user lookup
-refactor(api): extract validation into middleware
-docs: clarify API authentication flow
-test: add coverage for user registration edge cases
-
-feat!: drop Python 3.7 support
-
-BREAKING CHANGE: Minimum Python version is now 3.8.
-
-feat: add CSV export for reports
-
-Add ability to export analytics reports as CSV files.
-Supports filtering by date range and custom column selection.
-
-Fixes #42
-
----
-
-## YOUR TASK
-
-1. **Analyze the actual code changes** in the diff above
-2. **Identify the semantic type** (feat/fix/refactor/docs/etc.) based on what changed
-3. **Determine the scope** (if applicable) based on which files/components are affected
-4. **Write a clear, descriptive subject line** that says WHAT was done
-5. **Add a body** only if the change needs context (why, what for)
-
-**MULTI-FILE ANALYSIS**: When you see changes to multiple files, determine:
-- Are they all part of one cohesive change? → Single message describing the purpose
-- Are they semantically different? → Use the most significant type with a comprehensive subject
-- What is the COMMON THREAD that connects these changes?
-
-**OUTPUT REQUIREMENT**: Return ONLY a JSON object with this exact schema:
-{{"subject": "<type>[scope]: <description>", "body": "<optional body or null>"}}
-
-CRITICAL JSON RULES:
-- Return ONLY the JSON object, nothing else
-- No text before or after the JSON
-- No markdown fences around the JSON
-- `subject` is required, must be valid conventional commit format (max 72 chars)
-- `body` is optional (use null if no body needed)
-- **JSON STRING ESCAPING**: Use \n for newlines, \t for tabs within JSON strings
-  - ✅ CORRECT: {{"subject": "feat: add feature", "body": "First line\nSecond line"}}
-  - ❌ WRONG: {{"subject": "feat: add feature", "body": "First line
-Second line"}}
-  - The body value must be a valid JSON string - use escape sequences, NOT literal newlines
-
-WRONG (with preamble):
-Here is the commit message:
-{{"subject": "feat: add feature", "body": null}}
-
-WRONG (with analysis):
-```
-Looking at this diff, I can see:
-1. Updated parser
-
-feat: add feature
-```
-
-WRONG (with prefix):
-```
-Here is the commit message:
-feat: add feature
-```
-
-WRONG (literal newline in JSON - this is INVALID JSON):
-{{"subject": "feat: add feature", "body": "First line
-Second line"}}
-
-CORRECT:
-{{"subject": "feat: add feature", "body": null}}
-
-CORRECT (with body using \\n for newline):
-{{"subject": "feat: add OAuth2 login", "body": "Implement Google and GitHub OAuth providers.\\nAdd session management for OAuth tokens."}}"#;
+use std::collections::HashMap;
 
 /// Generate fix prompt (applies to either role).
 ///
@@ -171,7 +28,7 @@ CORRECT (with body using \\n for newline):
 /// focused on the issues identified during review.
 pub fn prompt_fix() -> String {
     let template_content = include_str!("templates/fix_mode.txt");
-    Template::new(template_content.to_string())
+    Template::new(template_content)
         .render(&std::collections::HashMap::new())
         .unwrap_or_else(|e| {
             eprintln!("Warning: Failed to render fix template: {e}");
@@ -184,6 +41,12 @@ pub fn prompt_fix() -> String {
 /// This is used by the orchestrator (not agents) to generate commit messages.
 /// The diff is provided directly in the prompt, so the LLM doesn't need to
 /// run git commands or access files.
+///
+/// Uses the XML-based template format for output, which is more reliable than JSON
+/// because:
+/// - No escape sequence issues (actual newlines work fine in XML)
+/// - Distinctive tags (`<ralph-commit>`) unlikely to appear in LLM analysis
+/// - Clear boundaries for parsing
 ///
 /// # Arguments
 ///
@@ -210,33 +73,47 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
             .to_string();
     }
 
-    COMMIT_PROMPT_TEMPLATE.replace("{{diff}}", diff_content)
+    let template_content = include_str!("templates/commit_message_xml.txt");
+    let template = Template::new(template_content);
+    let variables = HashMap::from([("DIFF", diff_content.to_string())]);
+
+    template.render(&variables).unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to render commit template: {e}");
+        // Fallback to a minimal prompt if template rendering fails
+        format!(
+            "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
+             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
+        )
+    })
 }
 
-/// Generate strict JSON-only prompt for commit message retry.
+/// Generate strict XML-only prompt for commit message retry.
 ///
-/// This is used when the initial attempt fails to produce valid JSON,
-/// providing a simpler, more focused prompt to encourage proper JSON output.
+/// This is used when the initial attempt fails to produce valid output,
+/// providing a simpler, more focused prompt to encourage proper XML output.
 pub fn prompt_strict_json_commit(diff: &str) -> String {
     let diff_content = diff.trim();
     format!(
-        r#"Your previous response was not valid JSON. Return ONLY a JSON object.
-
-REQUIRED FORMAT (nothing else):
-{{"subject": "<type>: <description>", "body": null}}
+        r"Your previous response was not valid. Return ONLY the XML tags below.
 
 DIFF:
 {diff_content}
 
+REQUIRED OUTPUT (nothing else):
+<ralph-commit>
+<ralph-subject>type: description</ralph-subject>
+</ralph-commit>
+
 RULES:
-- Return ONLY the JSON object
-- No text before or after
+- Start IMMEDIATELY with <ralph-commit>
+- No text before or after the XML
 - subject must start with: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
 - Keep subject under 72 characters
-- **JSON ESCAPING**: Use \\n for newlines in body, NOT literal newlines
 
 Example:
-{{"subject": "fix: correct null pointer in user lookup", "body": null}}"#
+<ralph-commit>
+<ralph-subject>fix: correct null pointer in user lookup</ralph-subject>
+</ralph-commit>"
     )
 }
 
@@ -245,35 +122,35 @@ Example:
 /// This is the second-level re-prompt used when the strict prompt also fails.
 /// It includes explicit examples of what NOT to output to prevent common mistakes.
 pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
-    r#"Your response MUST be ONLY a JSON object. No other text.
+    r#"Your response MUST be ONLY XML tags. No other text.
 
 DIFF:
 __DIFF_CONTENT__
 
 REQUIRED OUTPUT:
-{"subject": "feat: brief description", "body": null}
+<ralph-commit>
+<ralph-subject>feat: brief description</ralph-subject>
+</ralph-commit>
 
 WHAT NOT TO OUTPUT (these are WRONG):
-❌ "Here is the commit message:"
-❌ "Looking at the diff, I can see..."
-❌ "Based on the changes above..."
-❌ ```json
-   {"subject": "..."}
-   ```
-❌ Any explanation or analysis before the JSON
-❌ Literal newlines in JSON strings (use \n instead)
+- "Here is the commit message:"
+- "Looking at the diff, I can see..."
+- "Based on the changes above..."
+- Any markdown code fences
+- Any explanation or analysis before the XML
 
-CORRECT OUTPUT (copy this format):
-{"subject": "fix: prevent null pointer", "body": null}
+CORRECT OUTPUT (copy this format exactly):
+<ralph-commit>
+<ralph-subject>fix: prevent null pointer</ralph-subject>
+</ralph-commit>
 
 RULES:
-1. Start with {"subject":
-2. End with }
-3. Nothing before the opening {
-4. Nothing after the closing }
+1. Start with <ralph-commit>
+2. End with </ralph-commit>
+3. Nothing before <ralph-commit>
+4. Nothing after </ralph-commit>
 5. subject must be: feat, fix, docs, style, refactor, perf, test, build, ci, or chore
-6. Keep subject under 72 characters
-7. Keep all text on ONE LINE - no literal newlines in JSON strings"#
+6. Keep subject under 72 characters"#
         .replace("__DIFF_CONTENT__", diff.trim())
 }
 
@@ -282,13 +159,15 @@ RULES:
 /// This is the third-level re-prompt with bare minimum instructions.
 /// Removes all explanatory context to reduce chance of verbose responses.
 pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
-    r#"DIFF:
+    r"DIFF:
 __DIFF_CONTENT__
 
 OUTPUT ONLY:
-{"subject": "feat: description", "body": null}
+<ralph-commit>
+<ralph-subject>feat: description</ralph-subject>
+</ralph-commit>
 
-Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"#
+Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"
         .replace("__DIFF_CONTENT__", diff.trim())
 }
 
@@ -297,9 +176,11 @@ Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore"#
 /// This is an even shorter variant that only provides the subject line template.
 /// Used when `UltraMinimal` still produces too much output.
 pub fn prompt_ultra_minimal_commit_v2(diff: &str) -> String {
-    r#"__DIFF_CONTENT__
+    r"__DIFF_CONTENT__
 
-{"subject": "fix: ", "body": null}"#
+<ralph-commit>
+<ralph-subject>fix: </ralph-subject>
+</ralph-commit>"
         .replace("__DIFF_CONTENT__", diff.trim())
 }
 
@@ -333,19 +214,23 @@ pub fn prompt_file_list_only_commit(diff: &str) -> String {
     };
 
     format!(
-        r#"{file_list}
-{{"subject": "chore: update files", "body": null}}"#
+        r"{file_list}
+<ralph-commit>
+<ralph-subject>chore: update files</ralph-subject>
+</ralph-commit>"
     )
 }
 
 /// Generate emergency commit prompt with maximum constraints.
 ///
 /// This is the final re-prompt attempt before falling back to the next agent.
-/// It provides the absolute minimum context to elicit a JSON response.
+/// It provides the absolute minimum context to elicit an XML response.
 pub fn prompt_emergency_commit(diff: &str) -> String {
-    r#"__DIFF_CONTENT__
+    r"__DIFF_CONTENT__
 
-{"subject": "fix: ", "body": null}"#
+<ralph-commit>
+<ralph-subject>fix: </ralph-subject>
+</ralph-commit>"
         .replace("__DIFF_CONTENT__", diff.trim())
 }
 
@@ -410,9 +295,11 @@ pub fn prompt_file_list_summary_only_commit(diff: &str) -> String {
     }
 
     format!(
-        r#"{summary}
+        r"{summary}
 Generate a conventional commit message for these changes.
-{{"subject": "chore: update files", "body": null}}"#
+<ralph-commit>
+<ralph-subject>chore: update files</ralph-subject>
+</ralph-commit>"
     )
 }
 
@@ -421,7 +308,10 @@ Generate a conventional commit message for these changes.
 /// This is the absolute last resort that doesn't include any diff at all.
 /// Just asks for a generic commit when everything else fails.
 pub fn prompt_emergency_no_diff_commit(_diff: &str) -> String {
-    r#"{{"subject": "chore: changes", "body": null}}"#.to_string()
+    r"<ralph-commit>
+<ralph-subject>chore: changes</ralph-subject>
+</ralph-commit>"
+        .to_string()
 }
 
 #[cfg(test)]
@@ -487,11 +377,13 @@ mod tests {
         assert!(!result.is_empty());
         // Emergency prompt is extremely minimal - just diff + template
         assert!(result.len() < 200);
-        assert!(result.contains(r#"{"subject": "fix: ", "body": null}"#));
+        // Now uses XML format
+        assert!(result.contains("<ralph-commit>"));
+        assert!(result.contains("<ralph-subject>fix: </ralph-subject>"));
     }
 
     #[test]
-    fn test_strict_json_v2_has_negative_examples() {
+    fn test_strict_xml_v2_has_negative_examples() {
         let result = prompt_strict_json_commit_v2("dummy diff");
         // V2 should explicitly mention what NOT to output
         assert!(result.contains("WHAT NOT TO OUTPUT"));

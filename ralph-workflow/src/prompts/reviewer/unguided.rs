@@ -23,7 +23,7 @@ use std::collections::HashMap;
 /// includes the diff to ensure the review phase can proceed with content.
 fn load_template_str(template_content: &str, diff: &str) -> String {
     let variables = HashMap::from([("DIFF", diff.to_string())]);
-    let template = Template::new(template_content.to_string());
+    let template = Template::new(template_content);
     match template.render(&variables) {
         Ok(rendered) => rendered,
         Err(e) => {
