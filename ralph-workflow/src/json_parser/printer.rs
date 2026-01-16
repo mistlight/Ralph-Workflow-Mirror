@@ -276,6 +276,7 @@ mod tests {
         let _is_term = printer.is_terminal();
     }
 
+    #[cfg(feature = "test-utils")]
     #[test]
     fn test_printable_trait_is_terminal() {
         let printer = StdoutPrinter::new();
@@ -284,6 +285,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_stderr_printer() {
         let mut printer = StderrPrinter::new();
         // Just ensure it compiles and works
@@ -293,6 +295,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_printer_captures_output() {
         let mut printer = TestPrinter::new();
 
@@ -306,6 +309,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_printer_get_lines() {
         let mut printer = TestPrinter::new();
 
@@ -319,6 +323,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_printer_clear() {
         let mut printer = TestPrinter::new();
 
@@ -331,6 +336,7 @@ mod tests {
         assert!(printer.get_output().is_empty());
     }
 
+    #[cfg(feature = "test-utils")]
     #[test]
     fn test_printer_has_line() {
         let mut printer = TestPrinter::new();
@@ -343,6 +349,7 @@ mod tests {
         assert!(!printer.has_line("Goodbye"));
     }
 
+    #[cfg(feature = "test-utils")]
     #[test]
     fn test_printer_count_pattern() {
         let mut printer = TestPrinter::new();
@@ -353,6 +360,7 @@ mod tests {
         assert_eq!(printer.count_pattern("test"), 3);
     }
 
+    #[cfg(feature = "test-utils")]
     #[test]
     fn test_printer_detects_duplicates() {
         let mut printer = TestPrinter::new();
@@ -363,6 +371,7 @@ mod tests {
         assert!(printer.has_duplicate_consecutive_lines());
     }
 
+    #[cfg(feature = "test-utils")]
     #[test]
     fn test_printer_finds_duplicates() {
         let mut printer = TestPrinter::new();
@@ -380,6 +389,7 @@ mod tests {
         assert_eq!(duplicates[1].1, "Line 3\n");
     }
 
+    #[cfg(feature = "test-utils")]
     #[test]
     fn test_printer_no_false_positives() {
         let mut printer = TestPrinter::new();
@@ -390,6 +400,7 @@ mod tests {
         assert!(!printer.has_duplicate_consecutive_lines());
     }
 
+    #[cfg(feature = "test-utils")]
     #[test]
     fn test_printer_buffer_handling() {
         let mut printer = TestPrinter::new();
@@ -413,6 +424,7 @@ mod tests {
         assert!(output.contains("Partial content\n"));
     }
 
+    #[cfg(feature = "test-utils")]
     #[test]
     fn test_printer_get_stats() {
         let mut printer = TestPrinter::new();
@@ -433,6 +445,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_shared_stderr() {
         let printer = shared_stderr();
         // Verify the function creates a valid SharedPrinter
@@ -440,6 +453,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_shared_test() {
         let printer = shared_test();
         // Verify the function creates a valid SharedPrinter

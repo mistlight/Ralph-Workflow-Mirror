@@ -3,15 +3,19 @@
 //! This module contains tests for cross-parser behavior, shared utilities,
 //! and streaming functionality that applies to multiple parsers.
 
-use super::terminal::TerminalMode;
 use super::*;
 use crate::config::Verbosity;
 use crate::logger::Colors;
-use std::cell::RefCell;
-use std::rc::Rc;
+
+#[cfg(feature = "test-utils")]
+use super::terminal::TerminalMode;
 
 #[cfg(feature = "test-utils")]
 use crate::json_parser::printer::{SharedPrinter, TestPrinter};
+#[cfg(feature = "test-utils")]
+use std::cell::RefCell;
+#[cfg(feature = "test-utils")]
+use std::rc::Rc;
 
 // Cross-parser behavior tests
 
@@ -32,6 +36,7 @@ fn test_verbosity_affects_output() {
     assert!(quiet_output.len() < full_output.len());
 }
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_tool_use_shows_input_in_verbose_mode() {
     let verbose_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Verbose)
@@ -43,6 +48,7 @@ fn test_tool_use_shows_input_in_verbose_mode() {
     assert!(output.contains("file_path=/test.rs"));
 }
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_tool_use_shows_input_in_normal_mode() {
     // Tool inputs are now shown at Normal level for better usability
@@ -56,6 +62,7 @@ fn test_tool_use_shows_input_in_normal_mode() {
     assert!(output.contains("file_path=/test.rs"));
 }
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_tool_use_hides_input_in_quiet_mode() {
     // Only Quiet mode hides tool inputs
@@ -68,6 +75,7 @@ fn test_tool_use_hides_input_in_quiet_mode() {
     assert!(!output.contains("file_path=/test.rs"));
 }
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_parser_uses_custom_display_name_prefix() {
     let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
@@ -78,6 +86,7 @@ fn test_parser_uses_custom_display_name_prefix() {
     assert!(output.contains("[ccs-glm]"));
 }
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_debug_verbosity_is_recognized() {
     let debug_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Debug)
@@ -430,6 +439,7 @@ fn test_stream_classifies_status_without_content_as_control() {
     assert_eq!(result.event_type, StreamEventType::Control);
 }
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_stream_classifies_error_as_control() {
     use super::stream_classifier::{StreamEventClassifier, StreamEventType};
@@ -540,6 +550,7 @@ fn test_health_monitor_warning_only_for_parse_errors() {
 }
 
 // Tests for verbose mode streaming
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_verbose_mode_streaming_no_duplicate_lines() {
     use std::io::Cursor;
@@ -601,6 +612,7 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
     );
 }
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_normal_and_verbose_mode_show_same_deltas() {
     let normal_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
@@ -622,6 +634,7 @@ fn test_normal_and_verbose_mode_show_same_deltas() {
     assert!(verbose_output.unwrap().contains("Hello"));
 }
 
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_delta_with_embedded_newline_displays_inline() {
     let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
@@ -657,6 +670,7 @@ fn test_delta_with_embedded_newline_displays_inline() {
 
 // Integration test for streaming accumulation behavior
 // Verifies that multiple text deltas accumulate correctly and output contains carriage returns
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_accumulation_behavior() {
     use std::io::Cursor;
@@ -721,6 +735,7 @@ fn test_streaming_accumulation_behavior() {
 
 /// Test streaming with empty delta chunks
 /// Verifies that empty chunks don't cause errors and don't produce output
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_empty_delta_chunk() {
     use std::io::Cursor;
@@ -757,6 +772,7 @@ fn test_streaming_empty_delta_chunk() {
 
 /// Test streaming with a single chunk (no streaming scenario)
 /// Verifies that single-chunk content displays correctly with prefix
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_single_chunk() {
     use std::io::Cursor;
@@ -797,6 +813,7 @@ fn test_streaming_single_chunk() {
 /// Test streaming with very long accumulated text
 /// Verifies that the parser handles long text without errors
 /// and that truncation works correctly in Full terminal mode
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_very_long_text() {
     use std::io::Cursor;
@@ -847,6 +864,7 @@ fn test_streaming_very_long_text() {
 
 /// Test streaming with special characters in text
 /// Verifies that special characters (quotes, unicode, etc.) are handled correctly
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_special_characters() {
     let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
@@ -879,6 +897,7 @@ fn test_streaming_special_characters() {
 
 /// Test streaming with rapid consecutive chunks
 /// Verifies that rapid streaming (multiple chunks in quick succession) is handled correctly
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_rapid_chunks() {
     use std::io::Cursor;
@@ -931,6 +950,7 @@ fn test_streaming_rapid_chunks() {
 
 /// Test streaming with only whitespace chunks
 /// Verifies that whitespace-only chunks don't produce spurious output
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_whitespace_only_chunks() {
     use std::io::Cursor;
@@ -964,6 +984,7 @@ fn test_streaming_whitespace_only_chunks() {
 
 /// Test that content block start resets state properly
 /// Verifies that a new content block starts fresh without previous accumulation
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_content_block_reset() {
     use std::io::Cursor;
@@ -998,7 +1019,10 @@ fn test_streaming_content_block_reset() {
 /// This test will be re-enabled after Phase 3 (Refactor Other Parsers) is complete
 #[cfg(test)]
 #[test]
-#[cfg_attr(feature = "test-utils", ignore = "Codex/Gemini/OpenCode parsers not yet refactored to Printable trait")]
+#[cfg_attr(
+    feature = "test-utils",
+    ignore = "Codex/Gemini/OpenCode parsers not yet refactored to Printable trait"
+)]
 fn test_streaming_consistency_across_parsers() {
     // Test disabled until Codex/Gemini/OpenCode are refactored to use Printable trait
     // See implementation plan Phase 3 for details
@@ -1133,6 +1157,7 @@ fn test_mixed_small_and_large_deltas() {
 /// - ...and so on
 /// - Each delta rewrites the entire line with prefix
 /// - Visually, the user sees only one prefix that updates in-place
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_ccs_glm_streaming_no_duplicate_prefix() {
     use std::io::Cursor;
@@ -1204,6 +1229,7 @@ fn test_ccs_glm_streaming_no_duplicate_prefix() {
 /// This test verifies that when a complete message event arrives after
 /// streaming has already displayed the content, the complete message
 /// is NOT re-displayed (preventing duplication).
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_ccs_glm_complete_message_deduplication() {
     use std::io::Cursor;
@@ -1212,11 +1238,7 @@ fn test_ccs_glm_complete_message_deduplication() {
     let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
     let printer: SharedPrinter = test_printer.clone();
 
-    let parser = ClaudeParser::with_printer(
-        Colors { enabled: false },
-        Verbosity::Normal,
-        printer,
-    );
+    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer);
 
     // Simulate streaming followed by a complete message event
     let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
@@ -1305,6 +1327,7 @@ fn test_content_block_state_tracking() {
 ///
 /// This test verifies that when a message starts and stops without any
 /// content deltas, no extraneous output is produced (like spurious newlines).
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_finalize_without_deltas_no_output() {
     use std::io::Cursor;
@@ -1346,6 +1369,7 @@ fn test_finalize_without_deltas_no_output() {
 /// index, which should NOT cause the next delta to show the prefix again.
 /// The fix ensures that accumulated content is only cleared when transitioning
 /// to a DIFFERENT block index, not the same index.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_repeated_content_block_start_no_duplicate_prefix() {
     use std::io::Cursor;
@@ -1417,6 +1441,7 @@ fn test_repeated_content_block_start_no_duplicate_prefix() {
 /// This test verifies that multiple complete messages in sequence are rendered
 /// independently with proper newlines between them, no duplication, and each
 /// message has its own prefix.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_multiple_messages_with_proper_separation() {
     use std::io::Cursor;
@@ -1488,6 +1513,7 @@ fn test_multiple_messages_with_proper_separation() {
 ///
 /// Verifies that when output is piped or redirected (non-TTY), the parser
 /// produces clean output without escape sequences for cursor positioning.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_with_terminal_mode_none() {
     use std::io::Cursor;
@@ -1546,6 +1572,7 @@ fn test_streaming_with_terminal_mode_none() {
 ///
 /// Verifies that when terminal supports colors but not cursor positioning,
 /// the parser produces output with colors but without in-place updates.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_with_terminal_mode_basic() {
     use std::io::Cursor;
@@ -1604,6 +1631,7 @@ fn test_streaming_with_terminal_mode_basic() {
 ///
 /// Verifies that message completion produces just a newline without
 /// cursor positioning in None mode.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_completion_with_terminal_mode_none() {
     use std::io::Cursor;
@@ -1640,6 +1668,7 @@ fn test_completion_with_terminal_mode_none() {
 ///
 /// Verifies that message completion produces just a newline without
 /// cursor positioning in Basic mode.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_completion_with_terminal_mode_basic() {
     use std::io::Cursor;
@@ -1676,6 +1705,7 @@ fn test_completion_with_terminal_mode_basic() {
 ///
 /// Verifies that without cursor positioning, each delta appears on its
 /// own line (no in-place updates).
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_multiple_deltas_none_mode_produces_multiple_lines() {
     use std::io::Cursor;
@@ -1716,6 +1746,7 @@ fn test_multiple_deltas_none_mode_produces_multiple_lines() {
 /// Verifies that all parsers (Claude, Codex, Gemini, `OpenCode`) produce
 /// clean output without escape sequences in None mode.
 /// NOTE: Temporarily disabled - Codex/Gemini/OpenCode parsers not yet refactored to Printable trait
+#[cfg(feature = "test-utils")]
 #[test]
 #[ignore = "Codex/Gemini/OpenCode parsers not yet refactored to Printable trait"]
 fn test_all_parsers_clean_output_in_none_mode() {
@@ -1730,6 +1761,7 @@ fn test_all_parsers_clean_output_in_none_mode() {
 /// event output, ensuring that debug output appears synchronously with streaming
 /// events and is not lost or overwritten by subsequent output.
 /// NOTE: Temporarily disabled - Codex/Gemini/OpenCode parsers not yet refactored to Printable trait
+#[cfg(feature = "test-utils")]
 #[test]
 #[ignore = "Codex/Gemini/OpenCode parsers not yet refactored to Printable trait"]
 fn test_all_parsers_flush_debug_output_immediately() {
@@ -1746,6 +1778,7 @@ fn test_all_parsers_flush_debug_output_immediately() {
 /// accumulated content would be rendered over and over, creating the appearance
 /// of "stuttering" output. With the deduplication fix, rendering is skipped
 /// when accumulated content is unchanged.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_identical_accumulated_content_skips_rendering() {
     use std::io::Cursor;
@@ -1791,6 +1824,7 @@ fn test_identical_accumulated_content_skips_rendering() {
 }
 
 /// Test that `StreamingSession`'s `is_content_rendered` works correctly with prefix trie.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_session_is_content_rendered() {
     use crate::json_parser::streaming_state::StreamingSession;
@@ -1839,6 +1873,7 @@ fn test_streaming_session_is_content_rendered() {
 }
 
 /// Test that `mark_content_rendered` updates the prefix trie correctly.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_streaming_session_mark_content_rendered() {
     use crate::json_parser::streaming_state::StreamingSession;
@@ -1881,6 +1916,7 @@ fn test_streaming_session_mark_content_rendered() {
 }
 
 /// Test that `message_start` clears the rendered content trie.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_message_start_clears_rendered_content() {
     use crate::json_parser::streaming_state::StreamingSession;
@@ -1961,6 +1997,7 @@ fn test_delta_hash_deduplication_different_deltas() {
 }
 
 /// Test that identical deltas only produce output once (integration test).
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_identical_deltas_produce_output_once() {
     use std::io::Cursor;
@@ -1996,6 +2033,7 @@ fn test_identical_deltas_produce_output_once() {
 }
 
 /// Test that different deltas each produce output.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_different_deltas_produce_output() {
     use std::io::Cursor;
@@ -2028,6 +2066,7 @@ fn test_different_deltas_produce_output() {
 }
 
 /// Test that empty deltas are marked as processed and don't cause repeated processing.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_empty_deltas_marked_as_processed() {
     use std::io::Cursor;
@@ -2077,6 +2116,7 @@ fn test_empty_deltas_marked_as_processed() {
 /// - "Second" count=1, resets "First" counter (processed)
 /// - "First" count=1 (resets "Second" counter, processed)
 /// - "Second" count=1 (resets "First" counter, processed)
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_ccs_glm_duplicate_output_bug_fix() {
     use std::io::Cursor;
@@ -2140,6 +2180,7 @@ fn test_ccs_glm_duplicate_output_bug_fix() {
 /// events during streaming, and the same delta appears multiple times.
 /// The fix preserves `processed_deltas` during repeated `MessageStart` to prevent
 /// the same delta from being processed again.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_ccs_glm_repeated_message_start_preserves_processed_deltas() {
     use std::io::Cursor;
@@ -2222,6 +2263,7 @@ fn test_ccs_glm_repeated_message_start_preserves_processed_deltas() {
 ///
 /// Note: The check happens AFTER incrementing the count, so the 3rd occurrence
 /// is dropped because count becomes 3 and 3 >= 3.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_consecutive_duplicate_detection_drops_resend_glitch() {
     use std::io::Cursor;
@@ -2277,6 +2319,7 @@ fn test_consecutive_duplicate_detection_drops_resend_glitch() {
 /// This test verifies that the "3 strikes" heuristic only applies to
 /// consecutive identical deltas. When a different delta arrives, the
 /// counter should reset.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_consecutive_duplicate_counter_resets_on_different_delta() {
     use std::io::Cursor;
@@ -2352,6 +2395,7 @@ fn test_consecutive_duplicate_counter_resets_on_different_delta() {
 ///
 /// This test verifies that legitimate content repetition (where deltas
 /// are not identical) is not affected by the consecutive duplicate detection.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_consecutive_duplicate_allows_legitimate_repetition() {
     use std::io::Cursor;

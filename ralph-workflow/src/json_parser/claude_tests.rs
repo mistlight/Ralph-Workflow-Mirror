@@ -168,6 +168,7 @@ fn test_ccs_glm_event_sequence() {
 
 /// Test that `with_terminal_mode` method works correctly
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_with_terminal_mode() {
     use crate::json_parser::terminal::TerminalMode;
 

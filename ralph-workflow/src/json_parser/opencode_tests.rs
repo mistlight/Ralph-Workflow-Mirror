@@ -35,6 +35,7 @@ fn test_opencode_streaming_with_tool_use_events() {
 
 /// Test that `with_terminal_mode` method works correctly
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_with_terminal_mode() {
     use crate::json_parser::terminal::TerminalMode;
 
