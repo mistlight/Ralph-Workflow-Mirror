@@ -69,11 +69,11 @@ fn format_files_section(files: &[String]) -> String {
             result.push_str(file);
             result.push('\n');
         }
-        // Add explicit clarification that agent doesn't need to read ISSUES.md
+        // Add explicit clarification that agent doesn't need to read any ISSUES file
         result.push_str(
-            "\nIMPORTANT: Work ONLY with the files listed above. The ISSUES content\n\
-            is provided in this prompt - you do NOT need to read any files\n\
-            to discover what to fix.\n",
+            "\nIMPORTANT: Work ONLY with the files listed above. The issues\n\
+            content is already embedded in this prompt - you do NOT need to\n\
+            read or discover any files to know what to fix.\n",
         );
         result
     }
@@ -659,9 +659,10 @@ mod tests {
     fn test_fix_prompt_tells_agent_not_to_read_issues_file() {
         let fix_prompt = prompt_fix("", "", "");
         assert!(
-            fix_prompt.contains("you do NOT need to read it")
-                || fix_prompt.contains("do NOT need to read ISSUES.md"),
-            "Fix prompt should explicitly tell agent it doesn't need to read ISSUES.md"
+            fix_prompt.contains("do NOT need to read")
+                || fix_prompt.contains("you do NOT need to")
+                || fix_prompt.contains("DO NOT try to read"),
+            "Fix prompt should explicitly tell agent it doesn't need to read any ISSUES file"
         );
     }
 
