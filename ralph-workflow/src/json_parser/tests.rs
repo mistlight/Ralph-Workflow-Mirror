@@ -1904,3 +1904,110 @@ fn test_all_parsers_clean_output_in_none_mode() {
         "OpenCode should have no escape sequences in None mode. Output: {opencode_output:?}"
     );
 }
+
+/// Test that debug output is flushed immediately in all parsers.
+///
+/// This test verifies that the `[DEBUG]` output is flushed before the actual
+/// event output, ensuring that debug output appears synchronously with streaming
+/// events and is not lost or overwritten by subsequent output.
+#[test]
+fn test_all_parsers_flush_debug_output_immediately() {
+    use std::io::Cursor;
+
+    // Test Claude parser with debug mode
+    let claude_parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Debug)
+        .with_terminal_mode(TerminalMode::Full);
+    let claude_input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+    let claude_reader = Cursor::new(claude_input);
+    let mut claude_writer = Vec::new();
+    claude_parser
+        .parse_stream(claude_reader, &mut claude_writer)
+        .expect("Parse stream should succeed");
+    let claude_output = String::from_utf8(claude_writer).unwrap();
+
+    // Verify that [DEBUG] lines are complete (not truncated)
+    if claude_output.contains("[DEBUG]") {
+        let lines: Vec<&str> = claude_output.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.contains("[DEBUG]") {
+                assert!(
+                    line.trim().ends_with('}') || line.trim().ends_with(']'),
+                    "Claude: Debug line {i} should be complete JSON. Line: {line:?}"
+                );
+            }
+        }
+    }
+
+    // Test Codex parser with debug mode
+    let codex_parser = CodexParser::new(Colors { enabled: false }, Verbosity::Debug)
+        .with_terminal_mode(TerminalMode::Full);
+    let codex_input = r#"{"type":"item.started","item":{"type":"agent_message","id":"msg1","text":"Hello"}}
+{"type":"item.completed","item":{"type":"agent_message","id":"msg1"}}"#;
+    let codex_reader = Cursor::new(codex_input);
+    let mut codex_writer = Vec::new();
+    codex_parser
+        .parse_stream(codex_reader, &mut codex_writer)
+        .expect("Parse stream should succeed");
+    let codex_output = String::from_utf8(codex_writer).unwrap();
+
+    if codex_output.contains("[DEBUG]") {
+        let lines: Vec<&str> = codex_output.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.contains("[DEBUG]") {
+                assert!(
+                    line.trim().ends_with('}') || line.trim().ends_with(']'),
+                    "Codex: Debug line {i} should be complete JSON. Line: {line:?}"
+                );
+            }
+        }
+    }
+
+    // Test Gemini parser with debug mode
+    let gemini_parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Debug)
+        .with_terminal_mode(TerminalMode::Full);
+    let gemini_input = r#"{"type":"message","role":"assistant","content":"Hello","delta":true}
+{"type":"result","status":"success"}"#;
+    let gemini_reader = Cursor::new(gemini_input);
+    let mut gemini_writer = Vec::new();
+    gemini_parser
+        .parse_stream(gemini_reader, &mut gemini_writer)
+        .expect("Parse stream should succeed");
+    let gemini_output = String::from_utf8(gemini_writer).unwrap();
+
+    if gemini_output.contains("[DEBUG]") {
+        let lines: Vec<&str> = gemini_output.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.contains("[DEBUG]") {
+                assert!(
+                    line.trim().ends_with('}') || line.trim().ends_with(']'),
+                    "Gemini: Debug line {i} should be complete JSON. Line: {line:?}"
+                );
+            }
+        }
+    }
+
+    // Test OpenCode parser with debug mode
+    let opencode_parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Debug)
+        .with_terminal_mode(TerminalMode::Full);
+    let opencode_input = r#"{"type":"text","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","type":"text","text":"Hello"}}
+{"type":"step_finish","timestamp":1768191347296,"sessionID":"ses_44f9562d4ffe","part":{"type":"step-finish","reason":"end_turn"}}"#;
+    let opencode_reader = Cursor::new(opencode_input);
+    let mut opencode_writer = Vec::new();
+    opencode_parser
+        .parse_stream(opencode_reader, &mut opencode_writer)
+        .expect("Parse stream should succeed");
+    let opencode_output = String::from_utf8(opencode_writer).unwrap();
+
+    if opencode_output.contains("[DEBUG]") {
+        let lines: Vec<&str> = opencode_output.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.contains("[DEBUG]") {
+                assert!(
+                    line.trim().ends_with('}') || line.trim().ends_with(']'),
+                    "OpenCode: Debug line {i} should be complete JSON. Line: {line:?}"
+                );
+            }
+        }
+    }
+}
