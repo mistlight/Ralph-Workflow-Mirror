@@ -684,6 +684,14 @@ Emit structured events (JSON) and rely on external renderer.
   - `ralph-workflow/src/json_parser/tests.rs`: Updated `test_streaming_very_long_text` to expect no truncation during streaming
 
   **Impact**: Streaming deltas now show full content without mid-stream truncation. Long tool input (like complex JSON parameters) is now fully visible in Normal/Verbose modes, making it much easier to understand agent behavior. |
+| 2026-01-16 | **Enhancement: Render deduplication to prevent visual repetition**: Fixed visual repetition bug where identical accumulated content was rendered multiple times, creating a "stuttering" effect. The issue occurred when agents sent empty or no-op deltas that didn't change the accumulated content—rendering would still occur, producing duplicate output. Added `last_rendered: HashMap` field to `StreamingSession` to track the last rendered content for each `(ContentType, index)` key. Implemented `should_skip_render()` method that returns `true` when accumulated content is unchanged, preventing redundant rendering. Implemented `mark_rendered()` method to update tracking after successful rendering. Integrated deduplication into `ClaudeParser`'s `handle_content_block_delta()` and `handle_text_delta()` methods to check for unchanged content before calling renderer. Added comprehensive test coverage: `test_identical_accumulated_content_skips_rendering()`, `test_streaming_session_should_skip_render()`, `test_streaming_session_mark_rendered()`, `test_message_start_clears_last_rendered()`. The fix ensures smooth in-place updates without visual repetition, especially important when agents send no-op or empty deltas during streaming.
+
+  **Files modified**:
+  - `ralph-workflow/src/json_parser/streaming_state.rs`: Added `last_rendered` HashMap field, `should_skip_render()` method, `mark_rendered()` method, cleared in `on_message_start()` and `on_content_block_start()` when transitioning to different index
+  - `ralph-workflow/src/json_parser/claude.rs`: Updated `handle_content_block_delta()` and `handle_text_delta()` to check `should_skip_render()` and call `mark_rendered()`
+  - `ralph-workflow/src/json_parser/tests.rs`: Added 4 new tests for deduplication behavior
+
+  **Impact**: Streaming output now updates smoothly in-place without visual "stuttering" or repetition. Empty deltas and no-op events no longer cause redundant rendering, providing a cleaner user experience that matches ChatGPT-like real-time streaming expectations. |
 
 ---
 

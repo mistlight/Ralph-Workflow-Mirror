@@ -608,9 +608,14 @@ impl ClaudeParser {
                     .get_accumulated(ContentType::Text, &index_str)
                     .unwrap_or("");
 
+                // Skip rendering if accumulated content is unchanged (prevents visual repetition)
+                if session.should_skip_render(ContentType::Text, &index_str) {
+                    return String::new();
+                }
+
                 // Use TextDeltaRenderer for consistent rendering
                 let terminal_mode = *self.terminal_mode.borrow();
-                if show_prefix {
+                let output = if show_prefix {
                     TextDeltaRenderer::render_first_delta(
                         accumulated_text,
                         prefix,
@@ -624,7 +629,12 @@ impl ClaudeParser {
                         *c,
                         terminal_mode,
                     )
-                }
+                };
+
+                // Mark this content as rendered
+                session.mark_rendered(ContentType::Text, &index_str);
+
+                output
             }
             ContentBlockDelta::ThinkingDelta {
                 thinking: Some(text),
@@ -691,15 +701,25 @@ impl ClaudeParser {
             .get_accumulated(ContentType::Text, default_index_str)
             .unwrap_or("");
 
+        // Skip rendering if accumulated content is unchanged (prevents visual repetition)
+        if session.should_skip_render(ContentType::Text, default_index_str) {
+            return String::new();
+        }
+
         // Use TextDeltaRenderer for consistent rendering across all parsers
         let terminal_mode = *self.terminal_mode.borrow();
-        if show_prefix {
+        let output = if show_prefix {
             // First delta - use the renderer with prefix
             TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c, terminal_mode)
         } else {
             // Subsequent delta - use renderer for in-place update
             TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c, terminal_mode)
-        }
+        };
+
+        // Mark this content as rendered
+        session.mark_rendered(ContentType::Text, default_index_str);
+
+        output
     }
 
     /// Handle message stop events

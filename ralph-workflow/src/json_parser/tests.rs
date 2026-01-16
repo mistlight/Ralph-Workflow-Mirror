@@ -2015,3 +2015,156 @@ fn test_all_parsers_flush_debug_output_immediately() {
         }
     }
 }
+
+// Tests for render deduplication (preventing visual repetition)
+
+/// Test that identical accumulated content is not rendered multiple times.
+///
+/// This test verifies the fix for the visual repetition bug where the same
+/// accumulated content would be rendered over and over, creating the appearance
+/// of "stuttering" output. With the deduplication fix, rendering is skipped
+/// when accumulated content is unchanged.
+#[test]
+fn test_identical_accumulated_content_skips_rendering() {
+    use std::io::Cursor;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
+
+    // Simulate empty deltas that don't change accumulated content
+    // This can happen with some agents that send no-op events
+    let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}}
+{"type":"stream_event","event":{"type":"message_stop"}}"#;
+
+    let reader = Cursor::new(input);
+    let mut writer = Vec::new();
+
+    parser.parse_stream(reader, &mut writer).unwrap();
+    let output = String::from_utf8(writer).unwrap();
+
+    // The empty deltas should not produce output (rendering is skipped)
+    // Count non-empty lines in output
+    let non_empty_lines: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
+
+    // Should have minimal output (first delta with content, maybe prefix info)
+    // The key is that empty deltas don't cause repeated rendering
+    assert!(
+        non_empty_lines.len() < 10,
+        "Empty deltas should not cause excessive output. Found {count} non-empty lines. Output: {output:?}",
+        count = non_empty_lines.len()
+    );
+
+    // Should contain the accumulated content
+    assert!(
+        output.contains("Hello World"),
+        "Should contain accumulated text. Output: {output:?}"
+    );
+}
+
+/// Test that `StreamingSession`'s `should_skip_render` works correctly.
+#[test]
+fn test_streaming_session_should_skip_render() {
+    use crate::json_parser::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // First delta - should not skip
+    session.on_text_delta(0, "Hello");
+    assert!(
+        !session.should_skip_render(super::types::ContentType::Text, "0"),
+        "First delta should not skip rendering"
+    );
+
+    // Mark as rendered
+    session.mark_rendered(super::types::ContentType::Text, "0");
+
+    // Second delta that changes content - should not skip
+    session.on_text_delta(0, " World");
+    assert!(
+        !session.should_skip_render(super::types::ContentType::Text, "0"),
+        "Delta with changed content should not skip rendering"
+    );
+
+    // Mark as rendered
+    session.mark_rendered(super::types::ContentType::Text, "0");
+
+    // Now check again with same content - should skip
+    assert!(
+        session.should_skip_render(super::types::ContentType::Text, "0"),
+        "Unchanged content should skip rendering"
+    );
+}
+
+/// Test that `mark_rendered` updates the tracking correctly.
+#[test]
+fn test_streaming_session_mark_rendered() {
+    use crate::json_parser::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // First delta
+    session.on_text_delta(0, "Hello");
+
+    // Initially, should not skip (nothing rendered yet)
+    assert!(
+        !session.should_skip_render(super::types::ContentType::Text, "0"),
+        "Should not skip before first render"
+    );
+
+    // Mark as rendered
+    session.mark_rendered(super::types::ContentType::Text, "0");
+
+    // Now should skip (content unchanged)
+    assert!(
+        session.should_skip_render(super::types::ContentType::Text, "0"),
+        "Should skip after marking same content as rendered"
+    );
+
+    // Add more content
+    session.on_text_delta(0, " World");
+
+    // Should not skip anymore (content changed)
+    assert!(
+        !session.should_skip_render(super::types::ContentType::Text, "0"),
+        "Should not skip after content changes"
+    );
+}
+
+/// Test that `message_start` clears `last_rendered` tracking.
+#[test]
+fn test_message_start_clears_last_rendered() {
+    use crate::json_parser::streaming_state::StreamingSession;
+
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+
+    // First delta and mark as rendered
+    session.on_text_delta(0, "Hello");
+    session.mark_rendered(super::types::ContentType::Text, "0");
+
+    // Should skip (same content)
+    assert!(
+        session.should_skip_render(super::types::ContentType::Text, "0"),
+        "Should skip before message_start"
+    );
+
+    // New message
+    session.on_message_start();
+
+    // After message_start, last_rendered should be cleared
+    // But accumulated is also cleared, so there's no content to compare
+    // Add new content
+    session.on_text_delta(0, "New");
+
+    // Should not skip (fresh start)
+    assert!(
+        !session.should_skip_render(super::types::ContentType::Text, "0"),
+        "Should not skip after message_start with new content"
+    );
+}

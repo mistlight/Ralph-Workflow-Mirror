@@ -335,6 +335,10 @@ pub struct StreamingSession {
     /// Hash of the final streamed content (for deduplication)
     /// Computed at `message_stop` using all accumulated content
     final_content_hash: Option<u64>,
+    /// Track the last rendered content for each key to detect when rendering
+    /// would produce identical output (prevents visual repetition).
+    /// Maps `(content_type, key)` → the last accumulated content that was rendered.
+    last_rendered: HashMap<(ContentType, String), String>,
 }
 
 impl StreamingSession {
@@ -422,6 +426,7 @@ impl StreamingSession {
             self.accumulated.clear();
             self.key_order.clear();
             self.delta_sizes.clear();
+            self.last_rendered.clear();
 
             // Restore preserved state
             self.output_started_for_key = preserved_output_started;
@@ -434,6 +439,7 @@ impl StreamingSession {
             self.key_order.clear();
             self.delta_sizes.clear();
             self.output_started_for_key.clear();
+            self.last_rendered.clear();
         }
         // Note: We don't reset current_message_id here - it's set by a separate method
         // This allows for more flexible message ID handling
@@ -532,6 +538,7 @@ impl StreamingSession {
                     self.output_started_for_key.remove(&key);
                     // Clear delta sizes for the old index to prevent incorrect pattern detection
                     self.delta_sizes.remove(&key);
+                    self.last_rendered.remove(&key);
                 }
             }
         }
@@ -927,6 +934,50 @@ impl StreamingSession {
         self.accumulated
             .get(&(content_type, index.to_string()))
             .map(std::string::String::as_str)
+    }
+
+    /// Check if rendering should be skipped because accumulated content is unchanged.
+    ///
+    /// This prevents visual repetition where the same accumulated content is rendered
+    /// multiple times, creating the appearance of "stuttering" output. When a delta
+    /// doesn't change the accumulated content (e.g., empty delta, duplicate delta),
+    /// rendering would produce identical output, which we skip.
+    ///
+    /// # Arguments
+    /// * `content_type` - The type of content
+    /// * `index` - The content index (as string for flexibility)
+    ///
+    /// # Returns
+    /// * `true` - Skip rendering (accumulated content is same as last rendered)
+    /// * `false` - Render (accumulated content has changed or this is first render)
+    pub fn should_skip_render(&self, content_type: ContentType, index: &str) -> bool {
+        let content_key = (content_type, index.to_string());
+
+        // Get current accumulated content
+        let Some(current) = self.accumulated.get(&content_key) else {
+            return false; // No content yet, don't skip
+        };
+
+        // Check if we've rendered this content before
+        self.last_rendered.get(&content_key) == Some(current)
+    }
+
+    /// Mark content as having been rendered.
+    ///
+    /// This should be called after rendering to update the tracking that prevents
+    /// visual repetition. The next call to `should_skip_render` will compare against
+    /// this value.
+    ///
+    /// # Arguments
+    /// * `content_type` - The type of content
+    /// * `index` - The content index (as string for flexibility)
+    pub fn mark_rendered(&mut self, content_type: ContentType, index: &str) {
+        let content_key = (content_type, index.to_string());
+
+        // Store the current accumulated content as last rendered
+        if let Some(current) = self.accumulated.get(&content_key) {
+            self.last_rendered.insert(content_key, current.clone());
+        }
     }
 
     /// Check if incoming text is likely a snapshot (full accumulated content) rather than a delta.
