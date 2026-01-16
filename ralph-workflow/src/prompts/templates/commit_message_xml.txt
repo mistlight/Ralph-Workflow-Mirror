@@ -1,0 +1,221 @@
+{# ============================================================================ #}
+{# Template: commit_message_xml.txt                                            #}
+{# Version: 2.0                                                                #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Generate high-quality Conventional Commits messages from git diffs.       #}
+{#   Uses XML output format for reliable parsing (no escape sequence issues).  #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   {{DIFF}} - The git diff to analyze (required)                             #}
+{#                                                                             #}
+{# OUTPUT FORMAT (two supported formats):                                      #}
+{#                                                                             #}
+{#   Simple format (for small changes):                                        #}
+{#     <ralph-commit>                                                          #}
+{#       <ralph-subject>type(scope): description</ralph-subject>               #}
+{#       <ralph-body>Optional multi-line body</ralph-body>                     #}
+{#     </ralph-commit>                                                         #}
+{#                                                                             #}
+{#   Detailed format (for larger changes):                                     #}
+{#     <ralph-commit>                                                          #}
+{#       <ralph-subject>type(scope): description</ralph-subject>               #}
+{#       <ralph-body-summary>Brief 1-2 line summary</ralph-body-summary>       #}
+{#       <ralph-body-details>Detailed bullet points</ralph-body-details>       #}
+{#       <ralph-body-footer>BREAKING CHANGE or Fixes #123</ralph-body-footer>  #}
+{#     </ralph-commit>                                                         #}
+{#                                                                             #}
+{# EXTRACTION:                                                                 #}
+{#   Parsed by try_extract_xml_commit() in llm_output_extraction/commit.rs     #}
+{#   Falls back to JSON parsing if XML tags not found.                         #}
+{#   Detailed body tags are combined into a single body string.                #}
+{#                                                                             #}
+{# VALIDATION:                                                                 #}
+{#   - Subject must follow conventional commit format (type: description)      #}
+{#   - Subject max 50 chars, body max 2000 chars                               #}
+{#   - No JSON artifacts or escape sequences                                   #}
+{#   - No AI thought process leakage                                           #}
+{# ============================================================================ #}
+You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
+
+DIFF:
+{{DIFF}}
+
+---
+
+## CRITICAL: DO NOT PRODUCE THESE BAD COMMIT MESSAGES
+
+These are WRONG - they are vague, meaningless, and unhelpful:
+- chore: apply changes
+- chore: update code
+- chore: 6 file(s) changed
+- chore: update src/files/result_extraction.rs
+- chore: update src/git_helpers/repo.rs, src/prompts/commit.rs, tests/commit_message_generation.rs
+- fix: fixed bug
+- feat: Add New Feature.
+
+NEVER say "apply changes", "update code", "update [filename]", "N files changed", or just list filenames.
+ALWAYS describe WHAT changed and WHY.
+
+**When analyzing multi-file changes:**
+- Look for the SEMANTIC RELATIONSHIP between files
+- Are they all part of one feature? Use a single message with the feature's purpose
+- Are they unrelated changes? Use the highest-priority type with a descriptive subject
+- Examples:
+  - BAD: "chore: update src/auth.rs, src/auth_test.rs, docs/auth.md"
+  - GOOD: "feat(auth): add OAuth2 login flow with tests and docs"
+  - BAD: "chore: 3 file(s) changed"
+  - GOOD: "refactor: extract validation logic into shared module"
+
+---
+
+## COMMIT MESSAGE FORMAT
+
+<type>[optional scope][!]: <subject>
+
+[optional body]
+
+[optional footer]
+
+## TYPE GUIDELINES
+
+- **feat**: A new feature (user-visible change)
+- **fix**: A bug fix (correcting incorrect behavior)
+- **docs**: Documentation changes only
+- **style**: Code style changes (formatting, semicolons, etc.) - no logic change
+- **refactor**: Code restructuring without changing behavior
+- **perf**: Performance improvement
+- **test**: Adding or updating tests
+- **build**: Build system or dependency changes
+- **ci**: CI/CD configuration changes
+- **chore**: Other changes that don't modify src/test files
+
+## SUBJECT LINE RULES (CRITICAL)
+
+- Use **imperative mood** ("add" not "added", "fix" not "fixed")
+- Use **lowercase** (except for proper nouns)
+- **No period** at the end
+- **Maximum 50 characters**
+- **Be specific**: describe WHAT changed, not THAT something changed
+- For multi-file changes: describe the OVERALL PURPOSE, not just "update files"
+
+## GOOD EXAMPLES
+
+feat(auth): add OAuth2 login flow
+fix: prevent null pointer in user lookup
+refactor(api): extract validation into middleware
+docs: clarify API authentication flow
+test: add coverage for user registration edge cases
+
+feat!: drop Python 3.7 support
+
+BREAKING CHANGE: Minimum Python version is now 3.8.
+
+feat: add CSV export for reports
+
+Add ability to export analytics reports as CSV files.
+Supports filtering by date range and custom column selection.
+
+Fixes #42
+
+---
+
+## YOUR TASK
+
+1. **Analyze the actual code changes** in the diff above
+2. **Identify the semantic type** (feat/fix/refactor/docs/etc.) based on what changed
+3. **Determine the scope** (if applicable) based on which files/components are affected
+4. **Write a clear, descriptive subject line** that says WHAT was done
+5. **Add a body** only if the change needs context (why, what for)
+
+**MULTI-FILE ANALYSIS**: When you see changes to multiple files, determine:
+- Are they all part of one cohesive change? -> Single message describing the purpose
+- Are they semantically different? -> Use the most significant type with a comprehensive subject
+- What is the COMMON THREAD that connects these changes?
+
+---
+
+## OUTPUT FORMAT - XML (CRITICAL)
+
+You MUST output your commit message using ONLY these XML tags:
+
+<ralph-commit>
+<ralph-subject>type(scope): description</ralph-subject>
+<ralph-body>Optional body text here.
+Can span multiple lines.
+Leave empty or omit if no body needed.</ralph-body>
+</ralph-commit>
+
+### WHAT NOT TO OUTPUT (WRONG):
+
+WRONG - Do not include ANY text before the XML:
+```
+Here is the commit message:
+<ralph-commit>...</ralph-commit>
+```
+
+WRONG - Do not include analysis or thinking:
+```
+Looking at this diff, I can see that...
+<ralph-commit>...</ralph-commit>
+```
+
+WRONG - Do not use JSON format:
+```
+{"subject": "feat: add feature", "body": null}
+```
+
+WRONG - Do not use markdown code fences around the XML:
+```
+```xml
+<ralph-commit>...</ralph-commit>
+```
+```
+
+### CORRECT OUTPUT (RIGHT):
+
+Example 1 - Subject only (no body):
+<ralph-commit>
+<ralph-subject>fix: prevent null pointer in user lookup</ralph-subject>
+</ralph-commit>
+
+Example 2 - Subject with simple body:
+<ralph-commit>
+<ralph-subject>feat(auth): add OAuth2 login flow</ralph-subject>
+<ralph-body>Implement Google and GitHub OAuth providers.
+Add session management for OAuth tokens.
+Includes database migrations for storing OAuth credentials.</ralph-body>
+</ralph-commit>
+
+Example 3 - Detailed body (for complex changes):
+<ralph-commit>
+<ralph-subject>refactor(pipeline): restructure commit generation</ralph-subject>
+<ralph-body-summary>Improve reliability of commit message generation by adding
+per-attempt logging and enhanced error recovery.</ralph-body-summary>
+<ralph-body-details>- Add ExtractionAttemptTrace for detailed parsing diagnostics
+- Implement character position tracking for XML extraction
+- Add partial output detection for incomplete responses
+- Improve fallback messaging with actionable suggestions</ralph-body-details>
+<ralph-body-footer>Fixes #42</ralph-body-footer>
+</ralph-commit>
+
+Example 4 - Breaking change with detailed body:
+<ralph-commit>
+<ralph-subject>feat!: drop Python 3.7 support</ralph-subject>
+<ralph-body-summary>Minimum Python version is now 3.8.</ralph-body-summary>
+<ralph-body-details>- Remove compatibility shims for 3.7
+- Update CI to test only 3.8+
+- Add walrus operator usage
+- Use positional-only parameters</ralph-body-details>
+<ralph-body-footer>BREAKING CHANGE: Python 3.7 is no longer supported.</ralph-body-footer>
+</ralph-commit>
+
+### KEY POINTS:
+- Start your response IMMEDIATELY with <ralph-commit>
+- NO text before <ralph-commit>
+- NO text after </ralph-commit>
+- Actual newlines are fine inside the body (unlike JSON)
+- Body tags are optional - omit them entirely if no body is needed
+- Use EITHER <ralph-body> OR the detailed tags (<ralph-body-summary>, <ralph-body-details>, <ralph-body-footer>), not both
+- Prefer detailed tags for changes touching 3+ files or requiring explanation
