@@ -10,9 +10,9 @@ use crate::config::ReviewDepth;
 use crate::git_helpers::get_git_diff_from_start;
 use crate::guidelines::ReviewGuidelines;
 use crate::prompts::{
-    prompt_comprehensive_review, prompt_detailed_review_without_guidelines, prompt_for_agent,
-    prompt_incremental_review_with_diff, prompt_security_focused_review, prompt_universal_review,
-    Action, ContextLevel, Role,
+    prompt_comprehensive_review_with_diff, prompt_detailed_review_without_guidelines_with_diff,
+    prompt_incremental_review_with_diff, prompt_reviewer_review_with_guidelines_and_diff,
+    prompt_security_focused_review_with_diff, prompt_universal_review_with_diff, ContextLevel,
 };
 
 use super::super::context::PhaseContext;
@@ -37,11 +37,17 @@ pub fn should_use_universal_prompt(agent: &str, model_flag: Option<&str>, force:
 }
 
 /// Build the review prompt based on configuration and agent type.
+#[allow(clippy::too_many_lines)]
 pub fn build_review_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
     guidelines: Option<&ReviewGuidelines>,
 ) -> (String, String) {
+    // Fetch the diff from the starting commit to pass directly to the reviewer
+    // This keeps agents isolated from git operations and ensures they only review
+    // the changes made since the pipeline started.
+    let diff_result = get_and_validate_diff(ctx);
+
     // Check if we should use the universal prompt for this agent
     let use_universal = should_use_universal_prompt(
         ctx.reviewer_agent,
@@ -59,10 +65,14 @@ pub fn build_review_prompt(
             "Using universal/simplified review prompt for agent '{}' ({})",
             ctx.reviewer_agent, reason
         ));
-        return (
-            "review (universal)".to_string(),
-            prompt_universal_review(reviewer_context),
-        );
+        return match diff_result {
+            Ok(Some(diff)) => (
+                "review (universal)".to_string(),
+                prompt_universal_review_with_diff(reviewer_context, &diff),
+            ),
+            Ok(None) => ("review (universal - skipped)".to_string(), String::new()),
+            Err(()) => ("review (universal - error)".to_string(), String::new()),
+        };
     }
 
     match ctx.config.review_depth {
@@ -72,59 +82,93 @@ pub fn build_review_prompt(
             } else {
                 "Using security-focused review"
             });
-            let prompt = guidelines.map_or_else(
-                || {
-                    let default = ReviewGuidelines::default();
-                    prompt_security_focused_review(reviewer_context, &default)
-                },
-                |g| prompt_security_focused_review(reviewer_context, g),
-            );
-            ("review (security)".to_string(), prompt)
+            match diff_result {
+                Ok(Some(diff)) => {
+                    let guidelines_ref = guidelines.unwrap_or_else(|| {
+                        static DEFAULT_GUIDELINES: std::sync::OnceLock<ReviewGuidelines> =
+                            std::sync::OnceLock::new();
+                        DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
+                    });
+                    (
+                        "review (security)".to_string(),
+                        prompt_security_focused_review_with_diff(
+                            reviewer_context,
+                            guidelines_ref,
+                            &diff,
+                        ),
+                    )
+                }
+                Ok(None) => ("review (security - skipped)".to_string(), String::new()),
+                Err(()) => ("review (security - error)".to_string(), String::new()),
+            }
         }
-        ReviewDepth::Incremental => build_incremental_review_prompt(ctx, reviewer_context),
-        ReviewDepth::Comprehensive => guidelines.map_or_else(
-            || {
-                ctx.logger.info("Using comprehensive review");
+        ReviewDepth::Incremental => match diff_result {
+            Ok(Some(diff)) => {
+                ctx.logger
+                    .info("Using incremental review (changed files only)");
+                (
+                    "review (incremental)".to_string(),
+                    prompt_incremental_review_with_diff(reviewer_context, &diff),
+                )
+            }
+            Ok(None) => ("review (incremental - skipped)".to_string(), String::new()),
+            Err(()) => ("review (incremental - error)".to_string(), String::new()),
+        },
+        ReviewDepth::Comprehensive => match diff_result {
+            Ok(Some(diff)) => {
+                ctx.logger.info(if guidelines.is_some() {
+                    "Using comprehensive review with language-specific checks"
+                } else {
+                    "Using comprehensive review"
+                });
+                let guidelines_ref = guidelines.unwrap_or_else(|| {
+                    static DEFAULT_GUIDELINES: std::sync::OnceLock<ReviewGuidelines> =
+                        std::sync::OnceLock::new();
+                    DEFAULT_GUIDELINES.get_or_init(ReviewGuidelines::default)
+                });
                 (
                     "review (comprehensive)".to_string(),
-                    prompt_comprehensive_review(reviewer_context, &ReviewGuidelines::default()),
+                    prompt_comprehensive_review_with_diff(reviewer_context, guidelines_ref, &diff),
                 )
-            },
-            |g| {
-                ctx.logger
-                    .info("Using comprehensive review with language-specific checks");
-                (
-                    "review (comprehensive)".to_string(),
-                    prompt_comprehensive_review(reviewer_context, g),
+            }
+            Ok(None) => (
+                "review (comprehensive - skipped)".to_string(),
+                String::new(),
+            ),
+            Err(()) => ("review (comprehensive - error)".to_string(), String::new()),
+        },
+        ReviewDepth::Standard => match diff_result {
+            Ok(Some(diff)) => {
+                ctx.logger.info(if guidelines.is_some() {
+                    "Using standard review with language-specific checks"
+                } else {
+                    "Using detailed review without stack-specific checks"
+                });
+                guidelines.map_or_else(
+                    || {
+                        (
+                            "review (standard)".to_string(),
+                            prompt_detailed_review_without_guidelines_with_diff(
+                                reviewer_context,
+                                &diff,
+                            ),
+                        )
+                    },
+                    |g| {
+                        (
+                            "review (standard)".to_string(),
+                            prompt_reviewer_review_with_guidelines_and_diff(
+                                reviewer_context,
+                                g,
+                                &diff,
+                            ),
+                        )
+                    },
                 )
-            },
-        ),
-        ReviewDepth::Standard => guidelines.map_or_else(
-            || {
-                ctx.logger
-                    .info("Using detailed review without stack-specific checks");
-                (
-                    "review (standard)".to_string(),
-                    prompt_detailed_review_without_guidelines(reviewer_context),
-                )
-            },
-            |g| {
-                ctx.logger
-                    .info("Using standard review with language-specific checks");
-                (
-                    "review (standard)".to_string(),
-                    prompt_for_agent(
-                        Role::Reviewer,
-                        Action::Review,
-                        reviewer_context,
-                        None,
-                        None,
-                        Some(g),
-                        None,
-                    ),
-                )
-            },
-        ),
+            }
+            Ok(None) => ("review (standard - skipped)".to_string(), String::new()),
+            Err(()) => ("review (standard - error)".to_string(), String::new()),
+        },
     }
 }
 
@@ -136,25 +180,16 @@ fn is_problematic_prompt_target(agent: &str, model_flag: Option<&str>) -> bool {
     is_glm_like_agent(agent) || model_flag.is_some_and(is_glm_like_agent)
 }
 
-/// Build the incremental review prompt by fetching and validating the git diff.
+/// Fetch and validate the git diff from the starting commit.
 ///
-/// Returns a tuple of (label, prompt) where label describes the review type
-/// and prompt contains the actual review prompt with the diff.
-fn build_incremental_review_prompt(
-    ctx: &PhaseContext<'_>,
-    reviewer_context: ContextLevel,
-) -> (String, String) {
-    ctx.logger
-        .info("Using incremental review (changed files only)");
-
-    // Get the diff from the starting commit to pass directly to the reviewer
-    // This keeps agents isolated from git operations
-    let diff = match get_git_diff_from_start() {
+/// Returns:
+/// - `Ok(Some(diff))` - Successfully retrieved and validated diff
+/// - `Ok(None)` - No diff found (no changes since start commit)
+/// - `Err(..)` - Failed to retrieve diff (git error)
+fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<String>, ()> {
+    match get_git_diff_from_start() {
         Ok(d) if !d.trim().is_empty() => {
             let original_size = d.len();
-            // For reviewer, use truncation for very large diffs (not chunking)
-            // The limit is 1MB which provides substantial context for review
-            // Chunking is only for commit message generation where we need to combine results
             let (truncated_diff, was_truncated) = crate::git_helpers::validate_and_truncate_diff(d);
             if was_truncated {
                 ctx.logger.warn(&format!(
@@ -163,35 +198,27 @@ fn build_incremental_review_prompt(
                     truncated_diff.len()
                 ));
             }
-            truncated_diff
+            if ctx.config.verbosity.is_debug() {
+                ctx.logger.info(&format!(
+                    "Diff size for review: {} bytes",
+                    truncated_diff.len()
+                ));
+            }
+            Ok(Some(truncated_diff))
         }
         Ok(_) => {
             ctx.logger
                 .warn("No diff found from starting commit; review will be skipped for this cycle");
-            // Return empty prompt to signal no review should be done
-            return ("review (incremental - skipped)".to_string(), String::new());
+            Ok(None)
         }
         Err(e) => {
-            // Diff retrieval failed - this is a more serious issue
-            // Return an error result to signal the caller should skip this cycle
             ctx.logger.error(&format!(
                 "Failed to get diff from starting commit: {e}; skipping review cycle"
             ));
             ctx.logger.info(
                 "This may indicate a git repository issue. The review cycle will be skipped.",
             );
-            // Return empty prompt to signal no review should be done
-            return ("review (incremental - error)".to_string(), String::new());
+            Err(())
         }
-    };
-
-    if ctx.config.verbosity.is_debug() {
-        ctx.logger
-            .info(&format!("Diff size for review: {} bytes", diff.len()));
     }
-
-    (
-        "review (incremental)".to_string(),
-        prompt_incremental_review_with_diff(reviewer_context, &diff),
-    )
 }

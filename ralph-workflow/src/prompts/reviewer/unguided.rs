@@ -15,86 +15,72 @@
 
 use super::super::types::ContextLevel;
 
-/// Generate a simple/vague reviewer review prompt (without guidelines).
+/// Generate detailed reviewer review prompt without language-specific guidelines,
+/// including the diff directly in the prompt.
 ///
-/// This prompt is intentionally vague to preserve "fresh eyes" perspective
-/// and avoid context pollution. For detailed actionable output, use
-/// `prompt_detailed_review_without_guidelines` instead.
-///
-/// The reviewer returns structured issues data (captured by JSON parser)
-/// and the orchestrator writes it to .agent/ISSUES.md.
-pub fn prompt_reviewer_review(context: ContextLevel) -> String {
-    match context {
-        ContextLevel::Minimal => r#"You are in REVIEW MODE with fresh eyes perspective.
-
-YOUR TASK:
-Evaluate the codebase changes. Focus on:
-1) Code quality and correctness
-2) Bugs, error handling, tests, security
-3) Code style and idiomatic usage
-
-OUTPUT:
-Return your findings as structured output.
-If no issues found, return "No issues found.""#
-            .to_string(),
-        ContextLevel::Normal => r#"You are in REVIEW MODE.
-
-YOUR TASK:
-Review the codebase for:
-- Code quality and correctness
-- Bugs, error handling, tests
-- Security issues
-
-OUTPUT:
-Return your findings as structured output.
-If no issues, return "No issues found.""#
-            .to_string(),
-    }
-}
-
-/// Generate detailed reviewer review prompt without language-specific guidelines.
-///
-/// Use this when the review needs to produce actionable issues output
-/// even if stack detection did not produce `ReviewGuidelines`.
+/// This version receives the diff as a parameter instead of telling the agent
+/// to run git commands. This keeps agents isolated from git operations and
+/// ensures they only review the changes made since the pipeline started.
 ///
 /// The reviewer returns structured issues data (captured by JSON parser)
 /// and the orchestrator writes it to .agent/ISSUES.md.
-pub fn prompt_detailed_review_without_guidelines(context: ContextLevel) -> String {
+///
+/// # Arguments
+///
+/// * `context` - The context level (minimal or normal)
+/// * `diff` - The git diff to review (changes since pipeline start)
+pub fn prompt_detailed_review_without_guidelines_with_diff(
+    context: ContextLevel,
+    diff: &str,
+) -> String {
     match context {
-        ContextLevel::Minimal => r#"You are in DETAILED REVIEW MODE with fresh eyes perspective.
+        ContextLevel::Minimal => format!(
+            r#"You are in DETAILED REVIEW MODE with fresh eyes perspective.
 
 INPUTS TO READ:
+- DIFF below - Changes since the start of this pipeline
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md (you need unbiased perspective)
 
 YOUR TASK:
-Produce actionable issues:
+Review ONLY the changes in the DIFF below. Focus on:
 1) Code quality and correctness
 2) Bugs, security, tests
 3) Code style and maintainability
 
-OUTPUT (prioritized checklist):
+DIFF TO REVIEW:
+```diff
+{diff}
+```
+
+OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Description (blocks merge)
 - [ ] High: [file:line] Description (should fix before merge)
 - [ ] Medium: [file:line] Description (should address)
 - [ ] Low: [file:line] Description (nice to have)
 
-If no issues found, return "No issues found.""#
-            .to_string(),
-        ContextLevel::Normal => r#"You are in DETAILED REVIEW MODE.
+If no issues found in the changed files, return "No issues found.""#
+        ),
+        ContextLevel::Normal => format!(
+            r#"You are in DETAILED REVIEW MODE.
 
 YOUR TASK:
-Review for quality and correctness:
+Review ONLY the changes in the DIFF below. Focus on:
 - Bugs, security, tests
 - Code style and maintainability
 
-OUTPUT (prioritized checklist):
+DIFF TO REVIEW:
+```diff
+{diff}
+```
+
+OUTPUT (prioritized checklist with [file:line]):
 - [ ] Critical: [file:line] Blocks merge
 - [ ] High: [file:line] Should fix before merge
 - [ ] Medium: [file:line] Should address
 - [ ] Low: [file:line] Nice to have
 
-If no issues found, return "No issues found.""#
-            .to_string(),
+If no issues found in the changed files, return "No issues found.""#
+        ),
     }
 }
 
@@ -157,28 +143,38 @@ OUTPUT (prioritized checklist):
     }
 }
 
-/// Generate a universal/simplified review prompt for maximum agent compatibility.
+/// Generate a universal/simplified review prompt for maximum agent compatibility,
+/// including the diff directly in the prompt.
 ///
 /// This prompt is designed to work with a wide range of AI agents, including
 /// those with weaker instruction-following capabilities. It:
 /// - Uses simpler, more direct language
 /// - Provides explicit output templates
 /// - Minimizes complex structured instructions
+/// - Includes the diff directly to keep agents isolated from git operations
 ///
 /// The reviewer returns structured issues data (captured by JSON parser)
 /// and the orchestrator writes it to .agent/ISSUES.md.
 ///
-/// Use this for agents like GLM, `ZhipuAI`, and other models that may struggle
-/// with more complex prompts.
-pub fn prompt_universal_review(context: ContextLevel) -> String {
+/// # Arguments
+///
+/// * `context` - The context level (minimal or normal)
+/// * `diff` - The git diff to review (changes since pipeline start)
+pub fn prompt_universal_review_with_diff(context: ContextLevel, diff: &str) -> String {
     match context {
-        ContextLevel::Minimal => r#"REVIEW TASK
+        ContextLevel::Minimal => format!(
+            r#"REVIEW TASK
 
-Review the codebase for:
+Review ONLY the changes in the DIFF below for:
 - Bugs, errors, security issues
 - Missing tests
 - Code quality and style
 
+DIFF TO REVIEW:
+```diff
+{diff}
+```
+
 OUTPUT FORMAT
 
 Return your findings using this format:
@@ -188,13 +184,19 @@ Return your findings using this format:
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found, return exactly: "No issues found."
+If no issues found in the changed files, return exactly: "No issues found."
 
 IMPORTANT: Use the format [file:line] for each issue."#
-            .to_string(),
-        ContextLevel::Normal => r#"REVIEW TASK
+        ),
+        ContextLevel::Normal => format!(
+            r#"REVIEW TASK
 
-Review the codebase for quality and correctness.
+Review ONLY the changes in the DIFF below for quality and correctness.
+
+DIFF TO REVIEW:
+```diff
+{diff}
+```
 
 OUTPUT FORMAT
 
@@ -204,7 +206,7 @@ Return your findings using this format:
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
 
-If no issues found, return exactly: "No issues found.""#
-            .to_string(),
+If no issues found in the changed files, return exactly: "No issues found.""#
+        ),
     }
 }

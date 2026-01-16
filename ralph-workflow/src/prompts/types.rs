@@ -45,8 +45,6 @@ pub enum Action {
     Plan,
     /// Execute an iteration of development
     Iterate,
-    /// Review code for issues
-    Review,
     /// Fix issues found during review
     Fix,
 }
