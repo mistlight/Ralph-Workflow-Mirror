@@ -205,6 +205,7 @@ struct TryModelContext<'a> {
     prompt: &'a str,
     logfile_prefix: &'a str,
     fallback_config: &'a crate::agents::fallback::FallbackConfig,
+    output_validator: Option<crate::pipeline::fallback::OutputValidator>,
 }
 
 /// Try a single model configuration for an agent.
@@ -268,6 +269,7 @@ fn try_single_model(
         agent_index: ctx.agent_index,
         cycle: ctx.cycle as usize,
         fallback_config: ctx.fallback_config,
+        output_validator: ctx.output_validator,
     };
     let result = try_agent_with_retries(&attempt_config, runtime)?;
 
@@ -292,6 +294,7 @@ struct TryAgentContext<'a> {
     logfile_prefix: &'a str,
     cli_model_override: Option<&'a String>,
     cli_provider_override: Option<&'a String>,
+    output_validator: Option<crate::pipeline::fallback::OutputValidator>,
 }
 
 /// Try a single agent with all its model configurations.
@@ -344,6 +347,7 @@ fn try_single_agent(
             prompt: ctx.prompt,
             logfile_prefix: ctx.logfile_prefix,
             fallback_config,
+            output_validator: ctx.output_validator,
         };
         let result = try_single_model(&model_ctx, runtime)?;
 
@@ -360,6 +364,18 @@ fn try_single_agent(
     Ok(TrySingleAgentResult::NoRetry)
 }
 
+/// Configuration for running with fallback.
+pub struct FallbackConfig<'a, 'b> {
+    pub role: AgentRole,
+    pub base_label: &'a str,
+    pub prompt: &'a str,
+    pub logfile_prefix: &'a str,
+    pub runtime: &'a mut PipelineRuntime<'b>,
+    pub registry: &'a AgentRegistry,
+    pub primary_agent: &'a str,
+    pub output_validator: Option<crate::pipeline::fallback::OutputValidator>,
+}
+
 /// Run a command with automatic fallback to alternative agents on failure.
 pub fn run_with_fallback(
     role: AgentRole,
@@ -370,26 +386,73 @@ pub fn run_with_fallback(
     registry: &AgentRegistry,
     primary_agent: &str,
 ) -> std::io::Result<i32> {
-    let fallback_config = registry.fallback_config();
-    let fallbacks = registry.available_fallbacks(role);
-    if fallback_config.has_fallbacks(role) {
-        runtime.logger.info(&format!(
-            "Agent fallback chain for {role}: {}",
+    run_with_fallback_internal(FallbackConfig {
+        role,
+        base_label,
+        prompt,
+        logfile_prefix,
+        runtime,
+        registry,
+        primary_agent,
+        output_validator: None,
+    })
+}
+
+/// Run a command with automatic fallback to alternative agents on failure.
+///
+/// Includes an optional output validator callback that checks if the agent
+/// produced valid output after `exit_code=0`. If validation fails, triggers fallback.
+#[allow(clippy::too_many_arguments)]
+pub fn run_with_fallback_and_validator(
+    role: AgentRole,
+    base_label: &str,
+    prompt: &str,
+    logfile_prefix: &str,
+    runtime: &mut PipelineRuntime<'_>,
+    registry: &AgentRegistry,
+    primary_agent: &str,
+    output_validator: Option<crate::pipeline::fallback::OutputValidator>,
+) -> std::io::Result<i32> {
+    run_with_fallback_internal(FallbackConfig {
+        role,
+        base_label,
+        prompt,
+        logfile_prefix,
+        runtime,
+        registry,
+        primary_agent,
+        output_validator,
+    })
+}
+
+/// Run a command with automatic fallback to alternative agents on failure.
+///
+/// Includes an optional output validator callback that checks if the agent
+/// produced valid output after `exit_code=0`. If validation fails, triggers fallback.
+fn run_with_fallback_internal(config: FallbackConfig<'_, '_>) -> std::io::Result<i32> {
+    let fallback_config = config.registry.fallback_config();
+    let fallbacks = config.registry.available_fallbacks(config.role);
+    if fallback_config.has_fallbacks(config.role) {
+        config.runtime.logger.info(&format!(
+            "Agent fallback chain for {}: {}",
+            config.role,
             fallbacks.join(", ")
         ));
     } else {
-        runtime.logger.info(&format!(
-            "No configured fallbacks for {role}, using primary only"
+        config.runtime.logger.info(&format!(
+            "No configured fallbacks for {}, using primary only",
+            config.role
         ));
     }
 
-    let agents_to_try = build_agents_to_try(&fallbacks, primary_agent);
-    let (cli_model_override, cli_provider_override) = get_cli_overrides(role, runtime);
+    let agents_to_try = build_agents_to_try(&fallbacks, config.primary_agent);
+    let (cli_model_override, cli_provider_override) =
+        get_cli_overrides(config.role, config.runtime);
 
     for cycle in 0..fallback_config.max_cycles {
         if cycle > 0 {
             let backoff_ms = fallback_config.calculate_backoff(cycle - 1);
-            runtime.logger.info(&format!(
+            config.runtime.logger.info(&format!(
                 "Cycle {}/{}: All agents exhausted, waiting {}ms before retry (exponential backoff)...",
                 cycle + 1,
                 fallback_config.max_cycles,
@@ -403,14 +466,15 @@ pub fn run_with_fallback(
                 agent_name,
                 agent_index,
                 cycle,
-                role,
-                base_label,
-                prompt,
-                logfile_prefix,
+                role: config.role,
+                base_label: config.base_label,
+                prompt: config.prompt,
+                logfile_prefix: config.logfile_prefix,
                 cli_model_override: cli_model_override.as_ref(),
                 cli_provider_override: cli_provider_override.as_ref(),
+                output_validator: config.output_validator,
             };
-            let result = try_single_agent(&ctx, runtime, registry, fallback_config)?;
+            let result = try_single_agent(&ctx, config.runtime, config.registry, fallback_config)?;
 
             match result {
                 TrySingleAgentResult::Success => return Ok(0),
@@ -420,7 +484,7 @@ pub fn run_with_fallback(
         }
     }
 
-    runtime.logger.error(&format!(
+    config.runtime.logger.error(&format!(
         "All agents exhausted after {} cycles with exponential backoff",
         fallback_config.max_cycles
     ));

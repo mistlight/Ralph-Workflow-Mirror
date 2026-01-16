@@ -1076,12 +1076,14 @@ fn run_ai_conflict_resolution(
 ) -> anyhow::Result<String> {
     use crate::agents::AgentRegistry;
     use crate::files::result_extraction::extract_last_result;
-    use crate::pipeline::{run_with_fallback, PipelineRuntime};
-    use std::fs;
+    use crate::pipeline::{run_with_fallback_and_validator, OutputValidator, PipelineRuntime};
+    use std::io;
     use std::path::Path;
 
+    // Note: log_dir is used as a prefix for log file names, not as a directory.
+    // The actual log files will be created in .agent/logs/ with names like:
+    // .agent/logs/rebase_conflict_resolution_ccs-glm_0.log
     let log_dir = ".agent/logs/rebase_conflict_resolution";
-    fs::create_dir_all(log_dir)?;
 
     let registry = AgentRegistry::new()?;
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
@@ -1093,7 +1095,20 @@ fn run_ai_conflict_resolution(
         config,
     };
 
-    let exit_code = run_with_fallback(
+    // Output validator: checks if agent produced valid output after exit_code=0
+    let validate_output: OutputValidator =
+        |log_dir_path: &Path, validation_logger: &crate::logger::Logger| -> io::Result<bool> {
+            match extract_last_result(log_dir_path) {
+                Ok(Some(_)) => Ok(true), // Valid output exists
+                Ok(None) => Ok(false),   // No output found - trigger fallback
+                Err(e) => {
+                    validation_logger.warn(&format!("Output validation check failed: {e}"));
+                    Ok(false) // Treat validation errors as missing output
+                }
+            }
+        };
+
+    let exit_code = run_with_fallback_and_validator(
         crate::agents::AgentRole::Reviewer,
         "conflict resolution",
         resolution_prompt,
@@ -1101,12 +1116,17 @@ fn run_ai_conflict_resolution(
         &mut runtime,
         &registry,
         reviewer_agent,
+        Some(validate_output),
     )?;
 
     if exit_code != 0 {
         anyhow::bail!("Agent failed to resolve conflicts");
     }
 
+    // Extract the result from the log file.
+    // The log file is created as {log_dir}_{agent}_{index}.log in the parent directory.
+    // Since log_dir is a directory path, we pass it directly to extract_last_result
+    // which will use it as a prefix to find matching log files.
     let resolved_content = match extract_last_result(Path::new(log_dir)) {
         Ok(Some(c)) => c,
         Ok(None) => {

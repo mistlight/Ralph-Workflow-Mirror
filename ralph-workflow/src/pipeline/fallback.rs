@@ -4,6 +4,7 @@ use crate::agents::{is_glm_like_agent, AgentErrorKind, JsonParserType};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::logger::Logger;
 use std::io;
+use std::path::Path;
 
 use super::prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
 
@@ -19,6 +20,12 @@ pub enum TryAgentResult {
     /// Should retry (non-retriable error on last retry)
     NoRetry,
 }
+
+/// Callback type for validating agent output after execution.
+///
+/// Takes the log directory path and returns Ok(true) if output is valid,
+/// Ok(false) if output is missing/invalid (trigger fallback), or Err(e) for errors.
+pub type OutputValidator = fn(log_dir: &Path, logger: &Logger) -> io::Result<bool>;
 
 /// Configuration for attempting an agent with retries.
 pub struct AgentAttemptConfig<'a> {
@@ -48,6 +55,8 @@ pub struct AgentAttemptConfig<'a> {
     pub cycle: usize,
     /// Fallback configuration
     pub fallback_config: &'a crate::agents::fallback::FallbackConfig,
+    /// Optional callback to validate output after execution (`exit_code=0`)
+    pub output_validator: Option<OutputValidator>,
 }
 
 /// Log GLM-specific diagnostic output (only on first try to avoid spam).
@@ -181,6 +190,40 @@ fn log_retry_message(
     std::thread::sleep(std::time::Duration::from_millis(wait_ms));
 }
 
+/// Validate agent output after successful execution (`exit_code=0`).
+///
+/// Returns `Some(true)` if output is valid, `Some(false)` if missing/invalid (trigger fallback),
+/// or `None` if no validator is configured.
+fn validate_agent_output(
+    config: &AgentAttemptConfig<'_>,
+    runtime: &mut PipelineRuntime<'_>,
+) -> Option<bool> {
+    let validator = config.output_validator?;
+
+    let log_path = Path::new(config.logfile);
+    let log_dir = log_path.parent().unwrap_or_else(|| Path::new("."));
+
+    match validator(log_dir, runtime.logger) {
+        Ok(true) => Some(true),
+        Ok(false) => {
+            runtime.logger.warn(&format!(
+                "Agent '{}' exited with code 0 but produced no valid output",
+                config.agent_name
+            ));
+            runtime
+                .logger
+                .info("Treating as failure and trying fallback...");
+            Some(false)
+        }
+        Err(e) => {
+            runtime.logger.warn(&format!(
+                "Output validation failed (continuing anyway): {e}"
+            ));
+            Some(true)
+        }
+    }
+}
+
 /// Try a single agent/model configuration with retries.
 ///
 /// Returns the result of the attempt: success, unrecoverable error, or should-fallback.
@@ -230,7 +273,11 @@ pub fn try_agent_with_retries(
         )?;
 
         if result.exit_code == 0 {
-            return Ok(TryAgentResult::Success);
+            // Validate output if a validator is provided
+            match validate_agent_output(config, runtime) {
+                Some(false) => return Ok(TryAgentResult::Fallback),
+                Some(true) | None => return Ok(TryAgentResult::Success),
+            }
         }
 
         // Handle error classification, logging, and user guidance
