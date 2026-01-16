@@ -80,7 +80,6 @@ use validation::{
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
-#[allow(clippy::too_many_lines)]
 pub fn run(args: Args) -> anyhow::Result<()> {
     let colors = Colors::new();
     let mut logger = Logger::new(colors);
