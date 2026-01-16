@@ -315,7 +315,8 @@ impl<'a> SyntaxValidator<'a> {
         if self.i + 1 < bytes.len() && bytes[self.i] == b'{' && bytes[self.i + 1] == b'#' {
             let comment_start = self.line;
             self.i += 2;
-            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'#' && bytes[self.i + 1] == b'}') {
+            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'#' && bytes[self.i + 1] == b'}')
+            {
                 if bytes[self.i] == b'\n' {
                     self.line += 1;
                 }
@@ -347,11 +348,13 @@ impl<'a> SyntaxValidator<'a> {
         {
             let if_start = self.i;
             self.i += 6;
-            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'%' && bytes[self.i + 1] == b'}') {
+            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'%' && bytes[self.i + 1] == b'}')
+            {
                 self.i += 1;
             }
             if self.i + 1 >= bytes.len() {
-                self.errors.push(ValidationError::UnclosedConditional { line: self.line });
+                self.errors
+                    .push(ValidationError::UnclosedConditional { line: self.line });
             } else {
                 let condition = self.content[if_start + 6..self.i].trim();
                 if condition.is_empty() || condition.contains('{') || condition.contains('}') {
@@ -400,11 +403,13 @@ impl<'a> SyntaxValidator<'a> {
         {
             let for_start = self.i;
             self.i += 7;
-            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'%' && bytes[self.i + 1] == b'}') {
+            while self.i + 1 < bytes.len() && !(bytes[self.i] == b'%' && bytes[self.i + 1] == b'}')
+            {
                 self.i += 1;
             }
             if self.i + 1 >= bytes.len() {
-                self.errors.push(ValidationError::UnclosedLoop { line: self.line });
+                self.errors
+                    .push(ValidationError::UnclosedLoop { line: self.line });
             } else {
                 let condition = self.content[for_start + 7..self.i].trim();
                 if !condition.contains(" in ") || condition.split(" in ").count() != 2 {
@@ -442,10 +447,12 @@ impl<'a> SyntaxValidator<'a> {
 
     fn check_unclosed_blocks(&mut self) {
         if let Some((line, _)) = self.conditional_stack.first() {
-            self.errors.push(ValidationError::UnclosedConditional { line: *line });
+            self.errors
+                .push(ValidationError::UnclosedConditional { line: *line });
         }
         if let Some((line, _)) = self.loop_stack.first() {
-            self.errors.push(ValidationError::UnclosedLoop { line: *line });
+            self.errors
+                .push(ValidationError::UnclosedLoop { line: *line });
         }
     }
 }

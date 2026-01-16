@@ -516,7 +516,7 @@ fn handle_template_init(force: bool, colors: Colors) -> anyhow::Result<()> {
 
 /// Handle all template commands.
 pub fn handle_template_commands(commands: &TemplateCommands, colors: Colors) -> anyhow::Result<()> {
-    if commands.init_templates {
+    if commands.init_templates_enabled() {
         handle_template_init(commands.force, colors)?;
     } else if commands.validate {
         handle_template_validate(colors);

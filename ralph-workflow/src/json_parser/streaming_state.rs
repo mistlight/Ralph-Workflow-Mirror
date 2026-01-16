@@ -92,146 +92,14 @@
 //! session.on_message_stop();
 //! ```
 
+use crate::json_parser::deduplication::RollingHashWindow;
+use crate::json_parser::deduplication::{get_overlap_thresholds, DeltaDeduplicator};
 use crate::json_parser::health::StreamingQualityMetrics;
 use crate::json_parser::types::ContentType;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
-
-/// Prefix trie node for duplicate content detection.
-///
-/// Each node represents a character in the trie and contains
-/// references to child nodes for the next character.
-#[derive(Debug, Default, Clone)]
-struct PrefixTrieNode {
-    /// Map from character to child node
-    children: HashMap<char, Self>,
-    /// Whether this node marks the end of a complete content string
-    is_end: bool,
-}
-
-/// Prefix trie for efficient duplicate content detection.
-///
-/// This data structure stores all rendered content and provides O(k)
-/// lookup time where k is the content length. It's used to detect
-/// duplicate streaming content before rendering to prevent visual
-/// repetition.
-///
-/// # Example
-///
-/// ```ignore
-/// let mut trie = PrefixTrie::new();
-///
-/// // Insert rendered content
-/// trie.insert("Hello World");
-///
-/// // Check if content has been rendered
-/// assert!(trie.contains("Hello World"));
-/// assert!(!trie.contains("Goodbye"));
-///
-/// // Clear for new message
-/// trie.clear();
-/// assert!(!trie.contains("Hello World"));
-/// ```
-#[derive(Debug, Default, Clone)]
-pub struct PrefixTrie {
-    /// Root node of the trie
-    root: PrefixTrieNode,
-}
-
-impl PrefixTrie {
-    /// Insert content into the trie.
-    ///
-    /// This marks the content as having been rendered, so future
-    /// occurrences can be detected as duplicates.
-    ///
-    /// # Arguments
-    /// * `content` - The content string to insert
-    pub fn insert(&mut self, content: &str) {
-        let mut current = &mut self.root;
-
-        for ch in content.chars() {
-            current = current.children.entry(ch).or_default();
-        }
-
-        current.is_end = true;
-    }
-
-    /// Check if content has been inserted into the trie (exact match).
-    ///
-    /// # Arguments
-    /// * `content` - The content string to check
-    ///
-    /// # Returns
-    /// * `true` - The exact content has been rendered before
-    /// * `false` - The exact content has not been rendered
-    pub fn contains(&self, content: &str) -> bool {
-        let mut current = &self.root;
-
-        for ch in content.chars() {
-            match current.children.get(&ch) {
-                Some(node) => current = node,
-                None => return false,
-            }
-        }
-
-        current.is_end
-    }
-
-    /// Check if content starts with any previously rendered content (prefix match).
-    ///
-    /// This is the key deduplication method. It detects when new content
-    /// begins with something we've already rendered, indicating we should
-    /// do an in-place update (replace "Hello" with "Hello World").
-    ///
-    /// # Arguments
-    /// * `content` - The content string to check
-    ///
-    /// # Returns
-    /// * `true` - Content starts with previously rendered content
-    /// * `false` - Content is completely new
-    ///
-    /// # Example
-    /// ```ignore
-    /// let mut trie = PrefixTrie::new();
-    /// trie.insert("Hello");
-    ///
-    /// // "Hello World" starts with "Hello" which was rendered
-    /// assert!(trie.has_prefix_match("Hello World"));
-    ///
-    /// // "Goodbye" doesn't start with anything rendered
-    /// assert!(!trie.has_prefix_match("Goodbye"));
-    /// ```
-    pub fn has_prefix_match(&self, content: &str) -> bool {
-        let mut current = &self.root;
-
-        for ch in content.chars() {
-            // If we've reached a node marking end of rendered content,
-            // then the new content starts with previously rendered content
-            if current.is_end {
-                return true;
-            }
-
-            match current.children.get(&ch) {
-                Some(node) => current = node,
-                None => return false,
-            }
-        }
-
-        // Also return true if we've traversed the entire content
-        // and ended at a node marking end of rendered content (exact match)
-        current.is_end
-    }
-
-    /// Clear all content from the trie.
-    ///
-    /// This should be called at message boundaries to prevent
-    /// false positives across different messages.
-    pub fn clear(&mut self) {
-        self.root = PrefixTrieNode::default();
-    }
-}
 
 // Streaming configuration constants
 
@@ -255,34 +123,6 @@ const MIN_SNAPSHOT_THRESHOLD: usize = 50;
 /// Values above 1000 would allow malicious snapshots to pass undetected,
 /// potentially causing exponential duplication bugs.
 const MAX_SNAPSHOT_THRESHOLD: usize = 1000;
-
-/// Default fuzzy match ratio for snapshot detection (percentage 0-100).
-///
-/// This value determines how strict fuzzy snapshot detection is. At 85%:
-/// - Text containing >85% of previous content is flagged as a snapshot
-/// - Balances detection accuracy with false positive rate
-/// - Lower values increase detection but may catch legitimate content reuse
-/// - Higher values reduce false positives but miss some snapshots
-const DEFAULT_FUZZY_MATCH_RATIO: usize = 85;
-
-/// Minimum allowed fuzzy match ratio (percentage).
-///
-/// Values below 50% would flag too many false positives, as half of text
-/// overlap is common in normal responses (e.g., repeated phrases).
-const MIN_FUZZY_MATCH_RATIO: usize = 50;
-
-/// Maximum allowed fuzzy match ratio (percentage).
-///
-/// Values above 95% would make fuzzy detection too strict, missing many
-/// valid snapshots with minor formatting differences.
-const MAX_FUZZY_MATCH_RATIO: usize = 95;
-
-/// Minimum content length required for fuzzy snapshot detection (in characters).
-///
-/// Short content (below 20 chars) often has high overlap ratios by chance.
-/// For example, "Hi there" and "Hi there!" have ~90% overlap but the latter
-/// is a genuine delta, not a snapshot.
-const MIN_FUZZY_MATCH_LENGTH: usize = 20;
 
 /// Minimum number of consecutive large deltas required to trigger pattern detection warning.
 ///
@@ -326,8 +166,6 @@ const DEFAULT_MAX_DELTA_HISTORY: usize = 10;
 ///
 /// - `RALPH_STREAMING_SNAPSHOT_THRESHOLD`: Threshold for detecting snapshot-as-delta
 ///   violations (default: 200). Deltas exceeding this size trigger warnings.
-/// - `RALPH_STREAMING_FUZZY_MATCH_RATIO`: Ratio (0-100) for fuzzy snapshot detection
-///   (default: 85). Higher values make fuzzy detection more strict.
 ///
 /// Get the snapshot threshold from environment variable or use default.
 ///
@@ -348,28 +186,6 @@ fn snapshot_threshold() -> usize {
                 }
             })
             .unwrap_or(DEFAULT_SNAPSHOT_THRESHOLD)
-    })
-}
-
-/// Get the fuzzy match ratio from environment variable or use default.
-///
-/// Reads `RALPH_STREAMING_FUZZY_MATCH_RATIO` env var.
-/// Valid range: 50-95 (percentage).
-/// Falls back to default of 85 if not set or out of range.
-fn fuzzy_match_ratio() -> usize {
-    static RATIO: OnceLock<usize> = OnceLock::new();
-    *RATIO.get_or_init(|| {
-        std::env::var("RALPH_STREAMING_FUZZY_MATCH_RATIO")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .and_then(|v| {
-                if (MIN_FUZZY_MATCH_RATIO..=MAX_FUZZY_MATCH_RATIO).contains(&v) {
-                    Some(v)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(DEFAULT_FUZZY_MATCH_RATIO)
     })
 }
 
@@ -473,10 +289,22 @@ pub struct StreamingSession {
     /// would produce identical output (prevents visual repetition).
     /// Maps `(content_type, key)` → the last accumulated content that was rendered.
     last_rendered: HashMap<(ContentType, String), String>,
-    /// Prefix trie tracking all rendered content for duplicate detection.
-    /// This provides O(k) lookup for detecting duplicates across all content,
-    /// not just per-key. Cleared on message boundaries to prevent false positives.
-    rendered_content: PrefixTrie,
+    /// Track all rendered content hashes for duplicate detection.
+    /// This is preserved across `MessageStart` boundaries to prevent duplicate rendering.
+    rendered_content_hashes: HashSet<u64>,
+    /// Track the last delta for each key to detect exact duplicate deltas.
+    /// This is preserved across `MessageStart` boundaries to prevent duplicate processing.
+    /// Maps `(content_type, key)` → the last delta that was processed.
+    last_delta: HashMap<(ContentType, String), String>,
+    /// Track consecutive duplicates for resend glitch detection ("3 strikes" heuristic).
+    /// Maps `(content_type, key)` → (count, `delta_hash`) where count tracks how many
+    /// times the exact same delta has arrived consecutively. When count exceeds
+    /// the threshold, the delta is dropped as a resend glitch.
+    consecutive_duplicates: HashMap<(ContentType, String), (usize, u64)>,
+    /// Delta deduplicator using KMP and rolling hash for snapshot detection.
+    /// Provides O(n+m) guaranteed complexity for detecting snapshot-as-delta violations.
+    /// Cleared on message boundaries to prevent false positives.
+    deduplicator: DeltaDeduplicator,
 }
 
 impl StreamingSession {
@@ -558,6 +386,15 @@ impl StreamingSession {
             // events don't reset output tracking, preventing duplicate prefix display.
             let preserved_output_started = std::mem::take(&mut self.output_started_for_key);
 
+            // Also preserve last_delta to detect duplicate deltas across MessageStart boundaries
+            let preserved_last_delta = std::mem::take(&mut self.last_delta);
+
+            // Also preserve rendered_content_hashes to detect duplicate rendering across MessageStart
+            let preserved_rendered_hashes = std::mem::take(&mut self.rendered_content_hashes);
+
+            // Also preserve consecutive_duplicates to detect resend glitches across MessageStart
+            let preserved_consecutive_duplicates = std::mem::take(&mut self.consecutive_duplicates);
+
             self.state = StreamingState::Idle;
             self.streamed_types.clear();
             self.current_block = ContentBlockState::NotInBlock;
@@ -565,10 +402,13 @@ impl StreamingSession {
             self.key_order.clear();
             self.delta_sizes.clear();
             self.last_rendered.clear();
-            self.rendered_content.clear();
+            self.deduplicator.clear();
 
             // Restore preserved state
             self.output_started_for_key = preserved_output_started;
+            self.last_delta = preserved_last_delta;
+            self.rendered_content_hashes = preserved_rendered_hashes;
+            self.consecutive_duplicates = preserved_consecutive_duplicates;
         } else {
             // Normal reset for new message
             self.state = StreamingState::Idle;
@@ -579,7 +419,10 @@ impl StreamingSession {
             self.delta_sizes.clear();
             self.output_started_for_key.clear();
             self.last_rendered.clear();
-            self.rendered_content.clear();
+            self.last_delta.clear();
+            self.rendered_content_hashes.clear();
+            self.consecutive_duplicates.clear();
+            self.deduplicator.clear();
         }
         // Note: We don't reset current_message_id here - it's set by a separate method
         // This allows for more flexible message ID handling
@@ -679,6 +522,8 @@ impl StreamingSession {
                     // Clear delta sizes for the old index to prevent incorrect pattern detection
                     self.delta_sizes.remove(&key);
                     self.last_rendered.remove(&key);
+                    // Clear consecutive duplicates for the old index
+                    self.consecutive_duplicates.remove(&key);
                 }
             }
         }
@@ -742,6 +587,58 @@ impl StreamingSession {
         self.on_text_delta_key(&index.to_string(), delta)
     }
 
+    /// Check for consecutive duplicate delta using the "3 strikes" heuristic.
+    ///
+    /// Detects resend glitches where the exact same delta arrives repeatedly.
+    /// Returns true if the delta should be dropped (exceeded threshold), false otherwise.
+    ///
+    /// # Arguments
+    /// * `content_key` - The content key to check
+    /// * `delta` - The delta to check
+    /// * `key_str` - The string key for logging
+    ///
+    /// # Returns
+    /// * `true` - The delta should be dropped (consecutive duplicate exceeded threshold)
+    /// * `false` - The delta should be processed
+    fn check_consecutive_duplicate(
+        &mut self,
+        content_key: &(ContentType, String),
+        delta: &str,
+        key_str: &str,
+    ) -> bool {
+        let delta_hash = RollingHashWindow::compute_hash(delta);
+        let thresholds = get_overlap_thresholds();
+
+        if let Some((count, prev_hash)) = self.consecutive_duplicates.get_mut(content_key) {
+            if *prev_hash == delta_hash {
+                *count += 1;
+                // Check if we've exceeded the consecutive duplicate threshold
+                if *count >= thresholds.consecutive_duplicate_threshold {
+                    // This is a resend glitch - drop the delta entirely
+                    if self.verbose_warnings {
+                        eprintln!(
+                            "Warning: Dropping consecutive duplicate delta (count={count}, threshold={}). \
+                            This appears to be a resend glitch. Key: '{key_str}', Delta: {delta:?}",
+                            thresholds.consecutive_duplicate_threshold
+                        );
+                    }
+                    // Don't update last_delta - preserve previous for comparison
+                    return true;
+                }
+            } else {
+                // Different delta - reset count and update hash
+                *count = 1;
+                *prev_hash = delta_hash;
+            }
+        } else {
+            // First occurrence of this delta
+            self.consecutive_duplicates
+                .insert(content_key.clone(), (1, delta_hash));
+        }
+
+        false
+    }
+
     /// Process a text delta with a string key and return whether prefix should be shown.
     ///
     /// This variant is for parsers that use string keys instead of numeric indices
@@ -769,7 +666,61 @@ impl StreamingSession {
         // or idle (first delta starts streaming), never after finalization
         self.assert_lifecycle_state(&[StreamingState::Idle, StreamingState::Streaming]);
 
+        let content_key = (ContentType::Text, key.to_string());
         let delta_size = delta.len();
+
+        // Track delta size and warn on large deltas BEFORE duplicate check
+        // This ensures we track all received deltas even if they're duplicates
+        if delta_size > snapshot_threshold() {
+            self.large_delta_count += 1;
+            if self.verbose_warnings {
+                eprintln!(
+                    "Warning: Large delta ({delta_size} chars) for key '{key}'. \
+                    This may indicate unusual streaming behavior or a snapshot being sent as a delta."
+                );
+            }
+        }
+
+        // Track delta size for pattern detection
+        {
+            let sizes = self.delta_sizes.entry(content_key.clone()).or_default();
+            sizes.push(delta_size);
+
+            // Keep only the most recent delta sizes
+            if sizes.len() > self.max_delta_history {
+                sizes.remove(0);
+            }
+        }
+
+        // Check for exact duplicate delta (same delta sent twice)
+        // This handles the ccs-glm repeated MessageStart scenario where the same
+        // delta is sent multiple times. We skip processing exact duplicates ONLY when
+        // the accumulated content is empty (indicating we just had a MessageStart and
+        // this is a true duplicate, not just a repeated token in normal streaming).
+        if let Some(last) = self.last_delta.get(&content_key) {
+            if delta == last {
+                // Check if accumulated content is empty (just after MessageStart)
+                if let Some(current_accumulated) = self.accumulated.get(&content_key) {
+                    // If accumulated content is empty, this is likely a ccs-glm duplicate
+                    if current_accumulated.is_empty() {
+                        // Skip without updating last_delta (to preserve previous delta for comparison)
+                        return false;
+                    }
+                } else {
+                    // No accumulated content yet, definitely after MessageStart
+                    // Skip without updating last_delta
+                    return false;
+                }
+            }
+        }
+
+        // Consecutive duplicate detection ("3 strikes" heuristic)
+        // Detects resend glitches where the exact same delta arrives repeatedly.
+        // This is different from the above check - it tracks HOW MANY TIMES
+        // the same delta has arrived consecutively, not just if it matches once.
+        if self.check_consecutive_duplicate(&content_key, delta, key) {
+            return false;
+        }
 
         // Auto-repair: Check if this is a snapshot being sent as a delta
         // Do this BEFORE any mutable borrows so we can use immutable methods.
@@ -798,41 +749,28 @@ impl StreamingSession {
             delta.to_string()
         };
 
-        // Warn on large deltas BEFORE modification to detect snapshot-as-delta issues
-        // Use the original delta size since that's what we actually received
-        if delta_size > snapshot_threshold() {
-            self.large_delta_count += 1;
-            if self.verbose_warnings {
-                eprintln!(
-                    "Warning: Large delta ({delta_size} chars) for key '{key}'. \
-                    This may indicate unusual streaming behavior or a snapshot being sent as a delta."
-                );
-            }
-        }
-
-        // Track delta size for pattern detection (use original delta size for detection)
-        let content_key = (ContentType::Text, key.to_string());
-        let sizes = self.delta_sizes.entry(content_key.clone()).or_default();
-        sizes.push(delta_size);
-
-        // Keep only the most recent delta sizes
-        if sizes.len() > self.max_delta_history {
-            sizes.remove(0);
-        }
-
         // Pattern detection: Check if we're seeing repeated large deltas
         // This indicates the same content is being sent repeatedly (snapshot-as-delta)
-        if sizes.len() >= DEFAULT_PATTERN_DETECTION_MIN_DELTAS && self.verbose_warnings {
-            // Check if at least 3 of the last N deltas were large
-            let large_count = sizes.iter().filter(|&&s| s > snapshot_threshold()).count();
-            if large_count >= DEFAULT_PATTERN_DETECTION_MIN_DELTAS {
-                eprintln!(
-                    "Warning: Detected pattern of {large_count} large deltas for key '{key}'. \
-                    This strongly suggests a snapshot-as-delta bug where the same \
-                    large content is being sent repeatedly. File: streaming_state.rs, Line: {}",
-                    line!()
-                );
+        let sizes = self.delta_sizes.get(&content_key);
+        if let Some(sizes) = sizes {
+            if sizes.len() >= DEFAULT_PATTERN_DETECTION_MIN_DELTAS && self.verbose_warnings {
+                // Check if at least 3 of the last N deltas were large
+                let large_count = sizes.iter().filter(|&&s| s > snapshot_threshold()).count();
+                if large_count >= DEFAULT_PATTERN_DETECTION_MIN_DELTAS {
+                    eprintln!(
+                        "Warning: Detected pattern of {large_count} large deltas for key '{key}'. \
+                        This strongly suggests a snapshot-as-delta bug where the same \
+                        large content is being sent repeatedly. File: streaming_state.rs, Line: {}",
+                        line!()
+                    );
+                }
             }
+        }
+
+        // If the actual delta is empty (identical content detected), skip processing
+        if actual_delta.is_empty() {
+            // Return false to indicate no prefix should be shown (content unchanged)
+            return false;
         }
 
         // Mark that we're streaming text content
@@ -858,6 +796,11 @@ impl StreamingSession {
             .entry(content_key.clone())
             .and_modify(|buf| buf.push_str(&actual_delta))
             .or_insert_with(|| actual_delta);
+
+        // Track the last delta for duplicate detection
+        // Use the original delta for tracking (not the auto-repaired version)
+        self.last_delta
+            .insert(content_key.clone(), delta.to_string());
 
         // Track order
         if is_first {
@@ -1092,11 +1035,11 @@ impl StreamingSession {
         }
     }
 
-    /// Check if content has been rendered before using the prefix trie (exact match).
+    /// Check if content has been rendered before using hash-based tracking.
     ///
-    /// This provides global duplicate detection across all content, not just
-    /// per-key comparison. The prefix trie tracks all rendered content and
-    /// provides O(k) lookup where k is the content length.
+    /// This provides global duplicate detection across all content by computing
+    /// a hash of the accumulated content and checking if it's in the rendered set.
+    /// This is preserved across `MessageStart` boundaries to prevent duplicate rendering.
     ///
     /// # Arguments
     /// * `content_type` - The type of content
@@ -1110,59 +1053,66 @@ impl StreamingSession {
 
         // Check if we have accumulated content for this key
         if let Some(current) = self.accumulated.get(&content_key) {
-            return self.rendered_content.contains(current);
+            // Compute hash of current accumulated content
+            let mut hasher = DefaultHasher::new();
+            current.hash(&mut hasher);
+            let hash = hasher.finish();
+
+            // Check if this hash has been rendered before
+            return self.rendered_content_hashes.contains(&hash);
         }
 
         false
     }
 
-    /// Check if content starts with previously rendered content (prefix match).
+    /// Check if content has been rendered before and starts with previously rendered content.
     ///
-    /// This is the key method for detecting when new content extends previously
-    /// rendered content. When true, we should do an in-place update (replace
-    /// "Hello" with "Hello World" using carriage return).
+    /// This method detects when new content extends previously rendered content,
+    /// indicating an in-place update should be performed (e.g., using carriage return).
+    ///
+    /// With the new KMP + Rolling Hash approach, this checks if output has started
+    /// for this key, which indicates we're in an in-place update scenario.
     ///
     /// # Arguments
     /// * `content_type` - The type of content
     /// * `index` - The content index (as string for flexibility)
     ///
     /// # Returns
-    /// * `true` - Content starts with previously rendered content (do in-place update)
-    /// * `false` - Content is completely new
+    /// * `true` - Output has started for this key (do in-place update)
+    /// * `false` - Output has not started for this key (show new content)
     pub fn has_rendered_prefix(&self, content_type: ContentType, index: &str) -> bool {
         let content_key = (content_type, index.to_string());
-
-        // Check if we have accumulated content for this key
-        if let Some(current) = self.accumulated.get(&content_key) {
-            return self.rendered_content.has_prefix_match(current);
-        }
-
-        false
+        self.output_started_for_key.contains(&content_key)
     }
 
-    /// Mark content as rendered using the prefix trie.
+    /// Mark content as rendered using hash-based tracking.
     ///
-    /// This should be called after rendering to track the content in the trie.
-    /// Future calls to `is_content_rendered()` will return true for exact matches,
-    /// and `has_rendered_prefix()` will return true for content that extends this.
+    /// This method updates the `rendered_content_hashes` set to track all
+    /// content that has been rendered for deduplication.
     ///
     /// # Arguments
     /// * `content_type` - The type of content
     /// * `index` - The content index (as string for flexibility)
     pub fn mark_content_rendered(&mut self, content_type: ContentType, index: &str) {
-        let content_key = (content_type, index.to_string());
+        // Also update last_rendered for compatibility
+        self.mark_rendered(content_type, index);
 
-        // Insert the current accumulated content into the trie
+        // Add the hash of the accumulated content to the rendered set
+        let content_key = (content_type, index.to_string());
         if let Some(current) = self.accumulated.get(&content_key) {
-            self.rendered_content.insert(current);
+            let mut hasher = DefaultHasher::new();
+            current.hash(&mut hasher);
+            let hash = hasher.finish();
+            self.rendered_content_hashes.insert(hash);
         }
     }
 
     /// Check if incoming text is likely a snapshot (full accumulated content) rather than a delta.
     ///
-    /// This performs content-based detection by checking if the incoming text starts with
-    /// the previously accumulated content. This catches snapshot-as-delta violations that
-    /// are within size limits but still represent full accumulated content.
+    /// This uses the KMP + Rolling Hash algorithm for efficient O(n+m) snapshot detection.
+    /// The two-phase approach ensures optimal performance:
+    /// 1. Rolling hash for fast O(n) filtering
+    /// 2. KMP for exact O(n+m) verification
     ///
     /// # Arguments
     /// * `text` - The incoming text to check
@@ -1176,52 +1126,12 @@ impl StreamingSession {
 
         // Check if we have accumulated content for this key
         if let Some(previous) = self.accumulated.get(&content_key) {
-            // Exact snapshot detection: text starts with previous and is longer
-            if text.len() > previous.len() && text.starts_with(previous) {
-                return true;
-            }
-            // Explicitly handle duplicate content (identical to previous)
-            // This is not a snapshot, just a duplicate delta that should be ignored
-            if text == *previous {
-                return false;
-            }
-
-            // Fuzzy snapshot detection: check for high overlap ratio
-            // Some agents may add prefixes or have minor whitespace differences
-            // If the text contains most of the previous content (>80% overlap), it's likely a snapshot
-            if Self::is_fuzzy_snapshot_match(text, previous) {
-                return true;
-            }
+            // Use DeltaDeduplicator with threshold-aware snapshot detection
+            // This prevents false positives by requiring strong overlap (>=30 chars, >=50% ratio)
+            return DeltaDeduplicator::is_likely_snapshot_with_thresholds(text, previous);
         }
 
         false
-    }
-
-    /// Check if text is a fuzzy snapshot match using overlap ratio.
-    ///
-    /// This handles cases where agents send snapshot-style content with minor differences
-    /// like prefixes, extra whitespace, or formatting changes.
-    ///
-    /// Returns true if text contains >85% of previous content as a subsequence.
-    fn is_fuzzy_snapshot_match(text: &str, previous: &str) -> bool {
-        // For very short previous content, skip fuzzy matching to avoid false positives
-        if previous.len() < MIN_FUZZY_MATCH_LENGTH {
-            return false;
-        }
-
-        // Check if previous is contained within text
-        if text.contains(previous) {
-            // Calculate overlap ratio using integer arithmetic to avoid precision loss
-            // Check: previous.len() * 100 > text.len() * ratio (equivalent to previous/text > ratio/100)
-            // This avoids f64 precision issues for large usize values
-            let prev_len = previous.len();
-            let text_len = text.len();
-            let ratio = fuzzy_match_ratio();
-            // Use saturating multiplication to avoid overflow for extremely large strings
-            prev_len.saturating_mul(100) > text_len.saturating_mul(ratio)
-        } else {
-            false
-        }
     }
 
     /// Extract the delta portion from a snapshot.
@@ -1245,15 +1155,13 @@ impl StreamingSession {
         let content_key = (ContentType::Text, key.to_string());
 
         if let Some(previous) = self.accumulated.get(&content_key) {
-            // Try exact match first (previous is at the start)
-            if text.starts_with(previous) {
-                return Ok(previous.len());
-            }
-
-            // Try fuzzy match (previous is contained somewhere in text)
-            // This handles cases where agents add prefixes before the accumulated content
-            if let Some(pos) = text.find(previous) {
-                let delta_start = pos + previous.len();
+            // Use DeltaDeduplicator with threshold-aware delta extraction
+            // This ensures we only extract when overlap meets strong criteria
+            if let Some(new_content) =
+                DeltaDeduplicator::extract_new_content_with_thresholds(text, previous)
+            {
+                // Calculate the position where new content starts
+                let delta_start = text.len() - new_content.len();
                 return Ok(delta_start);
             }
         }
@@ -1442,13 +1350,22 @@ mod tests {
         session.on_message_start();
         session.on_content_block_start(0);
 
-        // First delta is "Hello"
-        session.on_text_delta(0, "Hello");
+        // First delta is long enough to meet threshold requirements
+        // Using 40 chars to ensure it exceeds the 30 char minimum
+        let initial = "This is a long message that exceeds threshold";
+        session.on_text_delta(0, initial);
 
         // Simulate GLM sending full accumulated content as next "delta"
-        // "Hello World" contains "Hello" at the start
-        let is_snapshot = session.is_likely_snapshot("Hello World", "0");
-        assert!(is_snapshot, "Should detect snapshot-as-delta");
+        // The overlap is 45 chars (100% of initial), meeting both thresholds:
+        // - char_count = 45 >= 30 ✓
+        // - ratio = 45/48 ≈ 94% >= 50% ✓
+        // - ends at safe boundary (space) ✓
+        let snapshot = format!("{initial} plus new content");
+        let is_snapshot = session.is_likely_snapshot(&snapshot, "0");
+        assert!(
+            is_snapshot,
+            "Should detect snapshot-as-delta with strong overlap"
+        );
     }
 
     #[test]
@@ -1488,12 +1405,14 @@ mod tests {
         session.on_message_start();
         session.on_content_block_start(0);
 
-        // First delta is "Hello"
-        session.on_text_delta(0, "Hello");
+        // First delta is long enough to meet threshold requirements
+        let initial = "This is a long message that exceeds threshold";
+        session.on_text_delta(0, initial);
 
-        // Snapshot "Hello World" should extract " World" as delta
-        let delta = session.get_delta_from_snapshot("Hello World", "0").unwrap();
-        assert_eq!(delta, " World");
+        // Snapshot should extract new portion
+        let snapshot = format!("{initial} plus new content");
+        let delta = session.get_delta_from_snapshot(&snapshot, "0").unwrap();
+        assert_eq!(delta, " plus new content");
     }
 
     #[test]
@@ -1533,150 +1452,36 @@ mod tests {
         session.on_message_start();
 
         // Test with string keys (like Codex/Gemini use)
-        session.on_text_delta_key("main", "Hello");
+        // Use content long enough to meet threshold requirements
+        let initial = "This is a long message that exceeds threshold";
+        session.on_text_delta_key("main", initial);
 
-        // Should detect snapshot for string key
-        let is_snapshot = session.is_likely_snapshot("Hello World", "main");
-        assert!(is_snapshot);
+        // Should detect snapshot for string key with strong overlap
+        let snapshot = format!("{initial} plus new content");
+        let is_snapshot = session.is_likely_snapshot(&snapshot, "main");
+        assert!(
+            is_snapshot,
+            "Should detect snapshot with string keys when thresholds are met"
+        );
 
         // Should extract delta correctly
-        let delta = session
-            .get_delta_from_snapshot("Hello World", "main")
-            .unwrap();
-        assert_eq!(delta, " World");
-    }
-
-    // Tests for fuzzy snapshot detection
-
-    #[test]
-    fn test_fuzzy_snapshot_detection_with_prefix() {
-        let mut session = StreamingSession::new();
-        session.on_message_start();
-
-        // First delta is "Hello World! This is a test message that is long enough to trigger fuzzy matching"
-        let long_text =
-            "Hello World! This is a test message that is long enough to trigger fuzzy matching";
-        session.on_text_delta(0, long_text);
-
-        // GLM might send: "Hello World! This is a test message that is long enough to trigger fuzzy matching and more"
-        // The previous content is embedded within the new text (with minimal prefix)
-        let with_prefix = format!("{long_text} and more");
-
-        // Should detect as snapshot using fuzzy matching (overlap > 85%)
-        let is_snapshot = session.is_likely_snapshot(&with_prefix, "0");
-        assert!(is_snapshot, "Should detect fuzzy snapshot with prefix");
-
-        // Should extract the delta portion (content after the previous text)
-        let delta = session.get_delta_from_snapshot(&with_prefix, "0").unwrap();
-        assert!(
-            delta.contains("and more"),
-            "Delta should contain new content"
-        );
-        assert!(
-            !delta.contains("Hello World"),
-            "Delta should not contain the previous content"
-        );
+        let delta = session.get_delta_from_snapshot(&snapshot, "main").unwrap();
+        assert_eq!(delta, " plus new content");
     }
 
     #[test]
-    fn test_fuzzy_snapshot_detection_no_false_positive() {
+    fn test_snapshot_extraction_exact_match() {
         let mut session = StreamingSession::new();
         session.on_message_start();
 
-        // First delta is "Hello"
-        session.on_text_delta(0, "Hello");
+        // First delta is long enough to meet threshold requirements
+        let initial = "This is a long message that exceeds threshold";
+        session.on_text_delta(0, initial);
 
-        // Genuine delta "World!" should NOT be detected as snapshot
-        // even though it's short and doesn't contain much overlap
-        let is_snapshot = session.is_likely_snapshot("World!", "0");
-        assert!(
-            !is_snapshot,
-            "Genuine delta should not be flagged as fuzzy snapshot"
-        );
-    }
-
-    #[test]
-    fn test_fuzzy_snapshot_detection_requires_minimum_length() {
-        let mut session = StreamingSession::new();
-        session.on_message_start();
-
-        // Short content (below MIN_FUZZY_MATCH_LENGTH char threshold)
-        session.on_text_delta(0, "Hi there");
-
-        // Even with high overlap, short content shouldn't trigger fuzzy matching
-        let with_prefix = "Response: Hi there, how are you?";
-        let is_snapshot = session.is_likely_snapshot(with_prefix, "0");
-        assert!(
-            !is_snapshot,
-            "Short content should not trigger fuzzy snapshot detection"
-        );
-    }
-
-    #[test]
-    fn test_fuzzy_snapshot_detection_requires_high_overlap() {
-        let mut session = StreamingSession::new();
-        session.on_message_start();
-
-        // First delta is "This is a moderately long message for testing fuzzy snapshot detection thresholds"
-        let long_text =
-            "This is a moderately long message for testing fuzzy snapshot detection thresholds";
-        session.on_text_delta(0, long_text);
-
-        // For fuzzy detection, the text must NOT start with previous (otherwise exact match triggers)
-        // Create text where previous is embedded but NOT at the start
-        let embedded_not_at_start = format!("Some prefix text {long_text} plus a lot more content to reduce the overlap ratio below threshold and ensure fuzzy detection does not trigger");
-        let is_snapshot = session.is_likely_snapshot(&embedded_not_at_start, "0");
-        assert!(
-            !is_snapshot,
-            "Low overlap with embedded content should not trigger fuzzy snapshot detection"
-        );
-    }
-
-    #[test]
-    fn test_snapshot_extraction_with_fuzzy_match() {
-        let mut session = StreamingSession::new();
-        session.on_message_start();
-
-        // First delta is a long message
-        let long_text =
-            "This is a moderately long message for testing snapshot extraction with fuzzy matching";
-        session.on_text_delta(0, long_text);
-
-        // New text with minimal additional content (overlap > 85%)
-        let with_prefix = format!("{long_text} plus extra");
-
-        // Should detect as snapshot (overlap > 85%)
-        assert!(session.is_likely_snapshot(&with_prefix, "0"));
-
-        // Should extract delta correctly (content after the embedded previous text)
-        let delta = session.get_delta_from_snapshot(&with_prefix, "0").unwrap();
-        assert!(
-            delta.contains("plus extra"),
-            "Delta should have new content"
-        );
-    }
-
-    #[test]
-    fn test_snapshot_extraction_exact_match_takes_priority() {
-        let mut session = StreamingSession::new();
-        session.on_message_start();
-
-        // First delta is "Hello"
-        session.on_text_delta(0, "Hello");
-
-        // Exact match: "Hello World" (starts with previous)
-        let exact_match = "Hello World";
-        let delta1 = session.get_delta_from_snapshot(exact_match, "0").unwrap();
+        // Exact match with additional content (strong overlap)
+        let exact_match = format!("{initial} World");
+        let delta1 = session.get_delta_from_snapshot(&exact_match, "0").unwrap();
         assert_eq!(delta1, " World");
-
-        // Reset for second test
-        session.on_message_start();
-        session.on_text_delta(0, "Hello");
-
-        // Fuzzy match: "Prefix: Hello World" (contains previous somewhere)
-        let fuzzy_match = "Prefix: Hello World";
-        let delta2 = session.get_delta_from_snapshot(fuzzy_match, "0").unwrap();
-        assert!(delta2.contains(" World") || delta2.starts_with(" World"));
     }
 
     #[test]
@@ -1710,28 +1515,39 @@ mod tests {
         let mut session = StreamingSession::new();
         session.on_message_start();
 
-        // First few tokens as genuine deltas
-        session.on_text_delta(0, "Hello");
-        session.on_text_delta(0, " World");
+        // First few tokens as genuine deltas - use longer content to meet thresholds
+        let initial = "This is a long message that exceeds threshold";
+        session.on_text_delta(0, initial);
+        session.on_text_delta(0, " with more content");
 
         // Now GLM sends a snapshot instead of delta
-        let snapshot = "Hello World! This is additional content";
+        // The accumulated content plus new content should meet thresholds:
+        // Accumulated: "This is a long message that exceeds threshold with more content" (62 chars)
+        // Snapshot: accumulated + "! This is additional content" (88 chars total)
+        // Overlap: 62 chars
+        // Ratio: 62/88 ≈ 70% >= 50% ✓
+        let accumulated = session
+            .get_accumulated(ContentType::Text, "0")
+            .unwrap()
+            .to_string();
+        let snapshot = format!("{accumulated}! This is additional content");
         assert!(
-            session.is_likely_snapshot(snapshot, "0"),
-            "Should detect snapshot in token stream"
+            session.is_likely_snapshot(&snapshot, "0"),
+            "Should detect snapshot in token stream with strong overlap"
         );
 
         // Extract delta and continue
-        let delta = session.get_delta_from_snapshot(snapshot, "0").unwrap();
+        let delta = session.get_delta_from_snapshot(&snapshot, "0").unwrap();
         assert!(delta.contains("! This is additional content"));
 
         // Apply the delta
         session.on_text_delta(0, delta);
 
         // Verify final accumulated content
+        let expected = format!("{accumulated}! This is additional content");
         assert_eq!(
             session.get_accumulated(ContentType::Text, "0"),
-            Some("Hello World! This is additional content")
+            Some(expected.as_str())
         );
     }
 
@@ -2062,8 +1878,9 @@ mod tests {
         session_verbose.on_message_start();
 
         // Send 3 large deltas to trigger pattern detection
-        for _ in 0..3 {
-            let large_delta = "x".repeat(snapshot_threshold() + 1);
+        // Use different content to avoid consecutive duplicate detection
+        for i in 0..3 {
+            let large_delta = format!("{}{i}", "x".repeat(snapshot_threshold() + 1));
             let _ = session_verbose.on_text_delta(0, &large_delta);
         }
 
@@ -2071,23 +1888,24 @@ mod tests {
         let mut session_quiet = StreamingSession::new();
         session_quiet.on_message_start();
 
-        // Send 3 large deltas
-        for _ in 0..3 {
-            let large_delta = "x".repeat(snapshot_threshold() + 1);
+        // Send 3 large deltas (different content to avoid consecutive duplicate detection)
+        for i in 0..3 {
+            let large_delta = format!("{}{i}", "x".repeat(snapshot_threshold() + 1));
             let _ = session_quiet.on_text_delta(0, &large_delta);
         }
 
-        // Both sessions should accumulate content correctly
-        // (All 3 deltas are accumulated since they're treated as genuine deltas)
-        let single_delta = "x".repeat(snapshot_threshold() + 1);
-        let expected = format!("{single_delta}{single_delta}{single_delta}");
+        // Verify that large_delta_count still tracks all 3 large deltas for both sessions
         assert_eq!(
-            session_verbose.get_accumulated(ContentType::Text, "0"),
-            Some(expected.as_str())
+            session_verbose
+                .get_streaming_quality_metrics()
+                .large_delta_count,
+            3
         );
         assert_eq!(
-            session_quiet.get_accumulated(ContentType::Text, "0"),
-            Some(expected.as_str())
+            session_quiet
+                .get_streaming_quality_metrics()
+                .large_delta_count,
+            3
         );
     }
 
@@ -2134,12 +1952,13 @@ mod tests {
         session.on_message_start();
         session.on_content_block_start(0);
 
-        // First delta
-        session.on_text_delta(0, "Hello");
+        // First delta - long enough to meet threshold requirements
+        let initial = "This is a long message that exceeds threshold";
+        session.on_text_delta(0, initial);
 
-        // GLM sends snapshot instead of delta
-        let snapshot = "Hello World!";
-        let _ = session.on_text_delta(0, snapshot);
+        // GLM sends snapshot instead of delta (with strong overlap)
+        let snapshot = format!("{initial} World!");
+        let _ = session.on_text_delta(0, &snapshot);
 
         let metrics = session.get_streaming_quality_metrics();
         assert_eq!(
@@ -2493,19 +2312,6 @@ mod tests {
         assert_eq!(
             threshold, DEFAULT_SNAPSHOT_THRESHOLD,
             "Default threshold should be 200"
-        );
-    }
-
-    #[test]
-    fn test_fuzzy_match_ratio_default() {
-        // Ensure no env var is set for this test
-        std::env::remove_var("RALPH_STREAMING_FUZZY_MATCH_RATIO");
-        // Note: Since we use OnceLock, we can't reset the value in tests.
-        // This test documents the default behavior.
-        let ratio = fuzzy_match_ratio();
-        assert_eq!(
-            ratio, DEFAULT_FUZZY_MATCH_RATIO,
-            "Default ratio should be 85"
         );
     }
 }

@@ -171,9 +171,12 @@ pub struct TemplateCommands {
     /// Initialize user templates directory
     #[arg(
         long = "init-templates",
-        help = "Create ~/.config/ralph/templates/ with default templates"
+        help = "Create ~/.config/ralph/templates/ with default templates",
+        default_missing_value = "false",
+        num_args = 0..=1,
+        require_equals = true
     )]
-    pub init_templates: bool,
+    pub init_templates: Option<bool>,
 
     /// Force overwrite existing templates when initializing
     #[arg(
@@ -206,6 +209,13 @@ pub struct TemplateCommands {
         help = "Test render a template with provided variables"
     )]
     pub render: Option<String>,
+}
+
+impl TemplateCommands {
+    /// Check if --init-templates flag was provided.
+    pub const fn init_templates_enabled(&self) -> bool {
+        self.init_templates.is_some()
+    }
 }
 
 /// Commit message plumbing flags.

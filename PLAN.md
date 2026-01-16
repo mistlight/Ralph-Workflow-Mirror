@@ -1,393 +1,527 @@
-# Implementation Plan: Fix Duplicate Output and Blank Lines in Streaming
+# Implementation Plan: Enhanced KMP + Rolling Hash Delta Deduplication with Strong Overlap Detection
 
 ## Summary
 
-This plan addresses two related but distinct issues in the streaming output system:
+The codebase already has a complete KMP + Rolling Hash implementation for snapshot-as-delta detection (`deduplication.rs`). This plan enhances it with **strong overlap detection** to prevent false positives that could incorrectly dedupe intentional repetitions. The enhancement adds configurable thresholds (minimum character count AND percentage of overlap), boundary sanity checks (whitespace/punctuation/newline), consecutive duplicate tracking, and special handling for short chunks. This ensures we only dedupe when overlap is "strong" and meets safe boundary conditions, distinguishing between agent resend bugs and legitimate repeated content.
 
-1. **Blank lines from control events**: Events like `content_block_stop`, `message_delta`, and `message_stop` that don't contain user-facing content are producing blank lines in the output.
+## Current State Assessment
 
-2. **Duplicate output**: The same content is being rendered multiple times, creating a "stuttering" effect where identical text appears repeatedly in the stream.
+**Already Implemented** (`deduplication.rs:1-887`):
+- `RollingHashWindow`: Polynomial rolling hash with base 256, modulus 2^31-1 (Rabin-Karp)
+- `KMPMatcher`: Failure function precomputation, O(n+m) search
+- `DeltaDeduplicator`: Two-phase algorithm (rolling hash filter → KMP verification)
+- `extract_new_content()`: Returns new portion when delta starts with accumulated
+- `is_likely_snapshot()`: Fast O(n) check using rolling hash only
+- 25+ unit tests covering rolling hash, KMP, and integration scenarios
+- Integrated into `StreamingSession` via `is_likely_snapshot()` and `get_delta_from_snapshot()`
 
-**ROOT CAUSE ANALYSIS:**
-
-After thorough code analysis, the issues stem from:
-
-1. **Duplicate output bug**: The `processed_deltas` HashSet (used for delta-level deduplication) is cleared when handling repeated `MessageStart` events (lines 574, 589 in `streaming_state.rs`), but is NOT preserved like `output_started_for_key`. When agents like GLM/ccs-glm send repeated `MessageStart` events during streaming (a known protocol quirk), the same delta can be processed multiple times.
-
-2. **Blank lines issue**: The Claude parser already filters control events (commit `9ca3dc3`), but other parsers (Codex, Gemini, OpenCode) may not have the same level of filtering.
-
-**IMPORTANT:** The prefix trie data structure is ALREADY IMPLEMENTED (lines 102-234 in `streaming_state.rs`) and is working correctly. The issue is not with the data structure, but with how `processed_deltas` is handled during repeated MessageStart events.
-
-The solution involves two targeted fixes:
-1. **Preserve `processed_deltas` during repeated MessageStart**: Similar to how `output_started_for_key` is preserved, we must preserve `processed_deltas` to prevent duplicate delta processing
-2. **Audit control event filtering in all parsers**: Ensure all parsers properly filter control events
+**What's Missing** (addressed by this proposal):
+- No minimum overlap threshold (currently dedupes ANY overlap at position 0)
+- No boundary sanity checks (overlap could end mid-word/sentence)
+- No consecutive duplicate tracking (no "3 strikes" heuristic for repeated identical chunks)
+- No special handling for short chunks (".", "\n", "Ok" get deduped inappropriately)
 
 ## Implementation Steps
 
-### Step 1: Preserve `processed_deltas` During Repeated MessageStart
+### Step 1: Add Configuration Constants for Overlap Detection
+
+**File**: `ralph-workflow/src/json_parser/deduplication.rs`
+
+**Purpose**: Define tunable thresholds for strong overlap detection.
+
+**Changes**:
+- Add `MIN_OVERLAP_CHARS: usize = 30` (minimum character count for dedupe)
+- Add `MIN_OVERLAP_RATIO: f64 = 0.5` (50% of delta must be overlap)
+- Add `SHORT_CHUNK_THRESHOLD: usize = 20` (below this, never dedupe unless exact repeat)
+- Add `CONSECUTIVE_DUPLICATE_THRESHOLD: usize = 3` (trigger after N identical chunks)
+
+**Rationale**: These constants are documented and can be tuned based on production feedback.
+
+---
+
+### Step 2: Implement Boundary Detection Helper
+
+**File**: `ralph-workflow/src/json_parser/deduplication.rs`
+
+**Purpose**: Check if a character position ends at a safe boundary for deduplication.
+
+**Changes**:
+- Add `is_safe_boundary(text: &str, pos: usize) -> bool` function
+- Check if character at `pos` is whitespace, punctuation, or newline
+- Use Unicode-aware character classification (not just ASCII)
+- Return `true` if boundary is safe for deduplication
+
+**Code**:
+```rust
+fn is_safe_boundary(text: &str, pos: usize) -> bool {
+    if pos >= text.len() {
+        return true; // End of string is always safe
+    }
+    
+    let c = text[pos..].chars().next().unwrap();
+    
+    // Safe boundaries: whitespace, punctuation, newline
+    c.is_whitespace() || c.is_ascii_punctuation() || c == '\n' || c == '\r'
+}
+```
+
+---
+
+### Step 3: Implement Overlap Quality Scoring
+
+**File**: `ralph-workflow/src/json_parser/deduplication.rs`
+
+**Purpose**: Score the "strength" of an overlap to determine if it's worth deduplicating.
+
+**Changes**:
+- Add `OverlapScore` struct with fields: `char_count`, `ratio`, `is_safe_boundary`
+- Add `score_overlap(delta: &str, accumulated: &str) -> OverlapScore` function
+- Use existing KMP to find overlap length
+- Calculate ratio as `overlap_len / delta.len()`
+- Check boundary safety at overlap end position
+
+**Rationale**: Centralizes overlap quality logic for reuse in detection and extraction.
+
+---
+
+### Step 4: Add Consecutive Duplicate Tracking
 
 **File**: `ralph-workflow/src/json_parser/streaming_state.rs`
 
-**What to accomplish**:
-- Preserve `processed_deltas` HashSet when handling repeated `MessageStart` events during active streaming
-- This prevents the same delta from being processed multiple times when agents send repeated `MessageStart` events
+**Purpose**: Detect when the exact same chunk arrives repeatedly ( resend glitch).
 
-**Why**:
-- GLM/ccs-glm agents send repeated `MessageStart` events during streaming (a protocol quirk)
-- Currently, `processed_deltas` is cleared but not preserved, allowing duplicate delta processing
-- `output_started_for_key` is already preserved to prevent prefix spam - we should do the same for `processed_deltas`
+**Changes**:
+- Add `consecutive_duplicates: HashMap<(ContentType, String), (usize, String)>` field
+  - Key: `(content_type, index)`
+  - Value: `(count, last_hash)` where count is consecutive occurrences, hash is for comparison
+- Add `ConsecutiveDuplicateState` enum: `None | Suspected(count) | Confirmed(count)`
+- Update `on_text_delta()` to increment counter when delta hash matches previous
+- Reset counter on any different delta
 
-**Implementation details**:
-Modify the `on_message_start()` method around line 564:
+**Rationale**: "3 strikes" heuristic only applies to identical chunks, not generic repeats.
 
-```rust
-if is_mid_stream_restart {
-    // Track protocol violation
-    self.protocol_violations += 1;
-    // Log the contract violation for debugging (only if verbose warnings enabled)
-    if self.verbose_warnings {
-        eprintln!(
-            "Warning: Received MessageStart while state is Streaming. \
-            This indicates a non-standard agent protocol (e.g., GLM sending \
-            repeated MessageStart events). Preserving output_started_for_key \
-            AND processed_deltas to prevent duplicate processing. File: streaming_state.rs, Line: {}",
-            line!()
-        );
-    }
+---
 
-    // Preserve both output_started_for_key AND processed_deltas to prevent duplicates
-    let preserved_output_started = std::mem::take(&mut self.output_started_for_key);
-    let preserved_processed_deltas = std::mem::take(&mut self.processed_deltas);
+### Step 5: Enhance `is_likely_snapshot()` with Strong Overlap Checks
 
-    self.state = StreamingState::Idle;
-    self.streamed_types.clear();
-    self.current_block = ContentBlockState::NotInBlock;
-    self.accumulated.clear();
-    self.key_order.clear();
-    self.delta_sizes.clear();
-    self.last_rendered.clear();
-    self.rendered_content.clear();
-    // Note: processed_deltas is NOT cleared here, it's preserved above
+**File**: `ralph-workflow/src/json_parser/deduplication.rs`
 
-    // Restore preserved state
-    self.output_started_for_key = preserved_output_started;
-    self.processed_deltas = preserved_processed_deltas;  // ADD THIS LINE
-}
-```
+**Purpose**: Make snapshot detection stricter to avoid false positives on intentional repetitions.
 
-### Step 2: Add Test for Repeated MessageStart Delta Preservation
+**Changes**:
+- Add new method `is_likely_snapshot_with_thresholds(delta: &str, accumulated: &str) -> bool`
+- Call existing `is_likely_snapshot()` for hash check
+- If hash matches, use `score_overlap()` to get overlap metrics
+- Apply thresholds: `score.char_count >= MIN_OVERLAP_CHARS AND score.ratio >= MIN_OVERLAP_RATIO`
+- Check `score.is_safe_boundary` is true
+- For short chunks (`delta.len() < SHORT_CHUNK_THRESHOLD`), only dedupe if `delta == accumulated` (exact match)
+- Return `true` only if ALL conditions pass
 
-**File**: `ralph-workflow/src/json_parser/streaming_state.rs` (in the `tests` module)
+**Rationale**: Prevents deduping legitimate repetitions that happen to start with previous content.
 
-**What to accomplish**:
-- Add test `test_repeated_message_start_preserves_processed_deltas()`
-- Verify that the same delta sent after a repeated MessageStart is not processed twice
+---
 
-**Dependencies**: Step 1 must be completed first
+### Step 6: Enhance `extract_new_content()` with Boundary Checks
 
-**Why**:
-- Ensures the fix for duplicate delta processing works correctly
-- Prevents regression if the repeated MessageStart handling is modified
+**File**: `ralph-workflow/src/json_parser/deduplication.rs`
 
-**Implementation details**:
-```rust
-#[test]
-fn test_repeated_message_start_preserves_processed_deltas() {
-    let mut session = StreamingSession::new();
-    session.on_message_start();
-    session.on_content_block_start(0);
+**Purpose**: Only extract new content if overlap meets quality thresholds.
 
-    // First delta - should be processed
-    let delta_hash = 12345_u64;
-    assert!(!session.is_delta_processed(delta_hash));
-    session.mark_delta_processed(delta_hash);
-    assert!(session.is_delta_processed(delta_hash));
+**Changes**:
+- Add new method `extract_new_content_with_thresholds<'a>(delta: &'a str, accumulated: &str) -> Option<&'a str>`
+- Use existing rolling hash + KMP to find overlap
+- Before returning `Some(&delta[overlap_len..])`, verify:
+  - `overlap_len >= MIN_OVERLAP_CHARS`
+  - `(overlap_len as f64 / delta.len() as f64) >= MIN_OVERLAP_RATIO`
+  - `is_safe_boundary(delta, overlap_len)` is true
+- Return `None` if any condition fails (treat as genuine delta)
 
-    // Repeated MessageStart (simulating GLM protocol quirk)
-    session.on_message_start();
+**Rationale**: Ensures we only dedupe when overlap is "strong" and ends at safe boundary.
 
-    // After repeated MessageStart, processed_deltas should be preserved
-    assert!(
-        session.is_delta_processed(delta_hash),
-        "Delta should still be marked as processed after repeated MessageStart"
-    );
+---
 
-    // Sending the same delta again should be detected as duplicate
-    assert!(
-        session.is_delta_processed(delta_hash),
-        "Same delta should be detected as duplicate"
-    );
-}
-```
+### Step 7: Add Consecutive Duplicate Handling
 
-### Step 3: Audit Control Event Filtering in All Parsers
+**File**: `ralph-workflow/src/json_parser/streaming_state.rs`
 
-**Files**:
-- `ralph-workflow/src/json_parser/codex/mod.rs`
-- `ralph-workflow/src/json_parser/codex/event_handlers.rs`
-- `ralph-workflow/src/json_parser/gemini.rs`
-- `ralph-workflow/src/json_parser/opencode.rs`
+**Purpose**: Implement "3 strikes" heuristic for repeated identical chunks.
 
-**What to accomplish**:
-- Audit each parser to ensure control events return `String::new()` immediately
-- Identify any code paths where control events might produce output
-- Document any differences from the Claude parser's implementation
+**Changes**:
+- In `on_text_delta()`, compute hash of incoming delta
+- Check `consecutive_duplicates` map for previous hash at same key
+- If hash matches:
+  - Increment count
+  - If count >= `CONSECUTIVE_DUPLICATE_THRESHOLD`:
+    - Skip rendering entirely (drop the delta)
+    - Log warning about resend glitch
+- If hash doesn't match:
+  - Reset count to 1
+  - Update stored hash
+- Clear map in `on_message_start()` and `on_content_block_start()` for different indices
 
-**Dependencies**: None (can be done in parallel with Step 1)
+**Rationale**: Aggressive deduplication only for proven resend glitches, not intentional content.
 
-**Why**:
-- Claude parser already has proper control event filtering (commit `9ca3dc3`)
-- Other parsers may have gaps in their control event handling
-- Blank lines may be coming from parsers other than Claude
+---
 
-**Implementation details**:
-For each parser:
-1. Identify all control events (start, stop, delta, ping, etc.)
-2. Verify each returns `String::new()` immediately
-3. Check for any code paths that might bypass the early return
-4. Document findings
+### Step 8: Update StreamingSession Integration
 
-### Step 4: Fix Control Event Filtering in Other Parsers
+**File**: `ralph-workflow/src/json_parser/streaming_state.rs`
 
-**Files**: Based on findings from Step 3
+**Purpose**: Replace old snapshot detection calls with enhanced threshold-aware versions.
 
-**What to accomplish**:
-- Add control event filtering to any parser that's missing it
-- Ensure all parsers consistently return `String::new()` for control events
-- Add comments explaining why control events produce no output
+**Changes**:
+- Update `is_likely_snapshot()` at line 655 to use `DeltaDeduplicator::is_likely_snapshot_with_thresholds()`
+- Update `get_delta_from_snapshot()` at line 658 to use `DeltaDeduplicator::extract_new_content_with_thresholds()`
+- Add verbose logging when threshold checks fail (for debugging)
+- Update `snapshot_repairs_count` to only count repairs that pass threshold checks
 
-**Dependencies**: Step 3 must be completed first
+**Rationale**: Apply new strong overlap logic to all delta processing.
 
-**Why**:
-- Consistency across all parsers
-- Prevents blank lines from any parser
+---
 
-**Implementation details**:
-Pattern to follow (from claude.rs lines 244-254):
-```rust
-StreamInnerEvent::ContentBlockStop { .. } => {
-    // Content block completion event - no output needed
-    // This event marks the end of a content block but doesn't produce
-    // any displayable content. It's a control event for state management.
-    String::new()
-}
-StreamInnerEvent::MessageDelta { .. } => {
-    // Message delta event with usage/metadata - no output needed
-    // This event contains final message metadata (stop_reason, usage stats)
-    // but is used for tracking/monitoring purposes only, not display.
-    String::new()
-}
-```
+### Step 9: Add Comprehensive Test Coverage
 
-### Step 5: Add Control Event Tests for All Parsers
+**File**: `ralph-workflow/src/json_parser/deduplication.rs` (tests module)
 
-**Files**:
-- `ralph-workflow/src/json_parser/codex_tests.rs`
-- `ralph-workflow/src/json_parser/gemini_tests.rs`
-- `ralph-workflow/src/json_parser/opencent_tests.rs`
+**Purpose**: Ensure new threshold logic works correctly and doesn't regress existing behavior.
 
-**What to accomplish**:
-- Add tests verifying control events produce no output
-- Test each parser's specific control events
+**Tests to Add**:
+- `test_strong_overlap_meets_char_threshold()`: Verify 30+ char overlap passes
+- `test_strong_overlap_meets_ratio_threshold()`: Verify 50%+ ratio passes
+- `test_strong_overlap_fails_char_threshold()`: Verify <30 chars fails even if ratio good
+- `test_strong_overlap_fails_ratio_threshold()`: Verify <50% ratio fails even if chars good
+- `test_boundary_check_whitespace()`: Verify whitespace boundary passes
+- `test_boundary_check_punctuation()`: Verify punctuation boundary passes
+- `test_boundary_check_mid_word_fails()`: Verify mid-word boundary fails
+- `test_short_chunk_never_deduped()`: Verify <20 char chunks never deduped unless exact match
+- `test_short_chunk_exact_match_deduped()`: Verify exact match short chunks ARE deduped
+- `test_consecutive_duplicates_triggers()`: Verify 3+ identical chunks trigger aggressive dedupe
+- `test_consecutive_duplicates_reset_on_change()`: Verify counter resets on different content
+- `test_intentional_repetition_not_deduped()`: Verify legitimate repeated content passes through
+- `test_snapshot_strong_overlap_deduped()`: Verify actual snapshots still detected and deduped
 
-**Dependencies**: Step 4 must be completed first
+**File**: `ralph-workflow/src/json_parser/streaming_state.rs` (tests module)
 
-**Why**:
-- Ensures control event filtering works correctly
-- Prevents regressions
+**Tests to Add**:
+- `test_streaming_consecutive_duplicate_tracking()`: Integration test for 3-strikes heuristic
+- `test_streaming_boundary_aware_deduplication()`: Full flow with boundary checks
+- `test_streaming_short_chunk_passthrough()`: Verify short chunks render correctly
 
-**Implementation details**:
-```rust
-#[test]
-fn test_control_events_produce_no_output() {
-    let parser = Parser::new(Colors { enabled: false }, Verbosity::Normal);
+---
 
-    // Test various control events
-    let control_events = vec![
-        // Add parser-specific control events here
-    ];
+### Step 10: Add Environment Variable Configuration
 
-    for event_json in control_events {
-        let output = parser.parse_event(&event_json);
-        assert!(
-            output.is_none() || output.unwrap().is_empty(),
-            "Control event should produce no output: {}",
-            event_json
-        );
-    }
-}
-```
+**File**: `ralph-workflow/src/json_parser/deduplication.rs`
 
-### Step 6: Integration Test for ccs-glm Event Sequence
+**Purpose**: Allow tuning thresholds without recompilation for production experimentation.
 
-**File**: `ralph-workflow/src/json_parser/tests.rs`
+**Changes**:
+- Add environment variable readers for each threshold:
+  - `RALPH_STREAMING_MIN_OVERLAP_CHARS` (default 30, range 10-100)
+  - `RALPH_STREAMING_MIN_OVERLAP_RATIO` (default 0.5, range 0.1-0.9)
+  - `RALPH_STREAMING_SHORT_CHUNK_THRESHOLD` (default 20, range 5-50)
+  - `RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD` (default 3, range 2-10)
+- Use `OnceLock` for lazy initialization (like existing `snapshot_threshold()`)
+- Validate ranges and fall back to defaults if invalid
+- Add `fn get_overlap_thresholds() -> OverlapThresholds` accessor
 
-**What to accomplish**:
-- Add test simulating the exact ccs-glm event sequence that produces duplicates
-- Verify the fix prevents duplicate output
-- Test includes repeated MessageStart events
+**File**: `docs/RFC/RFC-003-streaming-architecture-hardening.md`
 
-**Dependencies**: Steps 1-2 must be completed first
+**Changes**:
+- Document new environment variables in the quick reference section
+- Update "Open Questions" section to note threshold tuning is now configurable
 
-**Why**:
-- Validates the fix works for the real-world scenario reported by the user
-- Ensures no regressions in GLM/ccs-glm protocol handling
+**Rationale**: Enables production tuning without code changes.
 
-**Implementation details**:
-```rust
-#[test]
-fn test_ccs_glm_duplicate_prevention() {
-    let parser = ClaudeParser::new(
-        Colors { enabled: false },
-        Verbosity::Normal
-    ).with_display_name("ccs-glm");
+---
 
-    // Simulate ccs-glm event sequence:
-    // 1. MessageStart
-    // 2. ContentBlockStart
-    // 3. ContentBlockDelta with "Hello"
-    // 4. REPEATED MessageStart (GLM quirk)
-    // 5. ContentBlockDelta with "Hello" again (should be deduplicated)
+### Step 11: Update Documentation and RFC
 
-    let events = vec![
-        // Add actual event JSON here
-    ];
+**File**: `docs/RFC/RFC-003-streaming-architecture-hardening.md`
 
-    let mut outputs = Vec::new();
-    for event in events {
-        if let Some(output) = parser.parse_event(&event) {
-            if !output.is_empty() {
-                outputs.push(output);
-            }
-        }
-    }
+**Purpose**: Document the enhanced deduplication approach.
 
-    // Verify "Hello" appears only once
-    assert_eq!(
-        outputs.iter().filter(|o| o.contains("Hello")).count(),
-        1,
-        "Content should appear only once despite repeated MessageStart"
-    );
-}
-```
+**Changes**:
+- Add new section: "Enhanced Snapshot Detection with Strong Overlap"
+- Document the two-phase approach (rolling hash → KMP → threshold checks → boundary checks)
+- Explain "3 strikes" heuristic for consecutive duplicates
+- Update Issue 1 (Snapshot-as-Delta) to reference enhanced detection
+- Add changelog entry for the enhancement
+
+**File**: `ralph-workflow/src/json_parser/deduplication.rs` (module documentation)
+
+**Changes**:
+- Update module-level docs to describe strong overlap detection
+- Add examples showing threshold behavior
+- Document boundary detection rules
+
+---
+
+### Step 12: Verify All Existing Tests Still Pass
+
+**Purpose**: Ensure no regressions in existing behavior.
+
+**Steps**:
+1. Run `cargo test -p ralph-workflow streaming` - all streaming tests pass
+2. Run `cargo test -p ralph-workflow test_snapshot` - all snapshot tests pass
+3. Run `cargo test -p ralph-workflow test_dedup` - all deduplication tests pass
+4. Run `cargo test -p ralph-workflow json_parser::tests` - all parser integration tests pass
+5. Run `cargo clippy --all-targets --all-features -- -D warnings` - no new warnings
+6. Run `cargo fmt --all` - code is formatted
+7. Run `rg -n -U --pcre2 '(?x)\#\s*!?\[\s*(allow|expect)\s*\(' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .` - no suppressed warnings
+
+**Expected Outcome**: All existing tests pass, no clippy warnings, no dead code suppression.
+
+---
 
 ## Critical Files for Implementation
 
-1. **`ralph-workflow/src/json_parser/streaming_state.rs`** (~2,555 lines)
-   - **Line ~564**: Add `preserved_processed_deltas` to preserve delta tracking during repeated MessageStart
-   - **Line ~577**: Restore `processed_deltas` after clearing state
-   - **Tests module**: Add `test_repeated_message_start_preserves_processed_deltas()`
-   - **Why**: This is the ROOT CAUSE of the duplicate output bug
+### `ralph-workflow/src/json_parser/deduplication.rs`
+- **Justification**: Contains the core KMP + Rolling Hash implementation that needs enhancement. Will add threshold logic, boundary detection, overlap scoring, and consecutive duplicate handling here.
+- **Key Changes**:
+  - Add configuration constants (Step 1)
+  - Add `is_safe_boundary()` helper (Step 2)
+  - Add `OverlapScore` struct and `score_overlap()` function (Step 3)
+  - Add `is_likely_snapshot_with_thresholds()` method (Step 5)
+  - Add `extract_new_content_with_thresholds()` method (Step 6)
+  - Add environment variable readers (Step 10)
+  - Add comprehensive test coverage (Step 9)
+  - Update module documentation (Step 11)
 
-2. **`ralph-workflow/src/json_parser/claude.rs`** (~1,033 lines)
-   - **Lines 244-254**: Verify control event filtering is complete (already done in commit `9ca3dc3`)
-   - **Lines 606-651**: Verify delta processing logic correctly uses `processed_deltas`
-   - **Why**: Ensure the Claude parser continues to work correctly
+### `ralph-workflow/src/json_parser/streaming_state.rs`
+- **Justification**: Integrates deduplication into the delta processing flow. Needs to track consecutive duplicates and use enhanced threshold methods.
+- **Key Changes**:
+  - Add `consecutive_duplicates` HashMap field (Step 4)
+  - Add `ConsecutiveDuplicateState` enum (Step 4)
+  - Update `on_text_delta()` to use threshold-aware methods (Step 8)
+  - Update `is_likely_snapshot()` call at line 655 (Step 8)
+  - Update `get_delta_from_snapshot()` call at line 658 (Step 8)
+  - Add integration tests (Step 9)
 
-3. **`ralph-workflow/src/json_parser/codex/mod.rs`** (~200+ lines)
-   - Audit for control event handling
-   - Add filtering if missing
+### `docs/RFC/RFC-003-streaming-architecture-hardening.md`
+- **Justification**: Documents the streaming architecture and must reflect the enhanced deduplication approach.
+- **Key Changes**:
+  - Add "Enhanced Snapshot Detection" section (Step 11)
+  - Document new environment variables (Step 10)
+  - Update Issue 1 with enhanced detection details (Step 11)
+  - Add changelog entry (Step 11)
 
-4. **`ralph-workflow/src/json_parser/gemini.rs`** (~500+ lines)
-   - Audit for control event handling
-   - Add filtering if missing
+### `ralph-workflow/src/json_parser/tests.rs`
+- **Justification**: Contains integration tests for the full parsing flow. Needs tests for the new threshold behavior in realistic scenarios.
+- **Key Changes**:
+  - Add integration test for boundary-aware deduplication (Step 9)
+  - Add integration test for short chunk handling (Step 9)
+  - Add integration test for consecutive duplicate handling (Step 9)
 
-5. **`ralph-workflow/src/json_parser/opencode.rs`** (~500+ lines)
-   - Audit for control event handling
-   - Add filtering if missing
+### `ralph-workflow/src/json_parser/claude.rs` (and other parsers)
+- **Justification**: May need to update any direct calls to deduplication methods if they exist, though most flow goes through StreamingSession.
+- **Key Changes**:
+  - Audit for any direct calls to `DeltaDeduplicator` methods
+  - Update to use threshold-aware variants if needed
+  - Add parser-specific tests for new behavior (Step 9)
 
-6. **`ralph-workflow/src/json_parser/tests.rs`** (~200+ lines)
-   - Add integration test for ccs-glm duplicate prevention
+---
 
 ## Risks & Mitigations
 
-### Risk 1: Preserving `processed_deltas` May Cause False Positives
-**Challenge**: If `processed_deltas` is preserved across repeated MessageStart events, legitimate new deltas with the same hash might be incorrectly skipped.
+### Risk 1: False Positives from Threshold Tuning
+
+**Risk**: Overly aggressive thresholds could cause legitimate snapshots to not be deduped, leading to content duplication in the UI.
 
 **Mitigation**:
-- Delta hash is computed from the exact delta content, so a legitimate new delta with the same hash would be identical byte-for-byte
-- This is acceptable behavior - if the delta content is identical, it should be deduplicated
-- In the extremely unlikely case of a hash collision, the worst outcome is skipping a delta that would have shown the same content
+- Start with conservative defaults (30 chars, 50% ratio) based on the proposal
+- Make thresholds configurable via environment variables for production tuning
+- Add verbose logging when threshold checks fail to aid debugging
+- Comprehensive test coverage for edge cases
 
-### Risk 2: Memory Usage from Preserving `processed_deltas`
-**Challenge**: Preserving `processed_deltas` across repeated MessageStart events could allow it to grow unbounded.
+### Risk 2: Boundary Detection Breaking Non-English Languages
 
-**Mitigation**:
-- `processed_deltas` is cleared on normal message boundaries (when state is NOT Streaming)
-- It's only preserved during mid-stream restarts (repeated MessageStart during active streaming)
-- The HashSet grows linearly with the number of unique deltas, which is bounded by message length
-- This is acceptable memory usage for preventing duplicate output
-
-### Risk 3: Other Parsers May Have Different Control Event Semantics
-**Challenge**: Codex, Gemini, or OpenCode parsers may have different event structures where some events we consider "control" actually have user-facing meaning.
+**Risk**: `is_ascii_punctuation()` might not handle all Unicode punctuation correctly, causing boundary checks to fail for international content.
 
 **Mitigation**:
-- Carefully audit each parser's documentation and event structure
-- Only filter events that are clearly state-management only
-- Add tests to verify no legitimate output is being filtered
+- Use Unicode-aware character classification where possible
+- Test with CJK, Arabic, RTL languages
+- Consider using `unicode-segmentation` crate for proper grapheme detection
+- Make boundary checks configurable (can disable if problematic)
 
-### Risk 4: Breaking Existing Functionality
-**Challenge**: Changes to message start handling or control event filtering might break existing functionality.
+### Risk 3: Consecutive Duplicate Tracking Memory Overhead
+
+**Risk**: Storing hashes for all content keys could consume significant memory in long-running sessions with many content blocks.
 
 **Mitigation**:
-- The change to preserve `processed_deltas` only affects the repeated MessageStart case (a protocol violation)
-- Normal message boundaries still clear all state as before
-- Comprehensive tests will catch any regressions
-- Manual testing with each agent type (Claude, Codex, Gemini, OpenCode)
+- Store only the most recent hash per key (not full history)
+- Use 64-bit hashes (already using DefaultHasher) to minimize memory
+- Clear tracking in `on_message_start()` and `on_content_block_start()`
+- Consider using LRU cache if memory becomes an issue
+
+### Risk 4: Performance Impact from Additional Checks
+
+**Risk**: Threshold and boundary checks add overhead to every delta, potentially impacting streaming performance.
+
+**Mitigation**:
+- Existing KMP + Rolling Hash already does O(n+m) work
+- Threshold checks are O(1) after KMP finds overlap
+- Boundary check is O(1) character inspection
+- Most deltas should fail fast on the initial rolling hash check
+- Benchmark before/after to quantify any slowdown
+
+### Risk 5: Regression in Existing Snapshot Detection
+
+**Risk**: New threshold logic could cause existing snapshot-as-delta bugs to no longer be detected, reverting to exponential duplication.
+
+**Mitigation**:
+- Comprehensive test coverage for existing snapshot detection scenarios
+- Run all existing tests before and after changes
+- Add specific test for "real GLM snapshot bug" scenario
+- Make threshold logic opt-in initially, gate behind feature flag if needed
+- Monitor `snapshot_repairs_count` metric in production
+
+---
 
 ## Verification Strategy
 
-### Specific Tests to Run
+### Unit Tests for New Functionality
 
-1. **Test processed_deltas preservation**:
+**File**: `deduplication.rs` tests module
+
 ```bash
-cargo test test_repeated_message_start_preserves_processed_deltas
+# Run all deduplication tests
+cargo test -p ralph-workflow test_dedup
+
+# Run specific test categories
+cargo test -p ralph-workflow test_strong_overlap
+cargo test -p ralph-workflow test_boundary_check
+cargo test -p ralph-workflow test_short_chunk
+cargo test -p ralph-workflow test_consecutive_duplicates
 ```
-Expected: Pass - verifies delta tracking is preserved during repeated MessageStart
 
-2. **Test ccs-glm duplicate prevention**:
+**Expected**: All new tests pass, covering:
+- Overlap thresholds (char count and ratio)
+- Boundary detection (whitespace, punctuation, mid-word)
+- Short chunk handling (exact match vs. partial overlap)
+- Consecutive duplicate tracking (counter increment and reset)
+
+### Integration Tests for Full Flow
+
+**File**: `streaming_state.rs` and `tests.rs`
+
 ```bash
-cargo test test_ccs_glm_duplicate_prevention
+# Run streaming state tests
+cargo test -p ralph-workflow test_streaming
+
+# Run parser integration tests
+cargo test -p ralph-workflow json_parser::tests
+
+# Run snapshot detection tests
+cargo test -p ralph-workflow test_snapshot
 ```
-Expected: Pass - verifies no duplicate content with repeated MessageStart
 
-3. **Test control events produce no output (all parsers)**:
-```bash
-cargo test test_control_events_produce_no_output
-```
-Expected: Pass - control events return empty/None in all parsers
+**Expected**: All tests pass, including:
+- Full delta processing with threshold checks
+- Boundary-aware deduplication in realistic scenarios
+- Short chunks pass through correctly
+- Consecutive duplicates trigger aggressive dedupe
 
-4. **Full test suite**:
+### Regression Tests for Existing Behavior
+
+**Commands**:
 ```bash
+# All streaming-related tests
+cargo test -p ralph-workflow streaming
+
+# All deduplication tests (old and new)
+cargo test -p ralph-workflow dedup
+
+# Full test suite
 cargo test --all-features
 ```
-Expected: All tests pass
 
-### Manual Verification Steps
+**Expected**: No regressions—all existing tests still pass.
 
-1. **Test with ccs-glm agent**:
-   - Run a streaming session with ccs-glm
-   - Verify no blank lines appear in output
-   - Verify no duplicate content appears
-   - Look for the specific pattern mentioned in the issue:
-     - "ts (line 84 in the log) 2. **`message_delta`** events"
-     - This should NOT repeat multiple times
+### Code Quality Checks
 
-2. **Test with long streaming content**:
-   - Run a session with very long streaming content
-   - Verify memory usage is reasonable (processed_deltas HashSet doesn't grow unbounded)
-   - Verify no performance degradation
+**Commands**:
+```bash
+# Check for suppressed warnings (should produce NO output)
+rg -n -U --pcre2 '(?x)\#\s*!?\[\s*(allow|expect)\s*\(' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
 
-3. **Test across all parsers**:
-   - Test with Claude, Codex, Gemini, and OpenCode parsers
-   - Verify consistent behavior across all parsers
-   - Verify no blank lines from any parser
+# Check cfg_attr suppressed warnings (should produce NO output)
+rg -n -U --pcre2 '(?x)\#\s*!?\[\s*cfg_attr\s*\([^()]*?\b(allow|expect)\s*\(' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+
+# Format check
+cargo fmt --all -- --check
+
+# Clippy check
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+**Expected**: All checks pass with no output or errors.
+
+### Manual Verification Scenarios
+
+**Scenario 1: Legitimate Repetition Passes Through**
+- Agent sends: "Hello" → "Hello World" → "Hello World! Hello World!"
+- Expected: All three render (no dedupe on third, even though it repeats "Hello World")
+
+**Scenario 2: Snapshot Bug Still Detected**
+- Agent sends: "Hello" → "Hello World" (snapshot) → "Hello World!" (snapshot)
+- Expected: Only "Hello World!" renders (snapshots detected and deduped)
+
+**Scenario 3: Short Chunk Passthrough**
+- Agent sends: "." → "." → "." (three periods as separate deltas)
+- Expected: All three periods render (short chunks not deduped unless exact match of entire accumulated)
+
+**Scenario 4: Consecutive Duplicate Aggressive Dedupe**
+- Agent sends: "test" → "test" → "test" → "test" (identical chunk 4 times)
+- Expected: First three render, fourth is dropped (3-strikes heuristic)
+
+**Scenario 5: Boundary Awareness**
+- Accumulated: "Hello World"
+- Delta: "Hello World!" (overlap ends at safe boundary: space before "!")
+- Expected: Deduped, only "!" renders
+
+**Scenario 6: Boundary Fails Mid-Word**
+- Accumulated: "Hello"
+- Delta: "HelloWorld" (overlap ends mid-"word")
+- Expected: NOT deduped, full "HelloWorld" renders (boundary not safe)
 
 ### Success Criteria
 
-1. **No duplicates**: Identical deltas are not processed multiple times, even with repeated MessageStart events
-2. **No blank lines**: Control events (`content_block_stop`, `message_delta`, `message_stop`, etc.) produce no visible output in ANY parser
-3. **Message boundaries**: Same content in different messages is rendered (processed_deltas cleared on normal message boundaries)
-4. **All tests pass**: No regressions in existing functionality
-5. **Performance acceptable**: No significant slowdown or memory increase
-6. **Real-world validation**: The ccs-glm agent no longer produces duplicate content or blank lines
+**All acceptance checks must be satisfied**:
+
+1. **Thresholds Applied**: Deltas only deduped when overlap >= 30 chars AND >= 50% of delta
+2. **Boundaries Checked**: Dedupe only when overlap ends at whitespace/punctuation/newline
+3. **ShortChunks Pass**: <20 char chunks never deduped unless exact match
+4. **Consecutive Duplicates**: 3+ identical chunks trigger aggressive drop
+5. **Existing Behavior**: All existing snapshot detection still works
+6. **Tests Pass**: All unit and integration tests pass
+7. **No Code Quality Issues**: No clippy warnings, no dead code suppression
+8. **Documentation Updated**: RFC and module docs reflect new behavior
+9. **Configurable**: Thresholds tunable via environment variables
+
+---
+
+## Migration Path
+
+The implementation follows the phased approach outlined in the user's proposal:
+
+1. **Phase 1**: Implement new functionality alongside existing (Steps 1-7)
+2. **Phase 2**: Integrate into StreamingSession (Steps 8-9)
+3. **Phase 3**: Add configuration and documentation (Steps 10-11)
+4. **Phase 4**: Verify and validate (Step 12)
+
+No breaking changes to existing APIs—all enhancements are additive. The new threshold-aware methods can be adopted incrementally.
+
+---
+
+## Open Questions for Clarification
+
+1. **Should boundary checks be configurable?** If non-English languages have issues, should we add an environment variable to disable boundary checks?
+
+2. **What happens when overlap is "moderate"?** The proposal says "do nothing (append all)" for moderate overlap. Should we add a "warning" mode that logs but doesn't dedupe?
+
+3. **Should consecutive duplicate tracking persist across MessageStart?** The proposal says "clear on MessageStart" but resend glitches might span message boundaries. Should this be configurable?
+
+4. **Performance budget?** What's the acceptable overhead for these checks? If benchmarks show >10% slowdown, should we make threshold checks opt-in?
+
+These questions can be answered during implementation based on findings from test coverage and early production usage.

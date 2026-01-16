@@ -92,7 +92,8 @@ mod tests {
 
     #[test]
     fn test_template_context_registry_access() {
-        let _context = TemplateContext::default();
+        let context = TemplateContext::default();
+        let _registry = context.registry();
         // Should be able to access registry methods
         assert!(!TemplateRegistry::all_template_names().is_empty());
     }

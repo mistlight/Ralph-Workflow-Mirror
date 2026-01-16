@@ -80,6 +80,7 @@ use validation::{
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
+#[allow(clippy::too_many_lines)]
 pub fn run(args: Args) -> anyhow::Result<()> {
     let colors = Colors::new();
     let mut logger = Logger::new(colors);
@@ -237,7 +238,8 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
 
     // Handle template commands
     let template_cmds = &args.template_commands;
-    if template_cmds.validate
+    if template_cmds.init_templates_enabled()
+        || template_cmds.validate
         || template_cmds.show.is_some()
         || template_cmds.list
         || template_cmds.variables.is_some()
@@ -1144,7 +1146,9 @@ fn run_ai_conflict_resolution(
 ) -> anyhow::Result<ConflictResolutionResult> {
     use crate::agents::AgentRegistry;
     use crate::files::result_extraction::extract_last_result;
-    use crate::pipeline::{FallbackConfig, run_with_fallback_and_validator, OutputValidator, PipelineRuntime};
+    use crate::pipeline::{
+        run_with_fallback_and_validator, FallbackConfig, OutputValidator, PipelineRuntime,
+    };
     use std::io;
     use std::path::Path;
 

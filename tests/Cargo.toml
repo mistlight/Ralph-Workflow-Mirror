@@ -8,6 +8,13 @@ publish = false
 name = "ralph_workflow_tests"
 path = "lib.rs"
 
+[[bin]]
+name = "ralph-workflow-tests"
+path = "main.rs"
+
 [dependencies]
 ralph-workflow = { path = "../ralph-workflow" }
 serde_json = "1"
+test-helpers = { path = "../test-helpers" }
+tempfile = "3.10"
+assert_cmd = "2.0"

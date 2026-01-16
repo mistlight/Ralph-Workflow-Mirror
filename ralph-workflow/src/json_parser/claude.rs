@@ -43,6 +43,7 @@ use std::rc::Rc;
 
 use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
+use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
 use super::terminal::TerminalMode;
 use super::types::{
@@ -68,10 +69,47 @@ pub struct ClaudeParser {
     terminal_mode: RefCell<TerminalMode>,
     /// Whether to show streaming quality metrics
     show_streaming_metrics: bool,
+    /// Output printer for capturing or displaying output
+    printer: SharedPrinter,
 }
 
 impl ClaudeParser {
-    pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
+    /// Create a new ClaudeParser with the given colors and verbosity.
+    ///
+    /// # Arguments
+    ///
+    /// * `colors` - Colors for terminal output
+    /// * `verbosity` - Verbosity level for output
+    ///
+    /// # Returns
+    ///
+    /// A new ClaudeParser instance
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use ralph_workflow::json_parser::ClaudeParser;
+    /// use ralph_workflow::logger::Colors;
+    /// use ralph_workflow::config::Verbosity;
+    ///
+    /// let parser = ClaudeParser::new(Colors::new(), Verbosity::Normal);
+    /// ```
+    pub fn new(colors: Colors, verbosity: Verbosity) -> Self {
+        Self::with_printer(colors, verbosity, super::printer::shared_stdout())
+    }
+
+    /// Create a new ClaudeParser with a custom printer.
+    ///
+    /// # Arguments
+    ///
+    /// * `colors` - Colors for terminal output
+    /// * `verbosity` - Verbosity level for output
+    /// * `printer` - Shared printer for output
+    ///
+    /// # Returns
+    ///
+    /// A new ClaudeParser instance
+    pub fn with_printer(colors: Colors, verbosity: Verbosity, printer: SharedPrinter) -> Self {
         let verbose_warnings = matches!(verbosity, Verbosity::Debug);
         let streaming_session = StreamingSession::new().with_verbose_warnings(verbose_warnings);
         Self {
@@ -82,6 +120,7 @@ impl ClaudeParser {
             streaming_session: Rc::new(RefCell::new(streaming_session)),
             terminal_mode: RefCell::new(TerminalMode::detect()),
             show_streaming_metrics: false,
+            printer,
         }
     }
 
@@ -90,7 +129,16 @@ impl ClaudeParser {
         self
     }
 
-    pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
+    /// Set the display name for this parser.
+    ///
+    /// # Arguments
+    ///
+    /// * `display_name` - The name to display in output
+    ///
+    /// # Returns
+    ///
+    /// Self for builder pattern chaining
+    pub fn with_display_name(mut self, display_name: &str) -> Self {
         self.display_name = display_name.to_string();
         self
     }
@@ -100,8 +148,16 @@ impl ClaudeParser {
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_terminal_mode(self, mode: TerminalMode) -> Self {
+    /// Set the terminal mode for this parser.
+    ///
+    /// # Arguments
+    ///
+    /// * `mode` - The terminal mode to use
+    ///
+    /// # Returns
+    ///
+    /// Self for builder pattern chaining
+    pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
     }
@@ -112,7 +168,7 @@ impl ClaudeParser {
     /// - Malformed JSON (logged at debug level)
     /// - Unknown event types
     /// - Empty or whitespace-only output
-    pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
+    pub fn parse_event(&self, line: &str) -> Option<String> {
         let event: ClaudeEvent = if let Ok(e) = serde_json::from_str(line) {
             e
         } else {
@@ -877,11 +933,7 @@ impl ClaudeParser {
     }
 
     /// Parse a stream of Claude NDJSON events
-    pub(crate) fn parse_stream<R: BufRead, W: Write>(
-        &self,
-        mut reader: R,
-        mut writer: W,
-    ) -> io::Result<()> {
+    pub(crate) fn parse_stream<R: BufRead>(&self, mut reader: R) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
         let c = &self.colors;
@@ -925,16 +977,14 @@ impl ClaudeParser {
 
                 // In debug mode, also show the raw JSON
                 if self.verbosity.is_debug() {
-                    writeln!(
-                        writer,
+                    eprintln!(
                         "{}[DEBUG]{} {}{}{}",
                         c.dim(),
                         c.reset(),
                         c.dim(),
                         &line,
                         c.reset()
-                    )?;
-                    writer.flush()?;
+                    );
                 }
 
                 // Parse the event once - parse_event handles malformed JSON by returning None
@@ -954,8 +1004,10 @@ impl ClaudeParser {
                         } else {
                             monitor.record_parsed();
                         }
-                        write!(writer, "{output}")?;
-                        writer.flush()?;
+                        // Write output to printer
+                        let mut printer = self.printer.borrow_mut();
+                        write!(printer, "{output}")?;
+                        printer.flush()?;
                     }
                     None => {
                         // Check if this was a control event (state management with no user output)
@@ -989,7 +1041,9 @@ impl ClaudeParser {
             file.flush()?;
         }
         if let Some(warning) = monitor.check_and_warn(*c) {
-            writeln!(writer, "{warning}")?;
+            let mut printer = self.printer.borrow_mut();
+            writeln!(printer, "{warning}")?;
+            printer.flush()?;
         }
         Ok(())
     }

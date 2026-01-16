@@ -372,7 +372,7 @@ fn stream_agent_output(
                 .with_display_name(cmd.display_name)
                 .with_log_file(cmd.logfile)
                 .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader, &mut out)?;
+                p.parse_stream(reader)?;
             }
             JsonParserType::Codex => {
                 let p =

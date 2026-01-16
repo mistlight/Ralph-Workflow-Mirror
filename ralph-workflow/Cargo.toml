@@ -19,6 +19,12 @@ path = "src/lib.rs"
 name = "ralph"
 path = "src/main.rs"
 
+[features]
+# INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
+default = []
+# INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
+test-utils = []
+
 [dependencies]
 # CLI argument parsing
 clap = { version = "4.4", features = ["derive", "env"] }

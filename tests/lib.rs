@@ -4,3 +4,7 @@
 // All actual tests are in the subdirectories
 
 pub mod parsing_test_corpus;
+
+// Include deduplication integration tests
+#[path = "deduplication_integration_tests.rs"]
+pub mod deduplication_integration_tests;

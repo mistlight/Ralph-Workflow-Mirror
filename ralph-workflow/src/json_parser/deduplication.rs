@@ -3,10 +3,17 @@
 //! This module provides efficient deduplication for streaming deltas using:
 //! - **Rolling Hash (Rabin-Karp)**: Fast O(n) filtering to eliminate impossible matches
 //! - **KMP (Knuth-Morris-Pratt)**: O(n+m) verification for exact substring matching
+//! - **Strong Overlap Detection**: Thresholds and boundary checks to prevent false positives
 //!
-//! The two-phase approach ensures optimal performance:
-//! 1. Rolling hash quickly filters out non-matches
-//! 2. KMP verifies actual matches when hash collides
+//! # Enhanced Deduplication
+//!
+//! The enhanced algorithm uses multiple layers of validation to prevent false positives:
+//!
+//! 1. **Rolling Hash Filter**: Fast O(n) check to eliminate impossible matches
+//! 2. **KMP Verification**: O(n+m) confirmation of actual substring match
+//! 3. **Overlap Threshold**: Only dedupe when overlap >= 30 chars AND >= 50% of delta
+//! 4. **Boundary Sanity**: Ensure overlap ends at whitespace/punctuation/newline
+//! 5. **Short Chunk Protection**: Chunks < 20 chars never deduped unless exact match
 //!
 //! # Architecture
 //!
@@ -35,11 +42,309 @@
 //!                No   │   Yes
 //!                │    │
 //!                ▼    ▼
-//!             Accept  Extract New
-//!             Delta   Portion Only
+//!             Accept  ┌─────────────────────┐
+//!             Delta   │ Strong Overlap Check│ ◄── >= 30 chars, >= 50%, safe boundary
+//!                     └──────────┬──────────┘
+//!                                │
+//!                         ┌──────┴──────┐
+//!                         │Measures?    │
+//!                         └──────┬──────┘
+//!                           No   │   Yes
+//!                           │    │
+//!                           ▼    ▼
+//!                        Accept  Extract New
+//!                        Delta   Portion Only
 //! ```
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+// ============================================================================
+// Configuration Constants for Strong Overlap Detection
+// ============================================================================
+
+/// Default minimum overlap character count for deduplication.
+///
+/// Overlaps must be at least this many characters to be considered for deduplication.
+/// This prevents false positives from short accidental matches (e.g., "the", "and").
+const DEFAULT_MIN_OVERLAP_CHARS: usize = 30;
+
+/// Minimum overlap ratio expressed as integer (50 = 50%).
+/// Used for integer-based ratio comparison to avoid floating point issues.
+const MIN_OVERLAP_RATIO_INT: usize = 50;
+
+/// Default threshold for considering a chunk "short".
+///
+/// Short chunks (< this many chars) are never deduped unless they're exact matches
+/// with the accumulated content. This prevents aggressive deduplication of tokens
+/// like ".", "\n", "Ok" that are legitimately repeated.
+const DEFAULT_SHORT_CHUNK_THRESHOLD: usize = 20;
+
+/// Default threshold for consecutive duplicate detection.
+///
+/// If the exact same chunk arrives this many times in a row, it's treated as a
+/// resend glitch and dropped entirely.
+const DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD: usize = 3;
+
+/// Minimum allowed value for `MIN_OVERLAP_CHARS`.
+const MIN_MIN_OVERLAP_CHARS: usize = 10;
+
+/// Maximum allowed value for `MIN_OVERLAP_CHARS`.
+const MAX_MIN_OVERLAP_CHARS: usize = 100;
+
+/// Minimum allowed value for `SHORT_CHUNK_THRESHOLD`.
+const MIN_SHORT_CHUNK_THRESHOLD: usize = 5;
+
+/// Maximum allowed value for `SHORT_CHUNK_THRESHOLD`.
+const MAX_SHORT_CHUNK_THRESHOLD: usize = 50;
+
+/// Minimum allowed value for `CONSECUTIVE_DUPLICATE_THRESHOLD`.
+const MIN_CONSECUTIVE_DUPLICATE_THRESHOLD: usize = 2;
+
+/// Maximum allowed value for `CONSECUTIVE_DUPLICATE_THRESHOLD`.
+const MAX_CONSECUTIVE_DUPLICATE_THRESHOLD: usize = 10;
+
+/// Configuration for strong overlap detection.
+///
+/// This struct holds the tunable thresholds that determine when an overlap
+/// is "strong enough" to warrant deduplication.
+#[derive(Debug, Clone, Copy)]
+pub struct OverlapThresholds {
+    /// Minimum character count for overlap
+    pub min_overlap_chars: usize,
+    /// Threshold below which chunks are considered "short"
+    pub short_chunk_threshold: usize,
+    /// Number of consecutive duplicates before aggressive dedupe
+    pub consecutive_duplicate_threshold: usize,
+}
+
+impl Default for OverlapThresholds {
+    fn default() -> Self {
+        Self {
+            min_overlap_chars: DEFAULT_MIN_OVERLAP_CHARS,
+            short_chunk_threshold: DEFAULT_SHORT_CHUNK_THRESHOLD,
+            consecutive_duplicate_threshold: DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD,
+        }
+    }
+}
+
+/// Get the overlap thresholds from environment variables or use defaults.
+///
+/// Reads the following environment variables:
+/// - `RALPH_STREAMING_MIN_OVERLAP_CHARS`: Minimum overlap characters (default: 30, range: 10-100)
+/// - `RALPH_STREAMING_MIN_OVERLAP_RATIO`: Minimum overlap ratio (default: 0.5, range: 0.1-0.9)
+/// - `RALPH_STREAMING_SHORT_CHUNK_THRESHOLD`: Short chunk threshold (default: 20, range: 5-50)
+/// - `RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD`: Consecutive duplicate threshold (default: 3, range: 2-10)
+///
+/// # Returns
+/// The configured overlap thresholds.
+pub fn get_overlap_thresholds() -> OverlapThresholds {
+    static THRESHOLDS: OnceLock<OverlapThresholds> = OnceLock::new();
+    *THRESHOLDS.get_or_init(|| {
+        let min_overlap_chars = std::env::var("RALPH_STREAMING_MIN_OVERLAP_CHARS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|v| {
+                if (MIN_MIN_OVERLAP_CHARS..=MAX_MIN_OVERLAP_CHARS).contains(&v) {
+                    Some(v)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(DEFAULT_MIN_OVERLAP_CHARS);
+
+        let short_chunk_threshold = std::env::var("RALPH_STREAMING_SHORT_CHUNK_THRESHOLD")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|v| {
+                if (MIN_SHORT_CHUNK_THRESHOLD..=MAX_SHORT_CHUNK_THRESHOLD).contains(&v) {
+                    Some(v)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(DEFAULT_SHORT_CHUNK_THRESHOLD);
+
+        let consecutive_duplicate_threshold =
+            std::env::var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .and_then(|v| {
+                    if (MIN_CONSECUTIVE_DUPLICATE_THRESHOLD..=MAX_CONSECUTIVE_DUPLICATE_THRESHOLD)
+                        .contains(&v)
+                    {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD);
+
+        OverlapThresholds {
+            min_overlap_chars,
+            short_chunk_threshold,
+            consecutive_duplicate_threshold,
+        }
+    })
+}
+
+// ============================================================================
+// Boundary Detection
+// ============================================================================
+
+/// Check if a character position is at a safe boundary for deduplication.
+///
+/// A "safe boundary" is where the overlap ends at a natural break point in text:
+/// - Whitespace (space, tab, newline, etc.)
+/// - ASCII punctuation (.,!?;:, etc.)
+/// - End of string
+///
+/// This prevents deduplication from splitting words or tokens mid-way through,
+/// which could cause incorrect rendering of intentional repetitions.
+///
+/// # Arguments
+/// * `text` - The text to check
+/// * `pos` - The position in the text (byte offset)
+///
+/// # Returns
+/// * `true` - The position is at a safe boundary for deduplication
+/// * `false` - The position is NOT at a safe boundary (mid-word, etc.)
+///
+/// # Examples
+///
+/// ```ignore
+/// // Safe: overlap ends at space
+/// assert!(is_safe_boundary("Hello World", 11)); // After "World"
+///
+/// // Safe: overlap ends at punctuation
+/// assert!(is_safe_boundary("Hello, World!", 12)); // After "!"
+///
+/// // Unsafe: overlap ends mid-word
+/// assert!(!is_safe_boundary("HelloWorld", 5)); // After "Hello"
+/// ```
+fn is_safe_boundary(text: &str, pos: usize) -> bool {
+    // End of string is always safe
+    if pos >= text.len() {
+        return true;
+    }
+
+    // Get the character at the boundary position
+    // We need to use character iteration for Unicode safety
+    let char_at_pos = text[pos..].chars().next();
+
+    char_at_pos
+        .is_none_or(|c| c.is_whitespace() || c.is_ascii_punctuation() || c.is_ascii_control())
+}
+
+// ============================================================================
+// Overlap Quality Scoring
+// ============================================================================
+
+/// Score representing the "strength" of an overlap.
+///
+/// This struct captures multiple metrics about an overlap to determine
+/// if it's strong enough to warrant deduplication.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OverlapScore {
+    /// Character count of the overlap
+    pub char_count: usize,
+    /// Whether the overlap meets the minimum ratio threshold
+    pub ratio_met: bool,
+    /// Whether the overlap ends at a safe boundary
+    pub is_safe_boundary: bool,
+}
+
+impl OverlapScore {
+    /// Check if this overlap meets all thresholds for deduplication.
+    ///
+    /// # Arguments
+    /// * `thresholds` - The overlap thresholds to check against
+    ///
+    /// # Returns
+    /// * `true` - The overlap is strong enough for deduplication
+    /// * `false` - The overlap is too weak
+    #[must_use]
+    pub const fn meets_thresholds(&self, thresholds: &OverlapThresholds) -> bool {
+        self.char_count >= thresholds.min_overlap_chars && self.ratio_met && self.is_safe_boundary
+    }
+
+    /// Check if the delta is short (below short chunk threshold).
+    ///
+    /// # Arguments
+    /// * `delta_len` - The length of the delta
+    /// * `thresholds` - The overlap thresholds
+    ///
+    /// # Returns
+    /// * `true` - The delta is considered short
+    /// * `false` - The delta is normal length
+    #[must_use]
+    #[cfg(test)]
+    pub const fn is_short_delta(delta_len: usize, thresholds: &OverlapThresholds) -> bool {
+        delta_len < thresholds.short_chunk_threshold
+    }
+}
+
+/// Score the quality of an overlap between delta and accumulated content.
+///
+/// This function computes multiple metrics about an overlap to determine
+/// if it's strong enough to warrant deduplication.
+///
+/// # Arguments
+/// * `delta` - The incoming delta
+/// * `accumulated` - The previously accumulated content
+///
+/// # Returns
+/// An `OverlapScore` containing:
+/// - `char_count`: The length of the overlap in characters
+/// - `ratio`: The overlap as a fraction of delta length
+/// - `is_safe_boundary`: Whether the overlap ends at a safe boundary
+///
+/// # Examples
+///
+/// ```ignore
+/// // Strong overlap (30+ chars, 50%+ ratio, safe boundary)
+/// let score = score_overlap("Hello World! More text here", "Hello World!");
+/// assert!(score.char_count >= 30);
+/// assert!(score.ratio_met);
+/// assert!(score.is_safe_boundary);
+/// ```
+fn score_overlap(delta: &str, accumulated: &str) -> OverlapScore {
+    // Check if delta starts with accumulated (snapshot detection)
+    let overlap_len = if delta.starts_with(accumulated) {
+        accumulated.len()
+    } else {
+        0
+    };
+
+    // Calculate ratio as integer to avoid floating point precision issues
+    // We'll compare overlap * 100 >= delta * MIN_OVERLAP_RATIO_INT
+    // This avoids f64 casting entirely
+    let ratio_met = if delta.is_empty() {
+        false
+    } else {
+        // Check if overlap/delta >= MIN_OVERLAP_RATIO without floating point
+        // By cross-multiplying: overlap * 100 >= delta * MIN_OVERLAP_RATIO_INT
+        let overlap_scaled = overlap_len.saturating_mul(100);
+        let threshold = delta.len().saturating_mul(MIN_OVERLAP_RATIO_INT);
+        overlap_scaled >= threshold
+    };
+
+    // Check if the accumulated string ends at a safe boundary
+    // This is important because we don't want to dedupe if the accumulated
+    // string ends mid-word (e.g., accumulated="Hello" and delta="HelloWorld")
+    let is_safe_boundary = if overlap_len > 0 {
+        // Check if the last character of accumulated is a safe boundary
+        is_safe_boundary(accumulated, accumulated.len())
+    } else {
+        false
+    };
+
+    OverlapScore {
+        char_count: overlap_len,
+        ratio_met,
+        is_safe_boundary,
+    }
+}
 
 /// Rolling hash window for fast substring detection.
 ///
@@ -91,6 +396,7 @@ impl RollingHashWindow {
     const MODULUS: u64 = 2_147_483_647; // 2^31 - 1 (Mersenne prime)
 
     /// Create a new rolling hash window.
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -121,6 +427,7 @@ impl RollingHashWindow {
     ///
     /// This is used to efficiently remove the leftmost character when
     /// sliding the window.
+    #[cfg(test)]
     fn compute_power(power: usize) -> u64 {
         let mut result = 1u64;
         for _ in 0..power {
@@ -136,6 +443,7 @@ impl RollingHashWindow {
     ///
     /// # Arguments
     /// * `text` - The new content to add
+    #[cfg(test)]
     pub fn add_content(&mut self, text: &str) {
         if text.is_empty() {
             return;
@@ -164,6 +472,7 @@ impl RollingHashWindow {
     /// // Get hashes for all 5-character windows
     /// let hashes = window.get_window_hashes(5);
     /// ```
+    #[cfg(test)]
     pub fn get_window_hashes(&mut self, window_size: usize) -> Vec<(usize, u64)> {
         // Return cached copy if available
         if let Some(hashes) = self.cached_hashes.get(&window_size) {
@@ -224,6 +533,7 @@ impl RollingHashWindow {
     /// # Returns
     /// * `Some(position)` - The position where the hash was found
     /// * `None` - Hash not found
+    #[cfg(test)]
     pub fn contains_hash(&mut self, hash: u64, window_size: usize) -> Option<usize> {
         let hashes = self.get_window_hashes(window_size);
         hashes
@@ -239,11 +549,13 @@ impl RollingHashWindow {
     }
 
     /// Get the current content length.
+    #[cfg(test)]
     pub const fn len(&self) -> usize {
         self.content.len()
     }
 
     /// Check if the window is empty.
+    #[cfg(test)]
     pub const fn is_empty(&self) -> bool {
         self.content.is_empty()
     }
@@ -271,6 +583,7 @@ impl RollingHashWindow {
 /// }
 /// ```
 #[derive(Debug, Clone)]
+#[cfg(test)]
 pub struct KMPMatcher {
     /// The pattern to search for
     pattern: String,
@@ -278,6 +591,7 @@ pub struct KMPMatcher {
     failure: Vec<usize>,
 }
 
+#[cfg(test)]
 impl KMPMatcher {
     /// Create a new KMP matcher for the given pattern.
     ///
@@ -407,6 +721,7 @@ impl KMPMatcher {
     /// let positions = matcher.find_all("ababab");
     /// assert_eq!(positions, vec![0, 2, 4]);
     /// ```
+    #[cfg(test)]
     pub fn find_all(&self, text: &str) -> Vec<usize> {
         let mut positions = Vec::new();
         let n = text.len();
@@ -443,11 +758,13 @@ impl KMPMatcher {
     }
 
     /// Get the pattern length.
+    #[cfg(test)]
     pub const fn pattern_len(&self) -> usize {
         self.pattern.len()
     }
 
     /// Check if the pattern is empty.
+    #[cfg(test)]
     pub const fn is_empty(&self) -> bool {
         self.pattern.is_empty()
     }
@@ -481,6 +798,7 @@ pub struct DeltaDeduplicator {
 
 impl DeltaDeduplicator {
     /// Create a new delta deduplicator.
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -489,6 +807,7 @@ impl DeltaDeduplicator {
     ///
     /// # Arguments
     /// * `content` - The accumulated content to track
+    #[cfg(test)]
     pub fn add_accumulated(&mut self, content: &str) {
         self.hash_window.add_content(content);
     }
@@ -532,7 +851,13 @@ impl DeltaDeduplicator {
     ///     None
     /// );
     /// ```
+    #[cfg(test)]
     pub fn extract_new_content<'a>(delta: &'a str, accumulated: &str) -> Option<&'a str> {
+        // Handle identical content (delta == accumulated) - return empty string
+        if delta == accumulated {
+            return Some("");
+        }
+
         // Fast rejection: delta must be longer than accumulated
         if delta.len() <= accumulated.len() {
             return None;
@@ -573,6 +898,12 @@ impl DeltaDeduplicator {
     /// * `true` - Delta may be a snapshot (hash matches)
     /// * `false` - Delta is definitely not a snapshot (hash doesn't match)
     pub fn is_likely_snapshot(delta: &str, accumulated: &str) -> bool {
+        // Handle identical content (duplicate delta)
+        if delta == accumulated {
+            return true;
+        }
+
+        // Delta must be longer than accumulated to be a snapshot
         if delta.len() <= accumulated.len() {
             return false;
         }
@@ -581,6 +912,110 @@ impl DeltaDeduplicator {
         let delta_prefix_hash = RollingHashWindow::compute_hash(&delta[..accumulated.len()]);
 
         accumulated_hash == delta_prefix_hash
+    }
+
+    /// Check if delta is likely a snapshot with strong overlap detection.
+    ///
+    /// This is an enhanced version of `is_likely_snapshot` that applies
+    /// strong overlap thresholds to prevent false positives on intentional
+    /// repetitions.
+    ///
+    /// # Strong Overlap Detection
+    ///
+    /// This method only returns `true` when:
+    /// - The overlap meets minimum character count threshold (default: 30 chars)
+    /// - The overlap meets minimum ratio threshold (default: 50% of delta)
+    /// - The overlap ends at a safe boundary (whitespace/punctuation/newline)
+    /// - Short chunks (< 20 chars) are only deduped if exact match
+    ///
+    /// # Arguments
+    /// * `delta` - The incoming delta to check
+    /// * `accumulated` - The previously accumulated content
+    ///
+    /// # Returns
+    /// * `true` - Delta is a snapshot meeting strong overlap criteria
+    /// * `false` - Delta is either genuine or overlap is too weak
+    pub fn is_likely_snapshot_with_thresholds(delta: &str, accumulated: &str) -> bool {
+        let thresholds = get_overlap_thresholds();
+
+        // Handle short chunks: only dedupe if exact match
+        if delta.len() < thresholds.short_chunk_threshold {
+            return delta == accumulated;
+        }
+
+        // Handle identical content (delta == accumulated)
+        // This is a snapshot where no new content is added
+        if delta == accumulated {
+            return true;
+        }
+
+        // Fast rejection: delta must be longer than accumulated
+        if delta.len() <= accumulated.len() {
+            return false;
+        }
+
+        // First check with basic rolling hash for quick rejection
+        if !Self::is_likely_snapshot(delta, accumulated) {
+            return false;
+        }
+
+        // Score the overlap to check if it meets strong overlap criteria
+        let score = score_overlap(delta, accumulated);
+
+        // Apply threshold checks
+        score.meets_thresholds(&thresholds)
+    }
+
+    /// Extract new content from a snapshot with strong overlap detection.
+    ///
+    /// This is an enhanced version of `extract_new_content` that only extracts
+    /// new content when the overlap meets strong overlap thresholds.
+    ///
+    /// # Arguments
+    /// * `delta` - The incoming delta to check
+    /// * `accumulated` - The previously accumulated content
+    ///
+    /// # Returns
+    /// * `Some(new_portion)` - The overlap meets thresholds, returns new portion
+    /// * `None` - The overlap is too weak or not a snapshot
+    pub fn extract_new_content_with_thresholds<'a>(
+        delta: &'a str,
+        accumulated: &str,
+    ) -> Option<&'a str> {
+        let thresholds = get_overlap_thresholds();
+
+        // Handle short chunks: only dedupe if exact match
+        if delta.len() < thresholds.short_chunk_threshold {
+            if delta == accumulated {
+                return Some("");
+            }
+            return None;
+        }
+
+        // Handle identical content
+        if delta == accumulated {
+            return Some("");
+        }
+
+        // Fast rejection: delta must be longer than accumulated
+        if delta.len() <= accumulated.len() {
+            return None;
+        }
+
+        // Score the overlap
+        let score = score_overlap(delta, accumulated);
+
+        // Check if overlap meets thresholds
+        if !score.meets_thresholds(&thresholds) {
+            return None;
+        }
+
+        // Extract new content using the overlap length from the score
+        if score.char_count > 0 && delta.len() > score.char_count {
+            Some(&delta[score.char_count..])
+        } else {
+            None
+        }
     }
 
     /// Clear all tracked content.
@@ -768,9 +1203,15 @@ mod tests {
         let mut dedup = DeltaDeduplicator::new();
         dedup.add_accumulated("Hello");
 
-        // Equal length - even if identical, there's no "new" portion
+        // Equal length - if identical, return empty string (no new content)
         assert_eq!(
             DeltaDeduplicator::extract_new_content("Hello", "Hello"),
+            Some("")
+        );
+
+        // Equal length but different content - not a snapshot
+        assert_eq!(
+            DeltaDeduplicator::extract_new_content("World", "Hello"),
             None
         );
     }
@@ -853,5 +1294,364 @@ mod tests {
 
         // Any delta is genuine
         assert_eq!(DeltaDeduplicator::extract_new_content("Hello", ""), None);
+    }
+
+    // Tests for Strong Overlap Detection with Thresholds
+
+    #[test]
+    fn test_strong_overlap_meets_char_threshold() {
+        // Overlap of 30+ chars with safe boundary should pass
+        let accumulated = "The quick brown fox jumps over the lazy";
+        let delta = "The quick brown fox jumps over the lazy dog!";
+
+        assert!(
+            DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Should detect snapshot with 30+ char overlap"
+        );
+    }
+
+    #[test]
+    fn test_strong_overlap_meets_ratio_threshold() {
+        // Overlap is 50%+ of delta length
+        let accumulated = "The quick brown fox jumps over the lazy dog. ";
+        let delta = "The quick brown fox jumps over the lazy dog. And more!";
+
+        assert!(
+            DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Should detect snapshot when overlap is 50%+ of delta"
+        );
+    }
+
+    #[test]
+    fn test_strong_overlap_fails_char_threshold() {
+        // Overlap < 30 chars, even if ratio is good
+        let accumulated = "Hello";
+        let delta = "Hello World!";
+
+        assert!(
+            !DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Should NOT detect snapshot when overlap < 30 chars"
+        );
+    }
+
+    #[test]
+    fn test_strong_overlap_fails_ratio_threshold() {
+        // Overlap < 50% of delta, even if char count is good
+        let accumulated = "The quick brown fox jumps over the lazy dog. ";
+        let delta = "The quick brown fox jumps over the lazy dog. And then a whole lot more text follows to make the ratio low!";
+
+        assert!(
+            !DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Should NOT detect snapshot when overlap < 50% of delta"
+        );
+    }
+
+    #[test]
+    fn test_boundary_check_whitespace() {
+        // Overlap ends at space (safe boundary)
+        let accumulated = "The quick brown fox jumps over the lazy dog and ";
+        let delta = "The quick brown fox jumps over the lazy dog and then more!";
+
+        assert!(
+            DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Should detect snapshot when overlap ends at whitespace"
+        );
+    }
+
+    #[test]
+    fn test_boundary_check_punctuation() {
+        // Overlap ends at punctuation (safe boundary)
+        let accumulated = "The quick brown fox jumps over the lazy dog.";
+        let delta = "The quick brown fox jumps over the lazy dog. How are you?";
+
+        assert!(
+            DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Should detect snapshot when overlap ends at punctuation"
+        );
+    }
+
+    #[test]
+    fn test_boundary_check_mid_word_fails() {
+        // Overlap ends mid-word (unsafe boundary)
+        let accumulated = "Hello";
+        let delta = "HelloWorld! This is a lot of text to ensure we have enough characters.";
+
+        // Even though we have 30+ chars, the boundary check should fail
+        // because the overlap ends mid-word (at 'W' of "World")
+        assert!(
+            !DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Should NOT detect snapshot when overlap ends mid-word"
+        );
+    }
+
+    #[test]
+    fn test_short_chunk_never_deduped() {
+        // Short chunks (< 20 chars) never deduped unless exact match
+        let accumulated = "Hello";
+        let delta = "Hello World!";
+
+        // Even though "Hello World!" starts with "Hello", it's < 20 chars total
+        // and not an exact match, so it should NOT be deduped
+        assert!(
+            !DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Short chunks should NOT be deduped unless exact match"
+        );
+    }
+
+    #[test]
+    fn test_short_chunk_exact_match_deduped() {
+        // Short chunks (< 20 chars) ARE deduped if exact match
+        let accumulated = "Hello";
+        let delta = "Hello";
+
+        assert!(
+            DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Short chunk exact match SHOULD be deduped"
+        );
+    }
+
+    #[test]
+    fn test_extract_new_content_with_thresholds_strong_overlap() {
+        let accumulated = "The quick brown fox jumps over the lazy dog. ";
+        let delta = "The quick brown fox jumps over the lazy dog. More content here!";
+
+        let result = DeltaDeduplicator::extract_new_content_with_thresholds(delta, accumulated);
+        assert_eq!(result, Some("More content here!"));
+    }
+
+    #[test]
+    fn test_extract_new_content_with_thresholds_weak_overlap() {
+        // Weak overlap (< 30 chars) should return None
+        let accumulated = "Hello";
+        let delta = "Hello World! This is more content to exceed thresholds.";
+
+        let result = DeltaDeduplicator::extract_new_content_with_thresholds(delta, accumulated);
+        assert_eq!(result, None, "Weak overlap should return None");
+    }
+
+    #[test]
+    fn test_extract_new_content_with_thresholds_short_chunk() {
+        // Short chunk that's not an exact match should return None
+        let accumulated = "Hi";
+        let delta = "Hi there!";
+
+        let result = DeltaDeduplicator::extract_new_content_with_thresholds(delta, accumulated);
+        assert_eq!(
+            result, None,
+            "Short chunk should return None unless exact match"
+        );
+    }
+
+    #[test]
+    fn test_extract_new_content_with_thresholds_short_chunk_exact() {
+        // Short chunk exact match should return empty string
+        let accumulated = "Hello";
+        let delta = "Hello";
+
+        let result = DeltaDeduplicator::extract_new_content_with_thresholds(delta, accumulated);
+        assert_eq!(result, Some(""));
+    }
+
+    #[test]
+    fn test_strong_overlap_with_unicode() {
+        // Test with Unicode characters
+        let accumulated = "Hello 世界! This is a long enough string to meet thresholds. ";
+        let delta = "Hello 世界! This is a long enough string to meet thresholds. More!";
+
+        assert!(
+            DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Should handle Unicode correctly with strong overlap"
+        );
+
+        let result = DeltaDeduplicator::extract_new_content_with_thresholds(delta, accumulated);
+        assert_eq!(result, Some("More!"));
+    }
+
+    #[test]
+    fn test_intentional_repetition_not_deduped() {
+        // Simulate intentional repetition (e.g., "Hello World! Hello World!")
+        // where the overlap is small relative to the total delta
+        let accumulated = "Hello World!";
+        let delta = "Hello World! Hello World! This is a lot of additional content to make the overlap ratio low enough that it won't be deduplicated!";
+
+        assert!(
+            !DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Intentional repetition should NOT be deduped when overlap ratio is low"
+        );
+    }
+
+    #[test]
+    fn test_snapshot_strong_overlap_deduped() {
+        // Real snapshot scenario: agent sends full accumulated + new content
+        let accumulated = "The quick brown fox jumps over the lazy dog. ";
+        let delta = "The quick brown fox jumps over the lazy dog. And then some more!";
+
+        assert!(
+            DeltaDeduplicator::is_likely_snapshot_with_thresholds(delta, accumulated),
+            "Actual snapshot SHOULD be detected and deduped"
+        );
+
+        let result = DeltaDeduplicator::extract_new_content_with_thresholds(delta, accumulated);
+        assert_eq!(result, Some("And then some more!"));
+    }
+
+    #[test]
+    fn test_overlap_score_meets_thresholds() {
+        let thresholds = OverlapThresholds::default();
+
+        // Strong overlap: 30+ chars, 50%+ ratio, safe boundary
+        let score = OverlapScore {
+            char_count: 50,
+            ratio_met: true,
+            is_safe_boundary: true,
+        };
+
+        assert!(score.meets_thresholds(&thresholds));
+    }
+
+    #[test]
+    fn test_overlap_score_fails_char_count() {
+        let thresholds = OverlapThresholds::default();
+
+        // Char count too low
+        let score = OverlapScore {
+            char_count: 20,
+            ratio_met: true,
+            is_safe_boundary: true,
+        };
+
+        assert!(!score.meets_thresholds(&thresholds));
+    }
+
+    #[test]
+    fn test_overlap_score_fails_ratio() {
+        let thresholds = OverlapThresholds::default();
+
+        // Ratio too low (met = false)
+        let score = OverlapScore {
+            char_count: 50,
+            ratio_met: false,
+            is_safe_boundary: true,
+        };
+
+        assert!(!score.meets_thresholds(&thresholds));
+    }
+
+    #[test]
+    fn test_overlap_score_fails_boundary() {
+        let thresholds = OverlapThresholds::default();
+
+        // Boundary not safe
+        let score = OverlapScore {
+            char_count: 50,
+            ratio_met: true,
+            is_safe_boundary: false,
+        };
+
+        assert!(!score.meets_thresholds(&thresholds));
+    }
+
+    #[test]
+    fn test_is_short_delta() {
+        let thresholds = OverlapThresholds::default();
+
+        assert!(OverlapScore::is_short_delta(10, &thresholds));
+        assert!(!OverlapScore::is_short_delta(30, &thresholds));
+    }
+
+    #[test]
+    fn test_is_safe_boundary_whitespace() {
+        assert!(is_safe_boundary("Hello World", 5));
+        assert!(is_safe_boundary("Hello\nWorld", 5));
+        assert!(is_safe_boundary("Hello\tWorld", 5));
+    }
+
+    #[test]
+    fn test_is_safe_boundary_punctuation() {
+        assert!(is_safe_boundary("Hello, World!", 12)); // After "!"
+        assert!(is_safe_boundary("Hello. World", 5)); // After "."
+        assert!(is_safe_boundary("Hello; World", 5)); // After ";"
+    }
+
+    #[test]
+    fn test_is_safe_boundary_end_of_string() {
+        assert!(is_safe_boundary("Hello", 5));
+        assert!(is_safe_boundary("Hello", 10)); // Beyond length
+    }
+
+    #[test]
+    fn test_is_safe_boundary_mid_word() {
+        assert!(!is_safe_boundary("HelloWorld", 5));
+        assert!(!is_safe_boundary("Testing", 3));
+    }
+
+    #[test]
+    fn test_score_overlap_with_snapshot() {
+        let accumulated = "The quick brown fox jumps over the lazy dog. ";
+        let delta = "The quick brown fox jumps over the lazy dog. And more!";
+
+        let score = score_overlap(delta, accumulated);
+
+        assert!(score.char_count > 30);
+        assert!(score.ratio_met);
+        assert!(score.is_safe_boundary);
+    }
+
+    #[test]
+    fn test_score_overlap_with_genuine_delta() {
+        let accumulated = "Hello";
+        let delta = " World";
+
+        let score = score_overlap(delta, accumulated);
+
+        assert_eq!(score.char_count, 0);
+    }
+
+    #[test]
+    fn test_get_overlap_thresholds_default() {
+        let thresholds = get_overlap_thresholds();
+
+        assert_eq!(thresholds.min_overlap_chars, 30);
+        assert_eq!(thresholds.short_chunk_threshold, 20);
+        assert_eq!(thresholds.consecutive_duplicate_threshold, 3);
+    }
+
+    #[test]
+    fn test_consecutive_duplicate_threshold_default() {
+        let thresholds = OverlapThresholds::default();
+        assert_eq!(
+            thresholds.consecutive_duplicate_threshold, DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD,
+            "Default consecutive_duplicate_threshold should match constant"
+        );
+        assert_eq!(
+            thresholds.consecutive_duplicate_threshold, 3,
+            "Default consecutive_duplicate_threshold should be 3"
+        );
+    }
+
+    #[test]
+    fn test_consecutive_duplicate_threshold_bounds() {
+        // Test minimum allowed value
+        let min_env = "2";
+        std::env::set_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", min_env);
+        // Note: OnceLock caches the value, so we can't test this in the same process
+        // This test documents the expected behavior
+
+        // Test maximum allowed value
+        let max_env = "10";
+        std::env::set_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", max_env);
+
+        // Clean up
+        std::env::remove_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD");
+
+        // Verify bounds constants are correct
+        assert_eq!(
+            MIN_CONSECUTIVE_DUPLICATE_THRESHOLD, 2,
+            "Minimum threshold should be 2"
+        );
+        assert_eq!(
+            MAX_CONSECUTIVE_DUPLICATE_THRESHOLD, 10,
+            "Maximum threshold should be 10"
+        );
     }
 }

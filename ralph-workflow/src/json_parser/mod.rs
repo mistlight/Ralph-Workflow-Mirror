@@ -36,31 +36,35 @@
 //! - **Full (3)**: No truncation, show all content
 //! - **Debug (4)**: Maximum verbosity, includes raw JSON output
 
-mod claude;
+pub mod claude;
 #[cfg(test)]
 mod claude_tests;
-mod codex;
+pub mod codex;
 #[cfg(test)]
 mod codex_tests;
 pub mod deduplication;
 pub mod delta_display;
-mod gemini;
+mod event_queue;
+pub mod gemini;
 #[cfg(test)]
 mod gemini_tests;
 pub mod health;
 mod incremental_parser;
-mod opencode;
+pub mod opencode;
 #[cfg(test)]
 mod opencode_tests;
+pub mod printer;
 mod stream_classifier;
 pub mod streaming_state;
-mod terminal;
-mod types;
+pub mod terminal;
+pub mod types;
 
 pub use claude::ClaudeParser;
 pub use codex::CodexParser;
 pub use gemini::GeminiParser;
 pub use opencode::OpenCodeParser;
+#[allow(unused_imports)]
+pub use printer::{Printable, SharedPrinter, StderrPrinter, StdoutPrinter, TestPrinter};
 
 #[cfg(test)]
 mod tests;

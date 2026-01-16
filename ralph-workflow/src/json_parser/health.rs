@@ -53,6 +53,7 @@ use std::cell::Cell;
 /// - **Delta sizes**: Average, min, max sizes to understand streaming granularity
 /// - **Total deltas**: Count of deltas processed
 /// - **Streaming pattern**: Classification based on size variance
+/// - **Queue metrics**: Event queue depth, dropped events, and backpressure (when using bounded queue)
 #[derive(Debug, Clone, Default)]
 pub struct StreamingQualityMetrics {
     /// Total number of deltas processed
@@ -71,6 +72,12 @@ pub struct StreamingQualityMetrics {
     pub large_delta_count: usize,
     /// Number of protocol violations detected (e.g., `MessageStart` during streaming)
     pub protocol_violations: usize,
+    /// Queue depth (number of events in queue) - 0 if queue not in use
+    pub queue_depth: usize,
+    /// Number of events dropped due to queue overflow - 0 if queue not in use
+    pub queue_dropped_events: usize,
+    /// Number of times backpressure was triggered (send blocked on full queue) - 0 if queue not in use
+    pub queue_backpressure_count: usize,
 }
 
 /// Classification of streaming patterns based on delta size variance.
@@ -150,6 +157,9 @@ impl StreamingQualityMetrics {
             snapshot_repairs_count: 0,
             large_delta_count: 0,
             protocol_violations: 0,
+            queue_depth: 0,
+            queue_dropped_events: 0,
+            queue_backpressure_count: 0,
         }
     }
 
@@ -206,6 +216,36 @@ impl StreamingQualityMetrics {
                 self.protocol_violations,
                 colors.reset()
             ));
+        }
+
+        // Queue metrics (only show if queue is in use)
+        if self.queue_depth > 0
+            || self.queue_dropped_events > 0
+            || self.queue_backpressure_count > 0
+        {
+            let mut queue_parts = Vec::new();
+            if self.queue_depth > 0 {
+                queue_parts.push(format!("depth: {}", self.queue_depth));
+            }
+            if self.queue_dropped_events > 0 {
+                queue_parts.push(format!(
+                    "{}dropped: {}{}",
+                    colors.yellow(),
+                    self.queue_dropped_events,
+                    colors.reset()
+                ));
+            }
+            if self.queue_backpressure_count > 0 {
+                queue_parts.push(format!(
+                    "{}backpressure: {}{}",
+                    colors.yellow(),
+                    self.queue_backpressure_count,
+                    colors.reset()
+                ));
+            }
+            if !queue_parts.is_empty() {
+                parts.push(format!("queue: {}", queue_parts.join(", ")));
+            }
         }
 
         parts.join(", ")
@@ -998,5 +1038,57 @@ mod tests {
         assert_eq!(metrics.snapshot_repairs_count, 0);
         assert_eq!(metrics.large_delta_count, 0);
         assert_eq!(metrics.protocol_violations, 0);
+        assert_eq!(metrics.queue_depth, 0);
+        assert_eq!(metrics.queue_dropped_events, 0);
+        assert_eq!(metrics.queue_backpressure_count, 0);
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_queue_metrics() {
+        let mut metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+
+        // Set queue metrics
+        metrics.queue_depth = 5;
+        metrics.queue_dropped_events = 2;
+        metrics.queue_backpressure_count = 10;
+
+        assert_eq!(metrics.queue_depth, 5);
+        assert_eq!(metrics.queue_dropped_events, 2);
+        assert_eq!(metrics.queue_backpressure_count, 10);
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format_with_queue_metrics() {
+        let mut metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+        metrics.queue_depth = 5;
+        metrics.queue_dropped_events = 2;
+        metrics.queue_backpressure_count = 10;
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        assert!(formatted.contains("queue:"));
+        assert!(formatted.contains("depth: 5"));
+        assert!(formatted.contains("dropped: 2"));
+        assert!(formatted.contains("backpressure: 10"));
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format_queue_depth_only() {
+        let mut metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+        metrics.queue_depth = 3;
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        assert!(formatted.contains("queue: depth: 3"));
+    }
+
+    #[test]
+    fn test_streaming_quality_metrics_format_no_queue_metrics() {
+        let metrics = StreamingQualityMetrics::from_sizes([10, 20, 15].into_iter());
+        let colors = Colors { enabled: false };
+        let formatted = metrics.format(colors);
+
+        // Should not mention queue when all queue metrics are zero
+        assert!(!formatted.contains("queue:"));
     }
 }
