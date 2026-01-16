@@ -112,7 +112,7 @@ impl CodexParser {
             reasoning_accumulator: &self.reasoning_accumulator,
         };
 
-        return match event {
+        match event {
             CodexEvent::ThreadStarted { thread_id } => {
                 let output = handle_thread_started(&ctx, thread_id);
                 if output.is_empty() {
@@ -176,7 +176,7 @@ impl CodexParser {
                     Some(output)
                 }
             }
-        };
+        }
     }
 
     /// Check if a Codex event is a control event (state management with no user output)
