@@ -1,0 +1,4 @@
+{
+  "subject": "fix(commit): only abort on unrecoverable agent errors, try simpler prompts for recoverable ones",
+  "body": null
+}
