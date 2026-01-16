@@ -124,9 +124,9 @@
     --display-xl: 7rem;
     --display-2xl: 9rem;
 
-    /* Fluid Typography */
-    --fluid-display: clamp(2.5rem, 10vw + 1rem, 8rem);
-    --fluid-heading: clamp(1.5rem, 5vw, 3.5rem);
+    /* Fluid Typography - Calibrated for visual impact without overwhelming */
+    --fluid-display: clamp(2rem, 5vw + 0.5rem, 4.5rem);
+    --fluid-heading: clamp(1.5rem, 4vw, 3rem);
     --fluid-body: clamp(1rem, 1.2vw, 1.125rem);
 
     /* Line Heights */
@@ -1163,13 +1163,9 @@ pre code {
 .hero-content {
     position: relative;
     z-index: 1;
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 0 var(--space-6);
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-16);
-    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
 }
 
 .hero-text {
@@ -1211,12 +1207,12 @@ pre code {
     50% { opacity: 0.7; box-shadow: 0 0 16px var(--color-lime-glow); }
 }
 
-/* Hero title */
+/* Hero title - sized for balanced hero layout */
 .hero-title {
     font-family: var(--font-display);
-    font-size: var(--fluid-display);
+    font-size: clamp(2rem, 4vw + 0.5rem, 3.5rem);
     font-weight: var(--font-extrabold);
-    line-height: var(--leading-tight);
+    line-height: var(--leading-snug);
     letter-spacing: var(--tracking-tighter);
     margin-bottom: var(--space-6);
     animation: slideUp 0.8s var(--ease-expo-out) forwards;
@@ -1424,6 +1420,79 @@ pre code {
     }
 }
 
+/* Scroll Indicator - Animated mouse icon with bounce */
+.scroll-indicator {
+    position: absolute;
+    bottom: var(--space-8);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wider);
+    animation: fadeInUp 1s var(--ease-expo-out) 1.5s forwards;
+    opacity: 0;
+    cursor: pointer;
+    transition: color var(--duration-200) var(--ease-out);
+}
+
+.scroll-indicator:hover {
+    color: var(--color-primary);
+}
+
+.scroll-indicator-mouse {
+    width: 24px;
+    height: 38px;
+    border: 2px solid currentColor;
+    border-radius: 12px;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    padding-top: 8px;
+}
+
+.scroll-indicator-wheel {
+    width: 4px;
+    height: 8px;
+    background: var(--color-primary);
+    border-radius: 2px;
+    animation: scrollWheel 2s ease-in-out infinite;
+}
+
+@keyframes scrollWheel {
+    0%, 100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    50% {
+        transform: translateY(8px);
+        opacity: 0.3;
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+/* Hide scroll indicator on smaller screens where it's not as useful */
+@media (max-width: 768px) {
+    .scroll-indicator {
+        display: none;
+    }
+}
+
 /* Hero responsive */
 @media (max-width: 1024px) {
     .hero-content {
@@ -1583,6 +1652,83 @@ pre code {
     background-color: var(--color-bg-elevated);
 }
 
+/* What is Ralph Section Grid */
+.what-section {
+    background-color: var(--color-bg-alt);
+    padding: var(--space-24) var(--space-6);
+}
+
+.what-grid {
+    max-width: var(--container-lg);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-16);
+}
+
+.what-content {
+    max-width: 800px;
+}
+
+.what-content h2 {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: var(--font-bold);
+    margin-bottom: var(--space-6);
+}
+
+.what-lead {
+    font-size: var(--text-lg);
+    color: var(--color-text-muted);
+    line-height: var(--leading-relaxed);
+    margin-bottom: var(--space-12);
+}
+
+/* Key Points Sidebar */
+.what-sidebar {
+    margin-top: var(--space-8);
+}
+
+.key-points {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-6);
+}
+
+.key-point {
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-xl);
+    padding: var(--space-6);
+    transition: all var(--duration-200) var(--ease-out);
+}
+
+.key-point:hover {
+    border-color: var(--color-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 212, 255, 0.1);
+}
+
+.key-point h4 {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    color: var(--color-text);
+    margin-bottom: var(--space-3);
+}
+
+.key-point p {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: var(--leading-relaxed);
+}
+
+@media (max-width: 768px) {
+    .key-points {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Page Header */
 .page-header {
     padding: var(--space-24) 0;
@@ -1691,10 +1837,11 @@ pre code {
     border-radius: var(--radius-xl);
     padding: var(--space-8);
     position: relative;
-    transition: all var(--duration-300) var(--ease-out);
+    transition: all var(--duration-300) var(--ease-expo-out);
     overflow: hidden;
 }
 
+/* Gradient overlay on hover */
 .feature-card::before {
     content: '';
     position: absolute;
@@ -1704,14 +1851,40 @@ pre code {
     transition: opacity var(--duration-300) var(--ease-out);
 }
 
+/* Shine effect on hover */
+.feature-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.03),
+        transparent
+    );
+    transform: skewX(-20deg);
+    transition: none;
+}
+
 .feature-card:hover {
-    border-color: var(--border-accent);
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg), var(--shadow-glow-sm);
+    border-color: var(--color-primary);
+    transform: translateY(-6px) scale(1.01);
+    box-shadow:
+        0 20px 40px rgba(0, 0, 0, 0.3),
+        0 0 30px rgba(0, 212, 255, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .feature-card:hover::before {
     opacity: 1;
+}
+
+.feature-card:hover::after {
+    left: 150%;
+    transition: left 0.6s var(--ease-out);
 }
 
 .feature-icon {
@@ -1726,11 +1899,24 @@ pre code {
     margin-bottom: var(--space-6);
     position: relative;
     color: var(--color-primary);
+    transition: all var(--duration-300) var(--ease-out);
 }
 
 .feature-icon svg {
     width: 28px;
     height: 28px;
+    transition: transform var(--duration-300) var(--ease-expo-out);
+}
+
+.feature-card:hover .feature-icon {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
+}
+
+.feature-card:hover .feature-icon svg {
+    color: var(--color-bg);
+    transform: scale(1.1) rotate(5deg);
 }
 
 .feature-title {
@@ -3159,19 +3345,28 @@ pre code {
 .faq-item {
     background-color: var(--color-bg-card);
     border: 1px solid var(--border-soft);
+    border-left: 3px solid transparent;
     border-radius: var(--radius-lg);
     margin-bottom: var(--space-3);
     overflow: hidden;
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-300) var(--ease-expo-out);
+    position: relative;
 }
 
 .faq-item:hover {
     border-color: var(--border-accent);
+    border-left-color: var(--color-primary);
+    transform: translateX(4px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 .faq-item[open] {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 1px var(--color-primary-dim);
+    border-left-color: var(--color-primary);
+    box-shadow:
+        0 0 0 1px var(--color-primary-dim),
+        0 8px 24px rgba(0, 212, 255, 0.1);
+    transform: translateX(4px);
 }
 
 /* FAQ Summary (clickable header) */
@@ -3222,13 +3417,26 @@ pre code {
     font-weight: var(--font-light);
     color: var(--color-text-dim);
     line-height: 1;
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-300) var(--ease-expo-out);
     flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    background-color: transparent;
+}
+
+.faq-item:hover .faq-toggle {
+    color: var(--color-primary);
+    background-color: var(--color-primary-dim);
 }
 
 .faq-item[open] .faq-toggle {
     transform: rotate(45deg);
-    color: var(--color-primary);
+    color: var(--color-bg);
+    background-color: var(--color-primary);
 }
 
 /* FAQ Content (answer) */
@@ -3324,6 +3532,27 @@ pre code {
 .footer {
     padding: var(--space-16) 0;
     border-top: 1px solid var(--border-soft);
+    position: relative;
+    background:
+        linear-gradient(to bottom, transparent 0%, rgba(0, 212, 255, 0.02) 100%);
+}
+
+/* Subtle top gradient line */
+.footer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--color-primary) 20%,
+        var(--color-accent) 50%,
+        var(--color-primary) 80%,
+        transparent 100%
+    );
+    opacity: 0.5;
 }
 
 .footer-content {
@@ -3423,11 +3652,29 @@ pre code {
     color: var(--color-text-muted);
     font-size: var(--text-sm);
     text-decoration: none;
-    transition: color var(--duration-150) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-out);
+    position: relative;
+    display: inline-block;
+}
+
+.footer-link::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 1px;
+    background: var(--color-primary);
+    transition: width var(--duration-200) var(--ease-out);
 }
 
 .footer-link:hover {
     color: var(--color-primary);
+    transform: translateX(4px);
+}
+
+.footer-link:hover::after {
+    width: 100%;
 }
 
 .footer-bottom {
@@ -3516,18 +3763,30 @@ pre code {
     align-items: center;
     gap: var(--space-2);
     font-size: var(--text-sm);
-    color: var(--color-text-muted);
+    color: var(--color-primary);
     text-decoration: none;
-    transition: color var(--duration-150) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-out);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-full);
+    background-color: var(--color-primary-dim);
+    border: 1px solid var(--color-primary);
 }
 
 .footer-cta:hover {
-    color: var(--color-primary);
+    color: var(--color-bg);
+    background-color: var(--color-primary);
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
+    transform: translateY(-2px);
 }
 
 .footer-cta svg {
     width: 18px;
     height: 18px;
+    transition: transform var(--duration-200) var(--ease-out);
+}
+
+.footer-cta:hover svg {
+    transform: scale(1.2);
 }
 
 /* ========================================
@@ -4083,12 +4342,12 @@ pre code {
     }
 }
 
-/* Hero Title */
+/* Hero Title - Balanced for visual impact while showing terminal */
 .hero-title {
     font-family: var(--font-display);
-    font-size: var(--fluid-display);
+    font-size: clamp(2rem, 4vw + 0.5rem, 3.5rem);
     font-weight: var(--font-extrabold);
-    line-height: var(--leading-tight);
+    line-height: var(--leading-snug);
     letter-spacing: var(--tracking-tighter);
     margin-bottom: var(--space-6);
     animation: slideUp 0.8s var(--ease-expo-out) forwards;
