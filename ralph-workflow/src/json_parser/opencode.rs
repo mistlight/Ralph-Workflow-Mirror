@@ -176,247 +176,10 @@ impl OpenCodeParser {
         let prefix = &self.display_name;
 
         let output = match event.event_type.as_str() {
-            "step_start" => {
-                // Reset streaming state on new step
-                self.streaming_session.borrow_mut().on_message_start();
-
-                // Create unique step ID for duplicate detection
-                // Use part.message_id if available, otherwise combine session_id + part.id
-                let step_id = if let Some(part) = &event.part {
-                    if let Some(message_id) = &part.message_id {
-                        message_id.clone()
-                    } else {
-                        let session = event.session_id.as_deref().unwrap_or("unknown");
-                        let part_id = part.id.as_deref().unwrap_or("step");
-                        format!("{session}:{part_id}")
-                    }
-                } else {
-                    event
-                        .session_id
-                        .clone()
-                        .unwrap_or_else(|| "unknown".to_string())
-                };
-                self.streaming_session
-                    .borrow_mut()
-                    .set_current_message_id(Some(step_id));
-
-                let snapshot = event
-                    .part
-                    .as_ref()
-                    .and_then(|p| p.snapshot.as_ref())
-                    .map(|s| format!("({s:.8}...)"))
-                    .unwrap_or_default();
-                format!(
-                    "{}[{}]{} {}Step started{} {}{}{}\n",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    c.cyan(),
-                    c.reset(),
-                    c.dim(),
-                    snapshot,
-                    c.reset()
-                )
-            }
-            "step_finish" => {
-                // Check for duplicate final message using message ID or fallback to streaming content check
-                let session = self.streaming_session.borrow();
-                let is_duplicate = session.get_current_message_id().map_or_else(
-                    || session.has_any_streamed_content(),
-                    |message_id| session.is_duplicate_final_message(message_id),
-                );
-                let was_streaming = session.has_any_streamed_content();
-                drop(session);
-
-                // Finalize the message (this marks it as displayed)
-                let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
-
-                event.part.as_ref().map_or_else(String::new, |part| {
-                    let reason = part.reason.as_deref().unwrap_or("unknown");
-                    let cost = part.cost.unwrap_or(0.0);
-
-                    let tokens_str = part.tokens.as_ref().map_or_else(String::new, |tokens| {
-                        let input = tokens.input.unwrap_or(0);
-                        let output = tokens.output.unwrap_or(0);
-                        let reasoning = tokens.reasoning.unwrap_or(0);
-                        let cache_read = tokens.cache.as_ref().and_then(|c| c.read).unwrap_or(0);
-                        if reasoning > 0 {
-                            format!("in:{input} out:{output} reason:{reasoning} cache:{cache_read}")
-                        } else if cache_read > 0 {
-                            format!("in:{input} out:{output} cache:{cache_read}")
-                        } else {
-                            format!("in:{input} out:{output}")
-                        }
-                    });
-
-                    let is_success = reason == "tool-calls" || reason == "end_turn";
-                    let icon = if is_success { CHECK } else { CROSS };
-                    let color = if is_success { c.green() } else { c.yellow() };
-
-                    // Add final newline if we were streaming text
-                    let newline_prefix = if is_duplicate || was_streaming {
-                        TextDeltaRenderer::render_completion()
-                    } else {
-                        String::new()
-                    };
-
-                    let mut out = format!(
-                        "{}{}[{}]{} {}{} Step finished{} {}({}",
-                        newline_prefix,
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        color,
-                        icon,
-                        c.reset(),
-                        c.dim(),
-                        reason
-                    );
-                    if !tokens_str.is_empty() {
-                        let _ = write!(out, ", {tokens_str}");
-                    }
-                    if cost > 0.0 {
-                        let _ = write!(out, ", ${cost:.4}");
-                    }
-                    let _ = writeln!(out, "){}", c.reset());
-                    out
-                })
-            }
-            "tool_use" => {
-                event.part.as_ref().map_or_else(String::new, |part| {
-                    let tool_name = part.tool.as_deref().unwrap_or("unknown");
-                    let status = part
-                        .state
-                        .as_ref()
-                        .and_then(|s| s.status.as_deref())
-                        .unwrap_or("pending");
-                    let title = part.state.as_ref().and_then(|s| s.title.as_deref());
-
-                    let is_completed = status == "completed";
-                    let icon = if is_completed { CHECK } else { '…' };
-                    let color = if is_completed { c.green() } else { c.yellow() };
-
-                    let mut out = format!(
-                        "{}[{}]{} {}Tool{}: {}{}{} {}{}{}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.magenta(),
-                        c.reset(),
-                        c.bold(),
-                        tool_name,
-                        c.reset(),
-                        color,
-                        icon,
-                        c.reset()
-                    );
-
-                    // Show title if available
-                    if let Some(t) = title {
-                        let limit = self.verbosity.truncate_limit("text");
-                        let preview = truncate_text(t, limit);
-                        let _ = writeln!(
-                            out,
-                            "{}[{}]{} {}  └─ {}{}",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.dim(),
-                            preview,
-                            c.reset()
-                        );
-                    }
-
-                    // Show tool input at Normal+ verbosity
-                    if self.verbosity.show_tool_input() {
-                        if let Some(ref state) = part.state {
-                            if let Some(ref input_val) = state.input {
-                                let input_str = format_tool_input(input_val);
-                                let limit = self.verbosity.truncate_limit("tool_input");
-                                let preview = truncate_text(&input_str, limit);
-                                if !preview.is_empty() {
-                                    let _ = writeln!(
-                                        out,
-                                        "{}[{}]{} {}  └─ {}{}",
-                                        c.dim(),
-                                        prefix,
-                                        c.reset(),
-                                        c.dim(),
-                                        preview,
-                                        c.reset()
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    // Show tool output in verbose mode if completed
-                    if self.verbosity.is_verbose() && is_completed {
-                        if let Some(ref state) = part.state {
-                            if let Some(ref output_val) = state.output {
-                                let output_str = match output_val {
-                                    serde_json::Value::String(s) => s.as_str(),
-                                    _ => "",
-                                };
-                                let output_str = if output_str.is_empty() {
-                                    output_val.to_string()
-                                } else {
-                                    output_str.to_string()
-                                };
-                                let limit = self.verbosity.truncate_limit("tool_result");
-                                let preview = truncate_text(&output_str, limit);
-                                if !preview.is_empty() {
-                                    let _ = writeln!(
-                                        out,
-                                        "{}[{}]{} {}  └─ Output: {}{}",
-                                        c.dim(),
-                                        prefix,
-                                        c.reset(),
-                                        c.dim(),
-                                        preview,
-                                        c.reset()
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    out
-                })
-            }
-            "text" => {
-                if let Some(ref part) = event.part {
-                    if let Some(ref text) = part.text {
-                        // Accumulate streaming text using StreamingSession
-                        let (show_prefix, accumulated_text) = {
-                            let mut session = self.streaming_session.borrow_mut();
-                            let show_prefix = session.on_text_delta_key("main", text);
-                            // Get accumulated text for streaming display
-                            let accumulated_text = session
-                                .get_accumulated(ContentType::Text, "main")
-                                .unwrap_or("")
-                                .to_string();
-                            (show_prefix, accumulated_text)
-                        };
-
-                        // Show delta in real-time (both verbose and normal mode)
-                        let limit = self.verbosity.truncate_limit("text");
-                        let preview = truncate_text(&accumulated_text, limit);
-
-                        // Use TextDeltaRenderer for consistent rendering across all parsers
-                        if show_prefix {
-                            // First delta: use renderer with prefix
-                            return Some(TextDeltaRenderer::render_first_delta(
-                                &preview, prefix, *c,
-                            ));
-                        }
-                        // Subsequent deltas: use renderer for in-place update
-                        return Some(TextDeltaRenderer::render_subsequent_delta(
-                            &preview, prefix, *c,
-                        ));
-                    }
-                }
-                String::new()
-            }
+            "step_start" => self.format_step_start_event(&event),
+            "step_finish" => self.format_step_finish_event(&event),
+            "tool_use" => self.format_tool_use_event(&event),
+            "text" => self.format_text_event(&event),
             _ => {
                 // Unknown event type - use the generic formatter in verbose mode
                 format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
@@ -428,6 +191,267 @@ impl OpenCodeParser {
         } else {
             Some(output)
         }
+    }
+
+    /// Format a `step_start` event
+    fn format_step_start_event(&self, event: &OpenCodeEvent) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        // Reset streaming state on new step
+        self.streaming_session.borrow_mut().on_message_start();
+
+        // Create unique step ID for duplicate detection
+        // Use part.message_id if available, otherwise combine session_id + part.id
+        let step_id = event.part.as_ref().map_or_else(
+            || {
+                event
+                    .session_id
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string())
+            },
+            |part| {
+                part.message_id.as_ref().map_or_else(
+                    || {
+                        let session = event.session_id.as_deref().unwrap_or("unknown");
+                        let part_id = part.id.as_deref().unwrap_or("step");
+                        format!("{session}:{part_id}")
+                    },
+                    std::clone::Clone::clone,
+                )
+            },
+        );
+        self.streaming_session
+            .borrow_mut()
+            .set_current_message_id(Some(step_id));
+
+        let snapshot = event
+            .part
+            .as_ref()
+            .and_then(|p| p.snapshot.as_ref())
+            .map(|s| format!("({s:.8}...)"))
+            .unwrap_or_default();
+        format!(
+            "{}[{}]{} {}Step started{} {}{}{}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            c.cyan(),
+            c.reset(),
+            c.dim(),
+            snapshot,
+            c.reset()
+        )
+    }
+
+    /// Format a `step_finish` event
+    fn format_step_finish_event(&self, event: &OpenCodeEvent) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        // Check for duplicate final message using message ID or fallback to streaming content check
+        let session = self.streaming_session.borrow();
+        let is_duplicate = session.get_current_message_id().map_or_else(
+            || session.has_any_streamed_content(),
+            |message_id| session.is_duplicate_final_message(message_id),
+        );
+        let was_streaming = session.has_any_streamed_content();
+        drop(session);
+
+        // Finalize the message (this marks it as displayed)
+        let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
+
+        event.part.as_ref().map_or_else(String::new, |part| {
+            let reason = part.reason.as_deref().unwrap_or("unknown");
+            let cost = part.cost.unwrap_or(0.0);
+
+            let tokens_str = part.tokens.as_ref().map_or_else(String::new, |tokens| {
+                let input = tokens.input.unwrap_or(0);
+                let output = tokens.output.unwrap_or(0);
+                let reasoning = tokens.reasoning.unwrap_or(0);
+                let cache_read = tokens.cache.as_ref().and_then(|c| c.read).unwrap_or(0);
+                if reasoning > 0 {
+                    format!("in:{input} out:{output} reason:{reasoning} cache:{cache_read}")
+                } else if cache_read > 0 {
+                    format!("in:{input} out:{output} cache:{cache_read}")
+                } else {
+                    format!("in:{input} out:{output}")
+                }
+            });
+
+            let is_success = reason == "tool-calls" || reason == "end_turn";
+            let icon = if is_success { CHECK } else { CROSS };
+            let color = if is_success { c.green() } else { c.yellow() };
+
+            // Add final newline if we were streaming text
+            let newline_prefix = if is_duplicate || was_streaming {
+                TextDeltaRenderer::render_completion()
+            } else {
+                String::new()
+            };
+
+            let mut out = format!(
+                "{}{}[{}]{} {}{} Step finished{} {}({}",
+                newline_prefix,
+                c.dim(),
+                prefix,
+                c.reset(),
+                color,
+                icon,
+                c.reset(),
+                c.dim(),
+                reason
+            );
+            if !tokens_str.is_empty() {
+                let _ = write!(out, ", {tokens_str}");
+            }
+            if cost > 0.0 {
+                let _ = write!(out, ", ${cost:.4}");
+            }
+            let _ = writeln!(out, "){}", c.reset());
+            out
+        })
+    }
+
+    /// Format a `tool_use` event
+    fn format_tool_use_event(&self, event: &OpenCodeEvent) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        event.part.as_ref().map_or_else(String::new, |part| {
+            let tool_name = part.tool.as_deref().unwrap_or("unknown");
+            let status = part
+                .state
+                .as_ref()
+                .and_then(|s| s.status.as_deref())
+                .unwrap_or("pending");
+            let title = part.state.as_ref().and_then(|s| s.title.as_deref());
+
+            let is_completed = status == "completed";
+            let icon = if is_completed { CHECK } else { '…' };
+            let color = if is_completed { c.green() } else { c.yellow() };
+
+            let mut out = format!(
+                "{}[{}]{} {}Tool{}: {}{}{} {}{}{}\n",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.magenta(),
+                c.reset(),
+                c.bold(),
+                tool_name,
+                c.reset(),
+                color,
+                icon,
+                c.reset()
+            );
+
+            // Show title if available
+            if let Some(t) = title {
+                let limit = self.verbosity.truncate_limit("text");
+                let preview = truncate_text(t, limit);
+                let _ = writeln!(
+                    out,
+                    "{}[{}]{} {}  └─ {}{}",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.dim(),
+                    preview,
+                    c.reset()
+                );
+            }
+
+            // Show tool input at Normal+ verbosity
+            if self.verbosity.show_tool_input() {
+                if let Some(ref state) = part.state {
+                    if let Some(ref input_val) = state.input {
+                        let input_str = format_tool_input(input_val);
+                        let limit = self.verbosity.truncate_limit("tool_input");
+                        let preview = truncate_text(&input_str, limit);
+                        if !preview.is_empty() {
+                            let _ = writeln!(
+                                out,
+                                "{}[{}]{} {}  └─ {}{}",
+                                c.dim(),
+                                prefix,
+                                c.reset(),
+                                c.dim(),
+                                preview,
+                                c.reset()
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Show tool output in verbose mode if completed
+            if self.verbosity.is_verbose() && is_completed {
+                if let Some(ref state) = part.state {
+                    if let Some(ref output_val) = state.output {
+                        let output_str = match output_val {
+                            serde_json::Value::String(s) => s.as_str(),
+                            _ => "",
+                        };
+                        let output_str = if output_str.is_empty() {
+                            output_val.to_string()
+                        } else {
+                            output_str.to_string()
+                        };
+                        let limit = self.verbosity.truncate_limit("tool_result");
+                        let preview = truncate_text(&output_str, limit);
+                        if !preview.is_empty() {
+                            let _ = writeln!(
+                                out,
+                                "{}[{}]{} {}  └─ Output: {}{}",
+                                c.dim(),
+                                prefix,
+                                c.reset(),
+                                c.dim(),
+                                preview,
+                                c.reset()
+                            );
+                        }
+                    }
+                }
+            }
+            out
+        })
+    }
+
+    /// Format a `text` event
+    fn format_text_event(&self, event: &OpenCodeEvent) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        if let Some(ref part) = event.part {
+            if let Some(ref text) = part.text {
+                // Accumulate streaming text using StreamingSession
+                let (show_prefix, accumulated_text) = {
+                    let mut session = self.streaming_session.borrow_mut();
+                    let show_prefix = session.on_text_delta_key("main", text);
+                    // Get accumulated text for streaming display
+                    let accumulated_text = session
+                        .get_accumulated(ContentType::Text, "main")
+                        .unwrap_or("")
+                        .to_string();
+                    (show_prefix, accumulated_text)
+                };
+
+                // Show delta in real-time (both verbose and normal mode)
+                let limit = self.verbosity.truncate_limit("text");
+                let preview = truncate_text(&accumulated_text, limit);
+
+                // Use TextDeltaRenderer for consistent rendering across all parsers
+                if show_prefix {
+                    // First delta: use renderer with prefix
+                    return TextDeltaRenderer::render_first_delta(&preview, prefix, *c);
+                }
+                // Subsequent deltas: use renderer for in-place update
+                return TextDeltaRenderer::render_subsequent_delta(&preview, prefix, *c);
+            }
+        }
+        String::new()
     }
 
     /// Check if an `OpenCode` event is a control event (state management with no user output)
