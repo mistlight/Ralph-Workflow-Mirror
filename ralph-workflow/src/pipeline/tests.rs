@@ -13,40 +13,24 @@ use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::pipeline::Timer;
 use std::collections::HashMap;
+use std::path::Path;
 
+/// Helper to create a test script that tracks invocations.
 #[cfg(unix)]
-#[test]
-fn run_with_fallback_does_not_retry_problematic_glm_reviewer() {
-    let dir = tempfile::tempdir().unwrap();
-    let fail_count = dir.path().join("fail_count.txt");
-    let ok_count = dir.path().join("ok_count.txt");
-
-    let fail_script = dir.path().join("fail.sh");
+fn create_test_script(path: &Path, count_file: &Path, exit_code: i32) {
     std::fs::write(
-        &fail_script,
+        path,
         format!(
-            r#"#!/bin/sh
-echo x >> "{}"
-exit 1
-"#,
-            fail_count.display()
+            "#!/bin/sh\necho x >> \"{}\"\nexit {exit_code}\n",
+            count_file.display()
         ),
     )
     .unwrap();
+}
 
-    let ok_script = dir.path().join("ok.sh");
-    std::fs::write(
-        &ok_script,
-        format!(
-            r#"#!/bin/sh
-echo x >> "{}"
-exit 0
-"#,
-            ok_count.display()
-        ),
-    )
-    .unwrap();
-
+/// Helper to set up a test registry with glm and ok agents.
+#[cfg(unix)]
+fn setup_test_registry(fail_script: &Path, ok_script: &Path) -> AgentRegistry {
     let mut registry = AgentRegistry::new().unwrap();
     let defaults = crate::config::CcsConfig {
         output_flag: String::new(),
@@ -75,7 +59,6 @@ exit 0
     );
     registry.set_ccs_aliases(&aliases, defaults);
 
-    // Use apply_unified_config to set fallback chain (public API)
     let toml_str = r#"
         [agent_chain]
         reviewer = ["ccs/glm", "ccs/ok"]
@@ -84,6 +67,23 @@ exit 0
     "#;
     let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
     registry.apply_unified_config(&unified);
+    registry
+}
+
+#[cfg(unix)]
+#[test]
+fn run_with_fallback_does_not_retry_problematic_glm_reviewer() {
+    let dir = tempfile::tempdir().unwrap();
+    let fail_count = dir.path().join("fail_count.txt");
+    let ok_count = dir.path().join("ok_count.txt");
+
+    let fail_script = dir.path().join("fail.sh");
+    create_test_script(&fail_script, &fail_count, 1);
+
+    let ok_script = dir.path().join("ok.sh");
+    create_test_script(&ok_script, &ok_count, 0);
+
+    let registry = setup_test_registry(&fail_script, &ok_script);
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -118,19 +118,16 @@ exit 0
     .unwrap();
 
     assert_eq!(exit, 0, "fallback agent should succeed");
+    let fail_invocations = std::fs::read_to_string(&fail_count)
+        .unwrap()
+        .lines()
+        .count();
+    let ok_invocations = std::fs::read_to_string(&ok_count).unwrap().lines().count();
     assert_eq!(
-        std::fs::read_to_string(&fail_count)
-            .unwrap()
-            .lines()
-            .count(),
-        1,
+        fail_invocations, 1,
         "problematic agent should not be retried"
     );
-    assert_eq!(
-        std::fs::read_to_string(&ok_count).unwrap().lines().count(),
-        1,
-        "fallback agent should run once"
-    );
+    assert_eq!(ok_invocations, 1, "fallback agent should run once");
 }
 
 #[test]
