@@ -178,6 +178,188 @@ fn build_execution_metadata(
     (label, logfile, display_name_with_suffix)
 }
 
+/// Result of trying a single agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrySingleAgentResult {
+    /// Agent succeeded - return success
+    Success,
+    /// Unrecoverable error - abort immediately
+    Unrecoverable(i32),
+    /// Should fall back to next agent
+    Fallback,
+    /// Continue to next model (no retry)
+    NoRetry,
+}
+
+/// Context for trying a single model.
+struct TryModelContext<'a> {
+    agent_config: &'a AgentConfig,
+    agent_name: &'a str,
+    display_name: &'a str,
+    agent_index: usize,
+    cycle: u32,
+    model_index: usize,
+    role: AgentRole,
+    model_flag: Option<&'a String>,
+    base_label: &'a str,
+    prompt: &'a str,
+    logfile_prefix: &'a str,
+    fallback_config: &'a crate::agents::fallback::FallbackConfig,
+}
+
+/// Try a single model configuration for an agent.
+fn try_single_model(
+    ctx: &TryModelContext<'_>,
+    runtime: &mut PipelineRuntime<'_>,
+) -> std::io::Result<TrySingleAgentResult> {
+    let mut parser_type = ctx.agent_config.json_parser;
+
+    if ctx.role == AgentRole::Reviewer {
+        if let Some(ref parser_override) = runtime.config.reviewer_json_parser {
+            parser_type = JsonParserType::parse(parser_override);
+            if ctx.agent_index == 0 && ctx.cycle == 0 && ctx.model_index == 0 {
+                runtime.logger.info(&format!(
+                    "Using JSON parser override '{parser_override}' for reviewer"
+                ));
+            }
+        }
+    }
+
+    let cmd_str = build_command_for_model(
+        ctx.agent_index,
+        ctx.cycle,
+        ctx.model_index,
+        ctx.role,
+        ctx.model_flag.map(std::string::String::as_str),
+        ctx.agent_config,
+        runtime,
+    );
+
+    validate_glm_print_flag(
+        ctx.agent_name,
+        ctx.agent_config,
+        &cmd_str,
+        ctx.agent_index,
+        ctx.cycle,
+        ctx.model_index,
+        runtime,
+    );
+
+    let (label, logfile, display_name_with_suffix) = build_execution_metadata(
+        ctx.model_flag,
+        ctx.display_name,
+        ctx.base_label,
+        ctx.agent_name,
+        ctx.logfile_prefix,
+        ctx.model_index,
+    );
+
+    let attempt_config = crate::pipeline::fallback::AgentAttemptConfig {
+        agent_name: ctx.agent_name,
+        model_flag: ctx.model_flag.map(std::string::String::as_str),
+        label: &label,
+        display_name: &display_name_with_suffix,
+        cmd_str: &cmd_str,
+        prompt: ctx.prompt,
+        logfile: &logfile,
+        parser_type,
+        env_vars: &ctx.agent_config.env_vars,
+        model_index: ctx.model_index,
+        agent_index: ctx.agent_index,
+        cycle: ctx.cycle as usize,
+        fallback_config: ctx.fallback_config,
+    };
+    let result = try_agent_with_retries(&attempt_config, runtime)?;
+
+    match result {
+        TryAgentResult::Success => Ok(TrySingleAgentResult::Success),
+        TryAgentResult::Unrecoverable(exit_code) => {
+            Ok(TrySingleAgentResult::Unrecoverable(exit_code))
+        }
+        TryAgentResult::Fallback => Ok(TrySingleAgentResult::Fallback),
+        TryAgentResult::NoRetry => Ok(TrySingleAgentResult::NoRetry),
+    }
+}
+
+/// Context for trying a single agent.
+struct TryAgentContext<'a> {
+    agent_name: &'a str,
+    agent_index: usize,
+    cycle: u32,
+    role: AgentRole,
+    base_label: &'a str,
+    prompt: &'a str,
+    logfile_prefix: &'a str,
+    cli_model_override: Option<&'a String>,
+    cli_provider_override: Option<&'a String>,
+}
+
+/// Try a single agent with all its model configurations.
+fn try_single_agent(
+    ctx: &TryAgentContext<'_>,
+    runtime: &mut PipelineRuntime<'_>,
+    registry: &AgentRegistry,
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+) -> std::io::Result<TrySingleAgentResult> {
+    let Some(agent_config) = registry.resolve_config(ctx.agent_name) else {
+        runtime.logger.warn(&format!(
+            "Agent '{}' not found in registry, skipping",
+            ctx.agent_name
+        ));
+        return Ok(TrySingleAgentResult::Fallback);
+    };
+
+    let display_name = registry.display_name(ctx.agent_name);
+    let model_ctx = ModelFlagBuildContext {
+        agent_index: ctx.agent_index,
+        cli_model_override: ctx.cli_model_override,
+        cli_provider_override: ctx.cli_provider_override,
+        agent_config: &agent_config,
+        agent_name: ctx.agent_name,
+        fallback_config,
+        display_name: &display_name,
+        runtime,
+    };
+    let model_flags_to_try = build_model_flags_list(&model_ctx);
+
+    if ctx.agent_index == 0 && ctx.cycle == 0 {
+        for model_flag in model_flags_to_try.iter().flatten() {
+            for warning in validate_model_flag(model_flag) {
+                runtime.logger.warn(&warning);
+            }
+        }
+    }
+
+    for (model_index, model_flag) in model_flags_to_try.iter().enumerate() {
+        let model_ctx = TryModelContext {
+            agent_config: &agent_config,
+            agent_name: ctx.agent_name,
+            display_name: &display_name,
+            agent_index: ctx.agent_index,
+            cycle: ctx.cycle,
+            model_index,
+            role: ctx.role,
+            model_flag: model_flag.as_ref(),
+            base_label: ctx.base_label,
+            prompt: ctx.prompt,
+            logfile_prefix: ctx.logfile_prefix,
+            fallback_config,
+        };
+        let result = try_single_model(&model_ctx, runtime)?;
+
+        match result {
+            TrySingleAgentResult::Success => return Ok(TrySingleAgentResult::Success),
+            TrySingleAgentResult::Unrecoverable(exit_code) => {
+                return Ok(TrySingleAgentResult::Unrecoverable(exit_code))
+            }
+            TrySingleAgentResult::Fallback => return Ok(TrySingleAgentResult::Fallback),
+            TrySingleAgentResult::NoRetry => {}
+        }
+    }
+
+    Ok(TrySingleAgentResult::NoRetry)
+}
+
 /// Run a command with automatic fallback to alternative agents on failure.
 pub fn run_with_fallback(
     role: AgentRole,
@@ -217,100 +399,24 @@ pub fn run_with_fallback(
         }
 
         for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
-            let Some(agent_config) = registry.resolve_config(agent_name) else {
-                runtime.logger.warn(&format!(
-                    "Agent '{agent_name}' not found in registry, skipping"
-                ));
-                continue;
-            };
-
-            let display_name = registry.display_name(agent_name);
-            let ctx = ModelFlagBuildContext {
+            let ctx = TryAgentContext {
+                agent_name,
                 agent_index,
+                cycle,
+                role,
+                base_label,
+                prompt,
+                logfile_prefix,
                 cli_model_override: cli_model_override.as_ref(),
                 cli_provider_override: cli_provider_override.as_ref(),
-                agent_config: &agent_config,
-                agent_name,
-                fallback_config,
-                display_name: &display_name,
-                runtime,
             };
-            let model_flags_to_try = build_model_flags_list(&ctx);
+            let result = try_single_agent(&ctx, runtime, registry, fallback_config)?;
 
-            if agent_index == 0 && cycle == 0 {
-                for model_flag in model_flags_to_try.iter().flatten() {
-                    for warning in validate_model_flag(model_flag) {
-                        runtime.logger.warn(&warning);
-                    }
-                }
-            }
-
-            for (model_index, model_flag) in model_flags_to_try.iter().enumerate() {
-                let mut parser_type = agent_config.json_parser;
-
-                if role == AgentRole::Reviewer {
-                    if let Some(ref parser_override) = runtime.config.reviewer_json_parser {
-                        parser_type = JsonParserType::parse(parser_override);
-                        if agent_index == 0 && cycle == 0 && model_index == 0 {
-                            runtime.logger.info(&format!(
-                                "Using JSON parser override '{parser_override}' for reviewer"
-                            ));
-                        }
-                    }
-                }
-
-                let cmd_str = build_command_for_model(
-                    agent_index,
-                    cycle,
-                    model_index,
-                    role,
-                    model_flag.as_deref(),
-                    &agent_config,
-                    runtime,
-                );
-
-                validate_glm_print_flag(
-                    agent_name,
-                    &agent_config,
-                    &cmd_str,
-                    agent_index,
-                    cycle,
-                    model_index,
-                    runtime,
-                );
-
-                let (label, logfile, display_name_with_suffix) = build_execution_metadata(
-                    model_flag.as_ref(),
-                    &display_name,
-                    base_label,
-                    agent_name,
-                    logfile_prefix,
-                    model_index,
-                );
-
-                let attempt_config = crate::pipeline::fallback::AgentAttemptConfig {
-                    agent_name,
-                    model_flag: model_flag.as_deref(),
-                    label: &label,
-                    display_name: &display_name_with_suffix,
-                    cmd_str: &cmd_str,
-                    prompt,
-                    logfile: &logfile,
-                    parser_type,
-                    env_vars: &agent_config.env_vars,
-                    model_index,
-                    agent_index,
-                    cycle: cycle as usize,
-                    fallback_config,
-                };
-                let result = try_agent_with_retries(&attempt_config, runtime)?;
-
-                match result {
-                    TryAgentResult::Success => return Ok(0),
-                    TryAgentResult::Unrecoverable(exit_code) => return Ok(exit_code),
-                    TryAgentResult::Fallback => break,
-                    TryAgentResult::NoRetry => {}
-                }
+            match result {
+                TrySingleAgentResult::Success => return Ok(0),
+                TrySingleAgentResult::Unrecoverable(exit_code) => return Ok(exit_code),
+                TrySingleAgentResult::Fallback => continue,
+                TrySingleAgentResult::NoRetry => {}
             }
         }
     }
