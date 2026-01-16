@@ -12,6 +12,10 @@
 @custom-media --xl (max-width: 900px);
 @custom-media --xxl (max-width: 1024px);
 
+/* Desktop-first breakpoints (min-width) for larger screen enhancements */
+@custom-media --min-lg (min-width: 769px);
+@custom-media --min-xl (min-width: 1024px);
+
 /* === CSS CUSTOM PROPERTIES === */
 :root {
     /* === COLOR PALETTE: Terminal Noir === */

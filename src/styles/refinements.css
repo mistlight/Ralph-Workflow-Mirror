@@ -6,10 +6,11 @@
 
 /* === FOCUS STATE ENHANCEMENTS === */
 
-/* Enhanced focus visibility for keyboard navigation */
+/* Enhanced focus visibility for keyboard navigation with glow */
 a:focus-visible,
 button:focus-visible,
 .btn:focus-visible {
+    box-shadow: 0 0 0 4px var(--color-primary-dim), 0 0 12px var(--color-primary-glow);
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
 }
@@ -52,14 +53,15 @@ h2::after {
 
 /* === BUTTON ENHANCEMENTS === */
 
-/* Improved button press feedback */
+/* Improved button press feedback with smoother timing */
 .btn:active {
     transform: translateY(1px) scale(0.98);
+    transition: transform var(--duration-100) var(--ease-out);
 }
 
-/* Enhanced button glow on hover */
+/* Enhanced button glow on hover with staggered timing */
 .btn-primary:hover {
-    animation: button-glow 0.6s ease-out;
+    animation: button-glow 0.8s var(--ease-expo-out);
 }
 
 @keyframes button-glow {
@@ -76,19 +78,21 @@ h2::after {
     }
 }
 
-/* Enhanced secondary button hover */
+/* Enhanced secondary button hover with layered glow */
 .btn-secondary:hover {
     box-shadow: var(--shadow-glow-sm), 0 0 25px var(--color-primary-glow),
                 inset 0 1px 0 rgb(255 255 255 / 10%);
+    transition: all var(--duration-300) var(--ease-expo-out);
 }
 
-/* Ghost button refinement */
+/* Ghost button refinement with gradient reveal */
 .btn-ghost:hover {
     background: linear-gradient(135deg,
                 var(--color-bg-hover) 0%,
                 var(--color-bg-card) 100%);
     border-color: var(--border-accent);
     box-shadow: 0 0 20px var(--color-primary-dim);
+    transition: all var(--duration-300) var(--ease-expo-out);
 }
 
 /* === TERMINAL WINDOW POLISH === */
@@ -141,12 +145,13 @@ h2::after {
 
 /* === CARD IMPROVEMENTS === */
 
-/* Enhanced card depth and hover */
+/* Enhanced card depth and hover with premium easing */
 .feature-card,
 .install-card,
 .comparison-card {
-    transition: transform var(--duration-300) var(--ease-out),
-                box-shadow var(--duration-300) var(--ease-out);
+    transition: transform var(--duration-300) var(--ease-expo-out),
+                box-shadow var(--duration-300) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-out);
 }
 
 .feature-card:hover,
@@ -156,7 +161,7 @@ h2::after {
     transform: translateY(-6px);
 }
 
-/* Inner glow for card hover */
+/* Inner glow for card hover with staggered reveal */
 .feature-card::before,
 .install-card::before {
     background: linear-gradient(135deg,
@@ -168,7 +173,7 @@ h2::after {
     opacity: 0;
     pointer-events: none;
     position: absolute;
-    transition: opacity var(--duration-300) var(--ease-out);
+    transition: opacity var(--duration-400) var(--ease-expo-out);
 }
 
 .feature-card:hover::before,
@@ -229,7 +234,7 @@ h2::after {
 
 /* === MOBILE RESPONSIVENESS === */
 
-@media (width <= 768px) {
+@media (--lg) {
     /* Adjust spacing for mobile */
     .hero {
         padding: var(--space-20) 0 var(--space-16);
@@ -294,7 +299,7 @@ html {
     scroll-behavior: smooth;
 }
 
-/* Enhanced link hover with gradient */
+/* Enhanced link hover with gradient reveal - smoother animation */
 a:not(.btn) {
     background-image: linear-gradient(135deg,
                 var(--color-primary) 0%,
@@ -303,11 +308,13 @@ a:not(.btn) {
     background-repeat: no-repeat;
     background-size: 0% 2px;
     position: relative;
-    transition: background-size var(--duration-200) var(--ease-out);
+    transition: background-size var(--duration-300) var(--ease-expo-out),
+                color var(--duration-150) var(--ease-out);
 }
 
 a:not(.btn):hover {
     background-size: 100% 2px;
+    color: var(--color-primary);
 }
 
 /* Enhanced code inline hover */
@@ -338,7 +345,7 @@ code:not(pre code):hover {
     padding: var(--space-20) 0;
 }
 
-@media (width >= 1024px) {
+@media (--min-xl) {
     .section {
         padding: var(--space-28) 0;
     }
@@ -346,15 +353,18 @@ code:not(pre code):hover {
 
 /* === NAVIGATION ENHANCEMENTS === */
 
-/* Navigation active state */
+/* Navigation active state with subtle glow */
 .nav-link.active {
     background-color: var(--color-primary-dim);
+    box-shadow: 0 0 0 2px transparent;
     color: var(--color-primary);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 .nav-link:hover {
     background-color: var(--color-bg-hover);
     color: var(--color-primary);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 /* Enhanced dropdown menu */
@@ -378,12 +388,12 @@ code:not(pre code):hover {
 /* === HERO BADGE ENHANCEMENTS === */
 
 .badge {
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-300) var(--ease-expo-out);
 }
 
 .badge:hover {
-    box-shadow: 0 0 20px currentcolor;
-    transform: translateY(-1px);
+    box-shadow: 0 0 20px currentcolor, 0 0 30px currentcolor;
+    transform: translateY(-2px) scale(1.02);
 }
 
 /* === BORDER RADIUS CONSISTENCY === */
