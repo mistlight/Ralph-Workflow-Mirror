@@ -1322,36 +1322,6 @@ pre code {
     letter-spacing: var(--tracking-wider);
 }
 
-.terminal-controls {
-    display: flex;
-    gap: var(--space-2);
-}
-
-.terminal-control {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-soft);
-    background-color: transparent;
-    color: var(--color-text-dim);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all var(--duration-150) var(--ease-out);
-}
-
-.terminal-control:hover {
-    color: var(--color-primary);
-    border-color: var(--border-accent);
-    background-color: var(--color-primary-dim);
-}
-
-.terminal-control svg {
-    width: 16px;
-    height: 16px;
-}
-
 .terminal-body {
     padding: var(--space-6);
     font-family: var(--font-mono);

@@ -2,93 +2,101 @@
 
 ## Summary
 
-This plan addresses the **design stabilization** of the Ralph Workflow static site. After comprehensive visual inspection using browser automation, the site's "Terminal Noir" aesthetic is already well-implemented and polished across all pages.
+This plan completes the styling of the Ralph Workflow landing page by **removing the terminal demo controls** from the hero section. Users can install Ralph via `cargo install`, making the interactive demo unnecessary. The existing "Terminal Noir" aesthetic is cohesive and well-executed—this plan preserves that design while removing interactive demo elements.
 
-### ✅ IMPLEMENTATION COMPLETE
+**Key Changes:**
+1. Remove terminal playback controls (restart, pause, "Run Full Demo", speed buttons) from hero
+2. Clean up associated CSS for removed demo elements
+3. Remove or disable related JavaScript functionality
 
-All cleanup tasks have been completed:
-- **Orphaned demo CSS removed** (~225 lines from styles.css)
-- **Orphaned demo JavaScript removed** (~265 lines from script.js)
-- **Hero terminal "Run Full Demo" button retained** (still has working functionality)
-- **Visual verification passed** at desktop, tablet, and mobile breakpoints
+### Current State
 
-### Key Finding: Demo Section Already Removed
+The terminal demo controls are **still present** in `index.html` (lines 301-336):
+- Restart animation button
+- Pause/Play toggle button
+- "Run Full Demo" button
+- Speed selector (0.5x, 1x, 2x)
 
-The demo section HTML has **already been removed** from `index.html`. The section numbers are already sequential (Glossary, 01-06). The only remaining work is **cleaning up orphaned CSS** from the demo section removal.
+### Design System (Preserved)
 
-### Visual Inspection Findings
-
-**All pages are properly styled with consistent Terminal Noir theming:**
-
-| Page | Status | Notes |
-|------|--------|-------|
-| `index.html` | ✅ Complete | Hero, sections, FAQ, footer all polished |
-| `faq.html` | ✅ Complete | Consistent accordion styling |
-| `how-it-works.html` | ✅ Complete | Properly themed |
-| `open-source.html` | ✅ Complete | License info well-styled |
-| `404.html` | ✅ Complete | Glitch effects, animations working |
-
-**Design System Verification:**
+The existing Terminal Noir design is production-ready:
 - ✅ Color palette: Electric cyan (#00d4ff), Hot magenta (#ff006e), Electric lime (#a3ff12)
 - ✅ Typography: Syne (display), DM Sans (body), JetBrains Mono (code)
 - ✅ Dark backgrounds with gradient glows
-- ✅ Responsive layouts functioning at all breakpoints
-- ✅ Micro-interactions and hover effects
+- ✅ Responsive layouts at all breakpoints
 - ✅ Theme toggle (light/dark) functional
 
 ---
 
 ## Implementation Steps
 
-### Step 1: Remove Orphaned Demo CSS
+### Step 1: Remove Terminal Demo Controls HTML
 **Priority: HIGH**
+**File:** `index.html`
 
-Remove unused CSS rules from `styles.css` (approximately lines 2860-3007). These styles are orphaned after the demo section HTML was removed:
+Remove the entire `<div class="terminal-controls">` block (lines 301-336):
 
-```css
-/* ORPHANED - Safe to remove */
-.demo-section
-.demo-container
-.demo-header
-.demo-run-btn
-.demo-tabs
-.demo-tab
-.demo-tab.active
-.demo-panel
-.demo-panel.active
-.demo-terminal
-.demo-terminal-header
-.demo-terminal-content
-.demo-code
-.demo-steps
-.demo-step
-.demo-step-number
-.demo-step-content
+```html
+<!-- REMOVE THIS ENTIRE BLOCK -->
+<div class="terminal-controls" aria-label="Terminal playback controls">
+    <div class="terminal-controls-left">
+        <button class="terminal-control-btn" id="terminal-restart">...</button>
+        <button class="terminal-control-btn" id="terminal-play-pause">...</button>
+    </div>
+    <div class="terminal-controls-center">
+        <button class="terminal-run-demo-btn" id="terminal-run-demo">Run Full Demo</button>
+    </div>
+    <div class="terminal-controls-right">
+        <span class="terminal-speed-label">1x</span>
+        <div class="terminal-speed-controls">...</div>
+    </div>
+</div>
 ```
 
-**Estimated lines to remove:** ~150 lines
-**Location:** `styles.css` lines 2860-3007
+**Keep intact:** The terminal window visualization (`terminal-demo` container with output lines) should remain as a static display.
 
-### Step 2: Evaluate Hero Terminal "Run Demo" Button
-**Priority: LOW**
+### Step 2: Remove Demo Control CSS
+**Priority: HIGH**
+**File:** `styles.css`
 
-The hero section contains a terminal mockup with control buttons including "Run Full Demo" (`terminal-run-demo-btn`). Evaluate whether this button should:
-- Be removed (if demo functionality is gone)
-- Be renamed to something like "View Output"
-- Remain as-is (if it serves a different purpose)
+Remove CSS rules for the following selectors:
+- `.terminal-controls`
+- `.terminal-controls-left`, `.terminal-controls-center`, `.terminal-controls-right`
+- `.terminal-control-btn` and all states (`:hover`, `:active`, `:focus`)
+- `.terminal-run-demo-btn` and all states
+- `.terminal-speed-label`
+- `.terminal-speed-controls`
+- `.terminal-speed-btn` and all states
 
-**Location:** `index.html` line ~321
+Search for these patterns and remove associated rules.
 
-### Step 3: Final Verification
+### Step 3: Remove Demo JavaScript
+**Priority: MEDIUM**
+**File:** `script.js` or inline `<script>` in `index.html`
+
+Remove or comment out JavaScript that handles:
+- `#terminal-restart` click handler
+- `#terminal-play-pause` toggle logic
+- `#terminal-run-demo` click handler
+- Speed control button handlers (`[data-speed]`)
+- Any terminal animation playback state management
+
+### Step 4: Adjust Terminal Container Spacing
+**Priority: MEDIUM**
+**File:** `styles.css`
+
+After removing controls, the terminal container may need bottom margin/padding adjustments to maintain proper visual spacing with the content below.
+
+### Step 5: Final Verification
 **Priority: HIGH**
 
-After CSS cleanup, verify:
-1. No visual regressions on index page
-2. All hover states and animations still function
-3. Responsive design works at mobile, tablet, desktop breakpoints
-4. Theme toggle (light/dark) still functions
-5. All secondary pages render correctly
-6. No console errors related to missing styles
+Verify:
+1. Terminal visualization displays correctly (static output)
+2. No JavaScript console errors
+3. No empty space where controls were removed
+4. Responsive design works at 375px, 768px, 1024px, 1440px
+5. Dark mode (default) and light mode both work
+6. All other page functionality unaffected
 
 ---
 
@@ -96,70 +104,52 @@ After CSS cleanup, verify:
 
 | File | Changes | Lines Affected |
 |------|---------|----------------|
-| `styles.css` | Remove orphaned demo styles | ~2860-3007 (~150 lines) |
-| `index.html` | (Optional) Evaluate/modify hero terminal button | ~321 |
+| `index.html` | Remove terminal controls HTML | Lines 301-336 |
+| `styles.css` | Remove terminal control styles | Search for `.terminal-control*`, `.terminal-speed*`, `.terminal-run-demo*` |
+| `script.js` | Remove demo playback JavaScript | Event handlers for demo controls |
 
 **Files that require NO changes:**
-- `faq.html` - Already complete
-- `how-it-works.html` - Already complete
-- `open-source.html` - Already complete
-- `404.html` - Already complete
-- `script.js` - Functional as-is
+- `faq.html`
+- `how-it-works.html`
+- `open-source.html`
+- `getting-started.html`
+- `404.html`
 
 ---
 
 ## Risks & Mitigations
 
-### Risk 1: Accidentally Removing Active CSS
-**Likelihood:** Low
-**Impact:** High
-**Mitigation:**
-- Search codebase for each class name before removal
-- Verify no HTML elements use `.demo-*` classes
-- Test all pages after removal
-
-### Risk 2: Breaking Theme Toggle
-**Likelihood:** Very Low
-**Impact:** Medium
-**Mitigation:**
-- Demo styles are self-contained and don't affect theming
-- Test theme toggle after changes
-
-### Risk 3: Cascade Effects from CSS Removal
-**Likelihood:** Very Low
-**Impact:** Low
-**Mitigation:**
-- Demo styles use unique `.demo-*` namespace
-- No other components depend on these styles
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| Breaking terminal visual display | Low | Medium | Only remove controls div; keep terminal window and output intact |
+| JavaScript errors from removed elements | Medium | Medium | Remove all event listeners that reference removed button IDs |
+| Layout shift after control removal | Low | Low | Adjust terminal container spacing if needed |
+| Orphaned CSS selectors | Low | Low | Search for all `.terminal-control*` patterns and remove |
 
 ---
 
 ## Verification Strategy
 
-### Pre-Implementation Checklist
-- [x] Confirm demo section HTML is not present in any file
-- [x] Identify exact line range of orphaned CSS
-- [x] Document current visual state (screenshots)
+### Pre-Implementation
+- [ ] Confirm exact HTML lines to remove (301-336)
+- [ ] Identify all CSS selectors for demo controls
+- [ ] Locate JavaScript event handlers to remove
 
 ### Post-Implementation Checklist
-- [x] Index page renders without visual issues
-- [x] All sections display correctly (Glossary, 01-06)
-- [x] FAQ accordion expands/collapses
-- [x] Install section tabs work
-- [x] Theme toggle (sun/moon) switches themes
-- [x] Mobile responsive layout works
-- [x] All secondary pages render correctly
-- [x] No console errors
-- [x] CSS file size reduced by ~225 lines
-- [x] JS file size reduced by ~265 lines
+- [ ] Page loads without JavaScript console errors
+- [ ] Terminal visualization displays static output correctly
+- [ ] No empty space or layout gap where controls were
+- [ ] Hero section responsive at all breakpoints
+- [ ] Dark mode displays correctly
+- [ ] Light mode toggle works correctly
+- [ ] All navigation links functional
+- [ ] All accordions work (Glossary, FAQ, Troubleshooting)
+- [ ] Audience selector buttons work
 
 ### Browser Testing
-- [x] Chrome/Edge (Chromium) - Tested via Playwright
-- [ ] Firefox
-- [ ] Safari (if available)
-- [x] Mobile viewport (375px width)
-- [x] Tablet viewport (768px width)
-- [x] Desktop viewport (1280px width)
+- [ ] Desktop (1280px+)
+- [ ] Tablet (768px)
+- [ ] Mobile (375px)
 
 ---
 
@@ -167,37 +157,18 @@ After CSS cleanup, verify:
 
 The implementation is complete when:
 
-1. ✅ Orphaned demo CSS is removed from `styles.css`
-2. ✅ No visual regressions on any page
-3. ✅ All interactive elements function correctly
-4. ✅ Site renders correctly at all breakpoints
-5. ✅ CSS file is cleaner (~150 fewer lines)
+1. ✅ Terminal demo controls HTML removed from `index.html`
+2. ✅ Terminal control CSS removed from `styles.css`
+3. ✅ Demo JavaScript removed/disabled
+4. ✅ No visual regressions on any page
+5. ✅ No console errors
+6. ✅ Terminal still displays as attractive static visualization
 
 ---
 
 ## Notes
 
-- The existing Terminal Noir design is **production-ready** and requires minimal changes
-- Demo section HTML removal was completed in a previous commit
-- This plan focuses solely on CSS cleanup and verification
-- The design system (colors, typography, spacing) is consistent and well-implemented
-- No new styling work is required - this is purely maintenance/cleanup
-
----
-
-## Appendix: Visual Inspection Screenshots
-
-Screenshots were captured during planning for all major sections:
-- Hero section with terminal mockup
-- "What is Ralph?" explanation section
-- Before/After comparison cards
-- Glossary grid
-- How it Works quick benefits
-- PROMPT.md code explanation
-- Install section with tabs
-- Features grid
-- Target audience section
-- FAQ accordion
-- Footer with 4-column layout
-
-All sections pass visual inspection with consistent Terminal Noir aesthetic application.
+- The static terminal visualization should remain as it effectively shows Ralph's workflow
+- The "Terminal Noir" aesthetic is preserved—only interactive controls are removed
+- Users install via `cargo install`, making the demo unnecessary
+- This is a cleanup task, not a redesign
