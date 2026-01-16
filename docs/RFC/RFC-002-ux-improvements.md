@@ -5,7 +5,7 @@
 **Status**: In Progress
 **Author**: Analysis based on codebase review
 **Created**: 2026-01-15
-**Last Updated**: 2026-01-16
+**Last Updated**: 2026-01-17
 
 ---
 
@@ -50,7 +50,7 @@ This RFC proposes a comprehensive set of user experience improvements for Ralph 
 
 ## Implementation Status
 
-**Last Updated**: 2026-01-16
+**Last Updated**: 2026-01-17
 
 This section tracks the implementation status of RFC-002 proposals against the actual codebase.
 
@@ -600,6 +600,175 @@ ralph --completions fish > ~/.config/fish/completions/ralph.fish
 
 Comprehensive analysis of logger usage across the codebase reveals extensive feedback infrastructure already in place:
 
+---
+
+### Immediate Wins: Next Steps for Progress
+
+This section provides **copy-pasteable implementation steps** for the three easiest P0 features that can be completed in under 1 hour total using existing infrastructure.
+
+#### 🚀 Quick Win #1: Phase 1.1 - Immediate Feedback (15 minutes)
+
+**Priority**: P0 | **Effort**: 15 minutes | **Impact**: High
+
+**Implementation**: Add one feedback message at the start of the pipeline.
+
+**File**: `ralph-workflow/src/app/mod.rs`
+
+**Location**: After line 104 (after display names are retrieved)
+
+```rust
+// ADD THIS CODE after line 104:
+// EXISTING CODE shows developer_display and reviewer_display are already available
+let developer_display = registry.display_name(&developer_agent);
+let reviewer_display = registry.display_name(&reviewer_agent);
+
+// IMMEDIATE FEEDBACK (Phase 1.1) - Add these two lines:
+logger.info(&format!(
+    "Starting pipeline with {} (dev) → {} (review)...",
+    developer_display, reviewer_display
+));
+
+if std::io::stdin().is_terminal() {
+    logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+}
+```
+
+**Why it's easy**:
+- Single code addition at a well-defined location
+- Uses existing Logger infrastructure (150+ logger calls already in codebase)
+- No new dependencies or infrastructure needed
+- Immediately visible impact when running `ralph`
+
+**Testing**: Run `ralph` and verify the message appears before any agent calls.
+
+---
+
+#### 🚀 Quick Win #2: Phase 8.3 - Cancellation Hint (15 minutes)
+
+**Priority**: P0 | **Effort**: 15 minutes | **Impact**: Medium
+
+**Implementation**: Display cancellation hint during long operations.
+
+**Note**: This is already included in Quick Win #1 above (the `logger.warn()` call). If implementing separately:
+
+**File**: `ralph-workflow/src/app/mod.rs`
+
+**Location**: After line 104 (immediately after Phase 1.1 feedback)
+
+```rust
+// ADD THIS CODE after Phase 1.1 message:
+if std::io::stdin().is_terminal() {
+    logger.warn("Press Ctrl+C to cancel (checkpoint will be saved)");
+}
+```
+
+**Why it's easy**:
+- Single conditional check
+- Uses existing `logger.warn()` method
+- Gate on `is_terminal()` ensures it only shows in interactive mode
+- Pattern already used in similar CLI tools
+
+**Testing**: Run `ralph` in an interactive terminal and verify the warning appears.
+
+---
+
+#### 🚀 Quick Win #3: Phase 4.0 - Phase Transition Feedback (30 minutes)
+
+**Priority**: P0 | **Effort**: 30 minutes | **Impact**: High
+
+**Implementation**: Add feedback messages at key pipeline transition points.
+
+**File**: `ralph-workflow/src/app/mod.rs`
+
+**Locations**: Multiple locations in main pipeline flow
+
+```rust
+// ADD THESE CODE blocks at appropriate transition points:
+
+// 1. AFTER DEVELOPMENT PHASE COMPLETES:
+// Location: After development phase execution
+logger.success("✓ Development phase complete");
+
+// 2. BEFORE REVIEW PHASE STARTS:
+// Location: Before review phase execution
+logger.info("Switching to review phase...");
+
+// 3. AFTER REVIEW PHASE COMPLETES:
+// Location: After review phase execution
+logger.success("✓ Review phase complete");
+
+// 4. AFTER COMMIT PHASE COMPLETES:
+// Location: After commit phase execution (or at pipeline end)
+logger.success("✓ Pipeline completed successfully");
+```
+
+**Why it's easy**:
+- Leverages existing Logger methods (success, info)
+- Multiple small wins throughout the pipeline
+- Pattern matches existing 71 logger calls in `app/mod.rs`
+- No new infrastructure required
+
+**Testing**: Run `ralph` and verify phase transition messages appear between phases.
+
+---
+
+### Summary: Total Effort for All Three Quick Wins
+
+| Feature | Effort | Files Modified | New Dependencies |
+|---------|--------|----------------|------------------|
+| Phase 1.1: Immediate Feedback | 15 min | 1 (`app/mod.rs`) | None |
+| Phase 8.3: Cancellation Hint | 15 min | 1 (`app/mod.rs`) | None |
+| Phase 4.0: Phase Transitions | 30 min | 1 (`app/mod.rs`) | None |
+| **Total** | **1 hour** | **1 file** | **0** |
+
+**All three features can be implemented in a single PR that modifies only one file (`app/mod.rs`).**
+
+---
+
+### Example Pull Request
+
+**Title**: `feat(ux): [RFC-002] Add immediate feedback and phase transition messages`
+
+**Description**:
+```
+This PR implements three P0 features from RFC-002:
+
+1. **Phase 1.1**: Immediate feedback before pipeline starts
+   - Shows which agents are being used
+   - Addresses "Is it stuck?" friction point
+
+2. **Phase 8.3**: Cancellation hint during execution
+   - Shows "Press Ctrl+C to cancel" in interactive terminals
+   - Provides clear way out for long operations
+
+3. **Phase 4.0**: Phase transition feedback
+   - Shows completion of each phase
+   - Shows transitions between phases
+   - Shows final pipeline completion
+
+All features use existing Logger infrastructure and require no new
+dependencies. Total effort: ~1 hour.
+
+Resolves: RFC-002 Phase 1.1, Phase 4.0, Phase 8.3
+```
+
+**Files Changed**:
+- `ralph-workflow/src/app/mod.rs` (+8 lines)
+
+---
+
+### Next Steps After Quick Wins
+
+After completing these three quick wins (1 hour total), the next easiest features are:
+
+1. **Phase 2.1**: First-Run Detection (2-3 hours)
+2. **Phase 3.1**: Actionable Error Messages (3-4 hours)
+3. **Phase 1.2**: Enhanced Progress Bar (4-6 hours, requires `indicatif` dependency)
+
+These quick wins provide immediate user value with minimal effort and establish patterns for the remaining features.
+
+---
+
 #### Logger Call Statistics (337 total calls across 21 files)
 
 | File | Logger Calls | Notes |
@@ -718,6 +887,13 @@ registry.display_name(&agent_name) // Returns human-readable name
 - Verified completion percentages remain accurate at 32% overall completion
 - Confirmed 7 fully completed features and 2 partially completed features
 - All implementation notes and code references remain current
+
+**2026-01-16**: Added "Immediate Wins" section for quick implementation guidance
+- Added new "Immediate Wins: Next Steps for Progress" section with copy-pasteable code snippets
+- Documented three easiest P0 features (Phase 1.1, 8.3, 4.0) that can be completed in 1 hour total
+- Provided exact file locations and line numbers for all integration points
+- Included example PR description and file change summary
+- Added "Next Steps After Quick Wins" to guide contributors to subsequent features
 
 **2026-01-17**: Enhanced codebase analysis and implementation guidance
 - Added comprehensive "Codebase Analysis: Logger Usage Patterns" section documenting **337 logger calls** across 21 files
