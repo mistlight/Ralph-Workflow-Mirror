@@ -26,7 +26,7 @@ pub use commit::{
     prompt_ultra_minimal_commit_v2,
 };
 pub use developer::{prompt_developer_iteration, prompt_plan};
-pub use rebase::{build_conflict_resolution_prompt, collect_conflict_info};
+pub use rebase::{build_conflict_resolution_prompt, collect_conflict_info, FileConflict};
 pub use reviewer::{
     prompt_comprehensive_review, prompt_detailed_review_without_guidelines,
     prompt_incremental_review_with_diff, prompt_reviewer_review,

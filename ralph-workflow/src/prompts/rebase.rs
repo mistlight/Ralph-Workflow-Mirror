@@ -91,12 +91,13 @@ pub fn build_conflict_resolution_prompt(
 
     // List all conflicted files
     prompt.push_str("## Conflicted Files\n\n");
-    for (path, conflict) in conflicts.iter() {
-        prompt.push_str(&format!("### {}\n\n", path));
+    for (path, conflict) in conflicts {
+        use std::fmt::Write;
+        writeln!(prompt, "### {path}\n\n").unwrap();
         prompt.push_str("Current state (with conflict markers):\n\n");
         prompt.push_str("```");
         prompt.push_str(&get_language_marker(path));
-        prompt.push_str("\n");
+        prompt.push('\n');
         prompt.push_str(&conflict.current_content);
         prompt.push_str("\n```\n\n");
 
@@ -146,39 +147,27 @@ fn get_language_marker(path: &str) -> String {
     match ext {
         "rs" => "rust",
         "py" => "python",
-        "js" => "javascript",
-        "ts" => "typescript",
-        "tsx" => "typescript",
-        "jsx" => "javascript",
+        "js" | "jsx" => "javascript",
+        "ts" | "tsx" => "typescript",
         "go" => "go",
         "java" => "java",
-        "c" => "c",
-        "h" => "c",
-        "cpp" => "cpp",
-        "hpp" => "cpp",
-        "cc" => "cpp",
-        "cxx" => "cpp",
+        "c" | "h" => "c",
+        "cpp" | "hpp" | "cc" | "cxx" => "cpp",
         "cs" => "csharp",
         "php" => "php",
         "rb" => "ruby",
         "swift" => "swift",
         "kt" => "kotlin",
         "scala" => "scala",
-        "sh" => "bash",
-        "bash" => "bash",
-        "zsh" => "bash",
+        "sh" | "bash" | "zsh" => "bash",
         "fish" => "fish",
-        "yaml" => "yaml",
-        "yml" => "yaml",
+        "yaml" | "yml" => "yaml",
         "json" => "json",
         "toml" => "toml",
-        "md" => "markdown",
-        "markdown" => "markdown",
+        "md" | "markdown" => "markdown",
         "txt" => "text",
         "html" => "html",
-        "css" => "css",
-        "scss" => "scss",
-        "less" => "css",
+        "css" | "scss" | "less" => "css",
         "xml" => "xml",
         "sql" => "sql",
         _ => "",

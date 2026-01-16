@@ -4,6 +4,21 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
+/// Initialize a git repository in a temporary directory.
+///
+/// This function:
+/// 1. Creates a new git repository
+/// 2. Configures user.name and user.email
+/// 3. Creates initial .gitignore and PROMPT.md files
+/// 4. Creates the .agent directory
+///
+/// # Panics
+///
+/// - If repository initialization fails
+/// - If config operations fail
+/// - If file system writes fail
+/// - If directory creation fails
+#[must_use]
 pub fn init_git_repo(dir: &TempDir) -> Repository {
     let repo = Repository::init(dir.path()).expect("init git repo");
 
@@ -29,8 +44,11 @@ pub fn init_git_repo(dir: &TempDir) -> Repository {
     repo
 }
 
-// Test support utilities for integration tests.
-// These functions are used across multiple test files.
+/// Write contents to a file, creating parent directories if needed.
+///
+/// # Panics
+///
+/// - If file system write fails
 pub fn write_file<P: AsRef<Path>>(path: P, contents: &str) {
     if let Some(parent) = path.as_ref().parent() {
         if !parent.as_os_str().is_empty() {
@@ -40,6 +58,14 @@ pub fn write_file<P: AsRef<Path>>(path: P, contents: &str) {
     fs::write(path, contents).expect("write file");
 }
 
+/// Stage all changes and create a commit.
+///
+/// # Panics
+///
+/// - If index operations fail
+/// - If tree operations fail
+/// - If commit creation fails
+#[must_use]
 pub fn commit_all(repo: &Repository, message: &str) -> Oid {
     stage_all(repo);
 
@@ -62,6 +88,10 @@ pub fn commit_all(repo: &Repository, message: &str) -> Oid {
     }
 }
 
+/// Get the HEAD commit OID as a string.
+///
+/// Returns an empty string if there is no HEAD (e.g., empty repository).
+#[must_use]
 pub fn head_oid(repo: &Repository) -> String {
     repo.head()
         .ok()
@@ -70,6 +100,12 @@ pub fn head_oid(repo: &Repository) -> String {
         .unwrap_or_default()
 }
 
+/// Stage all changes in the repository, including deletions.
+///
+/// # Panics
+///
+/// - If index operations fail
+/// - If status retrieval fails
 pub fn stage_all(repo: &Repository) {
     let mut index = repo.index().expect("open index");
 

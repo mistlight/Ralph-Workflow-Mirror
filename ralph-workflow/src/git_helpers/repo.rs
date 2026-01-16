@@ -347,33 +347,36 @@ fn resolve_commit_identity(
         }
     }
 
-    // Priority 2-4: CLI args, env vars, Ralph config (as overrides to git config)
-    // These can override individual fields from git config (partial override support)
+    // Priority order (standard git behavior):
+    // 1. Git config (local .git/config, then global ~/.gitconfig) - primary source
+    // 2. CLI args (provided_name/provided_email) - only if git config is missing
+    // 3. Env vars (RALPH_GIT_USER_NAME/EMAIL) - only if git config and CLI are missing
+    //
+    // This matches standard git behavior where git config is authoritative.
     let cli_name = std::env::var("RALPH_GIT_USER_NAME").ok();
     let cli_email = std::env::var("RALPH_GIT_USER_EMAIL").ok();
 
-    // Apply overrides in priority order: CLI args > env vars > provided params > git config
-    let final_name = provided_name
-        .filter(|s| !s.is_empty())
-        .or(cli_name.as_deref())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            has_git_config
-                .then_some(name.as_str())
-                .filter(|s| !s.is_empty())
-        })
-        .unwrap_or("");
+    // Apply in priority order: git config > CLI args > env vars
+    // Git config takes highest priority (standard git behavior)
+    let final_name = if has_git_config && !name.is_empty() {
+        name.as_str()
+    } else {
+        provided_name
+            .filter(|s| !s.is_empty())
+            .or(cli_name.as_deref())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("")
+    };
 
-    let final_email = provided_email
-        .filter(|s| !s.is_empty())
-        .or(cli_email.as_deref())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            has_git_config
-                .then_some(email.as_str())
-                .filter(|s| !s.is_empty())
-        })
-        .unwrap_or("");
+    let final_email = if has_git_config && !email.is_empty() {
+        email.as_str()
+    } else {
+        provided_email
+            .filter(|s| !s.is_empty())
+            .or(cli_email.as_deref())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("")
+    };
 
     // If we have both name and email from git config + overrides, use them
     if !final_name.is_empty() && !final_email.is_empty() {

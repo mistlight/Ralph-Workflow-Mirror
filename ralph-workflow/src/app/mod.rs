@@ -142,55 +142,23 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         }
     }
 
-    // Validate agent commands exist
-    validate_agent_commands(
+    // Validate agents and set up git repo and PROMPT.md
+    let Some(repo_root) = validate_and_setup_agents(
         &config,
         &registry,
         &developer_agent,
         &reviewer_agent,
         &config_path,
-    )?;
-
-    // Validate agents are workflow-capable
-    validate_can_commit(
-        &config,
-        &registry,
-        &developer_agent,
-        &reviewer_agent,
-        &config_path,
-    )?;
-
-    // Set up git repo and working directory
-    require_git_repo()?;
-    let repo_root = get_repo_root()?;
-    env::set_current_dir(&repo_root)?;
+        colors,
+        &logger,
+    )?
+    else {
+        return Ok(());
+    };
 
     // Handle --rebase-only
     if args.rebase_flags.rebase_only {
         return handle_rebase_only(&args, &config, &logger, colors);
-    }
-
-    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
-    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
-    if config.behavior.interactive && !std::path::Path::new("PROMPT.md").exists() {
-        if let Some(template_name) = prompt_template_selection(colors) {
-            create_prompt_from_template(&template_name, colors)?;
-            println!();
-            logger.info(
-                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
-            );
-            logger.info(&format!(
-                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-                config.commit_msg
-            ));
-            return Ok(());
-        }
-        println!();
-        logger.info("PROMPT.md is required to run the pipeline.");
-        logger.info(
-            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-        );
-        return Ok(());
     }
 
     ensure_files(config.isolation_mode)?;
@@ -259,6 +227,85 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
         return true;
     }
     false
+}
+
+/// Validates agent commands and workflow capability, then sets up git repo and PROMPT.md.
+///
+/// Returns `Some(repo_root)` if setup succeeded and should continue.
+/// Returns `None` if the user declined PROMPT.md creation (to exit early).
+fn validate_and_setup_agents(
+    config: &crate::config::Config,
+    registry: &AgentRegistry,
+    developer_agent: &str,
+    reviewer_agent: &str,
+    config_path: &std::path::Path,
+    colors: Colors,
+    logger: &Logger,
+) -> anyhow::Result<Option<std::path::PathBuf>> {
+    // Validate agent commands exist
+    validate_agent_commands(
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        config_path,
+    )?;
+
+    // Validate agents are workflow-capable
+    validate_can_commit(
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        config_path,
+    )?;
+
+    // Set up git repo and working directory
+    require_git_repo()?;
+    let repo_root = get_repo_root()?;
+    env::set_current_dir(&repo_root)?;
+
+    // Set up PROMPT.md if needed (may return None to exit early)
+    let should_continue = setup_git_and_prompt_file(config, colors, logger)?;
+    if should_continue.is_none() {
+        return Ok(None);
+    }
+
+    Ok(Some(repo_root))
+}
+
+/// In interactive mode, prompts to create PROMPT.md from a template before `ensure_files()`.
+///
+/// Returns `Ok(Some(()))` if setup succeeded and should continue.
+/// Returns `Ok(None)` if the user declined PROMPT.md creation (to exit early).
+fn setup_git_and_prompt_file(
+    config: &crate::config::Config,
+    colors: Colors,
+    logger: &Logger,
+) -> anyhow::Result<Option<()>> {
+    // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
+    // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
+    if config.behavior.interactive && !std::path::Path::new("PROMPT.md").exists() {
+        if let Some(template_name) = prompt_template_selection(colors) {
+            create_prompt_from_template(&template_name, colors)?;
+            println!();
+            logger.info(
+                "PROMPT.md created. Please edit it with your task details, then run ralph again.",
+            );
+            logger.info(&format!(
+                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
+                config.commit_msg
+            ));
+            return Ok(None);
+        }
+        println!();
+        logger.info("PROMPT.md is required to run the pipeline.");
+        logger.info(
+            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
+        );
+        return Ok(None);
+    }
+    Ok(Some(()))
 }
 
 /// Runs the full development/review/commit pipeline.
@@ -640,7 +687,7 @@ fn run_final_validation(
 
 /// Handle --rebase-only flag.
 ///
-/// This function performs a rebase to the default branch and exits,
+/// This function performs a rebase to the default branch with AI conflict resolution and exits,
 /// without running the full pipeline.
 fn handle_rebase_only(
     args: &Args,
@@ -670,13 +717,49 @@ fn handle_rebase_only(
             logger.info("No rebase needed (already up-to-date or on main branch)");
             Ok(())
         }
-        Ok(RebaseResult::Conflicts(conflicts)) => {
-            logger.warn("Rebase resulted in conflicts:");
-            for conflict in conflicts {
-                logger.error(&format!("  - {conflict}"));
+        Ok(RebaseResult::Conflicts(_conflicts)) => {
+            // Get the actual conflicted files
+            let conflicted_files = get_conflicted_files()?;
+            if conflicted_files.is_empty() {
+                logger.warn("Rebase reported conflicts but no conflicted files found");
+                let _ = abort_rebase();
+                return Ok(());
             }
-            logger.info("Please resolve conflicts manually and run 'ralph --rebase-only' again");
-            anyhow::bail!("Rebase conflicts need manual resolution")
+
+            logger.warn(&format!(
+                "Rebase resulted in {} conflict(s), attempting AI resolution",
+                conflicted_files.len()
+            ));
+
+            // Attempt to resolve conflicts with AI
+            match try_resolve_conflicts_with_fallback(&conflicted_files, config, logger, colors) {
+                Ok(true) => {
+                    // Conflicts resolved, continue the rebase
+                    logger.info("Continuing rebase after conflict resolution");
+                    match continue_rebase() {
+                        Ok(()) => {
+                            logger.success("Rebase completed successfully after AI resolution");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            logger.error(&format!("Failed to continue rebase: {e}"));
+                            let _ = abort_rebase();
+                            anyhow::bail!("Rebase failed after conflict resolution")
+                        }
+                    }
+                }
+                Ok(false) => {
+                    // AI resolution failed
+                    logger.error("AI conflict resolution failed, aborting rebase");
+                    let _ = abort_rebase();
+                    anyhow::bail!("Rebase conflicts could not be resolved by AI")
+                }
+                Err(e) => {
+                    logger.error(&format!("Conflict resolution error: {e}"));
+                    let _ = abort_rebase();
+                    anyhow::bail!("Rebase conflict resolution failed: {e}")
+                }
+            }
         }
         Err(e) => {
             logger.error(&format!("Rebase failed: {e}"));
@@ -881,13 +964,6 @@ fn try_resolve_conflicts_with_fallback(
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<bool> {
-    use crate::agents::AgentRegistry;
-    use crate::files::result_extraction::extract_last_result;
-    use crate::pipeline::{run_with_fallback, PipelineRuntime};
-    use crate::prompts::{build_conflict_resolution_prompt, collect_conflict_info};
-    use std::fs;
-    use std::path::Path;
-
     if conflicted_files.is_empty() {
         return Ok(false);
     }
@@ -897,41 +973,79 @@ fn try_resolve_conflicts_with_fallback(
         conflicted_files.len()
     ));
 
-    // Collect conflict information
+    let conflicts = collect_conflict_info_or_error(conflicted_files, logger)?;
+    let resolution_prompt = build_resolution_prompt(&conflicts);
+
+    let resolved_content = run_ai_conflict_resolution(&resolution_prompt, config, logger, colors)?;
+    let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
+    write_resolved_files(&resolved_files, logger)?;
+
+    // Verify all conflicts are resolved
+    let remaining_conflicts = get_conflicted_files()?;
+    if remaining_conflicts.is_empty() {
+        Ok(true)
+    } else {
+        logger.warn(&format!(
+            "{} conflicts remain after AI resolution",
+            remaining_conflicts.len()
+        ));
+        Ok(false)
+    }
+}
+
+/// Collect conflict information from conflicted files.
+fn collect_conflict_info_or_error(
+    conflicted_files: &[String],
+    logger: &Logger,
+) -> anyhow::Result<std::collections::HashMap<String, crate::prompts::FileConflict>> {
+    use crate::prompts::collect_conflict_info;
+
     let conflicts = match collect_conflict_info(conflicted_files) {
         Ok(c) => c,
         Err(e) => {
             logger.error(&format!("Failed to collect conflict info: {e}"));
-            return Ok(false);
+            anyhow::bail!("Failed to collect conflict info");
         }
     };
+    Ok(conflicts)
+}
 
-    // Read PROMPT.md and PLAN.md for context
+/// Build the conflict resolution prompt from context files.
+fn build_resolution_prompt(
+    conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
+) -> String {
+    use crate::prompts::build_conflict_resolution_prompt;
+    use std::fs;
+
     let prompt_md_content = fs::read_to_string("PROMPT.md").ok();
     let plan_content = fs::read_to_string(".agent/PLAN.md").ok();
 
-    // Build the conflict resolution prompt
-    let resolution_prompt = build_conflict_resolution_prompt(
-        &conflicts,
+    build_conflict_resolution_prompt(
+        conflicts,
         prompt_md_content.as_deref(),
         plan_content.as_deref(),
-    );
+    )
+}
 
-    // Create log directory for conflict resolution
+/// Run AI agent to resolve conflicts with fallback mechanism.
+fn run_ai_conflict_resolution(
+    resolution_prompt: &str,
+    config: &crate::config::Config,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<String> {
+    use crate::agents::AgentRegistry;
+    use crate::files::result_extraction::extract_last_result;
+    use crate::pipeline::{run_with_fallback, PipelineRuntime};
+    use std::fs;
+    use std::path::Path;
+
     let log_dir = ".agent/logs/rebase_conflict_resolution";
-    let _ = fs::create_dir_all(log_dir);
+    fs::create_dir_all(log_dir)?;
 
-    // Get the registry - we need to construct a minimal one
     let registry = AgentRegistry::new()?;
+    let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
 
-    // Get the reviewer agent
-    let reviewer_agent = config
-        .reviewer_agent
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or("codex");
-
-    // Create a minimal runtime
     let mut runtime = PipelineRuntime {
         timer: &mut crate::pipeline::Timer::new(),
         logger,
@@ -939,11 +1053,10 @@ fn try_resolve_conflicts_with_fallback(
         config,
     };
 
-    // Run the reviewer agent with fallback
     let exit_code = run_with_fallback(
         crate::agents::AgentRole::Reviewer,
         "conflict resolution",
-        &resolution_prompt,
+        resolution_prompt,
         log_dir,
         &mut runtime,
         &registry,
@@ -951,78 +1064,72 @@ fn try_resolve_conflicts_with_fallback(
     )?;
 
     if exit_code != 0 {
-        logger.error("Agent failed to resolve conflicts");
-        return Ok(false);
+        anyhow::bail!("Agent failed to resolve conflicts");
     }
 
-    // Extract the resolved files from the agent output
     let resolved_content = match extract_last_result(Path::new(log_dir)) {
         Ok(Some(c)) => c,
         Ok(None) => {
-            logger.error("No output found from agent");
-            return Ok(false);
+            anyhow::bail!("No output found from agent");
         }
         Err(e) => {
             logger.error(&format!("Failed to extract agent output: {e}"));
-            return Ok(false);
+            anyhow::bail!("Failed to extract agent output");
         }
     };
 
-    // Parse JSON output
-    let json: serde_json::Value = match serde_json::from_str(&resolved_content) {
-        Ok(j) => j,
-        Err(e) => {
-            logger.error(&format!("Failed to parse agent output as JSON: {e}"));
-            return Ok(false);
-        }
-    };
+    Ok(resolved_content)
+}
 
-    // Extract resolved_files object
+/// Parse and validate the resolved files from AI output.
+fn parse_and_validate_resolved_files(
+    resolved_content: &str,
+    logger: &Logger,
+) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
+    let json: serde_json::Value = serde_json::from_str(resolved_content).map_err(|e| {
+        logger.error(&format!("Failed to parse agent output as JSON: {e}"));
+        anyhow::anyhow!("Failed to parse agent output as JSON")
+    })?;
+
     let resolved_files = match json.get("resolved_files") {
         Some(v) if v.is_object() => v.as_object().unwrap(),
         _ => {
             logger.error("Agent output missing 'resolved_files' object");
-            return Ok(false);
+            anyhow::bail!("Agent output missing 'resolved_files' object");
         }
     };
 
     if resolved_files.is_empty() {
         logger.error("No files were resolved by the agent");
-        return Ok(false);
+        anyhow::bail!("No files were resolved by the agent");
     }
 
-    // Write each resolved file and stage it
+    Ok(resolved_files.clone())
+}
+
+/// Write resolved files to disk and stage them.
+fn write_resolved_files(
+    resolved_files: &serde_json::Map<String, serde_json::Value>,
+    logger: &Logger,
+) -> anyhow::Result<usize> {
+    use std::fs;
+
     let mut files_written = 0;
     for (path, content) in resolved_files {
         if let Some(content_str) = content.as_str() {
-            match fs::write(path, content_str) {
-                Ok(()) => {
-                    logger.info(&format!("Resolved and wrote: {path}"));
-                    files_written += 1;
-                    // Stage the resolved file
-                    if let Err(e) = crate::git_helpers::git_add_all() {
-                        logger.warn(&format!("Failed to stage {path}: {e}"));
-                    }
-                }
-                Err(e) => {
-                    logger.error(&format!("Failed to write {path}: {e}"));
-                    return Ok(false);
-                }
+            fs::write(path, content_str).map_err(|e| {
+                logger.error(&format!("Failed to write {path}: {e}"));
+                anyhow::anyhow!("Failed to write {path}: {e}")
+            })?;
+            logger.info(&format!("Resolved and wrote: {path}"));
+            files_written += 1;
+            // Stage the resolved file
+            if let Err(e) = crate::git_helpers::git_add_all() {
+                logger.warn(&format!("Failed to stage {path}: {e}"));
             }
         }
     }
 
-    logger.success(&format!("Successfully resolved {} file(s)", files_written));
-
-    // Verify all conflicts are resolved
-    let remaining_conflicts = get_conflicted_files()?;
-    if !remaining_conflicts.is_empty() {
-        logger.warn(&format!(
-            "{} conflicts remain after AI resolution",
-            remaining_conflicts.len()
-        ));
-        Ok(false)
-    } else {
-        Ok(true)
-    }
+    logger.success(&format!("Successfully resolved {files_written} file(s)"));
+    Ok(files_written)
 }
