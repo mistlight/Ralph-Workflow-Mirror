@@ -21,6 +21,12 @@
 /// When the depth returns to zero after seeing a closing brace, we have a complete
 /// JSON object that can be parsed.
 ///
+/// # Depth Limit
+///
+/// The parser enforces a maximum nesting depth to prevent integer overflow
+/// from malicious input with extremely deep nesting. If the depth exceeds
+/// this limit, parsing fails with an error.
+///
 /// # Example
 ///
 /// ```ignore
@@ -47,6 +53,11 @@ pub struct IncrementalNdjsonParser {
     /// Whether we've seen at least one opening brace (started parsing JSON)
     started: bool,
 }
+
+/// Maximum allowed nesting depth for JSON objects.
+/// This prevents integer overflow from malicious input with extremely deep nesting.
+/// Most well-formed JSON has nesting depth < 20, so 1000 is a conservative limit.
+const MAX_JSON_DEPTH: usize = 1000;
 
 impl IncrementalNdjsonParser {
     /// Create a new incremental NDJSON parser.
@@ -83,6 +94,11 @@ impl IncrementalNdjsonParser {
     }
 
     /// Process a single byte, tracking state and extracting complete JSONs.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the depth exceeds `MAX_JSON_DEPTH`. This is
+    /// intentional to prevent integer overflow from malicious input.
     fn process_byte(&mut self, byte: u8, complete_jsons: &mut Vec<String>) {
         // Handle escape sequences
         if self.escape_next {
@@ -106,6 +122,12 @@ impl IncrementalNdjsonParser {
                 self.buffer.push(byte);
                 self.depth += 1;
                 self.started = true;
+                // Check for depth limit to prevent overflow
+                assert!(
+                    self.depth <= MAX_JSON_DEPTH,
+                    "JSON nesting depth exceeds maximum of {MAX_JSON_DEPTH}. \
+                    This may indicate malicious input with extremely deep nesting."
+                );
             }
             b'}' if !self.in_string && self.started => {
                 self.buffer.push(byte);
@@ -297,5 +319,19 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(events[0].contains("\"type\": \"delta\""));
         assert!(events[0].contains("\"value\": 123"));
+    }
+
+    #[test]
+    #[should_panic(expected = "JSON nesting depth exceeds maximum")]
+    fn test_incremental_parser_depth_limit() {
+        let mut parser = IncrementalNdjsonParser::new();
+        // Create JSON with depth exceeding MAX_JSON_DEPTH.
+        // We need exactly MAX_JSON_DEPTH + 1 opening braces to trigger the assertion.
+        let mut input = String::new();
+        for _ in 0..=MAX_JSON_DEPTH {
+            input.push('{');
+        }
+        // This should panic due to exceeding the depth limit
+        let _ = parser.feed(input.as_bytes());
     }
 }

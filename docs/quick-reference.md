@@ -207,8 +207,8 @@ Ralph's streaming system handles real-time AI agent output. These environment va
 
 | Variable | Default | Range | Description |
 |----------|---------|-------|-------------|
-| `RALPH_STREAMING_SNAPSHOT_THRESHOLD` | `200` | 50-1000 | Max delta size before warning (chars) |
-| `RALPH_STREAMING_FUZZY_MATCH_RATIO` | `85` | 50-95 | Fuzzy detection threshold (%) |
+| `RALPH_STREAMING_SNAPSHOT_THRESHOLD` | `200` | 50-1000 | Max delta size before warning (chars). Values outside this range are ignored. |
+| `RALPH_STREAMING_FUZZY_MATCH_RATIO` | `85` | 50-95 | Fuzzy detection threshold (%). Higher values = stricter detection. Values outside this range are ignored. |
 
 ## CLI Flags
 

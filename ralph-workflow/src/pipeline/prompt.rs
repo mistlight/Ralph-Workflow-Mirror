@@ -17,11 +17,21 @@ use std::process::{Child, ChildStdout, Command, Stdio};
 /// Unlike `BufReader::lines()`, this reader yields lines immediately
 /// when newlines are encountered, without waiting for the buffer to fill.
 /// This enables real-time streaming for agents that output NDJSON gradually.
+///
+/// # Buffer Size Limit
+///
+/// The reader enforces a maximum buffer size to prevent memory exhaustion
+/// from malicious or malformed input that never contains newlines.
+/// If the buffer exceeds this limit, subsequent reads will fail with an error.
 struct StreamingLineReader<R: Read> {
     inner: BufReader<R>,
     buffer: Vec<u8>,
     consumed: usize,
 }
+
+/// Maximum buffer size in bytes to prevent unbounded memory growth.
+/// This limits the impact of agents that output continuous data without newlines.
+const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1 MiB
 
 impl<R: Read> StreamingLineReader<R> {
     /// Create a new streaming line reader with a small buffer for low latency.
@@ -37,10 +47,32 @@ impl<R: Read> StreamingLineReader<R> {
     }
 
     /// Fill the internal buffer from the underlying reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the buffer would exceed `MAX_BUFFER_SIZE`.
+    /// This prevents memory exhaustion from malicious input that never contains newlines.
     fn fill_buffer(&mut self) -> io::Result<usize> {
+        // Check if we're approaching the limit before reading more
+        let current_size = self.buffer.len() - self.consumed;
+        if current_size >= MAX_BUFFER_SIZE {
+            return Err(io::Error::other(format!(
+                "StreamingLineReader buffer exceeded maximum size of {MAX_BUFFER_SIZE} bytes. \
+                This may indicate malformed input or an agent that is not sending newlines."
+            )));
+        }
+
         let mut read_buf = [0u8; 256];
         let n = self.inner.read(&mut read_buf)?;
         if n > 0 {
+            // Check if adding this data would exceed the limit
+            let new_size = current_size + n;
+            if new_size > MAX_BUFFER_SIZE {
+                return Err(io::Error::other(format!(
+                    "StreamingLineReader buffer would exceed maximum size of {MAX_BUFFER_SIZE} bytes. \
+                    This may indicate malformed input or an agent that is not sending newlines."
+                )));
+            }
             self.buffer.extend_from_slice(&read_buf[..n]);
         }
         Ok(n)
@@ -252,6 +284,10 @@ fn build_agent_command(
     // Set agent-side buffering disabling environment variables for real-time streaming.
     // These are only set if not already explicitly configured by the user's env_vars.
     // This mitigates the issue where AI agents buffer their stdout instead of streaming.
+    //
+    // Note: NODE_ENV is set to "production" (not "development") because production mode
+    // disables buffering in Node.js applications. This is necessary for real-time streaming
+    // but may affect error stack traces and logging levels in Node.js agents.
     let buffering_vars = [("PYTHONUNBUFFERED", "1"), ("NODE_ENV", "production")];
     for (key, value) in buffering_vars {
         if !config.env_vars.contains_key(key) {

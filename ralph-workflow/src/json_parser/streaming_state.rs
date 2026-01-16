@@ -101,31 +101,66 @@ use std::sync::OnceLock;
 
 // Streaming configuration constants
 
-/// Default threshold for detecting snapshot-as-delta violations (in characters)
+/// Default threshold for detecting snapshot-as-delta violations (in characters).
+///
+/// Deltas exceeding this size are flagged as potential snapshots. The value of 200
+/// characters was chosen because:
+/// - Normal deltas are typically < 100 characters (a few tokens)
+/// - Snapshots often contain the full accumulated content (200+ chars)
+/// - This threshold catches most violations while minimizing false positives
 const DEFAULT_SNAPSHOT_THRESHOLD: usize = 200;
 
-/// Minimum allowed snapshot threshold (in characters)
+/// Minimum allowed snapshot threshold (in characters).
+///
+/// Values below 50 would cause excessive false positives for normal deltas,
+/// as even small text chunks (1-2 sentences) can exceed 30 characters.
 const MIN_SNAPSHOT_THRESHOLD: usize = 50;
 
-/// Maximum allowed snapshot threshold (in characters)
+/// Maximum allowed snapshot threshold (in characters).
+///
+/// Values above 1000 would allow malicious snapshots to pass undetected,
+/// potentially causing exponential duplication bugs.
 const MAX_SNAPSHOT_THRESHOLD: usize = 1000;
 
-/// Default fuzzy match ratio for snapshot detection (percentage 0-100)
+/// Default fuzzy match ratio for snapshot detection (percentage 0-100).
+///
+/// This value determines how strict fuzzy snapshot detection is. At 85%:
+/// - Text containing >85% of previous content is flagged as a snapshot
+/// - Balances detection accuracy with false positive rate
+/// - Lower values increase detection but may catch legitimate content reuse
+/// - Higher values reduce false positives but miss some snapshots
 const DEFAULT_FUZZY_MATCH_RATIO: usize = 85;
 
-/// Minimum allowed fuzzy match ratio (percentage)
+/// Minimum allowed fuzzy match ratio (percentage).
+///
+/// Values below 50% would flag too many false positives, as half of text
+/// overlap is common in normal responses (e.g., repeated phrases).
 const MIN_FUZZY_MATCH_RATIO: usize = 50;
 
-/// Maximum allowed fuzzy match ratio (percentage)
+/// Maximum allowed fuzzy match ratio (percentage).
+///
+/// Values above 95% would make fuzzy detection too strict, missing many
+/// valid snapshots with minor formatting differences.
 const MAX_FUZZY_MATCH_RATIO: usize = 95;
 
-/// Minimum content length required for fuzzy snapshot detection (in characters)
+/// Minimum content length required for fuzzy snapshot detection (in characters).
+///
+/// Short content (below 20 chars) often has high overlap ratios by chance.
+/// For example, "Hi there" and "Hi there!" have ~90% overlap but the latter
+/// is a genuine delta, not a snapshot.
 const MIN_FUZZY_MATCH_LENGTH: usize = 20;
 
-/// Number of consecutive large deltas required to trigger pattern detection warning
+/// Number of consecutive large deltas required to trigger pattern detection warning.
+///
+/// This threshold prevents false positives from occasional large deltas.
+/// Three consecutive large deltas indicate a pattern (not a one-off event).
 const PATTERN_DETECTION_MIN_DELTAS: usize = 3;
 
-/// Maximum number of delta sizes to track per content key for pattern detection
+/// Maximum number of delta sizes to track per content key for pattern detection.
+///
+/// Tracking recent delta sizes allows us to detect patterns of repeated large
+/// content (a sign of snapshot-as-delta bugs). Ten entries provide sufficient
+/// history without excessive memory usage.
 const DEFAULT_MAX_DELTA_HISTORY: usize = 10;
 
 /// Ralph enforces a **delta contract** for all streaming content.
