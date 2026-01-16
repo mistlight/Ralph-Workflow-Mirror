@@ -337,9 +337,9 @@ mod tests {
             "test issues content",
         );
         assert!(result.contains("test issues content"));
-        // Agent should NOT modify ISSUES.md - orchestrator manages this file
-        assert!(result.contains("DO NOT modify ISSUES.md"));
-        assert!(result.contains("orchestrator manages this file"));
+        // Agent should NOT modify the ISSUES content - it is provided for reference only
+        assert!(result.contains("DO NOT modify the ISSUES content"));
+        assert!(result.contains("provided for reference only"));
         // Agent SHOULD modify source code files to fix issues
         assert!(result.contains("SHOULD modify source code files"));
         assert!(result.contains("FIX MODE"));

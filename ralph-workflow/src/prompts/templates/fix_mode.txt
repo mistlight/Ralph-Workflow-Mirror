@@ -26,9 +26,9 @@ AFTER FIXING:
 Return your completion status as structured output:
 - "All issues addressed." (if you believe everything is fixed)
 - "Issues remain." (if you believe issues still exist)
-- "No issues found." (if ISSUES.md didn't exist or was empty)
+- "No issues found." (if the ISSUES section above is empty)
 
-DO NOT modify ISSUES.md - the orchestrator manages this file.
+DO NOT modify the ISSUES content - it is provided for reference only.
 You SHOULD modify source code files to fix the issues.
 
 GUIDELINES:
