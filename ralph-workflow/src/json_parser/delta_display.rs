@@ -130,9 +130,9 @@ fn sanitize_for_display(content: &str, terminal_mode: TerminalMode, prefix: &str
 /// # Returns
 /// The content, possibly truncated with "..." appended if truncated.
 fn truncate_to_terminal_width(content: &str, prefix: &str) -> String {
-    // Reserve space for ANSI escape sequences (estimated)
-    // Colors add escape sequences like \x1b[2m...\x1b[0m
-    const ANSI_ESCAPE_OVERHEAD: usize = 20;
+    // ANSI escape sequences don't consume visual terminal width
+    // Colors add escape sequences like \x1b[2m...\x1b[0m which are zero-width
+    const ANSI_ESCAPE_OVERHEAD: usize = 0;
 
     // Reserve space for ellipsis
     const ELLIPSIS: &str = "...";
@@ -923,17 +923,13 @@ mod tests {
 
     #[test]
     fn test_sanitize_truncates_long_content_in_full_mode() {
-        let result = sanitize_for_display(
-            "This is a very long string that should be truncated when displayed",
-            TerminalMode::Full,
-            "agent",
-        );
+        // String that is definitely longer than terminal width (80 - 8 - 3 = 69 chars available)
+        let long_content =
+            "This is a very long string that should be truncated when displayed with more text";
+        let result = sanitize_for_display(long_content, TerminalMode::Full, "agent");
         // Should be truncated with ellipsis in Full mode
         assert!(result.contains("..."));
-        assert!(
-            result.len()
-                < "This is a very long string that should be truncated when displayed".len()
-        );
+        assert!(result.len() < long_content.len());
     }
 
     #[test]
