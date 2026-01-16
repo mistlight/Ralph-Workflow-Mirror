@@ -17,6 +17,306 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+/// Represents a single step in the parsing trace log.
+#[derive(Debug, Clone)]
+pub struct ParsingTraceStep {
+    /// Step number in the trace
+    pub step_number: usize,
+    /// Description of what was attempted
+    pub description: String,
+    /// Input content for this step
+    pub input: Option<String>,
+    /// Result/output of this step
+    pub result: Option<String>,
+    /// Whether this step succeeded
+    pub success: bool,
+    /// Additional details or error message
+    pub details: String,
+}
+
+impl ParsingTraceStep {
+    /// Create a new parsing trace step.
+    pub fn new(step_number: usize, description: &str) -> Self {
+        Self {
+            step_number,
+            description: description.to_string(),
+            input: None,
+            result: None,
+            success: false,
+            details: String::new(),
+        }
+    }
+
+    /// Set the input for this step.
+    pub fn with_input(mut self, input: &str) -> Self {
+        // Truncate input if too large
+        const MAX_INPUT_SIZE: usize = 10_000;
+        self.input = if input.len() > MAX_INPUT_SIZE {
+            Some(format!(
+                "{}\n\n[... input truncated {} bytes ...]",
+                &input[..MAX_INPUT_SIZE / 2],
+                input.len() - MAX_INPUT_SIZE
+            ))
+        } else {
+            Some(input.to_string())
+        };
+        self
+    }
+
+    /// Set the result for this step.
+    pub fn with_result(mut self, result: &str) -> Self {
+        // Truncate result if too large
+        const MAX_RESULT_SIZE: usize = 10_000;
+        self.result = if result.len() > MAX_RESULT_SIZE {
+            Some(format!(
+                "{}\n\n[... result truncated {} bytes ...]",
+                &result[..MAX_RESULT_SIZE / 2],
+                result.len() - MAX_RESULT_SIZE
+            ))
+        } else {
+            Some(result.to_string())
+        };
+        self
+    }
+
+    /// Set whether this step succeeded.
+    pub const fn with_success(mut self, success: bool) -> Self {
+        self.success = success;
+        self
+    }
+
+    /// Set additional details.
+    pub fn with_details(mut self, details: &str) -> Self {
+        self.details = details.to_string();
+        self
+    }
+}
+
+/// Detailed parsing trace log for commit message extraction.
+///
+/// This log captures each step of the extraction process, showing:
+/// - What extraction method was tried (XML, JSON, pattern-based)
+/// - The exact content being processed at each step
+/// - Validation results and why they passed/failed
+/// - The final extracted message
+///
+/// This is separate from the attempt log and written to `parsing_trace.log`.
+#[derive(Debug, Clone)]
+pub struct ParsingTraceLog {
+    /// Attempt number this trace belongs to
+    pub attempt_number: usize,
+    /// Agent that generated the output
+    pub agent: String,
+    /// Strategy used
+    pub strategy: String,
+    /// Raw output from the agent
+    pub raw_output: Option<String>,
+    /// Individual parsing steps
+    pub steps: Vec<ParsingTraceStep>,
+    /// Final extracted message (if any)
+    pub final_message: Option<String>,
+    /// Timestamp when trace started
+    pub timestamp: DateTime<Local>,
+}
+
+impl ParsingTraceLog {
+    /// Create a new parsing trace log.
+    pub fn new(attempt_number: usize, agent: &str, strategy: &str) -> Self {
+        Self {
+            attempt_number,
+            agent: agent.to_string(),
+            strategy: strategy.to_string(),
+            raw_output: None,
+            steps: Vec::new(),
+            final_message: None,
+            timestamp: Local::now(),
+        }
+    }
+
+    /// Set the raw output from the agent.
+    pub fn set_raw_output(&mut self, output: &str) {
+        const MAX_OUTPUT_SIZE: usize = 50_000;
+        self.raw_output = if output.len() > MAX_OUTPUT_SIZE {
+            Some(format!(
+                "{}\n\n[... raw output truncated {} bytes ...]\n\n{}",
+                &output[..MAX_OUTPUT_SIZE / 2],
+                output.len() - MAX_OUTPUT_SIZE,
+                &output[output.len() - MAX_OUTPUT_SIZE / 2..]
+            ))
+        } else {
+            Some(output.to_string())
+        };
+    }
+
+    /// Add a parsing step to the trace.
+    pub fn add_step(&mut self, step: ParsingTraceStep) {
+        self.steps.push(step);
+    }
+
+    /// Set the final extracted message.
+    pub fn set_final_message(&mut self, message: &str) {
+        self.final_message = Some(message.to_string());
+    }
+
+    /// Write this trace to a file.
+    ///
+    /// # Arguments
+    ///
+    /// * `log_dir` - Directory to write the trace file to
+    ///
+    /// # Returns
+    ///
+    /// Path to the written trace file on success.
+    pub fn write_to_file(&self, log_dir: &Path) -> std::io::Result<PathBuf> {
+        let trace_path = log_dir.join(format!(
+            "attempt_{:03}_parsing_trace.log",
+            self.attempt_number
+        ));
+
+        let file = File::create(&trace_path)?;
+        let mut writer = BufWriter::new(file);
+
+        Self::write_header(&mut writer, self)?;
+        Self::write_raw_output(&mut writer, self)?;
+        Self::write_parsing_steps(&mut writer, self)?;
+        Self::write_final_message(&mut writer, self)?;
+        Self::write_footer(&mut writer)?;
+
+        writer.flush()?;
+        Ok(trace_path)
+    }
+
+    fn write_header(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
+        writeln!(
+            w,
+            "================================================================================"
+        )?;
+        writeln!(
+            w,
+            "PARSING TRACE LOG - Attempt #{:03}",
+            trace.attempt_number
+        )?;
+        writeln!(
+            w,
+            "================================================================================"
+        )?;
+        writeln!(w)?;
+        writeln!(w, "Agent:     {}", trace.agent)?;
+        writeln!(w, "Strategy:  {}", trace.strategy)?;
+        writeln!(
+            w,
+            "Timestamp: {}",
+            trace.timestamp.format("%Y-%m-%d %H:%M:%S %Z")
+        )?;
+        writeln!(w)?;
+        Ok(())
+    }
+
+    fn write_raw_output(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
+        writeln!(
+            w,
+            "--------------------------------------------------------------------------------"
+        )?;
+        writeln!(w, "RAW AGENT OUTPUT")?;
+        writeln!(
+            w,
+            "--------------------------------------------------------------------------------"
+        )?;
+        writeln!(w)?;
+        match &trace.raw_output {
+            Some(output) => {
+                writeln!(w, "{output}")?;
+            }
+            None => {
+                writeln!(w, "[No raw output captured]")?;
+            }
+        }
+        writeln!(w)?;
+        Ok(())
+    }
+
+    fn write_parsing_steps(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
+        writeln!(
+            w,
+            "--------------------------------------------------------------------------------"
+        )?;
+        writeln!(w, "PARSING STEPS")?;
+        writeln!(
+            w,
+            "--------------------------------------------------------------------------------"
+        )?;
+        writeln!(w)?;
+
+        if trace.steps.is_empty() {
+            writeln!(w, "[No parsing steps recorded]")?;
+        } else {
+            for step in &trace.steps {
+                let status = if step.success {
+                    "✓ SUCCESS"
+                } else {
+                    "✗ FAILED"
+                };
+                writeln!(w, "{}. {} [{}]", step.step_number, step.description, status)?;
+                writeln!(w)?;
+
+                if let Some(input) = &step.input {
+                    writeln!(w, "   INPUT:")?;
+                    for line in input.lines() {
+                        writeln!(w, "   {line}")?;
+                    }
+                    writeln!(w)?;
+                }
+
+                if let Some(result) = &step.result {
+                    writeln!(w, "   RESULT:")?;
+                    for line in result.lines() {
+                        writeln!(w, "   {line}")?;
+                    }
+                    writeln!(w)?;
+                }
+
+                if !step.details.is_empty() {
+                    writeln!(w, "   DETAILS: {}", step.details)?;
+                    writeln!(w)?;
+                }
+            }
+        }
+        writeln!(w)?;
+        Ok(())
+    }
+
+    fn write_final_message(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
+        writeln!(
+            w,
+            "--------------------------------------------------------------------------------"
+        )?;
+        writeln!(w, "FINAL EXTRACTED MESSAGE")?;
+        writeln!(
+            w,
+            "--------------------------------------------------------------------------------"
+        )?;
+        writeln!(w)?;
+        match &trace.final_message {
+            Some(message) => {
+                writeln!(w, "{message}")?;
+            }
+            None => {
+                writeln!(w, "[No message extracted]")?;
+            }
+        }
+        writeln!(w)?;
+        Ok(())
+    }
+
+    fn write_footer(w: &mut impl Write) -> std::io::Result<()> {
+        writeln!(
+            w,
+            "================================================================================"
+        )?;
+        Ok(())
+    }
+}
+
 /// Represents an extraction attempt with its method and outcome.
 #[derive(Debug, Clone)]
 pub struct ExtractionAttempt {
@@ -671,5 +971,123 @@ mod tests {
         let output = log.raw_output.unwrap();
         assert!(output.len() < large_output.len());
         assert!(output.contains("[... truncated"));
+    }
+
+    #[test]
+    fn test_parsing_trace_step_creation() {
+        let step = ParsingTraceStep::new(1, "XML extraction");
+        assert_eq!(step.step_number, 1);
+        assert_eq!(step.description, "XML extraction");
+        assert!(!step.success);
+        assert!(step.input.is_none());
+        assert!(step.result.is_none());
+    }
+
+    #[test]
+    fn test_parsing_trace_step_builder() {
+        let step = ParsingTraceStep::new(1, "XML extraction")
+            .with_input("input content")
+            .with_result("result content")
+            .with_success(true)
+            .with_details("extraction successful");
+
+        assert!(step.success);
+        assert_eq!(step.input.as_deref(), Some("input content"));
+        assert_eq!(step.result.as_deref(), Some("result content"));
+        assert_eq!(step.details, "extraction successful");
+    }
+
+    #[test]
+    fn test_parsing_trace_step_truncation() {
+        let large_input = "x".repeat(100_000);
+        let step = ParsingTraceStep::new(1, "test").with_input(&large_input);
+
+        assert!(step.input.is_some());
+        let input = step.input.as_ref().unwrap();
+        assert!(input.len() < large_input.len());
+        assert!(input.contains("[... input truncated"));
+    }
+
+    #[test]
+    fn test_parsing_trace_log_creation() {
+        let trace = ParsingTraceLog::new(1, "claude", "initial");
+        assert_eq!(trace.attempt_number, 1);
+        assert_eq!(trace.agent, "claude");
+        assert_eq!(trace.strategy, "initial");
+        assert!(trace.raw_output.is_none());
+        assert!(trace.steps.is_empty());
+        assert!(trace.final_message.is_none());
+    }
+
+    #[test]
+    fn test_parsing_trace_log_set_raw_output() {
+        let mut trace = ParsingTraceLog::new(1, "claude", "initial");
+        trace.set_raw_output("test output");
+
+        assert_eq!(trace.raw_output.as_deref(), Some("test output"));
+    }
+
+    #[test]
+    fn test_parsing_trace_raw_output_truncation() {
+        let mut trace = ParsingTraceLog::new(1, "claude", "initial");
+        let large_output = "x".repeat(100_000);
+        trace.set_raw_output(&large_output);
+
+        let output = trace.raw_output.unwrap();
+        assert!(output.len() < large_output.len());
+        assert!(output.contains("[... raw output truncated"));
+    }
+
+    #[test]
+    fn test_parsing_trace_add_step() {
+        let mut trace = ParsingTraceLog::new(1, "claude", "initial");
+        let step = ParsingTraceStep::new(1, "XML extraction");
+        trace.add_step(step);
+
+        assert_eq!(trace.steps.len(), 1);
+        assert_eq!(trace.steps[0].description, "XML extraction");
+    }
+
+    #[test]
+    fn test_parsing_trace_set_final_message() {
+        let mut trace = ParsingTraceLog::new(1, "claude", "initial");
+        trace.set_final_message("feat: add feature");
+
+        assert_eq!(trace.final_message.as_deref(), Some("feat: add feature"));
+    }
+
+    #[test]
+    fn test_parsing_trace_write_to_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let log_dir = temp_dir.path();
+
+        let mut trace = ParsingTraceLog::new(1, "claude", "initial");
+        trace.set_raw_output("raw agent output");
+        trace.add_step(
+            ParsingTraceStep::new(1, "XML extraction")
+                .with_input("input")
+                .with_result("result")
+                .with_success(true)
+                .with_details("success"),
+        );
+        trace.add_step(
+            ParsingTraceStep::new(2, "Validation")
+                .with_success(false)
+                .with_details("failed"),
+        );
+        trace.set_final_message("feat: add feature");
+
+        let trace_path = trace.write_to_file(log_dir).unwrap();
+        assert!(trace_path.exists());
+        assert!(trace_path.to_string_lossy().contains("parsing_trace"));
+
+        let content = fs::read_to_string(&trace_path).unwrap();
+        assert!(content.contains("PARSING TRACE LOG"));
+        assert!(content.contains("Attempt #001"));
+        assert!(content.contains("RAW AGENT OUTPUT"));
+        assert!(content.contains("PARSING STEPS"));
+        assert!(content.contains("✓ SUCCESS"));
+        assert!(content.contains("✗ FAILED"));
+        assert!(content.contains("FINAL EXTRACTED MESSAGE"));
     }
 }

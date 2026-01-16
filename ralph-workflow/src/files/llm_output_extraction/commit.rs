@@ -692,23 +692,113 @@ fn validate_no_thought_process_leakage(content: &str) -> Result<(), String> {
 }
 
 /// Validate that content does not contain placeholder text.
+///
+/// This function uses word boundary checks to prevent false positives
+/// from log metadata or other technical content that may contain words
+/// like "placeholder" in valid contexts (e.g., "placeholder element",
+/// "placeholder attribute").
+///
+/// Template variables like `{{PROMPT}}`, `{{PLAN}}`, `{{DIFF}}` are
+/// explicitly excluded from being flagged as placeholders since they
+/// are valid template syntax that gets substituted before use.
 fn validate_no_placeholders(content: &str) -> Result<(), String> {
-    let placeholders = [
-        "[commit message]",
-        "<commit message>",
-        "placeholder",
-        "your commit message here",
-        "[insert",
-        "<insert",
-    ];
+    // Valid template variables that should NOT be flagged as placeholders
+    let valid_template_vars = ["{{prompt}}", "{{plan}}", "{{diff}}"];
     let content_lower = content.to_lowercase();
-    for placeholder in placeholders {
-        if content_lower.contains(placeholder) {
-            return Err(format!(
-                "Commit message contains placeholder: {placeholder}"
-            ));
+
+    // First, check if the content only contains valid template variables
+    // If so, skip the placeholder check entirely
+    for valid_var in &valid_template_vars {
+        if content_lower == *valid_var {
+            return Ok(());
         }
     }
+
+    // Placeholder patterns with word boundary checks
+    // These patterns must appear as complete phrases, not as substrings
+    let placeholder_patterns = [
+        r"(?i)\[commit message\]",           // [commit message]
+        r"(?i)<commit message>",             // <commit message>
+        r"(?i)\byour commit message here\b", // your commit message here (as standalone phrase)
+        r"(?i)\[commit\s*\]",                // [commit] or [commit  ]
+        r"(?i)<commit\s*>",                  // <commit> or <commit  >
+        r"(?i)\[insert\b",                   // [insert (but not [inserted])
+        r"(?i)<insert\b",                    // <insert (but not <inserted>)
+    ];
+
+    // Build a regex that matches any of the placeholder patterns
+    let combined_pattern = placeholder_patterns.join("|");
+    if let Ok(re) = regex::Regex::new(&combined_pattern) {
+        if re.is_match(content) {
+            return Err(
+                "Commit message contains placeholder text (e.g., '[commit message]', '<commit message>', or similar)".to_string()
+            );
+        }
+    }
+
+    // For "placeholder" specifically, only flag it if it appears as a standalone
+    // word that isn't part of a valid technical term like "placeholder attribute"
+    // We check for phrases like "is a placeholder", "placeholder for", etc.
+    let placeholder_context_patterns = [
+        r"(?i)\bplaceholder\s+for\b",     // "placeholder for"
+        r"(?i)\bplaceholder\s+text\b",    // "placeholder text"
+        r"(?i)\bplaceholder\s+here\b",    // "placeholder here"
+        r"(?i)\bplaceholder\s*\)",        // "placeholder)"
+        r"(?i)is\s+a\s+placeholder\b",    // "is a placeholder"
+        r"(?i)this\s+is\s+placeholder\b", // "this is placeholder" (grammatically incorrect, likely placeholder)
+    ];
+
+    let combined_placeholder_context = placeholder_context_patterns.join("|");
+    if let Ok(re) = regex::Regex::new(&combined_placeholder_context) {
+        if re.is_match(content) {
+            return Err(
+                "Commit message contains placeholder text (e.g., 'placeholder for', 'placeholder text', or similar)".to_string()
+            );
+        }
+    }
+
+    // Also check for bare "placeholder" word with word boundaries, but exclude
+    // common valid technical uses like "placeholder attribute", "template placeholders"
+    let bare_placeholder = regex::Regex::new(r"(?i)\bplaceholder\b").unwrap();
+    if bare_placeholder.is_match(content) {
+        // Check if it's in a valid technical context
+        let valid_contexts = [
+            // HTML/UI attribute contexts
+            "placeholder attribute",
+            "placeholder element",
+            "placeholder div",
+            "placeholder span",
+            "placeholder class",
+            // Template/variable contexts
+            "template placeholders",
+            "template placeholder",
+            "placeholder variable",
+            "placeholder variables",
+            "placeholder value",
+            "placeholder values",
+            // Substitution contexts
+            "substitute placeholder",
+            "substituting placeholder",
+            "replace placeholder",
+            "replacing placeholder",
+        ];
+
+        let content_lower_for_ctx = content.to_lowercase();
+        let mut in_valid_context = false;
+        for valid_ctx in &valid_contexts {
+            if content_lower_for_ctx.contains(valid_ctx) {
+                in_valid_context = true;
+                break;
+            }
+        }
+
+        if !in_valid_context {
+            return Err(
+                "Commit message contains 'placeholder'. If this refers to technical concepts (templates, variables, etc.), use more specific language like 'template placeholders' or 'placeholder variable'".to_string()
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -2225,6 +2315,138 @@ Line 3</ralph-body>
         assert!(
             result.is_some(),
             "Should extract from XML even inside code fence"
+        );
+    }
+
+    // Tests for placeholder validation with technical contexts
+    #[test]
+    fn test_validate_accepts_template_placeholders() {
+        // "template placeholders" should be accepted as technical context
+        let result = validate_commit_message("feat: substitute template placeholders in config");
+        assert!(
+            result.is_ok(),
+            "Should accept 'template placeholders' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_template_placeholder() {
+        // "template placeholder" (singular) should be accepted
+        let result = validate_commit_message("fix: update template placeholder handling");
+        assert!(
+            result.is_ok(),
+            "Should accept 'template placeholder' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_placeholder_variable() {
+        // "placeholder variable" should be accepted
+        let result = validate_commit_message("refactor: rename placeholder variable in template");
+        assert!(
+            result.is_ok(),
+            "Should accept 'placeholder variable' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_placeholder_variables() {
+        // "placeholder variables" (plural) should be accepted
+        let result = validate_commit_message("docs: document placeholder variables usage");
+        assert!(
+            result.is_ok(),
+            "Should accept 'placeholder variables' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_placeholder_value() {
+        // "placeholder value" should be accepted
+        let result = validate_commit_message("fix: set default placeholder value");
+        assert!(
+            result.is_ok(),
+            "Should accept 'placeholder value' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_placeholder_values() {
+        // "placeholder values" (plural) should be accepted
+        let result = validate_commit_message("feat: add support for placeholder values");
+        assert!(
+            result.is_ok(),
+            "Should accept 'placeholder values' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_substitute_placeholder() {
+        // Context around "substitute" and "placeholder" should be accepted
+        let result = validate_commit_message("fix: properly substitute placeholder in output");
+        assert!(
+            result.is_ok(),
+            "Should accept 'substitute placeholder' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_substituting_placeholder() {
+        // "substituting placeholder" should be accepted
+        let result =
+            validate_commit_message("refactor: add logic for substituting placeholder tokens");
+        assert!(
+            result.is_ok(),
+            "Should accept 'substituting placeholder' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_replace_placeholder() {
+        // "replace placeholder" should be accepted
+        let result = validate_commit_message("feat: replace placeholder with actual value");
+        assert!(
+            result.is_ok(),
+            "Should accept 'replace placeholder' as technical context"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_actual_placeholder_filler() {
+        // Actual filler patterns should still be rejected
+        let result = validate_commit_message("feat: [placeholder]");
+        assert!(
+            result.is_err(),
+            "Should reject '[placeholder]' filler pattern"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_placeholder_for() {
+        // "placeholder for" should be rejected
+        let result = validate_commit_message("feat: this is a placeholder for the real thing");
+        assert!(
+            result.is_err(),
+            "Should reject 'placeholder for' as filler pattern"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_is_a_placeholder() {
+        // "is a placeholder" should be rejected
+        let result = validate_commit_message("feat: this text is a placeholder");
+        assert!(
+            result.is_err(),
+            "Should reject 'is a placeholder' as filler pattern"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_bare_placeholder() {
+        // Bare "placeholder" without technical context should be rejected
+        let result = validate_commit_message("feat: add placeholder support");
+        assert!(
+            result.is_err(),
+            "Should reject bare 'placeholder' without technical context"
         );
     }
 }
