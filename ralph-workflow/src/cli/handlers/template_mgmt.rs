@@ -1,0 +1,631 @@
+//! Template management CLI handler.
+//!
+//! Provides commands for:
+//! - Listing all templates with metadata
+//! - Showing template content and variables
+//! - Validating templates for syntax errors
+//! - Extracting variables from templates
+//! - Rendering templates for testing
+
+use std::collections::HashMap;
+
+use crate::cli::args::TemplateCommands;
+use crate::logger::Colors;
+use crate::prompts::partials::get_shared_partials;
+use crate::prompts::{
+    extract_metadata, extract_partials, extract_variables, validate_template, Template,
+};
+
+/// Get all available templates as a map of name -> (content, description).
+#[allow(clippy::too_many_lines)]
+fn get_all_templates() -> HashMap<String, (String, String)> {
+    let mut templates = HashMap::new();
+
+    // Main templates
+    templates.insert(
+        "commit_message_xml".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_message_xml.txt").to_string(),
+            "Generate Conventional Commits messages from git diffs (XML format)".to_string(),
+        ),
+    );
+    templates.insert(
+        "commit_strict_json".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_strict_json.txt").to_string(),
+            "Strict JSON commit message format (retry attempt 1)".to_string(),
+        ),
+    );
+    templates.insert(
+        "commit_strict_json_v2".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_strict_json_v2.txt").to_string(),
+            "Strict JSON commit message format with examples (retry attempt 2)".to_string(),
+        ),
+    );
+    templates.insert(
+        "commit_ultra_minimal".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_ultra_minimal.txt").to_string(),
+            "Ultra-minimal commit message prompt (retry attempt 3)".to_string(),
+        ),
+    );
+    templates.insert(
+        "commit_ultra_minimal_v2".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_ultra_minimal_v2.txt").to_string(),
+            "Ultra-minimal commit message prompt v2 (retry attempt 4)".to_string(),
+        ),
+    );
+    templates.insert(
+        "commit_file_list_only".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_file_list_only.txt").to_string(),
+            "Commit message from file list only (fallback 1)".to_string(),
+        ),
+    );
+    templates.insert(
+        "commit_file_list_summary".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_file_list_summary.txt").to_string(),
+            "Commit message from file summary (fallback 2)".to_string(),
+        ),
+    );
+    templates.insert(
+        "commit_emergency".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_emergency.txt").to_string(),
+            "Emergency commit message with diff (fallback 3)".to_string(),
+        ),
+    );
+    templates.insert(
+        "commit_emergency_no_diff".to_string(),
+        (
+            include_str!("../../prompts/templates/commit_emergency_no_diff.txt").to_string(),
+            "Emergency commit message without diff (last resort)".to_string(),
+        ),
+    );
+    templates.insert(
+        "developer_iteration".to_string(),
+        (
+            include_str!("../../prompts/templates/developer_iteration.txt").to_string(),
+            "Developer agent implementation mode prompt".to_string(),
+        ),
+    );
+    templates.insert(
+        "planning".to_string(),
+        (
+            include_str!("../../prompts/templates/planning.txt").to_string(),
+            "Planning phase prompt for implementation plans".to_string(),
+        ),
+    );
+    templates.insert(
+        "fix_mode".to_string(),
+        (
+            include_str!("../../prompts/templates/fix_mode.txt").to_string(),
+            "Fix mode prompt for addressing review issues".to_string(),
+        ),
+    );
+    templates.insert(
+        "conflict_resolution".to_string(),
+        (
+            include_str!("../../prompts/templates/conflict_resolution.txt").to_string(),
+            "Merge conflict resolution prompt".to_string(),
+        ),
+    );
+
+    // Reviewer templates
+    templates.insert(
+        "detailed_review_minimal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/detailed_review_minimal.txt")
+                .to_string(),
+            "Detailed review mode (minimal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "detailed_review_normal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/detailed_review_normal.txt").to_string(),
+            "Detailed review mode (normal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "incremental_review_minimal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/incremental_review_minimal.txt")
+                .to_string(),
+            "Incremental review (changed files only, minimal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "incremental_review_normal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/incremental_review_normal.txt")
+                .to_string(),
+            "Incremental review (changed files only, normal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "universal_review_minimal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/universal_review_minimal.txt")
+                .to_string(),
+            "Universal review (all file types, minimal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "universal_review_normal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/universal_review_normal.txt")
+                .to_string(),
+            "Universal review (all file types, normal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "standard_review_minimal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/standard_review_minimal.txt")
+                .to_string(),
+            "Standard review (balanced, minimal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "standard_review_normal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/standard_review_normal.txt").to_string(),
+            "Standard review (balanced, normal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "comprehensive_review_minimal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/comprehensive_review_minimal.txt")
+                .to_string(),
+            "Comprehensive review (thorough, minimal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "comprehensive_review_normal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/comprehensive_review_normal.txt")
+                .to_string(),
+            "Comprehensive review (thorough, normal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "security_review_minimal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/security_review_minimal.txt")
+                .to_string(),
+            "Security-focused review (OWASP, minimal context)".to_string(),
+        ),
+    );
+    templates.insert(
+        "security_review_normal".to_string(),
+        (
+            include_str!("../../prompts/reviewer/templates/security_review_normal.txt").to_string(),
+            "Security-focused review (OWASP, normal context)".to_string(),
+        ),
+    );
+
+    templates
+}
+
+/// Handle template validation command.
+pub fn handle_template_validate(colors: Colors) {
+    println!("{}Validating templates...{}", colors.bold(), colors.reset());
+    println!();
+
+    let templates = get_all_templates();
+    let partials_set: std::collections::HashSet<String> =
+        get_shared_partials().keys().cloned().collect();
+
+    let mut total_errors = 0;
+    let mut total_warnings = 0;
+
+    for (name, (content, _)) in {
+        let mut items: Vec<_> = templates.iter().collect();
+        items.sort_by(|a, b| a.0.cmp(b.0));
+        items
+    } {
+        let result = validate_template(content, &partials_set);
+
+        if result.is_valid {
+            println!(
+                "{}✓{} {}{}{}",
+                colors.green(),
+                colors.reset(),
+                colors.cyan(),
+                name,
+                colors.reset()
+            );
+        } else {
+            println!(
+                "{}✗{} {}{}{}",
+                colors.red(),
+                colors.reset(),
+                colors.cyan(),
+                name,
+                colors.reset()
+            );
+        }
+
+        for error in &result.errors {
+            println!(
+                "  {}error:{} {}",
+                colors.red(),
+                colors.reset(),
+                format_error(error)
+            );
+            total_errors += 1;
+        }
+
+        for warning in &result.warnings {
+            println!(
+                "  {}warning:{} {}",
+                colors.yellow(),
+                colors.reset(),
+                format_warning(warning)
+            );
+            total_warnings += 1;
+        }
+
+        if !result.variables.is_empty() {
+            let var_names: Vec<&str> = result.variables.iter().map(|v| v.name.as_str()).collect();
+            println!(
+                "  {}variables:{} {}",
+                colors.dim(),
+                colors.reset(),
+                var_names.join(", ")
+            );
+        }
+
+        if !result.partials.is_empty() {
+            println!(
+                "  {}partials:{} {}",
+                colors.dim(),
+                colors.reset(),
+                result.partials.join(", ")
+            );
+        }
+    }
+
+    println!();
+    if total_errors == 0 {
+        println!(
+            "{}All templates validated successfully!{}",
+            colors.green(),
+            colors.reset()
+        );
+        if total_warnings > 0 {
+            println!("{total_warnings} warnings");
+        }
+    } else {
+        println!(
+            "{}Validation failed with {} error(s){}",
+            colors.red(),
+            total_errors,
+            colors.reset()
+        );
+        if total_warnings > 0 {
+            println!("{total_warnings} warnings");
+        }
+        std::process::exit(1);
+    }
+}
+
+/// Handle template list command.
+pub fn handle_template_list(colors: Colors) {
+    let templates = get_all_templates();
+
+    println!("{}Available Templates:{}", colors.bold(), colors.reset());
+    println!();
+
+    for (name, (_, description)) in {
+        let mut items: Vec<_> = templates.iter().collect();
+        items.sort_by(|a, b| a.0.cmp(b.0));
+        items
+    } {
+        println!(
+            "  {}{}{}  {}{}{}",
+            colors.cyan(),
+            name,
+            colors.reset(),
+            colors.dim(),
+            description,
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("Total: {} templates", templates.len());
+}
+
+/// Handle template show command.
+pub fn handle_template_show(name: &str, colors: Colors) -> anyhow::Result<()> {
+    let templates = get_all_templates();
+
+    let (content, description) = templates
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Template '{name}' not found"))?;
+
+    println!(
+        "{}Template: {}{}{}{}",
+        colors.bold(),
+        colors.cyan(),
+        name,
+        colors.reset(),
+        colors.reset()
+    );
+    println!(
+        "{}Description: {}{}{}",
+        colors.dim(),
+        description,
+        colors.reset(),
+        colors.reset()
+    );
+    println!();
+
+    // Show metadata
+    let metadata = extract_metadata(content);
+    if let Some(version) = metadata.version {
+        println!(
+            "{}Version: {}{}{}",
+            colors.dim(),
+            version,
+            colors.reset(),
+            colors.reset()
+        );
+    }
+    if let Some(purpose) = metadata.purpose {
+        println!(
+            "{}Purpose: {}{}{}",
+            colors.dim(),
+            purpose,
+            colors.reset(),
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("{}Variables:{}", colors.bold(), colors.reset());
+
+    let variables = extract_variables(content);
+    if variables.is_empty() {
+        println!("  (none)");
+    } else {
+        for var in &variables {
+            if var.has_default {
+                println!(
+                    "  {}{}{} = {}{}{}",
+                    colors.cyan(),
+                    var.name,
+                    colors.reset(),
+                    colors.green(),
+                    var.default_value.as_deref().unwrap_or(""),
+                    colors.reset()
+                );
+            } else {
+                println!("  {}{}{}", colors.cyan(), var.name, colors.reset());
+            }
+        }
+    }
+
+    println!();
+    println!("{}Partials:{}", colors.bold(), colors.reset());
+
+    let partials = extract_partials(content);
+    if partials.is_empty() {
+        println!("  (none)");
+    } else {
+        for partial in &partials {
+            println!("  {}{}{}", colors.cyan(), partial, colors.reset());
+        }
+    }
+
+    println!();
+    println!("{}Content:{}", colors.bold(), colors.reset());
+    println!("{}", colors.dim());
+    for line in content.lines().take(50) {
+        println!("{line}");
+    }
+    if content.lines().count() > 50 {
+        println!("... ({} more lines)", content.lines().count() - 50);
+    }
+    println!("{}", colors.reset());
+
+    Ok(())
+}
+
+/// Handle template variables command.
+pub fn handle_template_variables(name: &str, colors: Colors) -> anyhow::Result<()> {
+    let templates = get_all_templates();
+
+    let (content, _) = templates
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Template '{name}' not found"))?;
+
+    let variables = extract_variables(content);
+
+    println!(
+        "{}Variables in '{}':{}",
+        colors.bold(),
+        name,
+        colors.reset()
+    );
+    println!();
+
+    if variables.is_empty() {
+        println!("  (no variables found)");
+    } else {
+        for var in &variables {
+            let default = if var.has_default {
+                format!(
+                    " = {}{}{}",
+                    colors.green(),
+                    var.default_value.as_deref().unwrap_or(""),
+                    colors.reset()
+                )
+            } else {
+                String::new()
+            };
+            println!(
+                "  {}{}{}{}  {}line {}{}",
+                colors.cyan(),
+                var.name,
+                colors.reset(),
+                default,
+                colors.dim(),
+                var.line,
+                colors.reset()
+            );
+        }
+    }
+
+    println!();
+    println!("Total: {} variable(s)", variables.len());
+
+    Ok(())
+}
+
+/// Handle template render command.
+pub fn handle_template_render(name: &str, colors: Colors) -> anyhow::Result<()> {
+    let templates = get_all_templates();
+
+    let (content, _) = templates
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Template '{name}' not found"))?;
+
+    // Get variables from environment or command line
+    let mut variables = HashMap::new();
+
+    // For now, just use some example variables for testing
+    // In a full implementation, this would parse --var KEY=VALUE arguments
+    variables.insert("PROMPT".to_string(), "Example prompt content".to_string());
+    variables.insert("PLAN".to_string(), "Example plan content".to_string());
+    variables.insert("DIFF".to_string(), "+ example line".to_string());
+
+    println!(
+        "{}Rendering template '{}'...{}",
+        colors.bold(),
+        name,
+        colors.reset()
+    );
+    println!();
+
+    let partials = get_shared_partials();
+    let template = Template::new(content);
+
+    match template.render_with_partials(
+        &variables
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.clone()))
+            .collect(),
+        &partials,
+    ) {
+        Ok(rendered) => {
+            println!("{}", colors.dim());
+            println!("{rendered}");
+            println!("{}", colors.reset());
+        }
+        Err(e) => {
+            println!(
+                "{}Render error: {}{}{}",
+                colors.red(),
+                e,
+                colors.reset(),
+                colors.reset()
+            );
+            println!();
+            println!("{}Tip:{}", colors.yellow(), colors.reset());
+            println!("  Use --template-variables to see which variables are required.");
+        }
+    }
+
+    Ok(())
+}
+
+/// Format a validation error for display.
+fn format_error(error: &crate::prompts::ValidationError) -> String {
+    match error {
+        crate::prompts::ValidationError::UnclosedConditional { line } => {
+            format!("unclosed conditional block on line {line}")
+        }
+        crate::prompts::ValidationError::UnclosedLoop { line } => {
+            format!("unclosed loop block on line {line}")
+        }
+        crate::prompts::ValidationError::InvalidConditional { line, syntax } => {
+            format!("invalid conditional syntax on line {line}: '{syntax}'")
+        }
+        crate::prompts::ValidationError::InvalidLoop { line, syntax } => {
+            format!("invalid loop syntax on line {line}: '{syntax}'")
+        }
+        crate::prompts::ValidationError::UnclosedComment { line } => {
+            format!("unclosed comment on line {line}")
+        }
+        crate::prompts::ValidationError::PartialNotFound { name } => {
+            format!("partial not found: '{name}'")
+        }
+    }
+}
+
+/// Format a validation warning for display.
+fn format_warning(warning: &crate::prompts::ValidationWarning) -> String {
+    match warning {
+        crate::prompts::ValidationWarning::VariableMayError { name } => {
+            format!("variable '{name}' may cause error if not provided")
+        }
+    }
+}
+
+/// Handle all template commands.
+pub fn handle_template_commands(commands: &TemplateCommands, colors: Colors) -> anyhow::Result<()> {
+    if commands.validate {
+        handle_template_validate(colors);
+    } else if let Some(ref name) = commands.show {
+        handle_template_show(name, colors)?;
+    } else if commands.list {
+        handle_template_list(colors);
+    } else if let Some(ref name) = commands.variables {
+        handle_template_variables(name, colors)?;
+    } else if let Some(ref name) = commands.render {
+        handle_template_render(name, colors)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_all_templates_not_empty() {
+        let templates = get_all_templates();
+        assert!(!templates.is_empty());
+        assert!(templates.contains_key("developer_iteration"));
+        assert!(templates.contains_key("commit_message_xml"));
+    }
+
+    #[test]
+    fn test_template_show_valid() {
+        let colors = Colors::new();
+        let result = handle_template_show("developer_iteration", colors);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_template_show_invalid() {
+        let colors = Colors::new();
+        let result = handle_template_show("nonexistent", colors);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_template_variables() {
+        let colors = Colors::new();
+        let result = handle_template_variables("developer_iteration", colors);
+        assert!(result.is_ok());
+    }
+}

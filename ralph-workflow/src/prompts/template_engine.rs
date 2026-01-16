@@ -357,9 +357,8 @@ impl Template {
                     }
 
                     // Check for default value syntax: {{VAR|default="value"}}
-                    let (var_name, default_value) = var_spec
-                        .find('|')
-                        .map_or((trimmed_var, None), |pipe_pos| {
+                    let (var_name, default_value) =
+                        var_spec.find('|').map_or((trimmed_var, None), |pipe_pos| {
                             let name = var_spec[..pipe_pos].trim();
                             let rest = &var_spec[pipe_pos + 1..];
                             // Parse default="value"
@@ -383,27 +382,28 @@ impl Template {
                         });
 
                     // Look up the variable
-                    let (replacement, should_replace) = variables
-                        .get(var_name)
-                        .map_or_else(
-                            || {
-                                default_value.as_ref().map_or_else(|| {
+                    let (replacement, should_replace) = variables.get(var_name).map_or_else(
+                        || {
+                            default_value.as_ref().map_or_else(
+                                || {
                                     // Track as missing
                                     missing_vars.push(var_name.to_string());
                                     (String::new(), false)
-                                }, |default| (default.clone(), true))
-                            },
-                            |value| {
-                                if !value.is_empty() {
-                                    (value.clone(), true)
-                                } else if let Some(default) = &default_value {
-                                    (default.clone(), true)
-                                } else {
-                                    // Variable exists but is empty, and no default - keep placeholder
-                                    (String::new(), false)
-                                }
-                            },
-                        );
+                                },
+                                |default| (default.clone(), true),
+                            )
+                        },
+                        |value| {
+                            if !value.is_empty() {
+                                (value.clone(), true)
+                            } else if let Some(default) = &default_value {
+                                (default.clone(), true)
+                            } else {
+                                // Variable exists but is empty, and no default - keep placeholder
+                                (String::new(), false)
+                            }
+                        },
+                    );
 
                     if should_replace {
                         replacements.push((start, end, replacement));

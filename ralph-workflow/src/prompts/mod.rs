@@ -16,11 +16,12 @@
 
 mod commit;
 mod developer;
-mod partials;
+pub mod partials;
 mod rebase;
 mod reviewer;
 mod template_engine;
 mod template_macros;
+mod template_validator;
 mod types;
 
 // Re-export all public items for backward compatibility
@@ -38,6 +39,10 @@ pub use reviewer::{
     prompt_security_focused_review_with_diff, prompt_universal_review_with_diff,
 };
 pub use template_engine::Template;
+pub use template_validator::{
+    extract_metadata, extract_partials, extract_variables, validate_template, ValidationError,
+    ValidationWarning,
+};
 pub use types::{Action, ContextLevel, Role};
 
 /// Configuration for prompt generation.

@@ -31,7 +31,8 @@ use crate::banner::print_welcome_banner;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
-    handle_list_available_agents, handle_list_providers, prompt_template_selection, Args,
+    handle_list_available_agents, handle_list_providers, handle_template_commands,
+    prompt_template_selection, Args,
 };
 use crate::common::utils;
 use crate::files::protection::monitoring::PromptMonitor;
@@ -226,6 +227,19 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
         handle_list_providers(colors);
         return true;
     }
+
+    // Handle template commands
+    let template_cmds = &args.template_commands;
+    if template_cmds.validate
+        || template_cmds.show.is_some()
+        || template_cmds.list
+        || template_cmds.variables.is_some()
+        || template_cmds.render.is_some()
+    {
+        let _ = handle_template_commands(template_cmds, colors);
+        return true;
+    }
+
     false
 }
 
