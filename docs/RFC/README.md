@@ -35,6 +35,7 @@ An RFC is a design document that describes a proposed change to Ralph. RFCs are 
 | RFC | Title | Status |
 |-----|-------|--------|
 | [RFC-001](./RFC-001-enhanced-opencode-integration.md) | Enhanced OpenCode Integration | Draft |
+| [RFC-002](./RFC-002-ux-improvements.md) | Developer Experience Improvements | Draft |
 
 ## Creating a New RFC
 
