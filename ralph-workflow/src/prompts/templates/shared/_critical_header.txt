@@ -1,0 +1,33 @@
+{# ============================================================================ #}
+{# Partial: _critical_header.txt                                              #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Common "CRITICAL: You have NO access" header for review modes.           #}
+{#   Used to prevent agents from attempting to read files or explore.          #}
+{#                                                                             #}
+{# USAGE:                                                                      #}
+{#   {{> shared/_critical_header}}                                             #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   MODE     - Review mode name (e.g., "DETAILED REVIEW MODE")                #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - This partial is self-contained and requires no other partials           #}
+{# ============================================================================ #}
+
+*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+
+You are in {{MODE}}.
+
+CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
+
+YOUR TASK:
+Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+
+CRITICAL CONSTRAINTS:
+- You MUST review ONLY the code changes shown in the DIFF below
+- You MUST NOT read any other files in the repository
+- You MUST NOT run git commands or explore the codebase
+- Your analysis MUST be limited to the diff content provided
+- DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.

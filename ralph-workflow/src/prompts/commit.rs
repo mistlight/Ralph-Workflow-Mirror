@@ -141,7 +141,7 @@ pub fn prompt_strict_json_commit(diff: &str) -> String {
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
     Template::new(template_content)
         .render(&variables)
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|_e| {
             // Fallback to minimal prompt with diff if template rendering fails
             format!(
                 "Generate a conventional commit message. Output ONLY:\n\n\
@@ -163,7 +163,7 @@ pub fn prompt_strict_json_commit_v2(diff: &str) -> String {
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
     Template::new(template_content)
         .render(&variables)
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|_e| {
             // Fallback to minimal prompt with diff if template rendering fails
             format!(
                 "OUTPUT ONLY:\n\n<ralph-commit>\n<ralph-subject>type: description</ralph-subject>\n</ralph-commit>\n\nDiff:\n{}\n",
@@ -181,7 +181,7 @@ pub fn prompt_ultra_minimal_commit(diff: &str) -> String {
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
     Template::new(template_content)
         .render(&variables)
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|_e| {
             // Fallback to minimal prompt with diff if template rendering fails
             format!(
                 "OUTPUT ONLY:\n<ralph-commit>\n<ralph-subject>fix: </ralph-subject>\n</ralph-commit>\n\n{}\n",
@@ -199,7 +199,7 @@ pub fn prompt_ultra_minimal_commit_v2(diff: &str) -> String {
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
     Template::new(template_content)
         .render(&variables)
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|_e| {
             // Fallback to minimal prompt with diff if template rendering fails
             format!(
                 "OUTPUT:\n<ralph-subject>fix: </ralph-subject>\n\n{}\n",

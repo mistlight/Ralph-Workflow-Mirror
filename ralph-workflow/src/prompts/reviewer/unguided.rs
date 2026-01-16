@@ -13,6 +13,7 @@
 //! - **Incremental review**: Focus only on recently changed files
 //! - **Universal review**: Simplified prompt for agent compatibility
 
+use super::super::partials::get_shared_partials;
 use super::super::types::ContextLevel;
 use super::super::Template;
 use std::collections::HashMap;
@@ -22,17 +23,22 @@ use std::collections::HashMap;
 /// Templates are embedded at compile time via `include_str!`, so any failure
 /// indicates a programming error (missing template file or malformed template).
 /// Returns a minimal fallback prompt on failure to ensure the review phase can proceed.
+///
+/// This version supports partials via the `{{> partial_name}}` syntax.
 fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
     let template = Template::new(template_content);
-    template.render(variables).unwrap_or_else(|_| {
-        // Fallback to minimal prompt that still includes the diff
-        // This ensures the review phase can proceed even if template rendering fails
-        let diff = variables.get("DIFF").map_or("", |s| s.as_str());
-        format!(
-            "Review the following changes:\n\n{diff}\n\n\
+    let partials = get_shared_partials();
+    template
+        .render_with_partials(variables, &partials)
+        .unwrap_or_else(|_e| {
+            // Fallback to minimal prompt that still includes the diff
+            // This ensures the review phase can proceed even if template rendering fails
+            let diff = variables.get("DIFF").map(|s| s.as_str()).unwrap_or("");
+            format!(
+                "Review the following changes:\n\n{diff}\n\n\
              Provide feedback on any issues found."
-        )
-    })
+            )
+        })
 }
 
 /// Generate detailed reviewer review prompt without language-specific guidelines,
@@ -62,6 +68,7 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
         ContextLevel::Normal => include_str!("templates/detailed_review_normal.txt"),
     };
     let variables = HashMap::from([
+        ("MODE", "DETAILED REVIEW MODE".to_string()),
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),

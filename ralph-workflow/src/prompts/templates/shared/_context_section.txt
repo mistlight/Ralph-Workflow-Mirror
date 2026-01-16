@@ -1,0 +1,27 @@
+{# ============================================================================ #}
+{# Partial: _context_section.txt                                              #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Common context section with PROMPT and PLAN variables.                   #}
+{#   Provides original user request and implementation plan context.           #}
+{#                                                                             #}
+{# USAGE:                                                                      #}
+{#   {{> shared/_context_section}}                                             #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   PROMPT   - Original user request from PROMPT.md (required)                #}
+{#   PLAN     - Implementation plan from PLAN.md (required)                    #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - This partial is self-contained and requires no other partials           #}
+{#   - Both variables are required for context                                  #}
+{# ============================================================================ #}
+
+{# ORIGINAL REQUEST - The user's original prompt #}
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+{# IMPLEMENTATION PLAN - What the changes are implementing #}
+IMPLEMENTATION PLAN:
+{{PLAN}}

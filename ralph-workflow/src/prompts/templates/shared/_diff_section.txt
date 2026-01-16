@@ -1,0 +1,23 @@
+{# ============================================================================ #}
+{# Partial: _diff_section.txt                                                 #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Common diff display section for review templates.                         #}
+{#   Formats the DIFF variable in a code block for clarity.                    #}
+{#                                                                             #}
+{# USAGE:                                                                      #}
+{#   {{> shared/_diff_section}}                                                #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   DIFF     - Git diff content to review (required)                           #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - This partial is self-contained and requires no other partials           #}
+{#   - Uses markdown code block formatting for clarity                         #}
+{# ============================================================================ #}
+
+DIFF TO REVIEW:
+```diff
+{{DIFF}}
+```

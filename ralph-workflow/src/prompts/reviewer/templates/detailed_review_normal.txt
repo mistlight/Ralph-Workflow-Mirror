@@ -1,40 +1,40 @@
-*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+{# ============================================================================ #}
+{# Template: detailed_review_normal.txt                                        #}
+{# Version: 2.0                                                                #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Prompt for detailed reviewer review mode with normal context.             #}
+{#   Instructs the agent to review changes with PROMPT, PLAN, and DIFF.       #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   - During detailed review phase                                            #}
+{#   - With normal context level (PROMPT + PLAN + DIFF)                        #}
+{#   - Triggered by: --reviewer detailed --context normal                       #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   - Pipeline runtime: review phase with detailed reviewer and normal context #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   MODE     - Review mode name (e.g., "DETAILED REVIEW MODE")                #}
+{#   PROMPT   - Original user request from PROMPT.md (required)                #}
+{#   PLAN     - Implementation plan from PLAN.md (required)                    #}
+{#   DIFF     - Git diff content to review (required)                           #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - Uses shared partials for common sections                                #}
+{#   - Focus areas are specific to detailed review                             #}
+{#   - Checklist output format prioritizes issues by severity                  #}
+{# ============================================================================ #}
 
-You are in DETAILED REVIEW MODE.
+{{> shared/_critical_header}}
 
-CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
-
-CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-- DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
-
-{# ORIGINAL REQUEST - The user's original prompt #}
-ORIGINAL REQUEST:
-{{PROMPT}}
-
-{# IMPLEMENTATION PLAN - What the changes are implementing #}
-IMPLEMENTATION PLAN:
-{{PLAN}}
+{{> shared/_context_section}}
 
 Focus on:
 - Bugs, security, tests
 - Code style and maintainability
 
-DIFF TO REVIEW:
-```diff
-{{DIFF}}
-```
+{{> shared/_diff_section}}
 
-OUTPUT (prioritized checklist with [file:line]):
-- [ ] Critical: [file:line] Blocks merge
-- [ ] High: [file:line] Should fix before merge
-- [ ] Medium: [file:line] Should address
-- [ ] Low: [file:line] Nice to have
-
-If no issues found in the changed files, return "No issues found."
+{{> shared/_output_checklist}}
