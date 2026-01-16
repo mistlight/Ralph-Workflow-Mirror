@@ -907,132 +907,11 @@
             </div>
         </section>
 
-        <!-- INTERACTIVE DEMO SECTION -->
-        <section id="try-ralph" class="section">
-            <div class="section-header">
-                <span class="section-number">03</span>
-                <h2 class="section-title">Try Ralph Now</h2>
-                <p class="section-subtitle">Experience the multi-agent workflow without installing anything</p>
-            </div>
-
-            <div class="demo-container">
-                <div class="demo-interface">
-                    <div class="demo-header">
-                        <div class="demo-tabs">
-                            <button class="demo-tab active" data-tab="prompt">PROMPT.md</button>
-                            <button class="demo-tab" data-tab="terminal">Terminal Output</button>
-                            <button class="demo-tab" data-tab="code">Generated Code</button>
-                        </div>
-                        <button class="demo-run-btn" id="demo-run-btn">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polygon points="5 3 19 12 5 21 5 3"/>
-                            </svg>
-                            Run Demo
-                        </button>
-                    </div>
-
-                    <div class="demo-content">
-                        <!-- PROMPT.md Tab -->
-                        <div class="demo-panel active" data-panel="prompt">
-                            <div class="demo-editor">
-                                <div class="demo-line-number">1</div>
-                                <div class="demo-line-number">2</div>
-                                <div class="demo-line-number">3</div>
-                                <div class="demo-line-number">4</div>
-                                <div class="demo-line-number">5</div>
-                                <div class="demo-line-number">6</div>
-                                <div class="demo-line-number">7</div>
-                                <div class="demo-line-number">8</div>
-                                <textarea class="demo-textarea" id="demo-prompt" spellcheck="false"># Task: Add User Authentication
-
-Add user authentication to the application with:
-- Email/password login
-- Session management
-- Password reset functionality
-
-Use JWT tokens and store sessions in Redis.
-The API should return proper error messages.</textarea>
-                            </div>
-                        </div>
-
-                        <!-- Terminal Tab -->
-                        <div class="demo-panel" data-panel="terminal">
-                            <div class="demo-terminal" id="demo-terminal">
-                                <div class="demo-terminal-line">
-                                    <span class="demo-prompt">$</span> ralph -S
-                                </div>
-                                <div class="demo-terminal-line">
-                                    <span class="demo-success">✓</span> Reading PROMPT.md
-                                </div>
-                                <div class="demo-terminal-line" style="opacity: 0.5;">
-                                    <span class="demo-spinner"></span>
-                                    Developer agent: Analyzing requirements...
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Code Tab -->
-                        <div class="demo-panel" data-panel="code">
-                            <div class="demo-code" id="demo-code">
-                                <div class="demo-code-line">// Generated code will appear here...</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="demo-status-bar">
-                        <span class="demo-status" id="demo-status">Ready to run demo</span>
-                        <span class="demo-iteration">Iteration: <span id="demo-iteration">0</span>/10</span>
-                    </div>
-                </div>
-
-                <div class="demo-explanation">
-                    <h3>What's Happening?</h3>
-                    <div class="demo-steps">
-                        <div class="demo-step" data-step="1">
-                            <div class="demo-step-number">1</div>
-                            <div class="demo-step-content">
-                                <h4>Developer Agent Analyzes</h4>
-                                <p>Reads your PROMPT.md and breaks down the task into implementable steps.</p>
-                            </div>
-                        </div>
-                        <div class="demo-step" data-step="2">
-                            <div class="demo-step-number">2</div>
-                            <div class="demo-step-content">
-                                <h4>Developer Agent Writes Code</h4>
-                                <p>Implements the authentication system with the specified requirements.</p>
-                            </div>
-                        </div>
-                        <div class="demo-step" data-step="3">
-                            <div class="demo-step-number">3</div>
-                            <div class="demo-step-content">
-                                <h4>Reviewer Agent Checks</h4>
-                                <p>Analyzes the code for quality, security, and completeness.</p>
-                            </div>
-                        </div>
-                        <div class="demo-step" data-step="4">
-                            <div class="demo-step-number">4</div>
-                            <div class="demo-step-content">
-                                <h4>Loop Until Approved</h4>
-                                <p>If issues found, Developer fixes them. This repeats until Reviewer approves.</p>
-                            </div>
-                        </div>
-                        <div class="demo-step" data-step="5">
-                            <div class="demo-step-number">5</div>
-                            <div class="demo-step-content">
-                                <h4>Git Commit Created</h4>
-                                <p>Ralph creates a semantic commit with your changes. Ready to push!</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
         <!-- Install Section -->
         <section id="install" class="section install-section">
             <div class="container">
                 <div class="section-header">
-                    <span class="section-number">04</span>
+                    <span class="section-number">03</span>
                     <h2 class="section-title">Get started in minutes</h2>
                     <p class="section-subtitle">Install Ralph and run your first automated workflow</p>
                 </div>
@@ -1192,7 +1071,7 @@ max_iterations = 10</code></pre>
         <section id="features" class="section features-section">
             <div class="container">
                 <div class="section-header">
-                    <span class="section-number">05</span>
+                    <span class="section-number">04</span>
                     <h2 class="section-title">Features</h2>
                     <p class="section-subtitle">Built for developers who value autonomy and quality</p>
                 </div>
@@ -1284,7 +1163,7 @@ max_iterations = 10</code></pre>
         <section class="section audience-section">
             <div class="container">
                 <div class="section-header">
-                    <span class="section-number">06</span>
+                    <span class="section-number">05</span>
                     <h2 class="section-title">Built for how you work</h2>
                     <p class="section-subtitle">Whether you're a terminal power user or just getting started</p>
                 </div>
@@ -1333,7 +1212,7 @@ max_iterations = 10</code></pre>
         <section class="section faq-section" id="faq">
             <div class="container">
                 <div class="section-header">
-                    <span class="section-number">07</span>
+                    <span class="section-number">06</span>
                     <h2 class="section-title">Frequently Asked Questions</h2>
                     <p class="section-subtitle">Common questions about Ralph Workflow</p>
                 </div>
