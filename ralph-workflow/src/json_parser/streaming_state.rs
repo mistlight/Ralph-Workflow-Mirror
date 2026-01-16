@@ -408,9 +408,19 @@ impl StreamingSession {
                     let key = (content_type, old.clone());
                     self.accumulated.remove(&key);
                     self.key_order.retain(|k| k != &key);
+                    // Also clear output_started tracking to ensure prefix shows when switching back
+                    self.output_started_for_key.remove(&key);
+                    // Clear delta sizes for the old index to prevent incorrect pattern detection
+                    self.delta_sizes.remove(&key);
                 }
             }
         }
+
+        // Initialize the new content block
+        self.current_block = ContentBlockState::InBlock {
+            index: index_str,
+            started_output: false,
+        };
     }
 
     /// Ensure the current content block is finalized.
@@ -1961,5 +1971,163 @@ mod tests {
 
         // Same content should produce the same hash
         assert_eq!(session1.final_content_hash, session2.final_content_hash);
+    }
+
+    // Tests for rapid index switching edge case (RFC-003)
+
+    #[test]
+    fn test_rapid_index_switch_with_clear() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Start block 0 and accumulate content
+        session.on_content_block_start(0);
+        let show_prefix = session.on_text_delta(0, "X");
+        assert!(show_prefix, "First delta for index 0 should show prefix");
+        assert_eq!(session.get_accumulated(ContentType::Text, "0"), Some("X"));
+
+        // Switch to block 1 - this should clear accumulated content for index 0
+        session.on_content_block_start(1);
+
+        // Verify accumulated for index 0 was cleared
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            None,
+            "Accumulated content for index 0 should be cleared when switching to index 1"
+        );
+
+        // Switch back to index 0
+        session.on_content_block_start(0);
+
+        // Since output_started_for_key was also cleared, prefix should show again
+        let show_prefix = session.on_text_delta(0, "Y");
+        assert!(
+            show_prefix,
+            "Prefix should show when switching back to a previously cleared index"
+        );
+
+        // Verify new content is accumulated fresh
+        assert_eq!(
+            session.get_accumulated(ContentType::Text, "0"),
+            Some("Y"),
+            "New content should be accumulated fresh after clear"
+        );
+    }
+
+    #[test]
+    fn test_delta_sizes_cleared_on_index_switch() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Track some delta sizes for index 0
+        session.on_text_delta(0, "Hello");
+        session.on_text_delta(0, " World");
+
+        let content_key = (ContentType::Text, "0".to_string());
+        assert!(
+            session.delta_sizes.contains_key(&content_key),
+            "Delta sizes should be tracked for index 0"
+        );
+        let sizes_before = session.delta_sizes.get(&content_key).unwrap();
+        assert_eq!(sizes_before.len(), 2, "Should have 2 delta sizes tracked");
+
+        // Switch to index 1 - this should clear delta_sizes for index 0
+        session.on_content_block_start(1);
+
+        assert!(
+            !session.delta_sizes.contains_key(&content_key),
+            "Delta sizes for index 0 should be cleared when switching to index 1"
+        );
+
+        // Add deltas for index 1
+        session.on_text_delta(1, "New");
+
+        let content_key_1 = (ContentType::Text, "1".to_string());
+        let sizes_after = session.delta_sizes.get(&content_key_1).unwrap();
+        assert_eq!(
+            sizes_after.len(),
+            1,
+            "Should have fresh size tracking for index 1"
+        );
+    }
+
+    #[test]
+    fn test_rapid_index_switch_with_thinking_content() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Start thinking content in index 0
+        session.on_content_block_start(0);
+        let show_prefix = session.on_thinking_delta(0, "Thinking...");
+        assert!(show_prefix, "First thinking delta should show prefix");
+        assert_eq!(
+            session.get_accumulated(ContentType::Thinking, "0"),
+            Some("Thinking...")
+        );
+
+        // Switch to text content in index 1 - this should clear index 0's accumulated
+        session.on_content_block_start(1);
+
+        // Verify index 0's accumulated thinking was cleared
+        assert_eq!(
+            session.get_accumulated(ContentType::Thinking, "0"),
+            None,
+            "Thinking content for index 0 should be cleared when switching to index 1"
+        );
+
+        let show_prefix = session.on_text_delta(1, "Text");
+        assert!(
+            show_prefix,
+            "First text delta for index 1 should show prefix"
+        );
+
+        // Switch back to index 0 for thinking
+        session.on_content_block_start(0);
+
+        // Since output_started_for_key for (Thinking, "0") was cleared when switching to index 1,
+        // the prefix should show again
+        let show_prefix = session.on_thinking_delta(0, " more");
+        assert!(
+            show_prefix,
+            "Thinking prefix should show when switching back to cleared index 0"
+        );
+
+        // Verify thinking content was accumulated fresh (only the new content)
+        assert_eq!(
+            session.get_accumulated(ContentType::Thinking, "0"),
+            Some(" more"),
+            "Thinking content should be accumulated fresh after clear"
+        );
+    }
+
+    #[test]
+    fn test_output_started_for_key_cleared_across_all_content_types() {
+        let mut session = StreamingSession::new();
+        session.on_message_start();
+
+        // Start block 0 with text and thinking
+        // Note: ToolInput does not use output_started_for_key tracking
+        session.on_content_block_start(0);
+        session.on_text_delta(0, "Text");
+        session.on_thinking_delta(0, "Thinking");
+
+        // Verify text and thinking have started output
+        let text_key = (ContentType::Text, "0".to_string());
+        let thinking_key = (ContentType::Thinking, "0".to_string());
+
+        assert!(session.output_started_for_key.contains(&text_key));
+        assert!(session.output_started_for_key.contains(&thinking_key));
+
+        // Switch to index 1 - should clear output_started_for_key for all content types
+        session.on_content_block_start(1);
+
+        assert!(
+            !session.output_started_for_key.contains(&text_key),
+            "Text output_started should be cleared for index 0"
+        );
+        assert!(
+            !session.output_started_for_key.contains(&thinking_key),
+            "Thinking output_started should be cleared for index 0"
+        );
     }
 }

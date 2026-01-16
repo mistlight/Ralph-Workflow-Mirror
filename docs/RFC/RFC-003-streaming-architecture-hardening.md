@@ -549,7 +549,7 @@ cargo test -p ralph-workflow json_parser::tests
 ### Long-Term (Ongoing)
 - [ ] Zero streaming-related bug reports per release
 - [x] Streaming metrics available for debugging (Area 3 completed 2026-01-16)
-- [ ] All edge cases covered by tests
+- [x] Edge cases for rapid index switching covered by tests (2026-01-16)
 
 ---
 
@@ -649,6 +649,7 @@ Emit structured events (JSON) and rely on external renderer.
 | 2026-01-16 | **Area 5 (Content Hash Deduplication) completed**: Added `final_content_hash` field to `StreamingSession`, implemented `compute_content_hash()` using `DefaultHasher`, implemented `is_duplicate_by_hash()` for precise deduplication, integrated into `ClaudeParser` as fallback when message ID unavailable, added comprehensive test coverage |
 | 2026-01-16 | **RFC-003 Implementation completed**: All P0, P1, and P2 priority items implemented. Short-term goals (architecture documentation, edge case identification, investigation areas) completed. Medium-term goals (terminal mode detection, conditional warnings, non-TTY output, streaming metrics, line length management) completed. Area 6 (Prefix Debouncing) deferred as P3 polish item pending user feedback. |
 | 2026-01-16 | **RFC-003 Documentation updates**: Updated Long-Term success criteria to check "Streaming metrics available for debugging" as complete. Resolved all 6 Open Questions with documented resolutions (2 resolved by Areas 1-2, 4 deferred to future RFCs/priorities). Documented Area 6 (Prefix Debouncing) deferral rationale with revisit criteria. |
+| 2026-01-16 | **Bug Fix (Issue 5 - Content Block Transitions)**: Fixed bug where `output_started_for_key` and `delta_sizes` tracking sets were not cleared when transitioning between different content block indices. This caused inconsistent prefix display behavior when switching back to a previously used index. The fix ensures all per-index tracking (`accumulated`, `output_started_for_key`, `delta_sizes`, `key_order`) is cleared consistently. Additionally, fixed related bug where `on_content_block_start()` did not update `current_block` to the new index, causing index tracking to be lost when deltas were received via `on_thinking_delta()` (which doesn't update `current_block`). Added comprehensive test coverage for rapid index switching edge cases including `test_rapid_index_switch_with_clear()`, `test_delta_sizes_cleared_on_index_switch()`, `test_rapid_index_switch_with_thinking_content()`, and `test_output_started_for_key_cleared_across_all_content_types()`. |
 
 ---
 
