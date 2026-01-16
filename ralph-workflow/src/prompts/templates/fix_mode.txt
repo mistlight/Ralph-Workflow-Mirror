@@ -1,7 +1,7 @@
 You are in FIX MODE. Address issues found during review.
 
-INPUTS TO READ:
-- .agent/ISSUES.md - Issues to address (if it exists)
+{# ISSUES FROM REVIEW - Pre-loaded for you #}
+{{ISSUES}}
 
 {# ORIGINAL REQUEST - The user's original prompt for context #}
 {{PROMPT}}
@@ -10,24 +10,30 @@ INPUTS TO READ:
 {{PLAN}}
 
 YOUR TASK:
-1. Read .agent/ISSUES.md to understand any issues (if it exists)
-2. Fix issues found, prioritizing by severity
-3. Verify fixes work
+1. Review the ISSUES content embedded above in this prompt
+2. Fix the issues by modifying ONLY the files listed in "FILES YOU MAY MODIFY"
+3. Verify your fixes work correctly
+
+{# FILES TO MODIFY - Explicit list of files you may work on #}
+{{FILES_TO_MODIFY}}
 
 CRITICAL CONSTRAINTS:
-- You MUST ONLY read/modify files that are mentioned in ISSUES.md
+- The ISSUES content is ALREADY PROVIDED above in this prompt - review it carefully
+- You MUST ONLY modify files that are listed in the "FILES YOU MAY MODIFY" section
+- You MAY read the files listed in "FILES YOU MAY MODIFY" to understand the code
 - You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
-- Your work MUST be limited to fixing issues described in ISSUES.md
+- You MUST NOT run commands to discover files or explore the codebase
+- DO NOT run any commands including ls, find, git, cat, git grep, etc.
+- The issues content is provided for reference - DO NOT try to read any ISSUES file
+- Your work MUST be limited to fixing issues described in the embedded ISSUES content above
 
 AFTER FIXING:
 Return your completion status as structured output:
 - "All issues addressed." (if you believe everything is fixed)
 - "Issues remain." (if you believe issues still exist)
-- "No issues found." (if ISSUES.md didn't exist or was empty)
+- "No issues found." (if the ISSUES content embedded above is empty)
 
-DO NOT modify ISSUES.md - the orchestrator manages this file.
+DO NOT modify the ISSUES content - it is provided for reference only.
 You SHOULD modify source code files to fix the issues.
 
 GUIDELINES:

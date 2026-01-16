@@ -391,15 +391,20 @@ fn run_fix_pass(
 ) -> anyhow::Result<()> {
     update_status("Applying fixes", ctx.config.isolation_mode)?;
 
-    // Read PROMPT.md and PLAN.md for context
+    // Read PROMPT.md, PLAN.md, and ISSUES.md for context
     let prompt_content = fs::read_to_string("PROMPT.md").unwrap_or_default();
     let plan_content = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
+    let issues_content = fs::read_to_string(".agent/ISSUES.md").unwrap_or_default();
 
     let fix_prompt = prompt_for_agent(
         Role::Reviewer,
         Action::Fix,
         reviewer_context,
-        PromptConfig::new().with_prompt_and_plan(prompt_content, plan_content),
+        PromptConfig::new().with_prompt_plan_and_issues(
+            prompt_content,
+            plan_content,
+            issues_content,
+        ),
     );
 
     // Log the fix prompt details for debugging (when verbose)
