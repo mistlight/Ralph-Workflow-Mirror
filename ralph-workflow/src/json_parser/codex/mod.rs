@@ -64,6 +64,8 @@ pub struct CodexParser {
     turn_counter: Rc<RefCell<u64>>,
     /// Terminal mode for output formatting
     terminal_mode: RefCell<TerminalMode>,
+    /// Whether to show streaming quality metrics
+    show_streaming_metrics: bool,
 }
 
 impl CodexParser {
@@ -79,7 +81,13 @@ impl CodexParser {
             reasoning_accumulator: Rc::new(RefCell::new(super::types::DeltaAccumulator::new())),
             turn_counter: Rc::new(RefCell::new(0)),
             terminal_mode: RefCell::new(TerminalMode::detect()),
+            show_streaming_metrics: false,
         }
+    }
+
+    pub(crate) const fn with_show_streaming_metrics(mut self, show: bool) -> Self {
+        self.show_streaming_metrics = show;
+        self
     }
 
     pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
@@ -123,6 +131,7 @@ impl CodexParser {
             streaming_session: &self.streaming_session,
             reasoning_accumulator: &self.reasoning_accumulator,
             terminal_mode: *self.terminal_mode.borrow(),
+            show_streaming_metrics: self.show_streaming_metrics,
         };
 
         match event {

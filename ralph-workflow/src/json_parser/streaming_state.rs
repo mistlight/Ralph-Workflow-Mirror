@@ -99,6 +99,35 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
+// Streaming configuration constants
+
+/// Default threshold for detecting snapshot-as-delta violations (in characters)
+const DEFAULT_SNAPSHOT_THRESHOLD: usize = 200;
+
+/// Minimum allowed snapshot threshold (in characters)
+const MIN_SNAPSHOT_THRESHOLD: usize = 50;
+
+/// Maximum allowed snapshot threshold (in characters)
+const MAX_SNAPSHOT_THRESHOLD: usize = 1000;
+
+/// Default fuzzy match ratio for snapshot detection (percentage 0-100)
+const DEFAULT_FUZZY_MATCH_RATIO: usize = 85;
+
+/// Minimum allowed fuzzy match ratio (percentage)
+const MIN_FUZZY_MATCH_RATIO: usize = 50;
+
+/// Maximum allowed fuzzy match ratio (percentage)
+const MAX_FUZZY_MATCH_RATIO: usize = 95;
+
+/// Minimum content length required for fuzzy snapshot detection (in characters)
+const MIN_FUZZY_MATCH_LENGTH: usize = 20;
+
+/// Number of consecutive large deltas required to trigger pattern detection warning
+const PATTERN_DETECTION_MIN_DELTAS: usize = 3;
+
+/// Maximum number of delta sizes to track per content key for pattern detection
+const DEFAULT_MAX_DELTA_HISTORY: usize = 10;
+
 /// Ralph enforces a **delta contract** for all streaming content.
 ///
 /// Every streaming event must contain only the newly generated text (delta),
@@ -143,13 +172,13 @@ fn snapshot_threshold() -> usize {
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
             .and_then(|v| {
-                if (50..=1000).contains(&v) {
+                if (MIN_SNAPSHOT_THRESHOLD..=MAX_SNAPSHOT_THRESHOLD).contains(&v) {
                     Some(v)
                 } else {
                     None
                 }
             })
-            .unwrap_or(200)
+            .unwrap_or(DEFAULT_SNAPSHOT_THRESHOLD)
     })
 }
 
@@ -165,13 +194,13 @@ fn fuzzy_match_ratio() -> usize {
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
             .and_then(|v| {
-                if (50..=95).contains(&v) {
+                if (MIN_FUZZY_MATCH_RATIO..=MAX_FUZZY_MATCH_RATIO).contains(&v) {
                     Some(v)
                 } else {
                     None
                 }
             })
-            .unwrap_or(85)
+            .unwrap_or(DEFAULT_FUZZY_MATCH_RATIO)
     })
 }
 
@@ -277,7 +306,7 @@ impl StreamingSession {
     /// Create a new streaming session.
     pub fn new() -> Self {
         Self {
-            max_delta_history: 10,
+            max_delta_history: DEFAULT_MAX_DELTA_HISTORY,
             verbose_warnings: false,
             ..Default::default()
         }
@@ -347,7 +376,7 @@ impl StreamingSession {
             }
 
             // Preserve output_started_for_key to prevent prefix spam
-            let preserved_output_started = self.output_started_for_key.clone();
+            let preserved_output_started = std::mem::take(&mut self.output_started_for_key);
 
             self.state = StreamingState::Idle;
             self.streamed_types.clear();
@@ -608,10 +637,10 @@ impl StreamingSession {
 
         // Pattern detection: Check if we're seeing repeated large deltas
         // This indicates the same content is being sent repeatedly (snapshot-as-delta)
-        if sizes.len() >= 3 && self.verbose_warnings {
+        if sizes.len() >= PATTERN_DETECTION_MIN_DELTAS && self.verbose_warnings {
             // Check if at least 3 of the last N deltas were large
             let large_count = sizes.iter().filter(|&&s| s > snapshot_threshold()).count();
-            if large_count >= 3 {
+            if large_count >= PATTERN_DETECTION_MIN_DELTAS {
                 eprintln!(
                     "Warning: Detected pattern of {large_count} large deltas for key '{key}'. \
                     This strongly suggests a snapshot-as-delta bug where the same \
@@ -909,7 +938,7 @@ impl StreamingSession {
     /// Returns true if text contains >85% of previous content as a subsequence.
     fn is_fuzzy_snapshot_match(text: &str, previous: &str) -> bool {
         // For very short previous content, skip fuzzy matching to avoid false positives
-        if previous.len() < 20 {
+        if previous.len() < MIN_FUZZY_MATCH_LENGTH {
             return false;
         }
 
@@ -1304,7 +1333,7 @@ mod tests {
         let mut session = StreamingSession::new();
         session.on_message_start();
 
-        // Short content (below 20 char threshold)
+        // Short content (below MIN_FUZZY_MATCH_LENGTH char threshold)
         session.on_text_delta(0, "Hi there");
 
         // Even with high overlap, short content shouldn't trigger fuzzy matching
@@ -2194,7 +2223,10 @@ mod tests {
         // Note: Since we use OnceLock, we can't reset the value in tests.
         // This test documents the default behavior.
         let threshold = snapshot_threshold();
-        assert_eq!(threshold, 200, "Default threshold should be 200");
+        assert_eq!(
+            threshold, DEFAULT_SNAPSHOT_THRESHOLD,
+            "Default threshold should be 200"
+        );
     }
 
     #[test]
@@ -2204,6 +2236,9 @@ mod tests {
         // Note: Since we use OnceLock, we can't reset the value in tests.
         // This test documents the default behavior.
         let ratio = fuzzy_match_ratio();
-        assert_eq!(ratio, 85, "Default ratio should be 85");
+        assert_eq!(
+            ratio, DEFAULT_FUZZY_MATCH_RATIO,
+            "Default ratio should be 85"
+        );
     }
 }

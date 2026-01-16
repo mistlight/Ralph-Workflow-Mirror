@@ -66,6 +66,8 @@ pub struct ClaudeParser {
     /// Terminal mode for output formatting
     /// Detected at parse time and cached for performance
     terminal_mode: RefCell<TerminalMode>,
+    /// Whether to show streaming quality metrics
+    show_streaming_metrics: bool,
 }
 
 impl ClaudeParser {
@@ -79,7 +81,13 @@ impl ClaudeParser {
             display_name: "Claude".to_string(),
             streaming_session: Rc::new(RefCell::new(streaming_session)),
             terminal_mode: RefCell::new(TerminalMode::detect()),
+            show_streaming_metrics: false,
         }
+    }
+
+    pub(crate) const fn with_show_streaming_metrics(mut self, show: bool) -> Self {
+        self.show_streaming_metrics = show;
+        self
     }
 
     pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
@@ -712,8 +720,10 @@ impl ClaudeParser {
                 c.reset(),
                 TextDeltaRenderer::render_completion(terminal_mode)
             );
-            // In debug mode, also show streaming quality metrics
-            if self.verbosity.is_debug() && metrics.total_deltas > 0 {
+            // Show streaming quality metrics in debug mode or when flag is set
+            let show_metrics = (self.verbosity.is_debug() || self.show_streaming_metrics)
+                && metrics.total_deltas > 0;
+            if show_metrics {
                 format!("{}\n{}", completion, metrics.format(*c))
             } else {
                 completion

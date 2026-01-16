@@ -54,6 +54,8 @@ pub struct GeminiParser {
     streaming_session: Rc<RefCell<StreamingSession>>,
     /// Terminal mode for output formatting
     terminal_mode: RefCell<TerminalMode>,
+    /// Whether to show streaming quality metrics
+    show_streaming_metrics: bool,
 }
 
 impl GeminiParser {
@@ -67,7 +69,13 @@ impl GeminiParser {
             display_name: "Gemini".to_string(),
             streaming_session: Rc::new(RefCell::new(streaming_session)),
             terminal_mode: RefCell::new(TerminalMode::detect()),
+            show_streaming_metrics: false,
         }
+    }
+
+    pub(crate) const fn with_show_streaming_metrics(mut self, show: bool) -> Self {
+        self.show_streaming_metrics = show;
+        self
     }
 
     pub(crate) fn with_display_name(mut self, display_name: &str) -> Self {
@@ -218,6 +226,7 @@ impl GeminiParser {
                     |message_id| session.is_duplicate_final_message(message_id),
                 );
                 let was_streaming = session.has_any_streamed_content();
+                let metrics = session.get_streaming_quality_metrics();
                 drop(session);
 
                 // Finalize the message (this marks it as displayed)
@@ -226,7 +235,13 @@ impl GeminiParser {
                 // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
                 if is_duplicate || was_streaming {
                     let terminal_mode = *self.terminal_mode.borrow();
-                    return TextDeltaRenderer::render_completion(terminal_mode);
+                    let completion = TextDeltaRenderer::render_completion(terminal_mode);
+                    let show_metrics = (self.verbosity.is_debug() || self.show_streaming_metrics)
+                        && metrics.total_deltas > 0;
+                    if show_metrics {
+                        return format!("{}\n{}", completion, metrics.format(*c));
+                    }
+                    return completion;
                 }
 
                 // Otherwise, show the full content (non-streaming path)

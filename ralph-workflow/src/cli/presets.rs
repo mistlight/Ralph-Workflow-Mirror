@@ -133,4 +133,9 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
             config.git_user_email = Some(email.to_string());
         }
     }
+
+    // Streaming metrics display flag
+    if args.show_streaming_metrics {
+        config.show_streaming_metrics = true;
+    }
 }

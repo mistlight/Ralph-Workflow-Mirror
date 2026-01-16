@@ -25,6 +25,7 @@ pub struct EventHandlerContext<'a> {
     pub streaming_session: &'a Rc<RefCell<StreamingSession>>,
     pub reasoning_accumulator: &'a Rc<RefCell<DeltaAccumulator>>,
     pub terminal_mode: TerminalMode,
+    pub show_streaming_metrics: bool,
 }
 
 /// Handle `ItemStarted` event by delegating to type-specific handlers.
@@ -394,12 +395,19 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
         |message_id| session.is_duplicate_final_message(message_id),
     );
     let was_streaming = session.has_any_streamed_content();
+    let metrics = session.get_streaming_quality_metrics();
     drop(session);
 
     let _was_in_block = ctx.streaming_session.borrow_mut().on_message_stop();
 
     if is_duplicate || was_streaming {
-        return TextDeltaRenderer::render_completion(ctx.terminal_mode);
+        let completion = TextDeltaRenderer::render_completion(ctx.terminal_mode);
+        let show_metrics =
+            (ctx.verbosity.is_debug() || ctx.show_streaming_metrics) && metrics.total_deltas > 0;
+        if show_metrics {
+            return format!("{}\n{}", completion, metrics.format(*ctx.colors));
+        }
+        return completion;
     }
 
     if let Some(text) = text {

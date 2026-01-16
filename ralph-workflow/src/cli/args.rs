@@ -538,4 +538,11 @@ pub struct Args {
         help = "Git user email for commits (overrides config, env, and git config)"
     )]
     pub git_user_email: Option<String>,
+
+    /// Show streaming quality metrics at the end of agent output
+    #[arg(
+        long,
+        help = "Display streaming quality metrics (delta stats, repairs, violations) after agent completion"
+    )]
+    pub show_streaming_metrics: bool,
 }

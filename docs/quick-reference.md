@@ -201,6 +201,21 @@ ralph --apply-commit           # Commit using generated message
 | `RALPH_VERBOSITY` | `2` | Verbosity (0-4) |
 | `RALPH_ISOLATION_MODE` | `1` | Isolation on/off |
 
+## Streaming Configuration
+
+Ralph's streaming system handles real-time AI agent output. These environment variables control streaming behavior:
+
+| Variable | Default | Range | Description |
+|----------|---------|-------|-------------|
+| `RALPH_STREAMING_SNAPSHOT_THRESHOLD` | `200` | 50-1000 | Max delta size before warning (chars) |
+| `RALPH_STREAMING_FUZZY_MATCH_RATIO` | `85` | 50-95 | Fuzzy detection threshold (%) |
+
+## CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--show-streaming-metrics` | Display streaming quality metrics after agent completion |
+
 ## Files Created by Ralph
 
 ```

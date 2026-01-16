@@ -44,7 +44,7 @@ The streaming system is a critical path for user experience—it's the primary w
 ┌─────────────────────────────────────────────────────────────┐
 │                    Execution Layer                          │
 │  prompt.rs: spawn_agent_process(), stream_agent_output()    │
-│  - BufReader with 8KB chunks                                │
+│  - StreamingLineReader with 1KB buffer (low latency)        │
 │  - Routes to appropriate parser based on JsonParserType     │
 │  - Stderr collected in separate thread (512KB max)          │
 └─────────────────────────┬───────────────────────────────────┘
@@ -75,7 +75,7 @@ The streaming system is a critical path for user experience—it's the primary w
 | `streaming_state.rs` | ~1,460 | Unified state tracking, snapshot detection, deduplication |
 | `delta_display.rs` | ~790 | Terminal rendering, escape sequences, sanitization |
 | `claude.rs` | ~800 | Claude protocol parsing, primary parser |
-| `prompt.rs` | ~440 | Process spawning, output routing |
+| `prompt.rs` | ~530 | Process spawning, output routing, StreamingLineReader |
 | `health.rs` | ~900 | Parser health metrics, quality monitoring |
 
 ### Multiline Cursor Pattern
@@ -650,6 +650,15 @@ Emit structured events (JSON) and rely on external renderer.
 | 2026-01-16 | **RFC-003 Implementation completed**: All P0, P1, and P2 priority items implemented. Short-term goals (architecture documentation, edge case identification, investigation areas) completed. Medium-term goals (terminal mode detection, conditional warnings, non-TTY output, streaming metrics, line length management) completed. Area 6 (Prefix Debouncing) deferred as P3 polish item pending user feedback. |
 | 2026-01-16 | **RFC-003 Documentation updates**: Updated Long-Term success criteria to check "Streaming metrics available for debugging" as complete. Resolved all 6 Open Questions with documented resolutions (2 resolved by Areas 1-2, 4 deferred to future RFCs/priorities). Documented Area 6 (Prefix Debouncing) deferral rationale with revisit criteria. |
 | 2026-01-16 | **Bug Fix (Issue 5 - Content Block Transitions)**: Fixed bug where `output_started_for_key` and `delta_sizes` tracking sets were not cleared when transitioning between different content block indices. This caused inconsistent prefix display behavior when switching back to a previously used index. The fix ensures all per-index tracking (`accumulated`, `output_started_for_key`, `delta_sizes`, `key_order`) is cleared consistently. Additionally, fixed related bug where `on_content_block_start()` did not update `current_block` to the new index, causing index tracking to be lost when deltas were received via `on_thinking_delta()` (which doesn't update `current_block`). Added comprehensive test coverage for rapid index switching edge cases including `test_rapid_index_switch_with_clear()`, `test_delta_sizes_cleared_on_index_switch()`, `test_rapid_index_switch_with_thinking_content()`, and `test_output_started_for_key_cleared_across_all_content_types()`. |
+| 2026-01-16 | **Enhancement: User-facing streaming metrics flag**: Added `--show-streaming-metrics` CLI flag to expose streaming quality metrics to users outside of debug mode. Previously, metrics were only shown in `Verbosity::Debug` (level 4). Users can now enable metrics display with `ralph --show-streaming-metrics` regardless of verbosity level. Updated all four parsers (Claude, Codex, Gemini, OpenCode) to respect the new flag. Documented `RALPH_STREAMING_SNAPSHOT_THRESHOLD` and `RALPH_STREAMING_FUZZY_MATCH_RATIO` environment variables in quick reference documentation. |
+| 2026-01-16 | **Fix: Real-time streaming with StreamingLineReader**: Implemented `StreamingLineReader` in `prompt.rs` to replace the default `BufReader::lines()` pattern that was causing output to appear all at once instead of streaming character-by-character. The root cause was that `BufReader::lines()` blocks waiting for newlines, and when agents buffer their stdout (especially Codex), all output would appear at the end. The new `StreamingLineReader`:
+  - Uses a smaller 1KB buffer (vs 8KB default) for lower latency
+  - Implements `BufRead` trait for compatibility with existing parsers
+  - Aggressively fills buffer until a newline is found (up to 8 read attempts)
+  - Processes data immediately when newlines arrive, enabling true real-time streaming
+  - Maintains the same API as `BufReader` for minimal code changes
+
+  This fixes the user experience issue where Codex showed a blank screen for a long time before displaying all output at once. The fix applies to all parsers (Claude, Codex, Gemini, OpenCode) and ensures character-by-character streaming as intended. |
 
 ---
 

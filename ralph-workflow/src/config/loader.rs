@@ -135,6 +135,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         isolation_mode: general.execution.isolation_mode,
         git_user_name: general.git_user_name.clone(),
         git_user_email: general.git_user_email.clone(),
+        show_streaming_metrics: false, // Default to false, enabled via CLI flag
     }
 }
 
@@ -174,6 +175,7 @@ fn default_config() -> Config {
         isolation_mode: true,
         git_user_name: None,
         git_user_email: None,
+        show_streaming_metrics: false,
     }
 }
 

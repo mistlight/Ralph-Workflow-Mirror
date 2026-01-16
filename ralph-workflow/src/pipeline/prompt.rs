@@ -12,6 +12,106 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdout, Command, Stdio};
 
+/// A line-oriented reader that processes data as it arrives.
+///
+/// Unlike `BufReader::lines()`, this reader yields lines immediately
+/// when newlines are encountered, without waiting for the buffer to fill.
+/// This enables real-time streaming for agents that output NDJSON gradually.
+struct StreamingLineReader<R: Read> {
+    inner: BufReader<R>,
+    buffer: Vec<u8>,
+    consumed: usize,
+}
+
+impl<R: Read> StreamingLineReader<R> {
+    /// Create a new streaming line reader with a small buffer for low latency.
+    fn new(inner: R) -> Self {
+        // Use a smaller buffer (1KB) than default (8KB) for lower latency.
+        // This trades slightly more syscalls for faster response to newlines.
+        const BUFFER_SIZE: usize = 1024;
+        Self {
+            inner: BufReader::with_capacity(BUFFER_SIZE, inner),
+            buffer: Vec::new(),
+            consumed: 0,
+        }
+    }
+
+    /// Fill the internal buffer from the underlying reader.
+    fn fill_buffer(&mut self) -> io::Result<usize> {
+        let mut read_buf = [0u8; 256];
+        let n = self.inner.read(&mut read_buf)?;
+        if n > 0 {
+            self.buffer.extend_from_slice(&read_buf[..n]);
+        }
+        Ok(n)
+    }
+}
+
+impl<R: Read> Read for StreamingLineReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // First, consume from the buffer
+        let available = self.buffer.len() - self.consumed;
+        if available > 0 {
+            let to_copy = available.min(buf.len());
+            buf[..to_copy].copy_from_slice(&self.buffer[self.consumed..self.consumed + to_copy]);
+            self.consumed += to_copy;
+
+            // Compact the buffer if we've consumed everything
+            if self.consumed == self.buffer.len() {
+                self.buffer.clear();
+                self.consumed = 0;
+            }
+            return Ok(to_copy);
+        }
+
+        // Buffer empty - read directly from underlying reader
+        self.inner.read(buf)
+    }
+}
+
+impl<R: Read> BufRead for StreamingLineReader<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        const MAX_ATTEMPTS: usize = 8; // Prevent infinite loop
+
+        // If we have unconsumed data, return it
+        if self.consumed < self.buffer.len() {
+            return Ok(&self.buffer[self.consumed..]);
+        }
+
+        // Buffer was fully consumed - clear and try to read more
+        self.buffer.clear();
+        self.consumed = 0;
+
+        // Try to fill the buffer with at least some data
+        let mut total_read = 0;
+        for _ in 0..MAX_ATTEMPTS {
+            match self.fill_buffer()? {
+                0 if total_read == 0 => return Ok(&[]), // EOF
+                0 => break,                             // No more data available right now
+                n => {
+                    total_read += n;
+                    // Check if we have a newline
+                    if self.buffer.contains(&b'\n') {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(&self.buffer[self.consumed..])
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.consumed = (self.consumed + amt).min(self.buffer.len());
+
+        // Compact the buffer if we've consumed everything
+        if self.consumed == self.buffer.len() {
+            self.buffer.clear();
+            self.consumed = 0;
+        }
+    }
+}
+
 use super::clipboard::get_platform_clipboard_command;
 use super::types::CommandResult;
 
@@ -149,6 +249,16 @@ fn build_agent_command(
         }
     }
 
+    // Set agent-side buffering disabling environment variables for real-time streaming.
+    // These are only set if not already explicitly configured by the user's env_vars.
+    // This mitigates the issue where AI agents buffer their stdout instead of streaming.
+    let buffering_vars = [("PYTHONUNBUFFERED", "1"), ("NODE_ENV", "production")];
+    for (key, value) in buffering_vars {
+        if !config.env_vars.contains_key(key) {
+            command.env(key, value);
+        }
+    }
+
     // Clear problematic Anthropic env vars that weren't explicitly set by the agent.
     for &var in anthropic_env_vars_to_sanitize {
         if !config.env_vars.contains_key(var) {
@@ -192,15 +302,20 @@ fn spawn_agent_process(
 
 /// Streams agent output based on parser type.
 fn stream_agent_output(
-    reader: BufReader<ChildStdout>,
+    stdout: ChildStdout,
     cmd: &PromptCommand<'_>,
     runtime: &PipelineRuntime<'_>,
 ) -> io::Result<()> {
+    // Use StreamingLineReader for real-time streaming instead of BufReader::lines().
+    // StreamingLineReader yields lines immediately when newlines are found,
+    // enabling character-by-character streaming for agents that output NDJSON gradually.
+    let reader = StreamingLineReader::new(stdout);
+
     if cmd.parser_type != JsonParserType::Generic
         || argv_requests_json(&split_command(cmd.cmd_str)?)
     {
-        let stdout = io::stdout();
-        let mut out = stdout.lock();
+        let stdout_io = io::stdout();
+        let mut out = stdout_io.lock();
 
         match cmd.parser_type {
             JsonParserType::Claude => {
@@ -209,14 +324,16 @@ fn stream_agent_output(
                     runtime.config.verbosity,
                 )
                 .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile);
+                .with_log_file(cmd.logfile)
+                .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Codex => {
                 let p =
                     crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
                         .with_display_name(cmd.display_name)
-                        .with_log_file(cmd.logfile);
+                        .with_log_file(cmd.logfile)
+                        .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Gemini => {
@@ -225,7 +342,8 @@ fn stream_agent_output(
                     runtime.config.verbosity,
                 )
                 .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile);
+                .with_log_file(cmd.logfile)
+                .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::OpenCode => {
@@ -234,13 +352,15 @@ fn stream_agent_output(
                     runtime.config.verbosity,
                 )
                 .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile);
+                .with_log_file(cmd.logfile)
+                .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
                 p.parse_stream(reader, &mut out)?;
             }
             JsonParserType::Generic => {
                 let mut buf = String::new();
                 for line in reader.lines() {
-                    buf.push_str(&line?);
+                    let line = line?;
+                    buf.push_str(&line);
                     buf.push('\n');
                 }
                 let formatted = format_generic_json_for_display(&buf, runtime.config.verbosity);
@@ -253,8 +373,8 @@ fn stream_agent_output(
             .append(true)
             .open(cmd.logfile)?;
 
-        let stdout = io::stdout();
-        let mut out = stdout.lock();
+        let stdout_io = io::stdout();
+        let mut out = stdout_io.lock();
 
         for line in reader.lines() {
             let line = line?;
@@ -376,7 +496,6 @@ pub fn run_with_prompt(
         .stdout
         .take()
         .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
-    let reader = BufReader::new(stdout);
 
     let stderr_join_handle = child.stderr.take().map(|stderr| {
         std::thread::spawn(move || -> io::Result<String> {
@@ -419,7 +538,7 @@ pub fn run_with_prompt(
         })
     });
 
-    stream_agent_output(reader, cmd, runtime)?;
+    stream_agent_output(stdout, cmd, runtime)?;
 
     let (exit_code, stderr_output) =
         wait_for_completion_and_collect_stderr(child, stderr_join_handle, runtime)?;
