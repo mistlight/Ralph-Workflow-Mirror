@@ -111,175 +111,9 @@ impl ClaudeParser {
                 subtype,
                 session_id,
                 cwd,
-            } => {
-                if subtype.as_deref() == Some("init") {
-                    let sid = session_id.unwrap_or_else(|| "unknown".to_string());
-                    let mut out = format!(
-                        "{}[{}]{} {}Session started{} {}({:.8}...){}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.cyan(),
-                        c.reset(),
-                        c.dim(),
-                        sid,
-                        c.reset()
-                    );
-                    if let Some(cwd) = cwd {
-                        let _ = writeln!(
-                            out,
-                            "{}[{}]{} {}Working dir: {}{}",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.dim(),
-                            cwd,
-                            c.reset()
-                        );
-                    }
-                    out
-                } else {
-                    format!(
-                        "{}[{}]{} {}{}{}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.cyan(),
-                        subtype.unwrap_or_else(|| "system".to_string()),
-                        c.reset()
-                    )
-                }
-            }
-            ClaudeEvent::Assistant { message } => {
-                // CRITICAL FIX: When ANY content has been streamed via deltas,
-                // the Assistant event should NOT display it again.
-                // The Assistant event represents the "complete" message, but if we've
-                // already shown the streaming deltas, showing it again causes duplication.
-                let session = self.streaming_session.borrow();
-
-                // Check for duplicate using message ID if available
-                let is_duplicate = session.get_current_message_id().map_or_else(
-                    || session.has_any_streamed_content(),
-                    |message_id| session.is_duplicate_final_message(message_id),
-                );
-
-                // If this is a duplicate message, skip the entire display
-                // This prevents duplicate text AND duplicate tool use events
-                drop(session);
-                if is_duplicate {
-                    String::new()
-                } else {
-                    use std::fmt::Write;
-                    let mut out = String::new();
-                    if let Some(msg) = message {
-                        if let Some(content) = msg.content {
-                            for block in content {
-                                match block {
-                                    ContentBlock::Text { text } => {
-                                        if let Some(text) = text {
-                                            let limit = self.verbosity.truncate_limit("text");
-                                            let preview = truncate_text(&text, limit);
-                                            let _ = writeln!(
-                                                out,
-                                                "{}[{}]{} {}{}{}",
-                                                c.dim(),
-                                                prefix,
-                                                c.reset(),
-                                                c.white(),
-                                                preview,
-                                                c.reset()
-                                            );
-                                        }
-                                    }
-                                    ContentBlock::ToolUse { name: tool, input } => {
-                                        let tool_name =
-                                            tool.unwrap_or_else(|| "unknown".to_string());
-                                        let _ = writeln!(
-                                            out,
-                                            "{}[{}]{} {}Tool{}: {}{}{}",
-                                            c.dim(),
-                                            prefix,
-                                            c.reset(),
-                                            c.magenta(),
-                                            c.reset(),
-                                            c.bold(),
-                                            tool_name,
-                                            c.reset(),
-                                        );
-                                        // Show tool input details at Normal and above (not just Verbose)
-                                        // Tool inputs provide crucial context for understanding agent actions
-                                        if self.verbosity.show_tool_input() {
-                                            if let Some(ref input_val) = input {
-                                                let input_str = format_tool_input(input_val);
-                                                let limit =
-                                                    self.verbosity.truncate_limit("tool_input");
-                                                let preview = truncate_text(&input_str, limit);
-                                                if !preview.is_empty() {
-                                                    let _ = writeln!(
-                                                        out,
-                                                        "{}[{}]{} {}  └─ {}{}",
-                                                        c.dim(),
-                                                        prefix,
-                                                        c.reset(),
-                                                        c.dim(),
-                                                        preview,
-                                                        c.reset()
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                    ContentBlock::ToolResult { content } => {
-                                        if let Some(content) = content {
-                                            let content_str = match content {
-                                                serde_json::Value::String(s) => s,
-                                                other => other.to_string(),
-                                            };
-                                            let limit =
-                                                self.verbosity.truncate_limit("tool_result");
-                                            let preview = truncate_text(&content_str, limit);
-                                            let _ = writeln!(
-                                                out,
-                                                "{}[{}]{} {}Result:{} {}",
-                                                c.dim(),
-                                                prefix,
-                                                c.reset(),
-                                                c.dim(),
-                                                c.reset(),
-                                                preview
-                                            );
-                                        }
-                                    }
-                                    ContentBlock::Unknown => {}
-                                }
-                            }
-                        }
-                    }
-                    out
-                }
-            }
-            ClaudeEvent::User { message } => {
-                if let Some(msg) = message {
-                    if let Some(content) = msg.content {
-                        if let Some(ContentBlock::Text { text: Some(text) }) = content.first() {
-                            let limit = self.verbosity.truncate_limit("user");
-                            let preview = truncate_text(text, limit);
-                            return Some(format!(
-                                "{}[{}]{} {}User{}: {}{}{}\n",
-                                c.dim(),
-                                prefix,
-                                c.reset(),
-                                c.blue(),
-                                c.reset(),
-                                c.dim(),
-                                preview,
-                                c.reset()
-                            ));
-                        }
-                    }
-                }
-                String::new()
-            }
+            } => self.format_system_event(subtype.as_ref(), session_id, cwd),
+            ClaudeEvent::Assistant { message } => self.format_assistant_event(message),
+            ClaudeEvent::User { message } => self.format_user_event(message),
             ClaudeEvent::Result {
                 subtype,
                 duration_ms,
@@ -287,65 +121,14 @@ impl ClaudeParser {
                 num_turns,
                 result,
                 error,
-            } => {
-                use std::fmt::Write;
-
-                let duration_s = duration_ms.unwrap_or(0) / 1000;
-                let duration_m = duration_s / 60;
-                let duration_s_rem = duration_s % 60;
-                let cost = total_cost_usd.unwrap_or(0.0);
-                let turns = num_turns.unwrap_or(0);
-
-                let mut out = if subtype.as_deref() == Some("success") {
-                    format!(
-                        "{}[{}]{} {}{} Completed{} {}({}m {}s, {} turns, ${:.4}){}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.green(),
-                        CHECK,
-                        c.reset(),
-                        c.dim(),
-                        duration_m,
-                        duration_s_rem,
-                        turns,
-                        cost,
-                        c.reset()
-                    )
-                } else {
-                    let err = error.unwrap_or_else(|| "unknown error".to_string());
-                    format!(
-                        "{}[{}]{} {}{} {}{}: {} {}({}m {}s){}\n",
-                        c.dim(),
-                        prefix,
-                        c.reset(),
-                        c.red(),
-                        CROSS,
-                        subtype.unwrap_or_else(|| "error".to_string()),
-                        c.reset(),
-                        err,
-                        c.dim(),
-                        duration_m,
-                        duration_s_rem,
-                        c.reset()
-                    )
-                };
-
-                if let Some(result) = result {
-                    let limit = self.verbosity.truncate_limit("result");
-                    let preview = truncate_text(&result, limit);
-                    let _ = writeln!(
-                        out,
-                        "\n{}Result summary:{}\n{}{}{}",
-                        c.bold(),
-                        c.reset(),
-                        c.dim(),
-                        preview,
-                        c.reset()
-                    );
-                }
-                out
-            }
+            } => self.format_result_event(
+                subtype,
+                duration_ms,
+                total_cost_usd,
+                num_turns,
+                result,
+                error,
+            ),
             ClaudeEvent::StreamEvent { event } => {
                 // Handle streaming events for delta/partial updates
                 self.parse_stream_event(event)
@@ -375,8 +158,6 @@ impl ClaudeParser {
     ///
     /// Returns String for display content, empty String for control events.
     fn parse_stream_event(&self, event: StreamInnerEvent) -> String {
-        let c = &self.colors;
-        let prefix = &self.display_name;
         let mut session = self.streaming_session.borrow_mut();
 
         match event {
@@ -431,156 +212,455 @@ impl ClaudeParser {
             StreamInnerEvent::ContentBlockDelta {
                 index: Some(index),
                 delta: Some(delta),
-            } => match delta {
-                ContentBlockDelta::TextDelta { text: Some(text) } => {
-                    // Check for snapshot-as-delta bug (GLM sending full accumulated content)
-                    // If detected, extract only the delta portion
-                    let index_str = index.to_string();
-                    let text_to_process = if session.is_likely_snapshot(&text, &index_str) {
-                        // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
-                        session
-                            .get_delta_from_snapshot(&text, &index_str)
-                            .unwrap_or(&text)
-                    } else {
-                        // Genuine delta - use as-is
-                        &text
-                    };
-
-                    // Use StreamingSession to track state and determine prefix display
-                    let show_prefix = session.on_text_delta(index, text_to_process);
-
-                    // Get accumulated text for streaming display
-                    let accumulated_text = session
-                        .get_accumulated(ContentType::Text, &index_str)
-                        .unwrap_or("");
-
-                    // Use TextDeltaRenderer for consistent rendering
-                    if show_prefix {
-                        TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
-                    } else {
-                        TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
-                    }
-                }
-                ContentBlockDelta::ThinkingDelta {
-                    thinking: Some(text),
-                } => {
-                    // Track thinking deltas
-                    session.on_thinking_delta(index, &text);
-                    // Display thinking with visual distinction
-                    Self::formatter().format_thinking(text.as_str(), prefix, *c)
-                }
-                ContentBlockDelta::ToolUseDelta {
-                    tool_use: Some(tool_delta),
-                } => {
-                    // Handle tool input streaming
-                    // Extract the tool input from the delta
-                    let input_str =
-                        tool_delta
-                            .get("input")
-                            .map_or_else(String::new, |input| match input {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => format_tool_input(other),
-                            });
-
-                    if input_str.is_empty() {
-                        String::new()
-                    } else {
-                        // Accumulate tool input
-                        session.on_tool_input_delta(index, &input_str);
-
-                        // Show partial tool input in real-time
-                        let formatter = DeltaDisplayFormatter::new();
-                        formatter.format_tool_input(&input_str, prefix, *c)
-                    }
-                }
-                _ => String::new(),
-            },
+            } => self.handle_content_block_delta(&mut session, index, delta),
+            StreamInnerEvent::TextDelta { text: Some(text) } => {
+                self.handle_text_delta(&mut session, &text)
+            }
             StreamInnerEvent::ContentBlockDelta { .. }
             | StreamInnerEvent::Ping
             | StreamInnerEvent::TextDelta { text: None }
             | StreamInnerEvent::Error { error: None } => String::new(),
-            StreamInnerEvent::TextDelta { text: Some(text) } => {
-                // Standalone text delta (not part of content block)
-                // Use default index "0" for standalone text
-                let default_index = 0u64;
-                let default_index_str = "0";
-
-                // Check for snapshot-as-delta bug
-                let text_to_process = if session.is_likely_snapshot(&text, default_index_str) {
-                    // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
-                    session
-                        .get_delta_from_snapshot(&text, default_index_str)
-                        .unwrap_or(&text)
-                } else {
-                    &text
-                };
-
-                let show_prefix = session.on_text_delta(default_index, text_to_process);
-                let accumulated_text = session
-                    .get_accumulated(ContentType::Text, default_index_str)
-                    .unwrap_or("");
-
-                // Use TextDeltaRenderer for consistent rendering across all parsers
-                if show_prefix {
-                    // First delta - use the renderer with prefix
-                    TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
-                } else {
-                    // Subsequent delta - use renderer for in-place update
-                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
-                }
-            }
-            StreamInnerEvent::MessageStop => {
-                // Message complete - add final newline if we were in a content block
-                // OR if any content was streamed (handles edge cases where block state
-                // may not have been set but content was still streamed)
-                let metrics = session.get_streaming_quality_metrics();
-                let was_in_block = session.on_message_stop();
-                let had_content = session.has_any_streamed_content();
-                if was_in_block || had_content {
-                    // Use TextDeltaRenderer for completion - adds final newline
-                    let completion =
-                        format!("{}{}", c.reset(), TextDeltaRenderer::render_completion());
-                    // In debug mode, also show streaming quality metrics
-                    if self.verbosity.is_debug() && metrics.total_deltas > 0 {
-                        format!("{}\n{}", completion, metrics.format(*c))
-                    } else {
-                        completion
-                    }
-                } else {
-                    String::new()
-                }
-            }
+            StreamInnerEvent::MessageStop => self.handle_message_stop(&mut session),
             StreamInnerEvent::Error {
                 error: Some(err), ..
-            } => {
-                let msg = err
-                    .message
-                    .unwrap_or_else(|| "Unknown streaming error".to_string());
-                format!(
-                    "{}[{}]{} {}Error: {}{}\n",
+            } => self.handle_error_event(err),
+            StreamInnerEvent::Unknown => self.handle_unknown_event(),
+        }
+    }
+
+    /// Format a system event
+    fn format_system_event(
+        &self,
+        subtype: Option<&String>,
+        session_id: Option<String>,
+        cwd: Option<String>,
+    ) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        if subtype.map(std::string::String::as_str) == Some("init") {
+            let sid = session_id.unwrap_or_else(|| "unknown".to_string());
+            let mut out = format!(
+                "{}[{}]{} {}Session started{} {}({:.8}...){}\n",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.cyan(),
+                c.reset(),
+                c.dim(),
+                sid,
+                c.reset()
+            );
+            if let Some(cwd) = cwd {
+                let _ = writeln!(
+                    out,
+                    "{}[{}]{} {}Working dir: {}{}",
                     c.dim(),
                     prefix,
                     c.reset(),
-                    c.red(),
-                    msg,
+                    c.dim(),
+                    cwd,
                     c.reset()
-                )
+                );
             }
-            StreamInnerEvent::Unknown => {
-                // Unknown stream event - in debug mode, log it
-                if self.verbosity.is_debug() {
-                    format!(
-                        "{}[{}]{} {}Unknown streaming event{}\n",
+            out
+        } else {
+            format!(
+                "{}[{}]{} {}{}{}\n",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.cyan(),
+                subtype.map_or("system", |s| s.as_str()),
+                c.reset()
+            )
+        }
+    }
+
+    /// Format an assistant event
+    fn format_assistant_event(
+        &self,
+        message: Option<crate::json_parser::types::AssistantMessage>,
+    ) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        // CRITICAL FIX: When ANY content has been streamed via deltas,
+        // the Assistant event should NOT display it again.
+        // The Assistant event represents the "complete" message, but if we've
+        // already shown the streaming deltas, showing it again causes duplication.
+        let session = self.streaming_session.borrow();
+
+        // Check for duplicate using message ID if available
+        let is_duplicate = session.get_current_message_id().map_or_else(
+            || session.has_any_streamed_content(),
+            |message_id| session.is_duplicate_final_message(message_id),
+        );
+
+        // If this is a duplicate message, skip the entire display
+        // This prevents duplicate text AND duplicate tool use events
+        drop(session);
+        if is_duplicate {
+            String::new()
+        } else {
+            let mut out = String::new();
+            if let Some(msg) = message {
+                if let Some(content) = msg.content {
+                    for block in content {
+                        match block {
+                            ContentBlock::Text { text } => {
+                                if let Some(text) = text {
+                                    let limit = self.verbosity.truncate_limit("text");
+                                    let preview = truncate_text(&text, limit);
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}{}{}",
+                                        c.dim(),
+                                        prefix,
+                                        c.reset(),
+                                        c.white(),
+                                        preview,
+                                        c.reset()
+                                    );
+                                }
+                            }
+                            ContentBlock::ToolUse { name: tool, input } => {
+                                let tool_name = tool.unwrap_or_else(|| "unknown".to_string());
+                                let _ = writeln!(
+                                    out,
+                                    "{}[{}]{} {}Tool{}: {}{}{}",
+                                    c.dim(),
+                                    prefix,
+                                    c.reset(),
+                                    c.magenta(),
+                                    c.reset(),
+                                    c.bold(),
+                                    tool_name,
+                                    c.reset(),
+                                );
+                                // Show tool input details at Normal and above (not just Verbose)
+                                // Tool inputs provide crucial context for understanding agent actions
+                                if self.verbosity.show_tool_input() {
+                                    if let Some(ref input_val) = input {
+                                        let input_str = format_tool_input(input_val);
+                                        let limit = self.verbosity.truncate_limit("tool_input");
+                                        let preview = truncate_text(&input_str, limit);
+                                        if !preview.is_empty() {
+                                            let _ = writeln!(
+                                                out,
+                                                "{}[{}]{} {}  └─ {}{}",
+                                                c.dim(),
+                                                prefix,
+                                                c.reset(),
+                                                c.dim(),
+                                                preview,
+                                                c.reset()
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            ContentBlock::ToolResult { content } => {
+                                if let Some(content) = content {
+                                    let content_str = match content {
+                                        serde_json::Value::String(s) => s,
+                                        other => other.to_string(),
+                                    };
+                                    let limit = self.verbosity.truncate_limit("tool_result");
+                                    let preview = truncate_text(&content_str, limit);
+                                    let _ = writeln!(
+                                        out,
+                                        "{}[{}]{} {}Result:{} {}",
+                                        c.dim(),
+                                        prefix,
+                                        c.reset(),
+                                        c.dim(),
+                                        c.reset(),
+                                        preview
+                                    );
+                                }
+                            }
+                            ContentBlock::Unknown => {}
+                        }
+                    }
+                }
+            }
+            out
+        }
+    }
+
+    /// Format a user event
+    fn format_user_event(&self, message: Option<crate::json_parser::types::UserMessage>) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        if let Some(msg) = message {
+            if let Some(content) = msg.content {
+                if let Some(ContentBlock::Text { text: Some(text) }) = content.first() {
+                    let limit = self.verbosity.truncate_limit("user");
+                    let preview = truncate_text(text, limit);
+                    return format!(
+                        "{}[{}]{} {}User{}: {}{}{}\n",
                         c.dim(),
                         prefix,
                         c.reset(),
+                        c.blue(),
+                        c.reset(),
                         c.dim(),
+                        preview,
                         c.reset()
-                    )
-                } else {
-                    String::new()
+                    );
                 }
             }
+        }
+        String::new()
+    }
+
+    /// Format a result event
+    fn format_result_event(
+        &self,
+        subtype: Option<String>,
+        duration_ms: Option<u64>,
+        total_cost_usd: Option<f64>,
+        num_turns: Option<u32>,
+        result: Option<String>,
+        error: Option<String>,
+    ) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        let duration_total_secs = duration_ms.unwrap_or(0) / 1000;
+        let duration_m = duration_total_secs / 60;
+        let duration_s_rem = duration_total_secs % 60;
+        let cost = total_cost_usd.unwrap_or(0.0);
+        let turns = num_turns.unwrap_or(0);
+
+        let mut out = if subtype.as_deref() == Some("success") {
+            format!(
+                "{}[{}]{} {}{} Completed{} {}({}m {}s, {} turns, ${:.4}){}\n",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.green(),
+                CHECK,
+                c.reset(),
+                c.dim(),
+                duration_m,
+                duration_s_rem,
+                turns,
+                cost,
+                c.reset()
+            )
+        } else {
+            let err = error.unwrap_or_else(|| "unknown error".to_string());
+            format!(
+                "{}[{}]{} {}{} {}{}: {} {}({}m {}s){}\n",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.red(),
+                CROSS,
+                subtype.unwrap_or_else(|| "error".to_string()),
+                c.reset(),
+                err,
+                c.dim(),
+                duration_m,
+                duration_s_rem,
+                c.reset()
+            )
+        };
+
+        if let Some(result) = result {
+            let limit = self.verbosity.truncate_limit("result");
+            let preview = truncate_text(&result, limit);
+            let _ = writeln!(
+                out,
+                "\n{}Result summary:{}\n{}{}{}",
+                c.bold(),
+                c.reset(),
+                c.dim(),
+                preview,
+                c.reset()
+            );
+        }
+        out
+    }
+
+    /// Handle content block delta events
+    fn handle_content_block_delta(
+        &self,
+        session: &mut std::cell::RefMut<'_, StreamingSession>,
+        index: u64,
+        delta: ContentBlockDelta,
+    ) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        match delta {
+            ContentBlockDelta::TextDelta { text: Some(text) } => {
+                // Check for snapshot-as-delta bug (GLM sending full accumulated content)
+                // If detected, extract only the delta portion
+                let index_str = index.to_string();
+                let text_to_process = if session.is_likely_snapshot(&text, &index_str) {
+                    // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
+                    session
+                        .get_delta_from_snapshot(&text, &index_str)
+                        .unwrap_or(&text)
+                } else {
+                    // Genuine delta - use as-is
+                    &text
+                };
+
+                // Use StreamingSession to track state and determine prefix display
+                let show_prefix = session.on_text_delta(index, text_to_process);
+
+                // Get accumulated text for streaming display
+                let accumulated_text = session
+                    .get_accumulated(ContentType::Text, &index_str)
+                    .unwrap_or("");
+
+                // Use TextDeltaRenderer for consistent rendering
+                if show_prefix {
+                    TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
+                } else {
+                    TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
+                }
+            }
+            ContentBlockDelta::ThinkingDelta {
+                thinking: Some(text),
+            } => {
+                // Track thinking deltas
+                session.on_thinking_delta(index, &text);
+                // Display thinking with visual distinction
+                Self::formatter().format_thinking(text.as_str(), prefix, *c)
+            }
+            ContentBlockDelta::ToolUseDelta {
+                tool_use: Some(tool_delta),
+            } => {
+                // Handle tool input streaming
+                // Extract the tool input from the delta
+                let input_str =
+                    tool_delta
+                        .get("input")
+                        .map_or_else(String::new, |input| match input {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => format_tool_input(other),
+                        });
+
+                if input_str.is_empty() {
+                    String::new()
+                } else {
+                    // Accumulate tool input
+                    session.on_tool_input_delta(index, &input_str);
+
+                    // Show partial tool input in real-time
+                    let formatter = DeltaDisplayFormatter::new();
+                    formatter.format_tool_input(&input_str, prefix, *c)
+                }
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Handle text delta events
+    fn handle_text_delta(
+        &self,
+        session: &mut std::cell::RefMut<'_, StreamingSession>,
+        text: &str,
+    ) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        // Standalone text delta (not part of content block)
+        // Use default index "0" for standalone text
+        let default_index = 0u64;
+        let default_index_str = "0";
+
+        // Check for snapshot-as-delta bug
+        let text_to_process = if session.is_likely_snapshot(text, default_index_str) {
+            // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
+            session
+                .get_delta_from_snapshot(text, default_index_str)
+                .unwrap_or(text)
+        } else {
+            text
+        };
+
+        let show_prefix = session.on_text_delta(default_index, text_to_process);
+        let accumulated_text = session
+            .get_accumulated(ContentType::Text, default_index_str)
+            .unwrap_or("");
+
+        // Use TextDeltaRenderer for consistent rendering across all parsers
+        if show_prefix {
+            // First delta - use the renderer with prefix
+            TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c)
+        } else {
+            // Subsequent delta - use renderer for in-place update
+            TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c)
+        }
+    }
+
+    /// Handle message stop events
+    fn handle_message_stop(&self, session: &mut std::cell::RefMut<'_, StreamingSession>) -> String {
+        let c = &self.colors;
+
+        // Message complete - add final newline if we were in a content block
+        // OR if any content was streamed (handles edge cases where block state
+        // may not have been set but content was still streamed)
+        let metrics = session.get_streaming_quality_metrics();
+        let was_in_block = session.on_message_stop();
+        let had_content = session.has_any_streamed_content();
+        if was_in_block || had_content {
+            // Use TextDeltaRenderer for completion - adds final newline
+            let completion = format!("{}{}", c.reset(), TextDeltaRenderer::render_completion());
+            // In debug mode, also show streaming quality metrics
+            if self.verbosity.is_debug() && metrics.total_deltas > 0 {
+                format!("{}\n{}", completion, metrics.format(*c))
+            } else {
+                completion
+            }
+        } else {
+            String::new()
+        }
+    }
+
+    /// Handle error events
+    fn handle_error_event(&self, err: crate::json_parser::types::StreamError) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        let msg = err
+            .message
+            .unwrap_or_else(|| "Unknown streaming error".to_string());
+        format!(
+            "{}[{}]{} {}Error: {}{}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            c.red(),
+            msg,
+            c.reset()
+        )
+    }
+
+    /// Handle unknown events
+    fn handle_unknown_event(&self) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        // Unknown stream event - in debug mode, log it
+        if self.verbosity.is_debug() {
+            format!(
+                "{}[{}]{} {}Unknown streaming event{}\n",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.dim(),
+                c.reset()
+            )
+        } else {
+            String::new()
         }
     }
 
