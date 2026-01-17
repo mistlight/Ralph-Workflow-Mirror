@@ -24,7 +24,7 @@
     }
 }
 
-/* Slide Up Animation */
+/* Slide Up Animation - Alias for both slide-up and slideUp */
 @keyframes slide-up {
     from {
         opacity: 0;
@@ -121,6 +121,17 @@
     50% {
         opacity: 0.3;
         transform: translateY(8px);
+    }
+}
+
+/* Float Animation */
+@keyframes float {
+    0%, 100% {
+        transform: translateX(-50%) translateY(0);
+    }
+
+    50% {
+        transform: translateX(-50%) translateY(-10px);
     }
 }
 

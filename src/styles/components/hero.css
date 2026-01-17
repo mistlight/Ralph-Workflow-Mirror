@@ -115,7 +115,7 @@
 
 .hero-badge {
     align-items: center;
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
+    animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.1s;
     background-color: var(--color-bg-card);
     border: 1px solid var(--border-soft);
@@ -145,7 +145,7 @@
 /* === HERO BADGES (plural) === */
 
 .hero-badges {
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
+    animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.1s;
     display: flex;
     flex-wrap: wrap;
@@ -224,7 +224,7 @@
 /* === HERO TITLE === */
 
 .hero-title {
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
+    animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.2s;
     font-family: var(--font-display);
     font-size: clamp(2rem, 4vw + 0.5rem, 3.5rem);
@@ -282,7 +282,7 @@
 /* === HERO DESCRIPTION === */
 
 .hero-description {
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
+    animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.3s;
     color: var(--color-text-muted);
     font-size: var(--text-lg);
@@ -309,7 +309,7 @@
 /* === HERO ACTIONS === */
 
 .hero-actions {
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
+    animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.4s;
     display: flex;
     flex-wrap: wrap;
@@ -320,13 +320,13 @@
 /* === HERO VISUAL / TERMINAL === */
 
 .hero-visual {
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
+    animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.5s;
     opacity: 0;
 }
 
 .hero-terminal {
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
+    animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.5s;
     background-color: var(--color-bg-card);
     border: 1px solid var(--border-soft);
@@ -507,7 +507,7 @@
 
 .audience-selector {
     align-items: center;
-    animation: slideUp 0.8s var(--ease-expo-out) forwards;
+    animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.35s;
     display: flex;
     gap: var(--space-4);

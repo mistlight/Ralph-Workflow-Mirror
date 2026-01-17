@@ -492,7 +492,7 @@ code:not(pre code):hover {
 /* === SCROLL INDICATOR ENHANCEMENT === */
 
 .scroll-indicator {
-    animation: fadeInUp 1s var(--ease-expo-out) 1.5s forwards, float 3s ease-in-out infinite;
+    animation: fade-in-up 1s var(--ease-expo-out) 1.5s forwards, float 3s ease-in-out infinite;
 }
 
 @keyframes float {

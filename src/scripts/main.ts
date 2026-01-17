@@ -245,7 +245,7 @@ import type {
       // Show corresponding content
       installContents.forEach((content: HTMLElement): void => {
         if (content.dataset.content === targetTab) {
-          content.style.display = 'block';
+          content.classList.remove('hidden');
           content.style.opacity = '0';
           content.style.transform = 'translateY(10px)';
 
@@ -256,7 +256,7 @@ import type {
           content.style.opacity = '1';
           content.style.transform = 'translateY(0)';
         } else {
-          content.style.display = 'none';
+          content.classList.add('hidden');
         }
       });
     });
@@ -305,22 +305,22 @@ import type {
     installModeSwitch?.setAttribute('aria-checked', 'true');
     // Show advanced tabs
     advancedTabs.forEach((tab: HTMLButtonElement): void => {
-      tab.style.display = '';
+      tab.classList.remove('hidden');
     });
     // Hide simple tabs (or keep first one)
     simpleTabs.forEach((tab: HTMLButtonElement, index: number): void => {
-      if (index > 0) tab.style.display = 'none';
+      if (index > 0) tab.classList.add('hidden');
     });
   } else {
     installSection?.setAttribute('data-mode', 'simple');
     installModeSwitch?.setAttribute('aria-checked', 'false');
     // Hide advanced tabs
     advancedTabs.forEach((tab: HTMLButtonElement): void => {
-      tab.style.display = 'none';
+      tab.classList.add('hidden');
     });
     // Show simple tabs
     simpleTabs.forEach((tab: HTMLButtonElement): void => {
-      tab.style.display = '';
+      tab.classList.remove('hidden');
     });
   }
 
@@ -344,29 +344,29 @@ import type {
       // Toggle tabs visibility
       if (newMode === 'advanced') {
         advancedTabs.forEach((tab: HTMLButtonElement): void => {
-          tab.style.display = '';
+          tab.classList.remove('hidden');
           tab.style.opacity = '0';
           setTimeout(() => {
             tab.style.opacity = '1';
           }, 50);
         });
         simpleTabs.forEach((tab: HTMLButtonElement, index: number): void => {
-          if (index > 0) tab.style.display = 'none';
+          if (index > 0) tab.classList.add('hidden');
         });
 
         // Show full requirements in advanced mode
         if (advancedRequirements) {
           const allRequirements: NodeListOf<HTMLElement> = advancedRequirements.querySelectorAll('.requirement');
           allRequirements.forEach((req: HTMLElement): void => {
-            req.style.display = '';
+            req.classList.remove('hidden');
           });
         }
       } else {
         advancedTabs.forEach((tab: HTMLButtonElement): void => {
-          tab.style.display = 'none';
+          tab.classList.add('hidden');
         });
         simpleTabs.forEach((tab: HTMLButtonElement): void => {
-          tab.style.display = '';
+          tab.classList.remove('hidden');
           tab.style.opacity = '0';
           setTimeout(() => {
             tab.style.opacity = '1';
@@ -377,7 +377,7 @@ import type {
         if (advancedRequirements) {
           const allRequirements: NodeListOf<HTMLElement> = advancedRequirements.querySelectorAll('.requirement');
           allRequirements.forEach((req: HTMLElement, index: number): void => {
-            if (index > 0) req.style.display = 'none';
+            if (index > 0) req.classList.add('hidden');
           });
         }
 
