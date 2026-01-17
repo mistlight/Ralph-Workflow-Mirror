@@ -1890,3 +1890,286 @@ select:hover {
 ::-webkit-scrollbar-thumb:hover {
     background-color: var(--border-strong);
 }
+
+/* === ADDITIONAL POLISH REFINEMENTS === */
+
+/* Enhanced footer link hover states */
+.footer-link {
+    position: relative;
+    transition: color var(--duration-150) var(--ease-expo-out);
+}
+
+.footer-link::after {
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+    bottom: calc(var(--space-1) * -2);
+    content: '';
+    height: var(--size-xs);
+    left: 0;
+    position: absolute;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--duration-200) var(--ease-expo-out);
+    width: 100%;
+}
+
+.footer-link:hover::after {
+    transform: scaleX(1);
+}
+
+/* Social link icon hover with rotation */
+.footer-social-link {
+    transition: all var(--duration-200) var(--ease-expo-out);
+}
+
+.footer-social-link:hover {
+    color: var(--color-primary);
+    transform: translateY(var(--translate-neg2)) rotate(var(--rotate-5));
+}
+
+/* Improved switch focus-visible state */
+.switch:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-offset);
+}
+
+/* Enhanced persona card hover state */
+.persona-card {
+    transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+.persona-card:hover {
+    border-color: var(--border-accent);
+    box-shadow: var(--shadow-xl), var(--shadow-glow-md);
+}
+
+/* Improved workflow diagram node animations */
+.workflow-node {
+    transition: all var(--duration-200) var(--ease-expo-out);
+}
+
+.workflow-node:hover {
+    filter: brightness(1.1);
+}
+
+/* Enhanced definition list styling */
+dl {
+    display: grid;
+    gap: var(--space-3);
+}
+
+dt code {
+    background-color: var(--code-bg);
+    border: var(--border-width-1) solid var(--code-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    padding: var(--space-1) var(--space-2);
+}
+
+/* Improved table styling */
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+th,
+td {
+    border-bottom: var(--border-width-1) solid var(--border-subtle);
+    padding: var(--space-3) var(--space-4);
+    text-align: left;
+}
+
+th {
+    background-color: var(--color-bg-elevated);
+    color: var(--color-primary);
+    font-weight: var(--font-semibold);
+}
+
+tr:hover td {
+    background-color: var(--color-bg-hover);
+}
+
+/* Enhanced focus states for all interactive elements */
+:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-offset);
+}
+
+/* Skip link enhancement */
+.skip-link {
+    background-color: var(--color-bg);
+    border: var(--border-width-2) solid var(--color-primary);
+    border-radius: var(--radius-md);
+    color: var(--color-primary);
+    font-weight: var(--font-semibold);
+    left: 50%;
+    padding: var(--space-3) var(--space-4);
+    transform: translate(-50%, -100%);
+    transition: transform var(--duration-200) var(--ease-expo-out);
+    z-index: var(--z-max);
+}
+
+.skip-link:focus {
+    transform: translate(-50%, 0);
+}
+
+/* Improved hr styling */
+hr {
+    border: none;
+    border-top: var(--border-width-1) solid var(--border-soft);
+    margin: var(--space-16) 0;
+}
+
+hr.gradient {
+    background: linear-gradient(90deg,
+                transparent 0%,
+                var(--border-accent) 50%,
+                transparent 100%);
+    border: none;
+    height: var(--size-xs);
+}
+
+/* Enhanced abbr styling */
+abbr[title] {
+    border-bottom: var(--border-width-1) dotted var(--border-medium);
+    cursor: help;
+    text-decoration: none;
+}
+
+/* Improved mark/highlight styling */
+mark {
+    background-color: var(--color-primary-dim);
+    color: var(--color-text);
+    padding: var(--space-1) var(--space-2);
+}
+
+/* Enhanced kbd styling */
+kbd {
+    background-color: var(--color-bg-elevated);
+    border: var(--border-width-1) solid var(--border-medium);
+    border-bottom-width: var(--border-width-3);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    padding: var(--space-1) var(--space-2);
+}
+
+/* Improved sub/sup styling */
+sub,
+sup {
+    font-size: var(--text-sm);
+    line-height: 0;
+    position: relative;
+    vertical-align: baseline;
+}
+
+sup {
+    top: calc(var(--space-1) * -0.5);
+}
+
+sub {
+    bottom: calc(var(--space-1) * -0.25);
+}
+
+/* Enhanced data list styling */
+datalist {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+/* Improved progress element styling */
+progress {
+    background-color: var(--color-bg-alt);
+    border-radius: var(--radius-full);
+    height: var(--space-2);
+    width: 100%;
+}
+
+progress::-webkit-progress-bar {
+    background-color: var(--color-bg-alt);
+    border-radius: var(--radius-full);
+}
+
+progress::-webkit-progress-value {
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+    border-radius: var(--radius-full);
+}
+
+progress::-moz-progress-bar {
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+    border-radius: var(--radius-full);
+}
+
+/* Enhanced meter element styling */
+meter {
+    height: var(--space-2);
+    width: 100%;
+}
+
+/* Improved details/summary styling */
+details > summary {
+    cursor: pointer;
+    list-style: none;
+}
+
+details > summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Enhanced figure and figcaption */
+figure {
+    margin: var(--space-8) 0;
+}
+
+figcaption {
+    color: var(--color-text-dim);
+    font-size: var(--text-sm);
+    margin-top: var(--space-3);
+    text-align: center;
+}
+
+/* Improved address styling */
+address {
+    font-style: normal;
+}
+
+/* Enhanced var styling for code documentation */
+var {
+    font-family: var(--font-mono);
+    font-style: normal;
+}
+
+/* Improved samp styling for sample output */
+samp {
+    background-color: var(--code-bg);
+    border: var(--border-width-1) solid var(--code-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    padding: var(--space-1) var(--space-2);
+}
+
+/* Enhanced picture element */
+picture {
+    display: block;
+}
+
+/* Improved source element styling indication */
+source {
+    display: none;
+}
+
+/* Enhanced time element styling */
+time {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+}
+
+/* Improved small element */
+small {
+    color: var(--color-text-dim);
+    font-size: var(--text-sm);
+}
+
+/* === END OF REFINEMENTS === */
