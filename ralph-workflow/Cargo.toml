@@ -21,9 +21,9 @@ path = "src/main.rs"
 
 [features]
 # INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
-default = []
-# Export test-accessible methods for integration tests (printer, streaming_metrics)
-__test_export = []
+default = ["monitoring"]
+# Enable monitoring/debugging APIs (printer, streaming_metrics)
+monitoring = []
 
 [dependencies]
 # CLI argument parsing

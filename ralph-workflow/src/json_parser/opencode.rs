@@ -41,7 +41,6 @@ use std::rc::Rc;
 
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
-#[cfg(any(test, feature = "__test_export"))]
 use super::health::StreamingQualityMetrics;
 use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
@@ -212,11 +211,7 @@ impl OpenCodeParser {
     /// # Returns
     ///
     /// A clone of the shared printer reference (`Rc<RefCell<dyn Printable>>`)
-    #[cfg(any(test, feature = "__test_export"))]
-    #[allow(
-        dead_code,
-        reason = "Used by integration tests in tests/ package via __test_export feature. Not used by binary."
-    )]
+    #[cfg_attr(any(debug_assertions, test, feature = "monitoring"), allow(dead_code))]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -229,11 +224,7 @@ impl OpenCodeParser {
     /// # Returns
     ///
     /// A copy of the streaming quality metrics from the internal `StreamingSession`.
-    #[cfg(any(test, feature = "__test_export"))]
-    #[allow(
-        dead_code,
-        reason = "Used by integration tests in tests/ package via __test_export feature. Not used by binary."
-    )]
+    #[cfg_attr(any(debug_assertions, test, feature = "monitoring"), allow(dead_code))]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()
