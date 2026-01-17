@@ -390,6 +390,12 @@ code, .inline-code, .inline {
 
 .faq-question:hover {
     background-color: var(--color-bg-hover);
+    color: var(--color-primary);
+
+    .faq-icon {
+        color: var(--color-primary);
+        transform: rotate(var(--rotate-45));
+    }
 }
 
 .faq-icon {
@@ -480,6 +486,13 @@ code, .inline-code, .inline {
     background-color: var(--color-bg-elevated);
     border: var(--border-width-1) solid var(--border-subtle);
     border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    transition: all var(--duration-200) var(--ease-expo-out);
+
+    &:hover {
+        background-color: var(--color-bg-hover);
+        border-color: var(--border-soft);
+    }
 }
 
 .glossary-header {

@@ -575,7 +575,7 @@
         left: -100%;
         position: absolute;
         top: 0;
-        transform: skewX(-20deg);
+        transform: skewX(var(--skew-neg20));
         transition: none;
         width: 50%;
     }
@@ -679,7 +679,7 @@
         left: -100%;
         position: absolute;
         top: 0;
-        transform: skewX(-20deg);
+        transform: skewX(var(--skew-neg20));
         transition: none;
         width: 50%;
     }
@@ -786,7 +786,7 @@
         left: -100%;
         position: absolute;
         top: 0;
-        transform: skewX(-20deg);
+        transform: skewX(var(--skew-neg20));
         transition: none;
         width: 50%;
     }

@@ -137,9 +137,9 @@
     animation: pulse-glow 2s ease-in-out infinite;
     background-color: var(--color-lime);
     border-radius: 50%;
-    box-shadow: 0 0 12px var(--color-lime-glow);
-    height: 8px;
-    width: 8px;
+    box-shadow: 0 0 var(--space-3) var(--color-lime-glow);
+    height: var(--space-2);
+    width: var(--space-2);
 }
 
 /* === HERO BADGES (plural) === */
@@ -178,8 +178,8 @@
 .badge-dot {
     animation: pulse-glow 2s ease-in-out infinite;
     border-radius: 50%;
-    height: 6px;
-    width: 6px;
+    height: var(--space-1-5);
+    width: var(--space-1-5);
 }
 
 .badge-forest,
@@ -405,11 +405,11 @@
 
 .scroll-indicator-mouse {
     border: var(--border-width-2) solid currentcolor;
-    border-radius: 12px;
+    border-radius: var(--radius-xl);
     display: flex;
-    height: 38px;
+    height: var(--size-5xl);
     justify-content: center;
-    padding-top: 8px;
+    padding-top: var(--space-2);
     position: relative;
     width: var(--size-icon-2xl);
 }
@@ -417,9 +417,9 @@
 .scroll-indicator-wheel {
     animation: scrollWheel 2s ease-in-out infinite;
     background: var(--color-primary);
-    border-radius: 2px;
-    height: 8px;
-    width: 4px;
+    border-radius: var(--radius-sm);
+    height: var(--space-2);
+    width: var(--size-xs);
 }
 
 /* Hide scroll indicator on smaller screens */

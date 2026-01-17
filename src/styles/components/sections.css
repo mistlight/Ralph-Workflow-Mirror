@@ -1052,9 +1052,9 @@
 }
 
 .footer-cta svg {
-    height: 18px;
+    height: var(--size-icon-lg);
     transition: transform var(--duration-200) var(--ease-expo-out);
-    width: 18px;
+    width: var(--size-icon-lg);
 }
 
 .footer-cta:hover svg {
