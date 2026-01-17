@@ -405,6 +405,7 @@
 
     /* === TRANSFORM SCALE VALUES === */
     --scale-0: 0;
+    --scale-090: 0.9;
     --scale-095: 0.95;
     --scale-097: 0.97;
     --scale-098: 0.98;

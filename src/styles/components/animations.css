@@ -92,8 +92,8 @@
 /* Float Slow Animation */
 @keyframes float-slow {
     0%, 100% { transform: translate(0, 0) scale(var(--scale-100)); }
-    33% { transform: translate(var(--translate-30), var(--translate-neg30)) scale(var(--scale-105)); }
-    66% { transform: translate(var(--translate-neg20), var(--translate-20)) scale(var(--scale-095)); }
+    33% { transform: translate(var(--translate-30), var(--translate-neg30)) scale(var(--scale-110)); }
+    66% { transform: translate(var(--translate-neg20), var(--translate-20)) scale(var(--scale-090)); }
 }
 
 /* Ambient Drift Animation */

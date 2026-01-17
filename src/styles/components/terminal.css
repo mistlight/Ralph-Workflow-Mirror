@@ -132,7 +132,7 @@
 }
 
 .terminal-cursor {
-    animation: blink 1s step-end infinite;
+    animation: blink 1.2s step-end infinite;
     background-color: var(--color-primary);
     display: inline-block;
     height: 18px;

@@ -80,7 +80,8 @@
         box-shadow:
             0 16px 32px var(--shadow-black-25),
             0 0 30px var(--primary-shadow-12),
-            inset 0 1px 0 var(--white-alpha-5);
+            inset 0 1px 0 var(--white-alpha-5),
+            inset 0 -1px 0 var(--shadow-black-10);
         transform: translateY(var(--lift-md));
 
         &::before {
@@ -102,6 +103,13 @@
                 transform: scale(var(--scale-107)) rotate(var(--rotate-5));
             }
         }
+    }
+
+    &:active {
+        box-shadow:
+            0 8px 16px var(--shadow-black-20),
+            inset 0 2px 4px var(--shadow-black-15);
+        transform: translateY(var(--lift-xs));
     }
 }
 
