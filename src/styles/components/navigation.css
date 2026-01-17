@@ -71,7 +71,14 @@
         gap: var(--space-1);
 
         svg {
+            color: var(--color-text-primary);
+            height: 18px;
             transition: transform var(--duration-200) var(--ease-expo-out);
+            width: 18px;
+        }
+
+        &:hover svg {
+            color: var(--color-primary);
         }
 
         &[aria-expanded="true"] {
@@ -83,13 +90,13 @@
 
     &-menu {
         background-color: var(--color-bg-card);
-        border: 1px solid var(--border-soft);
+        border: 1px solid var(--border-accent);
         border-radius: var(--radius-lg);
-        box-shadow: var(--shadow-lg);
+        box-shadow: var(--shadow-xl), var(--shadow-glow-md);
         left: 0;
         list-style: none;
         margin-top: var(--space-2);
-        min-width: 180px;
+        min-width: 200px;
         opacity: 0;
         padding: var(--space-2);
         position: absolute;
@@ -102,7 +109,7 @@
         .nav-link {
             border-radius: var(--radius-md);
             display: block;
-            padding: var(--space-2) var(--space-3);
+            padding: var(--space-2-5) var(--space-3);
         }
     }
 

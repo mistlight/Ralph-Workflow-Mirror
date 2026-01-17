@@ -220,7 +220,9 @@
     &:hover {
         background-color: var(--color-primary-dim);
         border-color: var(--border-accent);
+        box-shadow: 0 0 20px var(--color-primary-dim);
         color: var(--color-primary);
+        transform: scale(1.05);
     }
 
     .sun-icon,
@@ -272,7 +274,9 @@
     &:hover {
         background-color: var(--color-primary-dim);
         border-color: var(--border-accent);
+        box-shadow: 0 0 20px var(--color-primary-dim);
         color: var(--color-primary);
+        transform: scale(1.05);
     }
 
     svg {
