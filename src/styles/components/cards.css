@@ -58,7 +58,7 @@
         background: linear-gradient(
             90deg,
             transparent,
-            rgb(255 255 255 / 3%),
+            var(--white-alpha-3),
             transparent
         );
         content: '';
@@ -74,9 +74,9 @@
     &:hover {
         border-color: var(--color-primary);
         box-shadow:
-            0 20px 40px rgb(0 0 0 / 30%),
-            0 0 30px rgb(0 212 255 / 15%),
-            inset 0 1px 0 rgb(255 255 255 / 5%);
+            0 20px 40px var(--shadow-black-30),
+            0 0 30px var(--primary-shadow-15),
+            inset 0 1px 0 var(--white-alpha-5);
         transform: translateY(-4px);
 
         &::before {
@@ -202,20 +202,20 @@
         background: linear-gradient(
             135deg,
             var(--color-bg-card) 0%,
-            rgb(0 212 255 / 3%) 100%
+            var(--primary-alpha-3) 100%
         );
         border-color: var(--color-primary-dim);
 
         &:hover {
             border-color: var(--color-primary);
-            box-shadow: var(--shadow-lg), 0 0 40px rgb(0 212 255 / 15%);
+            box-shadow: var(--shadow-lg), 0 0 40px var(--primary-shadow-15);
         }
     }
 
     &--before {
         &:hover {
             border-color: var(--color-accent);
-            box-shadow: var(--shadow-lg), 0 0 30px rgb(255 0 110 / 15%);
+            box-shadow: var(--shadow-lg), 0 0 30px var(--accent-alpha-15);
         }
     }
 }
@@ -232,7 +232,7 @@
     text-transform: uppercase;
 
     &--before {
-        background-color: rgb(255 255 255 / 5%);
+        background-color: var(--white-alpha-5);
         border: 1px solid var(--border-soft);
         color: var(--color-text-muted);
     }
@@ -541,9 +541,9 @@
     &::before {
         background: linear-gradient(
             135deg,
-            rgb(0 212 255 / 3%) 0%,
+            var(--primary-alpha-3) 0%,
             transparent 50%,
-            rgb(255 0 110 / 2%) 100%
+            var(--accent-alpha-2) 100%
         );
         content: '';
         inset: 0;
@@ -557,7 +557,7 @@
         background: linear-gradient(
             90deg,
             transparent,
-            rgb(255 255 255 / 4%),
+            var(--white-alpha-4),
             transparent
         );
         content: '';
@@ -573,8 +573,8 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow:
-            0 16px 32px rgb(0 0 0 / 25%),
-            0 0 20px rgb(0 212 255 / 10%);
+            0 16px 32px var(--shadow-black-25),
+            0 0 20px var(--primary-shadow-10);
         transform: translateY(-4px);
 
         &::before {
@@ -645,9 +645,9 @@
     &::before {
         background: linear-gradient(
             135deg,
-            rgb(0 212 255 / 4%) 0%,
+            var(--primary-alpha-4) 0%,
             transparent 50%,
-            rgb(163 255 18 / 2%) 100%
+            var(--lime-alpha-2) 100%
         );
         content: '';
         inset: 0;
@@ -661,7 +661,7 @@
         background: linear-gradient(
             90deg,
             transparent,
-            rgb(255 255 255 / 5%),
+            var(--white-alpha-5),
             transparent
         );
         content: '';
@@ -677,8 +677,8 @@
     &:hover {
         border-color: var(--color-primary);
         box-shadow:
-            0 20px 40px rgb(0 0 0 / 30%),
-            0 0 30px rgb(0 212 255 / 15%);
+            0 20px 40px var(--shadow-black-30),
+            0 0 30px var(--primary-shadow-15);
         transform: translateY(-4px);
 
         &::before {
@@ -753,7 +753,7 @@
     &::before {
         background: linear-gradient(
             135deg,
-            rgb(0 212 255 / 3%) 0%,
+            var(--primary-alpha-3) 0%,
             transparent 60%
         );
         content: '';
@@ -768,7 +768,7 @@
         background: linear-gradient(
             90deg,
             transparent,
-            rgb(255 255 255 / 4%),
+            var(--white-alpha-4),
             transparent
         );
         content: '';
@@ -784,8 +784,8 @@
     &:hover {
         border-color: var(--color-primary);
         box-shadow:
-            0 12px 24px rgb(0 0 0 / 20%),
-            0 0 20px rgb(0 212 255 / 12%);
+            0 12px 24px var(--shadow-black-20),
+            0 0 20px var(--primary-shadow-12);
         transform: translateY(-6px);
 
         &::before {
@@ -800,7 +800,7 @@
         .value-icon {
             background-color: var(--color-primary);
             border-color: var(--color-primary);
-            box-shadow: 0 0 18px rgb(0 212 255 / 35%);
+            box-shadow: 0 0 18px var(--primary-shadow-35);
             color: var(--color-bg);
 
             svg {

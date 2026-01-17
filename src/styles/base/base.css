@@ -26,11 +26,10 @@ html {
 body {
     background-attachment: fixed;
     background-color: var(--color-bg);
-    /* Direct RGB colors required for gradient stop positions - CSS variables cannot be used in gradient color stops */
     background-image:
-        radial-gradient(ellipse 80% 50% at 50% -20%, rgb(0 212 255 / 8%) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 60%, rgb(255 0 110 / 4%) 0%, transparent 50%),
-        radial-gradient(ellipse 50% 30% at 20% 80%, rgb(163 255 18 / 3%) 0%, transparent 50%);
+        radial-gradient(ellipse 80% 50% at 50% -20%, var(--gradient-primary-dim) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 60%, var(--gradient-accent-dim) 0%, transparent 50%),
+        radial-gradient(ellipse 50% 30% at 20% 80%, var(--gradient-lime-dim) 0%, transparent 50%);
     color: var(--color-text-primary);
     font-family: var(--font-body);
     font-size: var(--text-base);
@@ -43,14 +42,13 @@ body {
 }
 
 /* Scanline overlay for CRT effect */
-/* Direct RGB color used for specific opacity in pattern - CSS variables not suitable for pattern stops */
 body::before {
     background: repeating-linear-gradient(
         0deg,
         transparent,
         transparent 2px,
-        rgb(0 0 0 / 15%) 2px,
-        rgb(0 0 0 / 15%) 4px
+        var(--black-alpha-15) 2px,
+        var(--black-alpha-15) 4px
     );
     content: '';
     inset: 0;
@@ -176,17 +174,16 @@ input, textarea, select {
 }
 
 /* === LIGHT MODE SPECIFIC OVERRIDES === */
-/* Direct RGB colors used for light mode transparency - values specific to light theme only */
 
 [data-theme="light"] .nav,
 .light-mode .nav {
     backdrop-filter: blur(12px);
-    background-color: rgb(250 250 250 / 85%);
+    background-color: var(--light-bg-85);
 }
 
 [data-theme="light"] .nav.scrolled,
 .light-mode .nav.scrolled {
-    background-color: rgb(250 250 250 / 95%);
+    background-color: var(--light-bg-95);
     border-bottom: 1px solid var(--border-soft);
 }
 

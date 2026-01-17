@@ -22,7 +22,7 @@
 
 .nav.scrolled {
     backdrop-filter: blur(16px);
-    background-color: rgb(10 10 11 / 85%);
+    background-color: var(--dark-bg-85);
     border-bottom: 1px solid var(--border-soft);
 }
 

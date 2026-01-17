@@ -34,7 +34,7 @@
 
 .section--ambient::before {
     animation: ambient-drift 25s ease-in-out infinite;
-    background: radial-gradient(circle, rgb(0 212 255 / 6%) 0%, transparent 70%);
+    background: radial-gradient(circle, var(--gradient-primary-6) 0%, transparent 70%);
     border-radius: 50%;
     content: '';
     filter: blur(60px);
@@ -46,7 +46,7 @@
 
 .section--ambient::after {
     animation: ambient-drift 20s ease-in-out infinite reverse;
-    background: radial-gradient(circle, rgb(255 0 110 / 4%) 0%, transparent 70%);
+    background: radial-gradient(circle, var(--gradient-accent-dim) 0%, transparent 70%);
     border-radius: 50%;
     content: '';
     filter: blur(50px);
@@ -513,7 +513,7 @@
 
 .how-step:hover {
     border-color: var(--color-primary-dim);
-    box-shadow: 0 0 30px rgb(0 212 255 / 8%);
+    box-shadow: 0 0 30px var(--gradient-primary-dim);
 }
 
 .how-icon {
@@ -1516,7 +1516,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 }
 
 .comparison-column--before {
-    border-color: rgb(255 0 110 / 20%);
+    border-color: var(--accent-alpha-20);
 }
 
 .comparison-column--after {
@@ -1530,7 +1530,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 
 .comparison-header--before {
     background: linear-gradient(135deg, var(--color-accent-dim), transparent);
-    border-bottom: 1px solid rgb(255 0 110 / 20%);
+    border-bottom: 1px solid var(--accent-alpha-20);
 }
 
 .comparison-header--after {
@@ -1558,7 +1558,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 }
 
 .comparison-badge--before {
-    border: 1px solid rgb(255 0 110 / 30%);
+    border: 1px solid var(--accent-alpha-30);
     color: var(--color-accent);
 }
 
@@ -1883,7 +1883,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 
 .footer {
     background:
-        linear-gradient(to bottom, transparent 0%, rgb(0 212 255 / 2%) 100%);
+        linear-gradient(to bottom, transparent 0%, var(--primary-alpha-2) 100%);
     border-top: 1px solid var(--border-soft);
     padding: var(--space-16) 0;
     position: relative;

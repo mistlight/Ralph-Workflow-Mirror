@@ -109,7 +109,7 @@ h2::after {
     border-color: var(--color-primary);
     box-shadow: var(--shadow-glow-sm),
                 0 0 20px var(--color-primary-dim),
-                inset 0 1px 0 rgb(255 255 255 / 10%);
+                inset 0 1px 0 var(--white-alpha-10);
     transition: all var(--duration-300) var(--ease-expo-out);
 }
 
@@ -211,7 +211,7 @@ h2::after {
 .feature-card::before,
 .install-card::before {
     background: linear-gradient(135deg,
-                rgb(0 212 255 / 5%) 0%,
+                var(--primary-alpha-5) 0%,
                 transparent 50%);
     border-radius: inherit;
     content: '';
@@ -470,7 +470,7 @@ code:not(pre code):hover {
 
 /* Enhanced error visibility */
 .error-message {
-    background-color: rgb(255 0 110 / 10%);
+    background-color: var(--accent-alpha-10);
     border: 1px solid var(--color-accent);
     border-left-width: 4px;
     color: var(--color-accent-light);
@@ -481,7 +481,7 @@ code:not(pre code):hover {
 
 /* Subtle success indication */
 .success-message {
-    background-color: rgb(163 255 18 / 10%);
+    background-color: var(--lime-alpha-10);
     border: 1px solid var(--color-lime);
     border-left-width: 4px;
     color: var(--color-lime);
@@ -623,7 +623,7 @@ footer a:hover {
 }
 
 .comparison-card.before:hover {
-    box-shadow: -4px 0 12px rgb(255 0 110 / 20%),
+    box-shadow: -4px 0 12px var(--accent-alpha-20),
                 var(--shadow-lg);
 }
 
@@ -632,7 +632,7 @@ footer a:hover {
 }
 
 .comparison-card.after:hover {
-    box-shadow: -4px 0 12px rgb(163 255 18 / 20%),
+    box-shadow: -4px 0 12px var(--lime-alpha-20),
                 var(--shadow-lg);
 }
 
@@ -796,9 +796,9 @@ footer a:hover {
 
     &::before {
         background: linear-gradient(135deg,
-                    rgb(0 212 255 / 2%) 0%,
+                    var(--primary-alpha-3) 0%,
                     transparent 50%,
-                    rgb(255 0 110 / 1%) 100%);
+                    var(--accent-alpha-1) 100%);
         border-radius: inherit;
         content: '';
         inset: 0;
@@ -878,7 +878,7 @@ footer a:hover {
         border-left-color: var(--color-primary);
         box-shadow: var(--shadow-lg),
                     0 0 30px var(--color-primary-dim),
-                    inset 0 1px 0 rgb(255 255 255 / 5%);
+                    inset 0 1px 0 var(--white-alpha-5);
         transform: translateY(-3px);
     }
 
@@ -917,7 +917,7 @@ footer a:hover {
         animation: heroGlow 8s ease-in-out infinite alternate;
         background: radial-gradient(
             ellipse 80% 50% at 50% -20%,
-            rgb(0 212 255 / 8%) 0%,
+            var(--gradient-primary-dim) 0%,
             transparent 70%
         );
         content: '';
@@ -930,7 +930,7 @@ footer a:hover {
         animation: heroGlowAccent 12s ease-in-out infinite alternate;
         background: radial-gradient(
             ellipse 60% 40% at 80% 20%,
-            rgb(255 0 110 / 4%) 0%,
+            var(--gradient-accent-dim) 0%,
             transparent 60%
         );
         content: '';
@@ -972,13 +972,13 @@ footer a:hover {
 /* Enhanced terminal window with premium depth */
 .terminal-window {
     box-shadow: var(--shadow-lg),
-                inset 0 1px 0 rgb(255 255 255 / 5%);
+                inset 0 1px 0 var(--white-alpha-5);
     transition: all var(--duration-300) var(--ease-expo-out);
     will-change: transform, box-shadow;
 
     &::before {
         background: linear-gradient(180deg,
-                    rgb(0 212 255 / 5%) 0%,
+                    var(--primary-alpha-5) 0%,
                     transparent 30%);
         content: '';
         inset: 0;

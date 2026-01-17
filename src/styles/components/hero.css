@@ -198,7 +198,7 @@
 .badge-amber,
 .badge-accent {
     background-color: var(--color-accent-dim);
-    border: 1px solid rgb(255 0 110 / 25%);
+    border: 1px solid var(--border-accent-color);
     color: var(--color-accent);
 }
 
@@ -211,7 +211,7 @@
 .badge-moss,
 .badge-success {
     background-color: var(--color-lime-dim);
-    border: 1px solid rgb(163 255 18 / 25%);
+    border: 1px solid var(--border-lime);
     color: var(--color-lime);
 }
 
@@ -234,7 +234,7 @@
 
 .badge-green {
     background-color: var(--color-lime-dim);
-    border: 1px solid rgb(163 255 18 / 25%);
+    border: 1px solid var(--border-lime);
     color: var(--color-lime);
 }
 
@@ -577,7 +577,7 @@
 
 /* Subtle shine effect on hover */
 .audience-option::before {
-    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 5%), transparent);
+    background: linear-gradient(90deg, transparent, var(--white-alpha-5), transparent);
     content: '';
     inset: 0;
     position: absolute;
@@ -592,7 +592,7 @@
 .audience-option:hover {
     background-color: var(--color-bg-hover);
     border-color: var(--border-accent);
-    box-shadow: 0 4px 12px rgb(0 212 255 / 20%);
+    box-shadow: 0 4px 12px var(--primary-alpha-20);
     color: var(--color-text);
     transform: translateY(-2px) scale(1.02);
 }
@@ -603,7 +603,7 @@
     border-color: var(--color-primary-light);
     box-shadow: var(--shadow-glow-sm),
                 0 0 24px var(--color-primary-glow),
-                0 4px 12px rgb(0 212 255 / 25%);
+                0 4px 12px var(--primary-alpha-25);
     color: var(--color-bg);
     transform: translateY(-2px) scale(1.02);
 }
@@ -612,7 +612,7 @@
 .audience-option[aria-pressed="true"]::after,
 .audience-option.active::after {
     border-radius: var(--radius-full);
-    box-shadow: inset 0 1px 2px rgb(255 255 255 / 20%);
+    box-shadow: inset 0 1px 2px var(--white-alpha-20);
     content: '';
     inset: 0;
     pointer-events: none;

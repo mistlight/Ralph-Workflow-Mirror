@@ -137,7 +137,7 @@ select.error {
 input.error:focus,
 textarea.error:focus,
 select.error:focus {
-    box-shadow: 0 0 0 3px rgb(255 0 110 / 10%);
+    box-shadow: 0 0 0 3px var(--accent-alpha-10);
 }
 
 .form-error {
@@ -157,7 +157,7 @@ select.success {
 input.success:focus,
 textarea.success:focus,
 select.success:focus {
-    box-shadow: 0 0 0 3px rgb(163 255 18 / 10%);
+    box-shadow: 0 0 0 3px var(--lime-alpha-10);
 }
 
 .form-success {

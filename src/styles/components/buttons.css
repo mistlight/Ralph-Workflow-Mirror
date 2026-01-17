@@ -38,7 +38,7 @@
     }
 
     &::before {
-        background: linear-gradient(180deg, rgb(255 255 255 / 10%) 0%, transparent 50%);
+        background: linear-gradient(180deg, var(--white-alpha-10) 0%, transparent 50%);
         content: '';
         inset: 0;
         opacity: 0;
@@ -62,7 +62,7 @@
 
         /* Ripple effect for primary button */
         &::after {
-            background: radial-gradient(circle, rgb(255 255 255 / 30%) 0%, transparent 70%);
+            background: radial-gradient(circle, var(--white-alpha-30) 0%, transparent 70%);
             border-radius: 50%;
             content: '';
             height: 0;

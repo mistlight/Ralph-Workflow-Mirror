@@ -235,6 +235,110 @@
     --shadow-2xl: 0 32px 64px -12px rgb(0 0 0 / 75%);
     --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 40%);
 
+    /* === ALPHA OPACITY VALUES === */
+    --alpha-3: 3%;
+    --alpha-4: 4%;
+    --alpha-5: 5%;
+    --alpha-8: 8%;
+    --alpha-10: 10%;
+    --alpha-12: 12%;
+    --alpha-15: 15%;
+    --alpha-18: 18%;
+    --alpha-20: 20%;
+    --alpha-25: 25%;
+    --alpha-30: 30%;
+    --alpha-35: 35%;
+    --alpha-40: 40%;
+    --alpha-50: 50%;
+    --alpha-60: 60%;
+    --alpha-65: 65%;
+    --alpha-70: 70%;
+    --alpha-75: 75%;
+    --alpha-85: 85%;
+    --alpha-95: 95%;
+
+    /* === GRADIENT ALPHA COLORS === */
+    --gradient-primary-dim: rgb(0 212 255 / var(--alpha-8));
+    --gradient-primary-6: rgb(0 212 255 / 6%);
+    --gradient-accent-dim: rgb(255 0 110 / var(--alpha-4));
+    --gradient-lime-dim: rgb(163 255 18 / var(--alpha-3));
+
+    /* === WHITE/BLACK ALPHA === */
+    --white-alpha-3: rgb(255 255 255 / var(--alpha-3));
+    --white-alpha-4: rgb(255 255 255 / var(--alpha-4));
+    --white-alpha-5: rgb(255 255 255 / var(--alpha-5));
+    --white-alpha-10: rgb(255 255 255 / var(--alpha-10));
+    --white-alpha-15: rgb(255 255 255 / var(--alpha-15));
+    --white-alpha-20: rgb(255 255 255 / var(--alpha-20));
+    --white-alpha-30: rgb(255 255 255 / var(--alpha-30));
+    --white-alpha-100: rgb(255 255 255);
+
+    --black-alpha-15: rgb(0 0 0 / var(--alpha-15));
+    --black-alpha-40: rgb(0 0 0 / var(--alpha-40));
+    --black-alpha-50: rgb(0 0 0 / var(--alpha-50));
+    --black-alpha-60: rgb(0 0 0 / var(--alpha-60));
+    --black-alpha-65: rgb(0 0 0 / var(--alpha-65));
+    --black-alpha-70: rgb(0 0 0 / var(--alpha-70));
+    --black-alpha-75: rgb(0 0 0 / var(--alpha-75));
+
+    /* === LIGHT MODE SPECIFIC === */
+    --light-bg-85: rgb(250 250 250 / var(--alpha-85));
+    --light-bg-95: rgb(250 250 250 / var(--alpha-95));
+
+    /* === DARK BACKGROUND ALPHA === */
+    --dark-bg-85: rgb(10 10 11 / var(--alpha-85));
+
+    /* === SHADOW ALPHA VALUES === */
+    --shadow-black-15: rgb(0 0 0 / var(--alpha-15));
+    --shadow-black-20: rgb(0 0 0 / 20%);
+    --shadow-black-25: rgb(0 0 0 / 25%);
+    --shadow-black-30: rgb(0 0 0 / 30%);
+    --shadow-black-40: rgb(0 0 0 / var(--alpha-40));
+    --shadow-black-50: rgb(0 0 0 / var(--alpha-50));
+    --shadow-black-55: rgb(0 0 0 / 55%);
+    --shadow-black-60: rgb(0 0 0 / var(--alpha-60));
+    --shadow-black-65: rgb(0 0 0 / var(--alpha-65));
+    --shadow-black-70: rgb(0 0 0 / var(--alpha-70));
+    --shadow-black-75: rgb(0 0 0 / var(--alpha-75));
+
+    /* === PRIMARY ALPHA FOR BOX SHADOWS === */
+    --primary-shadow-10: rgb(0 212 255 / 10%);
+    --primary-shadow-12: rgb(0 212 255 / 12%);
+    --primary-shadow-15: rgb(0 212 255 / 15%);
+    --primary-shadow-35: rgb(0 212 255 / 35%);
+
+    /* === PRIMARY ALPHA VALUES === */
+    --primary-alpha-2: rgb(0 212 255 / 2%);
+    --primary-alpha-3: rgb(0 212 255 / var(--alpha-3));
+    --primary-alpha-4: rgb(0 212 255 / var(--alpha-4));
+    --primary-alpha-5: rgb(0 212 255 / var(--alpha-5));
+    --primary-alpha-8: rgb(0 212 255 / var(--alpha-8));
+    --primary-alpha-12: rgb(0 212 255 / var(--alpha-12));
+    --primary-alpha-15: rgb(0 212 255 / var(--alpha-15));
+    --primary-alpha-20: rgb(0 212 255 / var(--alpha-20));
+    --primary-alpha-25: rgb(0 212 255 / var(--alpha-25));
+    --primary-alpha-35: rgb(0 212 255 / 35%);
+    --primary-alpha-40: rgb(0 212 255 / var(--alpha-40));
+
+    /* === ACCENT ALPHA VALUES === */
+    --accent-alpha-1: rgb(255 0 110 / 1%);
+    --accent-alpha-2: rgb(255 0 110 / 2%);
+    --accent-alpha-3: rgb(255 0 110 / var(--alpha-3));
+    --accent-alpha-4: rgb(255 0 110 / var(--alpha-4));
+    --accent-alpha-10: rgb(255 0 110 / var(--alpha-10));
+    --accent-alpha-15: rgb(255 0 110 / 15%);
+    --accent-alpha-20: rgb(255 0 110 / 20%);
+    --accent-alpha-25: rgb(255 0 110 / var(--alpha-25));
+    --accent-alpha-30: rgb(255 0 110 / 30%);
+
+    /* === LIME ALPHA VALUES === */
+    --lime-alpha-2: rgb(163 255 18 / 2%);
+    --lime-alpha-3: rgb(163 255 18 / var(--alpha-3));
+    --lime-alpha-4: rgb(163 255 18 / var(--alpha-4));
+    --lime-alpha-10: rgb(163 255 18 / var(--alpha-10));
+    --lime-alpha-12: rgb(163 255 18 / var(--alpha-12));
+    --lime-alpha-20: rgb(163 255 18 / 20%);
+
     /* Neon Glow shadows - Cyan */
     --shadow-glow-sm: 0 0 12px rgb(0 212 255 / 30%);
     --shadow-glow-md: 0 0 24px rgb(0 212 255 / 35%), 0 0 8px rgb(0 212 255 / 20%);
