@@ -329,21 +329,40 @@ pre code {
 
 .copy-btn:hover {
     background-color: var(--color-primary-dim);
-    border-color: var(--border-accent);
-    box-shadow: 0 0 12px var(--primary-alpha-12);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 12px var(--primary-alpha-12), 0 0 20px var(--color-primary-dim);
     color: var(--color-primary);
     opacity: 1;
-    transform: scale(var(--scale-105));
+    transform: scale(var(--scale-110)) translateY(var(--translate-neg1));
 }
 
 .copy-btn:active {
-    transform: scale(var(--scale-095));
+    transform: scale(var(--scale-095)) translateY(var(--translate-0));
 }
 
 .copy-btn.copied {
+    animation: copySuccess var(--duration-300) var(--ease-out);
     background-color: var(--color-lime-dim);
     border-color: var(--color-lime);
+    box-shadow: 0 0 12px var(--lime-alpha-20);
     color: var(--color-lime);
+}
+
+@keyframes copySuccess {
+    0% {
+        box-shadow: 0 0 10px var(--lime-alpha-20);
+        transform: scale(var(--scale-095));
+    }
+
+    50% {
+        box-shadow: 0 0 20px var(--color-lime);
+        transform: scale(var(--scale-110));
+    }
+
+    100% {
+        box-shadow: 0 0 12px var(--lime-alpha-20);
+        transform: scale(var(--scale-100));
+    }
 }
 
 .code-block pre {

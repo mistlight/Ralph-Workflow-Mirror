@@ -18,7 +18,8 @@ Make improvements by focusing on small details until it's up to par with `fronte
 * YOU MUST USE ALL THE POSTCSS RULES AND REFACTOR
 * MOVE JAVASCRIPT TO TYPESCRIPT WITH STRICT MODE
 * VITE OUTPUT MUST BE COMITTED, we are an open source project so no point really hiding our actual source since they are open source anyway but it's for user experience to minify and load the site faster
-* Ensure everytime when npx build runs, the index.html links to the right dist/ for css and javascript (this is not testable on vite dev server)
+* When uploaded to codeberg pages it MUST work, the index.html in the main directory (not dist) MUST render without going through vite dev or opening a server, it should work by opening it from the filesystem even if the artifact is built with vite
 
 ## CONSTRAINT
-YOU ARE NOT HERE TO COME UP WITH A COMPLETELY NEW DESIGN YOU MUST ITERATE ON THIS EXISTING DESIGN
+* YOU ARE NOT HERE TO COME UP WITH A COMPLETELY NEW DESIGN YOU MUST ITERATE ON THIS EXISTING DESIGN
+* You MUST look up Codeberg documentation when you analyze if this will work on Codeberg Pages, you cannot rely on existing knowledge of SSG

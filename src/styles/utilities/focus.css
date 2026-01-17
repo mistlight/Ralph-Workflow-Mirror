@@ -101,7 +101,8 @@ details > summary:focus-visible {
 
 /* === ENHANCED FOCUS FOR SWITCHES === */
 
-.switch:focus-visible {
+.switch:focus-visible,
+.mode-switch:focus-visible {
     box-shadow: 0 0 0 3px var(--color-primary-dim),
                 0 0 0 5px var(--color-bg);
     outline: var(--focus-outline);
