@@ -103,7 +103,10 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
     // Check if branches share a common ancestor
     // If merge_base fails with NotFound, the branches are unrelated
     match repo.merge_base(head_commit.id(), upstream_commit.id()) {
-        Err(e) if e.class() == git2::ErrorClass::Reference && e.code() == git2::ErrorCode::NotFound => {
+        Err(e)
+            if e.class() == git2::ErrorClass::Reference
+                && e.code() == git2::ErrorCode::NotFound =>
+        {
             // Branches are unrelated - no shared history
             return Ok(RebaseResult::NoOp);
         }
