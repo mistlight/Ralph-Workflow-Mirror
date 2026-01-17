@@ -11,34 +11,52 @@ h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     font-weight: var(--font-bold);
     letter-spacing: var(--tracking-tight);
-    line-height: var(--leading-tight);
+    line-height: var(--leading-snug);
 }
 
 h1, .h1 {
     font-size: clamp(2.5rem, 8vw, var(--text-7xl));
     font-weight: var(--font-extrabold);
     letter-spacing: var(--tracking-tighter);
+    line-height: 1.05;
+    margin-bottom: var(--space-6);
 }
 
 h2, .h2 {
     font-size: clamp(1.875rem, 5vw, var(--text-5xl));
-    margin-bottom: var(--space-6);
+    font-weight: var(--font-bold);
+    margin-bottom: var(--space-5);
 }
 
 h3, .h3 {
     font-size: var(--text-2xl);
+    font-weight: var(--font-semibold);
     margin-bottom: var(--space-4);
 }
 
 h4, .h4 {
     font-size: var(--text-xl);
+    font-weight: var(--font-semibold);
     margin-bottom: var(--space-3);
+}
+
+h5, .h5 {
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    margin-bottom: var(--space-2);
+}
+
+h6, .h6 {
+    font-size: var(--text-base);
+    font-weight: var(--font-medium);
+    margin-bottom: var(--space-2);
 }
 
 /* === PARAGRAPHS === */
 
 p {
     color: var(--color-text-muted);
+    line-height: var(--leading-relaxed);
     margin-bottom: var(--space-4);
     max-width: 65ch;
 }
@@ -46,13 +64,17 @@ p {
 .lead {
     color: var(--color-text-primary);
     font-size: var(--text-lg);
-    line-height: var(--leading-relaxed);
+    font-weight: var(--font-normal);
+    line-height: 1.7;
+    margin-bottom: var(--space-5);
 }
 
 .lead-paragraph {
     color: var(--color-text);
     font-size: var(--text-lg);
-    line-height: var(--leading-relaxed);
+    font-weight: var(--font-normal);
+    line-height: 1.7;
+    margin-bottom: var(--space-5);
 }
 
 /* === TEXT EMPHASIS === */

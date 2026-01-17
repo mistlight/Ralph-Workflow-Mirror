@@ -17,8 +17,9 @@
     gap: var(--space-2);
     justify-content: center;
     letter-spacing: var(--tracking-wider);
-    line-height: 1;
-    min-height: 44px;
+    line-height: 1.2;
+    min-height: 48px;
+    min-width: 48px;
     overflow: hidden;
     padding: var(--space-3) var(--space-6);
     position: relative;
@@ -29,7 +30,7 @@
 
     &:focus-visible {
         outline: 2px solid var(--color-primary);
-        outline-offset: 2px;
+        outline-offset: 3px;
     }
 
     &::before {
@@ -185,17 +186,21 @@
 
     &-sm {
         font-size: var(--text-xs);
+        min-height: 40px;
+        min-width: 40px;
         padding: var(--space-2) var(--space-4);
     }
 
     &-lg {
         font-size: var(--text-base);
+        min-height: 52px;
         padding: var(--space-4) var(--space-8);
     }
 
     &-xl {
         border-radius: var(--radius-xl);
         font-size: var(--text-lg);
+        min-height: 56px;
         padding: var(--space-5) var(--space-10);
     }
 
@@ -247,11 +252,18 @@
     color: var(--color-text-muted);
     cursor: pointer;
     display: flex;
-    height: 40px;
+    height: 44px;
     justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
     position: relative;
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 40px;
+    width: 44px;
+
+    &:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 3px;
+    }
 
     &:hover {
         background-color: var(--color-primary-dim);
@@ -302,10 +314,17 @@
     color: var(--color-text-muted);
     cursor: pointer;
     display: flex;
-    height: 40px;
+    height: 44px;
     justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 40px;
+    width: 44px;
+
+    &:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 3px;
+    }
 
     &:hover {
         background-color: var(--color-primary-dim);

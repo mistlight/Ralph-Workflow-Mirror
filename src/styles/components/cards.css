@@ -16,7 +16,13 @@
     transition: all var(--duration-300) var(--ease-expo-out);
 
     &:hover {
-        transform: translateY(-6px);
+        border-color: var(--border-medium);
+        transform: translateY(-4px);
+    }
+
+    &:focus-within {
+        border-color: var(--border-accent);
+        box-shadow: 0 0 0 3px var(--color-primary-dim);
     }
 }
 
@@ -135,9 +141,14 @@
     transition: all var(--duration-300) var(--ease-expo-out);
 
     &:hover {
-        border-color: var(--color-primary);
+        border-color: var(--border-accent);
         box-shadow: 0 8px 24px rgb(0 212 255 / 10%);
-        transform: translateY(-6px);
+        transform: translateY(-4px);
+    }
+
+    &:focus-within {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-primary-dim);
     }
 
     h4 {
@@ -167,7 +178,12 @@
 
     &:hover {
         border-color: var(--border-medium);
-        transform: translateY(-6px);
+        transform: translateY(-4px);
+    }
+
+    &:focus-within {
+        border-color: var(--border-accent);
+        box-shadow: 0 0 0 3px var(--color-primary-dim);
     }
 
     &--after {
@@ -426,7 +442,12 @@
 
     &:hover {
         border-color: var(--border-medium);
-        transform: translateY(-6px);
+        transform: translateY(-4px);
+    }
+
+    &:focus-within {
+        border-color: var(--border-accent);
+        box-shadow: 0 0 0 3px var(--color-primary-dim);
     }
 }
 

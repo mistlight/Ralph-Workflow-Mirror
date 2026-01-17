@@ -10,7 +10,7 @@
 .nav-links {
     align-items: center;
     display: flex;
-    gap: var(--space-1);
+    gap: var(--space-2);
 }
 
 .nav-link {
@@ -20,20 +20,22 @@
     font-size: var(--text-sm);
     font-weight: var(--font-medium);
     letter-spacing: var(--tracking-wide);
-    padding: var(--space-2) var(--space-4);
+    min-height: 44px;
+    min-width: 44px;
+    padding: var(--space-2-5) var(--space-4);
     text-decoration: none;
     text-transform: uppercase;
-    transition: color var(--duration-150) var(--ease-expo-out),
-                background-color var(--duration-150) var(--ease-expo-out);
+    transition: all var(--duration-200) var(--ease-expo-out);
 
     &:hover {
         background-color: var(--color-bg-hover);
         color: var(--color-text);
+        transform: translateY(-1px);
     }
 
     &:focus-visible {
         outline: 2px solid var(--color-primary);
-        outline-offset: 2px;
+        outline-offset: 3px;
     }
 
     &.active,
@@ -179,10 +181,17 @@
     display: none;
     flex-direction: column;
     gap: var(--space-1-5);
-    height: 40px;
+    height: 44px;
     justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
     padding: var(--space-2);
-    width: 40px;
+    width: 44px;
+
+    &:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 3px;
+    }
 
     span {
         background-color: currentcolor;
@@ -206,7 +215,7 @@
     .nav-menu {
         align-items: center;
         display: flex;
-        gap: var(--space-1);
+        gap: var(--space-2);
         list-style: none;
 
         .nav-link {
@@ -216,11 +225,12 @@
             font-size: var(--text-sm);
             font-weight: var(--font-medium);
             letter-spacing: var(--tracking-wide);
-            padding: var(--space-2) var(--space-4);
+            min-height: 44px;
+            min-width: 44px;
+            padding: var(--space-2-5) var(--space-4);
             text-decoration: none;
             text-transform: uppercase;
-            transition: color var(--duration-150) var(--ease-expo-out),
-                        background-color var(--duration-150) var(--ease-expo-out);
+            transition: all var(--duration-200) var(--ease-expo-out);
         }
 
         .nav-link:hover,
@@ -229,6 +239,7 @@
             box-shadow: 0 0 0 1px var(--border-accent),
                         0 0 20px var(--color-primary-dim);
             color: var(--color-primary);
+            transform: translateY(-1px);
         }
     }
 }
