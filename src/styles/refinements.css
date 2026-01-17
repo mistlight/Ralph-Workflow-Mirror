@@ -304,8 +304,8 @@ pre code,
 }
 
 .terminal-window:hover {
-    border-color: var(--border-accent);
-    box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 40px var(--color-primary-dim);
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 50px var(--color-primary-glow);
     transform: translateY(calc(var(--lift-sm) * -1));
 }
 
@@ -473,6 +473,13 @@ pre code,
 }
 
 /* === NAVIGATION ENHANCEMENTS === */
+
+/* Navigation container with subtle backdrop blur */
+.nav {
+    backdrop-filter: blur(var(--blur-sm));
+    background-color: var(--dark-bg-85);
+    border-bottom: var(--border-width-1) solid var(--border-subtle);
+}
 
 /* Navigation link base styles */
 .nav-link {
@@ -732,6 +739,24 @@ code:not(pre code):hover {
     cursor: help;
 }
 
+/* Enhanced inline code within hero description */
+.hero-description code.inline {
+    background-color: var(--code-bg);
+    border: var(--border-width-1) solid var(--code-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    padding: 0.15em 0.4em;
+    transition: all var(--duration-150) var(--ease-out);
+}
+
+.hero-description code.inline:hover {
+    background-color: var(--color-primary-dim);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 12px var(--color-primary-glow);
+}
+
 /* Enhance code readability */
 .code-block code {
     line-height: 1.7;
@@ -947,6 +972,7 @@ footer a::after {
 footer a:hover {
     color: var(--color-primary);
     text-shadow: 0 0 10px var(--color-primary-glow);
+    transform: translateX(var(--translate-2));
 }
 
 footer a:hover::after {
@@ -1078,16 +1104,50 @@ a:not(.btn):hover {
     content: '';
     height: var(--size-xs);
     left: 0;
-    opacity: 0.4;
+    opacity: 0.5;
     position: absolute;
     transition: width var(--duration-500) var(--ease-expo-out),
                 opacity var(--duration-300) var(--ease-expo-out);
-    width: var(--space-16);
+    width: var(--space-20);
 }
 
 .section-header:hover .section-title::after {
-    opacity: 0.7;
-    width: var(--space-24);
+    opacity: 0.8;
+    width: var(--space-28);
+}
+
+/* FAQ category headers with better visual weight */
+.faq-category {
+    border-left: var(--border-width-3) solid currentcolor;
+    padding-left: var(--space-3);
+    position: relative;
+}
+
+.faq-category::before {
+    background: currentcolor;
+    bottom: 0;
+    content: '';
+    left: 0;
+    opacity: 0.2;
+    position: absolute;
+    top: 0;
+    width: var(--border-width-1);
+}
+
+.faq-category--primary {
+    color: var(--color-primary);
+}
+
+.faq-category--accent {
+    color: var(--color-accent);
+}
+
+.faq-category--violet {
+    color: var(--color-violet);
+}
+
+.faq-category--developer {
+    color: var(--color-lime);
 }
 
 /* === SUBTLE TEXT GLOW FOR HEADINGS === */
@@ -1503,6 +1563,21 @@ a:focus-visible {
 
 .glossary-item:hover {
     background-color: var(--color-bg-elevated);
+    border-left-width: var(--border-width-3);
+}
+
+/* Glossary icon container enhancement */
+.glossary-term-icon {
+    background: linear-gradient(135deg, var(--color-primary-dim) 0%, var(--color-bg-card) 100%);
+    border: var(--border-width-1) solid var(--border-accent);
+    border-radius: var(--radius-lg);
+    transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+.glossary-term:hover .glossary-term-icon {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-glow-sm);
+    transform: scale(var(--scale-110)) rotate(var(--rotate-5));
 }
 
 /* === BREADCRUMB NAVIGATION ENHANCEMENTS === */
