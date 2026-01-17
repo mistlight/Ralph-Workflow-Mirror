@@ -1592,6 +1592,27 @@ code:not(pre code) {
     gap: var(--space-5);
 }
 
+/* === NAVIGATION ACTIVE STATE IMPROVEMENT === */
+
+.nav-link.active,
+.nav-link.nav-link--active {
+    background: linear-gradient(135deg,
+                var(--color-primary-dim) 0%,
+                transparent 100%);
+    border: 1px solid var(--border-accent);
+    box-shadow: 0 0 0 1px var(--border-accent),
+                0 0 30px var(--color-primary-glow),
+                inset 0 0 20px var(--color-primary-dim);
+    color: var(--color-primary);
+}
+
+/* === HERO VISUAL REFINEMENTS === */
+
+/* Ensure hero background elements have proper z-index stacking */
+.hero-bg > * {
+    z-index: -1;
+}
+
 /* === CODE BLOCK COPY BUTTON IMPROVEMENTS === */
 
 .code-wrapper,
@@ -1602,6 +1623,58 @@ code:not(pre code) {
             opacity: 1;
         }
     }
+}
+
+/* === FAQ INTERACTIVE STATES CONSISTENCY === */
+
+.faq-summary {
+    transition: background-color var(--duration-200) var(--ease-out),
+                border-color var(--duration-200) var(--ease-out);
+}
+
+.faq-summary:hover {
+    border-left-width: 3px;
+}
+
+.faq-summary--accent:hover {
+    border-left-color: var(--color-accent);
+}
+
+.faq-summary--developer:hover {
+    border-left-color: var(--color-lime);
+}
+
+/* === GLOSSARY INTERACTIVE ENHANCEMENTS === */
+
+.glossary-term {
+    transition: all var(--duration-200) var(--ease-out);
+}
+
+.glossary-term:hover {
+    border-color: var(--border-accent);
+    box-shadow: 0 0 30px var(--color-primary-dim);
+    transform: translateY(-2px);
+}
+
+/* === AUDIENCE OPTION CONSISTENCY === */
+
+.audience-option[aria-pressed="true"] {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+    border-color: var(--color-primary-light);
+    box-shadow: var(--shadow-glow-sm), 0 0 24px var(--color-primary-glow);
+    color: var(--color-bg);
+    transform: translateY(-2px) scale(1.02);
+}
+
+/* === FOOTER LINK HOVER CONSISTENCY === */
+
+footer-link::after {
+    height: 2px;
+    transition: width var(--duration-200) var(--ease-expo-out);
+}
+
+.footer-link:hover::after {
+    width: 100%;
 }
 
 
