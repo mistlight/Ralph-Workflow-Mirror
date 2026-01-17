@@ -22,7 +22,6 @@
 
 .nav.scrolled {
     backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
     background-color: rgb(10 10 11 / 85%);
     border-bottom: 1px solid var(--border-soft);
 }
@@ -155,6 +154,7 @@
 /* === MOBILE MENU OVERLAY === */
 
 .nav-mobile-menu {
+    backdrop-filter: blur(16px);
     background-color: var(--color-bg);
     display: flex;
     flex-direction: column;

@@ -126,6 +126,7 @@
 @media (--2xl) {
     .nav-menu {
         align-items: stretch;
+        backdrop-filter: blur(12px);
         background-color: var(--color-bg);
         flex-direction: column;
         gap: var(--space-2);
