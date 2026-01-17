@@ -854,6 +854,13 @@ code:not(pre code):hover {
 .hero-title-gradient {
     animation: gradientShift 6s ease-in-out infinite alternate;
     background-size: 200% 200%;
+    will-change: background-position;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-title-gradient {
+        animation: none;
+    }
 }
 
 @keyframes gradientShift {

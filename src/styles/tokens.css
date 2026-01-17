@@ -486,6 +486,20 @@
     --focus-outline: 2px solid var(--color-primary);
     --focus-offset: 3px;
 
+    /* === TERMINAL TYPING ANIMATION === */
+    --terminal-typing-step-1: 600ms;
+    --terminal-typing-step-2: 1200ms;
+    --terminal-typing-step-3: 1500ms;
+    --terminal-typing-step-4: 1800ms;
+    --terminal-typing-step-5: 2200ms;
+    --terminal-typing-step-6: 2800ms;
+    --terminal-typing-step-7: 3500ms;
+
+    /* === SOCIAL BRAND COLORS === */
+    --social-twitter: #1da1f2;
+    --social-github: #fff;
+    --social-codeberg: #fff;
+
     /* === Z-INDEX LAYERS === */
     --z-behind: -1;
     --z-base: 0;

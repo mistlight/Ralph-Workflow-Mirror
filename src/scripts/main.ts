@@ -161,8 +161,17 @@ import type {
       line.classList.remove('typed');
     });
 
-    // More realistic timing - first lines faster, slower for output
-    const timing: number[] = [600, 1200, 1500, 1800, 2200, 2800, 3500];
+    // Read timing from CSS variables for designer-adjustable animation speed
+    const rootStyles: CSSStyleDeclaration = getComputedStyle(document.documentElement);
+    const timing: number[] = [
+      parseMsVariable(rootStyles.getPropertyValue('--terminal-typing-step-1').trim()) ?? 600,
+      parseMsVariable(rootStyles.getPropertyValue('--terminal-typing-step-2').trim()) ?? 1200,
+      parseMsVariable(rootStyles.getPropertyValue('--terminal-typing-step-3').trim()) ?? 1500,
+      parseMsVariable(rootStyles.getPropertyValue('--terminal-typing-step-4').trim()) ?? 1800,
+      parseMsVariable(rootStyles.getPropertyValue('--terminal-typing-step-5').trim()) ?? 2200,
+      parseMsVariable(rootStyles.getPropertyValue('--terminal-typing-step-6').trim()) ?? 2800,
+      parseMsVariable(rootStyles.getPropertyValue('--terminal-typing-step-7').trim()) ?? 3500,
+    ];
 
     // Animate lines sequentially
     terminalLines.forEach((line: HTMLElement, index: number): void => {
@@ -170,6 +179,30 @@ import type {
         line.classList.add('typed');
       }, timing[index] ?? index * 600);
     });
+  }
+
+  // Helper function to parse CSS time values (ms or s) to milliseconds
+  function parseMsVariable(value: string): number | null {
+    if (!value) return null;
+
+    // Remove whitespace
+    value = value.trim();
+
+    // Check if value ends with 'ms' (milliseconds)
+    if (value.endsWith('ms')) {
+      const numValue = parseFloat(value.slice(0, -2));
+      return isNaN(numValue) ? null : numValue;
+    }
+
+    // Check if value ends with 's' (seconds) - convert to ms
+    if (value.endsWith('s')) {
+      const numValue = parseFloat(value.slice(0, -1));
+      return isNaN(numValue) ? null : numValue * 1000;
+    }
+
+    // Assume raw milliseconds if no unit
+    const numValue = parseFloat(value);
+    return isNaN(numValue) ? null : numValue;
   }
 
   // Run animation on page load

@@ -1979,7 +1979,27 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 .footer-social-link:hover {
     background-color: var(--color-primary-dim);
     border-color: var(--border-accent);
-    color: var(--color-primary);
+}
+
+.footer-social-link--twitter:hover {
+    background-color: rgb(29 161 242 / 12%);
+    border-color: rgb(29 161 242 / 25%);
+    box-shadow: 0 0 20px rgb(29 161 242 / 30%);
+    color: var(--social-twitter);
+}
+
+.footer-social-link--github:hover {
+    background-color: rgb(255 255 255 / 12%);
+    border-color: rgb(255 255 255 / 25%);
+    box-shadow: 0 0 20px rgb(255 255 255 / 30%);
+    color: var(--social-github);
+}
+
+.footer-social-link--codeberg:hover {
+    background-color: rgb(255 255 255 / 12%);
+    border-color: rgb(255 255 255 / 25%);
+    box-shadow: 0 0 20px rgb(255 255 255 / 30%);
+    color: var(--social-codeberg);
 }
 
 .footer-social-link svg {
