@@ -1,4 +1,5 @@
 .agent/*
+.plan*
 .screenshots/*
 .playwright-mcp/*
 node_modules/
