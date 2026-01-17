@@ -18,10 +18,10 @@ button:focus-visible,
                 outline var(--duration-150) var(--ease-out);
 }
 
-/* Smooth focus transition for all interactive elements */
+/* Smooth focus transition for all interactive elements - snappy feedback */
 :focus-visible {
-    transition: box-shadow var(--duration-200) var(--ease-expo-out),
-                outline-color var(--duration-200) var(--ease-expo-out);
+    transition: box-shadow var(--duration-150) var(--ease-expo-out),
+                outline-color var(--duration-150) var(--ease-expo-out);
 }
 
 /* === SKIP LINK FOCUS === */
@@ -97,4 +97,32 @@ details > summary:focus-visible {
     :focus-visible {
         transition: none;
     }
+}
+
+/* === ENHANCED FOCUS FOR SWITCHES === */
+
+.switch:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-offset);
+    box-shadow: 0 0 0 3px var(--color-primary-dim),
+                0 0 0 5px var(--color-bg);
+}
+
+/* === ENHANCED FOCUS FOR FAQ TOGGLES === */
+
+.faq-toggle:focus-visible {
+    background-color: var(--color-primary-dim);
+    border-radius: var(--radius-md);
+    box-shadow: 0 0 0 2px var(--color-bg),
+                0 0 0 4px var(--color-primary);
+    outline: none;
+}
+
+/* === ENHANCED FOCUS FOR CARDS === */
+
+.card:focus-within,
+.feature-card:focus-within,
+.glossary-term:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: var(--focus-ring), var(--shadow-glow-sm);
 }

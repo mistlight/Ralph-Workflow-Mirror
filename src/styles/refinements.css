@@ -60,12 +60,12 @@ pre code,
 
 /* === BUTTON ENHANCEMENTS === */
 
-/* Improved button press feedback with smoother timing */
+/* Improved button press feedback with consistent timing */
 .btn {
     transition: transform var(--duration-150) var(--ease-expo-out),
-                box-shadow var(--duration-200) var(--ease-expo-out),
-                background-color var(--duration-200) var(--ease-expo-out),
-                border-color var(--duration-200) var(--ease-expo-out);
+                box-shadow var(--duration-150) var(--ease-expo-out),
+                background-color var(--duration-150) var(--ease-expo-out),
+                border-color var(--duration-150) var(--ease-expo-out);
     will-change: transform;
 }
 
@@ -125,11 +125,14 @@ pre code,
     transform: translateY(calc(var(--lift-sm) * -1));
 }
 
-/* Audience selection button interactions */
+/* Audience selection button interactions with consistent timing */
 .audience-btn,
 .audience-option,
 .cta-button {
-    transition: all var(--duration-200) var(--ease-expo-out);
+    transition: transform var(--duration-150) var(--ease-expo-out),
+                box-shadow var(--duration-150) var(--ease-expo-out),
+                background-color var(--duration-150) var(--ease-expo-out),
+                border-color var(--duration-150) var(--ease-expo-out);
 }
 
 .audience-btn:hover,
@@ -159,7 +162,7 @@ pre code,
 .audience-option:active,
 .cta-button:active {
     transform: translateY(var(--size-xs)) scale(var(--scale-098));
-    transition: transform var(--duration-100) var(--ease-out);
+    transition: transform var(--duration-75) var(--ease-out);
 }
 
 @keyframes audiencePulse {
@@ -306,13 +309,13 @@ pre code,
 }
 
 @keyframes terminalCursor {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
+    0%, 40% { opacity: 1; }
+    50%, 90% { opacity: 0; }
 }
 
 /* === CARD IMPROVEMENTS === */
 
-/* Enhanced card depth and hover with premium easing */
+/* Enhanced card depth and hover with consistent timing */
 .feature-card,
 .install-card,
 .comparison-card,
@@ -328,9 +331,9 @@ pre code,
 .persona-card {
     box-shadow: var(--shadow-lg);
     position: relative;
-    transition: transform var(--duration-300) var(--ease-expo-out),
-                box-shadow var(--duration-300) var(--ease-expo-out),
-                border-color var(--duration-200) var(--ease-expo-out);
+    transition: transform var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out),
+                border-color var(--duration-150) var(--ease-expo-out);
     will-change: transform;
 }
 
@@ -349,7 +352,7 @@ pre code,
 .persona-card:hover {
     border-color: var(--border-accent);
     box-shadow: var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim);
-    transform: translateY(var(--lift-md));
+    transform: translateY(var(--lift-sm));
 }
 
 /* Inner glow for card hover with staggered reveal */
@@ -372,17 +375,13 @@ pre code,
     opacity: 1;
 }
 
-/* Premium card border gradient on hover */
+/* Premium card border gradient on hover - using border-left for gradient effect */
 .feature-card:hover,
 .comparison-card:hover,
 .license-card:hover,
 .contribute-card:hover,
 .value-card:hover {
-    background-image: linear-gradient(var(--border-soft), var(--border-soft)),
-                          linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
-    background-origin: border-box;
-    background-repeat: no-repeat;
-    background-size: var(--size-xs) var(--size-xs), var(--size-xs) var(--size-xs);
+    border-left-color: var(--color-primary);
 }
 
 /* Enhanced comparison card accent */
@@ -583,13 +582,13 @@ pre code,
 
 /* === FAQ ACCORDION ENHANCEMENTS === */
 
-/* Enhanced FAQ accordion with smooth reveal */
+/* Enhanced FAQ accordion with snappy transitions */
 .faq-summary {
     cursor: pointer;
     position: relative;
     transition: background-color var(--duration-150) var(--ease-expo-out),
                 border-color var(--duration-150) var(--ease-expo-out),
-                padding-left var(--duration-200) var(--ease-expo-out),
+                padding-left var(--duration-150) var(--ease-expo-out),
                 transform var(--duration-150) var(--ease-expo-out);
 }
 
@@ -611,8 +610,8 @@ pre code,
     left: 0;
     opacity: 0;
     position: absolute;
-    transition: opacity var(--duration-200) var(--ease-out),
-                width var(--duration-300) var(--ease-expo-out);
+    transition: opacity var(--duration-150) var(--ease-out),
+                width var(--duration-200) var(--ease-expo-out);
     width: 0;
 }
 
@@ -650,12 +649,12 @@ pre code,
     transform: rotate(var(--rotate-5));
 }
 
-/* FAQ toggle icon */
+/* FAQ toggle icon with snappy transitions */
 .faq-toggle {
     box-shadow: 0 0 0 transparent;
-    transition: all var(--duration-300) var(--ease-expo-out),
-                color var(--duration-200) var(--ease-out),
-                transform var(--duration-300) var(--ease-expo-out);
+    transition: transform var(--duration-200) var(--ease-expo-out),
+                color var(--duration-150) var(--ease-out),
+                background-color var(--duration-150) var(--ease-out);
 }
 
 .faq-toggle:hover {
@@ -981,7 +980,7 @@ html {
     scroll-behavior: smooth;
 }
 
-/* Enhanced link hover with gradient reveal - smoother animation */
+/* Enhanced link hover with gradient reveal - snappy animation */
 a:not(.btn) {
     background-image: linear-gradient(135deg,
                 var(--color-primary) 0%,
@@ -990,8 +989,8 @@ a:not(.btn) {
     background-repeat: no-repeat;
     background-size: 0% var(--size-xs);
     position: relative;
-    transition: background-size var(--duration-400) var(--ease-expo-out),
-                color var(--duration-200) var(--ease-expo-out);
+    transition: background-size var(--duration-200) var(--ease-expo-out),
+                color var(--duration-150) var(--ease-expo-out);
 }
 
 a:not(.btn):hover {
@@ -1031,14 +1030,16 @@ a:not(.btn):hover {
     gap: var(--space-5);
 }
 
-/* Enhanced feature icon container glow */
+/* Enhanced feature icon container glow with snappy feedback */
 .feature-icon {
     background: linear-gradient(135deg,
                 var(--color-primary-dim) 0%,
                 var(--color-bg-card) 100%);
     border: var(--border-width-1) solid var(--border-accent);
     box-shadow: 0 0 20px var(--color-primary-dim);
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: transform var(--duration-200) var(--ease-expo-out),
+                border-color var(--duration-150) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
 }
 
 .feature-icon:hover {
@@ -1049,16 +1050,16 @@ a:not(.btn):hover {
     transform: scale(var(--scale-110)) rotate(var(--rotate-5));
 }
 
-/* Enhanced step number with glow */
+/* Enhanced step number with glow - snappy feedback */
 .step-number {
     background: linear-gradient(135deg,
                 var(--color-primary-dim) 0%,
                 var(--color-bg-card) 100%);
     border: var(--border-width-1) solid var(--border-accent);
     box-shadow: 0 0 20px var(--color-primary-dim);
-    transition: border-color var(--duration-200) var(--ease-expo-out),
-                box-shadow var(--duration-200) var(--ease-expo-out),
-                transform var(--duration-200) var(--ease-expo-out);
+    transition: transform var(--duration-150) var(--ease-expo-out),
+                border-color var(--duration-150) var(--ease-expo-out),
+                box-shadow var(--duration-150) var(--ease-expo-out);
 }
 
 .step-number:hover {
@@ -1103,8 +1104,8 @@ a:not(.btn):hover {
     left: 0;
     opacity: 0.5;
     position: absolute;
-    transition: width var(--duration-500) var(--ease-expo-out),
-                opacity var(--duration-300) var(--ease-expo-out);
+    transition: width var(--duration-300) var(--ease-expo-out),
+                opacity var(--duration-200) var(--ease-expo-out);
     width: var(--space-20);
 }
 
@@ -1886,23 +1887,16 @@ select:hover {
     width: 100%;
 }
 
-/* Install mode switch enhanced focus state - new addition */
+/* Install mode switch enhanced focus state */
 .switch:focus-visible {
     outline: var(--focus-outline);
     outline-offset: var(--focus-offset);
 }
 
-/* Glossary card snappier transitions - new addition */
+/* Glossary card snappier transitions */
 .glossary-card,
 .glossary-term {
-    transition-duration: var(--duration-150);
-}
-
-/* Enhanced FAQ toggle focus state - new addition */
-.faq-toggle:focus-visible {
-    background-color: var(--color-primary-dim);
-    border-radius: var(--radius-md);
-    box-shadow: 0 0 0 2px var(--color-bg),
-                0 0 0 4px var(--color-primary);
-    outline: none;
+    transition: border-color var(--duration-150) var(--ease-expo-out),
+                box-shadow var(--duration-150) var(--ease-expo-out),
+                transform var(--duration-150) var(--ease-expo-out);
 }
