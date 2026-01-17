@@ -1,0 +1,100 @@
+/* ========================================
+   FOCUS STATES
+   ========================================
+   Enhanced focus visibility for keyboard navigation
+   ======================================== */
+
+/* === ENHANCED FOCUS STATES === */
+
+/* Enhanced focus visibility for keyboard navigation with glow */
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible,
+[role="button"]:focus-visible {
+    box-shadow: var(--focus-ring), 0 0 12px var(--color-primary-glow);
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-offset);
+    transition: box-shadow var(--duration-150) var(--ease-out),
+                outline var(--duration-150) var(--ease-out);
+}
+
+/* Smooth focus transition for all interactive elements */
+:focus-visible {
+    transition: box-shadow var(--duration-200) var(--ease-expo-out),
+                outline-color var(--duration-200) var(--ease-expo-out);
+}
+
+/* === SKIP LINK FOCUS === */
+
+.skip-link:not(:focus) {
+    border-width: var(--border-width-0);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+}
+
+.skip-link:focus {
+    animation: slideIn var(--anim-base) var(--ease-expo-out);
+    background-color: var(--color-bg);
+    border: var(--border-width-2) solid var(--color-primary);
+    box-shadow: var(--shadow-glow-md);
+    color: var(--color-text);
+    inset: var(--space-4) auto auto var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    z-index: var(--z-tooltip);
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(var(--lift-lg)); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* === IMPROVED FOCUS RINGS === */
+
+/* Enhanced focus for input fields */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+    border-color: var(--color-primary);
+    box-shadow: var(--focus-ring), 0 0 12px var(--color-primary-dim);
+    outline: none;
+}
+
+/* Focus styles for tabs */
+[role="tab"]:focus-visible {
+    border-bottom-color: var(--color-primary);
+    box-shadow: inset 0 -2px 0 var(--color-primary);
+}
+
+/* Focus styles for accordion */
+details > summary:focus-visible {
+    box-shadow: var(--focus-ring), 0 0 8px var(--color-primary-dim);
+    outline-offset: var(--space-2);
+}
+
+/* === ACCESSIBILITY FOCUS INDICATORS === */
+
+/* High contrast focus for better visibility */
+@media (prefers-contrast: high) {
+    a:focus-visible,
+    button:focus-visible,
+    .btn:focus-visible {
+        outline-width: 3px;
+        outline-offset: 2px;
+    }
+}
+
+/* Reduced motion for focus animations */
+@media (prefers-reduced-motion: reduce) {
+    .skip-link:focus {
+        animation: none;
+    }
+
+    :focus-visible {
+        transition: none;
+    }
+}

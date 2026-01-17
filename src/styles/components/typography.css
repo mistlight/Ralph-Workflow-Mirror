@@ -141,16 +141,19 @@ code, .inline-code, .inline {
     border-radius: var(--radius-lg);
     padding: var(--space-4);
     position: relative;
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: border-color var(--duration-200) var(--ease-expo-out),
+                border-left-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out),
+                transform var(--duration-200) var(--ease-expo-out);
 }
 
 .glossary-term:hover {
     border-color: var(--border-accent);
     border-left-color: var(--color-primary);
-    box-shadow: var(--shadow-lg),
+    box-shadow: var(--shadow-md),
                 0 0 30px var(--color-primary-dim),
                 inset 0 1px 0 var(--white-alpha-5);
-    transform: translateY(var(--lift-md));
+    transform: translateY(var(--lift-sm));
 }
 
 .glossary-term-header {
@@ -281,7 +284,9 @@ code, .inline-code, .inline {
     justify-content: space-between;
     list-style: none;
     padding: var(--space-5) var(--space-6);
-    transition: background-color var(--duration-150) var(--ease-out);
+    transition: background-color var(--duration-200) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
 }
 
 .faq-summary::-webkit-details-marker {
@@ -294,6 +299,7 @@ code, .inline-code, .inline {
 
 .faq-summary:hover {
     background-color: var(--color-bg-hover);
+    box-shadow: inset var(--border-width-2) 0 0 0 var(--border-accent);
 }
 
 /* Colored summary variants */
@@ -487,11 +493,12 @@ code, .inline-code, .inline {
     border: var(--border-width-1) solid var(--border-subtle);
     border-radius: var(--radius-lg);
     padding: var(--space-5);
-    transition: all var(--duration-200) var(--ease-expo-out);
+    transition: background-color var(--duration-200) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out);
 
     &:hover {
         background-color: var(--color-bg-hover);
-        border-color: var(--border-soft);
+        border-color: var(--border-accent);
     }
 }
 

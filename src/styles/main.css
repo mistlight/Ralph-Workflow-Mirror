@@ -30,6 +30,7 @@
 
 /* Utility classes */
 @import './utilities/utilities.css';
+@import './utilities/focus.css';
 
 /* Design refinements - visual polish and micro-interactions */
 @import './refinements.css';

@@ -13,15 +13,15 @@
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     position: relative;
-    transition: transform var(--duration-300) var(--ease-expo-out),
+    transition: transform var(--duration-200) var(--ease-expo-out),
                 border-color var(--duration-200) var(--ease-expo-out),
                 box-shadow var(--duration-200) var(--ease-expo-out);
     will-change: transform;
 
     &:hover {
         border-color: var(--border-accent);
-        box-shadow: var(--shadow-xl), 0 0 30px var(--color-primary-dim);
-        transform: translateY(var(--lift-md));
+        box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
+        transform: translateY(var(--lift-sm));
     }
 
     &:focus-within {
@@ -30,7 +30,7 @@
     }
 
     &:active {
-        transform: translateY(var(--lift-sm));
+        transform: translateY(var(--lift-xs));
     }
 }
 
@@ -43,7 +43,7 @@
     overflow: hidden;
     padding: var(--space-8);
     position: relative;
-    transition: transform var(--duration-300) var(--ease-expo-out),
+    transition: transform var(--duration-200) var(--ease-expo-out),
                 border-color var(--duration-200) var(--ease-expo-out),
                 box-shadow var(--duration-200) var(--ease-expo-out);
 
@@ -54,7 +54,7 @@
         inset: 0;
         opacity: 0;
         position: absolute;
-        transition: opacity var(--duration-300) var(--ease-expo-out);
+        transition: opacity var(--duration-200) var(--ease-expo-out);
     }
 
     /* Shine effect on hover */
@@ -78,10 +78,10 @@
     &:hover {
         border-color: var(--color-primary);
         box-shadow:
-            0 20px 40px var(--shadow-black-30),
-            0 0 30px var(--primary-shadow-15),
+            0 16px 32px var(--shadow-black-25),
+            0 0 30px var(--primary-shadow-12),
             inset 0 1px 0 var(--white-alpha-5);
-        transform: translateY(var(--lift-lg));
+        transform: translateY(var(--lift-md));
 
         &::before {
             opacity: 1;
@@ -89,17 +89,17 @@
 
         &::after {
             left: 150%;
-            transition: left 0.6s var(--ease-expo-out);
+            transition: left 0.5s var(--ease-expo-out);
         }
 
         .feature-icon {
             background-color: var(--color-primary);
             border-color: var(--color-primary);
-            box-shadow: var(--shadow-glow-lg);
+            box-shadow: var(--shadow-glow-md);
 
             svg {
                 color: var(--color-bg);
-                transform: scale(var(--scale-110)) rotate(var(--rotate-5));
+                transform: scale(var(--scale-107)) rotate(var(--rotate-5));
             }
         }
     }
@@ -148,14 +148,14 @@
     border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-6);
-    transition: transform var(--duration-300) var(--ease-expo-out),
+    transition: transform var(--duration-200) var(--ease-expo-out),
                 border-color var(--duration-200) var(--ease-expo-out),
                 box-shadow var(--duration-200) var(--ease-expo-out);
 
     &:hover {
         border-color: var(--border-accent);
-        box-shadow: var(--shadow-xl), 0 0 30px var(--color-primary-dim);
-        transform: translateY(var(--lift-md));
+        box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
+        transform: translateY(var(--lift-sm));
     }
 
     &:focus-within {
@@ -186,15 +186,15 @@
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     position: relative;
-    transition: transform var(--duration-300) var(--ease-expo-out),
+    transition: transform var(--duration-200) var(--ease-expo-out),
                 border-color var(--duration-200) var(--ease-expo-out),
                 box-shadow var(--duration-200) var(--ease-expo-out);
     will-change: transform;
 
     &:hover {
         border-color: var(--border-accent);
-        box-shadow: var(--shadow-xl), 0 0 30px var(--color-primary-dim);
-        transform: translateY(var(--lift-md));
+        box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
+        transform: translateY(var(--lift-sm));
     }
 
     &:focus-within {
@@ -203,7 +203,7 @@
     }
 
     &:active {
-        transform: translateY(var(--lift-sm));
+        transform: translateY(var(--lift-xs));
     }
 
     &--after {
@@ -216,14 +216,14 @@
 
         &:hover {
             border-color: var(--color-primary);
-            box-shadow: var(--shadow-xl), 0 0 40px var(--primary-shadow-15);
+            box-shadow: var(--shadow-lg), 0 0 40px var(--primary-shadow-15);
         }
     }
 
     &--before {
         &:hover {
             border-color: var(--color-accent);
-            box-shadow: var(--shadow-xl), 0 0 30px var(--accent-alpha-15);
+            box-shadow: var(--shadow-lg), 0 0 30px var(--accent-alpha-15);
         }
     }
 }
