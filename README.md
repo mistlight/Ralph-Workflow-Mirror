@@ -5,17 +5,24 @@ If you need to change it, ask a human maintainer or if there is a major change n
 
 # Ralph Workflow
 
-Ralph Workflow is an external (lives outside of the AI Agent) agent orchastrator meant mostly for unattended sessions over long period of time. It is not meant to be babysat as long as you can write a detailed spec file.
+Ralph Workflow is an external (lives outside of the AI Agent) agent orchestrator meant mostly for unattended sessions over long period of time. 
+It is not meant to be babysat as long as you can write a detailed spec file unlike most active agent orchestrator.
+It is inspired by the idea of Ralph by [Geoffrey Huntley](https://ghuntley.com/ralph/). I started this project as a side project with bunch of shell scripts while working on my main project testing
+out the concept but then I decided that I want it working on separate parts of the project like different worktrees, so this became increasingly complex and I changed it to rust (no this isn't 
+one of those rewrite everything in rust stories, shell script genuinely does not scale well in big codebases).
 
-If you are looking for an interactive orchastrator, you are probably looking for something else.
+If you are looking for an interactive orchestrator, you are probably looking for something else.
 
 Ralph Workflow works best if you think like a Product Manager and can scope out every details about the feature you need. The more details you can add, the better Ralph Workflow will perform. It is meant to run long running tasks that are very deterministic and need a lot of commits and non trivial amount of manual work.
 
 ## Currently Supported Clients
-
-* Claude Code
+* Claude Code (and Claude Code Switch profiles)
 * OpenAI Codex CLI
 * OpenCode (Not Tested Much Yet, working on that soon)
+
+## Recommendations
+* Use Claude Code subscription if you have the 20x max plan, but even that will only give you like 2-3 days worth. I actually think GLM is probably best suited for this.
+* Codex is very much recommended as the reviewing agent, I personally had the most success using Codex as the reviewing agent.
 
 ## Design Philosophy
 
@@ -27,4 +34,4 @@ Ralph Workflow is designed to make as much deterministic decisions as possible. 
 I'm Mistlight, while Ralph did generate a lot of code for this repo, this README.md is written by me hence you can tell why it's very awkwardly worded.
 
 ## LICENSE
-Licesned under AGPL-v3
+Licensed under AGPL-v3. No this will not GPL or AGPL the code it generates. AGPL only applies to this codebase itself.
