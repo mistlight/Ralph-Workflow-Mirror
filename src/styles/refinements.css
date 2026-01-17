@@ -319,9 +319,9 @@ pre code,
     border-radius: inherit;
     content: '';
     inset: 0;
+    opacity: 0;
     pointer-events: none;
     position: absolute;
-    opacity: 0;
     transition: opacity var(--duration-300) var(--ease-expo-out);
 }
 
@@ -853,6 +853,12 @@ code:not(pre code):hover {
     right: var(--space-2);
     top: 50%;
     transform: translateY(-50%);
+}
+
+/* Icon rotation on copy for extra feedback */
+.copy-btn.copied svg {
+    transition: transform var(--duration-200) var(--ease-expo-out);
+    transform: rotate(var(--rotate-12));
 }
 
 @keyframes copyPulse {

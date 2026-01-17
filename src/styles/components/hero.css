@@ -418,6 +418,7 @@
     animation: scrollWheel 2s ease-in-out infinite;
     background: var(--color-primary);
     border-radius: var(--radius-sm);
+    box-shadow: 0 0 8px var(--color-primary-glow);
     height: var(--space-2);
     width: var(--size-xs);
 }

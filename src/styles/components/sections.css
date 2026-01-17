@@ -1045,8 +1045,8 @@
 }
 
 .footer-cta:hover {
-    background-color: var(--color-primary);
-    box-shadow: var(--shadow-glow-lg);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+    box-shadow: var(--shadow-glow-lg), 0 0 40px var(--color-primary-glow);
     color: var(--color-bg);
     transform: translateY(var(--lift-md));
 }
