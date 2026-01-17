@@ -2,3 +2,5 @@
 .screenshots/*
 .playwright-mcp/*
 node_modules/
+PROMPT.md
+*.md
