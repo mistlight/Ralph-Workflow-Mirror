@@ -229,3 +229,232 @@ pub fn handle_list_templates(colors: Colors) -> bool {
 
     true
 }
+
+/// Handle the smart `--init` flag.
+///
+/// This function intelligently determines what the user wants to initialize:
+/// - If a value is provided and matches a known template name → create PROMPT.md
+/// - If config doesn't exist and no template specified → create config
+/// - If config exists but PROMPT.md doesn't → prompt to create PROMPT.md
+/// - If both exist → show helpful message about what's already set up
+///
+/// # Arguments
+///
+/// * `template_arg` - Optional template name from `--init=TEMPLATE`
+/// * `colors` - Terminal color configuration for output
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the flag was handled (program should exit after),
+/// or `Ok(false)` if not handled, or an error if initialization failed.
+pub fn handle_smart_init(template_arg: Option<&str>, colors: Colors) -> anyhow::Result<bool> {
+    let config_path = crate::config::unified_config_path()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine config directory (no home directory)"))?;
+    let prompt_path = Path::new("PROMPT.md");
+
+    let config_exists = config_path.exists();
+    let prompt_exists = prompt_path.exists();
+
+    // If a template name is provided, treat it as --init-prompt
+    if let Some(template_name) = template_arg {
+        return handle_init_template_arg(template_name, colors);
+    }
+
+    // No template provided - use smart inference based on current state
+    handle_init_state_inference(&config_path, prompt_path, config_exists, prompt_exists, colors)
+}
+
+/// Handle --init when a template name is provided.
+fn handle_init_template_arg(template_name: &str, colors: Colors) -> anyhow::Result<bool> {
+    if get_template(template_name).is_some() {
+        return handle_init_prompt(template_name, colors);
+    }
+
+    // Unknown value - show helpful error
+    println!(
+        "{}Unknown template: '{}'{}",
+        colors.red(),
+        template_name,
+        colors.reset()
+    );
+    println!();
+    println!("Available templates:");
+    for (name, description) in list_templates() {
+        println!(
+            "  {}{}{}  {}",
+            colors.cyan(),
+            name,
+            colors.reset(),
+            description
+        );
+    }
+    println!();
+    println!("Usage: ralph --init=<template>");
+    println!("       ralph --init          # Smart init (infers intent)");
+    Ok(true)
+}
+
+/// Handle --init with smart inference based on current state.
+fn handle_init_state_inference(
+    config_path: &std::path::Path,
+    prompt_path: &Path,
+    config_exists: bool,
+    prompt_exists: bool,
+    colors: Colors,
+) -> anyhow::Result<bool> {
+    match (config_exists, prompt_exists) {
+        (false, false) => handle_init_none_exist(config_path, colors),
+        (true, false) => Ok(handle_init_only_config_exists(config_path, colors)),
+        (false, true) => handle_init_only_prompt_exists(colors),
+        (true, true) => Ok(handle_init_both_exist(config_path, prompt_path, colors)),
+    }
+}
+
+/// Handle --init when neither config nor PROMPT.md exists.
+fn handle_init_none_exist(_config_path: &std::path::Path, colors: Colors) -> anyhow::Result<bool> {
+    println!(
+        "{}No config found. Creating unified config...{}",
+        colors.dim(),
+        colors.reset()
+    );
+    println!();
+    handle_init_global(colors)?;
+    Ok(true)
+}
+
+/// Handle --init when only config exists (no PROMPT.md).
+fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors) -> bool {
+    println!(
+        "{}Config found at:{} {}",
+        colors.green(),
+        colors.reset(),
+        config_path.display()
+    );
+    println!(
+        "{}PROMPT.md not found in current directory.{}",
+        colors.yellow(),
+        colors.reset()
+    );
+    println!();
+    println!("Create a PROMPT.md from a template to get started:");
+    println!();
+
+    for (name, description) in list_templates() {
+        println!(
+            "  {}{}{}  {}{}{}",
+            colors.cyan(),
+            name,
+            colors.reset(),
+            colors.dim(),
+            description,
+            colors.reset()
+        );
+    }
+
+    println!();
+    println!("Usage: ralph --init <template>");
+    println!("       ralph --init-prompt <template>");
+    println!();
+    println!("Example:");
+    println!("  ralph --init bug-fix");
+    println!("  ralph --init feature-spec");
+    true
+}
+
+/// Handle --init when only PROMPT.md exists (no config).
+fn handle_init_only_prompt_exists(colors: Colors) -> anyhow::Result<bool> {
+    println!(
+        "{}PROMPT.md found in current directory.{}",
+        colors.green(),
+        colors.reset()
+    );
+    println!(
+        "{}No config found. Creating unified config...{}",
+        colors.dim(),
+        colors.reset()
+    );
+    println!();
+    handle_init_global(colors)?;
+    Ok(true)
+}
+
+/// Handle --init when both config and PROMPT.md exist.
+fn handle_init_both_exist(
+    config_path: &std::path::Path,
+    prompt_path: &Path,
+    colors: Colors,
+) -> bool {
+    println!("{}Setup complete!{}", colors.green(), colors.reset());
+    println!();
+    println!(
+        "  Config: {}{}{}",
+        colors.dim(),
+        config_path.display(),
+        colors.reset()
+    );
+    println!(
+        "  PROMPT: {}{}{}",
+        colors.dim(),
+        prompt_path.display(),
+        colors.reset()
+    );
+    println!();
+    println!("You're ready to run Ralph:");
+    println!("  ralph \"your commit message\"");
+    println!();
+    println!("Other commands:");
+    println!("  ralph --list-templates    # Show all PROMPT.md templates");
+    println!("  ralph --init=<template>    # Create new PROMPT.md from template");
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_smart_init_with_valid_template() {
+        // When a valid template name is provided, it should delegate to handle_init_prompt
+        let colors = Colors::new();
+        let result = handle_smart_init(Some("bug-fix"), colors);
+
+        // We expect this to return Ok(true) since it handles the init
+        // The actual test would need to mock file system operations
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_smart_init_with_invalid_template() {
+        // When an invalid template name is provided, it should show an error
+        let colors = Colors::new();
+        let result = handle_smart_init(Some("nonexistent-template"), colors);
+
+        // Should still return Ok(true) since it handled the request (showed error)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_smart_init_no_arg() {
+        // When no argument is provided, it should check the current state
+        let colors = Colors::new();
+        let result = handle_smart_init(None, colors);
+
+        // Should return Ok(something) depending on the state of config/PROMPT.md
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_template_name_validation() {
+        // Test that we can validate template names
+        assert!(get_template("bug-fix").is_some());
+        assert!(get_template("feature-spec").is_some());
+        assert!(get_template("refactor").is_some());
+        assert!(get_template("test").is_some());
+        assert!(get_template("docs").is_some());
+        assert!(get_template("quick").is_some());
+
+        // Invalid template names
+        assert!(get_template("invalid").is_none());
+        assert!(get_template("").is_none());
+    }
+}

@@ -16,6 +16,7 @@
 //! - [`init`] - Config initialization handlers (--init, --init-global, --init-legacy)
 
 mod args;
+mod completions;
 mod handlers;
 mod init;
 pub mod presets;
@@ -23,10 +24,14 @@ mod providers;
 
 // Re-export all public items for backward compatibility
 pub use args::Args;
+pub use completions::handle_generate_completion;
 pub use handlers::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
     handle_list_available_agents, handle_template_commands, prompt_template_selection,
 };
-pub use init::{handle_init_global, handle_init_legacy, handle_init_prompt, handle_list_templates};
+pub use init::{
+    handle_init_global, handle_init_legacy, handle_init_prompt, handle_list_templates,
+    handle_smart_init,
+};
 pub use presets::apply_args_to_config;
 pub use providers::handle_list_providers;

@@ -8,8 +8,8 @@
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{
-    apply_args_to_config, handle_init_global, handle_init_legacy, handle_init_prompt,
-    handle_list_templates, Args,
+    apply_args_to_config, handle_generate_completion, handle_init_global, handle_init_legacy,
+    handle_init_prompt, handle_list_templates, handle_smart_init, Args,
 };
 use crate::config::{loader, unified_config_path, Config, UnifiedConfig};
 use crate::git_helpers::get_repo_root;
@@ -79,6 +79,13 @@ pub fn initialize_config(
     // Apply CLI arguments to config
     apply_args_to_config(args, &mut config, colors);
 
+    // Handle --generate-completion flag: generate shell completion script and exit
+    if let Some(shell) = args.completion.generate_completion {
+        if handle_generate_completion(shell) {
+            return Ok(None);
+        }
+    }
+
     // Handle --list-templates flag: display available templates and exit
     if args.template_list.list_templates && handle_list_templates(colors) {
         return Ok(None);
@@ -91,8 +98,20 @@ pub fn initialize_config(
         }
     }
 
-    // Handle unified init flags: create unified config if it doesn't exist and exit
-    if (args.unified_init.init_global || args.unified_init.init) && handle_init_global(colors)? {
+    // Handle smart --init flag: intelligently determine what to initialize
+    if args.unified_init.init.is_some()
+        && handle_smart_init(args.unified_init.init.as_deref(), colors)?
+    {
+        return Ok(None);
+    }
+
+    // Handle --init-config flag: explicit config creation and exit
+    if args.unified_init.init_config && handle_init_global(colors)? {
+        return Ok(None);
+    }
+
+    // Handle --init-global flag: create unified config if it doesn't exist and exit
+    if args.unified_init.init_global && handle_init_global(colors)? {
         return Ok(None);
     }
 

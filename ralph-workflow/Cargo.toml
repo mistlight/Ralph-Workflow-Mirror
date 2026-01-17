@@ -28,6 +28,7 @@ monitoring = []
 [dependencies]
 # CLI argument parsing
 clap = { version = "4.4", features = ["derive", "env"] }
+clap_complete = "4.4"
 
 # JSON parsing with serde (100x faster than jq spawns)
 serde = { version = "1.0", features = ["derive"] }

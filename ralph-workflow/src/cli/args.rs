@@ -90,19 +90,36 @@ pub struct StandardPresets {
 /// Unified config initialization flags.
 #[derive(Parser, Debug, Default)]
 pub struct UnifiedInitFlags {
-    /// Initialize unified config file and exit (alias for --init-global)
+    /// Smart initialization: infers intent based on state
+    ///
+    /// With a value matching a known template name: creates PROMPT.md from that template
+    /// Without a value:
+    ///   - If config doesn't exist: creates config
+    ///   - If config exists but PROMPT.md doesn't: prompts for PROMPT.md creation
+    ///   - If both exist: shows helpful message about what's already set up
     #[arg(
         long,
-        conflicts_with_all = ["init_global", "init_legacy", "init_prompt"],
+        conflicts_with_all = ["init_global", "init_config", "init_legacy", "init_prompt"],
+        help = "Smart init: create config or PROMPT.md (infers from current state)",
+        value_name = "TEMPLATE",
+        num_args = 0..=1,
+        require_equals = true
+    )]
+    pub init: Option<String>,
+
+    /// Initialize unified config file and exit (explicit alias for config creation)
+    #[arg(
+        long,
+        conflicts_with_all = ["init", "init_global", "init_legacy", "init_prompt"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
         hide = true
     )]
-    pub init: bool,
+    pub init_config: bool,
 
     /// Initialize unified config file and exit
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_legacy", "init_prompt"],
+        conflicts_with_all = ["init", "init_config", "init_legacy", "init_prompt"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
         hide = true
     )]
@@ -154,13 +171,42 @@ pub struct ProviderListFlag {
     pub list_providers: bool,
 }
 
+/// Shell completion generation flag.
+#[derive(Parser, Debug, Default)]
+pub struct CompletionFlag {
+    /// Generate shell completion script
+    #[arg(
+        long,
+        value_name = "SHELL",
+        value_enum,
+        help = "Generate shell completion script (bash, zsh, fish, elvish, powershell)",
+        hide = true
+    )]
+    pub generate_completion: Option<Shell>,
+}
+
+/// Supported shell types for completion generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Shell {
+    /// Bash shell
+    Bash,
+    /// Zsh shell
+    Zsh,
+    /// Fish shell
+    Fish,
+    /// Elvish shell
+    Elvish,
+    /// `pwsh` (`PowerShell`) shell
+    Pwsh,
+}
+
 /// Template listing flag.
 #[derive(Parser, Debug, Default)]
 pub struct TemplateListFlag {
     /// List available PROMPT.md templates and exit
     #[arg(
         long,
-        help = "Show all available PROMPT.md templates with descriptions"
+        help = "Show all available PROMPT.md templates (user-facing templates for tasks)"
     )]
     pub list_templates: bool,
 }
@@ -171,7 +217,7 @@ pub struct TemplateCommands {
     /// Initialize user templates directory
     #[arg(
         long = "init-templates",
-        help = "Create ~/.config/ralph/templates/ with default templates",
+        help = "Create ~/.config/ralph/templates/ with default system prompts (backend AI prompts)",
         default_missing_value = "false",
         num_args = 0..=1,
         require_equals = true
@@ -187,26 +233,34 @@ pub struct TemplateCommands {
     pub force: bool,
 
     /// Validate all templates for syntax errors
-    #[arg(long, help = "Validate all templates for syntax errors")]
+    #[arg(long, help = "Validate all system prompt templates for syntax errors")]
     pub validate: bool,
 
     /// Show template content and metadata
-    #[arg(long, value_name = "NAME", help = "Show template content and metadata")]
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Show system prompt template content and metadata"
+    )]
     pub show: Option<String>,
 
     /// List all prompt templates with their variables
-    #[arg(long, help = "List all prompt templates with their variables")]
+    #[arg(long, help = "List all system prompt templates with their variables")]
     pub list: bool,
 
     /// Extract variables from a template
-    #[arg(long, value_name = "NAME", help = "Extract variables from a template")]
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Extract variables from a system prompt template"
+    )]
     pub variables: Option<String>,
 
     /// Test render a template with provided variables
     #[arg(
         long,
         value_name = "NAME",
-        help = "Test render a template with provided variables"
+        help = "Test render a system prompt template with provided variables"
     )]
     pub render: Option<String>,
 }
@@ -315,8 +369,8 @@ pub struct RebaseFlags {
 \n\
 NEW TO RALPH?\n\
     Just want to get started? Run:\n\
-        ralph --init-prompt feature-spec    # Create a prompt template\n\
-        ralph \"fix: my bug\"                # Run with AI agents\n\
+        ralph --init feature-spec         # Create PROMPT.md from template\n\
+        ralph \"fix: my bug\"              # Run with AI agents\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
@@ -345,7 +399,8 @@ QUICK EXAMPLES:\n\
     ralph -Q \"fix: small bug\"        Quick mode for tiny fixes\n\
     ralph -U \"feat: add button\"      Rapid mode for minor features\n\
     ralph -a claude \"fix: bug\"       Use specific agent\n\
-    ralph --list-templates            See all prompt templates\n\
+    ralph --list-templates            See all PROMPT.md templates\n\
+    ralph --init bug-fix              # Smart init: create PROMPT.md from template\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
 // CLI arguments naturally use many boolean flags. These represent independent
@@ -382,6 +437,10 @@ pub struct Args {
     /// Provider listing flag
     #[command(flatten)]
     pub provider_list: ProviderListFlag,
+
+    /// Shell completion generation flag
+    #[command(flatten)]
+    pub completion: CompletionFlag,
 
     /// Template listing flag
     #[command(flatten)]
