@@ -80,10 +80,9 @@ use validation::{
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
-#[allow(clippy::too_many_lines)]
 pub fn run(args: Args) -> anyhow::Result<()> {
     let colors = Colors::new();
-    let mut logger = Logger::new(colors);
+    let logger = Logger::new(colors);
 
     // Initialize configuration and agent registry
     let Some(init_result) = initialize_config(&args, colors, &logger)? else {
@@ -102,10 +101,6 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let developer_agent = validated.developer_agent;
     let reviewer_agent = validated.reviewer_agent;
 
-    // Get display names for UI/logging
-    let developer_display = registry.display_name(&developer_agent);
-    let reviewer_display = registry.display_name(&reviewer_agent);
-
     // Handle listing commands (these can run without git repo)
     if handle_listing_commands(&args, &registry, colors) {
         return Ok(());
@@ -120,29 +115,9 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // Validate agent chains
     validate_agent_chains(&registry, colors);
 
-    // Handle plumbing commands (these need git repo but not full validation)
-    if args.commit_display.show_commit_msg {
-        return handle_show_commit_msg();
-    }
-    if args.commit_plumbing.apply_commit {
-        return handle_apply_commit(&logger, colors);
-    }
-    if args.commit_display.reset_start_commit {
-        require_git_repo()?;
-        let repo_root = get_repo_root()?;
-        env::set_current_dir(&repo_root)?;
-
-        match reset_start_commit() {
-            Ok(()) => {
-                logger.success("Starting commit reference reset to current HEAD");
-                logger.info(".agent/start_commit has been updated");
-                return Ok(());
-            }
-            Err(e) => {
-                logger.error(&format!("Failed to reset starting commit: {e}"));
-                anyhow::bail!("Failed to reset starting commit");
-            }
-        }
+    // Handle plumbing commands
+    if handle_plumbing_commands(&args, &logger, colors)? {
+        return Ok(());
     }
 
     // Validate agents and set up git repo and PROMPT.md
@@ -159,64 +134,25 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         return Ok(());
     };
 
-    // Create template context for user template overrides (needed for rebase-only)
-    let template_context =
-        TemplateContext::from_user_templates_dir(config.user_templates_dir().cloned());
-
     // Handle --rebase-only
     if args.rebase_flags.rebase_only {
+        let template_context =
+            TemplateContext::from_user_templates_dir(config.user_templates_dir().cloned());
         return handle_rebase_only(&args, &config, &template_context, &logger, colors);
     }
 
-    ensure_files(config.isolation_mode)?;
-
-    // Reset context for isolation mode
-    if config.isolation_mode {
-        reset_context_for_isolation(&logger)?;
-    }
-
-    logger = logger.with_log_file(".agent/logs/pipeline.log");
-
-    // Handle --dry-run
-    if args.recovery.dry_run {
-        return handle_dry_run(
-            &logger,
-            colors,
-            &config,
-            &developer_display,
-            &reviewer_display,
-            &repo_root,
-        );
-    }
-
-    // Handle --generate-commit-msg
-    if args.commit_plumbing.generate_commit_msg {
-        return handle_generate_commit_msg(
-            &config,
-            &template_context,
-            &registry,
-            &logger,
-            colors,
-            &developer_agent,
-            &reviewer_agent,
-        );
-    }
-
-    // Run the full pipeline
-    let ctx = PipelineContext {
+    // Prepare pipeline context or exit early
+    (prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
         config,
         registry,
         developer_agent,
         reviewer_agent,
-        developer_display,
-        reviewer_display,
         repo_root,
         logger,
         colors,
-        template_context,
-    };
-    run_pipeline(&ctx)
+    })?)
+    .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
 }
 
 /// Handles listing commands that don't require the full pipeline.
@@ -250,6 +186,137 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
     }
 
     false
+}
+
+/// Handles plumbing commands that require git repo but not full validation.
+///
+/// Returns `Ok(true)` if a plumbing command was handled and we should exit.
+/// Returns `Ok(false)` if we should continue to the main pipeline.
+fn handle_plumbing_commands(args: &Args, logger: &Logger, colors: Colors) -> anyhow::Result<bool> {
+    // Show commit message
+    if args.commit_display.show_commit_msg {
+        return handle_show_commit_msg().map(|()| true);
+    }
+
+    // Apply commit
+    if args.commit_plumbing.apply_commit {
+        return handle_apply_commit(logger, colors).map(|()| true);
+    }
+
+    // Reset start commit
+    if args.commit_display.reset_start_commit {
+        require_git_repo()?;
+        let repo_root = get_repo_root()?;
+        env::set_current_dir(&repo_root)?;
+
+        return match reset_start_commit() {
+            Ok(()) => {
+                logger.success("Starting commit reference reset to current HEAD");
+                logger.info(".agent/start_commit has been updated");
+                Ok(true)
+            }
+            Err(e) => {
+                logger.error(&format!("Failed to reset starting commit: {e}"));
+                anyhow::bail!("Failed to reset starting commit");
+            }
+        };
+    }
+
+    Ok(false)
+}
+
+/// Parameters for preparing the pipeline context.
+///
+/// Groups related parameters to avoid too many function arguments.
+struct PipelinePreparationParams {
+    args: Args,
+    config: crate::config::Config,
+    registry: AgentRegistry,
+    developer_agent: String,
+    reviewer_agent: String,
+    repo_root: std::path::PathBuf,
+    logger: Logger,
+    colors: Colors,
+}
+
+/// Prepares the pipeline context after agent validation.
+///
+/// Returns `Some(ctx)` if pipeline should run, or `None` if we should exit early.
+fn prepare_pipeline_or_exit(
+    params: PipelinePreparationParams,
+) -> anyhow::Result<Option<PipelineContext>> {
+    let PipelinePreparationParams {
+        args,
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        repo_root,
+        mut logger,
+        colors,
+    } = params;
+
+    ensure_files(config.isolation_mode)?;
+
+    // Reset context for isolation mode
+    if config.isolation_mode {
+        reset_context_for_isolation(&logger)?;
+    }
+
+    logger = logger.with_log_file(".agent/logs/pipeline.log");
+
+    // Handle --dry-run
+    if args.recovery.dry_run {
+        let developer_display = registry.display_name(&developer_agent);
+        let reviewer_display = registry.display_name(&reviewer_agent);
+        handle_dry_run(
+            &logger,
+            colors,
+            &config,
+            &developer_display,
+            &reviewer_display,
+            &repo_root,
+        )?;
+        return Ok(None);
+    }
+
+    // Create template context for user template overrides
+    let template_context =
+        TemplateContext::from_user_templates_dir(config.user_templates_dir().cloned());
+
+    // Handle --generate-commit-msg
+    if args.commit_plumbing.generate_commit_msg {
+        handle_generate_commit_msg(
+            &config,
+            &template_context,
+            &registry,
+            &logger,
+            colors,
+            &developer_agent,
+            &reviewer_agent,
+        )?;
+        return Ok(None);
+    }
+
+    // Get display names before moving registry
+    let developer_display = registry.display_name(&developer_agent);
+    let reviewer_display = registry.display_name(&reviewer_agent);
+
+    // Build pipeline context
+    let ctx = PipelineContext {
+        args,
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        developer_display,
+        reviewer_display,
+        repo_root,
+        logger,
+        colors,
+        template_context,
+    };
+    Ok(Some(ctx))
 }
 
 /// Validates agent commands and workflow capability, then sets up git repo and PROMPT.md.
