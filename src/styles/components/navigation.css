@@ -34,7 +34,7 @@
                     var(--color-accent) 100%);
         bottom: calc(var(--space-1) * -1);
         content: '';
-        height: 2px;
+        height: var(--border-width-2);
         left: 50%;
         position: absolute;
         transform: translateX(-50%) scaleX(0);
@@ -98,9 +98,9 @@
 
         svg {
             color: var(--color-text-primary);
-            height: 18px;
+            height: var(--size-icon-md);
             transition: transform var(--duration-200) var(--ease-expo-out);
-            width: 18px;
+            width: var(--size-icon-md);
         }
 
         &:hover svg {
@@ -220,12 +220,12 @@
     display: none;
     flex-direction: column;
     gap: var(--space-1-5);
-    height: 44px;
+    height: var(--size-touch-target);
     justify-content: center;
-    min-height: 44px;
-    min-width: 44px;
+    min-height: var(--size-touch-target);
+    min-width: var(--size-touch-target);
     padding: var(--space-2);
-    width: 44px;
+    width: var(--size-touch-target);
 
     &:focus-visible {
         outline: var(--focus-outline);
@@ -236,9 +236,9 @@
         background-color: currentcolor;
         border-radius: var(--radius-full);
         display: block;
-        height: 2px;
+        height: var(--border-width-2);
         transition: all var(--duration-200) var(--ease-expo-out);
-        width: 18px;
+        width: var(--size-icon-md);
     }
 
     &.active span:first-child {
@@ -278,7 +278,7 @@
                             var(--color-accent) 100%);
                 bottom: calc(var(--space-1) * -1);
                 content: '';
-                height: 2px;
+                height: var(--border-width-2);
                 left: 50%;
                 position: absolute;
                 transform: translateX(-50%) scaleX(0);

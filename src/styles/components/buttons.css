@@ -186,13 +186,13 @@
             border-radius: 50%;
             border-top-color: transparent;
             content: '';
-            height: 16px;
+            height: var(--size-icon-xl);
             left: 50%;
-            margin-left: -8px;
-            margin-top: -8px;
+            margin-left: calc(var(--size-icon-xl) / -2);
+            margin-top: calc(var(--size-icon-xl) / -2);
             position: absolute;
             top: 50%;
-            width: 16px;
+            width: var(--size-icon-xl);
         }
     }
 
@@ -200,8 +200,8 @@
 
     &-sm {
         font-size: var(--text-xs);
-        min-height: 40px;
-        min-width: 40px;
+        min-height: var(--size-4xl);
+        min-width: var(--size-4xl);
         padding: var(--space-2) var(--space-4);
     }
 
@@ -223,24 +223,24 @@
     svg,
     .btn-icon {
         flex-shrink: 0;
-        height: 18px;
-        width: 18px;
+        height: var(--size-icon-md);
+        width: var(--size-icon-md);
     }
 }
 
 .btn-lg {
     svg,
     .btn-icon {
-        height: 20px;
-        width: 20px;
+        height: var(--size-icon-lg);
+        width: var(--size-icon-lg);
     }
 }
 
 .btn-xl {
     svg,
     .btn-icon {
-        height: 22px;
-        width: 22px;
+        height: var(--size-icon-xl);
+        width: var(--size-icon-xl);
     }
 }
 
@@ -266,13 +266,13 @@
     color: var(--color-text-muted);
     cursor: pointer;
     display: flex;
-    height: 44px;
+    height: var(--size-touch-target);
     justify-content: center;
-    min-height: 44px;
-    min-width: 44px;
+    min-height: var(--size-touch-target);
+    min-width: var(--size-touch-target);
     position: relative;
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 44px;
+    width: var(--size-touch-target);
 
     &:focus-visible {
         outline: var(--focus-outline);
@@ -328,12 +328,12 @@
     color: var(--color-text-muted);
     cursor: pointer;
     display: flex;
-    height: 44px;
+    height: var(--size-touch-target);
     justify-content: center;
-    min-height: 44px;
-    min-width: 44px;
+    min-height: var(--size-touch-target);
+    min-width: var(--size-touch-target);
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 44px;
+    width: var(--size-touch-target);
 
     &:focus-visible {
         outline: var(--focus-outline);
@@ -349,8 +349,8 @@
     }
 
     svg {
-        height: 20px;
-        width: 20px;
+        height: var(--size-icon-lg);
+        width: var(--size-icon-lg);
     }
 }
 

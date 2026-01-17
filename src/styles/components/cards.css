@@ -112,17 +112,17 @@
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
-    height: 56px;
+    height: var(--size-touch-target);
     justify-content: center;
     margin-bottom: var(--space-6);
     position: relative;
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 56px;
+    width: var(--size-touch-target);
 
     svg {
-        height: 28px;
+        height: var(--size-icon-2xl);
         transition: transform var(--duration-300) var(--ease-expo-out);
-        width: 28px;
+        width: var(--size-icon-2xl);
     }
 }
 
@@ -285,10 +285,10 @@
     flex-shrink: 0;
     font-size: var(--text-sm);
     font-weight: var(--font-bold);
-    height: 20px;
+    height: var(--size-icon-lg);
     justify-content: center;
-    margin-top: 3px;
-    width: 20px;
+    margin-top: var(--size-xs);
+    width: var(--size-icon-lg);
 
     &--negative {
         color: var(--color-accent);
@@ -403,11 +403,11 @@
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
-    height: 56px;
+    height: var(--size-touch-target);
     justify-content: center;
     margin-bottom: var(--space-5);
     transition: all var(--duration-200) var(--ease-expo-out);
-    width: 56px;
+    width: var(--size-touch-target);
 }
 
 /* === INSTALL CARDS === */
@@ -450,13 +450,13 @@
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
-    height: 48px;
+    height: var(--size-4xl);
     justify-content: center;
-    width: 48px;
+    width: var(--size-4xl);
 
     svg {
-        height: 24px;
-        width: 24px;
+        height: var(--size-icon-2xl);
+        width: var(--size-icon-2xl);
     }
 }
 
@@ -506,8 +506,8 @@
 
 .quick-benefit-icon {
     flex-shrink: 0;
-    height: 24px;
-    width: 24px;
+    height: var(--size-icon-2xl);
+    width: var(--size-icon-2xl);
 }
 
 .quick-benefit-title {
@@ -621,9 +621,9 @@
 
     svg {
         flex-shrink: 0;
-        height: 18px;
-        margin-top: 2px;
-        width: 18px;
+        height: var(--size-icon-md);
+        margin-top: var(--size-xs);
+        width: var(--size-icon-md);
     }
 
     &--can svg {
@@ -732,18 +732,18 @@
     border-radius: var(--radius-xl);
     color: var(--color-primary);
     display: flex;
-    height: 64px;
+    height: var(--size-6xl);
     justify-content: center;
     margin: 0 auto var(--space-5);
     position: relative;
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 64px;
+    width: var(--size-6xl);
     z-index: 1;
 
     svg {
-        height: 28px;
+        height: var(--size-icon-2xl);
         transition: transform var(--duration-300) var(--ease-expo-out);
-        width: 28px;
+        width: var(--size-icon-2xl);
     }
 }
 
@@ -840,18 +840,18 @@
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
-    height: 48px;
+    height: var(--size-4xl);
     justify-content: center;
     margin: 0 auto var(--space-4);
     position: relative;
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 48px;
+    width: var(--size-4xl);
     z-index: 1;
 
     svg {
-        height: 22px;
+        height: var(--size-icon-xl);
         transition: transform var(--duration-300) var(--ease-expo-out);
-        width: 22px;
+        width: var(--size-icon-xl);
     }
 }
 
@@ -923,13 +923,13 @@
     color: var(--color-primary);
     display: flex;
     flex-shrink: 0;
-    height: 40px;
+    height: var(--size-4xl);
     justify-content: center;
-    width: 40px;
+    width: var(--size-4xl);
 
     svg {
-        height: 20px;
-        width: 20px;
+        height: var(--size-icon-lg);
+        width: var(--size-icon-lg);
     }
 }
 

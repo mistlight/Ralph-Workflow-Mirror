@@ -18,20 +18,20 @@
 /* Vertical connecting line */
 .workflow-steps::before {
     background: linear-gradient(180deg, var(--color-primary), var(--color-accent), var(--color-lime));
-    bottom: 56px;
+    bottom: var(--size-touch-target);
     content: '';
     left: 28px;
     opacity: 0.3;
     position: absolute;
-    top: 56px;
-    width: 2px;
+    top: var(--size-touch-target);
+    width: var(--border-width-2);
 }
 
 .workflow-step {
     align-items: start;
     display: grid;
     gap: var(--space-6);
-    grid-template-columns: 56px 1fr;
+    grid-template-columns: var(--size-touch-target) 1fr;
 }
 
 .step-number {
@@ -47,11 +47,11 @@
     font-family: var(--font-mono);
     font-size: var(--text-xl);
     font-weight: var(--font-bold);
-    height: 56px;
+    height: var(--size-touch-target);
     justify-content: center;
     position: relative;
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 56px;
+    width: var(--size-touch-target);
 }
 
 .step-content {
@@ -101,8 +101,8 @@
 
     .step-number {
         font-size: var(--text-lg);
-        height: 48px;
-        width: 48px;
+        height: var(--size-4xl);
+        width: var(--size-4xl);
     }
 }
 
@@ -142,15 +142,15 @@
     border-radius: var(--radius-xl);
     color: var(--color-primary);
     display: flex;
-    height: 64px;
+    height: var(--size-6xl);
     justify-content: center;
     margin: 0 auto var(--space-4);
-    width: 64px;
+    width: var(--size-6xl);
 }
 
 .how-icon svg {
-    height: 32px;
-    width: 32px;
+    height: var(--size-3xl);
+    width: var(--size-3xl);
 }
 
 .how-step h3 {
@@ -253,9 +253,9 @@
     font-family: var(--font-mono);
     font-size: var(--text-xl);
     font-weight: var(--font-bold);
-    height: 48px;
+    height: var(--size-4xl);
     justify-content: center;
-    width: 48px;
+    width: var(--size-4xl);
 }
 
 .stage-number--amber {
@@ -319,9 +319,9 @@
     border-radius: var(--radius-lg);
     display: flex;
     flex-shrink: 0;
-    height: 40px;
+    height: var(--size-touch-target);
     justify-content: center;
-    width: 40px;
+    width: var(--size-touch-target);
 }
 
 .loop-step-icon--write {

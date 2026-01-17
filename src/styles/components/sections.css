@@ -125,7 +125,7 @@
     content: '';
     height: 1px;
     opacity: 0.5;
-    width: 24px;
+    width: var(--size-icon-2xl);
 }
 
 .section-title {
@@ -550,13 +550,13 @@
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     font-weight: var(--font-semibold);
-    height: 20px;
+    height: var(--size-icon-lg);
     justify-content: center;
     left: 0;
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    width: 20px;
+    width: var(--size-icon-lg);
 }
 
 .first-run-content ul li::before {
@@ -652,12 +652,12 @@
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     font-weight: var(--font-semibold);
-    height: 20px;
+    height: var(--size-icon-lg);
     justify-content: center;
     left: 0;
     position: absolute;
     top: 2px;
-    width: 20px;
+    width: var(--size-icon-lg);
 }
 
 /* === TUTORIAL SIDEBAR === */
@@ -887,9 +887,9 @@
     font-family: var(--font-mono);
     font-size: var(--text-lg);
     font-weight: var(--font-bold);
-    height: 36px;
+    height: calc(var(--size-3xl) + var(--space-1));
     justify-content: center;
-    width: 36px;
+    width: calc(var(--size-3xl) + var(--space-1));
 }
 
 .footer-logo-text {
@@ -918,10 +918,10 @@
     border-radius: var(--radius-lg);
     color: var(--color-text-muted);
     display: flex;
-    height: 40px;
+    height: var(--size-touch-target);
     justify-content: center;
     transition: all var(--duration-150) var(--ease-expo-out);
-    width: 40px;
+    width: var(--size-touch-target);
 }
 
 .footer-social-link:hover {
@@ -951,8 +951,8 @@
 }
 
 .footer-social-link svg {
-    height: 20px;
-    width: 20px;
+    height: var(--size-icon-lg);
+    width: var(--size-icon-lg);
 }
 
 .footer-column {

@@ -411,7 +411,7 @@
     justify-content: center;
     padding-top: 8px;
     position: relative;
-    width: 24px;
+    width: var(--size-icon-2xl);
 }
 
 .scroll-indicator-wheel {
@@ -568,7 +568,7 @@
     font-size: var(--text-sm);
     font-weight: var(--font-semibold);
     gap: var(--space-2);
-    min-height: 44px;
+    min-height: var(--size-touch-target);
     overflow: hidden;
     padding: var(--space-2-5) var(--space-4);
     position: relative;
@@ -620,8 +620,8 @@
 }
 
 .audience-option svg {
-    height: 16px;
-    width: 16px;
+    height: var(--size-xl);
+    width: var(--size-xl);
 }
 
 @media (--lg) {

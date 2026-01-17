@@ -124,8 +124,8 @@
 .audience-benefit-icon {
     color: var(--color-lime);
     flex-shrink: 0;
-    height: 24px;
-    width: 24px;
+    height: var(--size-icon-2xl);
+    width: var(--size-icon-2xl);
 }
 
 .audience-benefit-text {

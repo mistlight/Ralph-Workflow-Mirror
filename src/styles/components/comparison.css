@@ -176,9 +176,9 @@
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     font-weight: var(--font-bold);
-    height: 40px;
+    height: var(--size-touch-target);
     justify-content: center;
-    width: 40px;
+    width: var(--size-touch-target);
 }
 
 @media (--lg) {

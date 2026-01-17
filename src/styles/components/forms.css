@@ -81,8 +81,8 @@ input[type="checkbox"],
 input[type="radio"] {
     accent-color: var(--color-primary);
     cursor: pointer;
-    height: 18px;
-    width: 18px;
+    height: var(--size-icon-md);
+    width: var(--size-icon-md);
 }
 
 /* === SEARCH INPUT === */

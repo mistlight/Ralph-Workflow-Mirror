@@ -156,9 +156,9 @@
     font-family: var(--font-mono);
     font-size: var(--text-lg);
     font-weight: var(--font-bold);
-    height: 40px;
+    height: var(--size-touch-target);
     justify-content: center;
-    width: 40px;
+    width: var(--size-touch-target);
 }
 
 .install-step-header h3 {

@@ -128,8 +128,8 @@ code, .inline-code, .inline {
 .requirement-icon {
     color: var(--color-primary);
     flex-shrink: 0;
-    height: 20px;
-    width: 20px;
+    height: var(--size-icon-lg);
+    width: var(--size-icon-lg);
 }
 
 /* === GLOSSARY ITEMS === */
@@ -166,14 +166,14 @@ code, .inline-code, .inline {
     border-radius: var(--radius-md);
     color: var(--color-primary);
     display: flex;
-    height: 32px;
+    height: var(--size-2xl);
     justify-content: center;
-    width: 32px;
+    width: var(--size-2xl);
 }
 
 .glossary-term-icon svg {
-    height: 18px;
-    width: 18px;
+    height: var(--size-icon-md);
+    width: var(--size-icon-md);
 }
 
 .glossary-term-name {
@@ -239,32 +239,32 @@ code, .inline-code, .inline {
     background-color: var(--color-primary);
     border-radius: var(--radius-full);
     content: '';
-    height: 24px;
-    width: 4px;
+    height: var(--size-icon-2xl);
+    width: var(--border-width-1);
 }
 
 .faq-category--accent::before {
     background-color: var(--color-accent);
     border-radius: var(--radius-full);
     content: '';
-    height: 24px;
-    width: 4px;
+    height: var(--size-icon-2xl);
+    width: var(--border-width-1);
 }
 
 .faq-category--developer::before {
     background-color: var(--color-lime);
     border-radius: var(--radius-full);
     content: '';
-    height: 24px;
-    width: 4px;
+    height: var(--size-icon-2xl);
+    width: var(--border-width-1);
 }
 
 .faq-category--violet::before {
     background-color: var(--color-violet);
     border-radius: var(--radius-full);
     content: '';
-    height: 24px;
-    width: 4px;
+    height: var(--size-icon-2xl);
+    width: var(--border-width-1);
 }
 
 /* === FAQ SUMMARY === */
@@ -321,11 +321,11 @@ code, .inline-code, .inline {
     font-family: var(--font-mono);
     font-size: var(--text-xl);
     font-weight: var(--font-light);
-    height: 24px;
+    height: var(--size-icon-2xl);
     justify-content: center;
     line-height: 1;
     transition: all var(--duration-300) var(--ease-expo-out);
-    width: 24px;
+    width: var(--size-icon-2xl);
 }
 
 .faq-item:hover .faq-toggle {
@@ -395,9 +395,9 @@ code, .inline-code, .inline {
 .faq-icon {
     color: var(--color-text-dim);
     flex-shrink: 0;
-    height: 24px;
+    height: var(--size-icon-2xl);
     transition: transform var(--duration-200) var(--ease-out);
-    width: 24px;
+    width: var(--size-icon-2xl);
 }
 
 .faq-item.open .faq-icon {
@@ -456,9 +456,9 @@ code, .inline-code, .inline {
 }
 
 .glossary-summary svg {
-    height: 18px;
+    height: var(--size-icon-md);
     transition: transform var(--duration-200) var(--ease-out);
-    width: 18px;
+    width: var(--size-icon-md);
 }
 
 .glossary-details[open] .glossary-summary svg:last-child {
@@ -495,9 +495,9 @@ code, .inline-code, .inline {
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
-    height: 40px;
+    height: var(--size-touch-target);
     justify-content: center;
-    width: 40px;
+    width: var(--size-touch-target);
 }
 
 .glossary-item h3 {
@@ -611,14 +611,14 @@ code, .inline-code, .inline {
     color: var(--color-primary);
     display: flex;
     flex-shrink: 0;
-    height: 40px;
+    height: var(--size-touch-target);
     justify-content: center;
-    width: 40px;
+    width: var(--size-touch-target);
 }
 
 .prompt-explanation-icon svg {
-    height: 20px;
-    width: 20px;
+    height: var(--size-icon-lg);
+    width: var(--size-icon-lg);
 }
 
 .prompt-explanation-text h4 {

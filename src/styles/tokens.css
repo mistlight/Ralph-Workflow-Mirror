@@ -461,6 +461,16 @@
     --size-6xl: 60px;
     --size-8xl: 80px;
 
+    /* Icon sizes */
+    --size-icon-sm: 16px;
+    --size-icon-md: 18px;
+    --size-icon-lg: 20px;
+    --size-icon-xl: 22px;
+    --size-icon-2xl: 24px;
+
+    /* Touch target (WCAG 2.5.5: 44x44px minimum) */
+    --size-touch-target: 44px;
+
     /* === GRID SIZES === */
     --grid-size: 60px;
 
