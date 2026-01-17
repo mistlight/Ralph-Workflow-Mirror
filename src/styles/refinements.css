@@ -1823,3 +1823,86 @@ select:hover {
         gap: var(--space-6);
     }
 }
+
+/* === ADDITIONAL DESIGN REFINEMENTS === */
+
+/* "Step" label enhanced visibility */
+.step-label {
+    background-color: var(--color-bg-elevated);
+    border: var(--border-width-1) solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-dim);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+    letter-spacing: var(--tracking-wide);
+    padding: var(--space-1) var(--space-2);
+    text-transform: uppercase;
+}
+
+/* Enhanced category badge visibility */
+.category-badge {
+    background-color: var(--color-bg-elevated);
+    border: var(--border-width-1) solid var(--border-accent);
+    box-shadow: 0 0 10px var(--color-primary-dim);
+}
+
+/* Code block language badge hover state - new addition */
+.code-badge {
+    transition: all var(--duration-150) var(--ease-expo-out);
+}
+
+.code-badge:hover {
+    background-color: var(--color-primary-dim);
+    border-color: var(--color-primary);
+    transform: translateY(var(--lift-sm));
+}
+
+/* Enhanced step cards for workflows */
+.step-card {
+    transition: all var(--duration-200) var(--ease-expo-out);
+}
+
+.step-card:hover {
+    border-color: var(--border-accent);
+}
+
+/* Hero section number badge refinement */
+.section-number {
+    background: linear-gradient(135deg,
+                var(--color-primary-dim) 0%,
+                var(--color-bg-card) 100%);
+    border: var(--border-width-1) solid var(--border-accent);
+    box-shadow: 0 0 20px var(--color-primary-dim);
+}
+
+/* Breadcrumb active state indicator - new addition */
+.breadcrumb-item:last-child .breadcrumb-link::before {
+    background-color: var(--primary-alpha-20);
+    bottom: calc(var(--space-1) * -2);
+    content: '';
+    height: var(--size-xs);
+    left: 0;
+    position: absolute;
+    width: 100%;
+}
+
+/* Install mode switch enhanced focus state - new addition */
+.switch:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-offset);
+}
+
+/* Glossary card snappier transitions - new addition */
+.glossary-card,
+.glossary-term {
+    transition-duration: var(--duration-150);
+}
+
+/* Enhanced FAQ toggle focus state - new addition */
+.faq-toggle:focus-visible {
+    background-color: var(--color-primary-dim);
+    border-radius: var(--radius-md);
+    box-shadow: 0 0 0 2px var(--color-bg),
+                0 0 0 4px var(--color-primary);
+    outline: none;
+}
