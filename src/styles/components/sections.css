@@ -506,8 +506,8 @@
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     text-align: center;
-    transition: border-color var(--duration-200) var(--ease-out),
-                box-shadow var(--duration-200) var(--ease-out);
+    transition: border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
 }
 
 .how-step:hover {
@@ -649,7 +649,7 @@
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-8);
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 .audience-grid .audience-card:hover {
@@ -758,7 +758,7 @@
     letter-spacing: var(--tracking-wide);
     padding: var(--space-3) var(--space-6);
     text-transform: uppercase;
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 .audience-btn:hover {
@@ -776,7 +776,7 @@
 /* === AUDIENCE CONTENT VISIBILITY === */
 
 .audience-content {
-    animation: fadeIn 0.3s var(--ease-out);
+    animation: fadeIn 0.3s var(--ease-expo-out);
     display: none;
 }
 
@@ -787,7 +787,7 @@
 .audience-developer-content,
 .audience-vibe-coder-content,
 .audience-newcomer-content {
-    animation: fadeIn 0.3s var(--ease-out);
+    animation: fadeIn 0.3s var(--ease-expo-out);
     display: none;
 }
 
@@ -1328,7 +1328,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
     display: flex;
     height: 40px;
     justify-content: center;
-    transition: all var(--duration-150) var(--ease-out);
+    transition: all var(--duration-150) var(--ease-expo-out);
     width: 40px;
 }
 
@@ -1365,7 +1365,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
     font-size: var(--text-sm);
     position: relative;
     text-decoration: none;
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 .footer-link::after {
@@ -1375,7 +1375,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
     height: 1px;
     left: 0;
     position: absolute;
-    transition: width var(--duration-200) var(--ease-out);
+    transition: width var(--duration-200) var(--ease-expo-out);
     width: 0;
 }
 
@@ -1411,7 +1411,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
     color: var(--color-text-dim);
     font-size: var(--text-sm);
     text-decoration: none;
-    transition: color var(--duration-150) var(--ease-out);
+    transition: color var(--duration-150) var(--ease-expo-out);
 }
 
 .footer-legal-link:hover {
@@ -1429,7 +1429,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
     text-decoration: none;
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 .footer-cta:hover {
@@ -1441,7 +1441,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 
 .footer-cta svg {
     height: 18px;
-    transition: transform var(--duration-200) var(--ease-out);
+    transition: transform var(--duration-200) var(--ease-expo-out);
     width: 18px;
 }
 

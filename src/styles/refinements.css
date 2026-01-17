@@ -131,22 +131,6 @@ h2::after {
     }
 }
 
-/* Enhanced terminal window with visual depth */
-.terminal-window {
-    box-shadow: var(--shadow-lg),
-                inset 0 1px 0 rgb(255 255 255 / 5%);
-    will-change: transform, box-shadow;
-}
-
-.terminal-window:hover {
-    border-color: var(--border-accent);
-    box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 40px var(--color-primary-dim);
-    transform: translateY(-2px);
-    transition: box-shadow var(--duration-300) var(--ease-expo-out),
-                transform var(--duration-300) var(--ease-expo-out),
-                border-color var(--duration-300) var(--ease-expo-out);
-}
-
 /* Terminal typing effect polish */
 .terminal-line {
     animation: typeIn 0.3s ease-out forwards;
@@ -223,48 +207,6 @@ h2::after {
     background-color: var(--color-primary-dim);
     border-color: var(--color-primary);
     box-shadow: 0 0 30px var(--color-primary-glow);
-}
-
-/* === FAQ ACCORDION POLISH === */
-
-/* Enhanced accordion interactions */
-.faq-summary {
-    transition: all var(--duration-200) var(--ease-expo-out);
-}
-
-.faq-summary:hover {
-    background-color: var(--color-bg-hover);
-    border-color: var(--border-accent);
-}
-
-.faq-summary[aria-expanded="true"] {
-    background-color: var(--color-primary-dim);
-    border-color: var(--border-accent);
-}
-
-/* Smoother accordion icon rotation */
-.faq-summary .accordion-icon {
-    transition: transform var(--duration-300) var(--ease-expo-out);
-}
-
-.faq-summary[aria-expanded="true"] .accordion-icon {
-    transform: rotate(180deg);
-}
-
-.faq-details {
-    animation: accordionExpand 0.3s var(--ease-expo-out);
-}
-
-@keyframes accordionExpand {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 /* === MOBILE RESPONSIVENESS === */
@@ -376,15 +318,6 @@ code:not(pre code):hover {
 /* Enhance code readability */
 .code-block code {
     line-height: 1.7;
-}
-
-/* Enhanced code block visual polish */
-.code-block {
-    transition: all var(--duration-200) var(--ease-expo-out);
-}
-
-.code-block:hover {
-    border-color: var(--border-accent);
 }
 
 /* === SPACING CONSISTENCY === */
@@ -615,61 +548,6 @@ footer a:hover {
 
 /* === ADDITIONAL VISUAL POLISH === */
 
-/* Subtle glow enhancement for step numbers */
-.step-number {
-    background: linear-gradient(135deg,
-                var(--color-primary-dim) 0%,
-                var(--color-bg-card) 100%);
-    border: 1px solid var(--border-accent);
-    box-shadow: 0 0 20px var(--color-primary-dim);
-    transition: all var(--duration-300) var(--ease-expo-out);
-}
-
-.step-number:hover {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-bg),
-                0 0 0 4px var(--color-primary),
-                0 0 30px var(--color-primary-glow);
-    transform: scale(1.05);
-}
-
-/* Enhanced glossary card hover */
-.glossary-card {
-    transition: all var(--duration-300) var(--ease-expo-out);
-}
-
-.glossary-card:hover {
-    border-color: var(--border-accent);
-    box-shadow: var(--shadow-lg),
-                0 0 30px var(--color-primary-dim),
-                inset 0 1px 0 rgb(255 255 255 / 5%);
-    transform: translateY(-2px);
-}
-
-/* Improved workflow diagram connector animation */
-.workflow-connector {
-    background: linear-gradient(90deg,
-                var(--border-soft) 0%,
-                var(--border-accent) 50%,
-                var(--border-soft) 100%);
-    background-size: 200% 100%;
-    transition: all var(--duration-400) var(--ease-expo-out);
-}
-
-.workflow-step:hover ~ .workflow-connector {
-    animation: shimmer 1.5s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-    0% {
-        background-position: 200% 0;
-    }
-
-    100% {
-        background-position: -200% 0;
-    }
-}
-
 /* Subtle pulse for iteration badge */
 .iteration-badge {
     animation: subtle-pulse 3s ease-in-out infinite;
@@ -684,24 +562,6 @@ footer a:hover {
     50% {
         box-shadow: 0 0 20px var(--color-primary-glow);
     }
-}
-
-/* Enhanced table row hover */
-.table-row:hover {
-    background-color: var(--color-bg-hover);
-    transition: background-color var(--duration-150) var(--ease-out);
-}
-
-/* Improved copy button feedback */
-.copy-btn:active {
-    transform: scale(0.95);
-    transition: transform var(--duration-100) var(--ease-out);
-}
-
-.copy-btn.copied {
-    background-color: var(--color-lime-dim);
-    border-color: var(--color-lime);
-    color: var(--color-lime);
 }
 
 /* Subtle gradient text enhancement for key headings */
@@ -764,23 +624,6 @@ footer a:hover {
         box-shadow: 0 0 0 12px transparent;
         opacity: 0;
     }
-}
-
-/* Subtle gradient overlay for hero section to add depth */
-.hero {
-    position: relative;
-}
-
-.hero::before {
-    background: radial-gradient(
-        ellipse 80% 50% at 50% -20%,
-        rgb(0 212 255 / 8%) 0%,
-        transparent 70%
-    );
-    content: '';
-    inset: 0;
-    pointer-events: none;
-    position: absolute;
 }
 
 /* Improved readability for long-form content */
@@ -853,44 +696,8 @@ footer a:hover {
     width: 1px;
 }
 
-/* === ADDITIONAL PREMIUM POLISH ENHANCEMENTS === */
+/* === PREMIUM CARD BORDER GRADIENT ON HOVER === */
 
-/* Enhanced badge glow effect on hover */
-.badge {
-    backdrop-filter: blur(4px);
-    transition: all var(--duration-300) var(--ease-expo-out);
-
-    &:hover {
-        box-shadow: 0 0 20px currentcolor, 0 0 30px currentcolor, 0 0 40px currentcolor;
-        transform: translateY(-2px) scale(1.02);
-    }
-}
-
-/* Enhanced workflow diagram connector animation */
-.workflow-connector {
-    background: linear-gradient(90deg,
-                var(--border-soft) 0%,
-                var(--border-accent) 50%,
-                var(--border-soft) 100%);
-    background-size: 200% 100%;
-    transition: all var(--duration-400) var(--ease-expo-out);
-}
-
-.workflow-step:hover ~ .workflow-connector {
-    animation: shimmer 1.5s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-    0% {
-        background-position: 200% 0;
-    }
-
-    100% {
-        background-position: -200% 0;
-    }
-}
-
-/* Premium card border gradient on hover */
 .feature-card,
 .comparison-card,
 .license-card,
@@ -900,12 +707,12 @@ footer a:hover {
         background-image: linear-gradient(var(--border-soft), var(--border-soft)),
                               linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
         background-origin: border-box;
-        background-size: var(--border-soft) 1px, 1px 1px;
         background-repeat: no-repeat;
+        background-size: var(--border-soft) 1px, 1px 1px;
     }
 }
 
-/* Subtle text glow for primary headings in dark mode */
+/* === SUBTLE TEXT GLOW FOR HEADINGS === */
 .hero-title,
 .section-title {
     text-shadow: 0 0 40px var(--color-primary-dim);
@@ -1013,6 +820,7 @@ footer a:hover {
 /* Enhanced hero section with subtle animated gradient background */
 .hero {
     &::before {
+        animation: heroGlow 8s ease-in-out infinite alternate;
         background: radial-gradient(
             ellipse 80% 50% at 50% -20%,
             rgb(0 212 255 / 8%) 0%,
@@ -1022,10 +830,10 @@ footer a:hover {
         inset: 0;
         pointer-events: none;
         position: absolute;
-        animation: heroGlow 8s ease-in-out infinite alternate;
     }
 
     &::after {
+        animation: heroGlowAccent 12s ease-in-out infinite alternate;
         background: radial-gradient(
             ellipse 60% 40% at 80% 20%,
             rgb(255 0 110 / 4%) 0%,
@@ -1035,7 +843,6 @@ footer a:hover {
         inset: 0;
         pointer-events: none;
         position: absolute;
-        animation: heroGlowAccent 12s ease-in-out infinite alternate;
     }
 }
 
@@ -1043,9 +850,11 @@ footer a:hover {
     0% {
         opacity: 0.3;
     }
+
     50% {
         opacity: 0.5;
     }
+
     100% {
         opacity: 0.3;
     }
@@ -1055,6 +864,7 @@ footer a:hover {
     0% {
         opacity: 0;
     }
+
     100% {
         opacity: 0.15;
     }
@@ -1069,8 +879,8 @@ footer a:hover {
 .terminal-window {
     box-shadow: var(--shadow-lg),
                 inset 0 1px 0 rgb(255 255 255 / 5%);
-    will-change: transform, box-shadow;
     transition: all var(--duration-300) var(--ease-expo-out);
+    will-change: transform, box-shadow;
 
     &::before {
         background: linear-gradient(180deg,
