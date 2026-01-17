@@ -455,7 +455,7 @@ pre code,
     box-shadow: var(--shadow-lg),
                 0 0 30px var(--color-primary-dim),
                 inset 0 1px 0 var(--white-alpha-5);
-    transform: translateY(-3px);
+    transform: translateY(var(--lift-md));
 }
 
 .glossary-term:focus-within {

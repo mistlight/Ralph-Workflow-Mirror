@@ -114,7 +114,7 @@
             border-color: var(--color-primary-light);
             box-shadow: var(--shadow-glow-sm), 0 0 20px var(--color-primary-glow);
             color: var(--color-bg);
-            transform: translateY(-2px);
+            transform: translateY(var(--lift-sm));
             transition: all var(--duration-300) var(--ease-expo-out);
 
             &::before {
@@ -134,7 +134,7 @@
             border-color: var(--color-primary);
             box-shadow: 0 0 20px var(--color-primary-dim);
             color: var(--color-primary);
-            transform: translateY(-1px);
+            transform: translateY(var(--lift-xs));
             transition: all var(--duration-300) var(--ease-expo-out);
         }
 

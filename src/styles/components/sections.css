@@ -656,7 +656,7 @@
 .audience-grid .audience-card:hover {
     border-color: var(--border-accent);
     box-shadow: var(--shadow-lg);
-    transform: translateY(-2px);
+    transform: translateY(var(--lift-md));
 }
 
 .audience-grid .audience-card h3 {
@@ -1293,7 +1293,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 .stage-card:hover {
     border-color: var(--border-accent);
     box-shadow: var(--shadow-glow-sm);
-    transform: translateY(-2px);
+    transform: translateY(var(--lift-md));
 }
 
 .stage-card h3 {

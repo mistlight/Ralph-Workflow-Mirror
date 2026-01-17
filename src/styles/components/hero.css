@@ -594,7 +594,7 @@
     border-color: var(--border-accent);
     box-shadow: 0 4px 12px var(--primary-alpha-20);
     color: var(--color-text);
-    transform: translateY(-2px) scale(1.02);
+    transform: translateY(var(--lift-sm)) scale(var(--scale-102));
 }
 
 .audience-option[aria-pressed="true"],
@@ -605,7 +605,7 @@
                 0 0 24px var(--color-primary-glow),
                 0 4px 12px var(--primary-alpha-25);
     color: var(--color-bg);
-    transform: translateY(-2px) scale(1.02);
+    transform: translateY(var(--lift-sm)) scale(var(--scale-102));
 }
 
 /* Add inner glow for active state */

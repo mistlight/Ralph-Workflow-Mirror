@@ -30,7 +30,7 @@
     &:hover {
         background-color: var(--color-bg-hover);
         color: var(--color-text);
-        transform: translateY(-1px);
+        transform: translateY(var(--lift-xs));
     }
 
     &:focus-visible {
@@ -239,7 +239,7 @@
             box-shadow: 0 0 0 1px var(--border-accent),
                         0 0 20px var(--color-primary-dim);
             color: var(--color-primary);
-            transform: translateY(-1px);
+            transform: translateY(var(--lift-xs));
         }
     }
 }
