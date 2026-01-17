@@ -194,22 +194,37 @@ pre code,
 
 /* Enhanced terminal cursor with stronger glow */
 .terminal-cursor {
-    animation: cursor-blink 1s step-end infinite, cursor-glow 2s ease-in-out infinite;
+    animation: cursor-blink 0.8s step-end infinite, cursor-glow 2s ease-in-out infinite;
     background-color: var(--color-primary);
-    box-shadow: 0 0 15px var(--color-primary), 0 0 30px var(--color-primary-glow);
+    box-shadow: 0 0 12px var(--color-primary), 0 0 24px var(--color-primary-glow);
     display: inline-block;
     height: 1.2em;
+    transition: box-shadow var(--duration-200) var(--ease-expo-out);
     width: var(--size-xs);
 }
 
+.terminal-window:hover .terminal-cursor {
+    box-shadow: 0 0 15px var(--color-primary), 0 0 30px var(--color-primary-glow);
+}
+
 @keyframes cursor-glow {
-    0%, 100% { box-shadow: 0 0 10px var(--color-primary-glow); }
-    50% { box-shadow: 0 0 20px var(--color-primary-glow), 0 0 30px var(--color-primary-dim); }
+    0%, 100% {
+        box-shadow: 0 0 10px var(--color-primary-glow);
+    }
+
+    50% {
+        box-shadow: 0 0 18px var(--color-primary-glow), 0 0 24px var(--color-primary-dim);
+    }
 }
 
 @keyframes cursor-blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
+    0%, 40% {
+        opacity: 1;
+    }
+
+    50%, 90% {
+        opacity: 0;
+    }
 }
 
 /* Terminal typing effect polish */
@@ -398,16 +413,20 @@ pre code,
 
 /* Premium glossary card hover with depth */
 .glossary-term {
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: border-color var(--duration-200) var(--ease-expo-out),
+                border-left-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out),
+                transform var(--duration-200) var(--ease-expo-out);
 }
 
 .glossary-term:hover {
     border-color: var(--border-accent);
     border-left-color: var(--color-primary);
+    border-left-width: var(--border-width-3);
     box-shadow: var(--shadow-lg),
                 0 0 30px var(--color-primary-dim),
                 inset 0 1px 0 var(--white-alpha-5);
-    transform: translateY(var(--lift-md));
+    transform: translateY(var(--lift-sm));
 }
 
 .glossary-term:focus-within {
@@ -568,7 +587,10 @@ pre code,
 .faq-summary {
     cursor: pointer;
     position: relative;
-    transition: all var(--duration-200) var(--ease-expo-out);
+    transition: background-color var(--duration-150) var(--ease-expo-out),
+                border-color var(--duration-150) var(--ease-expo-out),
+                padding-left var(--duration-200) var(--ease-expo-out),
+                transform var(--duration-150) var(--ease-expo-out);
 }
 
 /* Improved FAQ hover state visibility */
@@ -779,13 +801,33 @@ code:not(pre code):hover {
     animation: copyPulse 0.4s var(--ease-out);
     background-color: var(--color-lime-dim);
     border-color: var(--color-lime);
+    box-shadow: 0 0 15px var(--lime-alpha-30);
     color: var(--color-lime);
 }
 
+.copy-btn.copied::after {
+    content: '✓';
+    position: absolute;
+    right: var(--space-2);
+    top: 50%;
+    transform: translateY(-50%);
+}
+
 @keyframes copyPulse {
-    0% { transform: scale(var(--scale-100)); }
-    50% { transform: scale(var(--scale-110)); }
-    100% { transform: scale(var(--scale-100)); }
+    0% {
+        box-shadow: 0 0 0 transparent;
+        transform: scale(var(--scale-100));
+    }
+
+    50% {
+        box-shadow: 0 0 20px var(--color-lime);
+        transform: scale(var(--scale-110));
+    }
+
+    100% {
+        box-shadow: 0 0 10px var(--lime-alpha-20);
+        transform: scale(var(--scale-100));
+    }
 }
 
 /* Ensure copy button is always visible on touch devices */
@@ -905,7 +947,8 @@ code:not(pre code):hover {
 /* Enhanced footer links with premium hover effect */
 footer a {
     position: relative;
-    transition: all var(--duration-200) var(--ease-expo-out);
+    transition: color var(--duration-150) var(--ease-expo-out),
+                transform var(--duration-150) var(--ease-expo-out);
 }
 
 footer a::after {
@@ -923,7 +966,7 @@ footer a::after {
 
 footer a:hover {
     color: var(--color-primary);
-    text-shadow: 0 0 10px var(--color-primary-glow);
+    text-shadow: 0 0 8px var(--color-primary-glow);
     transform: translateX(var(--translate-2));
 }
 
@@ -1013,7 +1056,9 @@ a:not(.btn):hover {
                 var(--color-bg-card) 100%);
     border: var(--border-width-1) solid var(--border-accent);
     box-shadow: 0 0 20px var(--color-primary-dim);
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out),
+                transform var(--duration-200) var(--ease-expo-out);
 }
 
 .step-number:hover {
@@ -1510,12 +1555,15 @@ a:focus-visible {
 
 /* Glossary item hover state */
 .glossary-item {
-    transition: all var(--duration-200) var(--ease-expo-out);
+    transition: background-color var(--duration-150) var(--ease-expo-out),
+                border-left-width var(--duration-150) var(--ease-expo-out),
+                transform var(--duration-150) var(--ease-expo-out);
 }
 
 .glossary-item:hover {
     background-color: var(--color-bg-elevated);
     border-left-width: var(--border-width-3);
+    transform: translateX(var(--translate-2));
 }
 
 /* Glossary icon container enhancement */
@@ -1648,26 +1696,50 @@ select:hover {
 /* === INSTALLATION TABS ENHANCEMENTS === */
 
 .tab-button {
-    transition: all var(--duration-150) var(--ease-expo-out);
+    transition: background-color var(--duration-150) var(--ease-expo-out),
+                border-color var(--duration-150) var(--ease-expo-out),
+                color var(--duration-150) var(--ease-expo-out),
+                transform var(--duration-150) var(--ease-expo-out);
 }
 
 .tab-button:hover {
     background-color: var(--color-bg-hover);
+    transform: translateY(var(--lift-sm));
 }
 
 .tab-button[aria-selected="true"] {
-    animation: tab-select 0.3s var(--ease-expo-out);
+    animation: tab-select 0.2s var(--ease-expo-out);
+    background-color: var(--color-primary-dim);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
 }
 
 @keyframes tab-select {
     from {
-        opacity: 0.7;
+        opacity: 0.8;
         transform: scale(var(--scale-095));
     }
 
     to {
         opacity: 1;
         transform: scale(var(--scale-100));
+    }
+}
+
+/* Enhanced tab panel transitions */
+.tab-panel {
+    animation: tab-panel-reveal 0.3s var(--ease-expo-out);
+}
+
+@keyframes tab-panel-reveal {
+    from {
+        opacity: 0;
+        transform: translateY(var(--space-2));
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
 

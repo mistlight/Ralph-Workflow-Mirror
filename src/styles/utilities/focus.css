@@ -79,12 +79,12 @@ details > summary:focus-visible {
 /* === ACCESSIBILITY FOCUS INDICATORS === */
 
 /* High contrast focus for better visibility */
-@media (prefers-contrast: high) {
+@media (prefers-contrast: more) {
     a:focus-visible,
     button:focus-visible,
     .btn:focus-visible {
-        outline-width: 3px;
         outline-offset: 2px;
+        outline-width: 3px;
     }
 }
 
