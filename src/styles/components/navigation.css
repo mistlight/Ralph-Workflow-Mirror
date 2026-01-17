@@ -36,8 +36,11 @@
         outline-offset: 2px;
     }
 
-    &.active {
+    &.active,
+    &.nav-link--active {
         background-color: var(--color-primary-dim);
+        box-shadow: 0 0 0 1px var(--border-accent),
+                    0 0 20px var(--color-primary-dim);
         color: var(--color-primary);
     }
 }
@@ -214,8 +217,10 @@
 
         .nav-link:hover,
         .nav-link--active {
-            background-color: var(--color-bg-hover);
-            color: var(--color-text);
+            background-color: var(--color-primary-dim);
+            box-shadow: 0 0 0 1px var(--border-accent),
+                        0 0 20px var(--color-primary-dim);
+            color: var(--color-primary);
         }
     }
 }
