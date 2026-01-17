@@ -126,10 +126,16 @@
         color: var(--color-text-muted);
 
         &:hover {
-            background-color: var(--color-bg-hover);
-            border-color: var(--border-medium);
-            color: var(--color-text);
+            background-color: var(--color-primary-dim);
+            border-color: var(--color-primary);
+            box-shadow: 0 0 20px var(--color-primary-dim);
+            color: var(--color-primary);
+            transform: translateY(-1px);
             transition: all var(--duration-300) var(--ease-expo-out);
+        }
+
+        &:active {
+            transform: translateY(0) scale(0.98);
         }
     }
 
@@ -141,9 +147,13 @@
 
         &:hover {
             background-color: var(--color-accent-light);
-            box-shadow: var(--shadow-glow-accent), var(--shadow-glow-accent-strong);
+            box-shadow: var(--shadow-glow-accent), var(--shadow-glow-accent-strong), 0 0 30px var(--color-accent-glow);
             transform: translateY(-2px);
             transition: all var(--duration-300) var(--ease-expo-out);
+        }
+
+        &:active {
+            transform: translateY(0) scale(0.98);
         }
     }
 

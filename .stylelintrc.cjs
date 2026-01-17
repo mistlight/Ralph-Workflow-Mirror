@@ -29,5 +29,11 @@ module.exports = {
 
     // Optional: consistent ordering
     'order/properties-alphabetical-order': true,
+
+    // Allow flexible comment spacing
+    'comment-empty-line-before': null,
+
+    // Disable import-notation rule as we use postcss-import
+    'import-notation': null,
   },
 };
