@@ -500,6 +500,27 @@
     --social-github: #fff;
     --social-codeberg: #fff;
 
+    /* Social hover states */
+    --social-twitter-dim: rgb(29 161 242 / 12%);
+    --social-twitter-glow: rgb(29 161 242 / 25%);
+    --social-twitter-intense: rgb(29 161 242 / 30%);
+    --social-white-dim: rgb(255 255 255 / 12%);
+    --social-white-glow: rgb(255 255 255 / 25%);
+    --social-white-intense: rgb(255 255 255 / 30%);
+
+    /* === BORDER WIDTH TOKENS === */
+    --border-width-0: 0;
+    --border-width-1: 1px;
+    --border-width-2: 2px;
+    --border-width-3: 3px;
+    --border-width-4: 4px;
+    --border-width-6: 6px;
+    --border-width-8: 8px;
+
+    /* === HTML BASE SETTINGS === */
+    --html-font-size: 16px;
+    --scroll-padding-top: 80px;
+
     /* === Z-INDEX LAYERS === */
     --z-behind: -1;
     --z-base: 0;

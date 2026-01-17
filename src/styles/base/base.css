@@ -15,11 +15,11 @@
 }
 
 html {
-    font-size: 16px;
+    font-size: var(--html-font-size);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     scroll-behavior: smooth;
-    scroll-padding-top: 80px;
+    scroll-padding-top: var(--scroll-padding-top);
     text-rendering: optimizelegibility;
 }
 
@@ -184,7 +184,7 @@ input, textarea, select {
 [data-theme="light"] .nav.scrolled,
 .light-mode .nav.scrolled {
     background-color: var(--light-bg-95);
-    border-bottom: 1px solid var(--border-soft);
+    border-bottom: var(--border-width-1) solid var(--border-soft);
 }
 
 [data-theme="light"] .hero-grid-pattern,

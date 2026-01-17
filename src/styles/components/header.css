@@ -8,7 +8,7 @@
 
 .nav {
     background-color: transparent;
-    border-bottom: 1px solid transparent;
+    border-bottom: var(--border-width-1) solid transparent;
     left: 0;
     padding: var(--space-4) 0;
     position: fixed;
@@ -23,7 +23,7 @@
 .nav.scrolled {
     backdrop-filter: blur(var(--blur-xl));
     background-color: var(--dark-bg-85);
-    border-bottom: 1px solid var(--border-soft);
+    border-bottom: var(--border-width-1) solid var(--border-soft);
 }
 
 .nav-container {
@@ -107,7 +107,7 @@
 .nav-mobile-toggle {
     align-items: center;
     background-color: transparent;
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-lg);
     color: var(--color-text-muted);
     cursor: pointer;
@@ -176,7 +176,7 @@
 }
 
 .nav-mobile-link {
-    border: 1px solid transparent;
+    border: var(--border-width-1) solid transparent;
     border-radius: var(--radius-lg);
     color: var(--color-text-muted);
     font-family: var(--font-mono);

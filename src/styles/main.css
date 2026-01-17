@@ -19,6 +19,12 @@
 @import './components/hero.css';
 @import './components/navigation.css';
 @import './components/sections.css';
+@import './components/comparison.css';
+@import './components/features.css';
+@import './components/faq.css';
+@import './components/glossary.css';
+@import './components/installation.css';
+@import './components/workflow.css';
 @import './components/terminal.css';
 @import './components/typography.css';
 

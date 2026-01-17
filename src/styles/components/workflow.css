@@ -1,0 +1,429 @@
+/* ========================================
+   WORKFLOW SECTION
+   ========================================
+   Workflow steps, stages, and loop styles
+   ======================================== */
+
+/* === WORKFLOW STEPS === */
+
+.workflow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    margin: 0 auto;
+    max-width: 900px;
+    position: relative;
+}
+
+/* Vertical connecting line */
+.workflow-steps::before {
+    background: linear-gradient(180deg, var(--color-primary), var(--color-accent), var(--color-lime));
+    bottom: 56px;
+    content: '';
+    left: 28px;
+    opacity: 0.3;
+    position: absolute;
+    top: 56px;
+    width: 2px;
+}
+
+.workflow-step {
+    align-items: start;
+    display: grid;
+    gap: var(--space-6);
+    grid-template-columns: 56px 1fr;
+}
+
+.step-number {
+    align-items: center;
+    background: linear-gradient(135deg,
+                var(--color-primary-dim) 0%,
+                var(--color-bg-card) 100%);
+    border: var(--border-width-2) solid var(--color-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 0 20px var(--color-primary-dim);
+    color: var(--color-primary);
+    display: flex;
+    font-family: var(--font-mono);
+    font-size: var(--text-xl);
+    font-weight: var(--font-bold);
+    height: 56px;
+    justify-content: center;
+    position: relative;
+    transition: all var(--duration-300) var(--ease-expo-out);
+    width: 56px;
+}
+
+.step-content {
+    padding-top: var(--space-2);
+}
+
+.step-title {
+    font-family: var(--font-heading);
+    font-size: var(--text-2xl);
+    font-weight: var(--font-semibold);
+    margin-bottom: var(--space-3);
+}
+
+.step-description {
+    color: var(--color-text-muted);
+    font-size: var(--text-base);
+    line-height: var(--leading-relaxed);
+    max-width: 600px;
+}
+
+.step-code {
+    background-color: var(--code-bg);
+    border: var(--border-width-1) solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    color: var(--code-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    margin-top: var(--space-4);
+    overflow-x: auto;
+    padding: var(--space-4);
+}
+
+.step-code .keyword { color: var(--code-keyword); }
+.step-code .string { color: var(--code-string); }
+.step-code .comment { color: var(--code-comment); }
+.step-code .function { color: var(--code-function); }
+
+@media (--md) {
+    .workflow-step {
+        gap: var(--space-4);
+        grid-template-columns: 1fr;
+    }
+
+    .workflow-steps::before {
+        display: none;
+    }
+
+    .step-number {
+        font-size: var(--text-lg);
+        height: 48px;
+        width: 48px;
+    }
+}
+
+/* === HOW SECTION === */
+
+.how-section {
+    position: relative;
+}
+
+.how-steps {
+    display: grid;
+    gap: var(--space-8);
+    grid-template-columns: repeat(3, 1fr);
+    margin: 0 auto;
+    max-width: 900px;
+}
+
+.how-step {
+    background-color: var(--color-bg-card);
+    border: var(--border-width-1) solid var(--border-soft);
+    border-radius: var(--radius-xl);
+    padding: var(--space-6);
+    text-align: center;
+    transition: border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
+}
+
+.how-step:hover {
+    border-color: var(--color-primary-dim);
+    box-shadow: 0 0 30px var(--gradient-primary-dim);
+}
+
+.how-icon {
+    align-items: center;
+    background: linear-gradient(135deg, var(--color-primary-dim), transparent);
+    border: var(--border-width-1) solid var(--color-primary-dim);
+    border-radius: var(--radius-xl);
+    color: var(--color-primary);
+    display: flex;
+    height: 64px;
+    justify-content: center;
+    margin: 0 auto var(--space-4);
+    width: 64px;
+}
+
+.how-icon svg {
+    height: 32px;
+    width: 32px;
+}
+
+.how-step h3 {
+    color: var(--color-text);
+    font-family: var(--font-heading);
+    font-size: var(--text-xl);
+    font-weight: var(--font-semibold);
+    margin-bottom: var(--space-2);
+}
+
+.how-step p {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+    margin: 0;
+}
+
+@media (--lg) {
+    .how-steps {
+        grid-template-columns: 1fr;
+        max-width: 400px;
+    }
+}
+
+/* === WORKFLOW DIAGRAM LARGE === */
+
+.workflow-diagram-large {
+    margin: var(--space-12) 0;
+}
+
+.workflow-svg-large {
+    display: block;
+    height: auto;
+    max-width: 100%;
+    width: 100%;
+}
+
+.workflow-node {
+    transition: transform var(--duration-200) var(--ease-expo-out);
+}
+
+.workflow-node:hover {
+    transform: scale(var(--scale-102));
+}
+
+/* === STAGES GRID === */
+
+.stages-grid {
+    display: grid;
+    gap: var(--space-6);
+    grid-template-columns: repeat(4, 1fr);
+    margin-top: var(--space-12);
+}
+
+@media (--xl) {
+    .stages-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (--md) {
+    .stages-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.stage-card {
+    background-color: var(--color-bg-card);
+    border: var(--border-width-1) solid var(--border-soft);
+    border-radius: var(--radius-xl);
+    padding: var(--space-6);
+    position: relative;
+    transition: all var(--duration-200) var(--ease-expo-out);
+}
+
+.stage-card:hover {
+    border-color: var(--border-accent);
+    box-shadow: var(--shadow-glow-sm);
+    transform: translateY(var(--lift-md));
+}
+
+.stage-card h3 {
+    font-family: var(--font-heading);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    margin-bottom: var(--space-3);
+    margin-top: var(--space-4);
+}
+
+.stage-card p {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+}
+
+.stage-number {
+    align-items: center;
+    border-radius: var(--radius-lg);
+    display: flex;
+    font-family: var(--font-mono);
+    font-size: var(--text-xl);
+    font-weight: var(--font-bold);
+    height: 48px;
+    justify-content: center;
+    width: 48px;
+}
+
+.stage-number--amber {
+    background-color: var(--color-accent-dim);
+    border: var(--border-width-2) solid var(--color-accent);
+    box-shadow: var(--shadow-glow-accent);
+    color: var(--color-accent);
+}
+
+.stage-number--sage {
+    background-color: var(--color-primary-dim);
+    border: var(--border-width-2) solid var(--color-primary);
+    box-shadow: var(--shadow-glow-sm);
+    color: var(--color-primary);
+}
+
+.stage-number--forest {
+    background-color: var(--color-primary-dim);
+    border: var(--border-width-2) solid var(--color-primary);
+    box-shadow: var(--shadow-glow-sm);
+    color: var(--color-primary);
+}
+
+.stage-number--green {
+    background-color: var(--color-lime-dim);
+    border: var(--border-width-2) solid var(--color-lime);
+    box-shadow: var(--shadow-glow-success);
+    color: var(--color-lime);
+}
+
+/* === LOOP EXPLANATION === */
+
+.loop-explanation {
+    display: grid;
+    gap: var(--space-12);
+    grid-template-columns: 1.5fr 1fr;
+    margin-top: var(--space-8);
+}
+
+.loop-content p {
+    margin-bottom: var(--space-4);
+}
+
+.loop-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    margin-top: var(--space-6);
+}
+
+.loop-step {
+    align-items: start;
+    display: flex;
+    gap: var(--space-4);
+}
+
+.loop-step-icon {
+    align-items: center;
+    background-color: var(--color-bg-elevated);
+    border: var(--border-width-1) solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-shrink: 0;
+    height: 40px;
+    justify-content: center;
+    width: 40px;
+}
+
+.loop-step-icon--write {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.loop-step-icon--review {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+}
+
+.loop-step-icon--feedback {
+    border-color: var(--color-violet);
+    color: var(--color-violet);
+}
+
+.loop-step-icon--fix {
+    border-color: var(--color-warning);
+    color: var(--color-warning);
+}
+
+.loop-step-icon--approve {
+    border-color: var(--color-lime);
+    color: var(--color-lime);
+}
+
+.loop-step-content h4 {
+    font-family: var(--font-heading);
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    margin-bottom: var(--space-1);
+}
+
+.loop-step-content p {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+}
+
+/* === LOOP SIDEBAR === */
+
+.loop-sidebar {
+    position: sticky;
+    top: calc(80px + var(--space-6));
+}
+
+.iteration-modes-card {
+    background-color: var(--color-bg-card);
+    border: var(--border-width-1) solid var(--border-accent);
+    border-radius: var(--radius-xl);
+    padding: var(--space-6);
+}
+
+.iteration-modes-card h4 {
+    color: var(--color-accent);
+    font-family: var(--font-heading);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    margin-bottom: var(--space-3);
+}
+
+.iteration-modes-card > p {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-4);
+}
+
+.iteration-list {
+    list-style: none;
+    margin: 0 0 var(--space-4);
+    padding: 0;
+}
+
+.iteration-list li {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-2);
+}
+
+.iteration-list code {
+    background-color: var(--color-primary-dim);
+    border: var(--border-width-1) solid var(--border-accent);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+    font-weight: var(--font-semibold);
+    padding: 0.15em 0.4em;
+}
+
+.iteration-note {
+    color: var(--color-text-dim);
+    font-size: var(--text-xs);
+    line-height: var(--leading-relaxed);
+}
+
+@media (--2xl) {
+    .loop-explanation {
+        grid-template-columns: 1fr;
+    }
+
+    .loop-sidebar {
+        position: static;
+    }
+}

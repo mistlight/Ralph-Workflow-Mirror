@@ -1,0 +1,12 @@
+/* ========================================
+   FAQ SECTION
+   ========================================
+   FAQ section background styles
+   Note: Actual FAQ card styles are in cards.css
+   ======================================== */
+
+/* === FAQ SECTION === */
+
+.faq-section {
+    background-color: var(--color-bg-alt);
+}

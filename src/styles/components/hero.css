@@ -118,7 +118,7 @@
     animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.1s;
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-full);
     color: var(--color-text-muted);
     display: inline-flex;
@@ -185,7 +185,7 @@
 .badge-forest,
 .badge-primary {
     background-color: var(--color-primary-dim);
-    border: 1px solid var(--border-accent);
+    border: var(--border-width-1) solid var(--border-accent);
     color: var(--color-primary);
 }
 
@@ -198,7 +198,7 @@
 .badge-amber,
 .badge-accent {
     background-color: var(--color-accent-dim);
-    border: 1px solid var(--border-accent-color);
+    border: var(--border-width-1) solid var(--border-accent-color);
     color: var(--color-accent);
 }
 
@@ -211,7 +211,7 @@
 .badge-moss,
 .badge-success {
     background-color: var(--color-lime-dim);
-    border: 1px solid var(--border-lime);
+    border: var(--border-width-1) solid var(--border-lime);
     color: var(--color-lime);
 }
 
@@ -223,7 +223,7 @@
 
 .badge-sage {
     background-color: var(--color-primary-dim);
-    border: 1px solid var(--border-accent);
+    border: var(--border-width-1) solid var(--border-accent);
     color: var(--color-primary);
 }
 
@@ -234,7 +234,7 @@
 
 .badge-green {
     background-color: var(--color-lime-dim);
-    border: 1px solid var(--border-lime);
+    border: var(--border-width-1) solid var(--border-lime);
     color: var(--color-lime);
 }
 
@@ -320,7 +320,7 @@
 
 .hero-description code.inline {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-md);
     color: var(--color-primary);
     font-family: var(--font-mono);
@@ -351,7 +351,7 @@
     animation: slide-up 0.8s var(--ease-expo-out) forwards;
     animation-delay: 0.5s;
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-2xl);
     box-shadow: var(--shadow-xl), var(--shadow-glow-lg);
     opacity: 0;
@@ -363,7 +363,7 @@
     background: linear-gradient(135deg, var(--color-primary), var(--color-accent), var(--color-lime));
     border-radius: var(--radius-2xl);
     content: '';
-    inset: -1px;
+    inset: calc(var(--space-px) * -1);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask-composite: xor;
@@ -404,7 +404,7 @@
 }
 
 .scroll-indicator-mouse {
-    border: 2px solid currentcolor;
+    border: var(--border-width-2) solid currentcolor;
     border-radius: 12px;
     display: flex;
     height: 38px;
@@ -559,7 +559,7 @@
 .audience-option {
     align-items: center;
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-full);
     color: var(--color-text-muted);
     cursor: pointer;

@@ -97,7 +97,7 @@ em, i {
 
 code, .inline-code, .inline {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-md);
     color: var(--color-primary);
     font-family: var(--font-mono);
@@ -136,8 +136,8 @@ code, .inline-code, .inline {
 
 .glossary-term {
     background-color: var(--color-bg-elevated);
-    border: 1px solid var(--border-subtle);
-    border-left: 3px solid transparent;
+    border: var(--border-width-1) solid var(--border-subtle);
+    border-left: var(--border-width-3) solid transparent;
     border-radius: var(--radius-lg);
     padding: var(--space-4);
     position: relative;
@@ -205,7 +205,7 @@ code, .inline-code, .inline {
 
 .glossary-note {
     background-color: var(--color-bg-elevated);
-    border-top: 1px solid var(--border-soft);
+    border-top: var(--border-width-1) solid var(--border-soft);
     color: var(--color-text-muted);
     font-size: var(--text-sm);
     padding: var(--space-4) var(--space-6);
@@ -219,7 +219,7 @@ code, .inline-code, .inline {
 
 .faq-category {
     align-items: center;
-    border-bottom: 2px solid var(--border-soft);
+    border-bottom: var(--border-width-2) solid var(--border-soft);
     color: var(--color-text);
     display: flex;
     font-family: var(--font-heading);
@@ -298,15 +298,15 @@ code, .inline-code, .inline {
 
 /* Colored summary variants */
 .faq-summary--accent {
-    border-left: 3px solid var(--color-accent);
+    border-left: var(--border-width-3) solid var(--color-accent);
 }
 
 .faq-summary--developer {
-    border-left: 3px solid var(--color-lime);
+    border-left: var(--border-width-3) solid var(--color-lime);
 }
 
 .faq-summary--violet {
-    border-left: 3px solid var(--color-violet);
+    border-left: var(--border-width-3) solid var(--color-violet);
 }
 
 /* === FAQ TOGGLE === */
@@ -343,7 +343,7 @@ code, .inline-code, .inline {
 
 .faq-content {
     background-color: var(--color-bg-elevated);
-    border-top: 1px solid var(--border-subtle);
+    border-top: var(--border-width-1) solid var(--border-subtle);
     color: var(--color-text-muted);
     font-size: var(--text-sm);
     line-height: var(--leading-relaxed);
@@ -426,7 +426,7 @@ code, .inline-code, .inline {
 
 .glossary-details {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     overflow: hidden;
 }
@@ -434,7 +434,7 @@ code, .inline-code, .inline {
 .glossary-summary {
     align-items: center;
     background-color: var(--color-bg-elevated);
-    border-bottom: 1px solid var(--border-soft);
+    border-bottom: var(--border-width-1) solid var(--border-soft);
     color: var(--color-primary);
     cursor: pointer;
     display: flex;
@@ -478,7 +478,7 @@ code, .inline-code, .inline {
 
 .glossary-item {
     background-color: var(--color-bg-elevated);
-    border: 1px solid var(--border-subtle);
+    border: var(--border-width-1) solid var(--border-subtle);
     border-radius: var(--radius-lg);
 }
 
@@ -535,7 +535,7 @@ code, .inline-code, .inline {
 }
 
 .cli-reference dd {
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: var(--border-width-1) solid var(--border-subtle);
     color: var(--color-text-muted);
     font-size: var(--text-sm);
     margin: 0;
@@ -558,7 +558,7 @@ code, .inline-code, .inline {
 }
 
 .sidebar-links li {
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: var(--border-width-1) solid var(--border-subtle);
 }
 
 .sidebar-links li:last-child {
@@ -606,7 +606,7 @@ code, .inline-code, .inline {
 .prompt-explanation-icon {
     align-items: center;
     background-color: var(--color-primary-dim);
-    border: 1px solid var(--border-accent);
+    border: var(--border-width-1) solid var(--border-accent);
     border-radius: var(--radius-md);
     color: var(--color-primary);
     display: flex;

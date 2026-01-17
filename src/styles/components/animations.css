@@ -284,7 +284,7 @@
     border-radius: inherit;
     content: '';
     filter: blur(8px);
-    inset: -2px;
+    inset: var(--translate-neg2);
     opacity: 0;
     position: absolute;
     transition: opacity var(--duration-300) var(--ease-out);

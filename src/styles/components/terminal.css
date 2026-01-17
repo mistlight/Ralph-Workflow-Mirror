@@ -8,7 +8,7 @@
 
 .terminal-window {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-2xl);
     box-shadow: var(--shadow-xl), var(--shadow-glow-lg);
     overflow: hidden;
@@ -20,7 +20,7 @@
     background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 50%, var(--color-lime) 100%);
     border-radius: var(--radius-2xl);
     content: '';
-    inset: -2px;
+    inset: var(--translate-neg2);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask-composite: xor;
@@ -46,7 +46,7 @@
 .terminal-header {
     align-items: center;
     background-color: var(--color-bg-elevated);
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: var(--border-width-1) solid var(--border-subtle);
     display: flex;
     justify-content: space-between;
     padding: var(--space-4) var(--space-5);
@@ -186,7 +186,7 @@
 
 .terminal-spinner {
     animation: spin 1s linear infinite;
-    border: 2px solid var(--color-primary-dim);
+    border: var(--border-width-2) solid var(--color-primary-dim);
     border-radius: 50%;
     border-top-color: var(--color-primary);
     height: 12px;
@@ -237,7 +237,7 @@
 
 pre {
     background-color: var(--code-bg);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     color: var(--code-text);
     font-family: var(--font-mono);
@@ -259,7 +259,7 @@ pre code {
 /* Small code block variant for inline content */
 .code-block--small {
     background-color: var(--code-bg);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-md);
     color: var(--code-text);
     font-family: var(--font-mono);
@@ -282,7 +282,7 @@ pre code {
 
 .code-block {
     background-color: var(--code-bg);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     margin-bottom: var(--space-4);
     overflow: hidden;
@@ -291,7 +291,7 @@ pre code {
 .code-block-header {
     align-items: center;
     background-color: var(--color-bg-elevated);
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: var(--border-width-1) solid var(--border-subtle);
     display: flex;
     justify-content: space-between;
     padding: var(--space-3) var(--space-4);
@@ -315,7 +315,7 @@ pre code {
 .copy-btn {
     align-items: center;
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-medium);
+    border: var(--border-width-1) solid var(--border-medium);
     border-radius: var(--radius-md);
     color: var(--color-text-muted);
     cursor: pointer;
@@ -382,7 +382,7 @@ pre code {
 
 code, .inline-code, .inline {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-md);
     color: var(--color-primary);
     font-family: var(--font-mono);
@@ -396,7 +396,7 @@ code, .inline-code, .inline {
 .install-code-block {
     align-items: center;
     background-color: var(--code-bg);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-lg);
     display: flex;
     gap: var(--space-4);
@@ -415,7 +415,7 @@ code, .inline-code, .inline {
 .install-copy-btn {
     align-items: center;
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-medium);
+    border: var(--border-width-1) solid var(--border-medium);
     border-radius: var(--radius-md);
     color: var(--color-text-muted);
     cursor: pointer;
@@ -451,7 +451,7 @@ code, .inline-code, .inline {
 
 .prompt-editor {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-lg);
     overflow: hidden;
@@ -460,7 +460,7 @@ code, .inline-code, .inline {
 .prompt-editor-header {
     align-items: center;
     background-color: var(--color-bg-elevated);
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: var(--border-width-1) solid var(--border-subtle);
     display: flex;
     justify-content: space-between;
     padding: var(--space-4) var(--space-5);
@@ -505,7 +505,7 @@ code, .inline-code, .inline {
 
 .comparison-table th,
 .comparison-table td {
-    border-bottom: 1px solid var(--border-soft);
+    border-bottom: var(--border-width-1) solid var(--border-soft);
     padding: var(--space-4) var(--space-5);
     text-align: left;
 }

@@ -1,0 +1,16 @@
+/* ========================================
+   GLOSSARY SECTION
+   ========================================
+   CLI glossary styles
+   ======================================== */
+
+/* === GLOSSARY SECTION === */
+
+.glossary-section {
+    position: relative;
+}
+
+.glossary-container {
+    margin: 0 auto;
+    max-width: 900px;
+}

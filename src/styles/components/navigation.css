@@ -116,7 +116,7 @@
 
     &-menu {
         background-color: var(--color-bg-card);
-        border: 1px solid var(--border-accent);
+        border: var(--border-width-1) solid var(--border-accent);
         border-radius: var(--radius-lg);
         box-shadow: var(--shadow-xl), var(--shadow-glow-md);
         left: 0;
@@ -213,7 +213,7 @@
 .nav-toggle {
     align-items: center;
     background-color: transparent;
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-lg);
     color: var(--color-text-muted);
     cursor: pointer;

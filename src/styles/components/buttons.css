@@ -7,7 +7,7 @@
 
 .btn {
     align-items: center;
-    border: 1px solid transparent;
+    border: var(--border-width-1) solid transparent;
     border-radius: var(--radius-lg);
     cursor: pointer;
     display: inline-flex;
@@ -152,7 +152,7 @@
         &:hover {
             background-color: var(--color-accent-light);
             box-shadow: var(--shadow-glow-accent), var(--shadow-glow-accent-strong), 0 0 30px var(--color-accent-glow);
-            transform: translateY(-2px);
+            transform: translateY(var(--lift-sm));
             transition: all var(--duration-300) var(--ease-expo-out);
         }
 
@@ -182,7 +182,7 @@
 
         &::after {
             animation: spin 0.6s linear infinite;
-            border: 2px solid var(--color-bg);
+            border: var(--border-width-2) solid var(--color-bg);
             border-radius: 50%;
             border-top-color: transparent;
             content: '';
@@ -253,7 +253,7 @@
 }
 
 .btn:hover .btn-arrow {
-    transform: translateX(4px);
+    transform: translateX(var(--translate-4));
 }
 
 /* === DARK MODE TOGGLE BUTTON === */
@@ -261,7 +261,7 @@
 .dark-mode-toggle {
     align-items: center;
     background-color: transparent;
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-lg);
     color: var(--color-text-muted);
     cursor: pointer;
@@ -323,7 +323,7 @@
 .theme-toggle {
     align-items: center;
     background-color: transparent;
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-lg);
     color: var(--color-text-muted);
     cursor: pointer;

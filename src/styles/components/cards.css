@@ -9,7 +9,7 @@
 
 .card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     position: relative;
@@ -38,7 +38,7 @@
 
 .feature-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     overflow: hidden;
     padding: var(--space-8);
@@ -108,7 +108,7 @@
 .feature-icon {
     align-items: center;
     background-color: var(--color-primary-dim);
-    border: 1px solid var(--border-accent);
+    border: var(--border-width-1) solid var(--border-accent);
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
@@ -145,7 +145,7 @@
 
 .key-point {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     transition: transform var(--duration-300) var(--ease-expo-out),
@@ -182,7 +182,7 @@
 
 .comparison-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     position: relative;
@@ -241,13 +241,13 @@
 
     &--before {
         background-color: var(--white-alpha-5);
-        border: 1px solid var(--border-soft);
+        border: var(--border-width-1) solid var(--border-soft);
         color: var(--color-text-muted);
     }
 
     &--after {
         background-color: var(--color-primary-dim);
-        border: 1px solid var(--color-primary);
+        border: var(--border-width-1) solid var(--color-primary);
         color: var(--color-primary);
     }
 }
@@ -318,7 +318,7 @@
 }
 
 .comparison-footer {
-    border-top: 1px solid var(--border-soft);
+    border-top: var(--border-width-1) solid var(--border-soft);
     font-family: var(--font-mono);
     font-size: var(--text-sm);
     margin-top: var(--space-6);
@@ -345,7 +345,7 @@
 
 .prereq-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-8);
     position: relative;
@@ -399,7 +399,7 @@
 .prereq-icon {
     align-items: center;
     background-color: var(--color-primary-dim);
-    border: 1px solid var(--border-accent);
+    border: var(--border-width-1) solid var(--border-accent);
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
@@ -414,7 +414,7 @@
 
 .install-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-8);
     transition: all var(--duration-300) var(--ease-expo-out);
@@ -446,7 +446,7 @@
 .install-card-icon {
     align-items: center;
     background-color: var(--color-primary-dim);
-    border: 1px solid var(--border-accent);
+    border: var(--border-width-1) solid var(--border-accent);
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
@@ -475,7 +475,7 @@
 
 .quick-benefit-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     transition: all var(--duration-300) var(--ease-expo-out);
@@ -540,7 +540,7 @@
 
 .license-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     overflow: hidden;
     padding: var(--space-6);
@@ -643,7 +643,7 @@
 
 .contribute-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     overflow: hidden;
     padding: var(--space-8);
@@ -728,7 +728,7 @@
 .contribute-icon {
     align-items: center;
     background-color: var(--color-primary-dim);
-    border: 1px solid transparent;
+    border: var(--border-width-1) solid transparent;
     border-radius: var(--radius-xl);
     color: var(--color-primary);
     display: flex;
@@ -751,7 +751,7 @@
 
 .value-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     overflow: hidden;
     padding: var(--space-6);
@@ -836,7 +836,7 @@
 .value-icon {
     align-items: center;
     background-color: var(--color-primary-dim);
-    border: 1px solid transparent;
+    border: var(--border-width-1) solid transparent;
     border-radius: var(--radius-lg);
     color: var(--color-primary);
     display: flex;
@@ -859,7 +859,7 @@
 
 .sidebar-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-6);
 
@@ -876,7 +876,7 @@
 
 .audience-card {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-xl);
     margin: 0 auto;
     max-width: 800px;
@@ -903,7 +903,7 @@
 
 .feature-list-item {
     background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-lg);
     display: flex;
     gap: var(--space-4);

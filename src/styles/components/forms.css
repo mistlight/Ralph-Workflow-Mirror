@@ -16,7 +16,7 @@ input[type="password"],
 textarea,
 select {
     background-color: var(--color-bg-input);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-lg);
     color: var(--color-text);
     font-family: var(--font-body);
@@ -181,7 +181,7 @@ select.success:focus {
 
 .code-inline-block code {
     background-color: var(--code-bg);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width-1) solid var(--border-soft);
     border-radius: var(--radius-md);
     color: var(--color-primary);
     font-family: var(--font-mono);
