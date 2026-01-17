@@ -23,7 +23,7 @@ path = "src/main.rs"
 # INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
 default = []
 # Export test-accessible methods for integration tests (printer, streaming_metrics)
-test-export = []
+__test_export = []
 
 [dependencies]
 # CLI argument parsing

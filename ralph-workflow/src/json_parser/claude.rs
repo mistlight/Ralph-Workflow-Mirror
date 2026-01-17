@@ -43,7 +43,7 @@ use std::rc::Rc;
 
 use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
-#[cfg(any(test, feature = "test-export"))]
+#[cfg(any(test, feature = "__test_export"))]
 use super::health::StreamingQualityMetrics;
 use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
@@ -195,7 +195,11 @@ impl ClaudeParser {
     /// let printer_ref = parser.printer().borrow();
     /// assert!(!printer_ref.has_duplicate_consecutive_lines());
     /// ```
-    #[cfg(any(test, feature = "test-export"))]
+    #[cfg(any(test, feature = "__test_export"))]
+    #[allow(
+        dead_code,
+        reason = "Used by integration tests in tests/ package via __test_export feature. Not used by binary."
+    )]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -230,7 +234,11 @@ impl ClaudeParser {
     /// let metrics = parser.streaming_metrics();
     /// assert!(metrics.snapshot_repairs_count > 0, "Snapshot repairs should occur");
     /// ```
-    #[cfg(any(test, feature = "test-export"))]
+    #[cfg(any(test, feature = "__test_export"))]
+    #[allow(
+        dead_code,
+        reason = "Used by integration tests in tests/ package via __test_export feature. Not used by binary."
+    )]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()

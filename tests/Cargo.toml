@@ -9,7 +9,7 @@ name = "integration"
 path = "main.rs"
 
 [dependencies]
-ralph-workflow = { path = "../ralph-workflow", features = ["test-export"] }
+ralph-workflow = { path = "../ralph-workflow", features = ["__test_export"] }
 serde_json = "1"
 test-helpers = { path = "../test-helpers" }
 tempfile = "3.10"
