@@ -378,6 +378,92 @@
     --lift-lg: -6px;
     --lift-xl: -8px;
     --lift-2xl: -10px;
+    --lift-3xl: -12px;
+    --lift-4xl: -20px;
+
+    /* === TRANSFORM VALUES === */
+    --rotate-0: 0deg;
+    --rotate-5: 5deg;
+    --rotate-neg10: -10deg;
+    --rotate-90: 90deg;
+    --rotate-180: 180deg;
+    --rotate-neg180: -180deg;
+    --rotate-270: 270deg;
+    --skew-neg20: -20deg;
+
+    /* === TRANSFORM SCALE VALUES === */
+    --scale-0: 0;
+    --scale-095: 0.95;
+    --scale-097: 0.97;
+    --scale-098: 0.98;
+    --scale-099: 0.99;
+    --scale-100: 1;
+    --scale-102: 1.02;
+    --scale-105: 1.05;
+    --scale-107: 1.07;
+    --scale-110: 1.1;
+    --scale-115: 1.15;
+    --scale-120: 1.2;
+
+    /* === TRANSFORM TRANSLATE VALUES === */
+    --translate-0: 0;
+    --translate-neg20: -20px;
+    --translate-neg15: -15px;
+    --translate-neg10: -10px;
+    --translate-neg8: -8px;
+    --translate-neg4: -4px;
+    --translate-neg2: -2px;
+    --translate-2: 2px;
+    --translate-3: 3px;
+    --translate-4: 4px;
+    --translate-8: 8px;
+    --translate-10: 10px;
+    --translate-12: 12px;
+    --translate-15: 15px;
+    --translate-20: 20px;
+    --translate-30: 30px;
+
+    /* === ANIMATION DURATIONS === */
+    --anim-fast: 0.2s;
+    --anim-base: 0.3s;
+    --anim-medium: 0.4s;
+    --anim-slow: 0.5s;
+    --anim-slower: 0.6s;
+    --anim-slower2: 0.8s;
+    --anim-slowest: 2s;
+    --anim-slowest2: 3s;
+
+    /* === DIMENSIONS === */
+    --size-0: 0;
+    --size-xs: 2px;
+    --size-sm: 4px;
+    --size-md: 8px;
+    --size-md2: 10px;
+    --size-lg: 12px;
+    --size-xl: 16px;
+    --size-2xl: 20px;
+    --size-3xl: 30px;
+    --size-4xl: 40px;
+    --size-5xl: 50px;
+    --size-6xl: 60px;
+    --size-8xl: 80px;
+
+    /* === SIZE PERCENTAGES === */
+    --pct-0: 0;
+    --pct-10: 10%;
+    --pct-20: 20%;
+    --pct-25: 25%;
+    --pct-30: 30%;
+    --pct-35: 35%;
+    --pct-40: 40%;
+    --pct-50: 50%;
+    --pct-60: 60%;
+    --pct-70: 70%;
+    --pct-80: 80%;
+    --pct-85: 85%;
+    --pct-90: 90%;
+    --pct-100: 100%;
+    --pct-150: 150%;
 
     /* === FOCUS STATE TOKENS === */
     --focus-ring: 0 0 0 3px var(--color-primary-dim);

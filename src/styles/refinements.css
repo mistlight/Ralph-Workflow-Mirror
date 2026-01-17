@@ -48,7 +48,7 @@ button:focus-visible,
 }
 
 @keyframes slideIn {
-    from { opacity: 0; transform: translateY(-10px); }
+    from { opacity: 0; transform: translateY(var(--lift-lg)); }
     to { opacity: 1; transform: translateY(0); }
 }
 
@@ -96,7 +96,7 @@ h2::after {
 }
 
 .btn:active {
-    transform: translateY(1px) scale(0.98);
+    transform: translateY(var(--size-xs)) scale(var(--scale-098));
     transition: transform var(--duration-100) var(--ease-out);
 }
 
@@ -176,13 +176,13 @@ h2::after {
     border-color: var(--color-primary-light);
     box-shadow: var(--shadow-glow-sm), 0 0 24px var(--color-primary-glow);
     color: var(--color-bg);
-    transform: translateY(-2px) scale(1.02);
+    transform: translateY(calc(var(--lift-md) * -1)) scale(var(--scale-102));
 }
 
 .audience-btn:active,
 .audience-option:active,
 .cta-button:active {
-    transform: translateY(1px) scale(0.98);
+    transform: translateY(var(--size-xs)) scale(var(--scale-098));
     transition: transform var(--duration-100) var(--ease-out);
 }
 
@@ -243,7 +243,7 @@ h2::after {
 }
 
 @keyframes typeIn {
-    from { opacity: 0; transform: translateX(-10px); }
+    from { opacity: 0; transform: translateX(calc(var(--lift-lg) * -1)); }
     to { opacity: 1; transform: translateX(0); }
 }
 
@@ -449,7 +449,7 @@ h2::after {
 }
 
 .nav-link:active {
-    transform: scale(0.97);
+    transform: scale(var(--scale-097));
 }
 
 /* Navigation link underline animation */
@@ -499,7 +499,7 @@ h2::after {
 }
 
 @keyframes dropdownFadeIn {
-    from { opacity: 0; transform: translateY(-10px); }
+    from { opacity: 0; transform: translateY(calc(var(--lift-lg) * -1)); }
     to { opacity: 1; transform: translateY(0); }
 }
 
@@ -546,7 +546,7 @@ h2::after {
 
 .nav-logo:hover .logo-mark {
     filter: drop-shadow(0 0 8px var(--color-primary));
-    transform: rotate(-10deg) scale(1.1);
+    transform: rotate(var(--rotate-neg10)) scale(var(--scale-110));
 }
 
 /* Enhanced dark mode toggle button */
@@ -607,7 +607,7 @@ h2::after {
 }
 
 .faq-summary:active {
-    transform: scale(0.99);
+    transform: scale(var(--scale-099));
     transition: transform var(--duration-100) var(--ease-out);
 }
 
@@ -617,17 +617,6 @@ h2::after {
 
 .faq-summary--developer:hover {
     border-left-color: var(--color-lime);
-}
-
-.faq-summary:focus-visible {
-    background-color: var(--color-primary-dim);
-    box-shadow: inset 0 0 0 2px var(--color-primary);
-    outline: none;
-}
-
-.faq-summary:active {
-    transform: scale(0.99);
-    transition: transform var(--duration-100) var(--ease-out);
 }
 
 .faq-summary[aria-expanded="true"] {
@@ -667,7 +656,7 @@ h2::after {
     from {
         max-height: 0;
         opacity: 0;
-        transform: translateY(-10px);
+        transform: translateY(calc(var(--lift-lg) * -1.5));
     }
 
     to {
@@ -678,7 +667,7 @@ h2::after {
 }
 
 @keyframes faqReveal {
-    from { opacity: 0; transform: translateY(-8px); }
+    from { opacity: 0; transform: translateY(calc(var(--lift-lg) * -1.3)); }
     to { opacity: 1; transform: translateY(0); }
 }
 
@@ -762,7 +751,7 @@ code:not(pre code):hover {
     background-color: var(--color-primary-dim);
     border-color: var(--color-primary);
     box-shadow: 0 0 15px var(--color-primary-dim);
-    transform: scale(1.05);
+    transform: scale(var(--scale-105));
 }
 
 .copy-btn:active {
@@ -777,9 +766,9 @@ code:not(pre code):hover {
 }
 
 @keyframes copyPulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.1); }
-    100% { transform: scale(1); }
+    0% { transform: scale(var(--scale-100)); }
+    50% { transform: scale(var(--scale-110)); }
+    100% { transform: scale(var(--scale-100)); }
 }
 
 /* Ensure copy button is always visible on touch devices */
@@ -859,7 +848,7 @@ code:not(pre code):hover {
 .badge:hover {
     box-shadow: 0 0 10px currentcolor;
     filter: brightness(1.1);
-    transform: translateY(-2px) scale(1.02);
+    transform: translateY(calc(var(--lift-md) * -1)) scale(var(--scale-102));
 }
 
 /* === SCROLL INDICATOR ENHANCEMENT === */
@@ -989,7 +978,7 @@ a:not(.btn):hover {
     box-shadow: 0 0 0 2px var(--color-bg),
                 0 0 0 4px var(--color-primary),
                 0 0 30px var(--color-primary-glow);
-    transform: scale(1.1) rotate(5deg);
+    transform: scale(var(--scale-110)) rotate(var(--rotate-5));
 }
 
 /* Enhanced step number with glow */
@@ -1007,7 +996,7 @@ a:not(.btn):hover {
     box-shadow: 0 0 0 2px var(--color-bg),
                 0 0 0 4px var(--color-primary),
                 0 0 30px var(--color-primary-glow);
-    transform: scale(1.05);
+    transform: scale(var(--scale-105));
 }
 
 /* Enhanced step card connector line animation */
@@ -1211,7 +1200,7 @@ dd {
 }
 
 .workflow-svg .workflow-node:hover {
-    transform: scale(1.05);
+    transform: scale(var(--scale-105));
 }
 
 /* === HERO BACKGROUND Z-INDEX === */
@@ -1297,11 +1286,6 @@ a, button, .btn, .nav-link, .faq-summary, .card, .feature-card {
 }
 
 /* === IMPROVED FOCUS RINGS FOR ACCESSIBILITY === */
-
-:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 3px;
-}
 
 button:focus-visible,
 .btn:focus-visible,
@@ -1429,7 +1413,7 @@ a:focus-visible {
 @keyframes tooltip-fade-in {
     from {
         opacity: 0;
-        transform: translateY(4px);
+        transform: translateY(var(--size-md));
     }
 
     to {

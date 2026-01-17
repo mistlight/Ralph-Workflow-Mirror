@@ -64,7 +64,7 @@
 
 .hero-orb {
     border-radius: 50%;
-    filter: blur(100px);
+    filter: blur(var(--size-5xl));
     opacity: 0.4;
     position: absolute;
 }
@@ -271,7 +271,7 @@
     background-clip: text;
     background-clip: text;
     content: attr(data-text);
-    filter: blur(20px);
+    filter: blur(var(--size-5xl));
     inset: 0;
     opacity: 0.4;
     position: absolute;
@@ -508,7 +508,7 @@
 .hero-blob {
     animation: blob-morph 20s ease-in-out infinite;
     border-radius: 50%;
-    filter: blur(80px);
+    filter: blur(var(--size-4xl));
     opacity: 0.25;
     position: absolute;
 }
