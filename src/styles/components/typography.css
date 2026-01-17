@@ -23,7 +23,7 @@ h1, .h1 {
     font-size: clamp(2.5rem, 8vw, var(--text-7xl));
     font-weight: var(--font-extrabold);
     letter-spacing: var(--tracking-tighter);
-    line-height: 1.05;
+    line-height: var(--leading-tight);
     margin-bottom: var(--space-6);
 }
 
@@ -70,7 +70,7 @@ p {
     color: var(--color-text-primary);
     font-size: var(--text-lg);
     font-weight: var(--font-normal);
-    line-height: 1.7;
+    line-height: var(--leading-relaxed);
     margin-bottom: var(--space-5);
 }
 
@@ -78,7 +78,7 @@ p {
     color: var(--color-text);
     font-size: var(--text-lg);
     font-weight: var(--font-normal);
-    line-height: 1.7;
+    line-height: var(--leading-relaxed);
     margin-bottom: var(--space-5);
 }
 
@@ -103,7 +103,7 @@ code, .inline-code, .inline {
     font-family: var(--font-mono);
     font-size: 0.875em;
     font-weight: var(--font-medium);
-    line-height: 1.5;
+    line-height: var(--leading-normal);
     padding: 0.2em 0.5em;
 }
 

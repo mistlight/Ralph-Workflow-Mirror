@@ -56,7 +56,7 @@
 }
 
 .nav-link-external:hover .external-icon {
-    transform: translateX(2px);
+    transform: translateX(var(--translate-4));
 }
 
 /* === DROPDOWN === */

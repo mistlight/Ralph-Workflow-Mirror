@@ -18,7 +18,7 @@
 
     &:hover {
         border-color: var(--border-accent);
-        box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
+        box-shadow: var(--shadow-xl), 0 0 30px var(--color-primary-dim);
         transform: translateY(var(--lift-md));
     }
 
@@ -148,7 +148,7 @@
 
     &:hover {
         border-color: var(--border-accent);
-        box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
+        box-shadow: var(--shadow-xl), 0 0 30px var(--color-primary-dim);
         transform: translateY(var(--lift-md));
     }
 
@@ -185,7 +185,7 @@
 
     &:hover {
         border-color: var(--border-accent);
-        box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
+        box-shadow: var(--shadow-xl), 0 0 30px var(--color-primary-dim);
         transform: translateY(var(--lift-md));
     }
 
@@ -208,14 +208,14 @@
 
         &:hover {
             border-color: var(--color-primary);
-            box-shadow: var(--shadow-lg), 0 0 40px var(--primary-shadow-15);
+            box-shadow: var(--shadow-xl), 0 0 40px var(--primary-shadow-15);
         }
     }
 
     &--before {
         &:hover {
             border-color: var(--color-accent);
-            box-shadow: var(--shadow-lg), 0 0 30px var(--accent-alpha-15);
+            box-shadow: var(--shadow-xl), 0 0 30px var(--accent-alpha-15);
         }
     }
 }
@@ -279,7 +279,7 @@
     font-weight: var(--font-bold);
     height: 20px;
     justify-content: center;
-    margin-top: 2px;
+    margin-top: 3px;
     width: 20px;
 
     &--negative {
@@ -299,7 +299,7 @@
     color: var(--color-text);
     display: block;
     font-weight: var(--font-medium);
-    margin-bottom: var(--space-1);
+    margin-bottom: var(--space-2);
 }
 
 .comparison-item-desc {

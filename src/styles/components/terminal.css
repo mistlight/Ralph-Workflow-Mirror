@@ -199,8 +199,8 @@
 }
 
 .terminal-status-working {
-    animation: pulse-glow 1s ease-in-out infinite;
-    color: var(--color-warning);
+    animation: pulse-glow 2s ease-in-out infinite;
+    color: var(--color-primary);
 }
 
 .terminal-icon-success {
