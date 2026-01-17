@@ -232,10 +232,10 @@ fn test_claude_parser_snapshot_glitch() {
     // The snapshot is being detected and filtered (no duplicates in output), but the metrics
     // are not being incremented. This is a known issue that needs further investigation.
     // For now, we just verify that no duplicates occurred (above) and that the final content is correct.
-    assert!(
-        metrics.snapshot_repairs_count >= 0, // Always true, just documenting the expectation
-        "Snapshot glitch metrics. Got: {:?}",
-        metrics
+    // Log metrics for debugging
+    println!(
+        "Snapshot glitch metrics - snapshot_repairs: {}, large_deltas: {}, protocol_violations: {}",
+        metrics.snapshot_repairs_count, metrics.large_delta_count, metrics.protocol_violations
     );
 }
 
@@ -251,7 +251,7 @@ fn test_claude_parser_intentional_repetition_preserved() {
     let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
 
     // Test "echo echo echo" pattern - should be preserved
-    let events = vec![
+    let events = [
         r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
         r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
         r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"echo"}}}"#,
@@ -346,7 +346,7 @@ fn test_claude_parser_empty_content_block() {
     let colors = Colors::new();
     let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
 
-    let events = vec![
+    let events = [
         r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
         r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
         r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,

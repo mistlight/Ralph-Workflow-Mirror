@@ -164,7 +164,7 @@ impl ClaudeParser {
     /// # Returns
     ///
     /// Self for builder pattern chaining
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -196,6 +196,7 @@ impl ClaudeParser {
     /// assert!(!printer_ref.has_duplicate_consecutive_lines());
     /// ```
     #[cfg(feature = "test-utils")]
+    #[allow(dead_code, reason = "Used by integration tests")]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -231,6 +232,7 @@ impl ClaudeParser {
     /// assert!(metrics.snapshot_repairs_count > 0, "Snapshot repairs should occur");
     /// ```
     #[cfg(feature = "test-utils")]
+    #[allow(dead_code, reason = "Used by integration tests")]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()
@@ -778,8 +780,7 @@ impl ClaudeParser {
 
                 // Sanitize the accumulated text to check if it's empty
                 // This is needed to skip rendering when the accumulated content is just whitespace
-                use super::delta_display::sanitize_for_display;
-                let sanitized_text = sanitize_for_display(accumulated_text);
+                let sanitized_text = super::delta_display::sanitize_for_display(accumulated_text);
 
                 // Skip rendering if the sanitized text is empty (e.g., only whitespace)
                 // This prevents rendering empty lines when the accumulated content is just whitespace
@@ -902,8 +903,7 @@ impl ClaudeParser {
 
         // Sanitize the accumulated text to check if it's empty
         // This is needed to skip rendering when the accumulated content is just whitespace
-        use super::delta_display::sanitize_for_display;
-        let sanitized_text = sanitize_for_display(accumulated_text);
+        let sanitized_text = super::delta_display::sanitize_for_display(accumulated_text);
 
         // Skip rendering if the sanitized text is empty (e.g., only whitespace)
         // This prevents rendering empty lines when the accumulated content is just whitespace

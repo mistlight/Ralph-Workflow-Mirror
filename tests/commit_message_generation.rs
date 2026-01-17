@@ -10,7 +10,8 @@
 use std::fs;
 use tempfile::TempDir;
 
-use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
+use crate::common::ralph_cmd;
+use test_helpers::{commit_all, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -27,7 +28,7 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     let repo = init_git_repo(dir);
     write_file(dir.path().join("initial.txt"), "initial content");
-    commit_all(&repo, "initial commit");
+    let _ = commit_all(&repo, "initial commit");
     repo
 }
 
@@ -59,7 +60,7 @@ exit 0
     .unwrap();
 
     // Run ralph with a mock developer that creates the plan
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -103,7 +104,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -133,7 +134,7 @@ fn test_commit_message_uses_full_diff_content() {
     write_file(dir.path().join("large_file.txt"), &content);
 
     // Commit the initial large file
-    commit_all(&repo, "add large file");
+    let _ = commit_all(&repo, "add large file");
 
     // Modify a line deep in the file (line 150)
     content.clear();
@@ -156,7 +157,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -194,7 +195,7 @@ exit 0
     .unwrap();
 
     // Use a non-existent LLM command
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     let _ = base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -238,7 +239,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -274,7 +275,7 @@ exit 0
     .unwrap();
 
     // Use a non-existent LLM command to trigger a failure
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     let _ = base_env(&mut cmd)
         .current_dir(dir.path())
         .env(

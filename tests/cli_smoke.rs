@@ -1,7 +1,6 @@
+use crate::common::ralph_cmd;
+
 #[test]
 fn ralph_prints_version() {
-    assert_cmd::cargo::cargo_bin_cmd!("ralph")
-        .arg("--version")
-        .assert()
-        .success();
+    ralph_cmd().arg("--version").assert().success();
 }

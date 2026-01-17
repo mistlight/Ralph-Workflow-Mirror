@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::io::{self, IsTerminal, Stdout};
 use std::rc::Rc;
 
-#[cfg(feature = "test-utils")]
+#[cfg(all(feature = "test-utils", test))]
 use std::io::Stderr;
 
 /// Trait for output destinations in parsers.
@@ -66,13 +66,13 @@ impl Printable for StdoutPrinter {
 
 /// Printer that writes to stderr.
 #[derive(Debug)]
-#[cfg(feature = "test-utils")]
+#[cfg(all(feature = "test-utils", test))]
 pub struct StderrPrinter {
     stderr: Stderr,
     is_terminal: bool,
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(all(feature = "test-utils", test))]
 impl StderrPrinter {
     /// Create a new stderr printer.
     pub fn new() -> Self {
@@ -84,14 +84,14 @@ impl StderrPrinter {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(all(feature = "test-utils", test))]
 impl Default for StderrPrinter {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(all(feature = "test-utils", test))]
 impl std::io::Write for StderrPrinter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.stderr.write(buf)
@@ -102,7 +102,7 @@ impl std::io::Write for StderrPrinter {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(all(feature = "test-utils", test))]
 impl Printable for StderrPrinter {
     fn is_terminal(&self) -> bool {
         self.is_terminal
@@ -114,7 +114,6 @@ impl Printable for StderrPrinter {
 /// This printer stores all output in memory for testing purposes.
 /// It provides methods to retrieve and inspect the captured output.
 #[derive(Debug, Default)]
-#[cfg(feature = "test-utils")]
 pub struct TestPrinter {
     /// Captured output lines.
     output: RefCell<Vec<String>>,
@@ -122,7 +121,6 @@ pub struct TestPrinter {
     buffer: RefCell<String>,
 }
 
-#[cfg(feature = "test-utils")]
 impl TestPrinter {
     /// Create a new test printer.
     pub fn new() -> Self {
@@ -200,7 +198,6 @@ impl TestPrinter {
     }
 }
 
-#[cfg(feature = "test-utils")]
 impl std::io::Write for TestPrinter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s =
@@ -247,18 +244,6 @@ pub fn shared_stdout() -> SharedPrinter {
     Rc::new(RefCell::new(StdoutPrinter::new()))
 }
 
-/// Create a shared stderr printer.
-#[cfg(feature = "test-utils")]
-pub fn shared_stderr() -> SharedPrinter {
-    Rc::new(RefCell::new(StderrPrinter::new()))
-}
-
-/// Create a shared test printer.
-#[cfg(feature = "test-utils")]
-pub fn shared_test() -> SharedPrinter {
-    Rc::new(RefCell::new(TestPrinter::new()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,7 +261,7 @@ mod tests {
         let _is_term = printer.is_terminal();
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     #[test]
     fn test_printable_trait_is_terminal() {
         let printer = StdoutPrinter::new();
@@ -285,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     fn test_stderr_printer() {
         let mut printer = StderrPrinter::new();
         // Just ensure it compiles and works
@@ -295,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     fn test_printer_captures_output() {
         let mut printer = TestPrinter::new();
 
@@ -309,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     fn test_printer_get_lines() {
         let mut printer = TestPrinter::new();
 
@@ -323,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     fn test_printer_clear() {
         let mut printer = TestPrinter::new();
 
@@ -336,7 +321,7 @@ mod tests {
         assert!(printer.get_output().is_empty());
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     #[test]
     fn test_printer_has_line() {
         let mut printer = TestPrinter::new();
@@ -349,7 +334,7 @@ mod tests {
         assert!(!printer.has_line("Goodbye"));
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     #[test]
     fn test_printer_count_pattern() {
         let mut printer = TestPrinter::new();
@@ -360,7 +345,7 @@ mod tests {
         assert_eq!(printer.count_pattern("test"), 3);
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     #[test]
     fn test_printer_detects_duplicates() {
         let mut printer = TestPrinter::new();
@@ -371,7 +356,7 @@ mod tests {
         assert!(printer.has_duplicate_consecutive_lines());
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     #[test]
     fn test_printer_finds_duplicates() {
         let mut printer = TestPrinter::new();
@@ -389,7 +374,7 @@ mod tests {
         assert_eq!(duplicates[1].1, "Line 3\n");
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     #[test]
     fn test_printer_no_false_positives() {
         let mut printer = TestPrinter::new();
@@ -400,7 +385,7 @@ mod tests {
         assert!(!printer.has_duplicate_consecutive_lines());
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     #[test]
     fn test_printer_buffer_handling() {
         let mut printer = TestPrinter::new();
@@ -424,7 +409,7 @@ mod tests {
         assert!(output.contains("Partial content\n"));
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     #[test]
     fn test_printer_get_stats() {
         let mut printer = TestPrinter::new();
@@ -440,22 +425,6 @@ mod tests {
     #[test]
     fn test_shared_stdout() {
         let printer = shared_stdout();
-        // Verify the function creates a valid SharedPrinter
-        let _borrowed = printer.borrow();
-    }
-
-    #[test]
-    #[cfg(feature = "test-utils")]
-    fn test_shared_stderr() {
-        let printer = shared_stderr();
-        // Verify the function creates a valid SharedPrinter
-        let _borrowed = printer.borrow();
-    }
-
-    #[test]
-    #[cfg(feature = "test-utils")]
-    fn test_shared_test() {
-        let printer = shared_test();
         // Verify the function creates a valid SharedPrinter
         let _borrowed = printer.borrow();
     }

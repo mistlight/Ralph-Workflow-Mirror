@@ -3,6 +3,7 @@ use std::fs;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
+use crate::common::ralph_cmd;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -27,9 +28,9 @@ fn ralph_cleans_up_on_early_error() {
 
     // Create an initial commit so we can verify no new commits were made
     write_file(dir.path().join("initial.txt"), "initial content");
-    let initial_oid = commit_all(&repo, "initial commit");
+    let initial_oid = commit_all(&repo, "initial commit").to_string();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -60,8 +61,8 @@ fn ralph_cleans_up_on_early_error() {
     let statuses = repo.statuses(Some(&mut status_opts)).unwrap();
     assert!(
         statuses.is_empty(),
-        "Repository should be clean (no uncommitted changes), found: {:?}",
-        statuses.iter().collect::<Vec<_>>()
+        "Repository should be clean (no uncommitted changes), found {} status entries",
+        statuses.len()
     );
 }
 
@@ -75,9 +76,9 @@ fn ralph_cleanup_on_interrupt_simulation() {
 
     // Create an initial commit so we can verify no unexpected commits were made
     write_file(dir.path().join("initial.txt"), "initial content");
-    let initial_oid = commit_all(&repo, "initial commit");
+    let _ = commit_all(&repo, "initial commit");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "1")
@@ -102,8 +103,8 @@ fn ralph_cleanup_on_interrupt_simulation() {
     let statuses = repo.statuses(Some(&mut status_opts)).unwrap();
     assert!(
         statuses.is_empty(),
-        "Repository should be clean after pipeline completes, found: {:?}",
-        statuses.iter().collect::<Vec<_>>()
+        "Repository should be clean after pipeline completes, found {} status entries",
+        statuses.len()
     );
 }
 
@@ -111,10 +112,10 @@ fn ralph_cleanup_on_interrupt_simulation() {
 fn ralph_handles_agent_timeout_gracefully() {
     // Test that ralph handles slow/hanging agents with timeout
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Use a short timeout for testing
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "1")
@@ -142,7 +143,7 @@ fn ralph_handles_invalid_json_in_config() {
     let dir_path = dir.path();
 
     // Initialize git repo
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create PROMPT.md
     fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
@@ -154,7 +155,7 @@ fn ralph_handles_invalid_json_in_config() {
     )
     .unwrap();
 
-    let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
+    let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
     cmd.current_dir(dir_path)
         .env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "1") // Need at least 1 iteration to trigger agent usage
@@ -187,9 +188,9 @@ fn ralph_handles_invalid_json_in_config() {
 fn ralph_isolation_mode_does_not_create_status_notes_issues() {
     // Isolation mode (default) should NOT create STATUS.md, NOTES.md or ISSUES.md
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -220,14 +221,14 @@ fn ralph_isolation_mode_does_not_create_status_notes_issues() {
 fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
     // Isolation mode should DELETE existing STATUS.md, NOTES.md and ISSUES.md
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Pre-create STATUS.md, NOTES.md and ISSUES.md
     fs::write(dir.path().join(".agent/STATUS.md"), "old status").unwrap();
     fs::write(dir.path().join(".agent/NOTES.md"), "old notes").unwrap();
     fs::write(dir.path().join(".agent/ISSUES.md"), "old issues").unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -258,9 +259,9 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
 fn ralph_no_isolation_creates_status_notes_issues() {
     // --no-isolation flag should create STATUS.md, NOTES.md and ISSUES.md
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .arg("--no-isolation")
@@ -292,9 +293,9 @@ fn ralph_no_isolation_creates_status_notes_issues() {
 fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
     // RALPH_ISOLATION_MODE=0 should create STATUS.md, NOTES.md and ISSUES.md
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_ISOLATION_MODE", "0")
@@ -327,7 +328,7 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
     // --no-isolation should overwrite/truncate STATUS.md, NOTES.md and ISSUES.md
     // to a single vague sentence, to prevent detailed context from persisting.
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Pre-create STATUS.md, NOTES.md and ISSUES.md with detailed multi-line content.
     fs::write(
@@ -346,7 +347,7 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .arg("--no-isolation")
@@ -387,7 +388,7 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
 #[test]
 fn ralph_resume_continues_from_checkpoint_phase() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let dev_script_path = dir.path().join("dev_script.sh");
     fs::write(
@@ -410,7 +411,7 @@ exit 0
     // First run: With auto-commit behavior, the pipeline will succeed.
     // But we can create a failure by making the PLAN.md empty/invalid
     // which causes a planning failure.
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_INTERACTIVE", "0")
@@ -445,7 +446,7 @@ fn ralph_developer_iteration_creates_changes_for_commit() {
     // Note: Full commit testing requires a real LLM agent for commit message generation.
     // This test verifies the changes are created correctly.
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Track how many times the script has been called
     let counter_path = dir.path().join(".agent/dev_counter");
@@ -484,7 +485,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "2") // 2 iterations

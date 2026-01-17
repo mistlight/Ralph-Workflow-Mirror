@@ -11,6 +11,7 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
+use crate::common::ralph_cmd;
 use test_helpers::init_git_repo;
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -26,9 +27,9 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 #[test]
 fn backup_created_at_pipeline_start() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -53,14 +54,14 @@ fn backup_created_at_pipeline_start() {
 #[test]
 fn auto_restore_works_when_prompt_deleted() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let original_content = "# Test Requirements\nTest task";
     let prompt_path = dir.path().join("PROMPT.md");
     let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
     // Initial run to create backup
-    let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd1 = ralph_cmd();
     base_env(&mut cmd1)
         .current_dir(dir.path())
         .env(
@@ -83,7 +84,7 @@ fn auto_restore_works_when_prompt_deleted() {
     assert!(!prompt_path.exists());
 
     // Run Ralph again - should auto-restore from backup
-    let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd2 = ralph_cmd();
     base_env(&mut cmd2)
         .current_dir(dir.path())
         .env(
@@ -105,12 +106,12 @@ fn auto_restore_works_when_prompt_deleted() {
 #[test]
 fn backup_not_deleted_during_cleanup() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
     // Run Ralph to create backup
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -127,7 +128,7 @@ fn backup_not_deleted_during_cleanup() {
     assert!(backup_path.exists());
 
     // Run Ralph again - cleanup shouldn't delete backup
-    let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd2 = ralph_cmd();
     base_env(&mut cmd2)
         .current_dir(dir.path())
         .env(
@@ -147,12 +148,12 @@ fn backup_not_deleted_during_cleanup() {
 #[test]
 fn backup_has_readonly_permissions() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
     // Run Ralph to create backup
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -201,14 +202,14 @@ fn backup_has_readonly_permissions() {
 #[test]
 fn periodic_restoration_works_during_pipeline() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let original_content = "# Test Requirements\nTest task";
     let prompt_path = dir.path().join("PROMPT.md");
     let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
     // Initial run to create backup
-    let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd1 = ralph_cmd();
     base_env(&mut cmd1)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "2")
@@ -232,7 +233,7 @@ fn periodic_restoration_works_during_pipeline() {
 #[test]
 fn backup_rotation_maintains_multiple_backups() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let backup_base = dir.path().join(".agent/PROMPT.md.backup");
     let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
@@ -240,7 +241,7 @@ fn backup_rotation_maintains_multiple_backups() {
 
     // Run Ralph multiple times to create multiple backups
     for _ in 0..3 {
-        let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+        let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
             .env(
@@ -278,14 +279,14 @@ fn backup_rotation_maintains_multiple_backups() {
 #[test]
 fn backup_oldest_deleted_when_exceeding_limit() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let backup_2 = dir.path().join(".agent/PROMPT.md.backup.2");
     let backup_3 = dir.path().join(".agent/PROMPT.md.backup.3");
 
     // Run Ralph 4 times - should only keep 3 backups
     for _ in 0..4 {
-        let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+        let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
             .env(
@@ -309,7 +310,7 @@ fn backup_oldest_deleted_when_exceeding_limit() {
 #[test]
 fn restore_from_fallback_backup_when_primary_corrupted() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let prompt_path = dir.path().join("PROMPT.md");
     let backup_base = dir.path().join(".agent/PROMPT.md.backup");
@@ -318,7 +319,7 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
 
     // Initial run to create backups
     for _ in 0..3 {
-        let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+        let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
             .env(
@@ -366,7 +367,7 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
     fs::write(&backup_1, "").unwrap();
 
     // Run Ralph - should restore from backup.2
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env(
@@ -398,13 +399,13 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
 #[test]
 fn agent_chmod_rm_is_caught_and_restored() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let prompt_path = dir.path().join("PROMPT.md");
     let original_content = "# Test Requirements\nTest task";
 
     // Initial run to create backup
-    let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd1 = ralph_cmd();
     base_env(&mut cmd1)
         .current_dir(dir.path())
         .env(
@@ -418,7 +419,7 @@ fn agent_chmod_rm_is_caught_and_restored() {
         .stdout(predicate::str::contains("Pipeline Complete"));
 
     // Now run an agent that tries chmod + rm on PROMPT.md
-    let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd2 = ralph_cmd();
     base_env(&mut cmd2)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_CMD", "sh -c 'chmod 644 PROMPT.md && rm PROMPT.md && mkdir -p .agent; echo plan > .agent/PLAN.md'")
@@ -441,13 +442,13 @@ fn agent_chmod_rm_is_caught_and_restored() {
 #[test]
 fn agent_overwrite_is_detected_and_restored() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let prompt_path = dir.path().join("PROMPT.md");
     let _original_content = "# Test Requirements\nTest task";
 
     // Initial run to create backup
-    let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd1 = ralph_cmd();
     base_env(&mut cmd1)
         .current_dir(dir.path())
         .env(
@@ -461,7 +462,7 @@ fn agent_overwrite_is_detected_and_restored() {
         .stdout(predicate::str::contains("Pipeline Complete"));
 
     // Now run an agent that tries to overwrite PROMPT.md with empty content
-    let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd2 = ralph_cmd();
     base_env(&mut cmd2)
         .current_dir(dir.path())
         .env(
@@ -491,12 +492,12 @@ fn agent_overwrite_is_detected_and_restored() {
 #[test]
 fn multiple_deletions_are_logged_with_context() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let prompt_path = dir.path().join("PROMPT.md");
 
     // Initial run to create backup
-    let mut cmd1 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd1 = ralph_cmd();
     base_env(&mut cmd1)
         .current_dir(dir.path())
         .env(
@@ -510,7 +511,7 @@ fn multiple_deletions_are_logged_with_context() {
         .stdout(predicate::str::contains("Pipeline Complete"));
 
     // Run with multiple iterations where agent deletes PROMPT.md each time
-    let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd2 = ralph_cmd();
     base_env(&mut cmd2)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "3")

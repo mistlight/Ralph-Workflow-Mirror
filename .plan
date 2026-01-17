@@ -1,134 +1,59 @@
-# Implementation Plan: Fix Duplicates with Testable Architecture
+# Implementation Plan: Fix Streaming Output Duplicates and Organize Integration Tests
 
 ## Summary
 
-The integration test (`test_claude_parser_no_duplicates_with_real_log`) is currently failing because duplicate content is still being printed. The root cause is that the existing deduplication logic in `ClaudeParser` is not adequately catching all duplicate scenarios. The user wants us to:
-1. Use the existing integration test to reproduce the issue (tests currently pass because they don't verify output)
-2. Refactor to make the parser testable by using a `Printable` trait instead of writing directly to stdout/stderr
-3. Fix the actual deduplication bug in `ClaudeParser`
-4. NOT create test-only functionality - refactor main code to be testable
+The project currently compiles successfully with minor warnings. The main issue is that the existing integration tests in `tests/` directory are structured as individual test files, which causes dead code warnings for shared utility code in `tests/common.rs`. Following the reference article's guidance, we need to reorganize the integration tests into a single test crate with modules. Additionally, there's a duplicate output issue in the ClaudeParser that needs to be fixed.
 
-The good news is that a `Printable` trait abstraction with `StdoutPrinter`, `StderrPrinter`, and `TestPrinter` has already been implemented. The current issue is that the integration test isn't using the printer API correctly to verify output, and there may be remaining deduplication bugs in the parser logic itself.
+The plan involves:
+1. Reorganizing integration tests into a single crate structure to eliminate dead code warnings
+2. Fixing the deduplication logic in ClaudeParser to prevent duplicate output
+3. Verifying all tests pass with the reorganized structure
 
 ## Implementation Steps
 
-### Step 1: Understand and Analyze the Current Test Failure
+### Step 1: Reorganize Integration Tests into Single Crate Structure
 
-**Goal**: Run the integration test to see what actual output is being produced.
+**Goal**: Convert the current `tests/*.rs` structure into a single integration test crate with modules.
+
+**Files to modify**:
+- Create `tests/integration_tests/main.rs`
+- Move existing test files into `tests/integration_tests/` as modules
 
 **Actions**:
-- Run `cargo test -p ralph-workflow --features test-utils test_claude_parser_no_duplicates_with_real_log`
-- Capture the actual output to see what duplicates are occurring
-- Analyze the real log data to understand the duplicate pattern
+1. Create `tests/integration_tests/` directory
+2. Create `tests/integration_tests/main.rs` with module declarations
+3. Move individual test files into the directory as modules
+4. Update `tests/Cargo.toml` to point to the new structure
 
-**Expected Outcome**: Identify the specific duplicate pattern that's slipping through the deduplication logic.
+**Expected Outcome**: Integration tests compile without dead code warnings since they're now part of a single crate.
 
----
-
-### Step 2: Fix Integration Test to Actually Verify Output
-
-**File**: `tests/deduplication_integration_tests.rs`
-
-**Current Issue**: The test uses `TestPrinter` and `parse_stream()` but the test passes because we're not checking for the right thing or the test is structured incorrectly.
-
-**Changes Needed**:
-- Ensure the test is actually checking the printer output correctly
-- The test currently creates a `TestPrinter`, wraps it as `SharedPrinter`, creates parser with `with_printer()`, calls `parse_stream()`, then checks `printer_ref.has_duplicate_consecutive_lines()`
-- Verify that `test_printer` reference is pointing to the same printer that the parser wrote to
-
-**Potential Issues**:
-1. The `printer()` method returns `Rc::clone(&self.printer)` - we need to ensure this is the same underlying `TestPrinter`
-2. The `has_duplicate_consecutive_lines()` method in `TestPrinter` may not be catching the right pattern
-3. We may need to check for different patterns of duplicates (not just consecutive identical lines)
-
----
-
-### Step 3: Debug the Deduplication Logic
+### Step 2: Fix Deduplication Logic in ClaudeParser
 
 **File**: `ralph-workflow/src/json_parser/claude.rs`
 
-**Goal**: Identify why duplicates are still being printed despite the deduplication logic.
+**Goal**: Fix the remaining deduplication issues that cause duplicate output.
 
-**Key Areas to Investigate**:
-1. **Snapshot-as-delta detection** (lines 748-760): The `is_likely_snapshot()` check may not be catching all cases
-2. **Content rendering skip** (lines 776-779): `is_content_rendered()` check may be passing when it shouldn't
-3. **Prefix rendering logic** (lines 787-805): The in-place update logic may be causing visual duplicates
-4. **Mark rendered calls** (lines 808-809): These may not be called at the right time
-5. **Assistant event duplicate detection** (lines 619-638): Final message duplicate check may have issues
+**Analysis from code review**:
+The current implementation has multiple layers of deduplication:
+- Snapshot-as-delta detection using KMP and Rolling Hash
+- Consecutive duplicate detection with "3 strikes" heuristic
+- Content hash rendering tracking
+- Message ID tracking for final message deduplication
 
-**Debug Strategy**:
-- Add verbose logging to understand which deduplication checks are failing
-- Use `streaming_metrics()` to see if snapshot repairs are being detected
-- Check if the issue is with consecutive duplicates, snapshot glitches, or something else
+The issue may be in the interaction between these layers or in edge cases not covered by the current logic.
 
----
+**Potential fixes**:
+1. Verify that `is_content_hash_rendered()` is being called correctly for all rendered content
+2. Ensure that the sanitization in `delta_display::sanitize_for_display()` is consistent with the hash being tracked
+3. Check that the `mark_content_hash_rendered()` is called at the right time (before or after rendering)
+4. Verify that the `TestPrinter` duplicate detection matches the parser's deduplication logic
 
-### Step 4: Implement Enhanced Deduplication Based on Findings
+### Step 3: Run and Fix All Verification Checks
 
-**File**: `ralph-workflow/src/json_parser/claude.rs` and potentially `streaming_state.rs`
-
-**Based on the findings**, implement fixes:
-
-**Possible Fix A: If consecutive identical deltas are not being caught**:
-- The `check_consecutive_duplicate()` in `streaming_state.rs` may need tuning
-- The threshold for "3 strikes" may need adjustment
-
-**Possible Fix B: If snapshot detection is failing**:
-- The `is_likely_snapshot_with_thresholds()` may need more sensitive thresholds
-- The overlap detection may be missing certain patterns
-
-**Possible Fix C: If the issue is with prefix rewriting**:
-- The `TextDeltaRenderer` may be outputting duplicates during in-place updates
-- We may need to track what was actually rendered vs. what was calculated
-
-**Possible Fix D: If the issue is with message boundary handling**:
-- The `is_duplicate_final_message()` check may not be working correctly
-- Message ID tracking may be broken
-
----
-
-### Step 5: Fix Unit Tests That Use TODO Comments
-
-**File**: `ralph-workflow/src/json_parser/tests.rs`
-
-**Current State**: Many tests have `// TODO: Fix test to use printer API` comments and set `output = "".to_string()` to make tests pass.
-
-**Changes Needed**:
-- Update these tests to use `TestPrinter` and verify actual output
-- Tests to fix:
-  - `test_verbose_mode_streaming_no_duplicate_lines` (line 554)
-  - `test_streaming_accumulation_behavior` (line 762)
-  - `test_streaming_empty_delta_chunk` (line 827)
-  - `test_streaming_single_chunk` (line 850)
-  - `test_streaming_very_long_text` (line 897)
-  - `test_streaming_rapid_chunks` (line 971)
-  - `test_streaming_whitespace_only_chunks` (line 1014)
-  - `test_streaming_content_block_reset` (line 1038)
-  - `test_ccs_glm_streaming_no_duplicate_prefix` (line 1313)
-  - `test_ccs_glm_complete_message_deduplication` (line 1366)
-  - `test_finalize_without_deltas_no_output` (line 1453)
-  - `test_repeated_content_block_start_no_duplicate_prefix` (line 1511)
-  - `test_multiple_messages_with_proper_separation` (line 1563)
-  - `test_streaming_with_terminal_mode_none` (line 1625)
-  - `test_streaming_with_terminal_mode_basic` (line 1679)
-  - `test_completion_with_terminal_mode_none` (line 1731)
-  - `test_completion_with_terminal_mode_basic` (line 1763)
-  - `test_multiple_deltas_none_mode_produces_multiple_lines` (line 1796)
-  - `test_identical_accumulated_content_skips_rendering` (line 2016)
-  - `test_identical_deltas_produce_output_once` (line 2226)
-  - `test_different_deltas_produce_output` (line 2257)
-  - `test_empty_deltas_marked_as_processed` (line 2288)
-
----
-
-### Step 6: Verify and Run All Checks
-
-**Commands to Run**:
+**Commands to run**:
 ```bash
 # Check for suppressed warnings (should produce NO OUTPUT)
-rg -n -U --pcre2 '(?x)\#\s*!?\[\s*(allow|expect)\s*\(' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
-
-rg -n -U --pcre2 '(?x)\#\s*!?\[\s*cfg_attr\s*\([^()]*?\b(allow|expect)\s*\(' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+rg -n -U --pcre2 '(?x)\#\s*!?\\[\\s*(allow|expect)\s*\(' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
 
 # Format and check
 cargo fmt --all
@@ -136,149 +61,88 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 # Run all tests
 cargo test --all-features
+cargo build --release
 ```
 
-**Expected Outcome**:
-- No suppressed warnings
-- No clippy warnings
-- All tests pass, including the integration test that was previously failing
-
----
+**Expected Outcome**: No suppressed warnings, no clippy warnings, all tests pass.
 
 ## Critical Files for Implementation
 
-### `tests/deduplication_integration_tests.rs`
-- **Justification**: Contains the failing integration test that needs to be fixed to properly detect duplicates
-- **Key Changes**:
-  - Ensure `TestPrinter` is correctly shared with the parser
-  - Verify duplicate detection methods are working correctly
-  - Add more specific duplicate pattern checks if needed
+### `tests/integration_tests/main.rs` (NEW)
+- **Justification**: New entry point for the integration test crate following the single-crate pattern from the reference article
+- **Changes**: Declare all test modules here
+
+### `tests/Cargo.toml`
+- **Justification**: Update the test configuration to point to the new main.rs
+- **Changes**: Update `[[test]]` section if needed
+
+### `tests/integration_tests/` (NEW directory with modules)
+- **Justification**: Reorganize existing tests into modules
+- **Changes**: Move existing test files here as modules
 
 ### `ralph-workflow/src/json_parser/claude.rs`
-- **Justification**: Contains the main deduplication logic that may have bugs
-- **Key Changes**:
-  - Debug and fix snapshot detection logic
-  - Fix content rendering skip logic
-  - Fix prefix rendering/in-place update logic
-  - Fix assistant event duplicate detection
+- **Justification**: Contains the deduplication logic that may have bugs
+- **Changes**: Debug and fix any remaining deduplication issues based on test failures
 
-### `ralph-workflow/src/json_parser/streaming_state.rs`
-- **Justification**: Contains the deduplication state tracking and consecutive duplicate detection
-- **Key Changes**:
-  - Debug and fix consecutive duplicate detection
-  - Fix snapshot extraction logic
-  - Fix rendered content tracking
-
-### `ralph-workflow/src/json_parser/tests.rs`
-- **Justification**: Contains 20+ tests with TODO comments that need to be fixed to use printer API
-- **Key Changes**:
-  - Replace `output = "".to_string()` with actual printer API usage
-  - Verify actual output instead of skipping verification
-
-### `ralph-workflow/src/json_parser/printer.rs`
-- **Justification**: Contains the `Printable` trait and printer implementations (already implemented)
-- **Key Changes**:
-  - May need to add more helper methods for duplicate detection
-  - May need to fix `has_duplicate_consecutive_lines()` if it's not catching the right pattern
-
----
+### `tests/common.rs`
+- **Justification**: Shared utilities that were causing dead code warnings
+- **Changes**: This file will become a module within the single test crate, eliminating the warning
 
 ## Risks & Mitigations
 
-### Risk 1: The Printable Abstraction May Have Issues
+### Risk 1: Reorganizing Tests May Break Import Paths
+**Risk**: Moving test files into modules may break relative imports and module paths.
+**Mitigation**: Carefully update all `use` statements and module declarations. Test incrementally.
 
-**Risk**: The printer abstraction may not be correctly capturing output, leading to false test results.
+### Risk 2: The Deduplication Issue May Be Complex
+**Risk**: The duplicate output may be caused by subtle interactions between multiple layers of the system.
+**Mitigation**: Use the existing `TestPrinter` and `streaming_metrics()` APIs to debug and understand what's happening.
 
-**Mitigation**:
-- Verify that `SharedPrinter` is correctly shared between test and parser
-- Add debug logging to ensure output is being written to the right place
-- Test the printer abstraction independently
-
-### Risk 2: Deduplication Logic May Be Fundamentally Flawed
-
-**Risk**: The current deduplication approach may not be able to catch all duplicate patterns.
-
-**Mitigation**:
-- Analyze the actual duplicate pattern from the real log data
-- Consider adding additional deduplication checks
-- May need to implement a more comprehensive approach
-
-### Risk 3: Fixing Tests May Expose More Bugs
-
-**Risk**: Fixing the 20+ TODO tests may expose additional bugs in the parser logic.
-
-**Mitigation**:
-- Fix tests incrementally
-- Each test fix may reveal a different issue
-- Be prepared to fix multiple bugs
-
-### Risk 4: Performance Impact from Additional Checks
-
-**Risk**: Adding more deduplication checks may slow down streaming performance.
-
-**Mitigation**:
-- Benchmark before and after changes
-- Keep checks efficient (O(1) where possible)
-- Most deltas should fail fast on the first check
-
----
+### Risk 3: Test Reorganization May Be Time-Consuming
+**Risk**: There are many test files to move and update.
+**Mitigation**: This is a mechanical refactoring. The file moves are straightforward, and the updates to imports can be done systematically.
 
 ## Verification Strategy
 
-### Step 1: Run Integration Test and Capture Output
-
+### Step 1: Verify No Dead Code Warnings After Reorganization
 ```bash
-cargo test -p ralph-workflow --features test-utils test_claude_parser_no_duplicates_with_real_log -- --nocapture
+cargo build --all-targets --all-features 2>&1 | grep -i "dead_code\|unused"
 ```
+**Expected**: No dead code warnings for `tests/common.rs`
 
-**Expected**: See the actual output and identify duplicate patterns.
-
-### Step 2: Check for Specific Duplicate Patterns
-
-After understanding the failure, verify:
-- Are duplicates consecutive identical lines?
-- Are they partial overlaps (snapshot glitches)?
-- Are they repeated prefixes?
-
-### Step 3: Verify Fix with Real Log Data
-
-After implementing fixes:
+### Step 2: Run All Integration Tests
 ```bash
-cargo test -p ralph-workflow --features test-utils test_claude_parser_no_duplicates_with_real_log
+cargo test -p ralph-workflow-tests --all-features
 ```
+**Expected**: All tests pass
 
-**Expected**: Test passes, meaning no duplicates in the output.
-
-### Step 4: Run All Deduplication Tests
-
+### Step 3: Run Deduplication Integration Tests Specifically
 ```bash
-cargo test -p ralph-workflow --features test-utils dedup
-cargo test -p ralph-workflow --features test-utils streaming
+cargo test -p ralph-workflow-tests --all-features deduplication
 ```
+**Expected**: All deduplication tests pass, including `test_claude_parser_no_duplicates_with_real_log`
 
-**Expected**: All tests pass.
-
-### Step 5: Run Complete Test Suite
-
+### Step 4: Verify No Suppressed Warnings
 ```bash
-cargo test --all-features
+rg -n -U --pcre2 '(?x)\#\s*!?\\[\\s*(allow|expect)\s*\(' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+```
+**Expected**: No output (no suppressed warnings)
+
+### Step 5: Final Verification
+```bash
+cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
-cargo fmt --all -- --check
+cargo test --all-features
+cargo build --release
 ```
-
-**Expected**: All checks pass.
-
-### Step 6: Manual Verification
-
-Run the actual parser with a real streaming agent to verify duplicates are gone in production use.
-
----
+**Expected**: All checks pass with no warnings
 
 ## Success Criteria
 
-1. Integration test `test_claude_parser_no_duplicates_with_real_log` passes
-2. All 20+ TODO tests in `tests.rs` are fixed and passing
-3. No `#[allow(dead_code)]` or other suppressions added
-4. No clippy warnings
-5. No suppressed warnings detected by ripgrep
-6. All existing tests still pass (no regressions)
+1. Integration tests are reorganized into a single crate structure
+2. No dead code warnings for `tests/common.rs`
+3. All integration tests pass
+4. Deduplication tests pass (no duplicate output in test results)
+5. No `#[allow(dead_code)]` or other suppressions in the code
+6. No clippy warnings
+7. Project compiles and builds successfully

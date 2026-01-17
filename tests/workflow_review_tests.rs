@@ -2,6 +2,7 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
+use crate::common::ralph_cmd;
 use test_helpers::init_git_repo;
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -23,7 +24,7 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 fn ralph_reviewer_reviews_zero_skips_review() {
     // Test that N=0 skips review phase entirely
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/review_counter");
     let script_path = dir.path().join("review_script.sh");
@@ -50,7 +51,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -83,7 +84,7 @@ exit 0
 fn ralph_reviewer_reviews_one_runs_single_cycle() {
     // Test that N=1 runs exactly one review-fix cycle
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/review_counter");
     let script_path = dir.path().join("review_script.sh");
@@ -117,7 +118,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -145,7 +146,7 @@ exit 0
 fn ralph_review_multiple_passes() {
     // Test that RALPH_REVIEWER_REVIEWS=N runs exactly N review-fix cycles
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/review_counter");
     let script_path = dir.path().join("review_script.sh");
@@ -179,7 +180,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -204,7 +205,7 @@ exit 0
 #[test]
 fn ralph_creates_issues_md_during_review() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create review script
     let script_path = dir.path().join("review_script.sh");
@@ -224,7 +225,7 @@ echo "feat: reviewed" > .agent/commit-message.txt
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .arg("--no-isolation") // Use non-isolation mode to keep ISSUES.md
@@ -245,7 +246,7 @@ echo "feat: reviewed" > .agent/commit-message.txt
 #[test]
 fn ralph_review_workflow_with_no_issues() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create review script
     let script_path = dir.path().join("review_script.sh");
@@ -264,7 +265,7 @@ echo "feat: clean code" > .agent/commit-message.txt
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -288,7 +289,7 @@ echo "feat: clean code" > .agent/commit-message.txt
 fn ralph_isolation_mode_deletes_issues_after_fix() {
     // Test that ISSUES.md is deleted after the final fix in isolation mode
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Script that creates ISSUES.md during review but not during commit message generation
     let script_path = dir.path().join("review_script.sh");
@@ -311,7 +312,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -336,7 +337,7 @@ exit 0
 fn ralph_non_isolation_mode_keeps_issues_after_fix() {
     // Test that ISSUES.md is preserved after the final fix when NOT in isolation mode
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let script_path = dir.path().join("review_script.sh");
     fs::write(
@@ -352,7 +353,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -378,7 +379,7 @@ fn ralph_issues_persists_between_review_and_fix_phases() {
     // Test that ISSUES.md created during Review is readable during Fix phase
     // within the SAME cycle. This is critical for the review-fix cycle to work.
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create a marker file to track which phases have run
     let phase_log = dir.path().join(".agent/phase_log.txt");
@@ -428,7 +429,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -463,7 +464,7 @@ exit 0
 fn ralph_zero_reviewer_reviews_no_issues_created() {
     // Test that with N=0 reviewer reviews, pre-existing ISSUES.md gets cleaned at start
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Pre-create an ISSUES.md to verify it gets cleaned at start of run (isolation mode)
     fs::create_dir_all(dir.path().join(".agent")).unwrap();
@@ -473,7 +474,7 @@ fn ralph_zero_reviewer_reviews_no_issues_created() {
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -500,7 +501,7 @@ fn ralph_early_exit_no_issues_still_cleans_up() {
     // Test that ISSUES.md is cleaned up even when review exits early
     // due to finding no issues
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let call_counter = dir.path().join(".agent/call_counter");
 
@@ -539,7 +540,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -566,7 +567,7 @@ exit 0
 fn ralph_multiple_review_cycles_final_cleanup() {
     // Test that with N=2 review cycles, ISSUES.md is cleaned up after EACH fix cycle
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/call_counter");
     let issues_state_log = dir.path().join(".agent/issues_state.txt");
@@ -632,7 +633,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -669,7 +670,7 @@ exit 0
 fn ralph_issues_md_deleted_after_each_fix_cycle() {
     // Comprehensive test for N=3 cycles verifying exact ISSUES.md lifecycle
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/call_counter");
     let issues_state_log = dir.path().join(".agent/issues_state.txt");
@@ -748,7 +749,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")

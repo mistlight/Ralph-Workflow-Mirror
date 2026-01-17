@@ -3,6 +3,7 @@ use std::fs;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
+use crate::common::ralph_cmd;
 use test_helpers::init_git_repo;
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -26,13 +27,13 @@ fn ralph_init_creates_config_file() {
     let dir_path = dir.path();
 
     // Initialize git repo but don't create agents.toml
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let config_path = dir_path.join(".agent/agents.toml");
     assert!(!config_path.exists());
 
     // Run ralph --init-legacy
-    let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
+    let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
     cmd.current_dir(dir_path).arg("--init-legacy");
 
     let output = cmd.output().unwrap();
@@ -59,7 +60,7 @@ fn ralph_init_reports_existing_config() {
     let dir_path = dir.path();
 
     // Initialize git repo
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create existing config with valid agent_chain
     let custom_config = r#"# Custom config
@@ -70,7 +71,7 @@ reviewer = ["codex"]
     fs::write(dir_path.join(".agent/agents.toml"), custom_config).unwrap();
 
     // Run ralph --init-legacy
-    let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
+    let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
     cmd.current_dir(dir_path).arg("--init-legacy");
 
     let output = cmd.output().unwrap();
@@ -91,7 +92,7 @@ fn ralph_first_run_creates_config_and_exits() {
     let dir_path = dir.path();
 
     // Initialize git repo but don't create agents.toml
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create PROMPT.md (required)
     fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
@@ -104,7 +105,7 @@ fn ralph_first_run_creates_config_and_exits() {
     assert!(!unified_config_path.exists());
 
     // Run ralph --init-global (unified config)
-    let mut cmd = StdCommand::new(env!("CARGO_BIN_EXE_ralph"));
+    let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
     cmd.current_dir(dir_path)
         .env("XDG_CONFIG_HOME", &config_home)
         .arg("--init-global");
@@ -125,7 +126,7 @@ fn ralph_first_run_creates_config_and_exits() {
 #[test]
 fn ralph_uses_agent_chain_first_entries_as_defaults() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Ensure no explicit agent selection via env is in play.
     // base_env doesn't set RALPH_DEVELOPER_AGENT / RALPH_REVIEWER_AGENT.
@@ -140,7 +141,7 @@ reviewer = ["aider", "codex"]
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("XDG_CONFIG_HOME", &config_home)
@@ -166,7 +167,7 @@ reviewer = ["aider", "codex"]
 fn ralph_quick_mode_sets_minimal_iterations() {
     // Quick mode should set developer_iters=1 and reviewer_reviews=1
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create a script that tracks how many times planning is called
     let counter_path = dir.path().join(".agent/plan_counter");
@@ -194,7 +195,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
         .arg("--quick") // Use quick mode
         .env("RALPH_INTERACTIVE", "0")
@@ -229,7 +230,7 @@ exit 0
 fn ralph_quick_mode_short_flag_works() {
     // -Q should work the same as --quick
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/plan_counter");
     let script_path = dir.path().join("dev_script.sh");
@@ -255,7 +256,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
         .arg("-Q") // Short flag
         .env("RALPH_INTERACTIVE", "0")
@@ -289,7 +290,7 @@ exit 0
 fn ralph_quick_mode_explicit_iters_override() {
     // Explicit --developer-iters should override quick mode
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/plan_counter");
     let script_path = dir.path().join("dev_script.sh");
@@ -315,7 +316,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
         .arg("--quick")
         .arg("--developer-iters")
@@ -351,7 +352,7 @@ exit 0
 fn ralph_rapid_mode_sets_two_iterations() {
     // Rapid mode should set developer_iters=2 and reviewer_reviews=1
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/plan_counter");
     let script_path = dir.path().join("dev_script.sh");
@@ -377,7 +378,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
         .arg("--rapid") // Use rapid mode
         .env("RALPH_INTERACTIVE", "0")
@@ -412,7 +413,7 @@ exit 0
 fn ralph_rapid_mode_short_flag_works() {
     // -U should work the same as --rapid
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/plan_counter");
     let script_path = dir.path().join("dev_script.sh");
@@ -438,7 +439,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
         .arg("-U") // Short flag
         .env("RALPH_INTERACTIVE", "0")
@@ -476,7 +477,7 @@ exit 0
 fn ralph_stack_detection_rust_project() {
     // Test that stack detection works in an integration context
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create a Rust project structure
     fs::write(
@@ -497,7 +498,7 @@ tokio = "1.0"
     fs::write(dir.path().join("tests/test.rs"), "#[test] fn it_works() {}").unwrap();
 
     // Run ralph with verbose output to see stack detection
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -518,7 +519,7 @@ tokio = "1.0"
 fn ralph_stack_detection_javascript_project() {
     // Test stack detection for a JavaScript/React project
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create a JavaScript/React project structure
     fs::write(
@@ -541,7 +542,7 @@ fn ralph_stack_detection_javascript_project() {
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -560,7 +561,7 @@ fn ralph_stack_detection_javascript_project() {
 fn ralph_stack_detection_disabled() {
     // Test that stack detection can be disabled
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create a project structure
     fs::write(
@@ -573,7 +574,7 @@ name = "test"
     fs::create_dir_all(dir.path().join("src")).unwrap();
     fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -592,7 +593,7 @@ name = "test"
 fn ralph_mixed_language_project() {
     // Test stack detection with multiple languages
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create a mixed-language project (Rust backend + Python scripts)
     fs::write(
@@ -609,7 +610,7 @@ version = "0.1.0"
     fs::create_dir_all(dir.path().join("scripts")).unwrap();
     fs::write(dir.path().join("scripts/deploy.py"), "print('deploy')").unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -632,9 +633,9 @@ version = "0.1.0"
 fn ralph_review_depth_standard() {
     // Test standard review depth
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -653,9 +654,9 @@ fn ralph_review_depth_standard() {
 fn ralph_review_depth_comprehensive() {
     // Test comprehensive review depth
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -674,9 +675,9 @@ fn ralph_review_depth_comprehensive() {
 fn ralph_review_depth_security() {
     // Test security-focused review depth
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -695,9 +696,9 @@ fn ralph_review_depth_security() {
 fn ralph_review_depth_incremental() {
     // Test incremental review depth (focuses on git diff)
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")

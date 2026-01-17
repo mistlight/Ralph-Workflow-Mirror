@@ -198,7 +198,7 @@ impl OpenCodeParser {
         self
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(all(feature = "test-utils", test))]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self

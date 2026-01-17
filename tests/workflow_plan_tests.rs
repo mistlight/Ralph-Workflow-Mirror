@@ -2,6 +2,7 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
+use crate::common::ralph_cmd;
 use test_helpers::init_git_repo;
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -22,9 +23,9 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 #[test]
 fn ralph_fails_if_plan_missing() {
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         // Need at least 1 developer iteration to trigger planning phase
@@ -44,9 +45,9 @@ fn ralph_skips_plan_when_zero_developer_iters() {
     // When developer_iters=0, planning phase should be skipped entirely
     // and the workflow should complete successfully if commit message is provided
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
@@ -71,9 +72,9 @@ fn ralph_skips_plan_when_zero_developer_iters() {
 fn ralph_fails_on_empty_plan() {
     // Empty PLAN.md should be rejected
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "1")
@@ -94,7 +95,7 @@ fn ralph_fails_on_empty_plan() {
 fn ralph_plan_deleted_after_iteration() {
     // PLAN.md should be deleted after each iteration completes
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create a script that creates PLAN.md on first call
     let script_path = dir.path().join("dev_script.sh");
@@ -111,7 +112,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "1")
@@ -135,7 +136,7 @@ exit 0
 fn ralph_runs_planning_for_each_iteration() {
     // Each developer iteration should run planning -> execution -> cleanup
     let dir = TempDir::new().unwrap();
-    init_git_repo(&dir);
+    let _ = init_git_repo(&dir);
 
     // Create a script that tracks how many times it's called
     let counter_path = dir.path().join(".agent/call_counter");
@@ -165,7 +166,7 @@ exit 0
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("ralph");
+    let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "2") // 2 iterations

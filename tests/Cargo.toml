@@ -4,12 +4,8 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-[lib]
-name = "ralph_workflow_tests"
-path = "lib.rs"
-
-[[bin]]
-name = "ralph-workflow-tests"
+[[test]]
+name = "integration"
 path = "main.rs"
 
 [dependencies]
@@ -18,3 +14,5 @@ serde_json = "1"
 test-helpers = { path = "../test-helpers" }
 tempfile = "3.10"
 assert_cmd = "2.0"
+predicates = "3"
+git2 = "0.18"
