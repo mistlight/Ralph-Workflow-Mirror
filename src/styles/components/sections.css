@@ -420,10 +420,12 @@
 
 .step-number {
     align-items: center;
-    background-color: var(--color-bg-card);
+    background: linear-gradient(135deg,
+                var(--color-primary-dim) 0%,
+                var(--color-bg-card) 100%);
     border: 2px solid var(--color-primary);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-glow-sm);
+    box-shadow: 0 0 20px var(--color-primary-dim);
     color: var(--color-primary);
     display: flex;
     font-family: var(--font-mono);
@@ -432,6 +434,7 @@
     height: 56px;
     justify-content: center;
     position: relative;
+    transition: all var(--duration-300) var(--ease-expo-out);
     width: 56px;
 }
 

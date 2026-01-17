@@ -70,13 +70,13 @@ h2 {
 
 h2::after {
     background: linear-gradient(90deg, var(--color-primary) 0%, transparent 100%);
-    bottom: -10px;
+    bottom: calc(var(--space-2) * -5);
     content: '';
-    height: 2px;
+    height: var(--size-xs);
     left: 0;
     opacity: 0.7;
     position: absolute;
-    width: 80px;
+    width: var(--space-20);
 }
 
 /* Improved readability for long-form content */
@@ -234,8 +234,8 @@ pre code,
 
 @keyframes subtleRing {
     0% { box-shadow: 0 0 0 0 var(--color-primary-dim); opacity: 0.6; }
-    70% { box-shadow: 0 0 0 12px transparent; opacity: 0; }
-    100% { box-shadow: 0 0 0 12px transparent; opacity: 0; }
+    70% { box-shadow: 0 0 0 var(--space-12) transparent; opacity: 0; }
+    100% { box-shadow: 0 0 0 var(--space-12) transparent; opacity: 0; }
 }
 
 /* === TERMINAL WINDOW POLISH === */
@@ -247,7 +247,7 @@ pre code,
     box-shadow: 0 0 15px var(--color-primary), 0 0 30px var(--color-primary-glow);
     display: inline-block;
     height: 1.2em;
-    width: 3px;
+    width: var(--size-xs);
 }
 
 @keyframes cursor-glow {
@@ -334,8 +334,8 @@ pre code,
     content: '';
     display: inline-block;
     height: 1.2em;
-    margin-left: 2px;
-    width: 3px;
+    margin-left: var(--size-xs);
+    width: var(--size-xs);
 }
 
 @keyframes terminalCursor {
@@ -415,7 +415,7 @@ pre code,
                           linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
     background-origin: border-box;
     background-repeat: no-repeat;
-    background-size: 1px 1px, 1px 1px;
+    background-size: var(--size-xs) var(--size-xs), var(--size-xs) var(--size-xs);
 }
 
 /* Enhanced comparison card accent */
@@ -424,7 +424,7 @@ pre code,
 }
 
 .comparison-card.before:hover {
-    box-shadow: -4px 0 12px var(--accent-alpha-20), var(--shadow-lg);
+    box-shadow: -4px 0 12px var(--accent-alpha-20), var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim);
 }
 
 .comparison-card.after {
@@ -432,7 +432,7 @@ pre code,
 }
 
 .comparison-card.after:hover {
-    box-shadow: -4px 0 12px var(--lime-alpha-20), var(--shadow-lg);
+    box-shadow: -4px 0 12px var(--lime-alpha-20), var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim);
 }
 
 /* Elevated shadow for interactive elements */
@@ -501,9 +501,9 @@ pre code,
     background: linear-gradient(90deg,
                 var(--color-primary) 0%,
                 var(--color-accent) 100%);
-    bottom: -3px;
+    bottom: calc(var(--space-1) * -3);
     content: '';
-    height: 2px;
+    height: var(--size-xs);
     left: 0;
     position: absolute;
     transform: scaleX(0);
@@ -566,7 +566,7 @@ pre code,
 .nav-link-external:hover::after {
     margin-left: var(--space-2);
     opacity: 1;
-    transform: translateX(2px);
+    transform: translateX(var(--translate-2));
 }
 
 .external-icon {
@@ -575,7 +575,7 @@ pre code,
 }
 
 .nav-link-external:hover .external-icon {
-    transform: translateX(3px);
+    transform: translateX(var(--translate-3));
 }
 
 /* Enhanced logo mark hover effect */
@@ -626,7 +626,7 @@ pre code,
                 transparent 100%);
     bottom: 0;
     content: '';
-    height: 2px;
+    height: var(--size-xs);
     left: 0;
     opacity: 0;
     position: absolute;
@@ -637,7 +637,7 @@ pre code,
 
 .faq-summary:hover::before {
     opacity: 0.6;
-    width: 80px;
+    width: var(--space-20);
 }
 
 .faq-summary:focus-visible {
@@ -886,7 +886,7 @@ code:not(pre code):hover {
 }
 
 .badge:hover {
-    box-shadow: 0 0 10px currentcolor;
+    box-shadow: 0 0 var(--space-10) currentcolor;
     filter: brightness(1.1);
     transform: translateY(calc(var(--lift-md) * -1)) scale(var(--scale-102));
 }
@@ -911,8 +911,8 @@ code:not(pre code):hover {
 /* Premium scroll progress indicator with glow */
 .scroll-progress {
     background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
-    box-shadow: 0 0 10px var(--color-primary-glow);
-    height: 3px;
+    box-shadow: 0 0 var(--space-10) var(--color-primary-glow);
+    height: var(--size-xs);
     transition: width var(--duration-100) var(--ease-out);
 }
 
@@ -926,9 +926,9 @@ footer a {
 
 footer a::after {
     background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
-    bottom: -2px;
+    bottom: calc(var(--size-xs) * -1);
     content: '';
-    height: 2px;
+    height: var(--size-xs);
     left: 0;
     position: absolute;
     transform: scaleX(0);
@@ -960,14 +960,14 @@ a:not(.btn) {
                 var(--color-accent) 100%);
     background-position: 0% 100%;
     background-repeat: no-repeat;
-    background-size: 0% 3px;
+    background-size: 0% var(--size-xs);
     position: relative;
     transition: background-size var(--duration-400) var(--ease-expo-out),
                 color var(--duration-200) var(--ease-expo-out);
 }
 
 a:not(.btn):hover {
-    background-size: 100% 3px;
+    background-size: 100% var(--size-xs);
     color: var(--color-primary);
 }
 
@@ -1045,13 +1045,13 @@ a:not(.btn):hover {
                 var(--border-soft) 0%,
                 var(--border-accent) 50%,
                 var(--border-soft) 100%);
-    bottom: -20px;
+    bottom: calc(var(--space-4) * -5);
     content: '';
-    height: 20px;
+    height: var(--space-5);
     left: 50%;
     position: absolute;
     transform: translateX(-50%);
-    width: 2px;
+    width: var(--size-xs);
 }
 
 .step-card:last-child::after {
@@ -1067,20 +1067,20 @@ a:not(.btn):hover {
 
 .section-header .section-title::after {
     background: linear-gradient(90deg, var(--color-primary) 0%, transparent 100%);
-    bottom: -12px;
+    bottom: calc(var(--space-3) * -4);
     content: '';
-    height: 2px;
+    height: var(--size-xs);
     left: 0;
     opacity: 0.4;
     position: absolute;
     transition: width var(--duration-500) var(--ease-expo-out),
                 opacity var(--duration-300) var(--ease-expo-out);
-    width: 60px;
+    width: var(--space-16);
 }
 
 .section-header:hover .section-title::after {
     opacity: 0.7;
-    width: 100px;
+    width: var(--space-24);
 }
 
 /* === SUBTLE TEXT GLOW FOR HEADINGS === */

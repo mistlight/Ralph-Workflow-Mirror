@@ -137,13 +137,20 @@ code, .inline-code, .inline {
 .glossary-term {
     background-color: var(--color-bg-elevated);
     border: 1px solid var(--border-subtle);
+    border-left: 3px solid transparent;
     border-radius: var(--radius-lg);
     padding: var(--space-4);
-    transition: border-color var(--duration-150) var(--ease-out);
+    position: relative;
+    transition: all var(--duration-300) var(--ease-expo-out);
 }
 
 .glossary-term:hover {
-    border-color: var(--border-soft);
+    border-color: var(--border-accent);
+    border-left-color: var(--color-primary);
+    box-shadow: var(--shadow-lg),
+                0 0 30px var(--color-primary-dim),
+                inset 0 1px 0 var(--white-alpha-5);
+    transform: translateY(var(--lift-md));
 }
 
 .glossary-term-header {
