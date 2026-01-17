@@ -33,3 +33,5 @@ wt-*/
 # Temporary files
 .tmp/
 *PLAN.md
+
+.plan
