@@ -15,18 +15,25 @@ fn test_parse_opencode_tool_output_object_payload() {
 }
 
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_opencode_streaming_with_tool_use_events() {
-    let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    use crate::json_parser::printer::{SharedPrinter, TestPrinter};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    // Create a TestPrinter to capture output
+    let test_printer: SharedPrinter = Rc::new(RefCell::new(TestPrinter::new()));
+    let parser =
+        OpenCodeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, test_printer);
 
     // Simulate streaming tool_use events
     let input = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"started","input":{"filePath":"/test.rs"}}}}
-{"type":"tool_use","timestamp":1768191346713,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"/test.rs"}}}}"#;
+{"type":"tool_use","timestamp":1768191346713,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool","read","state":{"status":"completed","input":{"filePath":"/test.rs"}}}}"#;
 
     let reader = Cursor::new(input);
-    let mut writer = Vec::new();
 
     // Verify the parse succeeds
-    let result = parser.parse_stream(reader, &mut writer);
+    let result = parser.parse_stream(reader);
     assert!(
         result.is_ok(),
         "parse_stream should succeed for OpenCode events"

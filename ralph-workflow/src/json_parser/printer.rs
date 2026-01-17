@@ -192,7 +192,7 @@ impl TestPrinter {
 
     /// Get statistics about the output.
     ///
-    /// Returns a tuple of (line_count, char_count).
+    /// Returns a tuple of (`line_count`, `char_count`).
     pub fn get_stats(&self) -> (usize, usize) {
         let lines = self.get_lines();
         let char_count: usize = lines.iter().map(String::len).sum();

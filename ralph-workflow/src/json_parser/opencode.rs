@@ -41,6 +41,9 @@ use std::rc::Rc;
 
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
+#[cfg(feature = "test-utils")]
+use super::health::StreamingQualityMetrics;
+use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
 use super::terminal::TerminalMode;
 use super::types::{format_tool_input, format_unknown_json_event, ContentType};
@@ -137,12 +140,37 @@ pub struct OpenCodeParser {
     terminal_mode: RefCell<TerminalMode>,
     /// Whether to show streaming quality metrics
     show_streaming_metrics: bool,
+    /// Output printer for capturing or displaying output
+    printer: SharedPrinter,
 }
 
 impl OpenCodeParser {
     pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
+        Self::with_printer(colors, verbosity, super::printer::shared_stdout())
+    }
+
+    /// Create a new `OpenCodeParser` with a custom printer.
+    ///
+    /// # Arguments
+    ///
+    /// * `colors` - Colors for terminal output
+    /// * `verbosity` - Verbosity level for output
+    /// * `printer` - Shared printer for output
+    ///
+    /// # Returns
+    ///
+    /// A new `OpenCodeParser` instance
+    pub(crate) fn with_printer(
+        colors: Colors,
+        verbosity: Verbosity,
+        printer: SharedPrinter,
+    ) -> Self {
         let verbose_warnings = matches!(verbosity, Verbosity::Debug);
         let streaming_session = StreamingSession::new().with_verbose_warnings(verbose_warnings);
+
+        // Use the printer's is_terminal method to validate it's connected correctly
+        let _printer_is_terminal = printer.borrow().is_terminal();
+
         Self {
             colors,
             verbosity,
@@ -151,6 +179,7 @@ impl OpenCodeParser {
             streaming_session: Rc::new(RefCell::new(streaming_session)),
             terminal_mode: RefCell::new(TerminalMode::detect()),
             show_streaming_metrics: false,
+            printer,
         }
     }
 
@@ -170,9 +199,39 @@ impl OpenCodeParser {
     }
 
     #[cfg(feature = "test-utils")]
-    pub(crate) fn with_terminal_mode(self, mode: TerminalMode) -> Self {
+    pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
+    }
+
+    /// Get a shared reference to the printer.
+    ///
+    /// This allows tests, monitoring, and other code to access the printer after parsing
+    /// to verify output content, check for duplicates, or capture output for analysis.
+    ///
+    /// # Returns
+    ///
+    /// A clone of the shared printer reference (`Rc<RefCell<dyn Printable>>`)
+    #[cfg(feature = "test-utils")]
+    #[allow(dead_code, reason = "Used by integration tests")]
+    pub fn printer(&self) -> SharedPrinter {
+        Rc::clone(&self.printer)
+    }
+
+    /// Get streaming quality metrics from the current session.
+    ///
+    /// This provides insight into the deduplication and streaming quality of the
+    /// parsing session.
+    ///
+    /// # Returns
+    ///
+    /// A copy of the streaming quality metrics from the internal `StreamingSession`.
+    #[cfg(feature = "test-utils")]
+    #[allow(dead_code, reason = "Used by integration tests")]
+    pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
+        self.streaming_session
+            .borrow()
+            .get_streaming_quality_metrics()
     }
 
     /// Parse and display a single `OpenCode` JSON event
@@ -520,11 +579,7 @@ impl OpenCodeParser {
     }
 
     /// Parse a stream of `OpenCode` NDJSON events
-    pub(crate) fn parse_stream<R: BufRead, W: Write>(
-        &self,
-        mut reader: R,
-        mut writer: W,
-    ) -> io::Result<()> {
+    pub(crate) fn parse_stream<R: BufRead>(&self, mut reader: R) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
         let c = &self.colors;
@@ -567,8 +622,9 @@ impl OpenCodeParser {
                 }
 
                 if self.verbosity.is_debug() {
+                    let mut printer = self.printer.borrow_mut();
                     writeln!(
-                        writer,
+                        printer,
                         "{}[DEBUG]{} {}{}{}",
                         c.dim(),
                         c.reset(),
@@ -576,7 +632,7 @@ impl OpenCodeParser {
                         &line,
                         c.reset()
                     )?;
-                    writer.flush()?;
+                    printer.flush()?;
                 }
 
                 // Parse the event once - parse_event handles malformed JSON by returning None
@@ -596,8 +652,10 @@ impl OpenCodeParser {
                         } else {
                             monitor.record_parsed();
                         }
-                        write!(writer, "{output}")?;
-                        writer.flush()?;
+                        // Write output to printer
+                        let mut printer = self.printer.borrow_mut();
+                        write!(printer, "{output}")?;
+                        printer.flush()?;
                     }
                     None => {
                         // Check if this was a control event (state management with no user output)
@@ -629,7 +687,8 @@ impl OpenCodeParser {
             file.flush()?;
         }
         if let Some(warning) = monitor.check_and_warn(*c) {
-            writeln!(writer, "{warning}")?;
+            let mut printer = self.printer.borrow_mut();
+            writeln!(printer, "{warning}")?;
         }
         Ok(())
     }
