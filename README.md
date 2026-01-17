@@ -9,6 +9,8 @@ Ralph Workflow is an external (lives outside of the AI Agent) agent orchastrator
 
 If you are looking for an interactive orchastrator, you are probably looking for something else.
 
+Ralph Workflow works best if you think like a Product Manager and can scope out every details about the feature you need. The more details you can add, the better Ralph Workflow will perform. It is meant to run long running tasks that are very deterministic and need a lot of commits and non trivial amount of manual work.
+
 ## Currently Supported Clients
 
 * Claude Code
