@@ -370,11 +370,13 @@ code:not(pre code):hover {
 /* === HERO BADGE ENHANCEMENTS === */
 
 .badge {
+    backdrop-filter: blur(8px);
     transition: all var(--duration-300) var(--ease-expo-out);
 }
 
 .badge:hover {
-    box-shadow: 0 0 20px currentcolor, 0 0 30px currentcolor;
+    box-shadow: 0 0 20px currentcolor, 0 0 40px currentcolor;
+    filter: brightness(1.1);
     transform: translateY(-2px) scale(1.02);
 }
 
@@ -493,6 +495,12 @@ code:not(pre code):hover {
 
 .scroll-indicator {
     animation: fade-in-up 1s var(--ease-expo-out) 1.5s forwards, float 3s ease-in-out infinite;
+    opacity: 0.7;
+    transition: opacity var(--duration-300) var(--ease-expo-out);
+}
+
+.scroll-indicator:hover {
+    opacity: 1;
 }
 
 @keyframes float {
@@ -578,8 +586,18 @@ footer a:hover {
     border-left: 3px solid var(--color-error);
 }
 
+.comparison-card.before:hover {
+    box-shadow: -4px 0 12px rgb(255 0 110 / 20%),
+                var(--shadow-lg);
+}
+
 .comparison-card.after {
     border-left: 3px solid var(--color-lime);
+}
+
+.comparison-card.after:hover {
+    box-shadow: -4px 0 12px rgb(163 255 18 / 20%),
+                var(--shadow-lg);
 }
 
 /* Improved mobile tap feedback */
@@ -743,6 +761,24 @@ footer a:hover {
     &:hover::before {
         opacity: 1;
     }
+
+    .copy-btn {
+        opacity: 0;
+        position: absolute;
+        right: var(--space-3);
+        top: var(--space-3);
+        transition: opacity var(--duration-200) var(--ease-expo-out),
+                    transform var(--duration-200) var(--ease-expo-out);
+    }
+
+    &:hover .copy-btn,
+    &:focus-within .copy-btn {
+        opacity: 1;
+    }
+
+    .copy-btn:hover {
+        transform: scale(1.05);
+    }
 }
 
 /* Enhanced copy button with better feedback */
@@ -792,7 +828,13 @@ footer a:hover {
         box-shadow: var(--shadow-lg),
                     0 0 30px var(--color-primary-dim),
                     inset 0 1px 0 rgb(255 255 255 / 5%);
-        transform: translateY(-2px);
+        transform: translateY(-3px);
+    }
+
+    &:focus-within {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-primary-dim),
+                    var(--shadow-glow-md);
     }
 }
 
@@ -1000,16 +1042,18 @@ footer a {
 }
 
 .faq-details {
-    animation: accordionExpand 0.3s var(--ease-expo-out);
+    animation: accordionExpand 0.4s var(--ease-expo-out);
 }
 
 @keyframes accordionExpand {
     from {
+        max-height: 0;
         opacity: 0;
         transform: translateY(-10px);
     }
 
     to {
+        max-height: 500px;
         opacity: 1;
         transform: translateY(0);
     }
@@ -1017,6 +1061,8 @@ footer a {
 
 /* Enhanced section header with decorative underline */
 .section-header {
+    position: relative;
+
     .section-title {
         position: relative;
 
@@ -1028,7 +1074,7 @@ footer a {
             left: 0;
             opacity: 0.5;
             position: absolute;
-            transition: width var(--duration-300) var(--ease-expo-out);
+            transition: width var(--duration-500) var(--ease-expo-out);
             width: 60px;
         }
     }
@@ -1100,4 +1146,250 @@ footer a {
     margin-left: var(--space-2);
     opacity: 1;
     transform: translateX(2px);
+}
+
+/* === ADDITIONAL VISUAL POLISH - Small Details === */
+
+/* Improved terminal window focus state */
+.terminal-window:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 50px var(--color-primary-glow);
+}
+
+/* Enhanced step card connector line animation */
+.step-card {
+    position: relative;
+}
+
+.step-card::after {
+    background: linear-gradient(180deg,
+                var(--border-soft) 0%,
+                var(--border-accent) 50%,
+                var(--border-soft) 100%);
+    bottom: -20px;
+    content: '';
+    height: 20px;
+    left: 50%;
+    position: absolute;
+    transform: translateX(-50%);
+    width: 2px;
+}
+
+.step-card:last-child::after {
+    display: none;
+}
+
+/* Improved feature icon container glow */
+.feature-icon {
+    background: linear-gradient(135deg,
+                var(--color-primary-dim) 0%,
+                var(--color-bg-card) 100%);
+    border: 1px solid var(--border-accent);
+    box-shadow: 0 0 20px var(--color-primary-dim);
+    transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+.feature-icon:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-bg),
+                0 0 0 4px var(--color-primary),
+                0 0 30px var(--color-primary-glow);
+    transform: scale(1.1) rotate(5deg);
+}
+
+/* Enhanced install mode switch */
+.switch {
+    position: relative;
+}
+
+.switch::before {
+    background: linear-gradient(90deg,
+                var(--color-primary) 0%,
+                var(--color-accent) 100%);
+    border-radius: inherit;
+    content: '';
+    inset: 0;
+    opacity: 0;
+    position: absolute;
+    transition: opacity var(--duration-300) var(--ease-expo-out);
+}
+
+.switch:hover::before {
+    opacity: 0.1;
+}
+
+/* Improved audience selection button active state */
+.audience-btn[aria-pressed="true"] {
+    animation: audiencePulse 2s ease-in-out infinite;
+}
+
+@keyframes audiencePulse {
+    0%, 100% {
+        box-shadow: 0 0 30px var(--color-primary-glow);
+    }
+
+    50% {
+        box-shadow: 0 0 40px var(--color-primary-glow), 0 0 60px var(--color-primary-dim);
+    }
+}
+
+/* Improved navigation link underline animation */
+.nav-link {
+    position: relative;
+}
+
+.nav-link::after {
+    background: linear-gradient(90deg,
+                var(--color-primary) 0%,
+                var(--color-accent) 100%);
+    bottom: -2px;
+    content: '';
+    height: 2px;
+    left: 50%;
+    position: absolute;
+    transform: translateX(-50%) scaleX(0);
+    transform-origin: center;
+    transition: transform var(--duration-300) var(--ease-expo-out);
+    width: 100%;
+}
+
+.nav-link:hover::after,
+.nav-link.nav-link--active::after {
+    transform: translateX(-50%) scaleX(1);
+}
+
+/* Enhanced external link icon animation */
+.external-icon {
+    display: inline-block;
+    transition: transform var(--duration-200) var(--ease-expo-out);
+}
+
+.nav-link-external:hover .external-icon {
+    transform: translateX(3px);
+}
+
+/* Improved dropdown menu item hover */
+.nav-dropdown-menu .nav-link {
+    transition: all var(--duration-150) var(--ease-out);
+}
+
+.nav-dropdown-menu .nav-link:hover {
+    background-color: var(--color-primary-dim);
+    color: var(--color-primary);
+    padding-left: var(--space-5);
+}
+
+/* Enhanced hero terminal typing effect */
+.terminal-typing {
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.terminal-typing::after {
+    animation: terminalCursor 1s step-end infinite;
+    background-color: var(--color-primary);
+    content: '';
+    display: inline-block;
+    height: 1.2em;
+    margin-left: 2px;
+    width: 3px;
+}
+
+@keyframes terminalCursor {
+    0%, 100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
+
+/* Enhanced dark mode toggle button */
+.dark-mode-toggle {
+    transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+.dark-mode-toggle:hover {
+    background-color: var(--color-bg-hover);
+    box-shadow: 0 0 20px var(--color-primary-dim);
+    transform: rotate(15deg);
+}
+
+.dark-mode-toggle:active {
+    transform: rotate(180deg);
+}
+
+/* Improved mobile navigation menu backdrop */
+.nav-menu {
+    backdrop-filter: blur(12px);
+}
+
+/* Enhanced logo mark hover effect */
+.logo-mark {
+    transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+.nav-logo:hover .logo-mark {
+    filter: drop-shadow(0 0 8px var(--color-primary));
+    transform: rotate(-10deg) scale(1.1);
+}
+
+/* Improved button group spacing */
+.button-group {
+    display: flex;
+    gap: var(--space-3);
+}
+
+.button-group .btn {
+    flex: 1;
+}
+
+/* Enhanced input focus state */
+.input:focus,
+.textarea:focus,
+.select:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-dim),
+                0 0 20px var(--color-primary-glow);
+}
+
+/* Improved table of contents navigation */
+.toc-link {
+    border-left: 2px solid var(--border-soft);
+    padding-left: var(--space-3);
+    transition: all var(--duration-200) var(--ease-out);
+}
+
+.toc-link:hover,
+.toc-link.active {
+    border-left-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+/* Enhanced blockquote styling */
+blockquote {
+    border-left: 4px solid var(--color-primary);
+    padding-left: var(--space-4);
+}
+
+blockquote::before {
+    color: var(--color-primary-dim);
+    content: '"';
+    font-size: var(--text-5xl);
+    left: 0;
+    line-height: 1;
+    position: absolute;
+    top: 0;
+}
+
+/* Improved definition list styling */
+dt {
+    color: var(--color-primary);
+    font-weight: var(--font-semibold);
+}
+
+dd {
+    margin-bottom: var(--space-4);
+    margin-left: 0;
 }
