@@ -5,8 +5,8 @@ edition = "2021"
 publish = false
 
 [[test]]
-name = "integration"
-path = "main.rs"
+name = "integration_tests"
+path = "integration_tests/main.rs"
 
 [dependencies]
 ralph-workflow = { path = "../ralph-workflow" }
