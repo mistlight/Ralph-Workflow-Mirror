@@ -13,6 +13,8 @@ button:focus-visible,
     box-shadow: 0 0 0 3px var(--color-primary-dim), 0 0 12px var(--color-primary-glow);
     outline: 2px solid var(--color-primary);
     outline-offset: 3px;
+    transition: box-shadow var(--duration-150) var(--ease-out),
+                outline var(--duration-150) var(--ease-out);
 }
 
 /* Skip link focus improvement */
