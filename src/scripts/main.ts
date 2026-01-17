@@ -5,6 +5,9 @@
  * cursor spotlight effect, dark mode, audience selector
  */
 
+// Import main stylesheet
+import '../styles/main.css';
+
 // Import type definitions
 import type {
   Theme,

@@ -101,14 +101,14 @@ h2::after {
 
 /* === TERMINAL WINDOW POLISH === */
 
-/* Enhanced terminal cursor with glow */
+/* Enhanced terminal cursor with stronger glow */
 .terminal-cursor {
     animation: cursor-blink 1s step-end infinite, cursor-glow 2s ease-in-out infinite;
     background-color: var(--color-primary);
-    box-shadow: 0 0 10px var(--color-primary-glow);
+    box-shadow: 0 0 15px var(--color-primary), 0 0 30px var(--color-primary-glow);
     display: inline-block;
     height: 1.2em;
-    width: 2px;
+    width: 3px;
 }
 
 @keyframes cursor-glow {
@@ -1065,4 +1065,118 @@ footer a {
             transform: scale(1.05);
         }
     }
+}
+
+/* === ADDITIONAL NAVIGATION ACTIVE STATE GLOW === */
+
+/* Enhanced navigation active state with stronger glow */
+.nav-link--active,
+.nav-link.active {
+    background: linear-gradient(135deg,
+                var(--color-primary-dim) 0%,
+                transparent 100%);
+    box-shadow: 0 0 0 1px var(--border-accent),
+                0 0 30px var(--color-primary-glow),
+                inset 0 0 20px var(--color-primary-dim);
+    color: var(--color-primary);
+    position: relative;
+}
+
+/* === AUDIENCE BUTTON RING ANIMATION === */
+
+/* Enhanced audience button with ring animation */
+.audience-option[aria-pressed="true"] {
+    animation: audience-ring 0.5s ease-out;
+}
+
+@keyframes audience-ring {
+    0% {
+        box-shadow: 0 0 0 0 var(--color-primary-dim);
+    }
+    70% {
+        box-shadow: 0 0 0 8px var(--color-primary-glow);
+    }
+    100% {
+        box-shadow: 0 0 30px var(--color-primary-glow);
+    }
+}
+
+/* === FAQ ACCORDION ENHANCEMENTS === */
+
+.faq-item {
+    border-bottom: 1px solid var(--border-subtle);
+    transition: border-color var(--duration-200) var(--ease-expo-out);
+}
+
+.faq-item:hover {
+    border-bottom-color: var(--border-soft);
+}
+
+.faq-summary {
+    cursor: pointer;
+    transition: color var(--duration-200) var(--ease-expo-out);
+}
+
+.faq-summary:hover {
+    color: var(--color-primary);
+}
+
+.faq-content {
+    animation: faq-expand 0.3s var(--ease-expo-out);
+}
+
+@keyframes faq-expand {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* === EXTERNAL LINK ENHANCEMENTS === */
+
+.nav-link-external {
+    position: relative;
+}
+
+.nav-link-external::after {
+    content: '→';
+    display: inline-block;
+    margin-left: var(--space-1);
+    opacity: 0.7;
+    transition: all var(--duration-200) var(--ease-expo-out);
+}
+
+.nav-link-external:hover::after {
+    margin-left: var(--space-2);
+    opacity: 1;
+    transform: translateX(2px);
+}
+
+/* === SCROLL PROGRESS ENHANCEMENT === */
+
+.scroll-progress {
+    background: linear-gradient(90deg,
+                var(--color-primary) 0%,
+                var(--color-accent) 100%);
+    box-shadow: 0 0 10px var(--color-primary-glow);
+    height: 3px;
+    transition: opacity var(--duration-300) var(--ease-expo-out);
+}
+
+/* === GLOSSARY CARD HOVER ENHANCEMENT === */
+
+.glossary-term {
+    transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+.glossary-term:hover {
+    border-color: var(--border-accent);
+    box-shadow: var(--shadow-lg),
+                0 0 30px var(--color-primary-dim),
+                inset 0 1px 0 rgb(255 255 255 / 5%);
+    transform: translateY(-2px);
 }
