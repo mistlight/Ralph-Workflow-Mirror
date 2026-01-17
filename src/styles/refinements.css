@@ -1067,18 +1067,20 @@ a:not(.btn):hover {
 
 .section-header .section-title::after {
     background: linear-gradient(90deg, var(--color-primary) 0%, transparent 100%);
-    bottom: -8px;
+    bottom: -12px;
     content: '';
     height: 2px;
     left: 0;
-    opacity: 0.5;
+    opacity: 0.4;
     position: absolute;
-    transition: width var(--duration-500) var(--ease-expo-out);
+    transition: width var(--duration-500) var(--ease-expo-out),
+                opacity var(--duration-300) var(--ease-expo-out);
     width: 60px;
 }
 
 .section-header:hover .section-title::after {
-    width: 120px;
+    opacity: 0.7;
+    width: 100px;
 }
 
 /* === SUBTLE TEXT GLOW FOR HEADINGS === */
@@ -1473,16 +1475,27 @@ a:focus-visible {
 /* === GLOSSARY CARD ENHANCEMENTS === */
 
 .glossary-card {
-    transition: all var(--duration-200) var(--ease-expo-out);
+    transition: all var(--duration-300) var(--ease-expo-out);
 }
 
 .glossary-card:hover {
+    border-color: var(--border-accent);
     transform: translateY(var(--lift-sm));
 }
 
 .glossary-card:focus-within {
+    border-color: var(--color-primary);
     box-shadow: 0 0 0 2px var(--color-primary-dim),
-                var(--shadow-glow-sm);
+                var(--shadow-glow-md);
+}
+
+/* Glossary item hover state */
+.glossary-item {
+    transition: all var(--duration-200) var(--ease-expo-out);
+}
+
+.glossary-item:hover {
+    background-color: var(--color-bg-elevated);
 }
 
 /* === BREADCRUMB NAVIGATION ENHANCEMENTS === */
@@ -1621,5 +1634,86 @@ select:hover {
     to {
         opacity: 1;
         transform: scale(1);
+    }
+}
+
+/* === ADDITIONAL CARD CONSISTENCY REFINEMENTS === */
+
+/* Unified card lift values for consistency */
+.audience-card:hover {
+    transform: translateY(-3px);
+}
+
+.stage-card:hover {
+    transform: translateY(-3px);
+}
+
+/* Improved card spacing consistency */
+.comparison-card,
+.license-card,
+.contribute-card,
+.audience-card,
+.stage-card {
+    transition: transform var(--duration-300) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-300) var(--ease-expo-out);
+}
+
+/* === HERO SECTION MOBILE SPACING === */
+
+@media (--lg) {
+    .hero {
+        padding: clamp(80px, 15vh, 96px) 0 clamp(64px, 12vh, 80px);
+    }
+}
+
+/* === FAQ SUMMARY IMPROVED FOCUS === */
+
+.faq-summary:focus {
+    background-color: var(--color-bg-elevated);
+    border-color: var(--color-primary-dim);
+    outline: none;
+}
+
+.faq-summary:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* === NAVIGATION ITEM ALIGNMENT === */
+
+.nav-list {
+    align-items: center;
+    display: flex;
+    gap: var(--space-1);
+}
+
+/* === CODE BLOCK ALIGNMENT FIX === */
+
+.code-wrapper,
+.code-block-container {
+    margin: var(--space-4) 0;
+}
+
+.code-wrapper code,
+.code-block-container code {
+    display: block;
+}
+
+/* === IMPROVED GRID GAP CONSISTENCY === */
+
+@media (--min-lg) {
+    .features-grid {
+        gap: var(--space-8);
+    }
+
+    .audience-grid {
+        gap: var(--space-8);
+    }
+}
+
+@media (--lg) {
+    .features-grid,
+    .audience-grid {
+        gap: var(--space-6);
     }
 }

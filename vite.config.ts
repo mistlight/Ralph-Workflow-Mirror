@@ -20,6 +20,28 @@ export default defineConfig({
         'docs/workflows': resolve(__dirname, 'docs/workflows.html'),
         'docs/writing-specs': resolve(__dirname, 'docs/writing-specs.html'),
       },
+      output: {
+        // Use consistent asset names without hashes for committed dist/
+        entryFileNames: 'assets/main.js',
+        chunkFileNames: 'assets/main.js',
+        assetFileNames: (assetInfo) => {
+          // CSS files get consistent name
+          if (assetInfo.name?.endsWith('.css')) {
+            return 'assets/main.css';
+          }
+          // SVG files keep their original names
+          if (assetInfo.name?.endsWith('.svg')) {
+            return 'assets/[name][extname]';
+          }
+          // For other assets
+          if (assetInfo.name) {
+            return 'assets/[name][extname]';
+          }
+          return 'assets/[name][extname]';
+        },
+        // Prevent automatic chunking to avoid hash suffixes
+        manualChunks: () => 'main',
+      },
     },
     assetsInlineLimit: 4096,
     cssMinify: true,
