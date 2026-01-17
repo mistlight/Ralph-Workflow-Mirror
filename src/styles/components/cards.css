@@ -77,7 +77,7 @@
             0 20px 40px rgb(0 0 0 / 30%),
             0 0 30px rgb(0 212 255 / 15%),
             inset 0 1px 0 rgb(255 255 255 / 5%);
-        transform: translateY(-6px) scale(1.01);
+        transform: translateY(-4px);
 
         &::before {
             opacity: 1;
@@ -148,7 +148,7 @@
 
     &:hover {
         border-color: var(--border-accent);
-        box-shadow: 0 8px 24px rgb(0 212 255 / 10%);
+        box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
         transform: translateY(-4px);
     }
 
@@ -186,7 +186,7 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
-        transform: translateY(-6px);
+        transform: translateY(-4px);
     }
 
     &:focus-within {
@@ -195,7 +195,7 @@
     }
 
     &:active {
-        transform: translateY(-4px);
+        transform: translateY(-2px);
     }
 
     &--after {
@@ -208,7 +208,7 @@
 
         &:hover {
             border-color: var(--color-primary);
-            box-shadow: var(--shadow-xl), 0 0 40px rgb(0 212 255 / 15%);
+            box-shadow: var(--shadow-lg), 0 0 40px rgb(0 212 255 / 15%);
         }
     }
 
@@ -413,7 +413,7 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
-        transform: translateY(-6px);
+        transform: translateY(-4px);
     }
 
     &:focus-within {
@@ -422,7 +422,7 @@
     }
 
     &:active {
-        transform: translateY(-4px);
+        transform: translateY(-2px);
     }
 }
 
@@ -474,7 +474,7 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
-        transform: translateY(-6px);
+        transform: translateY(-4px);
     }
 
     &:focus-within {
@@ -483,7 +483,7 @@
     }
 
     &:active {
-        transform: translateY(-4px);
+        transform: translateY(-2px);
     }
 }
 
@@ -679,7 +679,7 @@
         box-shadow:
             0 20px 40px rgb(0 0 0 / 30%),
             0 0 30px rgb(0 212 255 / 15%);
-        transform: translateY(-6px) scale(1.01);
+        transform: translateY(-4px);
 
         &::before {
             opacity: 1;
