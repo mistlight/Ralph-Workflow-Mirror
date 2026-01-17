@@ -9,8 +9,9 @@ use super::{
 use crate::checkpoint::timestamp;
 use crate::common::truncate_text;
 use crate::config::Verbosity;
+use crate::json_parser::printer::Printable;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 /// Logger for Ralph output.
@@ -198,6 +199,25 @@ impl Logger {
 impl Default for Logger {
     fn default() -> Self {
         Self::new(Colors::new())
+    }
+}
+
+// ===== Printable and Write Implementations =====
+
+impl std::io::Write for Logger {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // Write directly to stdout
+        std::io::stdout().write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::stdout().flush()
+    }
+}
+
+impl Printable for Logger {
+    fn is_terminal(&self) -> bool {
+        std::io::stdout().is_terminal()
     }
 }
 
