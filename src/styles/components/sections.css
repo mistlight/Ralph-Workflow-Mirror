@@ -26,6 +26,7 @@
 }
 
 /* Ambient glow effect for sections */
+/* Direct RGB colors in gradients - required for ambient effect color stops, CSS variables not supported in gradient stops */
 .section--ambient {
     overflow: hidden;
     position: relative;

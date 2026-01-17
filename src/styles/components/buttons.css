@@ -351,13 +351,4 @@
 }
 
 /* === KEYFRAME ANIMATIONS === */
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-
-    to {
-        transform: rotate(360deg);
-    }
-}
+/* Note: spin keyframe is defined in animations.css to avoid duplication */

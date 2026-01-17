@@ -26,6 +26,7 @@ html {
 body {
     background-attachment: fixed;
     background-color: var(--color-bg);
+    /* Direct RGB colors required for gradient stop positions - CSS variables cannot be used in gradient color stops */
     background-image:
         radial-gradient(ellipse 80% 50% at 50% -20%, rgb(0 212 255 / 8%) 0%, transparent 60%),
         radial-gradient(ellipse 60% 40% at 80% 60%, rgb(255 0 110 / 4%) 0%, transparent 50%),
@@ -42,6 +43,7 @@ body {
 }
 
 /* Scanline overlay for CRT effect */
+/* Direct RGB color used for specific opacity in pattern - CSS variables not suitable for pattern stops */
 body::before {
     background: repeating-linear-gradient(
         0deg,
@@ -174,6 +176,7 @@ input, textarea, select {
 }
 
 /* === LIGHT MODE SPECIFIC OVERRIDES === */
+/* Direct RGB colors used for light mode transparency - values specific to light theme only */
 
 [data-theme="light"] .nav,
 .light-mode .nav {
