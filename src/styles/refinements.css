@@ -1900,3 +1900,62 @@ select:hover {
                 box-shadow var(--duration-150) var(--ease-expo-out),
                 transform var(--duration-150) var(--ease-expo-out);
 }
+
+/* === VISUAL POLISH ADDITIONS === */
+
+/* Enhanced copy button visibility */
+.copy-button {
+    opacity: 0.6;
+    transition: opacity var(--duration-150) var(--ease-expo-out),
+                transform var(--duration-150) var(--ease-expo-out);
+}
+
+.copy-button:hover {
+    opacity: 1;
+    transform: scale(var(--scale-105));
+}
+
+.copy-button:active {
+    transform: scale(var(--scale-095));
+}
+
+/* Improved footer link hover states */
+.footer-link {
+    position: relative;
+    transition: color var(--duration-150) var(--ease-expo-out);
+}
+
+.footer-link::after {
+    background-color: var(--color-primary);
+    bottom: calc(var(--space-1) * -1);
+    content: '';
+    height: var(--border-width-1);
+    left: 0;
+    position: absolute;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--duration-200) var(--ease-expo-out);
+    width: 100%;
+}
+
+.footer-link:hover::after {
+    transform: scaleX(1);
+}
+
+/* Enhanced scrollbar styling for webkit browsers */
+::-webkit-scrollbar {
+    width: var(--space-2);
+}
+
+::-webkit-scrollbar-track {
+    background-color: var(--color-bg-alt);
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--border-medium);
+    border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--border-strong);
+}
