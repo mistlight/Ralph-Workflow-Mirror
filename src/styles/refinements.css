@@ -103,16 +103,17 @@ pre code,
     transform: translateY(calc(var(--lift-sm) * -1));
 }
 
-/* Enhanced button active states */
+/* Enhanced button active states with snappy feedback */
 .btn-primary:active {
     background: var(--color-primary-dark);
-    box-shadow: var(--shadow-glow-sm);
-    transform: translateY(var(--size-xs)) scale(var(--scale-097));
+    box-shadow: var(--shadow-glow-sm), inset 0 2px 4px var(--shadow-black-20);
+    transform: translateY(var(--translate-1)) scale(var(--scale-097));
 }
 
 .btn-secondary:active {
     background-color: var(--color-primary-dim);
-    transform: translateY(var(--size-xs)) scale(var(--scale-097));
+    box-shadow: inset 0 2px 4px var(--shadow-black-20);
+    transform: translateY(var(--translate-1)) scale(var(--scale-097));
 }
 
 /* Ghost button refinement with gradient reveal */
@@ -216,17 +217,21 @@ pre code,
     }
 
     50% {
-        box-shadow: 0 0 18px var(--color-primary-glow), 0 0 24px var(--color-primary-dim);
+        box-shadow: 0 0 18px var(--color-primary-glow),
+                    0 0 24px var(--color-primary-dim),
+                    0 0 6px var(--color-primary);
     }
 }
 
 @keyframes cursor-blink {
-    0%, 40% {
+    0%, 45% {
         opacity: 1;
+        transform: scaleY(1);
     }
 
-    50%, 90% {
+    50%, 95% {
         opacity: 0;
+        transform: scaleY(0.9);
     }
 }
 
@@ -400,7 +405,8 @@ pre code,
 .sidebar-card:hover,
 .persona-card:hover {
     border-color: var(--border-accent);
-    box-shadow: var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim);
+    box-shadow: var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim),
+                inset 0 1px 0 var(--white-alpha-5);
     transform: translateY(var(--lift-sm));
 }
 
@@ -534,7 +540,7 @@ pre code,
     position: absolute;
     transform: scaleX(0);
     transform-origin: left;
-    transition: transform var(--duration-200) var(--ease-expo-out);
+    transition: transform var(--duration-250) var(--ease-expo-out);
     width: 100%;
 }
 
@@ -857,8 +863,8 @@ code:not(pre code):hover {
 
 /* Icon rotation on copy for extra feedback */
 .copy-btn.copied svg {
-    transition: transform var(--duration-200) var(--ease-expo-out);
     transform: rotate(var(--rotate-12));
+    transition: transform var(--duration-200) var(--ease-expo-out);
 }
 
 @keyframes copyPulse {
@@ -937,9 +943,15 @@ code:not(pre code):hover {
 }
 
 @keyframes heroGlow {
-    0% { opacity: 0.3; }
-    50% { opacity: 0.5; }
-    100% { opacity: 0.3; }
+    0%, 100% {
+        opacity: 0.25;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.45;
+        transform: scale(1.05);
+    }
 }
 
 @keyframes heroGlowAccent {

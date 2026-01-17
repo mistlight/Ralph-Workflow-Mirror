@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200, initial-scale=1.0">
+    <title>Open Graph Image Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Space Grotesk,sans-serif}.og-canvas,body{background:#0a0a0b;height:630px;overflow:hidden;width:1200px}.og-canvas{position:relative}.og-glow{border-radius:50%;filter:blur(120px);opacity:.6;position:absolute}.og-glow-1{background:radial-gradient(circle,rgba(0,212,255,.25) 0,transparent 70%);height:500px;left:-100px;top:-150px;width:500px}.og-glow-2{background:radial-gradient(circle,rgba(255,0,110,.2) 0,transparent 70%);bottom:-100px;height:450px;right:-80px;width:450px}.og-glow-3{background:radial-gradient(circle,rgba(163,255,18,.15) 0,transparent 70%);height:350px;left:50%;top:50%;transform:translate(-50%,-50%);width:350px}.og-grid{background-image:linear-gradient(rgba(0,212,255,.03) 1px,transparent 0),linear-gradient(90deg,rgba(0,212,255,.03) 1px,transparent 0);background-size:40px 40px;bottom:0;left:0;position:absolute;right:0;top:0}.og-frame{border:4px solid #00d4ff;border-radius:12px;bottom:30px;left:30px;pointer-events:none;position:absolute;right:30px;top:30px}.og-frame:before{border:2px solid #ff006e;border-radius:8px;bottom:10px;content:"";left:10px;position:absolute;right:10px;top:10px}.og-corner{background:#00d4ff;height:6px;position:absolute;width:60px}.og-corner:after{background:inherit;content:"";height:60px;position:absolute;width:6px}.og-corner.tl{left:30px;top:30px}.og-corner.tr{background:#ff006e;right:30px;top:30px}.og-corner.bl{background:#ff006e;bottom:30px;left:30px}.og-corner.br{background:#a3ff12;bottom:30px;right:30px}.og-corner.br:after,.og-corner.tr:after{right:0}.og-corner.bl:after,.og-corner.br:after{bottom:0;top:auto}.og-content{align-items:center;display:flex;flex-direction:column;height:100%;justify-content:center;padding:80px;position:relative;z-index:10}.og-logo{color:#00d4ff;font-family:Syne,sans-serif;font-size:160px;font-weight:800;letter-spacing:-.04em;margin-bottom:20px;text-shadow:0 0 60px rgba(0,212,255,.6)}.og-logo,.og-tagline{text-transform:uppercase}.og-tagline{color:#e4e4e7;font-size:46px;font-weight:700;letter-spacing:.05em;margin-bottom:40px}.og-subtitle{color:#ff006e;font-size:30px;font-weight:500;letter-spacing:.03em;margin-bottom:60px}.og-command{align-items:center;background:#151518;border:2px solid #27272a;border-radius:8px;color:#a3ff12;display:flex;font-family:JetBrains Mono,monospace;font-size:22px;gap:12px;padding:16px 32px}.og-command-prompt{color:#00d4ff}.og-command-text{color:#a3ff12}.og-url{bottom:60px;color:#e4e4e7;font-size:18px;font-weight:600;opacity:.8;position:absolute;right:80px}.og-diagonal{background:#ff006e;height:4px;position:absolute;right:150px;top:80px;transform:rotate(45deg);width:120px}.og-dot{border-radius:50%;height:12px;position:absolute;width:12px}.og-dot-1{background:#00d4ff;box-shadow:0 0 20px rgba(0,212,255,.8);left:150px;top:150px}.og-dot-2{right:180px;top:200px}.og-dot-2,.og-dot-3{background:#ff006e;box-shadow:0 0 20px rgba(255,0,110,.8)}.og-dot-3{bottom:200px;left:180px}.og-dot-4{background:#a3ff12;bottom:150px;box-shadow:0 0 20px rgba(163,255,18,.8);right:150px}.og-scanline{background:linear-gradient(transparent 50%,rgba(0,212,255,.02) 0);background-size:100% 4px;bottom:0;left:0;opacity:.5;pointer-events:none;position:absolute;right:0;top:0}</style>
+  <script async type="module" crossorigin src="./assets/main.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/main.css">
+</head>
+<body>
+    <div class="og-canvas" id="ogCanvas">
+        <!-- Gradient glows -->
+        <div class="og-glow og-glow-1"></div>
+        <div class="og-glow og-glow-2"></div>
+        <div class="og-glow og-glow-3"></div>
+
+        <!-- Grid overlay -->
+        <div class="og-grid"></div>
+
+        <!-- Scanline effect -->
+        <div class="og-scanline"></div>
+
+        <!-- Editorial frame -->
+        <div class="og-frame"></div>
+
+        <!-- Corner accents -->
+        <div class="og-corner tl"></div>
+        <div class="og-corner tr"></div>
+        <div class="og-corner bl"></div>
+        <div class="og-corner br"></div>
+
+        <!-- Decorative elements -->
+        <div class="og-diagonal"></div>
+        <div class="og-dot og-dot-1"></div>
+        <div class="og-dot og-dot-2"></div>
+        <div class="og-dot og-dot-3"></div>
+        <div class="og-dot og-dot-4"></div>
+
+        <!-- Main content -->
+        <div class="og-content">
+            <div class="og-logo">RALPH</div>
+            <div class="og-tagline">YOUR IDEAS, SHIPPED BY AI</div>
+            <div class="og-subtitle">FROM PROMPT.MD TO COMMITTED CODE</div>
+            <div class="og-command">
+                <span class="og-command-prompt">$</span>
+                <span class="og-command-text">ralph run PROMPT.md</span>
+            </div>
+        </div>
+
+        <!-- URL -->
+        <div class="og-url">codeberg.org/mistlight/Ralph-Workflow</div>
+    </div>
+
+    <script>
+        // Auto-download screenshot logic
+        // This would be used with a headless browser or screenshot tool
+        console.log('Open Graph Image - 1200x630px');
+        console.log('To save as image, use a screenshot tool or browser capture');
+    </script>
+</body>
+</html>

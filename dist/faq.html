@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Frequently asked questions about Ralph Workflow. Installation help, usage tips, troubleshooting, and licensing information.">
+    <meta name="keywords" content="Ralph, FAQ, help, troubleshooting, questions, support">
+    <meta name="author" content="Ralph Workflow Contributors">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="FAQ - Ralph Workflow">
+    <meta property="og:description" content="Answers to common questions about Ralph Workflow. Installation, usage, troubleshooting, and more.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://mistlight.codeberg.page/ralph/faq.html">
+    <meta property="og:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
+    <meta property="og:site_name" content="Ralph Workflow">
+
+    <link rel="canonical" href="https://mistlight.codeberg.page/ralph/faq.html">
+    <meta name="theme-color" content="#0a0a0b">
+
+    <title>FAQ - Ralph Workflow</title>
+
+    <!-- Fonts: Syne (display/headings), DM Sans (body), JetBrains Mono (code) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="./assets/logo-icon.svg">
+    <link rel="apple-touch-icon" href="./assets/logo-icon.svg">
+
+    <!-- Main Stylesheet -->
+
+    <!-- Main Script -->
+  <script type="module" crossorigin src="./assets/main.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/main.css">
+</head>
+<body>
+    <!-- Skip Link -->
+    <a href="#main" class="skip-link">Skip to content</a>
+
+    <!-- Navigation -->
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo" aria-label="Ralph Workflow - Home">
+                <div class="logo-mark">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4h6c1.5 0 2.5.5 2.5 2v3c0 1-.5 1.5-1.5 2S11 12.5 10 15H8l1.5-5c-.75 0-1.75-.25-2.25-1V4z"/>
+                        <path d="M8 7.5h3c.4 0 .5.1.5.5v1.5c0 .3-.1.5-.5.5H8" fill="currentColor"/>
+                    </svg>
+                </div>
+                <span class="logo-text">ralph</span>
+            </a>
+
+            <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+                <span></span>
+                <span></span>
+            </button>
+
+            <ul class="nav-menu">
+                <li><a href="index.html" class="nav-link">Home</a></li>
+                <li><a href="how-it-works.html" class="nav-link">How it Works</a></li>
+                <li><a href="getting-started.html" class="nav-link">Getting Started</a></li>
+                <li class="nav-dropdown">
+                    <button class="nav-link nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">
+                        Docs
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                    <ul class="nav-dropdown-menu">
+                        <li><a href="docs/writing-specs.html" class="nav-link">Writing Specs</a></li>
+                        <li><a href="docs/overnight-runs.html" class="nav-link">Overnight Runs</a></li>
+                        <li><a href="docs/workflows.html" class="nav-link">Workflows</a></li>
+                    </ul>
+                </li>
+                <li><a href="open-source.html" class="nav-link">Open Source</a></li>
+                <li><a href="faq.html" class="nav-link nav-link--active" aria-current="page">FAQ</a></li>
+                <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="nav-link nav-link-external">Codeberg <span class="external-icon" aria-hidden="true">→</span></a></li>
+            </ul>
+
+            <!-- Dark Mode Toggle -->
+            <button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
+                <svg class="sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <svg class="moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <main id="main" role="main">
+        <!-- Page Header -->
+        <section class="page-header">
+            <div class="page-header-content">
+                <h1 class="page-title">Frequently Asked Questions</h1>
+                <p class="page-subtitle">Answers to common questions about Ralph Workflow</p>
+            </div>
+        </section>
+
+        <!-- Getting Started FAQ -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <h2 class="section-title">Getting Started</h2>
+                </div>
+
+                <div class="faq-list">
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>What is Ralph?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Ralph is an open-source command-line tool that automates AI coding workflows. Instead of manually copying prompts to an AI chat and pasting code back, Ralph orchestrates two AI agents—a Developer and a Reviewer—that work together in a self-correcting loop until your code is ready.</p>
+                            <p>You write your requirements in a file called <code class="inline">PROMPT.md</code>, run <code class="inline">ralph -S</code>, and Ralph handles the rest, creating a semantic Git commit when done.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Do I need to know how to code to use Ralph?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>You don't need to be a programmer, but you do need to be comfortable with the command line (terminal). Ralph is designed to be approachable—once installed, you mainly need to know how to write clear requirements in plain English.</p>
+                            <p>If you're new to the terminal, check out our <a href="getting-started.html">Getting Started guide</a> which walks you through each step.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>What is PROMPT.md and how do I create one?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>PROMPT.md is a simple Markdown file in your project directory where you describe what you want Ralph to build. Create a file named <code class="inline">PROMPT.md</code> and write your requirements in plain English.</p>
+                            <p>A good PROMPT.md includes:</p>
+                            <ul>
+                                <li>A clear goal (what you want to accomplish)</li>
+                                <li>Specific requirements (features, behavior)</li>
+                                <li>Constraints (what NOT to do)</li>
+                                <li>Success criteria (how to verify it works)</li>
+                            </ul>
+                            <p>See our <a href="docs/writing-specs.html">Writing Specs guide</a> for templates and examples.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>How much does Ralph cost?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p><strong>Ralph itself is free</strong>—it's open-source under the AGPL-3.0 license.</p>
+                            <p>However, you'll pay for the AI API calls you make to your provider (like Anthropic or OpenAI). Costs depend on your usage:</p>
+                            <ul>
+                                <li>Simple tasks: $0.50 - $2.00</li>
+                                <li>Medium tasks: $2.00 - $5.00</li>
+                                <li>Complex tasks: $5.00 - $15.00</li>
+                            </ul>
+                            <p>You can control costs by setting spending limits with your API provider and choosing appropriate iteration modes (<code>-Q</code> for quick, <code>-S</code> for standard).</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Installation FAQ -->
+        <section class="section section--alt">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <h2 class="section-title">Installation</h2>
+                </div>
+
+                <div class="faq-list">
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>What do I need to install Ralph?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>You need:</p>
+                            <ul>
+                                <li><strong>Rust toolchain</strong> (version 1.70+) — Install from <a href="https://rustup.rs" target="_blank" rel="noopener">rustup.rs</a></li>
+                                <li><strong>Git</strong> — Usually pre-installed on macOS/Linux</li>
+                                <li><strong>An AI agent</strong> — Claude Code, Codex, or OpenCode with valid API keys</li>
+                            </ul>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>"Command not found" error after installation?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>This usually means Cargo's bin directory isn't in your PATH. Add it by running:</p>
+                            <div class="code-block code-block--small">
+                                <pre><code>export PATH="$HOME/.cargo/bin:$PATH"</code></pre>
+                            </div>
+                            <p>To make this permanent, add the line to your shell config file (<code class="inline">~/.bashrc</code>, <code class="inline">~/.zshrc</code>, etc.) and restart your terminal.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>SSH clone fails?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>If you get an SSH error when cloning, you can use HTTPS instead:</p>
+                            <div class="code-block code-block--small">
+                                <pre><code>git clone https://codeberg.org/mistlight/Ralph-Workflow.git</code></pre>
+                            </div>
+                            <p>Or, add your SSH key to your Codeberg account under Settings → SSH / GPG Keys.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Can I install on Windows?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Yes! Ralph works on Windows. Install Rust via <a href="https://rustup.rs" target="_blank" rel="noopener">rustup.rs</a> (it will install the MSVC build tools if needed), then follow the same installation steps.</p>
+                            <p>We recommend using Windows Terminal or PowerShell for the best experience.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Usage FAQ -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <h2 class="section-title">Usage</h2>
+                </div>
+
+                <div class="faq-list">
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>What do the different modes mean (-Q, -S, -T, -L)?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Ralph has preset iteration modes that control how many passes the agents make:</p>
+                            <ul>
+                                <li><code>-Q</code> <strong>Quick</strong> — 3 iterations. For simple bug fixes.</li>
+                                <li><code>-S</code> <strong>Standard</strong> — 5 iterations. Balanced for most tasks.</li>
+                                <li><code>-T</code> <strong>Thorough</strong> — 10 iterations. For complex features or refactoring.</li>
+                                <li><code>-E</code> <strong>Extensive</strong> — 20 iterations. For large, difficult tasks.</li>
+                                <li><code>-L</code> <strong>Long</strong> — 30 iterations. Maximum refinement.</li>
+                            </ul>
+                            <p>More iterations = higher quality but longer time and higher API costs.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Can Ralph work with my existing codebase?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Yes! Ralph works with any Git repository. It reads your existing code to understand patterns and conventions, then makes changes while respecting your project structure.</p>
+                            <p>For best results, mention specific files and existing patterns in your PROMPT.md so Ralph knows what to follow.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>What if Ralph makes a mistake?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>The Reviewer agent is designed to catch mistakes before code is committed. But if something slips through:</p>
+                            <ol>
+                                <li>Ralph always creates Git commits, so you can see exactly what changed</li>
+                                <li>You can revert with <code class="inline">git reset --hard HEAD~1</code></li>
+                                <li>Review the diff with <code class="inline">git diff HEAD~1</code> before pushing</li>
+                            </ol>
+                            <p>Never push code you haven't reviewed. Ralph is a tool, not a replacement for human judgment.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Can I use Ralph in CI/CD pipelines?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Yes! Ralph supports quiet mode (<code>-q</code>) for CI/CD environments. Configure your API keys as environment variables and run:</p>
+                            <div class="code-block code-block--small">
+                                <pre><code>ralph -S -q</code></pre>
+                            </div>
+                            <p>This suppresses interactive output while still logging to files.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>How do I configure API keys?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Create a config file at <code class="inline">~/.ralph/config.toml</code>:</p>
+                            <div class="code-block code-block--small">
+                                <pre><code>agent = "claude-code"
+fallback = ["codex", "opencode"]
+
+[reviewer]
+model = "claude-sonnet-4"
+max_iterations = 10</code></pre>
+                            </div>
+                            <p>Or set environment variables for your AI provider (e.g., <code class="inline">ANTHROPIC_API_KEY</code>).</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Troubleshooting FAQ -->
+        <section class="section section--alt">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <h2 class="section-title">Troubleshooting</h2>
+                </div>
+
+                <div class="faq-list">
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Ralph runs but nothing happens?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Check these common issues:</p>
+                            <ul>
+                                <li><strong>No PROMPT.md?</strong> Make sure you have a PROMPT.md file in your current directory</li>
+                                <li><strong>Empty PROMPT.md?</strong> The file needs actual requirements, not just a title</li>
+                                <li><strong>API key issues?</strong> Run with <code class="inline">-v</code> (verbose) to see error messages</li>
+                                <li><strong>Not in a Git repo?</strong> Ralph requires a Git repository to work</li>
+                            </ul>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>API rate limit errors?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>If you hit rate limits:</p>
+                            <ul>
+                                <li>Wait a few minutes and try again</li>
+                                <li>Use fewer iterations (<code>-Q</code> instead of <code>-T</code>)</li>
+                                <li>Configure fallback agents in your config.toml</li>
+                                <li>Check your API provider's rate limit settings</li>
+                            </ul>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Ralph keeps looping without finishing?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>This usually means the spec is ambiguous or has conflicting requirements. Try:</p>
+                            <ul>
+                                <li>Making your requirements more specific</li>
+                                <li>Adding clear acceptance criteria</li>
+                                <li>Breaking the task into smaller specs</li>
+                                <li>Using a lower iteration mode to see partial results</li>
+                            </ul>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Where can I get more help?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>If your question isn't answered here:</p>
+                            <ul>
+                                <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/issues" target="_blank" rel="noopener">Open an issue on Codeberg</a> — Search first to see if it's been answered</li>
+                                <li>Check the <a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/README.md" target="_blank" rel="noopener">README</a> for technical details</li>
+                                <li>Read through our <a href="docs/writing-specs.html">documentation pages</a></li>
+                            </ul>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Licensing FAQ -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <h2 class="section-title">Licensing</h2>
+                </div>
+
+                <div class="faq-list">
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Is Ralph free to use?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Yes! Ralph is free and open-source under the AGPL-3.0 license. You can use it for personal projects, commercial work, or anything else—no license fee required.</p>
+                            <p>The only cost is the AI API calls you make to your provider.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Does the license affect code Ralph writes for me?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p><strong>No.</strong> The AGPL-3.0 license applies to Ralph itself—not to the code it generates for your projects.</p>
+                            <p>Your PROMPT.md files and the code Ralph writes belong to you. Ralph is just a tool, like a compiler. The output is yours to license however you choose.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>Can I use Ralph for commercial projects?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>Absolutely. The AGPL allows commercial use. You can use Ralph to build commercial software, proprietary applications, or client projects without any licensing fees.</p>
+                        </div>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary class="faq-summary">
+                            <span>What if I modify Ralph itself?</span>
+                            <span class="faq-toggle">+</span>
+                        </summary>
+                        <div class="faq-content">
+                            <p>If you modify Ralph and distribute it (or run it as a service for others), you must:</p>
+                            <ul>
+                                <li>Keep the AGPL-3.0 license</li>
+                                <li>Make your source code available</li>
+                                <li>State your changes clearly</li>
+                            </ul>
+                            <p>See our <a href="open-source.html">Open Source page</a> for more details on the license.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="section section--alt cta-section">
+            <div class="content-container">
+                <div class="cta-content">
+                    <h2>Still have questions?</h2>
+                    <p>Open an issue on Codeberg or explore our documentation for more details.</p>
+                    <div class="cta-buttons">
+                        <a href="https://codeberg.org/mistlight/Ralph-Workflow/issues" target="_blank" rel="noopener" class="btn btn-primary">
+                            Ask on Codeberg
+                            <span class="btn-arrow" aria-hidden="true">→</span>
+                        </a>
+                        <a href="getting-started.html" class="btn btn-secondary">
+                            Get Started
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h3>Ralph Workflow</h3>
+                <p>Multi-agent AI orchestration for automated code development. Ship your ideas with autonomous agents that collaborate until quality is achieved.</p>
+            </div>
+
+            <div class="footer-links">
+                <h4>Project</h4>
+                <ul>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener">Repository</a></li>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/issues" target="_blank" rel="noopener">Issues</a></li>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h4>Documentation</h4>
+                <ul>
+                    <li><a href="getting-started.html">Getting Started</a></li>
+                    <li><a href="docs/writing-specs.html">Writing Specs</a></li>
+                    <li><a href="docs/workflows.html">Workflows</a></li>
+                    <li><a href="faq.html">FAQ</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h4>Community</h4>
+                <ul>
+                    <li><a href="open-source.html">Open Source</a></li>
+                    <li><a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Original Concept</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <div class="footer-copy">
+                <p>&copy; 2025 Ralph Workflow Contributors. Licensed under <a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>.</p>
+            </div>
+            <a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="footer-cta">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                Star on Codeberg
+            </a>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Get started with Ralph Workflow - Step-by-step installation guide, first run tutorial, and your first PROMPT.md walkthrough.">
+    <meta name="keywords" content="Ralph, installation, getting started, CLI tool, AI coding, Rust, cargo">
+    <meta name="author" content="Ralph Workflow Contributors">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Getting Started - Ralph Workflow">
+    <meta property="og:description" content="Install Ralph and run your first automated AI coding workflow in minutes.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://mistlight.codeberg.page/ralph/getting-started.html">
+    <meta property="og:image" content="https://mistlight.codeberg.page/ralph/og-image.png">
+    <meta property="og:site_name" content="Ralph Workflow">
+
+    <link rel="canonical" href="https://mistlight.codeberg.page/ralph/getting-started.html">
+    <meta name="theme-color" content="#0a0a0b">
+
+    <title>Getting Started - Ralph Workflow</title>
+
+    <!-- Fonts: Syne (display/headings), DM Sans (body), JetBrains Mono (code) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="./assets/logo-icon.svg">
+    <link rel="apple-touch-icon" href="./assets/logo-icon.svg">
+
+    <!-- Main Stylesheet -->
+
+    <!-- Main Script -->
+
+
+  <script type="module" crossorigin src="./assets/main.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/main.css">
+</head>
+<body>
+    <!-- Skip Link -->
+    <a href="#main" class="skip-link">Skip to content</a>
+
+    <!-- Navigation -->
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo" aria-label="Ralph Workflow - Home">
+                <div class="logo-mark">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4h6c1.5 0 2.5.5 2.5 2v3c0 1-.5 1.5-1.5 2S11 12.5 10 15H8l1.5-5c-.75 0-1.75-.25-2.25-1V4z"/>
+                        <path d="M8 7.5h3c.4 0 .5.1.5.5v1.5c0 .3-.1.5-.5.5H8" fill="currentColor"/>
+                    </svg>
+                </div>
+                <span class="logo-text">ralph</span>
+            </a>
+
+            <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+                <span></span>
+                <span></span>
+            </button>
+
+            <ul class="nav-menu">
+                <li><a href="index.html" class="nav-link">Home</a></li>
+                <li><a href="how-it-works.html" class="nav-link">How it Works</a></li>
+                <li><a href="getting-started.html" class="nav-link nav-link--active" aria-current="page">Getting Started</a></li>
+                <li class="nav-dropdown">
+                    <button class="nav-link nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">
+                        Docs
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                    <ul class="nav-dropdown-menu">
+                        <li><a href="docs/writing-specs.html" class="nav-link">Writing Specs</a></li>
+                        <li><a href="docs/overnight-runs.html" class="nav-link">Overnight Runs</a></li>
+                        <li><a href="docs/workflows.html" class="nav-link">Workflows</a></li>
+                    </ul>
+                </li>
+                <li><a href="open-source.html" class="nav-link">Open Source</a></li>
+                <li><a href="faq.html" class="nav-link">FAQ</a></li>
+                <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="nav-link nav-link-external">Codeberg <span class="external-icon" aria-hidden="true">→</span></a></li>
+            </ul>
+
+            <!-- Dark Mode Toggle -->
+            <button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
+                <svg class="sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <svg class="moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <main id="main" role="main">
+        <!-- Page Header -->
+        <section class="page-header">
+            <div class="page-header-content">
+                <div class="page-header-badges">
+                    <span class="badge badge-forest"><span class="badge-dot"></span> Installation Guide</span>
+                </div>
+                <h1 class="page-title">Getting Started</h1>
+                <p class="page-subtitle">Install Ralph and run your first automated workflow in under 10 minutes</p>
+            </div>
+        </section>
+
+        <!-- Prerequisites Section -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">01</span>
+                    <h2 class="section-title">Prerequisites</h2>
+                    <p class="section-subtitle">What you need before installing Ralph</p>
+                </div>
+
+                <div class="prereq-grid">
+                    <div class="prereq-card">
+                        <div class="prereq-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                                <polyline points="2 17 12 22 22 17"/>
+                                <polyline points="2 12 12 17 22 12"/>
+                            </svg>
+                        </div>
+                        <h3>Rust Toolchain</h3>
+                        <p>Ralph is built in Rust and installed via Cargo. You'll need Rust 1.70 or newer.</p>
+                        <a href="https://rustup.rs" target="_blank" rel="noopener" class="prereq-link">
+                            Install Rust via rustup.rs
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M7 17L17 7M17 7H7M17 7v10"/>
+                            </svg>
+                        </a>
+                    </div>
+
+                    <div class="prereq-card">
+                        <div class="prereq-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 12c0 4.97-4.03 9-9 9a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.97 4.03-9 9-9s9 4.03 9 9z"/>
+                            </svg>
+                        </div>
+                        <h3>AI Agent</h3>
+                        <p>Ralph orchestrates AI agents. Install at least one supported agent:</p>
+                        <ul class="prereq-list">
+                            <li><strong>Claude Code</strong> — Anthropic's coding agent</li>
+                            <li><strong>Codex</strong> — OpenAI's code model</li>
+                            <li><strong>OpenCode</strong> — Open-source alternative</li>
+                        </ul>
+                    </div>
+
+                    <div class="prereq-card">
+                        <div class="prereq-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M12 1v6m0 6v10"/>
+                                <path d="M21 12h-6m-6 0H1"/>
+                            </svg>
+                        </div>
+                        <h3>Git</h3>
+                        <p>Ralph creates semantic commits automatically. Make sure Git is installed and configured.</p>
+                        <div class="code-inline-block">
+                            <code>git --version</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Installation Section -->
+        <section class="section section--alt">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">02</span>
+                    <h2 class="section-title">Installation</h2>
+                    <p class="section-subtitle">Clone and build Ralph from source</p>
+                </div>
+
+                <div class="install-steps">
+                    <!-- Step 1 -->
+                    <div class="install-step">
+                        <div class="install-step-header">
+                            <span class="install-step-number">1</span>
+                            <h3>Clone the repository</h3>
+                        </div>
+                        <div class="code-block">
+                            <div class="code-block-header">
+                                <span class="code-lang">bash</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <pre><code>git clone ssh://git@codeberg.org/mistlight/Ralph-Workflow.git</code></pre>
+                        </div>
+                        <p class="step-note">If SSH isn't set up, use HTTPS: <code class="inline">https://codeberg.org/mistlight/Ralph-Workflow.git</code></p>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="install-step">
+                        <div class="install-step-header">
+                            <span class="install-step-number">2</span>
+                            <h3>Navigate to the directory</h3>
+                        </div>
+                        <div class="code-block">
+                            <div class="code-block-header">
+                                <span class="code-lang">bash</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <pre><code>cd Ralph-Workflow</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="install-step">
+                        <div class="install-step-header">
+                            <span class="install-step-number">3</span>
+                            <h3>Install with Cargo</h3>
+                        </div>
+                        <div class="code-block">
+                            <div class="code-block-header">
+                                <span class="code-lang">bash</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <pre><code>cargo install --path .</code></pre>
+                        </div>
+                        <p class="step-note">This compiles Ralph and installs it to <code class="inline">~/.cargo/bin/</code></p>
+                    </div>
+
+                    <!-- Step 4 -->
+                    <div class="install-step">
+                        <div class="install-step-header">
+                            <span class="install-step-number">4</span>
+                            <h3>Verify installation</h3>
+                        </div>
+                        <div class="code-block">
+                            <div class="code-block-header">
+                                <span class="code-lang">bash</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <pre><code>ralph --version</code></pre>
+                        </div>
+                        <div class="step-success">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                            <span>You should see Ralph's version number. Installation complete!</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Troubleshooting -->
+                <div class="troubleshooting-box">
+                    <h4>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        Troubleshooting
+                    </h4>
+                    <ul class="troubleshooting-list">
+                        <li>
+                            <strong>"command not found" error?</strong>
+                            <p>Add Cargo's bin directory to your PATH:</p>
+                            <code class="inline">export PATH="$HOME/.cargo/bin:$PATH"</code>
+                        </li>
+                        <li>
+                            <strong>Rust not installed?</strong>
+                            <p>Install it from <a href="https://rustup.rs" target="_blank" rel="noopener">rustup.rs</a> — it takes about 2 minutes.</p>
+                        </li>
+                        <li>
+                            <strong>SSH clone fails?</strong>
+                            <p>Either add your SSH key to Codeberg, or use HTTPS clone URL instead.</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- First Run Section -->
+        <section class="section">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">03</span>
+                    <h2 class="section-title">Your First Run</h2>
+                    <p class="section-subtitle">Create a PROMPT.md and let Ralph do the work</p>
+                </div>
+
+                <div class="tutorial-grid">
+                    <div class="tutorial-content">
+                        <h3>Step 1: Create PROMPT.md</h3>
+                        <p>In your project's root directory, create a file named <code class="inline">PROMPT.md</code>. This is where you describe what you want Ralph to build.</p>
+
+                        <div class="code-block">
+                            <div class="code-block-header">
+                                <span class="code-lang">markdown</span>
+                                <span class="code-filename">PROMPT.md</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <pre><code># Add a Hello World Endpoint
+
+## Goal
+Add a simple `/hello` endpoint that returns "Hello, World!"
+
+## Requirements
+- Create a GET endpoint at `/hello`
+- Return plain text response "Hello, World!"
+- Add basic error handling
+
+## Constraints
+- Follow existing project patterns
+- Keep it simple for now</code></pre>
+                        </div>
+
+                        <h3>Step 2: Run Ralph</h3>
+                        <p>With your PROMPT.md ready, run Ralph in Standard mode:</p>
+
+                        <div class="code-block">
+                            <div class="code-block-header">
+                                <span class="code-lang">bash</span>
+                                <button class="copy-btn" aria-label="Copy to clipboard">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <pre><code>ralph -S</code></pre>
+                        </div>
+
+                        <h3>Step 3: Watch the Magic</h3>
+                        <p>Ralph will:</p>
+                        <ol class="tutorial-steps-list">
+                            <li>Read your PROMPT.md</li>
+                            <li>Start the Developer agent to write code</li>
+                            <li>Run the Reviewer agent to check quality</li>
+                            <li>Iterate until the code passes review</li>
+                            <li>Create a semantic Git commit</li>
+                        </ol>
+                    </div>
+
+                    <div class="tutorial-sidebar">
+                        <div class="cli-reference">
+                            <h4>CLI Quick Reference</h4>
+                            <dl class="cli-flags">
+                                <dt><code>-Q</code></dt>
+                                <dd>Quick mode (3 iterations)</dd>
+
+                                <dt><code>-S</code></dt>
+                                <dd>Standard mode (5 iterations)</dd>
+
+                                <dt><code>-T</code></dt>
+                                <dd>Thorough mode (10 iterations)</dd>
+
+                                <dt><code>-L</code></dt>
+                                <dd>Long mode (30 iterations)</dd>
+
+                                <dt><code>-q</code></dt>
+                                <dd>Quiet mode (minimal output)</dd>
+
+                                <dt><code>-v</code></dt>
+                                <dd>Verbose mode (detailed output)</dd>
+                            </dl>
+                        </div>
+
+                        <div class="next-steps-box">
+                            <h4>What's Next?</h4>
+                            <ul class="next-steps-list">
+                                <li>
+                                    <a href="docs/writing-specs.html">Learn to write effective specs</a>
+                                </li>
+                                <li>
+                                    <a href="docs/overnight-runs.html">Run Ralph overnight safely</a>
+                                </li>
+                                <li>
+                                    <a href="docs/workflows.html">Common workflow patterns</a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Configuration Section -->
+        <section class="section section--alt">
+            <div class="content-container">
+                <div class="section-header section-header--left">
+                    <span class="section-number">04</span>
+                    <h2 class="section-title">Configuration (Optional)</h2>
+                    <p class="section-subtitle">Customize Ralph's behavior with a config file</p>
+                </div>
+
+                <p class="section-intro">Ralph works out of the box, but you can customize its behavior by creating a configuration file.</p>
+
+                <div class="code-block code-block--large">
+                    <div class="code-block-header">
+                        <span class="code-lang">toml</span>
+                        <span class="code-filename">~/.ralph/config.toml</span>
+                        <button class="copy-btn" aria-label="Copy to clipboard">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <pre><code># Ralph Configuration
+# Create this file at ~/.ralph/config.toml
+
+# Primary agent to use
+agent = "claude-code"
+
+# Fallback agents if primary fails
+fallback = ["codex", "opencode"]
+
+[reviewer]
+# Model for the reviewer agent
+model = "claude-sonnet-4"
+
+# Maximum iterations before stopping
+max_iterations = 10
+
+[commit]
+# Commit message style
+style = "conventional"
+
+# Sign commits with GPG
+sign = false</code></pre>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h3>Ralph Workflow</h3>
+                <p>Multi-agent AI orchestration for automated code development. Ship your ideas with autonomous agents that collaborate until quality is achieved.</p>
+            </div>
+
+            <div class="footer-links">
+                <h4>Project</h4>
+                <ul>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener">Repository</a></li>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/issues" target="_blank" rel="noopener">Issues</a></li>
+                    <li><a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h4>Documentation</h4>
+                <ul>
+                    <li><a href="getting-started.html">Getting Started</a></li>
+                    <li><a href="docs/writing-specs.html">Writing Specs</a></li>
+                    <li><a href="docs/workflows.html">Workflows</a></li>
+                    <li><a href="faq.html">FAQ</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h4>Community</h4>
+                <ul>
+                    <li><a href="open-source.html">Open Source</a></li>
+                    <li><a href="https://codeberg.org/ghuntley/ralph" target="_blank" rel="noopener">Original Concept</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <div class="footer-copy">
+                <p>&copy; 2025 Ralph Workflow Contributors. Licensed under <a href="https://codeberg.org/mistlight/Ralph-Workflow/src/branch/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>.</p>
+            </div>
+            <a href="https://codeberg.org/mistlight/Ralph-Workflow" target="_blank" rel="noopener" class="footer-cta">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                Star on Codeberg
+            </a>
+        </div>
+    </footer>
+</body>
+</html>
