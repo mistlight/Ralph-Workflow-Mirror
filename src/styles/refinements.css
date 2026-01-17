@@ -545,7 +545,7 @@ footer a:hover {
     }
 
     .terminal-window {
-        border: 1px solid #ccc;
+        border: 1px solid var(--border-soft);
         box-shadow: none;
     }
 
