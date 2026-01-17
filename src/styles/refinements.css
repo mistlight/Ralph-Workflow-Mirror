@@ -19,11 +19,26 @@ button:focus-visible,
 
 /* Skip link focus improvement */
 .skip-link:focus {
+    animation: slideIn 0.3s var(--ease-expo-out);
     background-color: var(--color-bg);
+    border: 2px solid var(--color-primary);
+    box-shadow: var(--shadow-glow-md);
     color: var(--color-text);
     inset: var(--space-4) auto auto var(--space-4);
     padding: var(--space-3) var(--space-4);
     z-index: var(--z-tooltip);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* === TYPOGRAPHY REFINEMENTS === */
@@ -68,6 +83,11 @@ h2::after {
 /* Enhanced button glow on hover with staggered timing */
 .btn-primary:hover {
     animation: button-glow 0.8s var(--ease-expo-out);
+    background: linear-gradient(135deg,
+                var(--color-primary) 0%,
+                var(--color-primary-dark) 100%);
+    box-shadow: var(--shadow-glow-md),
+                0 0 30px var(--color-primary-glow);
 }
 
 @keyframes button-glow {
@@ -86,9 +106,23 @@ h2::after {
 
 /* Enhanced secondary button hover with layered glow */
 .btn-secondary:hover {
-    box-shadow: var(--shadow-glow-sm), 0 0 25px var(--color-primary-glow),
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-glow-sm),
+                0 0 20px var(--color-primary-dim),
                 inset 0 1px 0 rgb(255 255 255 / 10%);
     transition: all var(--duration-300) var(--ease-expo-out);
+}
+
+/* Enhanced button active states */
+.btn-primary:active {
+    background: var(--color-primary-dark);
+    box-shadow: var(--shadow-glow-sm);
+    transform: translateY(1px);
+}
+
+.btn-secondary:active {
+    background-color: var(--color-primary-dim);
+    transform: translateY(1px);
 }
 
 /* Ghost button refinement with gradient reveal */
@@ -841,6 +875,7 @@ footer a:hover {
 
     &:hover {
         border-color: var(--border-accent);
+        border-left-color: var(--color-primary);
         box-shadow: var(--shadow-lg),
                     0 0 30px var(--color-primary-dim),
                     inset 0 1px 0 rgb(255 255 255 / 5%);
@@ -848,6 +883,7 @@ footer a:hover {
     }
 
     &:focus-within {
+        background-color: var(--color-bg-elevated);
         border-color: var(--color-primary);
         box-shadow: 0 0 0 3px var(--color-primary-dim),
                     var(--shadow-glow-md);
@@ -1034,11 +1070,43 @@ footer a {
 /* Enhanced FAQ accordion with smooth reveal */
 .faq-summary {
     cursor: pointer;
+    position: relative;
     transition: all var(--duration-200) var(--ease-expo-out);
+
+    &::before {
+        background: linear-gradient(90deg,
+                    var(--color-primary) 0%,
+                    transparent 100%);
+        bottom: 0;
+        content: '';
+        height: 2px;
+        left: 0;
+        opacity: 0;
+        position: absolute;
+        transition: opacity var(--duration-200) var(--ease-out),
+                    width var(--duration-300) var(--ease-expo-out);
+        width: 0;
+    }
 
     &:hover {
         background-color: var(--color-bg-hover);
         border-color: var(--border-accent);
+
+        &::before {
+            opacity: 0.5;
+            width: 60px;
+        }
+    }
+
+    &:focus-visible {
+        background-color: var(--color-primary-dim);
+        box-shadow: inset 0 0 0 2px var(--color-primary);
+        outline: none;
+    }
+
+    &:active {
+        transform: scale(0.99);
+        transition: transform var(--duration-100) var(--ease-out);
     }
 
     &[aria-expanded="true"] {
@@ -1053,8 +1121,18 @@ footer a {
 }
 
 .faq-toggle {
-    transition: color var(--duration-200) var(--ease-out),
+    box-shadow: 0 0 0 transparent;
+    transition: all var(--duration-300) var(--ease-expo-out),
+                color var(--duration-200) var(--ease-out),
                 transform var(--duration-300) var(--ease-expo-out);
+
+    &:hover {
+        box-shadow: 0 0 15px var(--color-primary-dim);
+    }
+}
+
+.faq-item[open] .faq-toggle {
+    box-shadow: 0 0 20px var(--color-primary-glow);
 }
 
 .faq-details {
@@ -1252,6 +1330,17 @@ footer a {
 /* Improved navigation link underline animation */
 .nav-link {
     position: relative;
+    transition: all var(--duration-150) var(--ease-out);
+
+    &:focus-visible {
+        background-color: var(--color-primary-dim);
+        border-radius: var(--radius-md);
+        outline: none;
+    }
+
+    &:active {
+        transform: scale(0.97);
+    }
 }
 
 .nav-link::after {
@@ -1288,12 +1377,20 @@ footer a {
 /* Improved dropdown menu item hover */
 .nav-dropdown-menu .nav-link {
     transition: all var(--duration-150) var(--ease-out);
-}
 
-.nav-dropdown-menu .nav-link:hover {
-    background-color: var(--color-primary-dim);
-    color: var(--color-primary);
-    padding-left: var(--space-5);
+    &:hover {
+        background-color: var(--color-bg-hover);
+        border-color: var(--border-accent);
+        color: var(--color-primary);
+        padding-left: var(--space-5);
+    }
+
+    &:focus-visible {
+        background-color: var(--color-primary-dim);
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 2px var(--color-primary-dim);
+        outline: none;
+    }
 }
 
 /* Enhanced hero terminal typing effect */
@@ -1510,10 +1607,156 @@ code:not(pre code) {
 
 
 /* === FAQ ACCORDION IMPROVEMENTS === */
-/* Note: .faq-summary is already defined in lines 1033-1051 */
 
+/* Enhanced FAQ content reveal */
+.faq-content,
+.faq-answer-content {
+    animation: faqReveal 0.4s var(--ease-expo-out);
+}
 
+@keyframes faqReveal {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
 
-/* === DROPDOWN MENU IMPROVEMENTS === */
-/* Note: nav-dropdown-menu .nav-link is already defined in lines 1286-1295 */
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
 
+/* === FOOTER LINK ANIMATIONS === */
+
+/* Footer links with subtle underline animation */
+.footer-link {
+    position: relative;
+
+    &::after {
+        background-color: var(--color-primary-dim);
+        bottom: -1px;
+        content: '';
+        height: 1px;
+        left: 0;
+        position: absolute;
+        transform: scaleX(0);
+        transform-origin: left;
+        transition: all var(--duration-200) var(--ease-out);
+        width: 100%;
+    }
+
+    &:hover::after {
+        background-color: var(--color-primary);
+        transform: scaleX(1);
+    }
+}
+
+/* === CARD BORDER GLOW CONSISTENCY === */
+
+/* Ensure all card types have consistent premium border glow on hover */
+.contribute-card,
+.license-card,
+.value-card,
+.persona-card {
+    position: relative;
+    transition: all var(--duration-300) var(--ease-expo-out);
+
+    &:hover {
+        background-image: linear-gradient(var(--border-soft), var(--border-soft)),
+                              linear-gradient(135deg,
+                                  var(--color-primary) 0%,
+                                  var(--color-accent) 100%);
+        background-origin: border-box;
+        background-repeat: no-repeat;
+        background-size: 1px 1px, 1px 1px;
+        border-color: var(--border-accent);
+        box-shadow: var(--shadow-lg),
+                    var(--shadow-glow-md),
+                    0 0 30px var(--color-primary-dim);
+        transform: translateY(-3px);
+    }
+
+    &:focus-within {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-primary-dim),
+                    var(--shadow-glow-md);
+        outline: none;
+    }
+}
+
+/* === BUTTON ACTIVE STATE ENHANCEMENTS === */
+
+/* Enhanced button press feedback with scale animation */
+.audience-btn,
+.audience-option,
+.cta-button {
+    transition: all var(--duration-150) var(--ease-out);
+
+    &:active {
+        transform: translateY(1px) scale(0.98);
+        transition: transform var(--duration-100) var(--ease-out);
+    }
+
+    &:hover {
+        transform: translateY(-1px);
+    }
+}
+
+/* === CODE COPY BUTTON VISIBILITY === */
+
+/* Improved code copy button visibility */
+.code-block .copy-btn,
+.code-wrapper .copy-btn {
+    opacity: 0.6;
+    transition: all var(--duration-200) var(--ease-expo-out);
+
+    &:hover {
+        background-color: var(--color-primary-dim);
+        border-color: var(--color-primary);
+        box-shadow: 0 0 15px var(--color-primary-dim);
+        opacity: 1;
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+
+    &.copied {
+        animation: copyPulse 0.4s var(--ease-out);
+    }
+}
+
+@keyframes copyPulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* === ENHANCED FOCUS STATES FOR ACCESSIBILITY === */
+
+/* Strong focus indicators for all interactive elements */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 3px;
+}
+
+/* === GLOSSARY CARD ENHANCEMENTS === */
+
+/* Enhanced glossary-summary focus state */
+.glossary-summary {
+    &:focus-visible {
+        background-color: var(--color-primary-dim);
+        box-shadow: inset 0 0 0 2px var(--color-primary);
+        outline: none;
+    }
+}
