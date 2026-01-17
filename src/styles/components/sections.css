@@ -981,10 +981,10 @@
 }
 
 .footer-link::after {
-    background: var(--color-primary);
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
     bottom: -2px;
     content: '';
-    height: 1px;
+    height: 2px;
     left: 0;
     position: absolute;
     transition: width var(--duration-200) var(--ease-expo-out);

@@ -485,7 +485,7 @@ pre code,
     position: absolute;
     transform: scaleX(0);
     transform-origin: left;
-    transition: transform var(--duration-300) var(--ease-expo-out);
+    transition: transform var(--duration-200) var(--ease-expo-out);
     width: 100%;
 }
 
@@ -618,12 +618,6 @@ pre code,
 .faq-summary:hover::before {
     opacity: 0.6;
     width: var(--space-20);
-}
-
-.faq-summary:focus-visible {
-    background-color: var(--color-primary-dim);
-    box-shadow: inset 0 0 0 2px var(--color-primary);
-    outline: none;
 }
 
 .faq-summary:active {
@@ -939,38 +933,6 @@ code:not(pre code):hover {
     box-shadow: 0 0 var(--space-10) var(--color-primary-glow);
     height: var(--size-xs);
     transition: width var(--duration-100) var(--ease-out);
-}
-
-/* === FOOTER ENHANCEMENTS === */
-
-/* Enhanced footer links with premium hover effect */
-footer a {
-    position: relative;
-    transition: color var(--duration-150) var(--ease-expo-out),
-                transform var(--duration-150) var(--ease-expo-out);
-}
-
-footer a::after {
-    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
-    bottom: calc(var(--size-xs) * -1);
-    content: '';
-    height: var(--size-xs);
-    left: 0;
-    position: absolute;
-    transform: scaleX(0);
-    transform-origin: left;
-    transition: transform var(--duration-200) var(--ease-expo-out);
-    width: 100%;
-}
-
-footer a:hover {
-    color: var(--color-primary);
-    text-shadow: 0 0 8px var(--color-primary-glow);
-    transform: translateX(var(--translate-2));
-}
-
-footer a:hover::after {
-    transform: scaleX(1);
 }
 
 /* === MICRO-INTERACTION ENHANCEMENTS === */
@@ -1388,15 +1350,6 @@ a, button, .btn, .nav-link, .faq-summary, .card, .feature-card {
     transition-timing-function: var(--ease-expo-out);
 }
 
-/* === IMPROVED FOCUS RINGS FOR ACCESSIBILITY === */
-
-button:focus-visible,
-.btn:focus-visible,
-a:focus-visible {
-    box-shadow: 0 0 0 3px var(--color-primary-dim),
-                0 0 0 5px var(--color-bg);
-}
-
 /* === ACCESSIBILITY IMPROVEMENTS === */
 
 /* Reduced motion preference */
@@ -1432,6 +1385,23 @@ a:focus-visible {
 .faq-summary {
     min-height: 44px;
     min-width: 44px;
+}
+
+/* Enhanced mobile spacing for touch targets */
+@media (--md) {
+    .nav-link {
+        padding: var(--space-3) var(--space-4);
+    }
+
+    .footer-link {
+        display: inline-block;
+        padding: var(--space-2) 0;
+    }
+
+    .btn {
+        min-height: 48px;
+        padding: var(--space-3) var(--space-6);
+    }
 }
 
 /* === PRINT STYLES === */
@@ -1646,17 +1616,7 @@ a:focus-visible {
     transform: scale(var(--scale-105));
 }
 
-/* === FORM INPUT FOCUS STATES === */
-
-/* stylelint-disable-next-line selector-not-notation */
-input:not([type="checkbox"]):not([type="radio"]):focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-dim),
-                var(--shadow-glow-sm);
-    outline: none;
-}
+/* === FORM INPUT HOVER STATES === */
 
 /* stylelint-disable-next-line selector-not-notation */
 input:not([type="checkbox"]):not([type="radio"]):hover,
@@ -1887,12 +1847,6 @@ select:hover {
     width: 100%;
 }
 
-/* Install mode switch enhanced focus state */
-.switch:focus-visible {
-    outline: var(--focus-outline);
-    outline-offset: var(--focus-offset);
-}
-
 /* Glossary card snappier transitions */
 .glossary-card,
 .glossary-term {
@@ -1917,29 +1871,6 @@ select:hover {
 
 .copy-button:active {
     transform: scale(var(--scale-095));
-}
-
-/* Improved footer link hover states */
-.footer-link {
-    position: relative;
-    transition: color var(--duration-150) var(--ease-expo-out);
-}
-
-.footer-link::after {
-    background-color: var(--color-primary);
-    bottom: calc(var(--space-1) * -1);
-    content: '';
-    height: var(--border-width-1);
-    left: 0;
-    position: absolute;
-    transform: scaleX(0);
-    transform-origin: left;
-    transition: transform var(--duration-200) var(--ease-expo-out);
-    width: 100%;
-}
-
-.footer-link:hover::after {
-    transform: scaleX(1);
 }
 
 /* Enhanced scrollbar styling for webkit browsers */

@@ -25,11 +25,17 @@ html {
 
 body {
     background-attachment: fixed;
+    background-color: #0a0a0b;
     background-color: var(--color-bg);
+    background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgb(0 212 255 / 8%) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 60%, rgb(255 0 110 / 4%) 0%, transparent 50%),
+        radial-gradient(ellipse 50% 30% at 20% 80%, rgb(163 255 18 / 3%) 0%, transparent 50%);
     background-image:
         radial-gradient(ellipse 80% 50% at 50% -20%, var(--gradient-primary-dim) 0%, transparent 60%),
         radial-gradient(ellipse 60% 40% at 80% 60%, var(--gradient-accent-dim) 0%, transparent 50%),
         radial-gradient(ellipse 50% 30% at 20% 80%, var(--gradient-lime-dim) 0%, transparent 50%);
+    color: #e4e4e7;
     color: var(--color-text-primary);
     font-family: var(--font-body);
     font-size: var(--text-base);
