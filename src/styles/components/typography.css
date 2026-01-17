@@ -329,7 +329,7 @@ code, .inline-code, .inline {
 .faq-item[open] .faq-toggle {
     background-color: var(--color-primary);
     color: var(--color-bg);
-    transform: rotate(45deg);
+    transform: rotate(var(--rotate-5));
 }
 
 /* === FAQ CONTENT === */
@@ -395,7 +395,7 @@ code, .inline-code, .inline {
 
 .faq-item.open .faq-icon {
     color: var(--color-primary);
-    transform: rotate(45deg);
+    transform: rotate(var(--rotate-5));
 }
 
 .faq-answer {
@@ -455,7 +455,7 @@ code, .inline-code, .inline {
 }
 
 .glossary-details[open] .glossary-summary svg:last-child {
-    transform: rotate(180deg);
+    transform: rotate(var(--rotate-180));
 }
 
 .glossary-summary-text {

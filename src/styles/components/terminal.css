@@ -333,11 +333,11 @@ pre code {
     box-shadow: 0 0 12px var(--primary-alpha-12);
     color: var(--color-primary);
     opacity: 1;
-    transform: scale(1.05);
+    transform: scale(var(--scale-105));
 }
 
 .copy-btn:active {
-    transform: scale(0.95);
+    transform: scale(var(--scale-095));
 }
 
 .copy-btn.copied {

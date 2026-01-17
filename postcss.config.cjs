@@ -6,7 +6,7 @@ module.exports = ({ env }) => {
     plugins: [
       require('postcss-import'),
 
-      // Reusable breakpoints - picks up @custom-media from imported CSS files
+      // Reusable breakpoints - auto-detects @custom-media from imported CSS files
       require('postcss-custom-media'),
 
       // Nesting (keep shallow, see stylelint section)

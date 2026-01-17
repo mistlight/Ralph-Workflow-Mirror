@@ -157,7 +157,7 @@
 /* Scroll reveal animations */
 .scroll-reveal {
     opacity: 0;
-    transform: translateY(30px);
+    transform: translateY(var(--space-32));
     transition: opacity 0.6s var(--ease-expo-out), transform 0.6s var(--ease-expo-out);
 }
 
@@ -183,7 +183,7 @@
 
 .transform-animate.from-start {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(var(--space-10));
 }
 
 .transform-animate.is-visible {
@@ -240,7 +240,7 @@
 /* Tab content animation */
 .tab-content {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(var(--space-10));
     transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-out);
 }
 
@@ -266,7 +266,7 @@
 
 /* Dark mode toggle rotation */
 .dark-mode-toggle.is-rotated {
-    transform: rotate(180deg);
+    transform: rotate(var(--rotate-180));
 }
 
 /* Scroll progress indicator */

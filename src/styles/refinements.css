@@ -184,7 +184,7 @@ pre code,
 .audience-option:hover {
     border-color: var(--color-primary);
     box-shadow: 0 0 20px var(--color-primary-dim);
-    transform: translateY(-1px);
+    transform: translateY(var(--lift-sm));
 }
 
 .audience-btn.active,
@@ -493,7 +493,7 @@ pre code,
 .nav-link:hover {
     background-color: var(--color-bg-hover);
     color: var(--color-text);
-    transform: translateY(-1px);
+    transform: translateY(var(--lift-sm));
 }
 
 /* Navigation link underline animation */
@@ -596,7 +596,7 @@ pre code,
 .dark-mode-toggle:hover {
     background-color: var(--color-bg-hover);
     box-shadow: 0 0 20px var(--color-primary-dim);
-    transform: rotate(15deg);
+    transform: rotate(var(--rotate-5));
 }
 
 .dark-mode-toggle:active {
@@ -617,7 +617,7 @@ pre code,
     background-color: var(--color-bg-elevated);
     border-color: var(--border-accent);
     padding-left: var(--space-5);
-    transform: translateX(2px);
+    transform: translateX(var(--translate-2));
 }
 
 .faq-summary::before {
@@ -647,7 +647,7 @@ pre code,
 }
 
 .faq-summary:active {
-    transform: translateX(2px) scale(var(--scale-099));
+    transform: translateX(var(--translate-2)) scale(var(--scale-099));
     transition: transform var(--duration-100) var(--ease-out);
 }
 
@@ -666,7 +666,7 @@ pre code,
 
 .faq-summary[aria-expanded="true"] .faq-toggle {
     color: var(--color-primary);
-    transform: rotate(45deg);
+    transform: rotate(var(--rotate-5));
 }
 
 /* FAQ toggle icon */
@@ -795,7 +795,7 @@ code:not(pre code):hover {
 }
 
 .copy-btn:active {
-    transform: scale(0.95);
+    transform: scale(var(--scale-095));
 }
 
 .copy-btn.copied {
@@ -905,7 +905,7 @@ code:not(pre code):hover {
 
 @keyframes float {
     0%, 100% { transform: translateX(-50%) translateY(0); }
-    50% { transform: translateX(-50%) translateY(-10px); }
+    50% { transform: translateX(-50%) translateY(var(--lift-md)); }
 }
 
 /* Premium scroll progress indicator with glow */
@@ -993,7 +993,7 @@ a:not(.btn):hover {
 }
 
 .feature-list li:hover::before {
-    transform: translateX(4px);
+    transform: translateX(var(--translate-4));
 }
 
 /* Better spacing for list items */
@@ -1527,7 +1527,7 @@ a:focus-visible {
 
 .breadcrumb-link:hover {
     color: var(--color-primary);
-    transform: translateX(2px);
+    transform: translateX(var(--translate-2));
 }
 
 .breadcrumb-link:focus-visible {
@@ -1550,7 +1550,7 @@ a:focus-visible {
 
     50% {
         opacity: 1;
-        transform: translateY(8px);
+        transform: translateY(var(--space-8));
     }
 }
 
@@ -1628,12 +1628,12 @@ select:hover {
 @keyframes tab-select {
     from {
         opacity: 0.7;
-        transform: scale(0.95);
+        transform: scale(var(--scale-095));
     }
 
     to {
         opacity: 1;
-        transform: scale(1);
+        transform: scale(var(--scale-100));
     }
 }
 
@@ -1641,11 +1641,11 @@ select:hover {
 
 /* Unified card lift values for consistency */
 .audience-card:hover {
-    transform: translateY(-3px);
+    transform: translateY(var(--lift-md));
 }
 
 .stage-card:hover {
-    transform: translateY(-3px);
+    transform: translateY(var(--lift-md));
 }
 
 /* Improved card spacing consistency */

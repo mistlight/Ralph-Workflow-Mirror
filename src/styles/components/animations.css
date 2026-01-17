@@ -28,7 +28,7 @@
 @keyframes slide-up {
     from {
         opacity: 0;
-        transform: translateY(30px);
+        transform: translateY(var(--space-32));
     }
 
     to {
@@ -41,7 +41,7 @@
 @keyframes fade-in-up {
     from {
         opacity: 0;
-        transform: translateY(20px);
+        transform: translateY(var(--space-20));
     }
 
     to {
@@ -54,7 +54,7 @@
 @keyframes fade-in-left {
     from {
         opacity: 0;
-        transform: translateX(-20px);
+        transform: translateX(var(--translate-neg20));
     }
 
     to {
@@ -67,7 +67,7 @@
 @keyframes fade-in-right {
     from {
         opacity: 0;
-        transform: translateX(20px);
+        transform: translateX(var(--translate-20));
     }
 
     to {
@@ -80,7 +80,7 @@
 @keyframes fade-in {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(var(--space-10));
     }
 
     to {
@@ -91,23 +91,23 @@
 
 /* Float Slow Animation */
 @keyframes float-slow {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(30px, -30px) scale(1.05); }
-    66% { transform: translate(-20px, 20px) scale(0.95); }
+    0%, 100% { transform: translate(0, 0) scale(var(--scale-100)); }
+    33% { transform: translate(var(--translate-30), var(--translate-neg30)) scale(var(--scale-105)); }
+    66% { transform: translate(var(--translate-neg20), var(--translate-20)) scale(var(--scale-095)); }
 }
 
 /* Ambient Drift Animation */
 @keyframes ambient-drift {
     0%, 100% {
-        transform: translate(0, 0) scale(1);
+        transform: translate(0, 0) scale(var(--scale-100));
     }
 
     33% {
-        transform: translate(30px, -20px) scale(1.1);
+        transform: translate(var(--translate-30), var(--translate-neg20)) scale(var(--scale-110));
     }
 
     66% {
-        transform: translate(-20px, 15px) scale(0.95);
+        transform: translate(var(--translate-neg20), var(--translate-15)) scale(var(--scale-095));
     }
 }
 
@@ -120,7 +120,7 @@
 
     50% {
         opacity: 0.3;
-        transform: translateY(8px);
+        transform: translateY(var(--space-8));
     }
 }
 
@@ -131,7 +131,7 @@
     }
 
     50% {
-        transform: translateX(-50%) translateY(-10px);
+        transform: translateX(-50%) translateY(var(--translate-neg10));
     }
 }
 
@@ -139,7 +139,7 @@
 @keyframes fade-in-up-x {
     from {
         opacity: 0;
-        transform: translateX(-50%) translateY(20px);
+        transform: translateX(-50%) translateY(var(--space-20));
     }
 
     to {
@@ -158,7 +158,7 @@
 @keyframes count-up {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(var(--space-10));
     }
 
     to {
@@ -184,22 +184,22 @@
 @keyframes blob-morph {
     0%, 100% {
         border-radius: 50%;
-        transform: translate(0, 0) scale(1) rotate(0deg);
+        transform: translate(0, 0) scale(var(--scale-100)) rotate(var(--rotate-0));
     }
 
     25% {
         border-radius: 45% 55% 50% 50%;
-        transform: translate(20px, -20px) scale(1.05) rotate(90deg);
+        transform: translate(var(--translate-20), var(--translate-neg20)) scale(var(--scale-105)) rotate(var(--rotate-90));
     }
 
     50% {
         border-radius: 55% 45%;
-        transform: translate(-10px, 15px) scale(0.95) rotate(180deg);
+        transform: translate(var(--translate-neg10), var(--translate-15)) scale(var(--scale-095)) rotate(var(--rotate-180));
     }
 
     75% {
         border-radius: 48% 52%;
-        transform: translate(15px, 10px) scale(1.02) rotate(270deg);
+        transform: translate(var(--translate-15), var(--translate-10)) scale(var(--scale-102)) rotate(var(--rotate-270));
     }
 }
 
@@ -209,25 +209,25 @@
 .fade-in-up {
     animation: fade-in-up 0.6s var(--ease-out) forwards;
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(var(--space-20));
 }
 
 .fade-in-left {
     animation: fade-in-left 0.6s var(--ease-out) forwards;
     opacity: 0;
-    transform: translateX(-20px);
+    transform: translateX(var(--translate-neg20));
 }
 
 .fade-in-right {
     animation: fade-in-right 0.6s var(--ease-out) forwards;
     opacity: 0;
-    transform: translateX(20px);
+    transform: translateX(var(--translate-20));
 }
 
 /* Scroll reveal animations */
 .reveal {
     opacity: 0;
-    transform: translateY(30px);
+    transform: translateY(var(--space-32));
     transition: opacity 0.8s var(--ease-expo-out),
                 transform 0.8s var(--ease-expo-out);
 }
@@ -245,7 +245,7 @@
 /* Stagger animation for grids */
 .stagger-children > * {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(var(--space-20));
     transition: opacity 0.5s var(--ease-out),
                 transform 0.5s var(--ease-out);
 }

@@ -1257,7 +1257,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 }
 
 .workflow-node:hover {
-    transform: scale(1.02);
+    transform: scale(var(--scale-102));
 }
 
 /* === STAGES GRID === */
@@ -2077,7 +2077,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
     background-color: var(--color-primary);
     box-shadow: var(--shadow-glow-lg);
     color: var(--color-bg);
-    transform: translateY(-2px);
+    transform: translateY(var(--lift-md));
 }
 
 .footer-cta svg {
@@ -2087,7 +2087,7 @@ body:not([data-audience]) .faq-category.audience-newcomer-content {
 }
 
 .footer-cta:hover svg {
-    transform: scale(1.2);
+    transform: scale(var(--scale-120));
 }
 
 @media (--2xl) {

@@ -77,7 +77,7 @@
             0 20px 40px var(--shadow-black-30),
             0 0 30px var(--primary-shadow-15),
             inset 0 1px 0 var(--white-alpha-5);
-        transform: translateY(-4px);
+        transform: translateY(var(--lift-lg));
 
         &::before {
             opacity: 1;
@@ -95,7 +95,7 @@
 
             svg {
                 color: var(--color-bg);
-                transform: scale(1.1) rotate(5deg);
+                transform: scale(var(--scale-110)) rotate(var(--rotate-5));
             }
         }
     }
@@ -413,7 +413,7 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
-        transform: translateY(-4px);
+        transform: translateY(var(--lift-lg));
     }
 
     &:focus-within {
@@ -422,7 +422,7 @@
     }
 
     &:active {
-        transform: translateY(-2px);
+        transform: translateY(var(--lift-md));
     }
 }
 
@@ -474,7 +474,7 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
-        transform: translateY(-4px);
+        transform: translateY(var(--lift-lg));
     }
 
     &:focus-within {
@@ -483,7 +483,7 @@
     }
 
     &:active {
-        transform: translateY(-2px);
+        transform: translateY(var(--lift-md));
     }
 }
 
@@ -575,7 +575,7 @@
         box-shadow:
             0 16px 32px var(--shadow-black-25),
             0 0 20px var(--primary-shadow-10);
-        transform: translateY(-4px);
+        transform: translateY(var(--lift-lg));
 
         &::before {
             opacity: 1;
@@ -679,7 +679,7 @@
         box-shadow:
             0 20px 40px var(--shadow-black-30),
             0 0 30px var(--primary-shadow-15);
-        transform: translateY(-4px);
+        transform: translateY(var(--lift-lg));
 
         &::before {
             opacity: 1;
@@ -696,7 +696,7 @@
             box-shadow: var(--shadow-glow-lg);
 
             svg {
-                transform: scale(1.15) rotate(5deg);
+                transform: scale(var(--scale-115)) rotate(var(--rotate-5));
             }
         }
     }
@@ -804,7 +804,7 @@
             color: var(--color-bg);
 
             svg {
-                transform: scale(1.1) rotate(5deg);
+                transform: scale(var(--scale-110)) rotate(var(--rotate-5));
             }
         }
     }
