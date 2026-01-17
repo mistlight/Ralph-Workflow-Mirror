@@ -1082,60 +1082,6 @@ footer a {
     position: relative;
 }
 
-/* === AUDIENCE BUTTON RING ANIMATION === */
-
-/* Enhanced audience button with ring animation */
-.audience-option[aria-pressed="true"] {
-    animation: audience-ring 0.5s ease-out;
-}
-
-@keyframes audience-ring {
-    0% {
-        box-shadow: 0 0 0 0 var(--color-primary-dim);
-    }
-    70% {
-        box-shadow: 0 0 0 8px var(--color-primary-glow);
-    }
-    100% {
-        box-shadow: 0 0 30px var(--color-primary-glow);
-    }
-}
-
-/* === FAQ ACCORDION ENHANCEMENTS === */
-
-.faq-item {
-    border-bottom: 1px solid var(--border-subtle);
-    transition: border-color var(--duration-200) var(--ease-expo-out);
-}
-
-.faq-item:hover {
-    border-bottom-color: var(--border-soft);
-}
-
-.faq-summary {
-    cursor: pointer;
-    transition: color var(--duration-200) var(--ease-expo-out);
-}
-
-.faq-summary:hover {
-    color: var(--color-primary);
-}
-
-.faq-content {
-    animation: faq-expand 0.3s var(--ease-expo-out);
-}
-
-@keyframes faq-expand {
-    from {
-        opacity: 0;
-        transform: translateY(-8px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 /* === EXTERNAL LINK ENHANCEMENTS === */
 
 .nav-link-external {
@@ -1154,29 +1100,4 @@ footer a {
     margin-left: var(--space-2);
     opacity: 1;
     transform: translateX(2px);
-}
-
-/* === SCROLL PROGRESS ENHANCEMENT === */
-
-.scroll-progress {
-    background: linear-gradient(90deg,
-                var(--color-primary) 0%,
-                var(--color-accent) 100%);
-    box-shadow: 0 0 10px var(--color-primary-glow);
-    height: 3px;
-    transition: opacity var(--duration-300) var(--ease-expo-out);
-}
-
-/* === GLOSSARY CARD HOVER ENHANCEMENT === */
-
-.glossary-term {
-    transition: all var(--duration-300) var(--ease-expo-out);
-}
-
-.glossary-term:hover {
-    border-color: var(--border-accent);
-    box-shadow: var(--shadow-lg),
-                0 0 30px var(--color-primary-dim),
-                inset 0 1px 0 rgb(255 255 255 / 5%);
-    transform: translateY(-2px);
 }

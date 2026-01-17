@@ -58,6 +58,8 @@
     --color-lime-dark: #82cc0e;
     --color-lime-dim: rgb(163 255 18 / 12%);
     --color-lime-glow: rgb(163 255 18 / 25%);
+    --color-emerald: var(--color-lime);
+    --color-emerald-dim: var(--color-lime-dim);
 
     /* Quaternary - Violet */
     --color-violet: #a78bfa;
