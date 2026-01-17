@@ -14,6 +14,11 @@ h1, h2, h3, h4, h5, h6 {
     line-height: var(--leading-snug);
 }
 
+/* Enhanced heading readability with subtle glow */
+h1 {
+    text-shadow: 0 0 40px var(--color-primary-dim);
+}
+
 h1, .h1 {
     font-size: clamp(2.5rem, 8vw, var(--text-7xl));
     font-weight: var(--font-extrabold);
@@ -98,6 +103,7 @@ code, .inline-code, .inline {
     font-family: var(--font-mono);
     font-size: 0.875em;
     font-weight: var(--font-medium);
+    line-height: 1.5;
     padding: 0.2em 0.5em;
 }
 

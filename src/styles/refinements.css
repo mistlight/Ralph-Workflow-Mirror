@@ -70,13 +70,13 @@ h2 {
 
 h2::after {
     background: linear-gradient(90deg, var(--color-primary) 0%, transparent 100%);
-    bottom: -8px;
+    bottom: -10px;
     content: '';
     height: 2px;
     left: 0;
-    opacity: 0.5;
+    opacity: 0.7;
     position: absolute;
-    width: 60px;
+    width: 80px;
 }
 
 /* Improved readability for long-form content */
@@ -85,6 +85,25 @@ h2::after {
 .page-subtitle {
     line-height: var(--leading-relaxed);
     max-width: 65ch;
+}
+
+/* Enhanced code block readability */
+code,
+pre code,
+.code-block {
+    line-height: 1.6;
+}
+
+/* Consistent spacing for section headers */
+.section-header {
+    margin-bottom: var(--space-16);
+    position: relative;
+}
+
+/* Improved paragraph spacing within sections */
+.section > p,
+.section-content > p {
+    margin-bottom: var(--space-6);
 }
 
 /* === BUTTON ENHANCEMENTS === */
@@ -593,6 +612,14 @@ h2::after {
     transition: all var(--duration-200) var(--ease-expo-out);
 }
 
+/* Improved FAQ hover state visibility */
+.faq-summary:hover {
+    background-color: var(--color-bg-elevated);
+    border-color: var(--border-accent);
+    padding-left: var(--space-5);
+    transform: translateX(2px);
+}
+
 .faq-summary::before {
     background: linear-gradient(90deg,
                 var(--color-primary) 0%,
@@ -608,17 +635,9 @@ h2::after {
     width: 0;
 }
 
-.faq-summary:hover {
-    background-color: var(--color-bg-hover);
-    border-color: var(--border-accent);
-    border-left-width: 3px;
-    padding-left: var(--space-5);
-    transform: translateX(2px);
-}
-
 .faq-summary:hover::before {
-    opacity: 0.5;
-    width: 60px;
+    opacity: 0.6;
+    width: 80px;
 }
 
 .faq-summary:focus-visible {
@@ -1042,10 +1061,6 @@ a:not(.btn):hover {
 /* === SECTION HEADER ENHANCEMENTS === */
 
 /* Enhanced section header with decorative underline */
-.section-header {
-    position: relative;
-}
-
 .section-header .section-title {
     position: relative;
 }
