@@ -852,3 +852,401 @@ footer a:hover {
     white-space: nowrap;
     width: 1px;
 }
+
+/* === ADDITIONAL PREMIUM POLISH ENHANCEMENTS === */
+
+/* Enhanced badge glow effect on hover */
+.badge {
+    backdrop-filter: blur(4px);
+    transition: all var(--duration-300) var(--ease-expo-out);
+
+    &:hover {
+        box-shadow: 0 0 20px currentcolor, 0 0 30px currentcolor, 0 0 40px currentcolor;
+        transform: translateY(-2px) scale(1.02);
+    }
+}
+
+/* Enhanced workflow diagram connector animation */
+.workflow-connector {
+    background: linear-gradient(90deg,
+                var(--border-soft) 0%,
+                var(--border-accent) 50%,
+                var(--border-soft) 100%);
+    background-size: 200% 100%;
+    transition: all var(--duration-400) var(--ease-expo-out);
+}
+
+.workflow-step:hover ~ .workflow-connector {
+    animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Premium card border gradient on hover */
+.feature-card,
+.comparison-card,
+.license-card,
+.contribute-card,
+.value-card {
+    &:hover {
+        background-image: linear-gradient(var(--border-soft), var(--border-soft)),
+                              linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+        background-origin: border-box;
+        background-size: var(--border-soft) 1px, 1px 1px;
+        background-repeat: no-repeat;
+    }
+}
+
+/* Subtle text glow for primary headings in dark mode */
+.hero-title,
+.section-title {
+    text-shadow: 0 0 40px var(--color-primary-dim);
+
+    @media (--min-xl) {
+        text-shadow: 0 0 60px var(--color-primary-dim);
+    }
+}
+
+/* Enhanced code block with subtle inner glow */
+.code-block {
+    position: relative;
+
+    &::before {
+        background: linear-gradient(135deg,
+                    rgb(0 212 255 / 2%) 0%,
+                    transparent 50%,
+                    rgb(255 0 110 / 1%) 100%);
+        border-radius: inherit;
+        content: '';
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+        position: absolute;
+        transition: opacity var(--duration-300) var(--ease-expo-out);
+    }
+
+    &:hover::before {
+        opacity: 1;
+    }
+}
+
+/* Enhanced copy button with better feedback */
+.copy-btn {
+    transition: all var(--duration-150) var(--ease-expo-out);
+
+    &:hover {
+        background-color: var(--color-primary-dim);
+        border-color: var(--color-primary);
+        transform: scale(1.05);
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+
+    &.copied {
+        background-color: var(--color-lime-dim);
+        border-color: var(--color-lime);
+        color: var(--color-lime);
+    }
+}
+
+/* Enhanced audience selector button interactions */
+.audience-option {
+    transition: all var(--duration-200) var(--ease-expo-out);
+
+    &:hover {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 20px var(--color-primary-dim);
+        transform: translateY(-1px);
+    }
+
+    &[aria-pressed="true"] {
+        background-color: var(--color-primary-dim);
+        border-color: var(--color-primary);
+        box-shadow: 0 0 30px var(--color-primary-glow);
+    }
+}
+
+/* Premium glossary card hover with depth */
+.glossary-term {
+    transition: all var(--duration-300) var(--ease-expo-out);
+
+    &:hover {
+        border-color: var(--border-accent);
+        box-shadow: var(--shadow-lg),
+                    0 0 30px var(--color-primary-dim),
+                    inset 0 1px 0 rgb(255 255 255 / 5%);
+        transform: translateY(-2px);
+    }
+}
+
+/* Enhanced table row hover with smooth animation */
+.table-row {
+    transition: all var(--duration-150) var(--ease-expo-out);
+
+    &:hover {
+        background-color: var(--color-bg-hover);
+        border-left-color: var(--color-primary);
+        box-shadow: 0 0 20px var(--color-primary-dim);
+    }
+}
+
+/* Improved mobile tap feedback */
+@media (--lg) {
+    .btn:active,
+    .audience-option:active,
+    .faq-summary:active {
+        background-color: var(--color-bg-hover);
+        transform: scale(0.98);
+    }
+}
+
+/* Enhanced hero section with subtle animated gradient background */
+.hero {
+    &::before {
+        background: radial-gradient(
+            ellipse 80% 50% at 50% -20%,
+            rgb(0 212 255 / 8%) 0%,
+            transparent 70%
+        );
+        content: '';
+        inset: 0;
+        pointer-events: none;
+        position: absolute;
+        animation: heroGlow 8s ease-in-out infinite alternate;
+    }
+
+    &::after {
+        background: radial-gradient(
+            ellipse 60% 40% at 80% 20%,
+            rgb(255 0 110 / 4%) 0%,
+            transparent 60%
+        );
+        content: '';
+        inset: 0;
+        pointer-events: none;
+        position: absolute;
+        animation: heroGlowAccent 12s ease-in-out infinite alternate;
+    }
+}
+
+@keyframes heroGlow {
+    0% {
+        opacity: 0.3;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 0.3;
+    }
+}
+
+@keyframes heroGlowAccent {
+    0% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 0.15;
+    }
+}
+
+/* Subtle kinetic typography enhancement */
+.hero-word {
+    transition: transform var(--duration-300) var(--ease-expo-out);
+}
+
+/* Enhanced terminal window with premium depth */
+.terminal-window {
+    box-shadow: var(--shadow-lg),
+                inset 0 1px 0 rgb(255 255 255 / 5%);
+    will-change: transform, box-shadow;
+    transition: all var(--duration-300) var(--ease-expo-out);
+
+    &::before {
+        background: linear-gradient(180deg,
+                    rgb(0 212 255 / 5%) 0%,
+                    transparent 30%);
+        content: '';
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+        position: absolute;
+        transition: opacity var(--duration-300) var(--ease-expo-out);
+    }
+
+    &:hover {
+        border-color: var(--border-accent);
+        box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 40px var(--color-primary-dim);
+        transform: translateY(-2px);
+
+        &::before {
+            opacity: 1;
+        }
+    }
+}
+
+/* Premium scroll progress indicator with glow */
+.scroll-progress {
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+    box-shadow: 0 0 10px var(--color-primary-glow);
+    height: 3px;
+    transition: width var(--duration-100) var(--ease-out);
+}
+
+/* Enhanced footer links with premium hover effect */
+footer a {
+    position: relative;
+    transition: all var(--duration-200) var(--ease-expo-out);
+
+    &::after {
+        background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+        bottom: -2px;
+        content: '';
+        height: 2px;
+        left: 0;
+        position: absolute;
+        transform: scaleX(0);
+        transform-origin: left;
+        transition: transform var(--duration-200) var(--ease-expo-out);
+        width: 100%;
+    }
+
+    &:hover {
+        color: var(--color-primary);
+        text-shadow: 0 0 10px var(--color-primary-glow);
+
+        &::after {
+            transform: scaleX(1);
+        }
+    }
+}
+
+/* Premium CTA button with subtle pulse animation */
+.hero-actions .btn-primary {
+    position: relative;
+
+    &::before {
+        animation: subtleRing 2s ease-out infinite;
+        border-radius: inherit;
+        content: '';
+        inset: -4px;
+        opacity: 0;
+        position: absolute;
+        z-index: -1;
+    }
+}
+
+@keyframes subtleRing {
+    0% {
+        box-shadow: 0 0 0 0 var(--color-primary-dim);
+        opacity: 0.6;
+    }
+
+    70% {
+        box-shadow: 0 0 0 12px transparent;
+        opacity: 0;
+    }
+
+    100% {
+        box-shadow: 0 0 0 12px transparent;
+        opacity: 0;
+    }
+}
+
+/* Enhanced FAQ accordion with smooth reveal */
+.faq-summary {
+    cursor: pointer;
+    transition: all var(--duration-200) var(--ease-expo-out);
+
+    &:hover {
+        background-color: var(--color-bg-hover);
+        border-color: var(--border-accent);
+    }
+
+    &[aria-expanded="true"] {
+        background-color: var(--color-primary-dim);
+        border-color: var(--border-accent);
+
+        .faq-toggle {
+            transform: rotate(45deg);
+        }
+    }
+}
+
+.faq-details {
+    animation: accordionExpand 0.3s var(--ease-expo-out);
+}
+
+@keyframes accordionExpand {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Enhanced section header with decorative underline */
+.section-header {
+    .section-title {
+        position: relative;
+
+        &::after {
+            background: linear-gradient(90deg, var(--color-primary) 0%, transparent 100%);
+            bottom: -8px;
+            content: '';
+            height: 2px;
+            left: 0;
+            opacity: 0.5;
+            position: absolute;
+            transition: width var(--duration-300) var(--ease-expo-out);
+            width: 60px;
+        }
+    }
+
+    &:hover .section-title::after {
+        width: 120px;
+    }
+}
+
+/* Enhanced step number with glow */
+.step-number {
+    background: linear-gradient(135deg,
+                var(--color-primary-dim) 0%,
+                var(--color-bg-card) 100%);
+    border: 1px solid var(--border-accent);
+    box-shadow: 0 0 20px var(--color-primary-dim);
+    transition: all var(--duration-300) var(--ease-expo-out);
+
+    &:hover {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 2px var(--color-bg),
+                    0 0 0 4px var(--color-primary),
+                    0 0 30px var(--color-primary-glow);
+        transform: scale(1.05);
+    }
+}
+
+/* Premium workflow diagram with animated elements */
+.workflow-svg {
+    .workflow-node {
+        transition: all var(--duration-300) var(--ease-expo-out);
+
+        &:hover {
+            transform: scale(1.05);
+        }
+    }
+}
