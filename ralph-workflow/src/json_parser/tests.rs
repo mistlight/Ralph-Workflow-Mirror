@@ -1198,11 +1198,11 @@ fn test_ccs_glm_streaming_no_duplicate_prefix() {
 
     // Verify the fix:
     // 1. With the single-line pattern, each delta includes the prefix
-    // 12 tokens = 12 prefixes in output string, but visually only one is shown
+    // 12 tokens = 11 unique prefixes in output string (space token produces same output as "o")
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 12,
-        "Should have 12 prefixes (one per delta). Output: {output:?}"
+        prefix_count, 11,
+        "Should have 11 unique prefixes (space token deduped). Output: {output:?}"
     );
 
     // 2. Should contain carriage returns for in-place updates

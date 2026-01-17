@@ -772,20 +772,25 @@ impl ClaudeParser {
                 let show_prefix = session.on_text_delta(index, text_to_process);
 
                 // Get accumulated text for streaming display
-                // Clone to avoid borrow checker issues when marking as rendered
                 let accumulated_text = session
                     .get_accumulated(ContentType::Text, &index_str)
-                    .unwrap_or("")
-                    .to_string();
+                    .unwrap_or("");
 
-                // Check if this exact accumulated content has already been rendered
-                // We use the raw accumulated text for deduplication, not sanitized,
-                // to avoid false positives when content differs only by trailing whitespace
-                if session.is_content_hash_rendered(
-                    ContentType::Text,
-                    &index_str,
-                    &accumulated_text,
-                ) {
+                // Sanitize the accumulated text to check if it's empty
+                // This is needed to skip rendering when the accumulated content is just whitespace
+                use super::delta_display::sanitize_for_display;
+                let sanitized_text = sanitize_for_display(accumulated_text);
+
+                // Skip rendering if the sanitized text is empty (e.g., only whitespace)
+                // This prevents rendering empty lines when the accumulated content is just whitespace
+                if sanitized_text.is_empty() {
+                    return String::new();
+                }
+
+                // Check if this sanitized content has already been rendered
+                // This prevents duplicates when accumulated content differs only by whitespace
+                if session.is_content_hash_rendered(ContentType::Text, &index_str, &sanitized_text)
+                {
                     return String::new();
                 }
 
@@ -799,7 +804,7 @@ impl ClaudeParser {
                 let output = if show_prefix && !has_prefix {
                     // First delta with no prefix match - use the renderer with prefix
                     TextDeltaRenderer::render_first_delta(
-                        &accumulated_text,
+                        accumulated_text,
                         prefix,
                         *c,
                         terminal_mode,
@@ -808,20 +813,18 @@ impl ClaudeParser {
                     // Either continuation OR prefix match - use renderer for in-place update
                     // This handles the case where "Hello" becomes "Hello World" - we REPLACE
                     TextDeltaRenderer::render_subsequent_delta(
-                        &accumulated_text,
+                        accumulated_text,
                         prefix,
                         *c,
                         terminal_mode,
                     )
                 };
 
-                // Mark this content as rendered in both systems for future duplicate detection
+                // Mark this sanitized content as rendered for future duplicate detection
+                // We use the sanitized text (not the rendered output) to avoid false positives
+                // when the same accumulated text is rendered with different terminal modes
                 session.mark_rendered(ContentType::Text, &index_str);
-                session.mark_content_hash_rendered(
-                    ContentType::Text,
-                    &index_str,
-                    &accumulated_text,
-                );
+                session.mark_content_hash_rendered(ContentType::Text, &index_str, &sanitized_text);
 
                 output
             }
@@ -891,17 +894,26 @@ impl ClaudeParser {
         }
 
         let show_prefix = session.on_text_delta(default_index, text_to_process);
-        // Clone to avoid borrow checker issues when marking as rendered
+
+        // Get accumulated text for streaming display
         let accumulated_text = session
             .get_accumulated(ContentType::Text, default_index_str)
-            .unwrap_or("")
-            .to_string();
+            .unwrap_or("");
 
-        // Check if this exact accumulated content has already been rendered
-        // We use the raw accumulated text for deduplication, not sanitized,
-        // to avoid false positives when content differs only by trailing whitespace
-        if session.is_content_hash_rendered(ContentType::Text, default_index_str, &accumulated_text)
-        {
+        // Sanitize the accumulated text to check if it's empty
+        // This is needed to skip rendering when the accumulated content is just whitespace
+        use super::delta_display::sanitize_for_display;
+        let sanitized_text = sanitize_for_display(accumulated_text);
+
+        // Skip rendering if the sanitized text is empty (e.g., only whitespace)
+        // This prevents rendering empty lines when the accumulated content is just whitespace
+        if sanitized_text.is_empty() {
+            return String::new();
+        }
+
+        // Check if this sanitized content has already been rendered
+        // This prevents duplicates when accumulated content differs only by whitespace
+        if session.is_content_hash_rendered(ContentType::Text, default_index_str, &sanitized_text) {
             return String::new();
         }
 
@@ -914,16 +926,18 @@ impl ClaudeParser {
 
         let output = if show_prefix && !has_prefix {
             // First delta with no prefix match - use the renderer with prefix
-            TextDeltaRenderer::render_first_delta(&accumulated_text, prefix, *c, terminal_mode)
+            TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c, terminal_mode)
         } else {
             // Either continuation OR prefix match - use renderer for in-place update
             // This handles the case where "Hello" becomes "Hello World" - we REPLACE
-            TextDeltaRenderer::render_subsequent_delta(&accumulated_text, prefix, *c, terminal_mode)
+            TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c, terminal_mode)
         };
 
-        // Mark this content as rendered in both systems
+        // Mark this sanitized content as rendered for future duplicate detection
+        // We use the sanitized text (not the rendered output) to avoid false positives
+        // when the same accumulated text is rendered with different terminal modes
         session.mark_rendered(ContentType::Text, default_index_str);
-        session.mark_content_hash_rendered(ContentType::Text, default_index_str, &accumulated_text);
+        session.mark_content_hash_rendered(ContentType::Text, default_index_str, &sanitized_text);
 
         output
     }
