@@ -7,9 +7,12 @@
 use crate::agents::{AgentsConfigFile, ConfigInitResult};
 use crate::config::{unified_config_path, UnifiedConfig, UnifiedConfigInitResult};
 use crate::logger::Colors;
-use crate::templates::{get_template, list_templates};
+use crate::templates::{get_template, list_templates, ALL_TEMPLATES};
 use std::fs;
 use std::path::Path;
+
+/// Minimum similarity threshold for suggesting alternatives (0.0 to 1.0).
+const MIN_SIMILARITY: f64 = 0.4;
 
 /// Handle the `--init-global` flag.
 ///
@@ -261,7 +264,96 @@ pub fn handle_smart_init(template_arg: Option<&str>, colors: Colors) -> anyhow::
     }
 
     // No template provided - use smart inference based on current state
-    handle_init_state_inference(&config_path, prompt_path, config_exists, prompt_exists, colors)
+    handle_init_state_inference(
+        &config_path,
+        prompt_path,
+        config_exists,
+        prompt_exists,
+        colors,
+    )
+}
+
+/// Calculate Levenshtein distance between two strings.
+///
+/// Returns the minimum number of single-character edits (insertions, deletions,
+/// or substitutions) required to change one string into the other.
+fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let b_len = b_chars.len();
+
+    // Use two rows to save memory
+    let mut prev_row: Vec<usize> = (0..=b_len).collect();
+    let mut curr_row = vec![0; b_len + 1];
+
+    for (i, a_char) in a_chars.iter().enumerate() {
+        curr_row[0] = i + 1;
+
+        for (j, b_char) in b_chars.iter().enumerate() {
+            let cost = usize::from(a_char != b_char);
+            curr_row[j + 1] = std::cmp::min(
+                std::cmp::min(
+                    curr_row[j] + 1,         // deletion
+                    prev_row[j + 1] + 1,     // insertion
+                ),
+                prev_row[j] + cost,          // substitution
+            );
+        }
+
+        std::mem::swap(&mut prev_row, &mut curr_row);
+    }
+
+    prev_row[b_len]
+}
+
+/// Calculate similarity score as a percentage (0-100).
+///
+/// This avoids floating point comparison issues in tests.
+#[allow(clippy::cast_possible_truncation)]
+fn similarity_percentage(a: &str, b: &str) -> u32 {
+    if a == b {
+        return 100;
+    }
+    if a.is_empty() || b.is_empty() {
+        return 0;
+    }
+
+    let max_len = a.len().max(b.len());
+    let distance = levenshtein_distance(a, b);
+
+    if max_len == 0 {
+        return 100;
+    }
+
+    // Calculate percentage without floating point
+    // (100 * (max_len - distance)) / max_len
+    let diff = max_len.saturating_sub(distance);
+    ((100 * diff) / max_len) as u32
+}
+
+/// Find the best matching template names using fuzzy matching.
+///
+/// Returns templates that are similar to the input within the threshold.
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
+fn find_similar_templates(input: &str) -> Vec<(&'static str, u32)> {
+    let input_lower = input.to_lowercase();
+    let mut matches: Vec<(&'static str, u32)> = ALL_TEMPLATES
+        .iter()
+        .map(|t| {
+            let name = t.name();
+            let sim = similarity_percentage(&input_lower, &name.to_lowercase());
+            (name, sim)
+        })
+        .filter(|(_, sim)| *sim >= (MIN_SIMILARITY * 100.0) as u32)
+        .collect();
+
+    // Sort by similarity (highest first)
+    matches.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // Return top 3 matches
+    matches.truncate(3);
+    matches
 }
 
 /// Handle --init when a template name is provided.
@@ -270,7 +362,7 @@ fn handle_init_template_arg(template_name: &str, colors: Colors) -> anyhow::Resu
         return handle_init_prompt(template_name, colors);
     }
 
-    // Unknown value - show helpful error
+    // Unknown value - show helpful error with suggestions
     println!(
         "{}Unknown template: '{}'{}",
         colors.red(),
@@ -278,14 +370,33 @@ fn handle_init_template_arg(template_name: &str, colors: Colors) -> anyhow::Resu
         colors.reset()
     );
     println!();
+
+    // Try to find similar template names
+    let similar = find_similar_templates(template_name);
+    if !similar.is_empty() {
+        println!("{}Did you mean?{}", colors.yellow(), colors.reset());
+        for (name, score) in similar {
+            println!(
+                "  {}{}{}  ({}% similar)",
+                colors.cyan(),
+                name,
+                colors.reset(),
+                score
+            );
+        }
+        println!();
+    }
+
     println!("Available templates:");
     for (name, description) in list_templates() {
         println!(
-            "  {}{}{}  {}",
+            "  {}{}{}  {}{}{}",
             colors.cyan(),
             name,
             colors.reset(),
-            description
+            colors.dim(),
+            description,
+            colors.reset()
         );
     }
     println!();
@@ -456,5 +567,59 @@ mod tests {
         // Invalid template names
         assert!(get_template("invalid").is_none());
         assert!(get_template("").is_none());
+    }
+
+    #[test]
+    fn test_levenshtein_distance() {
+        // Exact match
+        assert_eq!(levenshtein_distance("test", "test"), 0);
+
+        // One edit
+        assert_eq!(levenshtein_distance("test", "tast"), 1);
+        assert_eq!(levenshtein_distance("test", "tests"), 1);
+        assert_eq!(levenshtein_distance("test", "est"), 1);
+
+        // Two edits
+        assert_eq!(levenshtein_distance("test", "taste"), 2);
+        assert_eq!(levenshtein_distance("test", "best"), 1);
+
+        // Completely different
+        assert_eq!(levenshtein_distance("abc", "xyz"), 3);
+    }
+
+    #[test]
+    fn test_similarity() {
+        // Exact match
+        assert_eq!(similarity_percentage("test", "test"), 100);
+
+        // Similar strings - should be high similarity
+        assert!(similarity_percentage("bug-fix", "bugfix") > 80);
+        assert!(similarity_percentage("feature-spec", "feature") > 50);
+
+        // Different strings - should be low similarity
+        assert!(similarity_percentage("test", "xyz") < 50);
+
+        // Empty strings
+        assert_eq!(similarity_percentage("", ""), 100);
+        assert_eq!(similarity_percentage("test", ""), 0);
+        assert_eq!(similarity_percentage("", "test"), 0);
+    }
+
+    #[test]
+    fn test_find_similar_templates() {
+        // Find similar to "bugfix" (missing hyphen)
+        let similar = find_similar_templates("bugfix");
+        assert!(!similar.is_empty());
+        assert!(similar.iter().any(|(name, _)| *name == "bug-fix"));
+
+        // Find similar to "feature" (should match feature-spec)
+        let similar = find_similar_templates("feature");
+        assert!(!similar.is_empty());
+        assert!(similar.iter().any(|(name, _)| name.contains("feature")));
+
+        // Very different string should return empty or low similarity
+        let similar = find_similar_templates("xyzabc");
+        // Either empty or all matches have low similarity
+        assert!(similar.is_empty() || similar.iter().all(|(_, sim)| *sim < 50));
     }
 }

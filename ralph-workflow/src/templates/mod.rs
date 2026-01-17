@@ -35,6 +35,14 @@ pub enum PromptTemplate {
     DatabaseMigration,
     /// Dependency update template
     DependencyUpdate,
+    /// CLI tool development template
+    CliTool,
+    /// Web API development template
+    WebApi,
+    /// Data pipeline template
+    DataPipeline,
+    /// UI component template
+    UiComponent,
 }
 
 impl PromptTemplate {
@@ -52,6 +60,10 @@ impl PromptTemplate {
             Self::ApiIntegration => "api-integration",
             Self::DatabaseMigration => "database-migration",
             Self::DependencyUpdate => "dependency-update",
+            Self::CliTool => "cli-tool",
+            Self::WebApi => "web-api",
+            Self::DataPipeline => "data-pipeline",
+            Self::UiComponent => "ui-component",
         }
     }
 
@@ -69,6 +81,10 @@ impl PromptTemplate {
             Self::ApiIntegration => "API integration template with error handling, retry logic, and resilience patterns",
             Self::DatabaseMigration => "Database migration template with zero-downtime strategies and rollback plans",
             Self::DependencyUpdate => "Dependency update template with migration guides and breaking change handling",
+            Self::CliTool => "CLI tool development template with argument parsing, completion, and error handling",
+            Self::WebApi => "Web API development template with REST design, error handling, and security considerations",
+            Self::DataPipeline => "Data pipeline template with ETL processing, reliability, and monitoring guidance",
+            Self::UiComponent => "UI component template with accessibility, responsive design, and user experience",
         }
     }
 
@@ -108,6 +124,18 @@ impl PromptTemplate {
             Self::DependencyUpdate => {
                 include_str!("../../templates/prompts/dependency-update.md")
             }
+            Self::CliTool => {
+                include_str!("../../templates/prompts/cli-tool.md")
+            }
+            Self::WebApi => {
+                include_str!("../../templates/prompts/web-api.md")
+            }
+            Self::DataPipeline => {
+                include_str!("../../templates/prompts/data-pipeline.md")
+            }
+            Self::UiComponent => {
+                include_str!("../../templates/prompts/ui-component.md")
+            }
         }
     }
 }
@@ -119,7 +147,7 @@ impl fmt::Display for PromptTemplate {
 }
 
 /// All available prompt templates.
-pub const ALL_TEMPLATES: [PromptTemplate; 11] = [
+pub const ALL_TEMPLATES: [PromptTemplate; 15] = [
     PromptTemplate::FeatureSpec,
     PromptTemplate::BugFix,
     PromptTemplate::Refactor,
@@ -131,6 +159,10 @@ pub const ALL_TEMPLATES: [PromptTemplate; 11] = [
     PromptTemplate::ApiIntegration,
     PromptTemplate::DatabaseMigration,
     PromptTemplate::DependencyUpdate,
+    PromptTemplate::CliTool,
+    PromptTemplate::WebApi,
+    PromptTemplate::DataPipeline,
+    PromptTemplate::UiComponent,
 ];
 
 /// Get a template by name.
@@ -180,6 +212,10 @@ mod tests {
             "database-migration"
         );
         assert_eq!(PromptTemplate::DependencyUpdate.name(), "dependency-update");
+        assert_eq!(PromptTemplate::CliTool.name(), "cli-tool");
+        assert_eq!(PromptTemplate::WebApi.name(), "web-api");
+        assert_eq!(PromptTemplate::DataPipeline.name(), "data-pipeline");
+        assert_eq!(PromptTemplate::UiComponent.name(), "ui-component");
     }
 
     #[test]
@@ -197,6 +233,10 @@ mod tests {
         assert!(!PromptTemplate::ApiIntegration.description().is_empty());
         assert!(!PromptTemplate::DatabaseMigration.description().is_empty());
         assert!(!PromptTemplate::DependencyUpdate.description().is_empty());
+        assert!(!PromptTemplate::CliTool.description().is_empty());
+        assert!(!PromptTemplate::WebApi.description().is_empty());
+        assert!(!PromptTemplate::DataPipeline.description().is_empty());
+        assert!(!PromptTemplate::UiComponent.description().is_empty());
     }
 
     #[test]
@@ -226,13 +266,23 @@ mod tests {
             get_template("dependency-update"),
             Some(PromptTemplate::DependencyUpdate)
         );
+        assert_eq!(get_template("cli-tool"), Some(PromptTemplate::CliTool));
+        assert_eq!(get_template("web-api"), Some(PromptTemplate::WebApi));
+        assert_eq!(
+            get_template("data-pipeline"),
+            Some(PromptTemplate::DataPipeline)
+        );
+        assert_eq!(
+            get_template("ui-component"),
+            Some(PromptTemplate::UiComponent)
+        );
         assert_eq!(get_template("nonexistent"), None);
     }
 
     #[test]
     fn test_list_templates() {
         let templates = list_templates();
-        assert_eq!(templates.len(), 11);
+        assert_eq!(templates.len(), 15);
         assert!(templates.iter().any(|(name, _)| name == &"feature-spec"));
         assert!(templates.iter().any(|(name, _)| name == &"bug-fix"));
         assert!(templates
@@ -246,6 +296,10 @@ mod tests {
         assert!(templates
             .iter()
             .any(|(name, _)| name == &"dependency-update"));
+        assert!(templates.iter().any(|(name, _)| name == &"cli-tool"));
+        assert!(templates.iter().any(|(name, _)| name == &"web-api"));
+        assert!(templates.iter().any(|(name, _)| name == &"data-pipeline"));
+        assert!(templates.iter().any(|(name, _)| name == &"ui-component"));
     }
 
     #[test]

@@ -179,8 +179,7 @@ pub struct CompletionFlag {
         long,
         value_name = "SHELL",
         value_enum,
-        help = "Generate shell completion script (bash, zsh, fish, elvish, powershell)",
-        hide = true
+        help = "Generate shell completion script (bash, zsh, fish, elvish, powershell)"
     )]
     pub generate_completion: Option<Shell>,
 }
@@ -372,6 +371,20 @@ NEW TO RALPH?\n\
         ralph --init feature-spec         # Create PROMPT.md from template\n\
         ralph \"fix: my bug\"              # Run with AI agents\n\
 \n\
+    NOTE: There are two types of templates in Ralph:\n\
+    • Task templates (PROMPT.md) - Describe YOUR work to the AI (use --list-templates)\n\
+    • System prompts (backend) - Configure how AI agents behave (use --init-templates)\n\
+\n\
+╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
+\n\
+SHELL COMPLETION\n\
+    Enable tab-completion for faster command entry:\n\
+        ralph --generate-completion=bash  > ~/.local/share/bash-completion/completions/ralph\n\
+        ralph --generate-completion=zsh   > ~/.zsh/completion/_ralph\n\
+        ralph --generate-completion=fish  > ~/.config/fish/completions/ralph.fish\n\
+\n\
+    Then restart your shell or source the file.\n\
+\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
 PRESET MODES (pick how thorough AI should be):\n\
@@ -399,7 +412,7 @@ QUICK EXAMPLES:\n\
     ralph -Q \"fix: small bug\"        Quick mode for tiny fixes\n\
     ralph -U \"feat: add button\"      Rapid mode for minor features\n\
     ralph -a claude \"fix: bug\"       Use specific agent\n\
-    ralph --list-templates            See all PROMPT.md templates\n\
+    ralph --list-templates            See all PROMPT.md task templates\n\
     ralph --init bug-fix              # Smart init: create PROMPT.md from template\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
