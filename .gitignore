@@ -1,7 +1,15 @@
+# Agent files
 .agent/*
 .plan*
 .screenshots/*
 .playwright-mcp/*
+
+# Dependencies
 node_modules/
+
+# Build artifacts (we commit these for Codeberg Pages, but ignore in dist/)
+dist/
+
+# Source files to ignore
 PROMPT.md
 *.md

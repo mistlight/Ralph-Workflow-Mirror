@@ -21,7 +21,7 @@ export default defineConfig({
         'docs/writing-specs': resolve(__dirname, 'docs/writing-specs.html'),
       },
       output: {
-        // Use consistent asset names without hashes for committed dist/
+        // Use consistent asset names without hashes for committed build artifacts
         entryFileNames: 'assets/main.js',
         chunkFileNames: 'assets/main.js',
         assetFileNames: (assetInfo) => {
@@ -51,7 +51,7 @@ export default defineConfig({
     postcss: './postcss.config.cjs',
     devSourcemap: false,
   },
-  publicDir: 'assets',
+  publicDir: 'public',
   server: {
     port: 3000,
     open: true,

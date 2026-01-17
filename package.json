@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && npm run copy-assets",
-    "copy-assets": "cp -R dist/assets .",
+    "build": "tsc --noEmit && vite build && npm run copy-dist",
+    "copy-dist": "rm -f assets/main.css assets/main.js && cp dist/assets/* assets/ && cp dist/*.html . 2>/dev/null || true && cp -R dist/docs/* docs/ 2>/dev/null || true && cp dist/assets/*.svg assets/ 2>/dev/null || true",
     "preview": "vite preview",
+    "clean": "rm -rf dist assets/main.css assets/main.js",
     "lint:css": "stylelint \"src/styles/**/*.css\"",
     "screenshots": "node capture-screenshots.js",
     "screenshots:baseline": "node capture-screenshots.js baseline",
