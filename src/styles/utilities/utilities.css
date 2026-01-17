@@ -151,3 +151,178 @@
         padding: 0 var(--space-4);
     }
 }
+
+/* === ANIMATION & TRANSITION UTILITIES === */
+
+/* Scroll reveal animations */
+.scroll-reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.6s var(--ease-expo-out), transform 0.6s var(--ease-expo-out);
+}
+
+.scroll-reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Fade in animations */
+.fade-in {
+    opacity: 0;
+}
+
+.fade-in.is-visible {
+    opacity: 1;
+    transition: opacity 0.3s var(--ease-out);
+}
+
+/* Transform animations */
+.transform-animate {
+    transition: transform 0.3s var(--ease-out), opacity 0.3s var(--ease-out);
+}
+
+.transform-animate.from-start {
+    opacity: 0;
+    transform: translateY(10px);
+}
+
+.transform-animate.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Body scroll lock */
+.body-scroll-locked {
+    overflow: hidden;
+}
+
+/* Cursor spotlight effect */
+.cursor-spotlight {
+    background: radial-gradient(circle 200px at var(--spotlight-x, 50%) var(--spotlight-y, 50%), var(--color-primary-dim), transparent 40%);
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: fixed;
+    transition: opacity var(--duration-300) var(--ease-out);
+    z-index: var(--z-below);
+}
+
+.cursor-spotlight.is-active {
+    opacity: 1;
+}
+
+/* Storage warning notification */
+.storage-warning {
+    animation: slideUp var(--duration-300) var(--ease-out);
+    background: var(--color-warning);
+    border-radius: var(--radius-md);
+    bottom: var(--space-6);
+    box-shadow: var(--shadow-xl);
+    color: var(--color-bg);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    max-width: 300px;
+    padding: var(--space-3) var(--space-4);
+    position: fixed;
+    right: var(--space-6);
+    z-index: var(--z-tooltip);
+}
+
+.storage-warning-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-weight: var(--font-bold);
+    margin-left: var(--space-2);
+    padding: 0;
+}
+
+/* Tab content animation */
+.tab-content {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-out);
+}
+
+.tab-content.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Magnetic effect classes */
+.magnetic-element {
+    will-change: transform;
+}
+
+/* Parallax effect for hero glows */
+.parallax-glow {
+    will-change: transform;
+}
+
+/* Terminal line animation state */
+.terminal-line.typed {
+    opacity: 1;
+}
+
+/* Dark mode toggle rotation */
+.dark-mode-toggle.is-rotated {
+    transform: rotate(180deg);
+}
+
+/* Scroll progress indicator */
+.scroll-progress-bar {
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+    height: 3px;
+    transition: width var(--duration-100) linear;
+    width: var(--scroll-progress, 0%);
+}
+
+/* === MAGNETIC EFFECT STYLES === */
+
+/* Magnetic button effect */
+.btn.magnetic-active {
+    transform: translate(var(--magnetic-x, 0), var(--magnetic-y, 0)) scale(var(--magnetic-scale, 1));
+}
+
+/* Magnetic card effect */
+.card-magnetic-active {
+    transform: translate(var(--card-magnetic-x, 0), var(--card-magnetic-y, 0));
+}
+
+/* === PARALLAX EFFECT STYLES === */
+
+.parallax-glow.parallax-active {
+    transform: translate(var(--parallax-x, 0), var(--parallax-y, 0)) rotate(var(--parallax-rotation, 0deg));
+}
+
+/* === TITLE SCROLLING STYLES === */
+
+.hero-title.title-scrolling {
+    transform: scale(var(--title-scale, 1)) translateY(var(--title-translate-y, 0));
+    transition: transform 0.1s linear;
+}
+
+.hero-title.scrolling {
+    opacity: 0.9;
+}
+
+.hero-word.word-parallax-active {
+    transform: translateY(var(--word-translate-y, 0));
+    will-change: transform;
+}
+
+/* === NO MOTION CLASS FOR ACCESSIBILITY === */
+
+.no-motion {
+    opacity: 1;
+    transform: none;
+    transition: none;
+}
+
+/* Ensure no-motion overrides animation states */
+.no-motion.fade-in,
+.no-motion.scroll-reveal,
+.no-motion.transform-animate {
+    opacity: 1;
+    transform: none;
+}
