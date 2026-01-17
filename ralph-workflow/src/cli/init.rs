@@ -190,7 +190,7 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
 
 /// Handle the `--list-templates` flag.
 ///
-/// Lists all available PROMPT.md templates with descriptions.
+/// Lists all available PROMPT.md templates with descriptions, organized by category.
 ///
 /// # Arguments
 ///
@@ -200,35 +200,52 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
 ///
 /// Returns `true` if the flag was handled (program should exit after).
 pub fn handle_list_templates(colors: Colors) -> bool {
-    println!("Available PROMPT.md templates:");
+    println!("PROMPT.md Task Templates (use: ralph --init <template>)");
     println!();
 
-    let templates = list_templates();
-    let _max_name_len = templates
-        .iter()
-        .map(|(name, _)| name.len())
-        .max()
-        .unwrap_or(0);
-
-    for (name, description) in templates {
-        println!(
-            "  {}{}{}  {}{}{}",
-            colors.cyan(),
-            name,
-            colors.reset(),
-            colors.dim(),
-            description,
-            colors.reset()
-        );
-    }
-
+    // Common templates (most frequently used)
+    println!("{}Common Templates:{}", colors.bold(), colors.reset());
+    println!("  {}quick{}  Quick/small changes (typos, minor fixes)", colors.cyan(), colors.reset());
+    println!("  {}bug-fix{}  Bug fix with investigation guidance", colors.cyan(), colors.reset());
+    println!("  {}feature-spec{}  Comprehensive product specification", colors.cyan(), colors.reset());
+    println!("  {}refactor{}  Code refactoring with behavior preservation", colors.cyan(), colors.reset());
     println!();
-    println!("Usage: ralph --init-prompt <template>");
+
+    // Testing and documentation
+    println!("{}Testing & Documentation:{}", colors.bold(), colors.reset());
+    println!("  {}test{}  Test writing with edge case considerations", colors.cyan(), colors.reset());
+    println!("  {}docs{}  Documentation update with completeness checklist", colors.cyan(), colors.reset());
+    println!();
+
+    // Specialized development
+    println!("{}Specialized Development:{}", colors.bold(), colors.reset());
+    println!("  {}cli-tool{}  CLI tool with argument parsing and completion", colors.cyan(), colors.reset());
+    println!("  {}web-api{}  REST/HTTP API with error handling", colors.cyan(), colors.reset());
+    println!("  {}ui-component{}  UI component with accessibility and responsive design", colors.cyan(), colors.reset());
+    println!();
+
+    // Advanced/Infrastructure
+    println!("{}Advanced & Infrastructure:{}", colors.bold(), colors.reset());
+    println!("  {}performance-optimization{}  Performance optimization with benchmarking", colors.cyan(), colors.reset());
+    println!("  {}security-audit{}  Security audit with OWASP Top 10 coverage", colors.cyan(), colors.reset());
+    println!("  {}api-integration{}  API integration with retry logic and resilience", colors.cyan(), colors.reset());
+    println!("  {}database-migration{}  Database migration with zero-downtime strategies", colors.cyan(), colors.reset());
+    println!("  {}dependency-update{}  Dependency update with breaking change handling", colors.cyan(), colors.reset());
+    println!("  {}data-pipeline{}  Data pipeline with ETL and monitoring", colors.cyan(), colors.reset());
+    println!();
+
+    println!("Usage: ralph --init <template>");
+    println!("       ralph --init-prompt <template>");
     println!();
     println!("Example:");
-    println!("  ralph --init-prompt feature-spec   # Create comprehensive spec template");
-    println!("  ralph --init-prompt bug-fix        # Create bug fix template");
-    println!("  ralph --init-prompt quick          # Create quick change template");
+    println!("  ralph --init bug-fix              # Create bug fix template");
+    println!("  ralph --init feature-spec         # Create feature spec template");
+    println!("  ralph --init quick                # Create quick change template");
+    println!();
+    println!("{}Tip:{}", colors.yellow(), colors.reset());
+    println!("  Use --init without a value to auto-detect what you need.");
+    println!("  Run ralph --help to understand the difference between Task Templates");
+    println!("  (for PROMPT.md) and System Prompts (backend AI configuration).");
 
     true
 }

@@ -97,13 +97,20 @@ pub struct UnifiedInitFlags {
     ///   - If config doesn't exist: creates config
     ///   - If config exists but PROMPT.md doesn't: prompts for PROMPT.md creation
     ///   - If both exist: shows helpful message about what's already set up
+    ///
+    /// Template names for completion (PROMPT.md task templates):
+    /// quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
+    /// performance-optimization, security-audit, api-integration, database-migration,
+    /// dependency-update, data-pipeline, ui-component
     #[arg(
         long,
         conflicts_with_all = ["init_global", "init_config", "init_legacy", "init_prompt"],
         help = "Smart init: create config or PROMPT.md (infers from current state)",
         value_name = "TEMPLATE",
         num_args = 0..=1,
-        require_equals = true
+        require_equals = true,
+        // Cannot use possible_values here due to Option<String> type with optional value
+        // Completion is handled via --generate-completion
     )]
     pub init: Option<String>,
 
@@ -639,6 +646,11 @@ pub struct Args {
     pub config: Option<std::path::PathBuf>,
 
     /// Initialize PROMPT.md from template and exit
+    ///
+    /// Available templates (PROMPT.md task templates):
+    /// quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
+    /// performance-optimization, security-audit, api-integration, database-migration,
+    /// dependency-update, data-pipeline, ui-component
     #[arg(
         long,
         value_name = "TEMPLATE",
