@@ -603,10 +603,24 @@ footer a:hover {
 /* Improved mobile tap feedback */
 @media (--lg) {
     .btn:active,
-    .audience-btn:active,
+    .audience-option:active,
     .faq-summary:active {
         background-color: var(--color-bg-hover);
         transform: scale(0.98);
+    }
+
+    /* Ensure touch targets meet minimum 44x44px */
+    .btn,
+    .audience-option,
+    .nav-link {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .nav-link {
+        display: flex;
+        align-items: center;
+        padding: var(--space-3) var(--space-4);
     }
 }
 
@@ -1392,4 +1406,55 @@ dt {
 dd {
     margin-bottom: var(--space-4);
     margin-left: 0;
+}
+
+/* === PREMIUM CARD HOVER CONSISTENCY === */
+
+/* Ensure all card-like elements have consistent hover lift */
+.card,
+.feature-card,
+.comparison-card,
+.license-card,
+.contribute-card,
+.value-card,
+.install-card,
+.prereq-card,
+.quick-benefit-card,
+.glossary-term,
+.audience-card,
+.key-point,
+.sidebar-card {
+    &:hover {
+        /* Consistent subtle lift across all cards */
+        transform: translateY(-4px);
+    }
+}
+
+/* === ENHANCED CODE INLINE STYLING === */
+
+code:not(pre code) {
+    background-color: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius-sm);
+    color: var(--code-text);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    padding: var(--space-1) var(--space-2);
+    transition: all var(--duration-150) var(--ease-out);
+
+    &:hover {
+        background-color: var(--color-primary-dim);
+        border-color: var(--color-primary);
+        box-shadow: 0 0 15px var(--color-primary-glow);
+        cursor: help;
+    }
+}
+
+/* === IMPROVED BADGE CONSISTENCY === */
+
+.badge {
+    &:hover {
+        /* More controlled scale on hover */
+        transform: translateY(-1px) scale(1.01);
+    }
 }
