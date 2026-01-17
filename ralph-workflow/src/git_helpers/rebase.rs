@@ -52,6 +52,7 @@ pub enum RebaseResult {
 /// - Empty repository (no commits) - Returns `Ok(RebaseResult::NoOp)`
 /// - Unborn branch - Returns `Ok(RebaseResult::NoOp)`
 /// - Already up-to-date - Returns `Ok(RebaseResult::NoOp)`
+/// - Unrelated branches (no shared ancestor) - Returns `Ok(RebaseResult::NoOp)`
 /// - Conflicts during rebase - Returns `Ok(RebaseResult::Conflicts)`
 ///
 /// # Note
@@ -96,6 +97,16 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
         .map_err(|e| git2_to_io_error(&e))?
     {
         // Already up-to-date
+        return Ok(RebaseResult::NoOp);
+    }
+
+    // Check if branches share a common ancestor
+    // If merge_base fails, the branches are unrelated
+    if repo
+        .merge_base(head_commit.id(), upstream_commit.id())
+        .is_err()
+    {
+        // Branches are unrelated - no shared history
         return Ok(RebaseResult::NoOp);
     }
 
