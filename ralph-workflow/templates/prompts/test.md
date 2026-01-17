@@ -6,6 +6,15 @@
 [What testing you want to add]
 [What gaps currently exist in test coverage]
 
+**EXAMPLE:**
+```markdown
+## Goal
+Add comprehensive test coverage for the password reset functionality.
+
+Currently password reset has no test coverage, which is risky since it involves
+security-critical operations like token generation and validation.
+```
+
 ## Questions to Consider
 Before adding tests:
 

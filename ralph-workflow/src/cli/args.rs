@@ -213,10 +213,11 @@ pub struct TemplateListFlag {
 /// Template management subcommands.
 #[derive(Parser, Debug, Default)]
 pub struct TemplateCommands {
-    /// Initialize user templates directory
+    /// Initialize user templates directory with system prompts (backend AI prompts)
     #[arg(
-        long = "init-templates",
-        help = "Create ~/.config/ralph/templates/ with default system prompts (backend AI prompts)",
+        long = "init-system-prompts",
+        alias = "init-templates",
+        help = "Create ~/.config/ralph/templates/ with default system prompts (backend AI behavior configuration, NOT task templates for PROMPT.md)",
         default_missing_value = "false",
         num_args = 0..=1,
         require_equals = true
@@ -227,7 +228,7 @@ pub struct TemplateCommands {
     #[arg(
         long,
         requires = "init_templates",
-        help = "Overwrite existing templates during init"
+        help = "Overwrite existing system prompt templates during init (use with caution)"
     )]
     pub force: bool,
 
@@ -265,7 +266,7 @@ pub struct TemplateCommands {
 }
 
 impl TemplateCommands {
-    /// Check if --init-templates flag was provided.
+    /// Check if --init-system-prompts or --init-templates flag was provided.
     pub const fn init_templates_enabled(&self) -> bool {
         self.init_templates.is_some()
     }
@@ -368,12 +369,15 @@ pub struct RebaseFlags {
 \n\
 NEW TO RALPH?\n\
     Just want to get started? Run:\n\
-        ralph --init feature-spec         # Create PROMPT.md from template\n\
+        ralph --init feature-spec         # Create PROMPT.md from task template\n\
         ralph \"fix: my bug\"              # Run with AI agents\n\
 \n\
-    NOTE: There are two types of templates in Ralph:\n\
-    • Task templates (PROMPT.md) - Describe YOUR work to the AI (use --list-templates)\n\
-    • System prompts (backend) - Configure how AI agents behave (use --init-templates)\n\
+    UNDERSTANDING TEMPLATES IN RALPH:\n\
+    • Task templates (PROMPT.md)  - For YOUR work descriptions (bug-fix, feature-spec, etc.)\n\
+      Use: --list-templates, --init <template>, --init-prompt <template>\n\
+\n\
+    • System prompts (backend AI)   - Configure AI agent behavior (developer, reviewer)\n\
+      Use: --init-system-prompts, --list, --show <name>\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
@@ -412,8 +416,8 @@ QUICK EXAMPLES:\n\
     ralph -Q \"fix: small bug\"        Quick mode for tiny fixes\n\
     ralph -U \"feat: add button\"      Rapid mode for minor features\n\
     ralph -a claude \"fix: bug\"       Use specific agent\n\
-    ralph --list-templates            See all PROMPT.md task templates\n\
-    ralph --init bug-fix              # Smart init: create PROMPT.md from template\n\
+    ralph --list-templates            See all task templates for PROMPT.md\n\
+    ralph --init bug-fix              # Smart init: create PROMPT.md from task template\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
 // CLI arguments naturally use many boolean flags. These represent independent

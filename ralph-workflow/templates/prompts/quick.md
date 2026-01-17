@@ -5,6 +5,12 @@
 ## Goal
 [One-line description of the change]
 
+**EXAMPLE:**
+```markdown
+## Goal
+Update the copyright year in the footer from 2023 to 2024.
+```
+
 ## Questions to Consider
 Quick check before implementing:
 - What exactly needs to change?

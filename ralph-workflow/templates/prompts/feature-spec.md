@@ -11,6 +11,12 @@
 - ❌ "Improve user experience" (too vague)
 - ❌ "Fix the thing" (doesn't say what)
 
+**EXAMPLE:**
+```markdown
+## Goal
+Add a file upload feature that allows users to upload and profile images with drag-and-drop support.
+```
+
 ## Questions to Consider
 Before implementing, think through:
 

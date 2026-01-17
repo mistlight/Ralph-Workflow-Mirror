@@ -293,10 +293,10 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
             let cost = usize::from(a_char != b_char);
             curr_row[j + 1] = std::cmp::min(
                 std::cmp::min(
-                    curr_row[j] + 1,         // deletion
-                    prev_row[j + 1] + 1,     // insertion
+                    curr_row[j] + 1,     // deletion
+                    prev_row[j + 1] + 1, // insertion
                 ),
-                prev_row[j] + cost,          // substitution
+                prev_row[j] + cost, // substitution
             );
         }
 

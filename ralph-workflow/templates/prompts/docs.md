@@ -6,6 +6,15 @@
 [What documentation needs to be written/updated]
 [Why this documentation is needed]
 
+**EXAMPLE:**
+```markdown
+## Goal
+Write API documentation for the new authentication endpoints.
+
+We just added OAuth login functionality but there's no documentation for
+developers on how to integrate with it.
+```
+
 ## Questions to Consider
 Before documenting:
 

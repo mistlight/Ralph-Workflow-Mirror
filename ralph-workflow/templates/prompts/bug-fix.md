@@ -44,6 +44,25 @@ Be specific and numbered:
 **Expected Behavior:**
 [What should happen instead]
 
+**EXAMPLE:**
+```markdown
+## Issue
+User login fails when password contains special characters like `@` or `#`.
+
+**Steps to Reproduce:**
+1. Navigate to login page
+2. Enter username: test@example.com
+3. Enter password: P@ssw0rd#123
+4. Click login button
+
+**Actual Behavior:**
+Returns error "Invalid credentials" even with correct password.
+Console shows: "URI malformed" error in URL encoding.
+
+**Expected Behavior:**
+User should be able to login with any valid password including special characters.
+```
+
 ## Acceptance
 - [Bug is fixed and no longer occurs]
 - [Reproduction test case added to prevent regressions]

@@ -13,6 +13,16 @@
 - Make code easier to test or maintain
 - Update to use newer patterns or APIs
 
+**EXAMPLE:**
+```markdown
+## Goal
+Extract duplicated user validation logic from create_user(), update_user(), and register_user()
+into a single reusable validate_user_input() function.
+
+The current code has the same 30 lines of validation logic repeated in three different places,
+making it error-prone to maintain and update.
+```
+
 ## Questions to Consider
 Before refactoring:
 
