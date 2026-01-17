@@ -988,9 +988,15 @@ footer a {
         border-color: var(--border-accent);
 
         .faq-toggle {
+            color: var(--color-primary);
             transform: rotate(45deg);
         }
     }
+}
+
+.faq-toggle {
+    transition: color var(--duration-200) var(--ease-out),
+                transform var(--duration-300) var(--ease-expo-out);
 }
 
 .faq-details {

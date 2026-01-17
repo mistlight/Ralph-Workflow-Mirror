@@ -314,22 +314,26 @@ pre code {
 
 .copy-btn {
     align-items: center;
-    background-color: transparent;
-    border: 1px solid var(--border-soft);
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--border-medium);
     border-radius: var(--radius-md);
-    color: var(--color-text-dim);
+    color: var(--color-text-muted);
     cursor: pointer;
     display: flex;
     height: 32px;
     justify-content: center;
-    transition: all var(--duration-150) var(--ease-out);
+    opacity: 0.9;
+    transition: all var(--duration-150) var(--ease-expo-out);
     width: 32px;
 }
 
 .copy-btn:hover {
     background-color: var(--color-primary-dim);
     border-color: var(--border-accent);
+    box-shadow: 0 0 12px rgb(0 212 255 / 15%);
     color: var(--color-primary);
+    opacity: 1;
+    transform: scale(1.05);
 }
 
 .copy-btn:active {
@@ -410,8 +414,8 @@ code, .inline-code, .inline {
 
 .install-copy-btn {
     align-items: center;
-    background-color: transparent;
-    border: 1px solid var(--border-soft);
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--border-medium);
     border-radius: var(--radius-md);
     color: var(--color-text-muted);
     cursor: pointer;
@@ -419,14 +423,18 @@ code, .inline-code, .inline {
     flex-shrink: 0;
     height: 36px;
     justify-content: center;
-    transition: all var(--duration-150) var(--ease-out);
+    opacity: 0.9;
+    transition: all var(--duration-150) var(--ease-expo-out);
     width: 36px;
 }
 
 .install-copy-btn:hover {
     background-color: var(--color-primary-dim);
     border-color: var(--border-accent);
+    box-shadow: 0 0 12px rgb(0 212 255 / 15%);
     color: var(--color-primary);
+    opacity: 1;
+    transform: scale(1.05);
 }
 
 .install-copy-btn.copied {

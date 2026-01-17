@@ -543,7 +543,7 @@
     overflow: hidden;
     padding: var(--space-2) var(--space-4);
     position: relative;
-    transition: all var(--duration-200) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 /* Subtle shine effect on hover */
@@ -563,18 +563,20 @@
 .audience-option:hover {
     background-color: var(--color-bg-hover);
     border-color: var(--border-accent);
-    box-shadow: 0 2px 8px rgb(0 212 255 / 15%);
+    box-shadow: 0 4px 12px rgb(0 212 255 / 20%);
     color: var(--color-text);
-    transform: translateY(-1px);
+    transform: translateY(-2px) scale(1.02);
 }
 
 .audience-option[aria-pressed="true"],
 .audience-option.active {
     background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
     border-color: var(--color-primary-light);
-    box-shadow: var(--shadow-glow-sm), 0 0 20px var(--color-primary-glow);
+    box-shadow: var(--shadow-glow-sm),
+                0 0 24px var(--color-primary-glow),
+                0 4px 12px rgb(0 212 255 / 25%);
     color: var(--color-bg);
-    transform: translateY(-1px);
+    transform: translateY(-2px) scale(1.02);
 }
 
 /* Add inner glow for active state */
