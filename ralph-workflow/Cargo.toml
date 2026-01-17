@@ -22,6 +22,8 @@ path = "src/main.rs"
 [features]
 # INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
 default = []
+# Export test utilities for integration tests (TestPrinter, parser test methods)
+test-export = []
 
 [dependencies]
 # CLI argument parsing

@@ -47,25 +47,6 @@ impl TestPrinter {
         result
     }
 
-    /// Clear all captured output.
-    pub fn clear(&self) {
-        self.output.borrow_mut().clear();
-        self.buffer.borrow_mut().clear();
-    }
-
-    /// Check if a specific line exists in the output.
-    pub fn has_line(&self, line: &str) -> bool {
-        self.get_lines().iter().any(|l| l.contains(line))
-    }
-
-    /// Get the number of times a specific pattern appears in output.
-    pub fn count_pattern(&self, pattern: &str) -> usize {
-        self.get_lines()
-            .iter()
-            .filter(|l| l.contains(pattern))
-            .count()
-    }
-
     /// Check if there are duplicate consecutive lines in output.
     pub fn has_duplicate_consecutive_lines(&self) -> bool {
         let lines = self.get_lines();

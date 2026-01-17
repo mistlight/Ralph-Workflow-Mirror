@@ -40,6 +40,7 @@ use std::rc::Rc;
 
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
+#[cfg(any(test, feature = "test-export"))]
 use super::health::StreamingQualityMetrics;
 use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
@@ -130,6 +131,7 @@ impl GeminiParser {
     /// # Returns
     ///
     /// A clone of the shared printer reference (`Rc<RefCell<dyn Printable>>`)
+    #[cfg(any(test, feature = "test-export"))]
     #[allow(
         dead_code,
         reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
@@ -146,6 +148,7 @@ impl GeminiParser {
     /// # Returns
     ///
     /// A copy of the streaming quality metrics from the internal `StreamingSession`.
+    #[cfg(any(test, feature = "test-export"))]
     #[allow(
         dead_code,
         reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
