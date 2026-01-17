@@ -221,6 +221,28 @@
     box-shadow: 0 0 8px var(--color-lime-glow);
 }
 
+.badge-sage {
+    background-color: var(--color-primary-dim);
+    border: 1px solid var(--border-accent);
+    color: var(--color-primary);
+}
+
+.badge-sage .badge-dot {
+    background-color: var(--color-primary);
+    box-shadow: 0 0 8px var(--color-primary-glow);
+}
+
+.badge-green {
+    background-color: var(--color-lime-dim);
+    border: 1px solid rgb(163 255 18 / 25%);
+    color: var(--color-lime);
+}
+
+.badge-green .badge-dot {
+    background-color: var(--color-lime);
+    box-shadow: 0 0 8px var(--color-lime-glow);
+}
+
 /* === HERO TITLE === */
 
 .hero-title {
