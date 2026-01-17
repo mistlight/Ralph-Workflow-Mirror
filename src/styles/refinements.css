@@ -91,17 +91,20 @@ h2::after {
 
 /* Improved button press feedback with smoother timing */
 .btn {
-    transition: all var(--duration-150) var(--ease-expo-out);
+    transition: transform var(--duration-150) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out),
+                background-color var(--duration-200) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out);
     will-change: transform;
 }
 
-.btn:active {
-    transform: translateY(var(--size-xs)) scale(var(--scale-098));
-    transition: transform var(--duration-100) var(--ease-out);
+.btn:hover {
+    transform: translateY(calc(var(--lift-sm) * -1));
 }
 
-.btn:hover {
-    transform: translateY(-1px);
+.btn:active {
+    transform: translateY(var(--size-xs)) scale(var(--scale-097));
+    transition: transform var(--duration-75) var(--ease-out);
 }
 
 /* Enhanced button glow on hover with staggered timing */
@@ -126,18 +129,19 @@ h2::after {
     box-shadow: var(--shadow-glow-sm),
                 0 0 20px var(--color-primary-dim),
                 inset 0 1px 0 var(--white-alpha-10);
+    transform: translateY(calc(var(--lift-sm) * -1));
 }
 
 /* Enhanced button active states */
 .btn-primary:active {
     background: var(--color-primary-dark);
     box-shadow: var(--shadow-glow-sm);
-    transform: translateY(1px);
+    transform: translateY(var(--size-xs)) scale(var(--scale-097));
 }
 
 .btn-secondary:active {
     background-color: var(--color-primary-dim);
-    transform: translateY(1px);
+    transform: translateY(var(--size-xs)) scale(var(--scale-097));
 }
 
 /* Ghost button refinement with gradient reveal */
@@ -147,6 +151,7 @@ h2::after {
                 var(--color-bg-card) 100%);
     border-color: var(--border-accent);
     box-shadow: 0 0 20px var(--color-primary-dim);
+    transform: translateY(calc(var(--lift-sm) * -1));
 }
 
 /* Audience selection button interactions */
@@ -267,14 +272,28 @@ h2::after {
     transition: opacity var(--duration-300) var(--ease-expo-out);
 }
 
+.terminal-window::after {
+    background: radial-gradient(ellipse at 50% 0%,
+                var(--primary-alpha-8) 0%,
+                transparent 70%);
+    content: '';
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transition: opacity var(--duration-300) var(--ease-expo-out);
+}
+
 .terminal-window:hover {
     border-color: var(--border-accent);
     box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 40px var(--color-primary-dim);
-    transform: translateY(-2px);
+    transform: translateY(calc(var(--lift-sm) * -1));
 }
 
 .terminal-window:hover::before,
-.terminal-window:focus-within::before {
+.terminal-window:hover::after,
+.terminal-window:focus-within::before,
+.terminal-window:focus-within::after {
     opacity: 1;
 }
 
@@ -439,7 +458,7 @@ h2::after {
 /* Navigation link base styles */
 .nav-link {
     position: relative;
-    transition: all var(--duration-150) var(--ease-out);
+    transition: all var(--duration-200) var(--ease-expo-out);
 }
 
 .nav-link:focus-visible {
@@ -450,6 +469,12 @@ h2::after {
 
 .nav-link:active {
     transform: scale(var(--scale-097));
+}
+
+.nav-link:hover {
+    background-color: var(--color-bg-hover);
+    color: var(--color-text);
+    transform: translateY(-1px);
 }
 
 /* Navigation link underline animation */
@@ -484,11 +509,6 @@ h2::after {
     box-shadow: 0 0 0 1px var(--border-accent),
                 0 0 30px var(--color-primary-glow),
                 inset 0 0 20px var(--color-primary-dim);
-    color: var(--color-primary);
-}
-
-.nav-link:hover {
-    background-color: var(--color-bg-hover);
     color: var(--color-primary);
 }
 
@@ -593,6 +613,7 @@ h2::after {
     border-color: var(--border-accent);
     border-left-width: 3px;
     padding-left: var(--space-5);
+    transform: translateX(2px);
 }
 
 .faq-summary:hover::before {
@@ -607,7 +628,7 @@ h2::after {
 }
 
 .faq-summary:active {
-    transform: scale(var(--scale-099));
+    transform: translateX(2px) scale(var(--scale-099));
     transition: transform var(--duration-100) var(--ease-out);
 }
 
