@@ -40,7 +40,6 @@ use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
 use super::health::HealthMonitor;
-#[cfg(feature = "test-utils")]
 use super::health::StreamingQualityMetrics;
 use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
@@ -129,7 +128,7 @@ impl CodexParser {
         self
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -143,8 +142,10 @@ impl CodexParser {
     /// # Returns
     ///
     /// A clone of the shared printer reference (`Rc<RefCell<dyn Printable>>`)
-    #[cfg(feature = "test-utils")]
-    #[allow(dead_code, reason = "Used by integration tests")]
+    #[allow(
+        dead_code,
+        reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
+    )]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -157,8 +158,10 @@ impl CodexParser {
     /// # Returns
     ///
     /// A copy of the streaming quality metrics from the internal `StreamingSession`.
-    #[cfg(feature = "test-utils")]
-    #[allow(dead_code, reason = "Used by integration tests")]
+    #[allow(
+        dead_code,
+        reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
+    )]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()

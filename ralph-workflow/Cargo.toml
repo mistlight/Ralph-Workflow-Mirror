@@ -22,10 +22,6 @@ path = "src/main.rs"
 [features]
 # INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
 default = []
-# INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
-test-utils = []
-# Automatically enable test-utils when running tests
-test = ["test-utils"]
 
 [dependencies]
 # CLI argument parsing

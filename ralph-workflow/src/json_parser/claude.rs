@@ -43,7 +43,6 @@ use std::rc::Rc;
 
 use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
-#[cfg(feature = "test-utils")]
 use super::health::StreamingQualityMetrics;
 use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
@@ -164,7 +163,7 @@ impl ClaudeParser {
     /// # Returns
     ///
     /// Self for builder pattern chaining
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -195,8 +194,10 @@ impl ClaudeParser {
     /// let printer_ref = parser.printer().borrow();
     /// assert!(!printer_ref.has_duplicate_consecutive_lines());
     /// ```
-    #[cfg(feature = "test-utils")]
-    #[allow(dead_code, reason = "Used by integration tests")]
+    #[allow(
+        dead_code,
+        reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
+    )]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -231,8 +232,10 @@ impl ClaudeParser {
     /// let metrics = parser.streaming_metrics();
     /// assert!(metrics.snapshot_repairs_count > 0, "Snapshot repairs should occur");
     /// ```
-    #[cfg(feature = "test-utils")]
-    #[allow(dead_code, reason = "Used by integration tests")]
+    #[allow(
+        dead_code,
+        reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
+    )]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()
@@ -1173,13 +1176,13 @@ impl ClaudeParser {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "test-utils")]
+    #[cfg(test)]
     use super::*;
-    #[cfg(feature = "test-utils")]
+    #[cfg(test)]
     use crate::json_parser::printer::{SharedPrinter, TestPrinter};
 
     #[test]
-    #[cfg(feature = "test-utils")]
+    #[cfg(test)]
     fn test_printer_method_accessible() {
         // Test that the printer() method is accessible and returns a SharedPrinter
         let test_printer: SharedPrinter = Rc::new(RefCell::new(TestPrinter::new()));
@@ -1191,7 +1194,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-utils")]
+    #[cfg(test)]
     fn test_streaming_metrics_method_accessible() {
         // Test that the streaming_metrics() method is accessible
         let test_printer: SharedPrinter = Rc::new(RefCell::new(TestPrinter::new()));

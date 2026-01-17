@@ -29,8 +29,8 @@ use std::io::Cursor;
 use std::path::Path;
 use std::rc::Rc;
 
+use crate::printer::{SharedPrinter, TestPrinter};
 use ralph_workflow::config::Verbosity;
-use ralph_workflow::json_parser::printer::{SharedPrinter, TestPrinter};
 use ralph_workflow::json_parser::ClaudeParser;
 use ralph_workflow::logger::Colors;
 
@@ -42,9 +42,9 @@ fn verify_no_duplicates(printer: &TestPrinter, context: &str) {
     let duplicates = printer.find_duplicate_consecutive_lines();
 
     // Filter out empty/whitespace line duplicates (known edge case from completion newlines)
-    let non_empty_duplicates: Vec<_> = duplicates
+    let non_empty_duplicates: Vec<(usize, String)> = duplicates
         .into_iter()
-        .filter(|(_, content)| !content.trim().is_empty())
+        .filter(|(_, content): &(usize, String)| !content.trim().is_empty())
         .collect();
 
     if !non_empty_duplicates.is_empty() {

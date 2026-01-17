@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::io::{self, IsTerminal, Stdout};
 use std::rc::Rc;
 
-#[cfg(all(feature = "test-utils", test))]
+#[cfg(test)]
 use std::io::Stderr;
 
 /// Trait for output destinations in parsers.
@@ -66,13 +66,13 @@ impl Printable for StdoutPrinter {
 
 /// Printer that writes to stderr.
 #[derive(Debug)]
-#[cfg(all(feature = "test-utils", test))]
+#[cfg(test)]
 pub struct StderrPrinter {
     stderr: Stderr,
     is_terminal: bool,
 }
 
-#[cfg(all(feature = "test-utils", test))]
+#[cfg(test)]
 impl StderrPrinter {
     /// Create a new stderr printer.
     pub fn new() -> Self {
@@ -84,14 +84,14 @@ impl StderrPrinter {
     }
 }
 
-#[cfg(all(feature = "test-utils", test))]
+#[cfg(test)]
 impl Default for StderrPrinter {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(all(feature = "test-utils", test))]
+#[cfg(test)]
 impl std::io::Write for StderrPrinter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.stderr.write(buf)
@@ -102,7 +102,7 @@ impl std::io::Write for StderrPrinter {
     }
 }
 
-#[cfg(all(feature = "test-utils", test))]
+#[cfg(test)]
 impl Printable for StderrPrinter {
     fn is_terminal(&self) -> bool {
         self.is_terminal
@@ -113,6 +113,7 @@ impl Printable for StderrPrinter {
 ///
 /// This printer stores all output in memory for testing purposes.
 /// It provides methods to retrieve and inspect the captured output.
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub struct TestPrinter {
     /// Captured output lines.
@@ -121,6 +122,7 @@ pub struct TestPrinter {
     buffer: RefCell<String>,
 }
 
+#[cfg(test)]
 impl TestPrinter {
     /// Create a new test printer.
     pub fn new() -> Self {
@@ -198,6 +200,7 @@ impl TestPrinter {
     }
 }
 
+#[cfg(test)]
 impl std::io::Write for TestPrinter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s =
@@ -225,7 +228,7 @@ impl std::io::Write for TestPrinter {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(test)]
 impl Printable for TestPrinter {
     fn is_terminal(&self) -> bool {
         // Test printer is never a terminal
@@ -261,7 +264,7 @@ mod tests {
         let _is_term = printer.is_terminal();
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     #[test]
     fn test_printable_trait_is_terminal() {
         let printer = StdoutPrinter::new();
@@ -270,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     fn test_stderr_printer() {
         let mut printer = StderrPrinter::new();
         // Just ensure it compiles and works
@@ -280,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     fn test_printer_captures_output() {
         let mut printer = TestPrinter::new();
 
@@ -294,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     fn test_printer_get_lines() {
         let mut printer = TestPrinter::new();
 
@@ -308,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     fn test_printer_clear() {
         let mut printer = TestPrinter::new();
 
@@ -321,7 +324,7 @@ mod tests {
         assert!(printer.get_output().is_empty());
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     #[test]
     fn test_printer_has_line() {
         let mut printer = TestPrinter::new();
@@ -334,7 +337,7 @@ mod tests {
         assert!(!printer.has_line("Goodbye"));
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     #[test]
     fn test_printer_count_pattern() {
         let mut printer = TestPrinter::new();
@@ -345,7 +348,7 @@ mod tests {
         assert_eq!(printer.count_pattern("test"), 3);
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     #[test]
     fn test_printer_detects_duplicates() {
         let mut printer = TestPrinter::new();
@@ -356,7 +359,7 @@ mod tests {
         assert!(printer.has_duplicate_consecutive_lines());
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     #[test]
     fn test_printer_finds_duplicates() {
         let mut printer = TestPrinter::new();
@@ -374,7 +377,7 @@ mod tests {
         assert_eq!(duplicates[1].1, "Line 3\n");
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     #[test]
     fn test_printer_no_false_positives() {
         let mut printer = TestPrinter::new();
@@ -385,7 +388,7 @@ mod tests {
         assert!(!printer.has_duplicate_consecutive_lines());
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     #[test]
     fn test_printer_buffer_handling() {
         let mut printer = TestPrinter::new();
@@ -409,7 +412,7 @@ mod tests {
         assert!(output.contains("Partial content\n"));
     }
 
-    #[cfg(all(feature = "test-utils", test))]
+    #[cfg(test)]
     #[test]
     fn test_printer_get_stats() {
         let mut printer = TestPrinter::new();

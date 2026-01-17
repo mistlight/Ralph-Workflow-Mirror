@@ -2,6 +2,10 @@
 members = ["ralph-workflow", "test-helpers", "tests"]
 resolver = "2"
 
+[workspace.metadata.test-workspace]
+# Integration tests are in a separate workspace
+test-members = ["tests"]
+
 [workspace.dependencies]
 # Shared dependencies for all workspace members
 git2 = "0.18"
