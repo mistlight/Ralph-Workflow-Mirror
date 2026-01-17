@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
 export default defineConfig({
+  // Use relative paths for file:// protocol compatibility
+  base: './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
