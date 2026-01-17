@@ -11,8 +11,8 @@ use crate::templates::{get_template, list_templates, ALL_TEMPLATES};
 use std::fs;
 use std::path::Path;
 
-/// Minimum similarity threshold for suggesting alternatives (0.0 to 1.0).
-const MIN_SIMILARITY: f64 = 0.4;
+/// Minimum similarity threshold for suggesting alternatives (0-100 percentage).
+const MIN_SIMILARITY_PERCENT: u32 = 40;
 
 /// Handle the `--init-global` flag.
 ///
@@ -309,7 +309,6 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 /// Calculate similarity score as a percentage (0-100).
 ///
 /// This avoids floating point comparison issues in tests.
-#[allow(clippy::cast_possible_truncation)]
 fn similarity_percentage(a: &str, b: &str) -> u32 {
     if a == b {
         return 100;
@@ -328,14 +327,13 @@ fn similarity_percentage(a: &str, b: &str) -> u32 {
     // Calculate percentage without floating point
     // (100 * (max_len - distance)) / max_len
     let diff = max_len.saturating_sub(distance);
-    ((100 * diff) / max_len) as u32
+    // The division result is guaranteed to fit in u32 since it's ≤ 100
+    u32::try_from((100 * diff) / max_len).unwrap_or(0)
 }
 
 /// Find the best matching template names using fuzzy matching.
 ///
 /// Returns templates that are similar to the input within the threshold.
-#[allow(clippy::cast_possible_truncation)]
-#[allow(clippy::cast_sign_loss)]
 fn find_similar_templates(input: &str) -> Vec<(&'static str, u32)> {
     let input_lower = input.to_lowercase();
     let mut matches: Vec<(&'static str, u32)> = ALL_TEMPLATES
@@ -345,7 +343,7 @@ fn find_similar_templates(input: &str) -> Vec<(&'static str, u32)> {
             let sim = similarity_percentage(&input_lower, &name.to_lowercase());
             (name, sim)
         })
-        .filter(|(_, sim)| *sim >= (MIN_SIMILARITY * 100.0) as u32)
+        .filter(|(_, sim)| *sim >= MIN_SIMILARITY_PERCENT)
         .collect();
 
     // Sort by similarity (highest first)
