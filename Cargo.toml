@@ -1,5 +1,6 @@
 [workspace]
 members = ["ralph-workflow", "test-helpers", "tests"]
+default-members = ["ralph-workflow", "test-helpers"]
 resolver = "2"
 
 [workspace.metadata.test-workspace]

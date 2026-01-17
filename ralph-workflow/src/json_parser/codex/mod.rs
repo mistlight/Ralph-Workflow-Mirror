@@ -144,10 +144,6 @@ impl CodexParser {
     ///
     /// A clone of the shared printer reference (`Rc<RefCell<dyn Printable>>`)
     #[cfg(any(test, feature = "test-export"))]
-    #[allow(
-        dead_code,
-        reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
-    )]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -161,10 +157,6 @@ impl CodexParser {
     ///
     /// A copy of the streaming quality metrics from the internal `StreamingSession`.
     #[cfg(any(test, feature = "test-export"))]
-    #[allow(
-        dead_code,
-        reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
-    )]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()

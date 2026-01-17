@@ -196,10 +196,6 @@ impl ClaudeParser {
     /// assert!(!printer_ref.has_duplicate_consecutive_lines());
     /// ```
     #[cfg(any(test, feature = "test-export"))]
-    #[allow(
-        dead_code,
-        reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
-    )]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -235,10 +231,6 @@ impl ClaudeParser {
     /// assert!(metrics.snapshot_repairs_count > 0, "Snapshot repairs should occur");
     /// ```
     #[cfg(any(test, feature = "test-export"))]
-    #[allow(
-        dead_code,
-        reason = "Used by integration tests in tests/deduplication_integration_tests.rs"
-    )]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()
