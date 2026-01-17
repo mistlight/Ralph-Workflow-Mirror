@@ -10,9 +10,9 @@
 a:focus-visible,
 button:focus-visible,
 .btn:focus-visible {
-    box-shadow: 0 0 0 4px var(--color-primary-dim), 0 0 12px var(--color-primary-glow);
+    box-shadow: 0 0 0 3px var(--color-primary-dim), 0 0 12px var(--color-primary-glow);
     outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
+    outline-offset: 3px;
 }
 
 /* Skip link focus improvement */
@@ -54,6 +54,10 @@ h2::after {
 /* === BUTTON ENHANCEMENTS === */
 
 /* Improved button press feedback with smoother timing */
+.btn {
+    will-change: transform;
+}
+
 .btn:active {
     transform: translateY(1px) scale(0.98);
     transition: transform var(--duration-100) var(--ease-out);
@@ -99,12 +103,22 @@ h2::after {
 
 /* Enhanced terminal cursor with glow */
 .terminal-cursor {
-    animation: cursor-blink 1s step-end infinite;
+    animation: cursor-blink 1s step-end infinite, cursor-glow 2s ease-in-out infinite;
     background-color: var(--color-primary);
     box-shadow: 0 0 10px var(--color-primary-glow);
     display: inline-block;
     height: 1.2em;
     width: 2px;
+}
+
+@keyframes cursor-glow {
+    0%, 100% {
+        box-shadow: 0 0 10px var(--color-primary-glow);
+    }
+
+    50% {
+        box-shadow: 0 0 20px var(--color-primary-glow), 0 0 30px var(--color-primary-dim);
+    }
 }
 
 @keyframes cursor-blink {
@@ -117,7 +131,13 @@ h2::after {
     }
 }
 
-/* Enhanced terminal window hover effect */
+/* Enhanced terminal window with visual depth */
+.terminal-window {
+    box-shadow: var(--shadow-lg),
+                inset 0 1px 0 rgb(255 255 255 / 5%);
+    will-change: transform, box-shadow;
+}
+
 .terminal-window:hover {
     border-color: var(--border-accent);
     box-shadow: var(--shadow-2xl), var(--shadow-glow-xl), 0 0 40px var(--color-primary-dim);
@@ -151,9 +171,11 @@ h2::after {
 .feature-card,
 .install-card,
 .comparison-card {
+    box-shadow: var(--shadow-lg);
     transition: transform var(--duration-300) var(--ease-expo-out),
                 box-shadow var(--duration-300) var(--ease-expo-out),
                 border-color var(--duration-200) var(--ease-expo-out);
+    will-change: transform;
 }
 
 .feature-card:hover,
@@ -162,6 +184,7 @@ h2::after {
     border-color: var(--border-accent);
     box-shadow: var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim);
     transform: translateY(-6px);
+    will-change: transform, box-shadow;
 }
 
 /* Inner glow for card hover with staggered reveal */
@@ -258,6 +281,11 @@ h2::after {
         min-width: 44px;
     }
 
+    /* Better mobile button spacing */
+    .hero-actions {
+        gap: var(--space-3);
+    }
+
     /* Better mobile typography */
     h1 {
         font-size: clamp(2rem, 10vw, 3rem);
@@ -318,14 +346,14 @@ a:not(.btn) {
                 var(--color-accent) 100%);
     background-position: 0% 100%;
     background-repeat: no-repeat;
-    background-size: 0% 2px;
+    background-size: 0% 3px;
     position: relative;
     transition: background-size var(--duration-400) var(--ease-expo-out),
                 color var(--duration-200) var(--ease-expo-out);
 }
 
 a:not(.btn):hover {
-    background-size: 100% 2px;
+    background-size: 100% 3px;
     color: var(--color-primary);
 }
 
@@ -736,13 +764,6 @@ footer a:hover {
         box-shadow: 0 0 0 12px transparent;
         opacity: 0;
     }
-}
-
-/* Enhanced visual depth for terminal window with subtle inner shadow */
-.terminal-window {
-    box-shadow:
-        var(--shadow-lg),
-        inset 0 1px 0 rgb(255 255 255 / 5%);
 }
 
 /* Subtle gradient overlay for hero section to add depth */
