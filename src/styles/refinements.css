@@ -74,8 +74,9 @@ pre code,
 }
 
 .btn:active {
-    transform: translateY(var(--size-xs)) scale(var(--scale-097));
-    transition: transform var(--duration-75) var(--ease-out);
+    transform: translateY(var(--translate-1)) scale(var(--scale-098)) translateZ(0);
+    transition: transform var(--duration-100) var(--ease-out),
+                box-shadow var(--duration-100) var(--ease-out);
 }
 
 /* Enhanced button glow on hover with staggered timing */
@@ -385,9 +386,9 @@ pre code,
 .persona-card {
     box-shadow: var(--shadow-lg);
     position: relative;
-    transition: transform var(--duration-200) var(--ease-expo-out),
-                box-shadow var(--duration-200) var(--ease-expo-out),
-                border-color var(--duration-150) var(--ease-expo-out);
+    transition: transform var(--duration-250) var(--ease-expo-out),
+                box-shadow var(--duration-250) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out);
     will-change: transform;
 }
 
@@ -405,9 +406,12 @@ pre code,
 .sidebar-card:hover,
 .persona-card:hover {
     border-color: var(--border-accent);
-    box-shadow: var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim),
-                inset 0 1px 0 var(--white-alpha-5);
-    transform: translateY(var(--lift-sm));
+    box-shadow: var(--shadow-xl),
+                var(--shadow-glow-md),
+                0 0 40px var(--color-primary-dim),
+                inset 0 1px 0 var(--white-alpha-8),
+                inset 0 -1px 0 var(--shadow-black-5);
+    transform: translateY(var(--lift-md));
 }
 
 /* Inner glow for card hover with staggered reveal */
@@ -1018,13 +1022,15 @@ a:not(.btn) {
     background-repeat: no-repeat;
     background-size: 0% var(--size-xs);
     position: relative;
-    transition: background-size var(--duration-200) var(--ease-expo-out),
-                color var(--duration-150) var(--ease-expo-out);
+    transition: background-size var(--duration-250) var(--ease-expo-out),
+                color var(--duration-200) var(--ease-expo-out),
+                transform var(--duration-200) var(--ease-expo-out);
 }
 
 a:not(.btn):hover {
     background-size: 100% var(--size-xs);
     color: var(--color-primary);
+    transform: translateY(calc(var(--lift-xs) * -0.5));
 }
 
 /* Subtle text selection color for better feedback */
