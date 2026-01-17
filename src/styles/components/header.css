@@ -21,7 +21,7 @@
 }
 
 .nav.scrolled {
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(var(--blur-xl));
     background-color: var(--dark-bg-85);
     border-bottom: 1px solid var(--border-soft);
 }
@@ -130,7 +130,7 @@
 }
 
 .nav-mobile-toggle.active span:nth-child(1) {
-    transform: rotate(45deg) translate(5px, 5px);
+    transform: rotate(var(--rotate-45)) translate(var(--translate-5), var(--translate-5));
 }
 
 .nav-mobile-toggle.active span:nth-child(2) {
@@ -138,7 +138,7 @@
 }
 
 .nav-mobile-toggle.active span:nth-child(3) {
-    transform: rotate(-45deg) translate(5px, -5px);
+    transform: rotate(var(--rotate-neg45)) translate(var(--translate-5), var(--translate-neg5));
 }
 
 @media (--2xl) {
@@ -154,7 +154,7 @@
 /* === MOBILE MENU OVERLAY === */
 
 .nav-mobile-menu {
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(var(--blur-xl));
     background-color: var(--color-bg);
     display: flex;
     flex-direction: column;

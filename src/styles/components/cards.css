@@ -13,7 +13,9 @@
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     position: relative;
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: transform var(--duration-300) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
     will-change: transform;
 
     &:hover {
@@ -41,7 +43,9 @@
     overflow: hidden;
     padding: var(--space-8);
     position: relative;
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: transform var(--duration-300) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
 
     /* Gradient overlay on hover */
     &::before {
@@ -66,7 +70,7 @@
         left: -100%;
         position: absolute;
         top: 0;
-        transform: skewX(-20deg);
+        transform: skewX(var(--skew-neg20));
         transition: none;
         width: 50%;
     }
@@ -144,7 +148,9 @@
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-xl);
     padding: var(--space-6);
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: transform var(--duration-300) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
 
     &:hover {
         border-color: var(--border-accent);
@@ -180,7 +186,9 @@
     border-radius: var(--radius-xl);
     padding: var(--space-6);
     position: relative;
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: transform var(--duration-300) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
     will-change: transform;
 
     &:hover {
@@ -341,13 +349,15 @@
     border-radius: var(--radius-xl);
     padding: var(--space-8);
     position: relative;
-    transition: all var(--duration-300) var(--ease-expo-out);
+    transition: transform var(--duration-300) var(--ease-expo-out),
+                border-color var(--duration-200) var(--ease-expo-out),
+                box-shadow var(--duration-200) var(--ease-expo-out);
 
     &::before {
         background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
         border-radius: var(--radius-xl) var(--radius-xl) 0 0;
         content: '';
-        height: 3px;
+        height: var(--size-xs);
         left: 0;
         opacity: 0;
         position: absolute;

@@ -235,6 +235,16 @@
     --shadow-2xl: 0 32px 64px -12px rgb(0 0 0 / 75%);
     --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 40%);
 
+    /* === BLUR AMOUNTS === */
+    --blur-xs: 2px;
+    --blur-sm: 4px;
+    --blur-md: 8px;
+    --blur-lg: 12px;
+    --blur-xl: 16px;
+    --blur-2xl: 24px;
+    --blur-3xl: 32px;
+    --blur-4xl: 40px;
+
     /* === ALPHA OPACITY VALUES === */
     --alpha-3: 3%;
     --alpha-4: 4%;
@@ -384,7 +394,9 @@
     /* === TRANSFORM VALUES === */
     --rotate-0: 0deg;
     --rotate-5: 5deg;
+    --rotate-45: 45deg;
     --rotate-neg10: -10deg;
+    --rotate-neg45: -45deg;
     --rotate-90: 90deg;
     --rotate-180: 180deg;
     --rotate-neg180: -180deg;
@@ -416,6 +428,7 @@
     --translate-2: 2px;
     --translate-3: 3px;
     --translate-4: 4px;
+    --translate-5: 5px;
     --translate-8: 8px;
     --translate-10: 10px;
     --translate-12: 12px;
@@ -447,6 +460,9 @@
     --size-5xl: 50px;
     --size-6xl: 60px;
     --size-8xl: 80px;
+
+    /* === GRID SIZES === */
+    --grid-size: 60px;
 
     /* === SIZE PERCENTAGES === */
     --pct-0: 0;

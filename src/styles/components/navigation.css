@@ -167,7 +167,7 @@
 @media (--2xl) {
     .nav-menu {
         align-items: stretch;
-        backdrop-filter: blur(12px);
+        backdrop-filter: blur(var(--blur-lg));
         background-color: var(--color-bg);
         flex-direction: column;
         gap: var(--space-2);
@@ -242,11 +242,11 @@
     }
 
     &.active span:first-child {
-        transform: rotate(45deg) translate(4px, 4px);
+        transform: rotate(var(--rotate-45)) translate(var(--translate-4), var(--translate-4));
     }
 
     &.active span:last-child {
-        transform: rotate(-45deg) translate(4px, -4px);
+        transform: rotate(var(--rotate-neg45)) translate(var(--translate-4), var(--translate-neg4));
     }
 }
 

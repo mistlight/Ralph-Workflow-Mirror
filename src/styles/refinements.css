@@ -91,7 +91,7 @@ h2::after {
 code,
 pre code,
 .code-block {
-    line-height: 1.6;
+    line-height: var(--leading-relaxed);
 }
 
 /* Consistent spacing for section headers */
@@ -881,7 +881,7 @@ code:not(pre code):hover {
 /* === BADGE ENHANCEMENTS === */
 
 .badge {
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(var(--blur-md));
     transition: all var(--duration-300) var(--ease-expo-out);
 }
 
