@@ -10,9 +10,9 @@
 a:focus-visible,
 button:focus-visible,
 .btn:focus-visible {
-    box-shadow: 0 0 0 3px var(--color-primary-dim), 0 0 12px var(--color-primary-glow);
+    box-shadow: var(--focus-ring), 0 0 12px var(--color-primary-glow);
     outline: 2px solid var(--color-primary);
-    outline-offset: 3px;
+    outline-offset: var(--focus-offset);
     transition: box-shadow var(--duration-150) var(--ease-out),
                 outline var(--duration-150) var(--ease-out);
 }
@@ -203,7 +203,7 @@ h2::after {
 .comparison-card:hover {
     border-color: var(--border-accent);
     box-shadow: var(--shadow-xl), var(--shadow-glow-md), 0 0 30px var(--color-primary-dim);
-    transform: translateY(-6px);
+    transform: translateY(var(--lift-md));
     will-change: transform, box-shadow;
 }
 
@@ -885,7 +885,7 @@ footer a:hover {
     &:focus-within {
         background-color: var(--color-bg-elevated);
         border-color: var(--color-primary);
-        box-shadow: 0 0 0 3px var(--color-primary-dim),
+        box-shadow: var(--focus-ring),
                     var(--shadow-glow-md);
     }
 }
@@ -1464,7 +1464,7 @@ footer a {
 .textarea:focus,
 .select:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-dim),
+    box-shadow: var(--focus-ring),
                 0 0 20px var(--color-primary-glow);
 }
 
@@ -1678,7 +1678,7 @@ code:not(pre code) {
 
     &:focus-within {
         border-color: var(--color-primary);
-        box-shadow: 0 0 0 3px var(--color-primary-dim),
+        box-shadow: var(--focus-ring),
                     var(--shadow-glow-md);
         outline: none;
     }
@@ -1747,7 +1747,7 @@ a:focus-visible,
 button:focus-visible,
 [role="button"]:focus-visible {
     outline: 2px solid var(--color-primary);
-    outline-offset: 3px;
+    outline-offset: var(--focus-offset);
 }
 
 /* === GLOSSARY CARD ENHANCEMENTS === */

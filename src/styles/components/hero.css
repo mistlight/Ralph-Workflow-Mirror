@@ -641,31 +641,7 @@
     }
 }
 
-/* === TERMINAL WINDOW === */
-
-.terminal-window {
-    background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-xl), var(--shadow-glow-lg);
-    overflow: hidden;
-    position: relative;
-}
-
-.terminal-window::before {
-    background: linear-gradient(135deg, var(--color-primary), var(--color-accent), var(--color-lime));
-    border-radius: var(--radius-2xl);
-    content: '';
-    inset: -1px;
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask-composite: xor;
-    mask-composite: exclude;
-    opacity: 0.5;
-    padding: 1px;
-    pointer-events: none;
-    position: absolute;
-}
+/* Note: .terminal-window styles are defined in terminal.css */
 
 @media (--2xl) {
     .hero-visual {

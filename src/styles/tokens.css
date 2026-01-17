@@ -272,7 +272,6 @@
     --white-alpha-20: rgb(255 255 255 / var(--alpha-20));
     --white-alpha-30: rgb(255 255 255 / var(--alpha-30));
     --white-alpha-100: rgb(255 255 255);
-
     --black-alpha-15: rgb(0 0 0 / var(--alpha-15));
     --black-alpha-40: rgb(0 0 0 / var(--alpha-40));
     --black-alpha-50: rgb(0 0 0 / var(--alpha-50));
@@ -371,6 +370,19 @@
     --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
     --ease-expo-out: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-power4: cubic-bezier(0.77, 0, 0.175, 1);
+
+    /* === HOVER LIFT TRANSFORMS === */
+    --lift-none: 0;
+    --lift-sm: -2px;
+    --lift-md: -4px;
+    --lift-lg: -6px;
+    --lift-xl: -8px;
+    --lift-2xl: -10px;
+
+    /* === FOCUS STATE TOKENS === */
+    --focus-ring: 0 0 0 3px var(--color-primary-dim);
+    --focus-outline: 2px solid var(--color-primary);
+    --focus-offset: 3px;
 
     /* === Z-INDEX LAYERS === */
     --z-behind: -1;

@@ -19,16 +19,16 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
-        transform: translateY(-6px);
+        transform: translateY(var(--lift-md));
     }
 
     &:focus-within {
         border-color: var(--color-primary);
-        box-shadow: 0 0 0 3px var(--color-primary-dim), var(--shadow-glow-md);
+        box-shadow: var(--focus-ring), var(--shadow-glow-md);
     }
 
     &:active {
-        transform: translateY(-4px);
+        transform: translateY(var(--lift-sm));
     }
 }
 
@@ -149,12 +149,12 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
-        transform: translateY(-4px);
+        transform: translateY(var(--lift-md));
     }
 
     &:focus-within {
         border-color: var(--color-primary);
-        box-shadow: 0 0 0 3px var(--color-primary-dim);
+        box-shadow: var(--focus-ring);
     }
 
     h4 {
@@ -186,16 +186,16 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), 0 0 30px var(--color-primary-dim);
-        transform: translateY(-4px);
+        transform: translateY(var(--lift-md));
     }
 
     &:focus-within {
         border-color: var(--color-primary);
-        box-shadow: 0 0 0 3px var(--color-primary-dim), var(--shadow-glow-md);
+        box-shadow: var(--focus-ring), var(--shadow-glow-md);
     }
 
     &:active {
-        transform: translateY(-2px);
+        transform: translateY(var(--lift-sm));
     }
 
     &--after {
@@ -359,7 +359,7 @@
     &:hover {
         border-color: var(--border-accent);
         box-shadow: var(--shadow-lg), var(--shadow-glow-sm);
-        transform: translateY(-6px);
+        transform: translateY(var(--lift-md));
 
         &::before {
             opacity: 1;
@@ -418,7 +418,7 @@
 
     &:focus-within {
         border-color: var(--color-primary);
-        box-shadow: 0 0 0 3px var(--color-primary-dim), var(--shadow-glow-md);
+        box-shadow: var(--focus-ring), var(--shadow-glow-md);
     }
 
     &:active {
@@ -479,7 +479,7 @@
 
     &:focus-within {
         border-color: var(--color-primary);
-        box-shadow: 0 0 0 3px var(--color-primary-dim), var(--shadow-glow-md);
+        box-shadow: var(--focus-ring), var(--shadow-glow-md);
     }
 
     &:active {
@@ -786,7 +786,7 @@
         box-shadow:
             0 12px 24px var(--shadow-black-20),
             0 0 20px var(--primary-shadow-12);
-        transform: translateY(-6px);
+        transform: translateY(var(--lift-md));
 
         &::before {
             opacity: 1;
