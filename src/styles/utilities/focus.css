@@ -102,10 +102,10 @@ details > summary:focus-visible {
 /* === ENHANCED FOCUS FOR SWITCHES === */
 
 .switch:focus-visible {
-    outline: var(--focus-outline);
-    outline-offset: var(--focus-offset);
     box-shadow: 0 0 0 3px var(--color-primary-dim),
                 0 0 0 5px var(--color-bg);
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-offset);
 }
 
 /* === ENHANCED FOCUS FOR FAQ TOGGLES === */
