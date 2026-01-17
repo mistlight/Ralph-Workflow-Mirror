@@ -2,6 +2,7 @@
    NAVIGATION
    ========================================
    Navigation links, mobile menu, dropdowns, and navigation patterns
+   Uses postcss-nesting for better organization (max depth 2-3)
    ======================================== */
 
 /* === NAV LINKS === */
@@ -22,23 +23,23 @@
     padding: var(--space-2) var(--space-4);
     text-decoration: none;
     text-transform: uppercase;
-    transition: color var(--duration-150) var(--ease-out),
-                background-color var(--duration-150) var(--ease-out);
-}
+    transition: color var(--duration-150) var(--ease-expo-out),
+                background-color var(--duration-150) var(--ease-expo-out);
 
-.nav-link:hover {
-    background-color: var(--color-bg-hover);
-    color: var(--color-text);
-}
+    &:hover {
+        background-color: var(--color-bg-hover);
+        color: var(--color-text);
+    }
 
-.nav-link:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
-}
+    &:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+    }
 
-.nav-link.active {
-    background-color: var(--color-primary-dim);
-    color: var(--color-primary);
+    &.active {
+        background-color: var(--color-primary-dim);
+        color: var(--color-primary);
+    }
 }
 
 /* === EXTERNAL LINKS === */
@@ -46,7 +47,7 @@
 .nav-link-external .external-icon {
     display: inline-block;
     margin-left: var(--space-1);
-    transition: transform var(--duration-150) var(--ease-out);
+    transition: transform var(--duration-150) var(--ease-expo-out);
 }
 
 .nav-link-external:hover .external-icon {
@@ -57,55 +58,57 @@
 
 .nav-dropdown {
     position: relative;
-}
 
-.nav-dropdown-toggle {
-    align-items: center;
-    background: none;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    gap: var(--space-1);
-}
+    &-toggle {
+        align-items: center;
+        background: none;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        gap: var(--space-1);
 
-.nav-dropdown-toggle svg {
-    transition: transform var(--duration-200) var(--ease-out);
-}
+        svg {
+            transition: transform var(--duration-200) var(--ease-expo-out);
+        }
 
-.nav-dropdown-toggle[aria-expanded="true"] svg {
-    transform: rotate(180deg);
-}
+        &[aria-expanded="true"] {
+            svg {
+                transform: rotate(180deg);
+            }
+        }
+    }
 
-.nav-dropdown-menu {
-    background-color: var(--color-bg-card);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    left: 0;
-    list-style: none;
-    margin-top: var(--space-2);
-    min-width: 180px;
-    opacity: 0;
-    padding: var(--space-2);
-    position: absolute;
-    top: 100%;
-    transform: translateY(-10px);
-    transition: all var(--duration-200) var(--ease-out);
-    visibility: hidden;
-    z-index: var(--z-dropdown);
-}
+    &-menu {
+        background-color: var(--color-bg-card);
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-lg);
+        left: 0;
+        list-style: none;
+        margin-top: var(--space-2);
+        min-width: 180px;
+        opacity: 0;
+        padding: var(--space-2);
+        position: absolute;
+        top: 100%;
+        transform: translateY(-10px);
+        transition: all var(--duration-200) var(--ease-expo-out);
+        visibility: hidden;
+        z-index: var(--z-dropdown);
 
-.nav-dropdown:hover .nav-dropdown-menu,
-.nav-dropdown-toggle[aria-expanded="true"] + .nav-dropdown-menu {
-    opacity: 1;
-    transform: translateY(0);
-    visibility: visible;
-}
+        .nav-link {
+            border-radius: var(--radius-md);
+            display: block;
+            padding: var(--space-2) var(--space-3);
+        }
+    }
 
-.nav-dropdown-menu .nav-link {
-    border-radius: var(--radius-md);
-    display: block;
-    padding: var(--space-2) var(--space-3);
+    &:hover &-menu,
+    &-toggle[aria-expanded="true"] + &-menu {
+        opacity: 1;
+        transform: translateY(0);
+        visibility: visible;
+    }
 }
 
 /* === RESPONSIVE NAVIGATION === */
@@ -122,29 +125,33 @@
         pointer-events: none;
         position: fixed;
         transform: translateY(-100%);
-        transition: all var(--duration-300) var(--ease-out);
+        transition: all var(--duration-300) var(--ease-expo-out);
+
+        &.mobile-open {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
+        .nav-link {
+            font-size: var(--text-lg);
+            padding: var(--space-4);
+        }
+
+        .nav-dropdown-menu {
+            border: none;
+            box-shadow: none;
+            margin-top: 0;
+            opacity: 1;
+            padding-left: var(--space-4);
+            position: static;
+            transform: none;
+            visibility: visible;
+        }
     }
 
-    .nav-menu.open {
-        opacity: 1;
-        pointer-events: auto;
-        transform: translateY(0);
-    }
-
-    .nav-menu .nav-link {
-        font-size: var(--text-lg);
-        padding: var(--space-4);
-    }
-
-    .nav-dropdown-menu {
-        border: none;
-        box-shadow: none;
-        margin-top: 0;
-        opacity: 1;
-        padding-left: var(--space-4);
-        position: static;
-        transform: none;
-        visibility: visible;
+    .nav-toggle {
+        display: flex;
     }
 }
 
@@ -165,54 +172,50 @@
     justify-content: center;
     padding: var(--space-2);
     width: 40px;
-}
 
-.nav-toggle span {
-    background-color: currentcolor;
-    border-radius: var(--radius-full);
-    display: block;
-    height: 2px;
-    transition: all var(--duration-200) var(--ease-out);
-    width: 18px;
-}
+    span {
+        background-color: currentcolor;
+        border-radius: var(--radius-full);
+        display: block;
+        height: 2px;
+        transition: all var(--duration-200) var(--ease-expo-out);
+        width: 18px;
+    }
 
-.nav-toggle.active span:first-child {
-    transform: rotate(45deg) translate(4px, 4px);
-}
+    &.active span:first-child {
+        transform: rotate(45deg) translate(4px, 4px);
+    }
 
-.nav-toggle.active span:last-child {
-    transform: rotate(-45deg) translate(4px, -4px);
-}
-
-@media (--2xl) {
-    .nav-toggle {
-        display: flex;
+    &.active span:last-child {
+        transform: rotate(-45deg) translate(4px, -4px);
     }
 }
 
-.nav-menu {
-    align-items: center;
-    display: flex;
-    gap: var(--space-1);
-    list-style: none;
-}
+@media (--min-xl) {
+    .nav-menu {
+        align-items: center;
+        display: flex;
+        gap: var(--space-1);
+        list-style: none;
 
-.nav-menu .nav-link {
-    border-radius: var(--radius-md);
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    font-weight: var(--font-medium);
-    letter-spacing: var(--tracking-wide);
-    padding: var(--space-2) var(--space-4);
-    text-decoration: none;
-    text-transform: uppercase;
-    transition: color var(--duration-150) var(--ease-out),
-                background-color var(--duration-150) var(--ease-out);
-}
+        .nav-link {
+            border-radius: var(--radius-md);
+            color: var(--color-text-muted);
+            font-family: var(--font-mono);
+            font-size: var(--text-sm);
+            font-weight: var(--font-medium);
+            letter-spacing: var(--tracking-wide);
+            padding: var(--space-2) var(--space-4);
+            text-decoration: none;
+            text-transform: uppercase;
+            transition: color var(--duration-150) var(--ease-expo-out),
+                        background-color var(--duration-150) var(--ease-expo-out);
+        }
 
-.nav-menu .nav-link:hover,
-.nav-link--active {
-    background-color: var(--color-bg-hover);
-    color: var(--color-text);
+        .nav-link:hover,
+        .nav-link--active {
+            background-color: var(--color-bg-hover);
+            color: var(--color-text);
+        }
+    }
 }

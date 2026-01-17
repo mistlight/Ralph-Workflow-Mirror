@@ -2,6 +2,7 @@
    BUTTONS
    ========================================
    All button styles, variants, and states
+   Uses postcss-nesting for better organization
    ======================================== */
 
 .btn {
@@ -24,200 +25,164 @@
     text-transform: uppercase;
     transition: all var(--duration-200) var(--ease-out);
     white-space: nowrap;
-}
 
-.btn:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
-}
+    &:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+    }
 
-.btn::before {
-    background: linear-gradient(180deg, rgb(255 255 255 / 10%) 0%, transparent 50%);
-    content: '';
-    inset: 0;
-    opacity: 0;
-    position: absolute;
-    transition: opacity var(--duration-150) var(--ease-out);
-}
+    &::before {
+        background: linear-gradient(180deg, rgb(255 255 255 / 10%) 0%, transparent 50%);
+        content: '';
+        inset: 0;
+        opacity: 0;
+        position: absolute;
+        transition: opacity var(--duration-150) var(--ease-out);
+    }
 
-.btn:hover::before {
-    opacity: 1;
-}
+    &:hover::before {
+        opacity: 1;
+    }
 
-/* === BUTTON VARIANTS === */
+    /* === BUTTON VARIANTS === */
 
-/* Primary Button - Electric Cyan */
-.btn-primary {
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
-    box-shadow: var(--shadow-glow-sm);
-    color: var(--color-bg);
-    overflow: hidden;
-    position: relative;
-}
+    /* Primary Button - Electric Cyan */
+    &-primary {
+        background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+        box-shadow: var(--shadow-glow-sm);
+        color: var(--color-bg);
+        overflow: hidden;
+        position: relative;
 
-/* Ripple effect for primary button */
-.btn-primary::after {
-    background: radial-gradient(circle, rgb(255 255 255 / 30%) 0%, transparent 70%);
-    border-radius: 50%;
-    content: '';
-    height: 0;
-    left: 50%;
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    transition: width var(--duration-500) var(--ease-out), height var(--duration-500) var(--ease-out);
-    width: 0;
-}
+        /* Ripple effect for primary button */
+        &::after {
+            background: radial-gradient(circle, rgb(255 255 255 / 30%) 0%, transparent 70%);
+            border-radius: 50%;
+            content: '';
+            height: 0;
+            left: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            transition: width var(--duration-500) var(--ease-out), height var(--duration-500) var(--ease-out);
+            width: 0;
+        }
 
-.btn-primary:hover::after {
-    height: 300px;
-    width: 300px;
-}
+        &:hover {
+            background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 100%);
+            box-shadow: var(--shadow-glow-md), 0 0 30px var(--color-primary-glow);
+            transform: translateY(-2px) scale(1.02);
 
-.btn-primary:hover {
-    background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 100%);
-    box-shadow: var(--shadow-glow-md), 0 0 30px var(--color-primary-glow);
-    transform: translateY(-2px) scale(1.02);
-}
+            &::after {
+                height: 300px;
+                width: 300px;
+            }
+        }
 
-.btn-primary:active {
-    transform: translateY(0) scale(0.98);
-}
+        &:active {
+            transform: translateY(0) scale(0.98);
+        }
+    }
 
-/* Secondary Button - Outline */
-.btn-secondary {
-    background-color: transparent;
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    position: relative;
-    z-index: 1;
-}
+    /* Secondary Button - Outline */
+    &-secondary {
+        background-color: transparent;
+        border-color: var(--color-primary);
+        color: var(--color-primary);
+        position: relative;
+        z-index: 1;
 
-.btn-secondary::before {
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
-    border-radius: inherit;
-    content: '';
-    inset: 0;
-    opacity: 0;
-    position: absolute;
-    transition: opacity var(--duration-200) var(--ease-out);
-    z-index: -1;
-}
+        &::before {
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+            border-radius: inherit;
+            content: '';
+            inset: 0;
+            opacity: 0;
+            position: absolute;
+            transition: opacity var(--duration-200) var(--ease-expo-out);
+            z-index: -1;
+        }
 
-.btn-secondary:hover {
-    border-color: var(--color-primary-light);
-    box-shadow: var(--shadow-glow-sm), 0 0 20px var(--color-primary-glow);
-    color: var(--color-bg);
-    transform: translateY(-2px);
-}
+        &:hover {
+            border-color: var(--color-primary-light);
+            box-shadow: var(--shadow-glow-sm), 0 0 20px var(--color-primary-glow);
+            color: var(--color-bg);
+            transform: translateY(-2px);
 
-.btn-secondary:hover::before {
-    opacity: 1;
-}
+            &::before {
+                opacity: 1;
+            }
+        }
+    }
 
-/* Ghost Button */
-.btn-ghost {
-    background-color: transparent;
-    border-color: var(--border-soft);
-    color: var(--color-text-muted);
-}
+    /* Ghost Button */
+    &-ghost {
+        background-color: transparent;
+        border-color: var(--border-soft);
+        color: var(--color-text-muted);
 
-.btn-ghost:hover {
-    background-color: var(--color-bg-hover);
-    border-color: var(--border-medium);
-    color: var(--color-text);
-}
+        &:hover {
+            background-color: var(--color-bg-hover);
+            border-color: var(--border-medium);
+            color: var(--color-text);
+        }
+    }
 
-/* Accent Button - Magenta */
-.btn-accent {
-    background-color: var(--color-accent);
-    box-shadow: var(--shadow-glow-accent);
-    color: var(--color-text);
-}
+    /* Accent Button - Magenta */
+    &-accent {
+        background-color: var(--color-accent);
+        box-shadow: var(--shadow-glow-accent);
+        color: var(--color-text);
 
-.btn-accent:hover {
-    background-color: var(--color-accent-light);
-    box-shadow: var(--shadow-glow-accent), var(--shadow-glow-accent-strong);
-    transform: translateY(-2px);
-}
+        &:hover {
+            background-color: var(--color-accent-light);
+            box-shadow: var(--shadow-glow-accent), var(--shadow-glow-accent-strong);
+            transform: translateY(-2px);
+        }
+    }
 
-/* === BUTTON SIZES === */
+    /* === BUTTON SIZES === */
 
-.btn-sm {
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-4);
+    &-sm {
+        font-size: var(--text-xs);
+        padding: var(--space-2) var(--space-4);
+    }
+
+    &-lg {
+        font-size: var(--text-base);
+        padding: var(--space-4) var(--space-8);
+    }
+
+    &-xl {
+        border-radius: var(--radius-xl);
+        font-size: var(--text-lg);
+        padding: var(--space-5) var(--space-10);
+    }
+
+    /* === BUTTON WITH ICON === */
+
+    svg,
+    .btn-icon {
+        flex-shrink: 0;
+        height: 18px;
+        width: 18px;
+    }
 }
 
 .btn-lg {
-    font-size: var(--text-base);
-    padding: var(--space-4) var(--space-8);
+    svg,
+    .btn-icon {
+        height: 20px;
+        width: 20px;
+    }
 }
 
 .btn-xl {
-    border-radius: var(--radius-xl);
-    font-size: var(--text-lg);
-    padding: var(--space-5) var(--space-10);
-}
-
-/* === BUTTON WITH ICON === */
-
-.btn svg,
-.btn-icon {
-    flex-shrink: 0;
-    height: 18px;
-    width: 18px;
-}
-
-.btn-lg svg,
-.btn-lg .btn-icon {
-    height: 20px;
-    width: 20px;
-}
-
-.btn-xl svg,
-.btn-xl .btn-icon {
-    height: 22px;
-    width: 22px;
-}
-
-/* === ICON-ONLY BUTTON === */
-
-.btn-icon-only {
-    height: 44px;
-    padding: 0;
-    width: 44px;
-}
-
-.btn-icon-only.btn-sm {
-    height: 36px;
-    width: 36px;
-}
-
-/* === BUTTON STATES === */
-
-/* Disabled state */
-.btn:disabled,
-.btn.disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
-    pointer-events: none;
-}
-
-/* Loading state */
-.btn.loading {
-    color: transparent;
-    pointer-events: none;
-}
-
-.btn.loading::after {
-    animation: spin 0.6s linear infinite;
-    border: 2px solid currentcolor;
-    border-radius: 50%;
-    border-right-color: transparent;
-    content: '';
-    height: 18px;
-    position: absolute;
-    width: 18px;
+    svg,
+    .btn-icon {
+        height: 22px;
+        width: 22px;
+    }
 }
 
 /* === BUTTON WITH ARROW === */
@@ -225,7 +190,7 @@
 .btn-arrow {
     display: inline-block;
     margin-left: var(--space-2);
-    transition: transform var(--duration-150) var(--ease-out);
+    transition: transform var(--duration-150) var(--ease-expo-out);
 }
 
 .btn:hover .btn-arrow {
@@ -245,43 +210,44 @@
     height: 40px;
     justify-content: center;
     position: relative;
-    transition: all var(--duration-150) var(--ease-out);
+    transition: all var(--duration-150) var(--ease-expo-out);
     width: 40px;
+
+    &:hover {
+        background-color: var(--color-primary-dim);
+        border-color: var(--border-accent);
+        color: var(--color-primary);
+    }
+
+    .sun-icon,
+    .moon-icon {
+        position: absolute;
+        transition: opacity var(--duration-200) var(--ease-expo-out),
+                    transform var(--duration-200) var(--ease-expo-out);
+    }
+
+    .sun-icon {
+        opacity: 0;
+        transform: rotate(180deg) scale(0);
+    }
+
+    .moon-icon {
+        opacity: 1;
+        transform: rotate(0) scale(1);
+    }
 }
 
-.dark-mode-toggle:hover {
-    background-color: var(--color-primary-dim);
-    border-color: var(--border-accent);
-    color: var(--color-primary);
-}
+[data-theme="light"] .dark-mode-toggle,
+.light-mode .dark-mode-toggle {
+    .sun-icon {
+        opacity: 1;
+        transform: rotate(0) scale(1);
+    }
 
-.dark-mode-toggle .sun-icon,
-.dark-mode-toggle .moon-icon {
-    position: absolute;
-    transition: opacity var(--duration-200) var(--ease-out),
-                transform var(--duration-200) var(--ease-out);
-}
-
-.dark-mode-toggle .sun-icon {
-    opacity: 0;
-    transform: rotate(180deg) scale(0);
-}
-
-.dark-mode-toggle .moon-icon {
-    opacity: 1;
-    transform: rotate(0) scale(1);
-}
-
-[data-theme="light"] .dark-mode-toggle .sun-icon,
-.light-mode .dark-mode-toggle .sun-icon {
-    opacity: 1;
-    transform: rotate(0) scale(1);
-}
-
-[data-theme="light"] .dark-mode-toggle .moon-icon,
-.light-mode .dark-mode-toggle .moon-icon {
-    opacity: 0;
-    transform: rotate(-180deg) scale(0);
+    .moon-icon {
+        opacity: 0;
+        transform: rotate(-180deg) scale(0);
+    }
 }
 
 /* === THEME TOGGLE BUTTON === */
@@ -296,17 +262,17 @@
     display: flex;
     height: 40px;
     justify-content: center;
-    transition: all var(--duration-150) var(--ease-out);
+    transition: all var(--duration-150) var(--ease-expo-out);
     width: 40px;
-}
 
-.theme-toggle:hover {
-    background-color: var(--color-primary-dim);
-    border-color: var(--border-accent);
-    color: var(--color-primary);
-}
+    &:hover {
+        background-color: var(--color-primary-dim);
+        border-color: var(--border-accent);
+        color: var(--color-primary);
+    }
 
-.theme-toggle svg {
-    height: 20px;
-    width: 20px;
+    svg {
+        height: 20px;
+        width: 20px;
+    }
 }
