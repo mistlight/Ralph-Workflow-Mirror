@@ -592,11 +592,23 @@ h2::after {
     background-color: var(--color-bg-hover);
     border-color: var(--border-accent);
     border-left-width: 3px;
+    padding-left: var(--space-5);
 }
 
 .faq-summary:hover::before {
     opacity: 0.5;
     width: 60px;
+}
+
+.faq-summary:focus-visible {
+    background-color: var(--color-primary-dim);
+    box-shadow: inset 0 0 0 2px var(--color-primary);
+    outline: none;
+}
+
+.faq-summary:active {
+    transform: scale(0.99);
+    transition: transform var(--duration-100) var(--ease-out);
 }
 
 .faq-summary--accent:hover {
@@ -807,6 +819,18 @@ code:not(pre code):hover {
     pointer-events: none;
     position: absolute;
     z-index: var(--z-behind);
+}
+
+/* Enhanced hero text with better gradient animation */
+.hero-title-gradient {
+    animation: gradientShift 6s ease-in-out infinite alternate;
+    background-size: 200% 200%;
+}
+
+@keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
 
 @keyframes heroGlow {
@@ -1264,6 +1288,26 @@ dd {
         display: flex;
         padding: var(--space-3) var(--space-4);
     }
+}
+
+/* === SMOOTH TRANSITIONS FOR ALL INTERACTIVE ELEMENTS === */
+
+a, button, .btn, .nav-link, .faq-summary, .card, .feature-card {
+    transition-timing-function: var(--ease-expo-out);
+}
+
+/* === IMPROVED FOCUS RINGS FOR ACCESSIBILITY === */
+
+:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 3px;
+}
+
+button:focus-visible,
+.btn:focus-visible,
+a:focus-visible {
+    box-shadow: 0 0 0 3px var(--color-primary-dim),
+                0 0 0 5px var(--color-bg);
 }
 
 /* === ACCESSIBILITY IMPROVEMENTS === */
