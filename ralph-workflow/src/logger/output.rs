@@ -461,7 +461,17 @@ pub trait Loggable {
 /// This logger stores all log messages in memory for testing purposes.
 /// It provides methods to retrieve and inspect the captured log output.
 /// Uses line buffering similar to `TestPrinter` to handle partial writes.
+///
+/// # Dead Code Note
+///
+/// `TestLogger` is only used in tests (unit tests and integration tests via the
+/// `test-utils` feature). When the binary is built with `--all-features`, the
+/// `test-utils` feature is enabled but the binary doesn't use `TestLogger`, which
+/// would normally trigger a `dead_code` warning. We use `#[allow(dead_code)]`
+/// via `cfg_attr` to suppress this warning only in non-test builds - it's
+/// intentional that `TestLogger` is not used in production binary builds.
 #[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Default)]
 pub struct TestLogger {
     /// Captured complete log lines.
@@ -471,6 +481,7 @@ pub struct TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 impl TestLogger {
     /// Create a new test logger.
     pub fn new() -> Self {
@@ -508,6 +519,7 @@ impl TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 impl Loggable for TestLogger {
     fn log(&self, msg: &str) {
         self.logs.borrow_mut().push(msg.to_string());
@@ -531,6 +543,7 @@ impl Loggable for TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 impl Printable for TestLogger {
     fn is_terminal(&self) -> bool {
         // Test logger is never a terminal
@@ -539,6 +552,7 @@ impl Printable for TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 impl std::io::Write for TestLogger {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let s = std::str::from_utf8(buf)

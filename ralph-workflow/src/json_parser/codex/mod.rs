@@ -357,10 +357,6 @@ impl CodexParser {
             return Ok(false);
         }
 
-        let is_turn_completed = trimmed.starts_with('{')
-            && trimmed.contains("\"type\"")
-            && trimmed.contains("turn.completed");
-
         if self.verbosity.is_debug() {
             let mut printer = self.printer.borrow_mut();
             writeln!(
@@ -375,15 +371,23 @@ impl CodexParser {
             printer.flush()?;
         }
 
+        // Parse the event once for both display/logic and synthetic result writing
+        let parsed_event = if trimmed.starts_with('{') {
+            serde_json::from_str::<CodexEvent>(trimmed).ok()
+        } else {
+            None
+        };
+
+        // Check if this is a turn.completed event using the parsed event
+        let is_turn_completed = parsed_event
+            .as_ref()
+            .is_some_and(|e| matches!(e, CodexEvent::TurnCompleted { .. }));
+
         match self.parse_event(line) {
             Some(output) => {
-                if trimmed.starts_with('{') {
-                    if let Ok(event) = serde_json::from_str::<CodexEvent>(trimmed) {
-                        if Self::is_partial_event(&event) {
-                            monitor.record_partial_event();
-                        } else {
-                            monitor.record_parsed();
-                        }
+                if let Some(event) = &parsed_event {
+                    if Self::is_partial_event(event) {
+                        monitor.record_partial_event();
                     } else {
                         monitor.record_parsed();
                     }
@@ -395,15 +399,11 @@ impl CodexParser {
                 printer.flush()?;
             }
             None => {
-                if trimmed.starts_with('{') {
-                    if let Ok(event) = serde_json::from_str::<CodexEvent>(trimmed) {
-                        if Self::is_control_event(&event) {
-                            monitor.record_control_event();
-                        } else {
-                            monitor.record_unknown_event();
-                        }
+                if let Some(event) = &parsed_event {
+                    if Self::is_control_event(event) {
+                        monitor.record_control_event();
                     } else {
-                        monitor.record_parse_error();
+                        monitor.record_unknown_event();
                     }
                 } else {
                     monitor.record_ignored();
@@ -421,6 +421,8 @@ impl CodexParser {
                 {
                     // Propagate the error to ensure the result event is written
                     Self::write_synthetic_result_event(file, accumulated)?;
+                    // Sync to disk to ensure result event is persisted immediately
+                    file.get_mut().sync_all()?;
                 }
             }
         }
@@ -471,7 +473,7 @@ impl CodexParser {
             file.flush()?;
             // Ensure data is written to disk before continuing
             // This prevents race conditions where extraction runs before OS commits writes
-            let _ = file.get_mut().sync_all();
+            file.get_mut().sync_all()?;
         }
         if let Some(warning) = monitor.check_and_warn(self.colors) {
             let mut printer = self.printer.borrow_mut();
