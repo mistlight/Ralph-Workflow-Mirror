@@ -8,6 +8,8 @@ mod codex_parser_tests;
 mod commit;
 mod common;
 mod deduplication;
+mod gemini_parser_tests;
 mod git;
 mod logger;
+mod opencode_parser_tests;
 mod workflows;

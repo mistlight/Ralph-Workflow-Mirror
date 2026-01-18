@@ -122,6 +122,36 @@ impl GeminiParser {
         self
     }
 
+    /// Create a new parser with a test printer.
+    ///
+    /// This is the primary entry point for integration tests that need
+    /// to capture parser output for verification.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn with_printer_for_test(
+        colors: Colors,
+        verbosity: Verbosity,
+        printer: SharedPrinter,
+    ) -> Self {
+        Self::with_printer(colors, verbosity, printer)
+    }
+
+    /// Set the log file path for testing.
+    ///
+    /// This allows tests to verify log file content after parsing.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn with_log_file_for_test(mut self, path: &str) -> Self {
+        self.log_file = Some(path.to_string());
+        self
+    }
+
+    /// Parse a stream for testing purposes.
+    ///
+    /// This exposes the internal `parse_stream` method for integration tests.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn parse_stream_for_test<R: std::io::BufRead>(&self, reader: R) -> std::io::Result<()> {
+        self.parse_stream(reader)
+    }
+
     /// Get a shared reference to the printer.
     ///
     /// This allows tests, monitoring, and other code to access the printer after parsing
