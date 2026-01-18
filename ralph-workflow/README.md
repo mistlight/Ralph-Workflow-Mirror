@@ -60,6 +60,12 @@ Ralph makes **deterministic decisions whenever possible**, only calling on AI wh
 git clone https://codeberg.org/mistlight/RalphWithReviewer.git
 cd RalphWithReviewer
 cargo install --path .
+make install # (if you want to install this system wide)
+```
+
+Alternatively you can use cargo crate
+```bash
+cargo install ralph-workflow
 ```
 
 ### 2. Install AI Agents
