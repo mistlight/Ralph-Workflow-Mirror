@@ -60,6 +60,7 @@ IMPORTANT: You are in FULL AUTO mode and have permission to:
 - Read any of the files listed in "FILES YOU MAY MODIFY" using whatever tools you have available
 - Apply patches, edits, or any modifications needed to fix the issues
 - Make all necessary changes without asking for confirmation
+- The yolo flag is enabled, which grants you permission to use file editing tools directly
 
 AFTER FIXING:
 Return your completion status as structured output:
