@@ -92,9 +92,10 @@ fn build_model_flags_list(ctx: &ModelFlagBuildContext<'_>) -> Vec<Option<String>
 /// Build the command string for a specific model configuration.
 fn build_command_for_model(ctx: &TryModelContext<'_>, runtime: &PipelineRuntime<'_>) -> String {
     let model_ref = ctx.model_flag.map(std::string::String::as_str);
-    // Enable yolo for Developer and Commit roles always.
-    // For Reviewer, only enable in fix mode (detected via base_label starting with "fix").
-    let yolo = matches!(ctx.role, AgentRole::Developer | AgentRole::Commit)
+    // Enable yolo for Developer role always.
+    // For Reviewer and Commit, only enable in fix mode (detected via base_label starting with "fix").
+    let yolo = matches!(ctx.role, AgentRole::Developer)
+        || (ctx.role == AgentRole::Commit && ctx.base_label.starts_with("fix"))
         || (ctx.role == AgentRole::Reviewer && ctx.base_label.starts_with("fix"));
 
     if ctx.agent_index == 0 && ctx.cycle == 0 && ctx.model_index == 0 {
