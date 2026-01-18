@@ -43,10 +43,11 @@ rg -n -U --pcre2 '(?x)
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy -p ralph-workflow --all-targets --all-features -- -D warnings
+cargo clippy -p tests --all-targets --features test-utils -- -D warnings
 cargo test --all-features
 cargo build --release
-make release # in theory same as above
+make release # in theory the same as above
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 

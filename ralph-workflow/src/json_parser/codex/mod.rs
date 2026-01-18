@@ -134,6 +134,40 @@ impl CodexParser {
         self
     }
 
+    // ===== Test utilities (available with test-utils feature) =====
+
+    /// Create a new parser with a custom printer (for testing).
+    ///
+    /// This method is public when the `test-utils` feature is enabled,
+    /// allowing integration tests to create parsers with custom printers.
+    #[cfg(feature = "test-utils")]
+    pub fn with_printer_for_test(
+        colors: Colors,
+        verbosity: Verbosity,
+        printer: SharedPrinter,
+    ) -> Self {
+        Self::with_printer(colors, verbosity, printer)
+    }
+
+    /// Set the log file path (for testing).
+    ///
+    /// This method is public when the `test-utils` feature is enabled,
+    /// allowing integration tests to configure log file output.
+    #[cfg(feature = "test-utils")]
+    pub fn with_log_file_for_test(mut self, path: &str) -> Self {
+        self.log_file = Some(path.to_string());
+        self
+    }
+
+    /// Parse a stream of JSON events (for testing).
+    ///
+    /// This method is public when the `test-utils` feature is enabled,
+    /// allowing integration tests to invoke parsing.
+    #[cfg(feature = "test-utils")]
+    pub fn parse_stream_for_test<R: std::io::BufRead>(&self, reader: R) -> std::io::Result<()> {
+        self.parse_stream(reader)
+    }
+
     /// Get a shared reference to the printer.
     ///
     /// This allows tests, monitoring, and other code to access the printer after parsing
@@ -308,11 +342,11 @@ impl CodexParser {
     /// This is called when a `TurnCompleted` event is encountered to ensure
     /// that the extraction process can find the aggregated content.
     ///
-    /// # Important: Persistence Guarantees
+    /// # Persistence Guarantees
     ///
-    /// This function flushes the `BufWriter` after writing. The final `sync_all()`
-    /// on the underlying `File` happens at the end of `parse_stream()` to ensure
-    /// all data is committed to physical storage.
+    /// This function flushes the `BufWriter` after writing and calls `sync_all()`
+    /// to ensure data is committed to physical storage. Errors are propagated
+    /// to ensure the result event is actually persisted before continuing.
     fn write_synthetic_result_event(
         file: &mut impl std::io::Write,
         accumulated: &str,
@@ -495,8 +529,11 @@ impl CodexParser {
                 }
             }
             file.flush()?;
-            // Ensure data is written to disk before continuing
-            // This prevents race conditions where extraction runs before OS commits writes
+        }
+        // Ensure data is written to disk before continuing
+        // This prevents race conditions where extraction runs before OS commits writes
+        if let Some(ref mut file) = log_writer {
+            // Propagate sync_all errors to ensure all data is committed to disk
             file.get_mut().sync_all()?;
         }
         if let Some(warning) = monitor.check_and_warn(self.colors) {

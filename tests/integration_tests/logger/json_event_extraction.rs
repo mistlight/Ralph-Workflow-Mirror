@@ -214,6 +214,7 @@ fn test_logger_json_event_extraction_empty_file() {
     // Create an empty file
     OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open(&log_path)
         .unwrap();

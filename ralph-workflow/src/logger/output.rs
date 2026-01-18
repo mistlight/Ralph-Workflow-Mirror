@@ -505,12 +505,11 @@ pub trait Loggable {
 ///
 /// # Availability
 ///
-/// `TestLogger` is available in test builds (`#[cfg(test)]`) and when the
+/// `TestLogger` is available in test builds (`#[cfg(any(test, feature = "test-utils"))]`) and when the
 /// `test-utils` feature is enabled (for integration tests). In production
 /// binary builds with `--all-features`, the `test-utils` feature enables
 /// this code but it's not used by the binary, which is expected behavior.
 #[cfg(any(test, feature = "test-utils"))]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Default)]
 pub struct TestLogger {
     /// Captured complete log lines.
@@ -520,7 +519,6 @@ pub struct TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-#[cfg_attr(not(test), allow(dead_code))]
 impl TestLogger {
     /// Create a new test logger.
     pub fn new() -> Self {
@@ -558,7 +556,6 @@ impl TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-#[cfg_attr(not(test), allow(dead_code))]
 impl Loggable for TestLogger {
     fn log(&self, msg: &str) {
         self.logs.borrow_mut().push(msg.to_string());
@@ -582,7 +579,6 @@ impl Loggable for TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-#[cfg_attr(not(test), allow(dead_code))]
 impl Printable for TestLogger {
     fn is_terminal(&self) -> bool {
         // Test logger is never a terminal
@@ -591,7 +587,6 @@ impl Printable for TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-#[cfg_attr(not(test), allow(dead_code))]
 impl std::io::Write for TestLogger {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let s = std::str::from_utf8(buf)
