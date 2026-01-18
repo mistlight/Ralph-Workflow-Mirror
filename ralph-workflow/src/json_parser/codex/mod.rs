@@ -47,7 +47,7 @@ use super::terminal::TerminalMode;
 use super::types::{format_unknown_json_event, CodexEvent};
 
 use event_handlers::{
-    handle_error, handle_item_completed, handle_item_started, handle_thread_started,
+    handle_error, handle_item_completed, handle_item_started, handle_result, handle_thread_started,
     handle_turn_completed, handle_turn_failed, handle_turn_started, EventHandlerContext,
 };
 
@@ -240,6 +240,14 @@ impl CodexParser {
                     Some(output)
                 }
             }
+            CodexEvent::Result { result } => {
+                let output = handle_result(&ctx, result);
+                if output.is_empty() {
+                    None
+                } else {
+                    Some(output)
+                }
+            }
             CodexEvent::Unknown => {
                 // Use the generic unknown event formatter for consistent handling
                 let output = format_unknown_json_event(
@@ -268,7 +276,8 @@ impl CodexParser {
             CodexEvent::ThreadStarted { .. }
             | CodexEvent::TurnStarted { .. }
             | CodexEvent::TurnCompleted { .. }
-            | CodexEvent::TurnFailed { .. } => true,
+            | CodexEvent::TurnFailed { .. }
+            | CodexEvent::Result { .. } => true,
             // Item started/completed events are control events for certain item types
             CodexEvent::ItemStarted { item } => {
                 item.as_ref().and_then(|i| i.item_type.as_deref()) == Some("plan_update")
@@ -296,11 +305,28 @@ impl CodexParser {
         }
     }
 
+    /// Write a synthetic result event to the log file with accumulated content.
+    ///
+    /// This is called when a `TurnCompleted` event is encountered to ensure
+    /// that the extraction process can find the aggregated content.
+    fn write_synthetic_result_event(
+        file: &mut impl std::io::Write,
+        accumulated: &str,
+    ) -> io::Result<()> {
+        let result_event = CodexEvent::Result {
+            result: Some(accumulated.to_string()),
+        };
+        if let Ok(json) = serde_json::to_string(&result_event) {
+            writeln!(file, "{json}")?;
+            file.flush()?;
+        }
+        Ok(())
+    }
+
     /// Parse a stream of Codex NDJSON events
     pub(crate) fn parse_stream<R: BufRead>(&self, mut reader: R) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
-        let c = &self.colors;
         let monitor = HealthMonitor::new("Codex");
         let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
             std::fs::OpenOptions::new()
@@ -311,53 +337,45 @@ impl CodexParser {
                 .map(std::io::BufWriter::new)
         });
 
-        // Use incremental parser for true real-time streaming
-        // This processes JSON as soon as it's complete, not waiting for newlines
         let mut incremental_parser = IncrementalNdjsonParser::new();
         let mut byte_buffer = Vec::new();
 
         loop {
-            // Read available bytes
             byte_buffer.clear();
             let chunk = reader.fill_buf()?;
             if chunk.is_empty() {
                 break;
             }
-
-            // Process all bytes immediately
-            byte_buffer.extend_from_slice(chunk);
             let consumed = chunk.len();
+            byte_buffer.extend_from_slice(chunk);
             reader.consume(consumed);
 
-            // Feed bytes to incremental parser
-            let json_events = incremental_parser.feed(&byte_buffer);
-
-            // Process each complete JSON event immediately
-            for line in json_events {
+            for line in incremental_parser.feed(&byte_buffer) {
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
                     continue;
                 }
 
-                // In debug mode, also show the raw JSON
+                let is_turn_completed = trimmed.starts_with('{')
+                    && trimmed.contains("\"type\"")
+                    && trimmed.contains("turn.completed");
+
                 if self.verbosity.is_debug() {
                     let mut printer = self.printer.borrow_mut();
                     writeln!(
                         printer,
                         "{}[DEBUG]{} {}{}{}",
-                        c.dim(),
-                        c.reset(),
-                        c.dim(),
+                        self.colors.dim(),
+                        self.colors.reset(),
+                        self.colors.dim(),
                         &line,
-                        c.reset()
+                        self.colors.reset()
                     )?;
                     printer.flush()?;
                 }
 
-                // Parse the event once - parse_event handles malformed JSON by returning None
                 match self.parse_event(&line) {
                     Some(output) => {
-                        // Check if this is a partial/delta event (streaming content)
                         if trimmed.starts_with('{') {
                             if let Ok(event) = serde_json::from_str::<CodexEvent>(&line) {
                                 if Self::is_partial_event(&event) {
@@ -371,23 +389,19 @@ impl CodexParser {
                         } else {
                             monitor.record_parsed();
                         }
-                        // Write output to printer
                         let mut printer = self.printer.borrow_mut();
                         write!(printer, "{output}")?;
                         printer.flush()?;
                     }
                     None => {
-                        // Check if this was a control event (state management with no user output)
                         if trimmed.starts_with('{') {
                             if let Ok(event) = serde_json::from_str::<CodexEvent>(&line) {
                                 if Self::is_control_event(&event) {
                                     monitor.record_control_event();
                                 } else {
-                                    // Valid JSON but not a control event - track as unknown
                                     monitor.record_unknown_event();
                                 }
                             } else {
-                                // Failed to deserialize - track as parse error
                                 monitor.record_parse_error();
                             }
                         } else {
@@ -396,9 +410,17 @@ impl CodexParser {
                     }
                 }
 
-                // Log raw JSON to file if configured
                 if let Some(ref mut file) = log_writer {
                     writeln!(file, "{line}")?;
+                    if is_turn_completed {
+                        if let Some(accumulated) = self
+                            .streaming_session
+                            .borrow()
+                            .get_accumulated(super::types::ContentType::Text, "agent_msg")
+                        {
+                            let _ = Self::write_synthetic_result_event(file, accumulated);
+                        }
+                    }
                 }
             }
         }
@@ -406,7 +428,7 @@ impl CodexParser {
         if let Some(ref mut file) = log_writer {
             file.flush()?;
         }
-        if let Some(warning) = monitor.check_and_warn(*c) {
+        if let Some(warning) = monitor.check_and_warn(self.colors) {
             let mut printer = self.printer.borrow_mut();
             writeln!(printer, "{warning}")?;
         }

@@ -585,3 +585,30 @@ pub fn handle_error(
         err
     )
 }
+
+/// Handle `Result` event.
+///
+/// This is a synthetic event written by the parser to enable content extraction.
+/// It contains the aggregated content from `agent_message` items.
+pub fn handle_result(ctx: &EventHandlerContext, result: Option<String>) -> String {
+    // Result events are only written to the log file, not displayed to the user
+    // Return empty string to suppress display
+    if ctx.verbosity.is_debug() {
+        if let Some(content) = result {
+            let limit = ctx.verbosity.truncate_limit("result");
+            let preview = truncate_text(&content, limit);
+            return format!(
+                "{}[{}]{} {}Result:{} {}{}{}\n",
+                ctx.colors.dim(),
+                ctx.display_name,
+                ctx.colors.reset(),
+                ctx.colors.green(),
+                ctx.colors.reset(),
+                ctx.colors.dim(),
+                preview,
+                ctx.colors.reset()
+            );
+        }
+    }
+    String::new()
+}

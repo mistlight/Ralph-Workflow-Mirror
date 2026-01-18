@@ -321,6 +321,7 @@ pub enum ContentBlock {
 /// - `turn.started`/`turn.completed`/`turn.failed`: Turn lifecycle events
 /// - `item.started`/`item.completed`: Item events for commands, file ops, messages, etc.
 /// - `error`: Error events
+/// - `result`: Synthetic result event written by the parser (not from Codex CLI itself)
 ///
 /// Item types include: `agent_message`, reasoning, `command_execution`, `file_read`,
 /// `file_write`, `file_change`, `mcp_tool_call`, `web_search`, `plan_update`
@@ -340,6 +341,10 @@ pub enum CodexEvent {
     ItemStarted { item: Option<CodexItem> },
     #[serde(rename = "item.completed")]
     ItemCompleted { item: Option<CodexItem> },
+    /// Result event containing aggregated content from `agent_message` items
+    /// This is a synthetic event written by the parser to enable content extraction
+    #[serde(rename = "result")]
+    Result { result: Option<String> },
     Error {
         message: Option<String>,
         error: Option<String>,
