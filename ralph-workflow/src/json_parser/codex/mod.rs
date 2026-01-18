@@ -322,10 +322,9 @@ impl CodexParser {
         let result_event = CodexEvent::Result {
             result: Some(accumulated.to_string()),
         };
-        if let Ok(json) = serde_json::to_string(&result_event) {
-            writeln!(file, "{json}")?;
-            file.flush()?;
-        }
+        let json = serde_json::to_string(&result_event)?;
+        writeln!(file, "{json}")?;
+        file.flush()?;
         Ok(())
     }
 
@@ -420,7 +419,8 @@ impl CodexParser {
                     .borrow()
                     .get_accumulated(super::types::ContentType::Text, "agent_msg")
                 {
-                    let _ = Self::write_synthetic_result_event(file, accumulated);
+                    // Propagate the error to ensure the result event is written
+                    Self::write_synthetic_result_event(file, accumulated)?;
                 }
             }
         }
