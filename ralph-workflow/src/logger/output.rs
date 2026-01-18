@@ -96,7 +96,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use std::cell::RefCell;
 
 /// Logger for Ralph output.
@@ -461,8 +461,9 @@ pub trait Loggable {
 /// This logger stores all log messages in memory for testing purposes.
 /// It provides methods to retrieve and inspect the captured log output.
 /// Uses line buffering similar to `TestPrinter` to handle partial writes.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub struct TestLogger {
     /// Captured complete log lines.
     logs: RefCell<Vec<String>>,
@@ -470,7 +471,8 @@ pub struct TestLogger {
     buffer: RefCell<String>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
+#[allow(dead_code)]
 impl TestLogger {
     /// Create a new test logger.
     pub fn new() -> Self {
@@ -507,7 +509,7 @@ impl TestLogger {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 impl Loggable for TestLogger {
     fn log(&self, msg: &str) {
         self.logs.borrow_mut().push(msg.to_string());
@@ -530,7 +532,7 @@ impl Loggable for TestLogger {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 impl Printable for TestLogger {
     fn is_terminal(&self) -> bool {
         // Test logger is never a terminal
@@ -538,7 +540,7 @@ impl Printable for TestLogger {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 impl std::io::Write for TestLogger {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let s = std::str::from_utf8(buf)
@@ -718,7 +720,9 @@ pub fn format_generic_json_for_display(line: &str, verbosity: Verbosity) -> Stri
 
 #[cfg(test)]
 mod output_formatting_tests {
-    use super::*;
+    use super::argv_requests_json;
+    use super::format_generic_json_for_display;
+    use crate::config::Verbosity;
 
     #[test]
     fn test_argv_requests_json_detects_common_flags() {

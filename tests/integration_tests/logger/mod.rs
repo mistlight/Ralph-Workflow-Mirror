@@ -5,3 +5,4 @@
 //! parsed by `extract_result_from_file`.
 
 mod json_event_extraction;
+mod test_logger_tests;

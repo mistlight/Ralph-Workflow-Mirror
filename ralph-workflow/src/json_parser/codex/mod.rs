@@ -309,6 +309,12 @@ impl CodexParser {
     ///
     /// This is called when a `TurnCompleted` event is encountered to ensure
     /// that the extraction process can find the aggregated content.
+    ///
+    /// # Important: Persistence Guarantees
+    ///
+    /// This function flushes the `BufWriter` after writing. The final `sync_all()`
+    /// on the underlying `File` happens at the end of `parse_stream()` to ensure
+    /// all data is committed to physical storage.
     fn write_synthetic_result_event(
         file: &mut impl std::io::Write,
         accumulated: &str,

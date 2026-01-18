@@ -54,6 +54,10 @@ mod output;
 mod progress;
 
 pub use output::{argv_requests_json, format_generic_json_for_display, Loggable, Logger};
+
+#[cfg(any(test, feature = "test-utils"))]
+#[allow(unused_imports)]
+pub use output::TestLogger;
 pub use progress::print_progress;
 
 // ===== Colors & Formatting =====

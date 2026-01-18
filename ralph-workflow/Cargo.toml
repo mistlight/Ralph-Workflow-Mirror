@@ -24,6 +24,8 @@ path = "src/main.rs"
 default = ["monitoring"]
 # Enable monitoring/debugging APIs (printer, streaming_metrics)
 monitoring = []
+# Enable test utilities (TestLogger, TestPrinter, etc.) for integration testing
+test-utils = []
 
 [dependencies]
 # CLI argument parsing
