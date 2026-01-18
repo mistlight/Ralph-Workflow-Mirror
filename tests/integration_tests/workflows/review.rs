@@ -1,9 +1,26 @@
 use predicates::prelude::*;
 use std::fs;
+use std::path::Path;
 use tempfile::TempDir;
 
 use crate::common::ralph_cmd;
 use test_helpers::{commit_all, init_git_repo, write_file};
+
+/// Create an isolated config file in the test directory.
+/// This prevents user config from interfering with tests.
+fn create_isolated_config(dir: &Path) -> std::path::PathBuf {
+    let config_home = dir.join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["codex"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+    config_home
+}
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
@@ -98,6 +115,11 @@ fn ralph_reviewer_reviews_one_runs_single_cycle() {
 
     let counter_path = dir.path().join(".agent/review_counter");
     let script_path = dir.path().join("review_script.sh");
+
+    // Create isolated config to avoid user config interference
+    let config_home = create_isolated_config(dir.path());
+
+    // Agent output must include JSON result events for the orchestrator to extract issues
     fs::write(
         &script_path,
         format!(
@@ -112,13 +134,14 @@ else
 fi
 echo $count > "{counter}"
 
-# On odd calls (review phases): create ISSUES.md with issues
-# On even calls (fix phases): just run
+# On odd calls (review phases): output JSON result with issues
+# On even calls (fix phases): output JSON result indicating completion
 if [ $((count % 2)) -ne 0 ]; then
-    echo "# Issues" > .agent/ISSUES.md
-    echo "" >> .agent/ISSUES.md
-    echo "Critical:" >> .agent/ISSUES.md
-    echo "- [ ] Issue found" >> .agent/ISSUES.md
+    # Review phase: output issues in JSON format that orchestrator can extract
+    printf '{{"type":"result","result":"# Issues\\n\\nCritical:\\n- [ ] [initial.txt:1] Issue found"}}\n'
+else
+    # Fix phase: output completion message
+    printf '{{"type":"result","result":"Fixed the issue in initial.txt"}}\n'
 fi
 
 exit 0
@@ -131,6 +154,7 @@ exit 0
     let mut cmd = ralph_cmd();
     base_env(&mut cmd)
         .current_dir(dir.path())
+        .env("XDG_CONFIG_HOME", &config_home)
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "1") // N=1 should run one cycle
         .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
