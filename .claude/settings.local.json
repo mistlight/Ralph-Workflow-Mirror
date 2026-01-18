@@ -50,7 +50,11 @@
       "WebFetch(domain:github.blog)",
       "Bash(git reset:*)",
       "Bash(git worktree:*)",
-      "mcp__filesystem__read_multiple_files"
+      "mcp__filesystem__read_multiple_files",
+      "Bash(git rev-list:*)",
+      "Bash(git cat-file:*)",
+      "Bash(sort:*)",
+      "Bash(du:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
