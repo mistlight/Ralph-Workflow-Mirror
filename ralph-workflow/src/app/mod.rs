@@ -396,8 +396,8 @@ fn setup_git_and_prompt_file(
         println!();
         logger.info("To get started:");
         logger.info("  ralph --init                    # Smart setup wizard");
-        logger.info("  ralph --init bug-fix             # Create from template");
-        logger.info("  ralph --list-templates            # See all templates");
+        logger.info("  ralph --init bug-fix             # Create from Work Guide");
+        logger.info("  ralph --list-work-guides          # See all Work Guides");
         println!();
         return Ok(None);
     }
@@ -409,8 +409,8 @@ fn setup_git_and_prompt_file(
         println!();
         logger.info("Quick start:");
         logger.info("  ralph --init                    # Smart setup wizard");
-        logger.info("  ralph --init bug-fix             # Create from template");
-        logger.info("  ralph --list-templates            # See all templates");
+        logger.info("  ralph --init bug-fix             # Create from Work Guide");
+        logger.info("  ralph --list-work-guides          # See all Work Guides");
         println!();
         logger.info("Use -i flag for interactive mode to be prompted for template selection.");
         println!();

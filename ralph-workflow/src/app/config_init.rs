@@ -35,7 +35,7 @@ pub struct ConfigInitResult {
 /// 1. Loads config from unified config file (~/.config/ralph-workflow.toml)
 /// 2. Applies environment variable overrides
 /// 3. Applies CLI arguments to config
-/// 4. Handles --list-templates, --init-prompt, --init/--init-global (unified), and --init-legacy if set
+/// 4. Handles --list-work-guides, --init-prompt, --init/--init-global (unified), and --init-legacy if set
 /// 5. Loads agent registry from built-ins + unified config
 /// 6. Selects default agents from fallback chains
 ///

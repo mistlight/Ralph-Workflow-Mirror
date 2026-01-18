@@ -632,14 +632,14 @@ pub struct Args {
     )]
     pub config: Option<std::path::PathBuf>,
 
-    /// Initialize PROMPT.md from a Task Template and exit
+    /// Initialize PROMPT.md from a Work Guide and exit
     ///
     /// This is a legacy alias for `--init <template>`. Consider using `--init` instead.
     ///
-    /// Task Templates describe YOUR work to the AI (e.g., bug-fix, feature-spec).
-    /// These are different from System Prompts which configure AI behavior.
+    /// Work Guides describe YOUR work to the AI (e.g., bug-fix, feature-spec).
+    /// These are different from Agent Prompts which configure AI behavior.
     ///
-    /// Available Task Templates:
+    /// Available Work Guides:
     /// quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
     /// performance-optimization, security-audit, api-integration, database-migration,
     /// dependency-update, data-pipeline, ui-component, code-review, debug-triage,
@@ -647,7 +647,7 @@ pub struct Args {
     #[arg(
         long,
         value_name = "TEMPLATE",
-        help = "Create PROMPT.md from a Task Template (use --list-templates to see options)"
+        help = "Create PROMPT.md from a Work Guide (use --list-work-guides to see options)"
     )]
     pub init_prompt: Option<String>,
 

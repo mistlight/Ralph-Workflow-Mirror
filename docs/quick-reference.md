@@ -70,7 +70,7 @@ ralph -D 3 -R 2 "feat: add user settings"
 ```bash
 ralph --help           # Show basic help (quick start, common flags)
 ralph --help-advanced  # Show comprehensive help (all options, templates, docs)
-ralph --list-templates # Show available PROMPT.md templates
+ralph --list-work-guides  # Show available Work Guides for PROMPT.md
 ```
 
 ## Preset Modes
@@ -143,12 +143,12 @@ ralph --no-isolation            # Keep NOTES.md/ISSUES.md
 ralph --reset-start-commit      # Reset diff baseline
 ```
 
-### PROMPT.md Templates
+### PROMPT.md Work Guides
 ```bash
-ralph --list-templates          # Show available templates
-ralph --init-prompt feature-spec
-ralph --init-prompt bug-fix
-ralph --init-prompt refactor
+ralph --list-work-guides        # Show available Work Guides
+ralph --init feature-spec       # Create PROMPT.md from Work Guide
+ralph --init bug-fix
+ralph --init refactor
 ralph --interactive             # Prompt if PROMPT.md missing
 ```
 

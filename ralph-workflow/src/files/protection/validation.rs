@@ -278,8 +278,8 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
                 );
             } else {
                 result.errors.push(
-                    "PROMPT.md not found. Run 'ralph --list-templates' to see available templates, \
-                     then 'ralph --init-prompt <template>' to create one."
+                    "PROMPT.md not found. Run 'ralph --list-work-guides' to see available Work Guides, \
+                     then 'ralph --init <template>' to create one."
                         .to_string(),
                 );
             }
@@ -414,11 +414,11 @@ mod tests {
             assert!(!result.exists());
             assert!(!result.is_valid());
             assert!(result.errors.iter().any(|e| e.contains("not found")));
-            // Verify template suggestion is included
+            // Verify Work Guide suggestion is included
             assert!(result
                 .errors
                 .iter()
-                .any(|e| e.contains("--list-templates") || e.contains("--init-prompt")));
+                .any(|e| e.contains("--list-work-guides") || e.contains("--init")));
         });
     }
 

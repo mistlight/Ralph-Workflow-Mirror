@@ -17,4 +17,4 @@ Provide any relevant context about the task:
 
 - This is a minimal PROMPT.md created by `ralph --init`
 - You can edit this file directly or use `ralph --init <work-guide>` to start from a Work Guide
-- Run `ralph --list-templates` to see all available Work Guides
+- Run `ralph --list-work-guides` to see all available Work Guides
