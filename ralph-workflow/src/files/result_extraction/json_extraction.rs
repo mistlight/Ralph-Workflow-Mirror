@@ -189,3 +189,62 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
 
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_extract_result_from_file_with_trailing_newline() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, r#"{{"type":"message","content":"first"}}"#).unwrap();
+        writeln!(
+            temp_file,
+            r#"{{"type":"result","result":"the result content"}}"#
+        )
+        .unwrap();
+
+        let result = extract_result_from_file(temp_file.path()).unwrap();
+        assert_eq!(result, Some("the result content".to_string()));
+    }
+
+    #[test]
+    fn test_extract_result_from_file_without_trailing_newline() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, r#"{{"type":"message","content":"first"}}"#).unwrap();
+        // Write the last line WITHOUT a trailing newline
+        write!(
+            temp_file,
+            r#"{{"type":"result","result":"the result content"}}"#
+        )
+        .unwrap();
+
+        let result = extract_result_from_file(temp_file.path()).unwrap();
+        assert_eq!(result, Some("the result content".to_string()));
+    }
+
+    #[test]
+    fn test_extract_result_from_file_last_line_only() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        // Single line without trailing newline
+        write!(temp_file, r#"{{"type":"result","result":"only line"}}"#).unwrap();
+
+        let result = extract_result_from_file(temp_file.path()).unwrap();
+        assert_eq!(result, Some("only line".to_string()));
+    }
+
+    #[test]
+    fn test_extract_result_from_file_no_result() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(
+            temp_file,
+            r#"{{"type":"message","content":"just a message"}}"#
+        )
+        .unwrap();
+
+        let result = extract_result_from_file(temp_file.path()).unwrap();
+        assert_eq!(result, None);
+    }
+}

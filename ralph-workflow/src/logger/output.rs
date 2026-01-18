@@ -14,6 +14,9 @@ use std::fs::{self, OpenOptions};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
+#[cfg(test)]
+use std::cell::RefCell;
+
 /// Logger for Ralph output.
 ///
 /// Provides consistent, colorized output with optional file logging.
@@ -232,6 +235,66 @@ pub fn strip_ansi_codes(s: &str) -> String {
         .map_or_else(|_| s.to_string(), |re| re.replace_all(s, "").to_string())
 }
 
+/// Trait for logger output destinations.
+///
+/// This trait allows loggers to write to different destinations
+/// (files, test collectors) without hardcoding the specific destination.
+/// This makes loggers testable by allowing output capture.
+#[cfg(test)]
+pub trait LogSink {
+    /// Write a log message to the sink.
+    fn log(&self, msg: &str);
+}
+
+/// Test logger that captures log output for assertion.
+///
+/// This logger stores all log messages in memory for testing purposes.
+/// It provides methods to retrieve and inspect the captured log output.
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub struct TestLogger {
+    /// Captured log messages.
+    logs: RefCell<Vec<String>>,
+}
+
+#[cfg(test)]
+impl TestLogger {
+    /// Create a new test logger.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get all captured log messages.
+    pub fn get_logs(&self) -> Vec<String> {
+        self.logs.borrow().clone()
+    }
+
+    /// Clear all captured log messages.
+    pub fn clear(&self) {
+        self.logs.borrow_mut().clear();
+    }
+
+    /// Check if a specific message exists in the logs.
+    pub fn has_log(&self, msg: &str) -> bool {
+        self.get_logs().iter().any(|l| l.contains(msg))
+    }
+
+    /// Get the number of times a specific pattern appears in logs.
+    pub fn count_pattern(&self, pattern: &str) -> usize {
+        self.get_logs()
+            .iter()
+            .filter(|l| l.contains(pattern))
+            .count()
+    }
+}
+
+#[cfg(test)]
+impl LogSink for TestLogger {
+    fn log(&self, msg: &str) {
+        self.logs.borrow_mut().push(msg.to_string());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +315,42 @@ mod tests {
     fn test_strip_ansi_codes_multiple() {
         let input = "\x1b[1m\x1b[32mbold green\x1b[0m \x1b[34mblue\x1b[0m";
         assert_eq!(strip_ansi_codes(input), "bold green blue");
+    }
+
+    #[test]
+    fn test_logger_captures_output() {
+        let logger = TestLogger::new();
+        logger.log("Test message");
+        assert!(logger.has_log("Test message"));
+    }
+
+    #[test]
+    fn test_logger_get_logs() {
+        let logger = TestLogger::new();
+        logger.log("Message 1");
+        logger.log("Message 2");
+        let logs = logger.get_logs();
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[0], "Message 1");
+        assert_eq!(logs[1], "Message 2");
+    }
+
+    #[test]
+    fn test_logger_clear() {
+        let logger = TestLogger::new();
+        logger.log("Before clear");
+        assert!(!logger.get_logs().is_empty());
+        logger.clear();
+        assert!(logger.get_logs().is_empty());
+    }
+
+    #[test]
+    fn test_logger_count_pattern() {
+        let logger = TestLogger::new();
+        logger.log("test message 1");
+        logger.log("test message 2");
+        logger.log("other message");
+        assert_eq!(logger.count_pattern("test"), 2);
     }
 }
 
