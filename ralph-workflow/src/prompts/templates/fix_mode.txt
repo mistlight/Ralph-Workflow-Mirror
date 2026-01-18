@@ -50,10 +50,12 @@ YOUR TASK:
 CRITICAL CONSTRAINTS:
 - The ISSUES content is ALREADY PROVIDED above in this prompt - review it carefully
 - You MUST ONLY modify files that are listed in the "FILES YOU MAY MODIFY" section
+- You MAY use your file reading and editing tools (Read, Edit, Write, apply_patch, etc.) on the files listed in "FILES YOU MAY MODIFY"
 - You MAY read the files listed in "FILES YOU MAY MODIFY" to understand the code
 - You MUST NOT read any other files in the repository
-- You MUST NOT run commands to discover files or explore the codebase
-- DO NOT run any commands including ls, find, git, cat, git grep, etc.
+- You MUST NOT run discovery or exploration commands to explore the codebase
+- DO NOT run commands like: ls, find, git grep, rg, grep, or other codebase search/exploration tools
+- You MUST NOT use shell commands to read files (cat, head, tail, etc.) - use your native file tools instead
 - The issues content is provided for reference - DO NOT try to read any ISSUES file
 - Your work MUST be limited to fixing issues described in the embedded ISSUES content above
 

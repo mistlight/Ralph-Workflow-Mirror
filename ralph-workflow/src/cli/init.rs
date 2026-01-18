@@ -194,7 +194,13 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
 fn print_template_category(category_name: &str, templates: &[(&str, &str)], colors: Colors) {
     println!("{}{}:{}", colors.bold(), category_name, colors.reset());
     for (name, description) in templates {
-        println!("  {}{}{}  {}", colors.cyan(), name, colors.reset(), description);
+        println!(
+            "  {}{}{}  {}",
+            colors.cyan(),
+            name,
+            colors.reset(),
+            description
+        );
     }
     println!();
 }
@@ -243,7 +249,10 @@ pub fn handle_list_templates(colors: Colors) -> bool {
         &[
             ("cli-tool", "CLI tool with argument parsing and completion"),
             ("web-api", "REST/HTTP API with error handling"),
-            ("ui-component", "UI component with accessibility and responsive design"),
+            (
+                "ui-component",
+                "UI component with accessibility and responsive design",
+            ),
             ("onboarding", "Learn a new codebase efficiently"),
         ],
         colors,
@@ -257,8 +266,14 @@ pub fn handle_list_templates(colors: Colors) -> bool {
                 "performance-optimization",
                 "Performance optimization with benchmarking",
             ),
-            ("security-audit", "Security audit with OWASP Top 10 coverage"),
-            ("api-integration", "API integration with retry logic and resilience"),
+            (
+                "security-audit",
+                "Security audit with OWASP Top 10 coverage",
+            ),
+            (
+                "api-integration",
+                "API integration with retry logic and resilience",
+            ),
             (
                 "database-migration",
                 "Database migration with zero-downtime strategies",
@@ -276,9 +291,18 @@ pub fn handle_list_templates(colors: Colors) -> bool {
     print_template_category(
         "Maintenance & Operations",
         &[
-            ("debug-triage", "Systematic issue investigation and diagnosis"),
-            ("tech-debt", "Technical debt refactoring with prioritization"),
-            ("release", "Release preparation with versioning and changelog"),
+            (
+                "debug-triage",
+                "Systematic issue investigation and diagnosis",
+            ),
+            (
+                "tech-debt",
+                "Technical debt refactoring with prioritization",
+            ),
+            (
+                "release",
+                "Release preparation with versioning and changelog",
+            ),
         ],
         colors,
     );
