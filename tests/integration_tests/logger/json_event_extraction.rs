@@ -5,6 +5,7 @@
 
 use ralph_workflow::files::result_extraction::extract_last_result;
 use ralph_workflow::logger::Colors;
+use ralph_workflow::logger::Loggable;
 use ralph_workflow::logger::Logger;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -361,4 +362,141 @@ fn test_user_reported_bug_scenario_with_logger() {
     assert!(result_content.contains("Critical:"));
     assert!(result_content.contains("args.rs"));
     assert!(result_content.contains("duplicate"));
+}
+
+/// Test using Loggable trait as a generic constraint.
+///
+/// This test demonstrates the Loggable trait's usefulness by writing
+/// a generic function that works with both Logger and TestLogger.
+#[test]
+fn test_loggable_trait_generic_function() {
+    use ralph_workflow::logger::output::TestLogger;
+
+    fn process_logs<L: Loggable>(logger: &L) {
+        logger.info("Starting process");
+        logger.success("Process completed");
+        logger.warn("Potential issue");
+        logger.error("Critical error");
+    }
+
+    // Test with TestLogger
+    let test_logger = TestLogger::new();
+    process_logs(&test_logger);
+
+    assert!(test_logger.has_log("[INFO] Starting process"));
+    assert!(test_logger.has_log("[OK] Process completed"));
+    assert!(test_logger.has_log("[WARN] Potential issue"));
+    assert!(test_logger.has_log("[ERROR] Critical error"));
+}
+
+/// Test Logger → file → extraction flow using Loggable trait.
+///
+/// This test uses the Loggable trait interface to write logs,
+/// demonstrating that the trait provides a unified interface for
+/// both production (Logger) and test (TestLogger) scenarios.
+#[test]
+fn test_loggable_trait_with_logger_file_extraction() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("loggable_test.log");
+
+    // Create a logger and use it via the Loggable trait
+    let logger = Logger::new(Colors::new()).with_log_file(log_path.to_str().unwrap());
+
+    // Use the Loggable trait methods
+    logger.log("[INFO] Direct log message");
+    logger.info("Info message via trait");
+    logger.success("Success message via trait");
+    logger.warn("Warning message via trait");
+    logger.error("Error message via trait");
+
+    // Verify the logs were written to the file
+    let log_content = std::fs::read_to_string(&log_path).unwrap();
+    assert!(log_content.contains("[INFO] Direct log message"));
+    assert!(log_content.contains("[INFO] Info message via trait"));
+    assert!(log_content.contains("[OK] Success message via trait"));
+    assert!(log_content.contains("[WARN] Warning message via trait"));
+    assert!(log_content.contains("[ERROR] Error message via trait"));
+
+    // Now append JSON events and verify extraction works
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .unwrap();
+
+    writeln!(file, r#"{{"type":"message","content":"Agent working"}}"#).unwrap();
+    // Write result event WITHOUT trailing newline
+    write!(
+        file,
+        r#"{{"type":"result","result":"Result from Loggable test"}}"#
+    )
+    .unwrap();
+    drop(file);
+
+    // Verify extraction works
+    let result = extract_last_result(&log_path).unwrap();
+    assert_eq!(result, Some("Result from Loggable test".to_string()));
+}
+
+/// Test TestLogger → extraction flow using Loggable trait.
+///
+/// This test verifies that TestLogger correctly implements the Loggable trait
+/// and captures log messages that can be inspected for testing.
+#[test]
+fn test_loggable_trait_with_testlogger() {
+    use ralph_workflow::logger::output::TestLogger;
+
+    let logger = TestLogger::new();
+
+    // Use the Loggable trait methods
+    logger.log("Direct log message");
+    logger.info("Info message");
+    logger.success("Success message");
+    logger.warn("Warning message");
+    logger.error("Error message");
+
+    // Verify all messages were captured
+    assert_eq!(logger.get_logs().len(), 5);
+    assert!(logger.has_log("Direct log message"));
+    assert!(logger.has_log("[INFO] Info message"));
+    assert!(logger.has_log("[OK] Success message"));
+    assert!(logger.has_log("[WARN] Warning message"));
+    assert!(logger.has_log("[ERROR] Error message"));
+}
+
+/// Test that Loggable trait default implementations work correctly.
+///
+/// This test verifies that the default implementations of info(), success(),
+/// warn(), and error() in the Loggable trait correctly format messages
+/// and delegate to the log() method.
+#[test]
+fn test_loggable_trait_default_implementations() {
+    use ralph_workflow::logger::output::TestLogger;
+
+    struct CustomLogger {
+        inner: TestLogger,
+    }
+
+    // Implement only the required log() method
+    impl Loggable for CustomLogger {
+        fn log(&self, msg: &str) {
+            self.inner.log(msg);
+        }
+    }
+
+    let logger = CustomLogger {
+        inner: TestLogger::new(),
+    };
+
+    // Use the default implementations
+    logger.info("Info");
+    logger.success("Success");
+    logger.warn("Warning");
+    logger.error("Error");
+
+    // Verify the default implementations correctly format messages
+    assert!(logger.inner.has_log("[INFO] Info"));
+    assert!(logger.inner.has_log("[OK] Success"));
+    assert!(logger.inner.has_log("[WARN] Warning"));
+    assert!(logger.inner.has_log("[ERROR] Error"));
 }

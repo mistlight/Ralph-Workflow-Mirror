@@ -43,14 +43,17 @@
 //! # Trait Implementation
 //!
 //! Both `Logger` and `TestLogger` implement:
+//! - `Loggable` trait - provides unified interface for log output (info, success, warn, error)
 //! - `Printable` trait from `json_parser::printer` - enables terminal detection
 //! - `std::io::Write` trait - enables writing to the logger
-//! - `LogSink` trait (test-only) - internal test API for log message capture
+//!
+//! The `Loggable` trait mirrors the `Printable` trait pattern used for printers,
+//! providing a consistent API for both production (`Logger`) and test (`TestLogger`) scenarios.
 
 mod output;
 mod progress;
 
-pub use output::{argv_requests_json, format_generic_json_for_display, Logger};
+pub use output::{argv_requests_json, format_generic_json_for_display, Loggable, Logger};
 pub use progress::print_progress;
 
 // ===== Colors & Formatting =====

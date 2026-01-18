@@ -4,7 +4,7 @@
 //! including the welcome banner and the final summary display.
 
 use crate::logger::Colors;
-use crate::logger::Logger;
+use crate::logger::Loggable;
 
 /// Summary data for pipeline completion display.
 ///
@@ -104,8 +104,8 @@ pub fn print_welcome_banner(colors: Colors, developer_agent: &str, reviewer_agen
 ///
 /// * `colors` - Color configuration for terminal output
 /// * `summary` - Pipeline summary data
-/// * `logger` - Logger for final success message
-pub fn print_final_summary(colors: Colors, summary: &PipelineSummary, logger: &Logger) {
+/// * `logger` - Logger for final success message (via Loggable trait)
+pub fn print_final_summary<L: Loggable>(colors: Colors, summary: &PipelineSummary, logger: &L) {
     logger.header("Pipeline Complete", crate::logger::Colors::green);
 
     println!();
@@ -162,7 +162,35 @@ pub fn print_final_summary(colors: Colors, summary: &PipelineSummary, logger: &L
 
     print_output_files(colors, summary.isolation_mode);
 
+    // Use the Loggable trait's success method
     logger.success("Ralph pipeline completed successfully!");
+
+    // Log additional status messages via Loggable trait
+    if summary.review_runs > 0 {
+        logger.info(&format!("Completed {} review run(s)", summary.review_runs));
+    }
+    if summary.changes_detected > 0 {
+        logger.info(&format!("Detected {} change(s)", summary.changes_detected));
+    }
+    if summary.isolation_mode {
+        logger.info("Running in isolation mode");
+    }
+
+    // Log warnings for unresolved issues if present
+    if let Some(ref review) = summary.review_summary {
+        if review.unresolved_count > 0 {
+            logger.warn(&format!(
+                "{} unresolved issue(s) remaining",
+                review.unresolved_count
+            ));
+        }
+        if review.blocking_count > 0 {
+            logger.error(&format!(
+                "{} blocking issue(s) unresolved",
+                review.blocking_count
+            ));
+        }
+    }
 }
 
 /// Print review metrics summary.

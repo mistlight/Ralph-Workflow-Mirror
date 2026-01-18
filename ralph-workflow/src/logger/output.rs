@@ -12,7 +12,7 @@
 //! ## How Logger Writes to Files
 //!
 //! Logger's file logging is **not** done through the `std::io::Write` trait.
-//! Instead, file logging happens via the internal `log_to_file()` method, which
+//! Instead, file logging happens via the `Loggable` trait's `log()` method, which
 //! is called by each log level method (`info()`, `success()`, `warn()`, `error()`).
 //!
 //! ### Important: `Write` Trait Behavior
@@ -33,6 +33,22 @@
 //! If you need file output, always use the Logger's methods (`info()`, `success()`,
 //! etc.) rather than the `Write` trait. The `Write` trait implementation exists
 //! for compatibility with code that expects a writer, but it's a console-only path.
+//!
+//! ## Using the `Loggable` Trait
+//!
+//! The `Loggable` trait provides a unified interface for logging that works with
+//! both `Logger` (production) and `TestLogger` (testing):
+//!
+//! ```ignore
+//! use ralph_workflow::logger::Loggable;
+//!
+//! fn process_logs<L: Loggable>(logger: &L) {
+//!     logger.info("Starting process");
+//!     logger.success("Process completed");
+//!     logger.warn("Potential issue");
+//!     logger.error("Critical error");
+//! }
+//! ```
 //!
 //! ## Logger → File → Extraction Flow
 //!
@@ -57,6 +73,7 @@
 //!
 //! ```ignore
 //! use ralph_workflow::logger::output::TestLogger;
+//! use ralph_workflow::logger::Loggable;
 //!
 //! let logger = TestLogger::new();
 //! logger.info("Test message");
@@ -66,7 +83,7 @@
 //! ```
 //!
 //! `TestLogger` follows the same pattern as `TestPrinter` with line buffering
-//! and implements the same traits (`Printable`, `std::io::Write`, `LogSink`).
+//! and implements the same traits (`Printable`, `std::io::Write`, `Loggable`).
 
 use super::{
     Colors, ARROW, BOX_BL, BOX_BR, BOX_H, BOX_TL, BOX_TR, BOX_V, CHECK, CROSS, INFO, WARN,
@@ -271,6 +288,85 @@ impl Default for Logger {
     }
 }
 
+// ===== Loggable Implementation =====
+
+impl Loggable for Logger {
+    fn log(&self, msg: &str) {
+        self.log_to_file(msg);
+    }
+
+    fn info(&self, msg: &str) {
+        let c = &self.colors;
+        println!(
+            "{}[{}]{} {}{}{} {}",
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.blue(),
+            INFO,
+            c.reset(),
+            msg
+        );
+        self.log(&format!("[{}] [INFO] {msg}", timestamp()));
+    }
+
+    fn success(&self, msg: &str) {
+        let c = &self.colors;
+        println!(
+            "{}[{}]{} {}{}{} {}{}{}",
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.green(),
+            CHECK,
+            c.reset(),
+            c.green(),
+            msg,
+            c.reset()
+        );
+        self.log(&format!("[{}] [OK] {msg}", timestamp()));
+    }
+
+    fn warn(&self, msg: &str) {
+        let c = &self.colors;
+        println!(
+            "{}[{}]{} {}{}{} {}{}{}",
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.yellow(),
+            WARN,
+            c.reset(),
+            c.yellow(),
+            msg,
+            c.reset()
+        );
+        self.log(&format!("[{}] [WARN] {msg}", timestamp()));
+    }
+
+    fn error(&self, msg: &str) {
+        let c = &self.colors;
+        eprintln!(
+            "{}[{}]{} {}{}{} {}{}{}",
+            c.dim(),
+            timestamp(),
+            c.reset(),
+            c.red(),
+            CROSS,
+            c.reset(),
+            c.red(),
+            msg,
+            c.reset()
+        );
+        self.log(&format!("[{}] [ERROR] {msg}", timestamp()));
+    }
+
+    fn header(&self, title: &str, color_fn: fn(Colors) -> &'static str) {
+        // Call the existing Logger::header method
+        Self::header(self, title, color_fn);
+    }
+}
+
 // ===== Printable and Write Implementations =====
 
 impl std::io::Write for Logger {
@@ -304,12 +400,58 @@ pub fn strip_ansi_codes(s: &str) -> String {
 /// Trait for logger output destinations.
 ///
 /// This trait allows loggers to write to different destinations
-/// (files, test collectors) without hardcoding the specific destination.
+/// (console, files, test collectors) without hardcoding the specific destination.
 /// This makes loggers testable by allowing output capture.
-#[cfg(test)]
-pub trait LogSink {
+///
+/// This trait mirrors the `Printable` trait pattern used for printers,
+/// providing a unified interface for both production and test loggers.
+pub trait Loggable {
     /// Write a log message to the sink.
+    ///
+    /// This is the core logging method that all loggers must implement.
+    /// For `Logger`, this writes to the configured log file (if any).
+    /// For `TestLogger`, this captures the message in memory for testing.
     fn log(&self, msg: &str);
+
+    /// Log an informational message.
+    ///
+    /// Default implementation formats the message with [INFO] prefix
+    /// and delegates to the `log` method.
+    fn info(&self, msg: &str) {
+        self.log(&format!("[INFO] {msg}"));
+    }
+
+    /// Log a success message.
+    ///
+    /// Default implementation formats the message with [OK] prefix
+    /// and delegates to the `log` method.
+    fn success(&self, msg: &str) {
+        self.log(&format!("[OK] {msg}"));
+    }
+
+    /// Log a warning message.
+    ///
+    /// Default implementation formats the message with [WARN] prefix
+    /// and delegates to the `log` method.
+    fn warn(&self, msg: &str) {
+        self.log(&format!("[WARN] {msg}"));
+    }
+
+    /// Log an error message.
+    ///
+    /// Default implementation formats the message with [ERROR] prefix
+    /// and delegates to the `log` method.
+    fn error(&self, msg: &str) {
+        self.log(&format!("[ERROR] {msg}"));
+    }
+
+    /// Print a section header with box drawing.
+    ///
+    /// Default implementation does nothing (test loggers may not need headers).
+    /// Production loggers override this to display styled headers.
+    fn header(&self, _title: &str, _color_fn: fn(Colors) -> &'static str) {
+        // Default: no-op for test loggers
+    }
 }
 
 /// Test logger that captures log output for assertion.
@@ -364,9 +506,25 @@ impl TestLogger {
 }
 
 #[cfg(test)]
-impl LogSink for TestLogger {
+impl Loggable for TestLogger {
     fn log(&self, msg: &str) {
         self.logs.borrow_mut().push(msg.to_string());
+    }
+
+    fn info(&self, msg: &str) {
+        self.log(&format!("[INFO] {msg}"));
+    }
+
+    fn success(&self, msg: &str) {
+        self.log(&format!("[OK] {msg}"));
+    }
+
+    fn warn(&self, msg: &str) {
+        self.log(&format!("[WARN] {msg}"));
+    }
+
+    fn error(&self, msg: &str) {
+        self.log(&format!("[ERROR] {msg}"));
     }
 }
 
