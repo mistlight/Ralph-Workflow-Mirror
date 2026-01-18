@@ -194,6 +194,72 @@ pub fn make_prompt_read_only() -> Option<String> {
     readonly_warning
 }
 
+/// Make PROMPT.md writable again after pipeline completion.
+///
+/// This function restores write permissions on PROMPT.md after Ralph exits.
+/// It reverses the `make_prompt_read_only` operation so users can edit the file
+/// normally when Ralph is not running.
+///
+/// # Behavior
+///
+/// - If PROMPT.md doesn't exist, returns `None` (nothing to modify)
+/// - Uses platform-specific permission setting
+/// - Returns a warning string if setting permissions fails (best-effort)
+///
+/// # Returns
+///
+/// Returns `Option<String>` where:
+/// - `None` - permissions restored successfully or file doesn't exist
+/// - `Some(warning)` - couldn't restore write permissions
+pub fn make_prompt_writable() -> Option<String> {
+    let prompt_path = std::path::Path::new("PROMPT.md");
+
+    // If PROMPT.md doesn't exist, that's fine - nothing to modify
+    if !prompt_path.exists() {
+        return None;
+    }
+
+    // Try to restore write permissions and track any failure
+    let mut writable_warning = None;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        match fs::metadata(prompt_path) {
+            Ok(metadata) => {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o644); // Owner read-write, group/others read-only
+                if fs::set_permissions(prompt_path, perms).is_err() {
+                    writable_warning =
+                        Some("Failed to restore write permissions on PROMPT.md".to_string());
+                }
+            }
+            Err(_) => {
+                writable_warning = Some("Failed to read metadata for PROMPT.md".to_string());
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        match fs::metadata(prompt_path) {
+            Ok(metadata) => {
+                let mut perms = metadata.permissions();
+                perms.set_readonly(false);
+                if fs::set_permissions(prompt_path, perms).is_err() {
+                    writable_warning =
+                        Some("Failed to restore write permissions on PROMPT.md".to_string());
+                }
+            }
+            Err(_) => {
+                writable_warning = Some("Failed to read metadata for PROMPT.md".to_string());
+            }
+        }
+    }
+
+    writable_warning
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,6 +471,56 @@ mod tests {
             // File should still exist and be readable
             let content = fs::read_to_string("PROMPT.md").unwrap();
             assert_eq!(content, "# Test Prompt\n\nThis is a test prompt.");
+        });
+    }
+
+    #[test]
+    fn test_make_prompt_writable_restores_permissions() {
+        with_temp_cwd(|_dir| {
+            // Create a PROMPT.md
+            fs::write("PROMPT.md", "# Test Prompt\n\nThis is a test prompt.").unwrap();
+
+            // Make it read-only
+            make_prompt_read_only();
+
+            // Now make it writable again
+            make_prompt_writable();
+
+            // On Unix, verify permissions are writable
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let metadata = fs::metadata("PROMPT.md").unwrap();
+                let perms = metadata.permissions();
+                let mode = perms.mode();
+                // Check that owner write bit is set (0o644 = rw-r--r--)
+                assert_eq!(mode & 0o777, 0o644);
+            }
+
+            // On Windows, verify readonly flag is not set
+            #[cfg(windows)]
+            {
+                let metadata = fs::metadata("PROMPT.md").unwrap();
+                let perms = metadata.permissions();
+                assert!(!perms.readonly());
+            }
+
+            // Verify we can write to the file
+            fs::write("PROMPT.md", "# Updated content").unwrap();
+            let content = fs::read_to_string("PROMPT.md").unwrap();
+            assert_eq!(content, "# Updated content");
+        });
+    }
+
+    #[test]
+    fn test_make_prompt_writable_handles_missing_prompt() {
+        with_temp_cwd(|_dir| {
+            // No PROMPT.md exists
+            assert!(!std::path::Path::new("PROMPT.md").exists());
+
+            // Should succeed without error
+            let result = make_prompt_writable();
+            assert!(result.is_none());
         });
     }
 }

@@ -6,6 +6,7 @@
 use crate::banner::{print_final_summary, PipelineSummary};
 use crate::checkpoint::clear_checkpoint;
 use crate::config::Config;
+use crate::files::make_prompt_writable;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -57,6 +58,11 @@ pub fn finalize_pipeline(
         if let Err(err) = clear_checkpoint() {
             logger.warn(&format!("Failed to clear checkpoint: {err}"));
         }
+    }
+
+    // Restore PROMPT.md write permissions so users can edit it normally
+    if let Some(warning) = make_prompt_writable() {
+        logger.warn(&warning);
     }
 
     agent_phase_guard.disarm();

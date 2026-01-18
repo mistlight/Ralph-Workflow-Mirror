@@ -30,8 +30,8 @@ pub use handlers::{
     handle_list_available_agents, handle_template_commands, prompt_template_selection,
 };
 pub use init::{
-    handle_init_global, handle_init_legacy, handle_init_prompt, handle_list_templates,
-    handle_smart_init,
+    handle_extended_help, handle_init_global, handle_init_legacy, handle_init_prompt,
+    handle_list_work_guides, handle_smart_init,
 };
 pub use presets::apply_args_to_config;
 pub use providers::handle_list_providers;

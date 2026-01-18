@@ -81,19 +81,40 @@ Install at least one AI agent:
 ### 3. Run Ralph
 
 ```bash
-# Create config file
+# Create config file (smart init detects what you need)
 ralph --init
 
 # Navigate to your git repo
 cd /path/to/your/project
 
-# Create PROMPT.md from a template
+# Create PROMPT.md from a Work Guide
 ralph --init feature-spec
 # Edit PROMPT.md with detailed requirements
 
 # Run Ralph and walk away
-ralph
+ralph "feat: your commit message"
 ```
+
+### Work Guides
+
+Work Guides are templates for describing your tasks to the AI. Use them with `--init`:
+
+```bash
+# See all available Work Guides
+ralph --list-work-guides
+
+# Create PROMPT.md from a Work Guide
+ralph --init bug-fix              # Bug fix with investigation guidance
+ralph --init feature-spec         # Comprehensive product specification
+ralph --init refactor             # Code refactoring
+ralph --init quick                # Quick/small changes
+ralph --init test                 # Test writing
+
+# Overwrite existing PROMPT.md
+ralph --init bug-fix --force-overwrite
+```
+
+**Note:** Work Guides (for PROMPT.md) are different from Agent Prompts (backend AI behavior). Run `ralph --extended-help` for details.
 
 ## Writing Effective Specifications
 
@@ -167,7 +188,10 @@ ralph --dry-run                        # Validate setup without running
 Ralph uses `~/.config/ralph-workflow.toml`:
 
 ```bash
-ralph --init   # Creates config if missing
+ralph --init              # Smart init: creates config or PROMPT.md as needed
+ralph --init bug-fix      # Create PROMPT.md from a specific Work Guide
+ralph --list-work-guides  # Show all available Work Guides
+ralph --extended-help     # Show comprehensive help
 ```
 
 Configure agent chains and defaults:
@@ -208,7 +232,7 @@ Environment variables override config:
 - **[Quick Reference](docs/quick-reference.md)** - Cheat sheet for commands and flags
 - **[Agent Compatibility](docs/agent-compatibility.md)** - Supported AI agents
 - **[Git Workflow](docs/git-workflow.md)** - How Ralph handles commits and diffs
-- **[Template Guide](docs/template-guide.md)** - PROMPT.md templates
+- **[Work Guide Reference](docs/template-guide.md)** - PROMPT.md Work Guides (templates for your tasks)
 
 ## FAQ
 

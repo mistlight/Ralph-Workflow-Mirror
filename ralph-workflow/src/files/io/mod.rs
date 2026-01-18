@@ -35,7 +35,7 @@ pub use agent_files::{
     file_contains_marker, read_commit_message_file, write_commit_message_file,
 };
 
-pub use backup::{create_prompt_backup, make_prompt_read_only};
+pub use backup::{create_prompt_backup, make_prompt_read_only, make_prompt_writable};
 
 pub use context::{
     clean_context_for_reviewer, delete_issues_file_for_isolation, reset_context_for_isolation,

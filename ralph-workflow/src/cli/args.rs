@@ -123,6 +123,14 @@ pub struct UnifiedInitFlags {
     )]
     pub init: Option<String>,
 
+    /// Force overwrite existing PROMPT.md when using --init or --init-prompt
+    #[arg(
+        long = "force-overwrite",
+        visible_alias = "overwrite",
+        help = "Overwrite existing PROMPT.md without prompting (use with --init or --init-prompt)"
+    )]
+    pub force_init: bool,
+
     /// Initialize unified config file and exit (explicit alias for config creation)
     #[arg(
         long,
@@ -215,15 +223,16 @@ pub enum Shell {
     Pwsh,
 }
 
-/// Template listing flag.
+/// Work Guide listing flag.
 #[derive(Parser, Debug, Default)]
-pub struct TemplateListFlag {
+pub struct WorkGuideListFlag {
     /// List available PROMPT.md Work Guides and exit
     #[arg(
-        long,
+        long = "list-work-guides",
+        visible_alias = "list-templates",
         help = "Show all available Work Guides for PROMPT.md (templates for your tasks)"
     )]
-    pub list_templates: bool,
+    pub list_work_guides: bool,
 }
 
 /// Template management subcommands.
@@ -350,6 +359,14 @@ pub struct RecoveryFlags {
         help = "Show system info, agent status, and config for troubleshooting"
     )]
     pub diagnose: bool,
+
+    /// Show extended help with more details
+    #[arg(
+        long = "extended-help",
+        visible_alias = "man",
+        help = "Show extended help with shell completion, all presets, and troubleshooting"
+    )]
+    pub extended_help: bool,
 }
 
 /// Rebase control flags.
@@ -380,75 +397,23 @@ pub struct RebaseFlags {
     quality assurance, automatically staging and committing the final result."
 )]
 #[command(version)]
-#[command(
-    after_help = "╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
+#[command(after_help = "GETTING STARTED:\n\
+    ralph --init                      Smart init (infers what you need)\n\
+    ralph --init feature-spec         Create PROMPT.md from a Work Guide\n\
+    ralph \"fix: my bug\"              Run the orchestrator\n\
 \n\
-NEW TO RALPH?\n\
-    Just want to get started? Run:\n\
-        ralph --init feature-spec         # Create PROMPT.md from a Task Template\n\
-        ralph \"fix: my bug\"              # Run with AI agents\n\
+PRESET MODES (pick how thorough):\n\
+    -Q  Quick:  1 dev + 1 review      -S  Standard: 5 dev + 2 reviews\n\
+    -U  Rapid:  2 dev + 1 review      -T  Thorough: 10 dev + 5 reviews\n\
+                                      -L  Long:     15 dev + 10 reviews\n\
 \n\
-    WORK GUIDES IN RALPH (two different types):\n\
-\n\
-    1. Work Guides (for PROMPT.md - YOUR task descriptions)\n\
-       These are templates for describing YOUR work to the AI.\n\
-       Examples: bug-fix, feature-spec, refactor, test, docs, etc.\n\
-       \n\
-       Commands:\n\
-         ralph --init <template>       # Create PROMPT.md from a Work Guide\n\
-         ralph --list-templates        # Show all available Work Guides\n\
-         ralph --init-prompt <name>    # Same as --init (legacy alias)\n\
-\n\
-    2. Agent Prompts (backend AI behavior configuration)\n\
-       These configure HOW the AI agents behave (internal prompts).\n\
-       You probably don't need to touch these unless you're customizing agent behavior.\n\
-       \n\
-       Commands:\n\
-         ralph --init-system-prompts    # Create default Agent Prompts\n\
-         ralph --list                   # Show Agent Prompt templates\n\
-         ralph --show <name>            # Show a specific Agent Prompt\n\
-\n\
-╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
-\n\
-SHELL COMPLETION\n\
-    Enable tab-completion for faster command entry:\n\
-        ralph --generate-completion=bash  > ~/.local/share/bash-completion/completions/ralph\n\
-        ralph --generate-completion=zsh   > ~/.zsh/completion/_ralph\n\
-        ralph --generate-completion=fish  > ~/.config/fish/completions/ralph.fish\n\
-\n\
-    Then restart your shell or source the file.\n\
-\n\
-╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
-\n\
-PRESET MODES (pick how thorough AI should be):\n\
-    -Q  Quick:      1 dev + 1 review     (typos, small fixes)\n\
-    -U  Rapid:      2 dev + 1 review     (minor changes)\n\
-    -S  Standard:   5 dev + 2 reviews    (default for most tasks)\n\
-    -T  Thorough:  10 dev + 5 reviews    (complex features)\n\
-    -L  Long:      15 dev + 10 reviews   (most thorough)\n\
-\n\
-╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
-\n\
-COMMON SHORTHANDS:\n\
+COMMON OPTIONS:\n\
     -D N, -R N       Set dev iterations and review cycles\n\
     -a AGENT         Pick developer agent (claude, opencode, etc.)\n\
     -r AGENT         Pick reviewer agent\n\
-    -v N / -q / -f   Set verbosity (quiet/normal/full)\n\
     -d               Diagnose/show system info\n\
-    -i               Interactive mode (prompt if PROMPT.md missing)\n\
-    -c PATH          Use specific config file\n\
 \n\
-╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
-\n\
-QUICK EXAMPLES:\n\
-    ralph \"fix: typo\"                Run with default settings\n\
-    ralph -Q \"fix: small bug\"        Quick mode for tiny fixes\n\
-    ralph -U \"feat: add button\"      Rapid mode for minor features\n\
-    ralph -a claude \"fix: bug\"       Use specific agent\n\
-    ralph --list-templates            See all Work Guides\n\
-    ralph --init bug-fix              # Create PROMPT.md from a Work Guide\n\
-╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-)]
+For more help: ralph --extended-help (shell completion, all presets, troubleshooting)")]
 // CLI arguments naturally use many boolean flags. These represent independent
 // user choices, not a state machine, so bools are the appropriate type.
 pub struct Args {
@@ -488,9 +453,9 @@ pub struct Args {
     #[command(flatten)]
     pub completion: CompletionFlag,
 
-    /// Template listing flag
+    /// Work Guide listing flag
     #[command(flatten)]
-    pub template_list: TemplateListFlag,
+    pub work_guide_list: WorkGuideListFlag,
 
     /// Template management commands
     #[command(flatten)]

@@ -54,7 +54,7 @@ pub fn handle_init_global(colors: Colors) -> anyhow::Result<bool> {
             println!("Next steps:");
             println!("  1. Create a PROMPT.md for your task:");
             println!("       ralph --init <work-guide>");
-            println!("       ralph --list-templates  # Show all Work Guides");
+            println!("       ralph --list-work-guides  # Show all Work Guides");
             println!("  2. Or run ralph directly with default settings:");
             println!("       ralph \"your commit message\"");
             Ok(true)
@@ -71,7 +71,7 @@ pub fn handle_init_global(colors: Colors) -> anyhow::Result<bool> {
             println!("Next steps:");
             println!("  1. Create a PROMPT.md for your task:");
             println!("       ralph --init <work-guide>");
-            println!("       ralph --list-templates  # Show all Work Guides");
+            println!("       ralph --list-work-guides  # Show all Work Guides");
             println!("  2. Or run ralph directly with default settings:");
             println!("       ralph \"your commit message\"");
             Ok(true)
@@ -121,6 +121,33 @@ pub fn handle_init_legacy(colors: Colors, agents_config_path: &Path) -> anyhow::
 
 // NOTE: legacy per-repo agents.toml creation is handled by `--init-legacy` only.
 
+/// Prompt the user to confirm overwriting an existing PROMPT.md.
+///
+/// Returns `true` if the user confirms, `false` otherwise.
+fn prompt_overwrite_confirmation(prompt_path: &Path, colors: Colors) -> bool {
+    use std::io::{self, Write};
+
+    println!(
+        "{}PROMPT.md already exists:{} {}",
+        colors.yellow(),
+        colors.reset(),
+        prompt_path.display()
+    );
+    print!("Do you want to overwrite it? [y/N]: ");
+    if io::stdout().flush().is_err() {
+        return false;
+    }
+
+    let mut input = String::new();
+    match io::stdin().read_line(&mut input) {
+        Ok(0) | Err(_) => return false,
+        Ok(_) => {}
+    }
+
+    let response = input.trim().to_lowercase();
+    response == "y" || response == "yes"
+}
+
 /// Handle the `--init-prompt` flag.
 ///
 /// Creates a PROMPT.md file from the specified template.
@@ -128,25 +155,37 @@ pub fn handle_init_legacy(colors: Colors, agents_config_path: &Path) -> anyhow::
 /// # Arguments
 ///
 /// * `template_name` - The name of the template to use
+/// * `force` - If true, overwrite existing PROMPT.md without prompting
 /// * `colors` - Terminal color configuration for output
 ///
 /// # Returns
 ///
 /// Returns `Ok(true)` if the flag was handled (program should exit after),
 /// or an error if template creation failed.
-pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result<bool> {
+pub fn handle_init_prompt(
+    template_name: &str,
+    force: bool,
+    colors: Colors,
+) -> anyhow::Result<bool> {
     let prompt_path = Path::new("PROMPT.md");
 
     // Check if PROMPT.md already exists
-    if prompt_path.exists() {
-        println!(
-            "{}PROMPT.md already exists:{} {}",
-            colors.yellow(),
-            colors.reset(),
-            prompt_path.display()
-        );
-        println!("Delete or backup the existing file to create a new one from a template.");
-        return Ok(true);
+    if prompt_path.exists() && !force {
+        // If in a TTY, prompt for confirmation
+        if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+            if !prompt_overwrite_confirmation(prompt_path, colors) {
+                return Ok(true);
+            }
+        } else {
+            println!(
+                "{}PROMPT.md already exists:{} {}",
+                colors.yellow(),
+                colors.reset(),
+                prompt_path.display()
+            );
+            println!("Use --force-overwrite to overwrite, or delete/backup the existing file.");
+            return Ok(true);
+        }
     }
 
     // Validate the template exists
@@ -170,7 +209,7 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
         }
         println!();
         println!("Usage: ralph --init-prompt <template>");
-        println!("       ralph --list-templates");
+        println!("       ralph --list-work-guides");
         return Ok(true);
     };
 
@@ -198,14 +237,48 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
     println!("  1. Edit PROMPT.md with your task details");
     println!("  2. Run: ralph \"your commit message\"");
     println!();
-    println!("Tip: Use --list-templates to see all available templates.");
+    println!("Tip: Use --list-work-guides to see all available Work Guides.");
 
     Ok(true)
 }
 
+/// Print common Work Guides inline (for --init without template specified).
+///
+/// Shows the most commonly used Work Guides with a note to use --list-work-guides for more.
+fn print_common_work_guides(colors: Colors) {
+    println!("{}Common Work Guides:{}", colors.bold(), colors.reset());
+    println!(
+        "  {}quick{}           Quick/small changes (typos, minor fixes)",
+        colors.cyan(),
+        colors.reset()
+    );
+    println!(
+        "  {}bug-fix{}         Bug fix with investigation guidance",
+        colors.cyan(),
+        colors.reset()
+    );
+    println!(
+        "  {}feature-spec{}    Comprehensive product specification",
+        colors.cyan(),
+        colors.reset()
+    );
+    println!(
+        "  {}refactor{}        Code refactoring with behavior preservation",
+        colors.cyan(),
+        colors.reset()
+    );
+    println!();
+    println!(
+        "Use {}--list-work-guides{} for the complete list of Work Guides.",
+        colors.cyan(),
+        colors.reset()
+    );
+    println!();
+}
+
 /// Print a template category section.
 ///
-/// Helper function to reduce the length of `handle_list_templates`.
+/// Helper function to reduce the length of `handle_list_work_guides`.
 fn print_template_category(category_name: &str, templates: &[(&str, &str)], colors: Colors) {
     println!("{}{}:{}", colors.bold(), category_name, colors.reset());
     for (name, description) in templates {
@@ -220,9 +293,9 @@ fn print_template_category(category_name: &str, templates: &[(&str, &str)], colo
     println!();
 }
 
-/// Handle the `--list-templates` flag.
+/// Handle the `--list-work-guides` (or `--list-templates`) flag.
 ///
-/// Lists all available PROMPT.md templates with descriptions, organized by category.
+/// Lists all available PROMPT.md Work Guides with descriptions, organized by category.
 ///
 /// # Arguments
 ///
@@ -231,8 +304,8 @@ fn print_template_category(category_name: &str, templates: &[(&str, &str)], colo
 /// # Returns
 ///
 /// Returns `true` if the flag was handled (program should exit after).
-pub fn handle_list_templates(colors: Colors) -> bool {
-    println!("PROMPT.md Work Guides (use: ralph --init <template>)");
+pub fn handle_list_work_guides(colors: Colors) -> bool {
+    println!("PROMPT.md Work Guides (use: ralph --init <work-guide>)");
     println!();
 
     // Common templates (most frequently used)
@@ -322,18 +395,18 @@ pub fn handle_list_templates(colors: Colors) -> bool {
         colors,
     );
 
-    println!("Usage: ralph --init <template>");
-    println!("       ralph --init-prompt <template>");
+    println!("Usage: ralph --init <work-guide>");
+    println!("       ralph --init-prompt <work-guide>");
     println!();
     println!("Example:");
-    println!("  ralph --init bug-fix              # Create bug fix template");
-    println!("  ralph --init feature-spec         # Create feature spec template");
-    println!("  ralph --init quick                # Create quick change template");
+    println!("  ralph --init bug-fix              # Create bug fix Work Guide");
+    println!("  ralph --init feature-spec         # Create feature spec Work Guide");
+    println!("  ralph --init quick                # Create quick change Work Guide");
     println!();
     println!("{}Tip:{}", colors.yellow(), colors.reset());
     println!("  Use --init without a value to auto-detect what you need.");
-    println!("  Run ralph --help to understand the difference between Task Templates");
-    println!("  (for PROMPT.md) and System Prompts (backend AI configuration).");
+    println!("  Use --force-overwrite to overwrite an existing PROMPT.md.");
+    println!("  Run ralph --extended-help to learn about Work Guides vs Agent Prompts.");
 
     true
 }
@@ -349,13 +422,18 @@ pub fn handle_list_templates(colors: Colors) -> bool {
 /// # Arguments
 ///
 /// * `template_arg` - Optional template name from `--init=TEMPLATE`
+/// * `force` - If true, overwrite existing PROMPT.md without prompting
 /// * `colors` - Terminal color configuration for output
 ///
 /// # Returns
 ///
 /// Returns `Ok(true)` if the flag was handled (program should exit after),
 /// or `Ok(false)` if not handled, or an error if initialization failed.
-pub fn handle_smart_init(template_arg: Option<&str>, colors: Colors) -> anyhow::Result<bool> {
+pub fn handle_smart_init(
+    template_arg: Option<&str>,
+    force: bool,
+    colors: Colors,
+) -> anyhow::Result<bool> {
     let config_path = crate::config::unified_config_path()
         .ok_or_else(|| anyhow::anyhow!("Cannot determine config directory (no home directory)"))?;
     let prompt_path = Path::new("PROMPT.md");
@@ -366,7 +444,7 @@ pub fn handle_smart_init(template_arg: Option<&str>, colors: Colors) -> anyhow::
     // If a template name is provided (non-empty), treat it as --init-prompt
     if let Some(template_name) = template_arg {
         if !template_name.is_empty() {
-            return handle_init_template_arg(template_name, colors);
+            return handle_init_template_arg(template_name, force, colors);
         }
         // Empty string means --init was used without a value, fall through to smart inference
     }
@@ -377,6 +455,7 @@ pub fn handle_smart_init(template_arg: Option<&str>, colors: Colors) -> anyhow::
         prompt_path,
         config_exists,
         prompt_exists,
+        force,
         colors,
     )
 }
@@ -463,9 +542,13 @@ fn find_similar_templates(input: &str) -> Vec<(&'static str, u32)> {
 }
 
 /// Handle --init when a template name is provided.
-fn handle_init_template_arg(template_name: &str, colors: Colors) -> anyhow::Result<bool> {
+fn handle_init_template_arg(
+    template_name: &str,
+    force: bool,
+    colors: Colors,
+) -> anyhow::Result<bool> {
     if get_template(template_name).is_some() {
-        return handle_init_prompt(template_name, colors);
+        return handle_init_prompt(template_name, force, colors);
     }
 
     // Unknown value - show helpful error with suggestions
@@ -517,13 +600,19 @@ fn handle_init_state_inference(
     prompt_path: &Path,
     config_exists: bool,
     prompt_exists: bool,
+    force: bool,
     colors: Colors,
 ) -> anyhow::Result<bool> {
     match (config_exists, prompt_exists) {
         (false, false) => handle_init_none_exist(config_path, colors),
-        (true, false) => Ok(handle_init_only_config_exists(config_path, colors)),
+        (true, false) => Ok(handle_init_only_config_exists(config_path, force, colors)),
         (false, true) => handle_init_only_prompt_exists(colors),
-        (true, true) => Ok(handle_init_both_exist(config_path, prompt_path, colors)),
+        (true, true) => Ok(handle_init_both_exist(
+            config_path,
+            prompt_path,
+            force,
+            colors,
+        )),
     }
 }
 
@@ -543,7 +632,11 @@ fn handle_init_none_exist(_config_path: &std::path::Path, colors: Colors) -> any
 ///
 /// When in a TTY, prompts for template selection.
 /// When not in a TTY, creates a minimal default PROMPT.md.
-fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors) -> bool {
+fn handle_init_only_config_exists(
+    config_path: &std::path::Path,
+    force: bool,
+    colors: Colors,
+) -> bool {
     println!(
         "{}Config found at:{} {}",
         colors.green(),
@@ -557,11 +650,14 @@ fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors)
     );
     println!();
 
+    // Show common Work Guides inline
+    print_common_work_guides(colors);
+
     // Check if we're in a TTY for interactive prompting
     if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
         // Interactive mode: prompt for template selection
         if let Some(template_name) = prompt_for_template(colors) {
-            match handle_init_prompt(&template_name, colors) {
+            match handle_init_prompt(&template_name, force, colors) {
                 Ok(_) => return true,
                 Err(e) => {
                     println!(
@@ -592,7 +688,7 @@ fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors)
                 println!("  1. Edit PROMPT.md with your task details");
                 println!("  2. Run: ralph \"your commit message\"");
                 println!();
-                println!("Tip: Use ralph --list-templates to see all available Work Guides.");
+                println!("Tip: Use ralph --list-work-guides to see all available Work Guides.");
                 return true;
             }
             Err(e) => {
@@ -722,7 +818,7 @@ fn prompt_for_template(colors: Colors) -> Option<String> {
             template_name,
             colors.reset()
         );
-        println!("Run 'ralph --list-templates' to see all available templates.");
+        println!("Run 'ralph --list-work-guides' to see all available Work Guides.");
         None
     }
 }
@@ -748,7 +844,7 @@ Provide any relevant context about the task:
 
 - This is a minimal PROMPT.md created by `ralph --init`
 - You can edit this file directly or use `ralph --init <work-guide>` to start from a Work Guide
-- Run `ralph --list-templates` to see all available Work Guides
+- Run `ralph --list-work-guides` to see all available Work Guides
 "
     .to_string()
 }
@@ -774,8 +870,20 @@ fn handle_init_only_prompt_exists(colors: Colors) -> anyhow::Result<bool> {
 fn handle_init_both_exist(
     config_path: &std::path::Path,
     prompt_path: &Path,
+    force: bool,
     colors: Colors,
 ) -> bool {
+    // If force is set, show that they can use --force-overwrite to overwrite
+    if force {
+        println!(
+            "{}Note:{} --force-overwrite has no effect when not specifying a Work Guide.",
+            colors.yellow(),
+            colors.reset()
+        );
+        println!("Use: ralph --init <work-guide> --force-overwrite  to overwrite PROMPT.md");
+        println!();
+    }
+
     println!("{}Setup complete!{}", colors.green(), colors.reset());
     println!();
     println!(
@@ -795,9 +903,159 @@ fn handle_init_both_exist(
     println!("  ralph \"your commit message\"");
     println!();
     println!("Other commands:");
-    println!("  ralph --list-templates    # Show all Work Guides");
-    println!("  ralph --init=<template>    # Create new PROMPT.md from Work Guide");
+    println!("  ralph --list-work-guides   # Show all Work Guides");
+    println!("  ralph --init <work-guide> --force-overwrite  # Overwrite PROMPT.md");
     true
+}
+
+/// Handle the `--extended-help` / `--man` flag.
+///
+/// Displays comprehensive help including shell completion, all presets,
+/// troubleshooting information, and the difference between Work Guides and Agent Prompts.
+pub fn handle_extended_help() {
+    println!(
+        r#"RALPH EXTENDED HELP
+═══════════════════════════════════════════════════════════════════════════════
+
+Ralph is a PROMPT-driven multi-agent orchestrator for git repos. It runs a
+developer agent for code implementation, then a reviewer agent for quality
+assurance, automatically staging and committing the final result.
+
+═══════════════════════════════════════════════════════════════════════════════
+GETTING STARTED
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. Initialize config:
+       ralph --init                      # Smart init (infers what you need)
+
+  2. Create a PROMPT.md from a Work Guide:
+       ralph --init feature-spec         # Or: bug-fix, refactor, quick, etc.
+
+  3. Edit PROMPT.md with your task details
+
+  4. Run Ralph:
+       ralph "fix: my bug description"   # Commit message for the final commit
+
+═══════════════════════════════════════════════════════════════════════════════
+WORK GUIDES VS AGENT PROMPTS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Ralph has two types of templates - understanding the difference is key:
+
+  1. WORK GUIDES (for PROMPT.md - YOUR task descriptions)
+     ─────────────────────────────────────────────────────
+     These are templates for describing YOUR work to the AI.
+     You fill them in with your specific task requirements.
+
+     Examples: quick, bug-fix, feature-spec, refactor, test, docs
+
+     Commands:
+       ralph --init <work-guide>      Create PROMPT.md from a Work Guide
+       ralph --list-work-guides       Show all available Work Guides
+       ralph --init-prompt <name>     Same as --init (legacy alias)
+
+  2. AGENT PROMPTS (backend AI behavior configuration)
+     ─────────────────────────────────────────────────────
+     These configure HOW the AI agents behave (internal system prompts).
+     You probably don't need to touch these unless customizing agent behavior.
+
+     Commands:
+       ralph --init-system-prompts    Create default Agent Prompts
+       ralph --list                   Show Agent Prompt templates
+       ralph --show <name>            Show a specific Agent Prompt
+
+═══════════════════════════════════════════════════════════════════════════════
+PRESET MODES
+═══════════════════════════════════════════════════════════════════════════════
+
+  Pick how thorough the AI should be:
+
+    -Q  Quick:      1 dev iteration  + 1 review   (typos, small fixes)
+    -U  Rapid:      2 dev iterations + 1 review   (minor changes)
+    -S  Standard:   5 dev iterations + 2 reviews  (default for most tasks)
+    -T  Thorough:  10 dev iterations + 5 reviews  (complex features)
+    -L  Long:      15 dev iterations + 10 reviews (most thorough)
+
+  Custom iterations:
+    ralph -D 3 -R 2 "feat: feature"   # 3 dev iterations, 2 review cycles
+    ralph -D 10 -R 0 "feat: no review"  # Skip review phase entirely
+
+═══════════════════════════════════════════════════════════════════════════════
+COMMON OPTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Iterations:
+    -D N, --developer-iters N   Set developer iterations
+    -R N, --reviewer-reviews N  Set review cycles (0 = skip review)
+
+  Agents:
+    -a AGENT, --developer-agent AGENT   Pick developer agent
+    -r AGENT, --reviewer-agent AGENT    Pick reviewer agent
+
+  Verbosity:
+    -q, --quiet          Quiet mode (minimal output)
+    -f, --full           Full output (no truncation)
+    -v N, --verbosity N  Set verbosity (0-4)
+
+  Other:
+    -d, --diagnose       Show system info and agent status
+    -i, --interactive    Interactive mode (prompt if PROMPT.md missing)
+    -c PATH, --config    Use specific config file
+
+═══════════════════════════════════════════════════════════════════════════════
+SHELL COMPLETION
+═══════════════════════════════════════════════════════════════════════════════
+
+  Enable tab-completion for faster command entry:
+
+    Bash:
+      ralph --generate-completion=bash > ~/.local/share/bash-completion/completions/ralph
+
+    Zsh:
+      ralph --generate-completion=zsh > ~/.zsh/completion/_ralph
+
+    Fish:
+      ralph --generate-completion=fish > ~/.config/fish/completions/ralph.fish
+
+  Then restart your shell or source the file.
+
+═══════════════════════════════════════════════════════════════════════════════
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+  Common issues:
+
+    "PROMPT.md not found"
+      → Run: ralph --init <work-guide>  (e.g., ralph --init bug-fix)
+
+    "No agents available"
+      → Run: ralph -d  (diagnose) to check agent status
+      → Ensure at least one agent is installed (claude, codex, opencode)
+
+    "Config file not found"
+      → Run: ralph --init  to create ~/.config/ralph-workflow.toml
+
+    Resume after interruption:
+      → Run: ralph --resume  to continue from last checkpoint
+
+    Validate setup without running:
+      → Run: ralph --dry-run
+
+═══════════════════════════════════════════════════════════════════════════════
+EXAMPLES
+═══════════════════════════════════════════════════════════════════════════════
+
+    ralph "fix: typo"                 Run with default settings
+    ralph -Q "fix: small bug"         Quick mode for tiny fixes
+    ralph -U "feat: add button"       Rapid mode for minor features
+    ralph -a claude "fix: bug"        Use specific agent
+    ralph --list-work-guides          See all Work Guides
+    ralph --init bug-fix              Create PROMPT.md from a Work Guide
+    ralph --init bug-fix --force-overwrite  Overwrite existing PROMPT.md
+
+═══════════════════════════════════════════════════════════════════════════════
+"#
+    );
 }
 
 #[cfg(test)]
@@ -808,7 +1066,7 @@ mod tests {
     fn test_handle_smart_init_with_valid_template() {
         // When a valid template name is provided, it should delegate to handle_init_prompt
         let colors = Colors::new();
-        let result = handle_smart_init(Some("bug-fix"), colors);
+        let result = handle_smart_init(Some("bug-fix"), false, colors);
 
         // We expect this to return Ok(true) since it handles the init
         // The actual test would need to mock file system operations
@@ -819,7 +1077,7 @@ mod tests {
     fn test_handle_smart_init_with_invalid_template() {
         // When an invalid template name is provided, it should show an error
         let colors = Colors::new();
-        let result = handle_smart_init(Some("nonexistent-template"), colors);
+        let result = handle_smart_init(Some("nonexistent-template"), false, colors);
 
         // Should still return Ok(true) since it handled the request (showed error)
         assert!(result.is_ok());
@@ -829,7 +1087,7 @@ mod tests {
     fn test_handle_smart_init_no_arg() {
         // When no argument is provided, it should check the current state
         let colors = Colors::new();
-        let result = handle_smart_init(None, colors);
+        let result = handle_smart_init(None, false, colors);
 
         // Should return Ok(something) depending on the state of config/PROMPT.md
         assert!(result.is_ok());

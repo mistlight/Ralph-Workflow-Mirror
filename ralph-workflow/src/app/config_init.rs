@@ -8,8 +8,8 @@
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{
-    apply_args_to_config, handle_generate_completion, handle_init_global, handle_init_legacy,
-    handle_init_prompt, handle_list_templates, handle_smart_init, Args,
+    apply_args_to_config, handle_extended_help, handle_generate_completion, handle_init_global,
+    handle_init_legacy, handle_init_prompt, handle_list_work_guides, handle_smart_init, Args,
 };
 use crate::config::{loader, unified_config_path, Config, UnifiedConfig};
 use crate::git_helpers::get_repo_root;
@@ -86,21 +86,31 @@ pub fn initialize_config(
         }
     }
 
-    // Handle --list-templates flag: display available templates and exit
-    if args.template_list.list_templates && handle_list_templates(colors) {
+    // Handle --extended-help / --man flag: display extended help and exit
+    if args.recovery.extended_help {
+        handle_extended_help();
+        return Ok(None);
+    }
+
+    // Handle --list-work-guides / --list-templates flag: display available Work Guides and exit
+    if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
         return Ok(None);
     }
 
     // Handle --init-prompt flag: create PROMPT.md from template and exit
     if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt(template_name, colors)? {
+        if handle_init_prompt(template_name, args.unified_init.force_init, colors)? {
             return Ok(None);
         }
     }
 
     // Handle smart --init flag: intelligently determine what to initialize
     if args.unified_init.init.is_some()
-        && handle_smart_init(args.unified_init.init.as_deref(), colors)?
+        && handle_smart_init(
+            args.unified_init.init.as_deref(),
+            args.unified_init.force_init,
+            colors,
+        )?
     {
         return Ok(None);
     }
