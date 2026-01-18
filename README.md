@@ -38,6 +38,20 @@ Ralph Workflow works best if you think like a Product Manager and can scope out 
 
 Ralph Workflow is designed to make as much deterministic decisions as possible. For example, if it detects there is a rebase needed, it would prompt very specifically about the merge conflict that it needs to do, then deterministically performs the rebase itself. It will only call upon AI agent to do things when it doesn't know what to do.
 
+## How do I use this?
+
+Look in the [Product README here](ralph-workflow/README.md).
+
+## Questions
+
+Do I need coding knowledge to use this?
+:Coding knowledge will help a lot but not strictly required in my opinion, but you should at least know the principles of good software engineering. There are times where you need to refactor before adding more features and it will not be obvious to you what that line is if you don't have at least some programming knowledge. I recommend books like Code Complete.
+
+Should I use this in production level code?
+:If you thoroughly review the code that it outputs and it depends on your risk tolerance. Any code change is risky, human or AI generated. 
+
+What is the recommended workflow with this?
+:I recommend using Ralph Workflow on different git worktrees so you can work on multiple features at the same time. Due to its unattended nature, Ralph Workflow will naturally take longer than if you interact with an AI agent directly when you work on features. While you can run Ralph Workflow on the main branch, it reduces your ability to work on multiple features at the same time by the nature of ralph process taking a long time.
 
 ## About Me
 
