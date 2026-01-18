@@ -121,10 +121,15 @@ pub fn prompt_fix_with_context(
 ///
 /// If files are found, formats them as a bulleted list with a clear header.
 /// If no files are found, provides a fallback message indicating that the
-/// agent should fix issues wherever appropriate.
+/// agent should fix issues wherever appropriate based on the ISSUES content.
 fn format_files_section(files: &[String]) -> String {
     if files.is_empty() {
-        "No specific files listed in ISSUES - fix issues anywhere appropriate.".to_string()
+        "FILES YOU MAY MODIFY:\n\n\
+         (No specific files were extracted from ISSUES content)\n\n\
+         You may work on any files mentioned in the ISSUES content above.\n\
+         Use the file citations in the ISSUES to identify which files to modify.\n\
+         The ISSUES content is already embedded in this prompt - review it carefully."
+            .to_string()
     } else {
         let mut result = String::from("FILES YOU MAY MODIFY:\n\n");
         for file in files {
@@ -695,8 +700,12 @@ mod tests {
         let issues = "# Issues\n- [ ] Fix the build system";
         let fix_prompt = prompt_fix("", "", issues);
         assert!(
-            fix_prompt.contains("No specific files listed"),
+            fix_prompt.contains("No specific files were extracted"),
             "Fix prompt should indicate no specific files when extraction finds none"
+        );
+        assert!(
+            fix_prompt.contains("You may work on any files mentioned in the ISSUES content"),
+            "Fix prompt should allow working on files mentioned in ISSUES"
         );
     }
 

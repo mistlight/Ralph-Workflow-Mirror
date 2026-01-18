@@ -13,6 +13,7 @@ use std::collections::BTreeSet;
 /// - Bracketed without line numbers: `[src/lib.rs]`
 /// - Parenthesized: `(src/utils.rs)`
 /// - Bare colon format: `src/helpers.rs:123`
+/// - Backtick format: `` `src/file.rs:42` ``
 ///
 /// File paths are deduplicated and sorted alphabetically for consistency.
 ///
@@ -56,7 +57,12 @@ pub fn extract_file_paths_from_issues(content: &str) -> Vec<String> {
     // Use non-greedy match to avoid partial matches
     let paren_pattern = regex::Regex::new(r"\(([^\)]+?\.[a-z]+)\)").unwrap();
 
-    // Pattern 3: Bare colon format (file.rs:line)
+    // Pattern 3: Backtick format (used by some agents like Codex)
+    // Matches: `src/main.rs:42`, `path/to/file.rs`
+    // Use non-greedy match to avoid partial matches
+    let backtick_pattern = regex::Regex::new(r"`([^`]+?\.[a-z]+(?::\d+)?)`").unwrap();
+
+    // Pattern 4: Bare colon format (file.rs:line)
     // Matches: src/main.rs:42, lib.rs:123 (but not URLs or similar)
     // Use word boundaries and non-greedy matching
     let bare_pattern = regex::Regex::new(r"\b([\w/-]+?\.[a-z]+:\d+)\b").unwrap();
@@ -79,6 +85,18 @@ pub fn extract_file_paths_from_issues(content: &str) -> Vec<String> {
             let path = file_ref.as_str().trim();
             if looks_like_file_path(path) {
                 files.insert(path.to_string());
+            }
+        }
+    }
+
+    // Extract from backtick format
+    for caps in backtick_pattern.captures_iter(content) {
+        if let Some(file_ref) = caps.get(1) {
+            let path = file_ref.as_str().trim();
+            // Remove line number if present
+            let file_path = path.split(':').next().unwrap_or(path);
+            if looks_like_file_path(file_path) {
+                files.insert(file_path.to_string());
             }
         }
     }
@@ -373,5 +391,131 @@ Medium:
         let files = extract_file_paths_from_issues(content);
         // Should handle both styles (though we normalize to forward slashes)
         assert!(files.contains(&"src/lib.rs".to_string()));
+    }
+
+    #[test]
+    fn test_extract_backtick_format_with_line_numbers() {
+        let content = r"
+# Issues
+- [ ] Critical: `src/main.rs:42` Bug in main function
+- [ ] High: `src/lib.rs:10` Style issue
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(files, vec!["src/lib.rs", "src/main.rs"]);
+    }
+
+    #[test]
+    fn test_extract_backtick_format_without_line_numbers() {
+        let content = r"
+# Issues
+- [ ] `src/main.rs` Bug in main function
+- [ ] `src/lib.rs` Style issue
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(files, vec!["src/lib.rs", "src/main.rs"]);
+    }
+
+    #[test]
+    fn test_extract_backtick_format_nested_paths() {
+        let content = r"
+# Issues
+- [ ] Critical: `ralph-workflow/src/app/config_init.rs:11` Duplicate entries
+- [ ] High: `ralph-workflow/src/cli/args.rs:90` Duplicate field name
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(
+            files,
+            vec![
+                "ralph-workflow/src/app/config_init.rs",
+                "ralph-workflow/src/cli/args.rs"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extract_backtick_format_mixed_with_other_formats() {
+        let content = r"
+# Issues
+
+Critical:
+- [ ] [src/main.rs:42] Critical bug (bracket format)
+- [ ] (src/lib.rs) Style issue (paren format)
+- [ ] `src/utils.rs:100` Missing docs (backtick format)
+
+Medium:
+- [ ] [src/helpers.rs:5] Unused import
+- [ ] `src/another.rs:10` Another issue
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(
+            files,
+            vec![
+                "src/another.rs",
+                "src/helpers.rs",
+                "src/lib.rs",
+                "src/main.rs",
+                "src/utils.rs"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extract_backtick_format_deduplicates() {
+        let content = r"
+# Issues
+- [ ] `src/main.rs:42` First issue
+- [ ] `src/main.rs:100` Second issue (same file)
+- [ ] [src/lib.rs] Third issue (different format)
+- [ ] `src/lib.rs:50` Fourth issue (same file)
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(files, vec!["src/lib.rs", "src/main.rs"]);
+    }
+
+    #[test]
+    fn test_extract_backtick_format_with_various_extensions() {
+        let content = r"
+# Issues
+- [ ] `src/main.rs:42` Rust issue
+- [ ] `config.toml:5` Config issue
+- [ ] `README.md:10` Doc issue
+- [ ] `data.json:1` Data issue
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(
+            files,
+            vec!["README.md", "config.toml", "data.json", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn test_extract_codex_style_output() {
+        // This matches the actual format Codex CLI uses
+        let content = r"
+[OpenAI Codex CLI] - [ ] Critical: `ralph-workflow/src/app/config_init.rs:11` Duplicate `use crate::cli::{...}` entries (e.g., `apply_args_to_config`, `handle_init_global`, etc. appear twice) will fail to compile (`E0252` duplicate imports).
+- [ ] Critical: `ralph-workflow/src/cli/args.rs:90` `UnifiedInitFlags` defines `pub init: Option<String>` and later also defines `pub init: bool` (duplicate field name) → will not compile.
+- [ ] Critical: `ralph-workflow/src/cli/args.rs:101` Multiple `#[arg(...)]` attributes contain duplicate keys (`conflicts_with_all`, `help`, `long`) in the same attribute list (e.g., `help = ...` twice) → clap derive macro will fail to compile.
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(
+            files,
+            vec![
+                "ralph-workflow/src/app/config_init.rs",
+                "ralph-workflow/src/cli/args.rs"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_backtick_format_ignores_non_file_paths() {
+        let content = r"
+# Issues
+- [ ] `src/main.rs:42` Real file
+- [ ] `not_a_file` Not a file (no extension)
+- [ ] `https://example.com` URL with backticks
+- [ ] `src/lib.rs:10` Another real file
+";
+        let files = extract_file_paths_from_issues(content);
+        assert_eq!(files, vec!["src/lib.rs", "src/main.rs"]);
     }
 }
