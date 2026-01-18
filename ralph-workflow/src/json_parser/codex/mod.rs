@@ -47,8 +47,9 @@ use super::terminal::TerminalMode;
 use super::types::{format_unknown_json_event, CodexEvent};
 
 use event_handlers::{
-    handle_error, handle_item_completed, handle_item_started, handle_result, handle_thread_started,
-    handle_turn_completed, handle_turn_failed, handle_turn_started, EventHandlerContext,
+    handle_error, handle_item_completed, handle_item_started, handle_result_for_display,
+    handle_thread_started, handle_turn_completed, handle_turn_failed, handle_turn_started,
+    EventHandlerContext,
 };
 
 /// Codex event parser
@@ -241,11 +242,12 @@ impl CodexParser {
                 }
             }
             CodexEvent::Result { result } => {
-                let output = handle_result(&ctx, result);
-                if output.is_empty() {
-                    None
+                // Result events are synthetic control events that are logged to the file
+                // In debug mode, also show them on console for troubleshooting
+                if self.verbosity.is_debug() {
+                    handle_result_for_display(&ctx, result)
                 } else {
-                    Some(output)
+                    None
                 }
             }
             CodexEvent::Unknown => {
@@ -413,6 +415,8 @@ impl CodexParser {
 
         if let Some(ref mut file) = log_writer {
             writeln!(file, "{line}")?;
+            // Write synthetic result event on turn.completed to ensure content is captured
+            // This handles the normal case where the stream completes properly
             if is_turn_completed {
                 if let Some(accumulated) = self
                     .streaming_session
@@ -446,6 +450,8 @@ impl CodexParser {
 
         let mut incremental_parser = IncrementalNdjsonParser::new();
         let mut byte_buffer = Vec::new();
+        // Track whether we've written a synthetic result event for the current turn
+        let mut result_written_for_current_turn = false;
 
         loop {
             byte_buffer.clear();
@@ -458,7 +464,18 @@ impl CodexParser {
             reader.consume(consumed);
 
             for line in incremental_parser.feed(&byte_buffer) {
+                // Check if this is a turn.completed event before processing
+                let is_turn_completed = line.trim().starts_with('{')
+                    && serde_json::from_str::<CodexEvent>(line.trim())
+                        .ok()
+                        .is_some_and(|e| matches!(e, CodexEvent::TurnCompleted { .. }));
+
                 self.process_event_line(&line, &mut monitor, &mut log_writer)?;
+
+                // Track result event writes
+                if is_turn_completed {
+                    result_written_for_current_turn = true;
+                }
             }
         }
 
@@ -469,7 +486,19 @@ impl CodexParser {
             self.process_event_line(&remaining, &mut monitor, &mut log_writer)?;
         }
 
+        // Ensure accumulated content is written even if turn.completed was not received
+        // This handles the case where the stream ends unexpectedly
         if let Some(ref mut file) = log_writer {
+            if !result_written_for_current_turn {
+                if let Some(accumulated) = self
+                    .streaming_session
+                    .borrow()
+                    .get_accumulated(super::types::ContentType::Text, "agent_msg")
+                {
+                    // Write the synthetic result event for any accumulated content
+                    Self::write_synthetic_result_event(file, accumulated)?;
+                }
+            }
             file.flush()?;
             // Ensure data is written to disk before continuing
             // This prevents race conditions where extraction runs before OS commits writes

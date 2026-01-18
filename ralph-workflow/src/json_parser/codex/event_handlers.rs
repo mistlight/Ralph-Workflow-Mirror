@@ -586,29 +586,28 @@ pub fn handle_error(
     )
 }
 
-/// Handle `Result` event.
+/// Handle `Result` event for console display (debug mode only).
 ///
-/// This is a synthetic event written by the parser to enable content extraction.
-/// It contains the aggregated content from `agent_message` items.
-pub fn handle_result(ctx: &EventHandlerContext, result: Option<String>) -> String {
-    // Result events are only written to the log file, not displayed to the user
-    // Return empty string to suppress display
-    if ctx.verbosity.is_debug() {
-        if let Some(content) = result {
-            let limit = ctx.verbosity.truncate_limit("result");
-            let preview = truncate_text(&content, limit);
-            return format!(
-                "{}[{}]{} {}Result:{} {}{}{}\n",
-                ctx.colors.dim(),
-                ctx.display_name,
-                ctx.colors.reset(),
-                ctx.colors.green(),
-                ctx.colors.reset(),
-                ctx.colors.dim(),
-                preview,
-                ctx.colors.reset()
-            );
-        }
+/// This function returns formatted output for Result events in debug mode.
+/// Result events are always written to the log file via `process_event_line`,
+/// but this function provides debug visibility into what's being logged.
+pub fn handle_result_for_display(ctx: &EventHandlerContext, result: Option<String>) -> Option<String> {
+    if let Some(content) = result {
+        let limit = ctx.verbosity.truncate_limit("result");
+        let preview = truncate_text(&content, limit);
+        Some(format!(
+            "{}[{}]{} {}Result:{} {}{}{}\n",
+            ctx.colors.dim(),
+            ctx.display_name,
+            ctx.colors.reset(),
+            ctx.colors.green(),
+            ctx.colors.reset(),
+            ctx.colors.dim(),
+            preview,
+            ctx.colors.reset()
+        ))
+    } else {
+        None
     }
-    String::new()
 }
+

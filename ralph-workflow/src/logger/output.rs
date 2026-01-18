@@ -84,6 +84,8 @@
 //!
 //! `TestLogger` follows the same pattern as `TestPrinter` with line buffering
 //! and implements the same traits (`Printable`, `std::io::Write`, `Loggable`).
+//! Note: `TestLogger` is available in test builds and when the `test-utils`
+//! feature is enabled (for integration tests).
 
 use super::{
     Colors, ARROW, BOX_BL, BOX_BR, BOX_H, BOX_TL, BOX_TR, BOX_V, CHECK, CROSS, INFO, WARN,
@@ -364,8 +366,47 @@ impl Loggable for Logger {
     }
 
     fn header(&self, title: &str, color_fn: fn(Colors) -> &'static str) {
-        // Call the existing Logger::header method
-        Self::header(self, title, color_fn);
+        // Call the inherent impl's header method
+        // We need to duplicate the implementation here since calling the inherent
+        // method from a trait impl causes issues with method resolution
+        let c = self.colors;
+        let color = color_fn(c);
+        let width = 60;
+        let title_len = title.chars().count();
+        let padding = (width - title_len - 2) / 2;
+
+        println!();
+        println!(
+            "{}{}{}{}{}{}",
+            color,
+            c.bold(),
+            BOX_TL,
+            BOX_H.to_string().repeat(width),
+            BOX_TR,
+            c.reset()
+        );
+        println!(
+            "{}{}{}{}{}{}{}{}{}{}",
+            color,
+            c.bold(),
+            BOX_V,
+            " ".repeat(padding),
+            c.white(),
+            title,
+            color,
+            " ".repeat(width - padding - title_len),
+            BOX_V,
+            c.reset()
+        );
+        println!(
+            "{}{}{}{}{}{}",
+            color,
+            c.bold(),
+            BOX_BL,
+            BOX_H.to_string().repeat(width),
+            BOX_BR,
+            c.reset()
+        );
     }
 }
 
@@ -462,14 +503,12 @@ pub trait Loggable {
 /// It provides methods to retrieve and inspect the captured log output.
 /// Uses line buffering similar to `TestPrinter` to handle partial writes.
 ///
-/// # Dead Code Note
+/// # Availability
 ///
-/// `TestLogger` is only used in tests (unit tests and integration tests via the
-/// `test-utils` feature). When the binary is built with `--all-features`, the
-/// `test-utils` feature is enabled but the binary doesn't use `TestLogger`, which
-/// would normally trigger a `dead_code` warning. We use `#[allow(dead_code)]`
-/// via `cfg_attr` to suppress this warning only in non-test builds - it's
-/// intentional that `TestLogger` is not used in production binary builds.
+/// `TestLogger` is available in test builds (`#[cfg(test)]`) and when the
+/// `test-utils` feature is enabled (for integration tests). In production
+/// binary builds with `--all-features`, the `test-utils` feature enables
+/// this code but it's not used by the binary, which is expected behavior.
 #[cfg(any(test, feature = "test-utils"))]
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Default)]
