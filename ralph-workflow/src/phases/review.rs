@@ -290,10 +290,19 @@ fn run_review_pass(
             ctx.logger
                 .success("Issues extracted from agent output (JSON)");
         } else {
-            ctx.logger.warn(&format!(
-                "Issues written but validation failed: {}",
-                extraction.validation_warning.clone().unwrap_or_default()
-            ));
+            let warning = extraction.validation_warning.clone().unwrap_or_default();
+            ctx.logger
+                .warn(&format!("Issues written but validation failed: {warning}"));
+            // Debug logging: show the actual content for diagnosis
+            if ctx.config.verbosity.is_debug() {
+                ctx.logger.info(&format!(
+                    "Extracted content (first 200 chars): {}",
+                    content.chars().take(200).collect::<String>()
+                ));
+                ctx.logger
+                    .info(&format!("Content length: {} characters", content.len()));
+                ctx.logger.info("Hint: Content may not match expected issue format (checkboxes, severity markers, file paths)");
+            }
         }
     } else {
         // JSON extraction failed - log for debugging

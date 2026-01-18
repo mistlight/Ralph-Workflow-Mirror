@@ -33,6 +33,9 @@ You are in FIX MODE. Address issues found during review.
 {# ISSUES FROM REVIEW - Pre-loaded for you #}
 {{ISSUES}}
 
+{# FILES TO MODIFY - Explicit list of files you may work on #}
+{{FILES_TO_MODIFY}}
+
 {# ORIGINAL REQUEST - The user's original prompt for context #}
 {{PROMPT}}
 
@@ -44,11 +47,9 @@ YOUR TASK:
 2. Fix the issues by modifying ONLY the files listed in "FILES YOU MAY MODIFY"
 3. Verify your fixes work correctly
 
-{# FILES TO MODIFY - Explicit list of files you may work on #}
-{{FILES_TO_MODIFY}}
-
 CRITICAL CONSTRAINTS:
 - The ISSUES content is ALREADY PROVIDED above in this prompt - review it carefully
+- PERMISSIONS: FULL AUTO MODE ENABLED - You have permission to make changes directly
 - You MUST ONLY modify files that are listed in the "FILES YOU MAY MODIFY" section (if specific files are listed)
 - If "FILES YOU MAY MODIFY" shows no specific files, you may work on ANY files in the repository that are needed to fix the issues described in the ISSUES content above
 - You MUST use your available tools to read the files listed in "FILES YOU MAY MODIFY" before editing them
@@ -63,6 +64,7 @@ IMPORTANT: You are in FULL AUTO mode and have permission to:
 - Apply patches, edits, or any modifications needed to fix the issues
 - Make all necessary changes without asking for confirmation
 - The yolo flag is enabled, which grants you permission to use file editing tools directly
+- When no specific files are listed in "FILES YOU MAY MODIFY", this means you may work on ANY files needed to fix the issues
 
 AFTER FIXING:
 Return your completion status as structured output:

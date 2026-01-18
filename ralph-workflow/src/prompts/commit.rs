@@ -124,15 +124,33 @@ pub fn prompt_fix_with_context(
 /// agent may work on any files in the repository to fix the issues.
 fn format_files_section(files: &[String]) -> String {
     if files.is_empty() {
-        "FILES YOU MAY MODIFY:\n\n\
-         (No specific files were extracted from ISSUES content)\n\n\
-         You may work on ANY files in the repository that are needed to fix the issues\n\
-         described in the ISSUES content above. Use your judgment to determine which\n\
-         files need modification - you are not limited to files mentioned in ISSUES.\n\
-         The ISSUES content is already embedded in this prompt - review it carefully."
-            .to_string()
+        "================================================================================
+FILES YOU MAY MODIFY
+================================================================================
+
+(No specific files were extracted from ISSUES content)
+
+PERMISSIONS: FULL AUTO MODE - You may work on ANY files in the repository
+
+You are authorized to modify any files in the repository that are needed to fix
+the issues described in the ISSUES content above. Use your judgment to determine
+which files need modification - you are not limited to files mentioned in ISSUES.
+
+The ISSUES content is already embedded in this prompt - review it carefully.
+
+================================================================================
+END OF FILES SECTION
+================================================================================
+"
+        .to_string()
     } else {
-        let mut result = String::from("FILES YOU MAY MODIFY:\n\n");
+        let mut result = String::from(
+            "================================================================================
+FILES YOU MAY MODIFY
+================================================================================
+
+",
+        );
         for file in files {
             result.push_str("- ");
             result.push_str(file);
@@ -140,9 +158,15 @@ fn format_files_section(files: &[String]) -> String {
         }
         // Add explicit clarification that agent doesn't need to read any ISSUES file
         result.push_str(
-            "\nIMPORTANT: Work ONLY with the files listed above. The issues\n\
-            content is already embedded in this prompt - you do NOT need to\n\
-            read or discover any files to know what to fix.\n",
+            "
+IMPORTANT: Work ONLY with the files listed above. The issues
+content is already embedded in this prompt - you do NOT need to
+read or discover any files to know what to fix.
+
+================================================================================
+END OF FILES SECTION
+================================================================================
+",
         );
         result
     }
