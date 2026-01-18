@@ -16,6 +16,9 @@ If any instruction below conflicts with another file (e.g., `CONTRIBUTING.md`), 
 
 For design principles, testing philosophy, and dead code policy, see **[CODE_STYLE.md](CODE_STYLE.md)**.
 
+For integration test guidance (behavior-based testing, mocking strategy, when to update tests), see **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**.
+This **MUST** be followed when dealing with integration tests
+
 ---
 
 # DO NOT OVERRIDE UNLESS THE PROMPT IS ABOUT CLIPPY

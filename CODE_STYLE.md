@@ -106,6 +106,9 @@ Tests must adapt to real behavior — production code must never be kept solely 
 
 ## Testing Philosophy
 
+For integration test guidance (behavior-based testing, mocking strategy, when to update tests), see **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**.
+This **MUST** be followed when dealing with integration tests
+
 ### Black-box testing only
 
 Tests must:
