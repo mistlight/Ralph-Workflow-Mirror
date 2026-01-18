@@ -22,6 +22,28 @@ Ralph follows idiomatic Rust practices. Before submitting a pull request:
 - **Lint code**: Run `cargo clippy -- -D warnings` (treat warnings as errors)
 - **Test code**: Run `cargo test` and ensure all tests pass
 
+# To check you can simply run these:
+
+```bash
+cargo fmt --all --check
+
+# Lint the main crate (lib only) with all its features
+cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
+
+# Lint the separate integration test package, enabling its own test-utils feature
+cargo clippy -p ralph-workflow-tests --all-targets --features test-utils -- -D warnings
+
+# Run the main crate's unit tests with all features
+cargo test -p ralph-workflow --lib --all-features
+
+# Run the integration tests package
+# (dependency features for ralph-workflow should be enabled via ralph-workflow-tests/Cargo.toml)
+cargo test -p ralph-workflow-tests
+
+# Build release artifacts (default-members only)
+cargo build --release
+```
+
 ### Rust Conventions
 
 - **Edition**: Rust 2021 (stable)

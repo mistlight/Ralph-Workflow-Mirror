@@ -494,16 +494,22 @@ impl CodexParser {
             reader.consume(consumed);
 
             for line in incremental_parser.feed(&byte_buffer) {
-                // Check if this is a turn.completed event before processing
+                // Check if this is a turn.completed or turn.started event before processing
                 let is_turn_completed = line.trim().starts_with('{')
                     && serde_json::from_str::<CodexEvent>(line.trim())
                         .ok()
                         .is_some_and(|e| matches!(e, CodexEvent::TurnCompleted { .. }));
+                let is_turn_started = line.trim().starts_with('{')
+                    && serde_json::from_str::<CodexEvent>(line.trim())
+                        .ok()
+                        .is_some_and(|e| matches!(e, CodexEvent::TurnStarted { .. }));
 
                 self.process_event_line(&line, &monitor, &mut log_writer)?;
 
-                // Track result event writes
-                if is_turn_completed {
+                // Track result event writes - reset flag when new turn starts
+                if is_turn_started {
+                    result_written_for_current_turn = false;
+                } else if is_turn_completed {
                     result_written_for_current_turn = true;
                 }
             }
