@@ -209,11 +209,12 @@ reviewer = ["codex"]
         "ralph --init=not-a-real-template should exit successfully"
     );
 
-    // Should show error about unknown template
+    // Should show error about unknown template/work guide
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Unknown template"),
-        "Should show unknown template error"
+        stdout.contains("Unknown Work Guide"),
+        "Should show unknown work guide error. Got: {}",
+        stdout
     );
 
     // Should NOT run the pipeline
@@ -259,11 +260,12 @@ reviewer = ["codex"]
         "ralph --init with commit message should exit successfully"
     );
 
-    // Should show error about unknown template (since "my commit message" is not a template)
+    // Should show error about unknown work guide (since "my commit message" is not a template)
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Unknown template"),
-        "Should show unknown template error for 'my commit message'"
+        stdout.contains("Unknown Work Guide"),
+        "Should show unknown work guide error for 'my commit message'. Got: {}",
+        stdout
     );
 
     // Should NOT run the pipeline

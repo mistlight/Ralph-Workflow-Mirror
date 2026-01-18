@@ -17,6 +17,9 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
+        // Use generic agents to avoid picking up user's local config
+        .env("RALPH_DEVELOPER_AGENT", "codex")
+        .env("RALPH_REVIEWER_AGENT", "codex")
         // Ensure git identity isn't a factor if a commit happens in the test.
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
@@ -178,9 +181,20 @@ else
 fi
 echo $count > "{counter}"
 
-# Planning phase: create PLAN.md
+# Planning phase: write plan directly to .agent/PLAN.md
+# (The orchestrator reads plan from this file after the agent completes)
 if [ ! -f .agent/PLAN.md ]; then
-    echo "Plan $count" > .agent/PLAN.md
+    cat > .agent/PLAN.md <<'PLAN_EOF'
+## Summary
+
+Test plan for iteration.
+
+## Implementation Steps
+
+Step 1: Create the test file.
+Step 2: Verify the changes.
+Step 3: Complete the iteration.
+PLAN_EOF
 fi
 
 # Execution phase: create a change file (only on even calls = execution phases)
@@ -242,6 +256,9 @@ fn ralph_commit_infrastructure_for_review_fix_cycles() {
     // since the orchestrator-controlled extraction requires proper JSON logging.
     let dir = TempDir::new().unwrap();
     init_repo_with_initial_commit(&dir);
+
+    // Create a change to generate a diff (required for review to run)
+    write_file(dir.path().join("initial.txt"), "updated content for review");
 
     // Track calls and create fixes
     let counter_path = dir.path().join(".agent/fix_counter");
@@ -324,6 +341,9 @@ fn ralph_reviewer_receives_cumulative_diff_from_start() {
     fs::write(dir.path().join("file1.txt"), "content1").unwrap();
     fs::write(dir.path().join("file2.txt"), "content2").unwrap();
     let _ = commit_all(&repo, "baseline");
+
+    // Create a change after baseline so the reviewer has something to review
+    fs::write(dir.path().join("file1.txt"), "content1 updated").unwrap();
 
     // Track if diff was received and check its content
     let diff_log_path = dir.path().join(".agent/diff_log.txt");

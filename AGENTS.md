@@ -41,16 +41,22 @@ rg -n -U --pcre2 '(?x)
 ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+cargo fmt --all --check
 
-cargo fmt --all
-# Check lib with all features (including test-utils)
+# Lint the main crate (lib only) with all its features
 cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
-# Check bins without test-utils feature (binary doesn't use test utilities)
-cargo clippy -p ralph-workflow --bins -- -D warnings
-# Run lib tests with all features
-cargo test --lib --all-features
-# Run integration tests (test-utils is enabled via their Cargo.toml)
+
+# Lint the separate integration test package, enabling its own test-utils feature
+cargo clippy -p ralph-workflow-tests --all-targets --features test-utils -- -D warnings
+
+# Run the main crate's unit tests with all features
+cargo test -p ralph-workflow --lib --all-features
+
+# Run the integration tests package
+# (dependency features for ralph-workflow should be enabled via ralph-workflow-tests/Cargo.toml)
 cargo test -p ralph-workflow-tests
+
+# Build release artifacts (default-members only)
 cargo build --release
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT

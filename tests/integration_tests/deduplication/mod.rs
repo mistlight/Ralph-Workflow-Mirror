@@ -29,8 +29,8 @@ use std::io::Cursor;
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::printer::{SharedPrinter, TestPrinter};
 use ralph_workflow::config::Verbosity;
+use ralph_workflow::json_parser::printer::{SharedPrinter, TestPrinter};
 use ralph_workflow::json_parser::ClaudeParser;
 use ralph_workflow::logger::Colors;
 
@@ -228,14 +228,9 @@ fn test_claude_parser_snapshot_glitch() {
 
     // Verify streaming metrics show snapshot repair occurred
     let metrics = parser.streaming_metrics();
-    // TODO: Snapshot repair tracking is not working correctly with the current deduplication logic
-    // The snapshot is being detected and filtered (no duplicates in output), but the metrics
-    // are not being incremented. This is a known issue that needs further investigation.
-    // For now, we just verify that no duplicates occurred (above) and that the final content is correct.
-    // Log metrics for debugging
-    println!(
-        "Snapshot glitch metrics - snapshot_repairs: {}, large_deltas: {}, protocol_violations: {}",
-        metrics.snapshot_repairs_count, metrics.large_delta_count, metrics.protocol_violations
+    assert_eq!(
+        metrics.snapshot_repairs_count, 1,
+        "Should track one snapshot repair when accumulated content is re-sent as a delta"
     );
 }
 
@@ -368,5 +363,247 @@ fn test_claude_parser_empty_content_block() {
     assert!(
         !printer_ref.has_duplicate_consecutive_lines(),
         "Empty content block should not produce duplicates"
+    );
+}
+
+// ===========================================================================
+// GLM/CCS Agent Duplicate Detection Tests
+// ===========================================================================
+//
+// GLM agents accessed via CCS (Claude Code Switch) use the Claude parser but
+// can exhibit unique streaming patterns that cause duplicates. These tests
+// verify the deduplication system handles GLM-specific patterns correctly.
+
+/// Test GLM agent repeated MessageStart events don't cause duplicates.
+///
+/// GLM agents sometimes send multiple MessageStart events during a conversation
+/// turn. This should not reset the deduplication state and cause content to
+/// be re-rendered.
+#[test]
+fn test_glm_repeated_message_start_no_duplicates() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let colors = Colors::new();
+    let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
+
+    // Simulate GLM pattern with repeated message_start events
+    let events = [
+        // First message start
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}"#,
+        // Second message_start (GLM quirk) - should not reset state
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
+        // Same deltas arrive again (which should be deduped)
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}"#,
+        // New content after the duplicate block
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+    ];
+
+    let input = events.join("\n");
+    let cursor = Cursor::new(input);
+    let reader = std::io::BufReader::new(cursor);
+    parser
+        .parse_stream(reader)
+        .expect("parse_stream should succeed");
+
+    let printer_ref = test_printer.borrow();
+
+    // Verify no duplicates in output
+    verify_no_duplicates(&printer_ref, "GLM repeated message_start");
+
+    // Verify final content is correct
+    let output = printer_ref.get_output();
+    assert!(
+        output.contains("Hello World!"),
+        "Output should contain complete message"
+    );
+}
+
+/// Test GLM agent alternating delta pattern doesn't trigger false deduplication.
+///
+/// GLM agents sometimes send deltas in alternating patterns (A, B, A, B).
+/// These are NOT consecutive duplicates and should all be processed.
+#[test]
+fn test_glm_alternating_deltas_not_deduped() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let colors = Colors::new();
+    let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
+
+    // Alternating pattern: Ping, Pong, Ping, Pong
+    let events = [
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Ping"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Pong"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Ping"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Pong"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+    ];
+
+    let input = events.join("\n");
+    let cursor = Cursor::new(input);
+    let reader = std::io::BufReader::new(cursor);
+    parser
+        .parse_stream(reader)
+        .expect("parse_stream should succeed");
+
+    let printer_ref = test_printer.borrow();
+    let output = printer_ref.get_output();
+
+    // Should contain both "Ping" and "Pong" multiple times
+    // Since alternating pattern isn't consecutive duplicates, all should render
+    assert!(
+        output.contains("PingPongPingPong"),
+        "All alternating deltas should be processed. Output: {output}"
+    );
+}
+
+/// Test GLM agent consecutive identical deltas are filtered.
+///
+/// When GLM agents send the exact same delta multiple times consecutively
+/// (a resend glitch), these duplicates should be filtered.
+#[test]
+fn test_glm_consecutive_identical_deltas_filtered() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let colors = Colors::new();
+    let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
+
+    // Same delta sent 4 times consecutively (resend glitch)
+    let repeated_text = "This should only appear once or twice in render";
+    let repeated_event = format!(
+        r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{repeated_text}"}}}}}}"#
+    );
+
+    let events: Vec<String> = vec![
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#.to_string(),
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#.to_string(),
+        repeated_event.clone(),
+        repeated_event.clone(),
+        repeated_event.clone(),
+        repeated_event.clone(),
+        r#"{"type":"stream_event","event":{"type":"message_stop"}}"#.to_string(),
+    ];
+
+    let input = events.join("\n");
+    let cursor = Cursor::new(input);
+    let reader = std::io::BufReader::new(cursor);
+    parser
+        .parse_stream(reader)
+        .expect("parse_stream should succeed");
+
+    let printer_ref = test_printer.borrow();
+
+    // Verify no duplicate consecutive lines in output
+    verify_no_duplicates(&printer_ref, "GLM consecutive identical deltas");
+
+    // Verify content appears (at least once)
+    let output = printer_ref.get_output();
+    assert!(
+        output.contains(repeated_text),
+        "Content should appear in output"
+    );
+}
+
+/// Test GLM agent tool use events with text don't cause duplicates.
+///
+/// GLM agents can interleave tool use blocks with text blocks.
+/// Switching between them should not cause duplicate rendering.
+#[test]
+fn test_glm_tool_use_interleaved_with_text() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let colors = Colors::new();
+    let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
+
+    let events = [
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
+        // First text block
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Let me check"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#,
+        // Tool use block
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tool_1","name":"Read","input":{}}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"/test\"}"}}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_stop","index":1}}"#,
+        // Second text block after tool
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"text","text":""}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"Now I can see"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_stop","index":2}}"#,
+        r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+    ];
+
+    let input = events.join("\n");
+    let cursor = Cursor::new(input);
+    let reader = std::io::BufReader::new(cursor);
+    parser
+        .parse_stream(reader)
+        .expect("parse_stream should succeed");
+
+    let printer_ref = test_printer.borrow();
+
+    // Verify no duplicates
+    verify_no_duplicates(&printer_ref, "GLM tool use interleaved");
+
+    // Verify both text blocks are in output
+    let output = printer_ref.get_output();
+    assert!(
+        output.contains("Let me check"),
+        "First text block should be in output"
+    );
+    assert!(
+        output.contains("Now I can see"),
+        "Second text block should be in output"
+    );
+}
+
+/// Test GLM agent snapshot-as-delta detection.
+///
+/// GLM agents can sometimes send accumulated content as a "delta"
+/// (a snapshot glitch). The deduplication system should detect and
+/// filter this to avoid rendering the same content twice.
+#[test]
+fn test_glm_snapshot_as_delta_detected() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let colors = Colors::new();
+    let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
+
+    // Simulate streaming followed by a snapshot-as-delta
+    let events = [
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+        // Normal streaming
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"The quick brown fox"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" jumps over"}}}"#,
+        // Snapshot-as-delta: entire accumulated content resent
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"The quick brown fox jumps over"}}}"#,
+        // New content after snapshot
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" the lazy dog"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+    ];
+
+    let input = events.join("\n");
+    let cursor = Cursor::new(input);
+    let reader = std::io::BufReader::new(cursor);
+    parser
+        .parse_stream(reader)
+        .expect("parse_stream should succeed");
+
+    let printer_ref = test_printer.borrow();
+
+    // Verify no duplicates in output
+    verify_no_duplicates(&printer_ref, "GLM snapshot-as-delta");
+
+    // Verify final content is present
+    let output = printer_ref.get_output();
+    assert!(
+        output.contains("the lazy dog"),
+        "Content after snapshot should be in output"
     );
 }

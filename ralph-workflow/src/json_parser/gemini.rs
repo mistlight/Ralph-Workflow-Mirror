@@ -40,6 +40,7 @@ use std::rc::Rc;
 
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
+#[cfg(feature = "test-utils")]
 use super::health::StreamingQualityMetrics;
 use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
@@ -122,15 +123,46 @@ impl GeminiParser {
         self
     }
 
+    /// Create a new parser with a test printer.
+    ///
+    /// This is the primary entry point for integration tests that need
+    /// to capture parser output for verification.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn with_printer_for_test(
+        colors: Colors,
+        verbosity: Verbosity,
+        printer: SharedPrinter,
+    ) -> Self {
+        Self::with_printer(colors, verbosity, printer)
+    }
+
+    /// Set the log file path for testing.
+    ///
+    /// This allows tests to verify log file content after parsing.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn with_log_file_for_test(mut self, path: &str) -> Self {
+        self.log_file = Some(path.to_string());
+        self
+    }
+
+    /// Parse a stream for testing purposes.
+    ///
+    /// This exposes the internal `parse_stream` method for integration tests.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn parse_stream_for_test<R: std::io::BufRead>(&self, reader: R) -> std::io::Result<()> {
+        self.parse_stream(reader)
+    }
+
     /// Get a shared reference to the printer.
     ///
     /// This allows tests, monitoring, and other code to access the printer after parsing
     /// to verify output content, check for duplicates, or capture output for analysis.
+    /// Only available with the `test-utils` feature.
     ///
     /// # Returns
     ///
     /// A clone of the shared printer reference (`Rc<RefCell<dyn Printable>>`)
-    #[cfg_attr(any(debug_assertions, test, feature = "monitoring"), allow(dead_code))]
+    #[cfg(feature = "test-utils")]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -138,12 +170,12 @@ impl GeminiParser {
     /// Get streaming quality metrics from the current session.
     ///
     /// This provides insight into the deduplication and streaming quality of the
-    /// parsing session.
+    /// parsing session. Only available with the `test-utils` feature.
     ///
     /// # Returns
     ///
     /// A copy of the streaming quality metrics from the internal `StreamingSession`.
-    #[cfg_attr(any(debug_assertions, test, feature = "monitoring"), allow(dead_code))]
+    #[cfg(feature = "test-utils")]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()

@@ -21,6 +21,9 @@ mod prompt;
 mod runner;
 mod types;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_trait;
+
 pub use fallback::OutputValidator;
 pub use prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
 pub use runner::{run_with_fallback, run_with_fallback_and_validator, FallbackConfig};
