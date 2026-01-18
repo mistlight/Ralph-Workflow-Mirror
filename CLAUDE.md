@@ -31,6 +31,7 @@ This **MUST** be followed when dealing with integration tests
 
 For design principles, testing philosophy, and dead code policy, see **[CODE_STYLE.md](CODE_STYLE.md)**.
 
+Do not assume anything about external dependency, if you need to interact with an external API, you must use context7, if that fails, research the official documentation by going to the website through playwright.
 
 ---
 
