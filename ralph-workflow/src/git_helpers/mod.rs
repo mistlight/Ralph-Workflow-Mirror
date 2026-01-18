@@ -24,6 +24,9 @@ mod start_commit;
 mod wrapper;
 
 #[cfg(any(test, feature = "test-utils"))]
+pub mod ops;
+
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_trait;
 
 pub use branch::{get_default_branch, is_main_or_master_branch};
@@ -41,6 +44,9 @@ pub use wrapper::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
     start_agent_phase, GitHelpers,
 };
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use ops::{CommitResult, GitOps, RealGit, RebaseResult as GitRebaseResult};
 
 #[cfg(test)]
 mod tests;

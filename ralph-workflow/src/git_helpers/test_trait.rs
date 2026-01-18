@@ -11,6 +11,8 @@ use std::cell::RefCell;
 use std::io;
 use std::path::PathBuf;
 
+use super::ops::{CommitResult, GitOps, RebaseResult};
+
 /// Result of a git commit operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TestCommitResult {
@@ -168,6 +170,11 @@ pub struct MockGit {
     require_repo_calls: RefCell<Vec<()>>,
     /// Mock return value for require_repo.
     require_repo_result: RefCell<MockResult<()>>,
+
+    /// Captured calls to diff_from_start.
+    diff_from_start_calls: RefCell<Vec<()>>,
+    /// Mock return value for diff_from_start.
+    diff_from_start_result: RefCell<MockResult<String>>,
 }
 
 impl Default for MockGit {
@@ -204,6 +211,9 @@ impl Default for MockGit {
 
             require_repo_calls: RefCell::new(Vec::new()),
             require_repo_result: RefCell::new(MockResult::Ok(())),
+
+            diff_from_start_calls: RefCell::new(Vec::new()),
+            diff_from_start_result: RefCell::new(MockResult::Ok(String::new())),
         }
     }
 }
@@ -253,6 +263,9 @@ impl MockGit {
 
             require_repo_calls: RefCell::new(Vec::new()),
             require_repo_result: RefCell::new(err_result("mock git error")),
+
+            diff_from_start_calls: RefCell::new(Vec::new()),
+            diff_from_start_result: RefCell::new(err_result("mock git error")),
         }
     }
 
@@ -327,6 +340,13 @@ impl MockGit {
         self
     }
 
+    /// Set the mock return value for diff_from_start.
+    pub fn with_diff_from_start(self, result: io::Result<String>) -> Self {
+        self.diff_from_start_result
+            .replace(MockResult::from_io_result(result));
+        self
+    }
+
     // Assertion methods
 
     /// Get the number of times repo_root was called.
@@ -377,6 +397,11 @@ impl MockGit {
     /// Get the number of times require_repo was called.
     pub fn require_repo_count(&self) -> usize {
         self.require_repo_calls.borrow().len()
+    }
+
+    /// Get the number of times diff_from_start was called.
+    pub fn diff_from_start_count(&self) -> usize {
+        self.diff_from_start_calls.borrow().len()
     }
 }
 
@@ -436,6 +461,73 @@ impl TestGit for MockGit {
     }
 }
 
+/// Implementation of GitOps for MockGit.
+///
+/// This allows MockGit to be used as a drop-in replacement for RealGit
+/// in integration tests.
+impl GitOps for MockGit {
+    fn repo_root(&self) -> io::Result<PathBuf> {
+        TestGit::repo_root(self)
+    }
+
+    fn diff(&self) -> io::Result<String> {
+        TestGit::diff(self)
+    }
+
+    fn diff_from(&self, start_oid: &str) -> io::Result<String> {
+        TestGit::diff_from(self, start_oid)
+    }
+
+    fn snapshot(&self) -> io::Result<String> {
+        TestGit::snapshot(self)
+    }
+
+    fn add_all(&self) -> io::Result<bool> {
+        TestGit::add_all(self)
+    }
+
+    fn commit(
+        &self,
+        message: &str,
+        _git_user_name: Option<&str>,
+        _git_user_email: Option<&str>,
+    ) -> io::Result<CommitResult> {
+        // Convert TestCommitResult to CommitResult
+        TestGit::commit(self, message).map(|r| match r {
+            TestCommitResult::Success(oid) => CommitResult::Success(oid),
+            TestCommitResult::NoChanges => CommitResult::NoChanges,
+            TestCommitResult::Failed(msg) => CommitResult::Failed(msg),
+        })
+    }
+
+    fn head_oid(&self) -> io::Result<String> {
+        TestGit::head_oid(self)
+    }
+
+    fn rebase_onto(&self, upstream_branch: &str) -> io::Result<RebaseResult> {
+        // Convert TestRebaseResult to RebaseResult
+        TestGit::rebase_onto(self, upstream_branch).map(|r| match r {
+            TestRebaseResult::Success => RebaseResult::Success,
+            TestRebaseResult::Conflicts(files) => RebaseResult::Conflicts(files),
+            TestRebaseResult::NoOp => RebaseResult::NoOp,
+            TestRebaseResult::Failed(msg) => RebaseResult::Failed(msg),
+        })
+    }
+
+    fn conflicted_files(&self) -> io::Result<Vec<String>> {
+        TestGit::conflicted_files(self)
+    }
+
+    fn require_repo(&self) -> io::Result<()> {
+        TestGit::require_repo(self)
+    }
+
+    fn diff_from_start(&self) -> io::Result<String> {
+        self.diff_from_start_calls.borrow_mut().push(());
+        self.diff_from_start_result.borrow().to_io_result()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,21 +535,21 @@ mod tests {
     #[test]
     fn test_mock_git_captures_repo_root_call() {
         let mock = MockGit::new().with_repo_root(Ok(PathBuf::from("/test/repo")));
-        let _ = mock.repo_root();
+        let _ = TestGit::repo_root(&mock);
         assert_eq!(mock.repo_root_count(), 1);
     }
 
     #[test]
     fn test_mock_git_captures_diff_call() {
         let mock = MockGit::new().with_diff(Ok("test diff".to_string()));
-        let _ = mock.diff();
+        let _ = TestGit::diff(&mock);
         assert_eq!(mock.diff_count(), 1);
     }
 
     #[test]
     fn test_mock_git_captures_diff_from_call() {
         let mock = MockGit::new().with_diff_from(Ok("test diff".to_string()));
-        let _ = mock.diff_from("abc123");
+        let _ = TestGit::diff_from(&mock, "abc123");
         let calls = mock.diff_from_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], "abc123");
@@ -466,7 +558,7 @@ mod tests {
     #[test]
     fn test_mock_git_captures_commit_call() {
         let mock = MockGit::new().with_commit(Ok(TestCommitResult::Success("def456".to_string())));
-        let _ = mock.commit("test message");
+        let _ = TestGit::commit(&mock, "test message");
         let calls = mock.commit_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], "test message");
@@ -475,7 +567,7 @@ mod tests {
     #[test]
     fn test_mock_git_captures_rebase_onto_call() {
         let mock = MockGit::new().with_rebase_onto(Ok(TestRebaseResult::Success));
-        let _ = mock.rebase_onto("main");
+        let _ = TestGit::rebase_onto(&mock, "main");
         let calls = mock.rebase_onto_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], "main");
@@ -484,14 +576,14 @@ mod tests {
     #[test]
     fn test_commit_result_success() {
         let mock = MockGit::new().with_commit(Ok(TestCommitResult::Success("abc123".to_string())));
-        let result = mock.commit("test").unwrap();
+        let result = TestGit::commit(&mock, "test").unwrap();
         assert_eq!(result, TestCommitResult::Success("abc123".to_string()));
     }
 
     #[test]
     fn test_commit_result_no_changes() {
         let mock = MockGit::new().with_commit(Ok(TestCommitResult::NoChanges));
-        let result = mock.commit("test").unwrap();
+        let result = TestGit::commit(&mock, "test").unwrap();
         assert_eq!(result, TestCommitResult::NoChanges);
     }
 
@@ -500,22 +592,46 @@ mod tests {
         let conflicts = vec!["file1.txt".to_string(), "file2.txt".to_string()];
         let mock =
             MockGit::new().with_rebase_onto(Ok(TestRebaseResult::Conflicts(conflicts.clone())));
-        let result = mock.rebase_onto("main").unwrap();
+        let result = TestGit::rebase_onto(&mock, "main").unwrap();
         assert_eq!(result, TestRebaseResult::Conflicts(conflicts));
     }
 
     #[test]
     fn test_rebase_result_no_op() {
         let mock = MockGit::new().with_rebase_onto(Ok(TestRebaseResult::NoOp));
-        let result = mock.rebase_onto("main").unwrap();
+        let result = TestGit::rebase_onto(&mock, "main").unwrap();
         assert_eq!(result, TestRebaseResult::NoOp);
     }
 
     #[test]
     fn test_mock_git_error_returns_error() {
         let mock = MockGit::new_error();
-        assert!(mock.repo_root().is_err());
-        assert!(mock.diff().is_err());
-        assert!(mock.commit("test").is_err());
+        assert!(TestGit::repo_root(&mock).is_err());
+        assert!(TestGit::diff(&mock).is_err());
+        assert!(TestGit::commit(&mock, "test").is_err());
+    }
+
+    // Tests for GitOps implementation
+
+    #[test]
+    fn test_git_ops_commit_converts_result() {
+        let mock = MockGit::new().with_commit(Ok(TestCommitResult::Success("abc123".to_string())));
+        let result = GitOps::commit(&mock, "test", None, None).unwrap();
+        assert_eq!(result, CommitResult::Success("abc123".to_string()));
+    }
+
+    #[test]
+    fn test_git_ops_rebase_converts_result() {
+        let mock = MockGit::new().with_rebase_onto(Ok(TestRebaseResult::Success));
+        let result = GitOps::rebase_onto(&mock, "main").unwrap();
+        assert_eq!(result, RebaseResult::Success);
+    }
+
+    #[test]
+    fn test_git_ops_diff_from_start() {
+        let mock = MockGit::new().with_diff_from_start(Ok("diff content".to_string()));
+        let result = GitOps::diff_from_start(&mock).unwrap();
+        assert_eq!(result, "diff content");
+        assert_eq!(mock.diff_from_start_count(), 1);
     }
 }
