@@ -86,9 +86,14 @@ pub fn initialize_config(
         }
     }
 
-    // Handle --extended-help / --man flag: display extended help and exit
+    // Handle --extended-help / --man flag: display extended help and exit.
+    // If combined with --list-work-guides, show both to reduce surprises.
     if args.recovery.extended_help {
         handle_extended_help();
+        if args.work_guide_list.list_work_guides {
+            println!();
+            handle_list_work_guides(colors);
+        }
         return Ok(None);
     }
 

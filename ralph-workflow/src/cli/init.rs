@@ -125,42 +125,71 @@ pub fn handle_init_legacy(colors: Colors, agents_config_path: &Path) -> anyhow::
 /// Prompt the user to confirm overwriting an existing PROMPT.md.
 ///
 /// Returns `true` if the user confirms, `false` otherwise.
+///
+/// Requires stdin to be a terminal and at least one output stream (stdout/stderr)
+/// to be a terminal so prompts are visible.
 fn can_prompt_user() -> bool {
-    std::io::stdin().is_terminal()
-        && (std::io::stderr().is_terminal() || std::io::stdout().is_terminal())
+    prompt_output_target().is_some()
+}
+
+#[derive(Clone, Copy)]
+enum PromptOutputTarget {
+    Stdout,
+    Stderr,
+}
+
+fn prompt_output_target() -> Option<PromptOutputTarget> {
+    if !std::io::stdin().is_terminal() {
+        return None;
+    }
+
+    if std::io::stdout().is_terminal() {
+        return Some(PromptOutputTarget::Stdout);
+    }
+    if std::io::stderr().is_terminal() {
+        return Some(PromptOutputTarget::Stderr);
+    }
+
+    None
+}
+
+fn with_prompt_writer<T>(
+    target: PromptOutputTarget,
+    f: impl FnOnce(&mut dyn std::io::Write) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    use std::io;
+
+    match target {
+        PromptOutputTarget::Stdout => {
+            let mut out = io::stdout().lock();
+            f(&mut out)
+        }
+        PromptOutputTarget::Stderr => {
+            let mut err = io::stderr().lock();
+            f(&mut err)
+        }
+    }
 }
 
 fn prompt_overwrite_confirmation(prompt_path: &Path, colors: Colors) -> anyhow::Result<bool> {
-    use std::io::{self, Write};
+    use std::io;
 
-    if !std::io::stdin().is_terminal() {
+    let Some(target) = prompt_output_target() else {
         return Ok(false);
-    }
+    };
 
-    let use_stderr = std::io::stderr().is_terminal();
-    if use_stderr {
-        let mut err = io::stderr().lock();
+    with_prompt_writer(target, |w| {
         writeln!(
-            err,
+            w,
             "{}PROMPT.md already exists:{} {}",
             colors.yellow(),
             colors.reset(),
             prompt_path.display()
         )?;
-        write!(err, "Do you want to overwrite it? [y/N]: ")?;
-        err.flush()?;
-    } else {
-        let mut out = io::stdout().lock();
-        writeln!(
-            out,
-            "{}PROMPT.md already exists:{} {}",
-            colors.yellow(),
-            colors.reset(),
-            prompt_path.display()
-        )?;
-        write!(out, "Do you want to overwrite it? [y/N]: ")?;
-        out.flush()?;
-    }
+        write!(w, "Do you want to overwrite it? [y/N]: ")?;
+        w.flush()?;
+        Ok(())
+    })?;
 
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
@@ -204,12 +233,27 @@ fn handle_init_prompt_at_path(
     // Validate the template exists first, before any file operations
     let Some(template) = get_template(template_name) else {
         println!(
-            "{}Unknown template: '{}'{}",
+            "{}Unknown Work Guide: '{}'{}",
             colors.red(),
             template_name,
             colors.reset()
         );
         println!();
+        let similar = find_similar_templates(template_name);
+        if !similar.is_empty() {
+            println!("{}Did you mean?{}", colors.yellow(), colors.reset());
+            for (name, score) in similar {
+                println!(
+                    "  {}{}{}  ({}% similar)",
+                    colors.cyan(),
+                    name,
+                    colors.reset(),
+                    score
+                );
+            }
+            println!();
+        }
+        println!("Commonly used Work Guides:");
         print_common_work_guides(colors);
         println!("Usage: ralph --init-prompt <work-guide>");
         return Ok(true);
@@ -235,16 +279,10 @@ fn handle_init_prompt_at_path(
                     }
                     fs::write(prompt_path, content)?;
                 } else {
-                    println!(
-                        "{}PROMPT.md already exists:{} {}",
-                        colors.yellow(),
-                        colors.reset(),
+                    return Err(anyhow::anyhow!(
+                        "PROMPT.md already exists: {}\nRefusing to overwrite in non-interactive mode. Use --force-overwrite to overwrite, or delete/backup the existing file.",
                         prompt_path.display()
-                    );
-                    println!(
-                        "Use --force-overwrite to overwrite, or delete/backup the existing file."
-                    );
-                    return Ok(true);
+                    ));
                 }
             }
             Err(err) => return Err(err.into()),
@@ -276,7 +314,7 @@ fn handle_init_prompt_at_path(
     Ok(true)
 }
 
-/// Print common Work Guides inline (for --init without template specified).
+/// Print a short list of common Work Guides.
 ///
 /// Shows the most commonly used Work Guides with a note to use --list-work-guides for more.
 fn print_common_work_guides(colors: Colors) {
@@ -624,6 +662,7 @@ fn handle_init_template_arg_at_path(
         println!();
     }
 
+    println!("Commonly used Work Guides:");
     print_common_work_guides(colors);
     println!("Usage: ralph --init=<work-guide>");
     println!("       ralph --init            # Smart init (infers intent)");
@@ -794,30 +833,22 @@ fn handle_init_only_config_exists(
 /// Returns `Some(template_name)` if the user selected a template,
 /// or `None` if the user declined or entered invalid input.
 fn prompt_for_template(colors: Colors) -> Option<String> {
-    use std::io::{self, Write};
+    use std::io;
 
-    let use_stderr = std::io::stderr().is_terminal();
-    if use_stderr {
-        let mut err = io::stderr().lock();
+    let target = prompt_output_target()?;
+    if with_prompt_writer(target, |w| {
         let _ = writeln!(
-            err,
+            w,
             "PROMPT.md contains your task specification for the AI agents."
         );
-        let _ = write!(err, "Would you like to create one from a template? [Y/n]: ");
-        if err.flush().is_err() {
-            return None;
-        }
-    } else {
-        let mut out = io::stdout().lock();
-        let _ = writeln!(
-            out,
-            "PROMPT.md contains your task specification for the AI agents."
-        );
-        let _ = write!(out, "Would you like to create one from a template? [Y/n]: ");
-        if out.flush().is_err() {
-            return None;
-        }
-    }
+        let _ = write!(w, "Would you like to create one from a Work Guide? [Y/n]: ");
+        w.flush()?;
+        Ok(())
+    })
+    .is_err()
+    {
+        return None;
+    };
 
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
@@ -832,14 +863,13 @@ fn prompt_for_template(colors: Colors) -> Option<String> {
 
     // Show available templates
     let templates: Vec<(&str, &str)> = list_templates();
-    if use_stderr {
-        let mut err = io::stderr().lock();
-        let _ = writeln!(err);
-        let _ = writeln!(err, "Available templates:");
+    if with_prompt_writer(target, |w| {
+        let _ = writeln!(w);
+        let _ = writeln!(w, "Available Work Guides:");
 
         for (i, (name, description)) in templates.iter().enumerate() {
             let _ = writeln!(
-                err,
+                w,
                 "  {}{}{}  {}{}{}",
                 colors.cyan(),
                 name,
@@ -849,82 +879,39 @@ fn prompt_for_template(colors: Colors) -> Option<String> {
                 colors.reset()
             );
             if (i + 1) % 5 == 0 {
-                let _ = writeln!(err); // Group templates in sets of 5 for readability
+                let _ = writeln!(w); // Group templates in sets of 5 for readability
             }
         }
 
-        let _ = writeln!(err);
-        let _ = writeln!(err, "Common choices:");
+        let _ = writeln!(w);
+        let _ = writeln!(w, "Common choices:");
         let _ = writeln!(
-            err,
+            w,
             "  {}quick{}           - Quick/small changes (typos, minor fixes)",
             colors.cyan(),
             colors.reset()
         );
         let _ = writeln!(
-            err,
+            w,
             "  {}bug-fix{}         - Bug fix with investigation guidance",
             colors.cyan(),
             colors.reset()
         );
         let _ = writeln!(
-            err,
+            w,
             "  {}feature-spec{}    - Product specification",
             colors.cyan(),
             colors.reset()
         );
-        let _ = writeln!(err);
-        let _ = write!(err, "Enter template name (or press Enter to use 'quick'): ");
-        if err.flush().is_err() {
-            return None;
-        }
-    } else {
-        let mut out = io::stdout().lock();
-        let _ = writeln!(out);
-        let _ = writeln!(out, "Available templates:");
-
-        for (i, (name, description)) in templates.iter().enumerate() {
-            let _ = writeln!(
-                out,
-                "  {}{}{}  {}{}{}",
-                colors.cyan(),
-                name,
-                colors.reset(),
-                colors.dim(),
-                description,
-                colors.reset()
-            );
-            if (i + 1) % 5 == 0 {
-                let _ = writeln!(out); // Group templates in sets of 5 for readability
-            }
-        }
-
-        let _ = writeln!(out);
-        let _ = writeln!(out, "Common choices:");
-        let _ = writeln!(
-            out,
-            "  {}quick{}           - Quick/small changes (typos, minor fixes)",
-            colors.cyan(),
-            colors.reset()
-        );
-        let _ = writeln!(
-            out,
-            "  {}bug-fix{}         - Bug fix with investigation guidance",
-            colors.cyan(),
-            colors.reset()
-        );
-        let _ = writeln!(
-            out,
-            "  {}feature-spec{}    - Product specification",
-            colors.cyan(),
-            colors.reset()
-        );
-        let _ = writeln!(out);
-        let _ = write!(out, "Enter template name (or press Enter to use 'quick'): ");
-        if out.flush().is_err() {
-            return None;
-        }
-    }
+        let _ = writeln!(w);
+        let _ = write!(w, "Enter Work Guide name (or press Enter to use 'quick'): ");
+        w.flush()?;
+        Ok(())
+    })
+    .is_err()
+    {
+        return None;
+    };
 
     let mut template_input = String::new();
     match io::stdin().read_line(&mut template_input) {
@@ -942,28 +929,20 @@ fn prompt_for_template(colors: Colors) -> Option<String> {
     if get_template(template_name).is_some() {
         Some(template_name.to_string())
     } else {
-        if use_stderr {
-            let mut err = io::stderr().lock();
-            let _ = writeln!(
-                err,
-                "{}Unknown template: '{}'{}",
+        let _ = with_prompt_writer(target, |w| {
+            writeln!(
+                w,
+                "{}Unknown Work Guide: '{}'{}",
                 colors.red(),
                 template_name,
                 colors.reset()
-            );
-            let _ = writeln!(
-                err,
+            )?;
+            writeln!(
+                w,
                 "Run 'ralph --list-work-guides' to see all available Work Guides."
-            );
-        } else {
-            println!(
-                "{}Unknown template: '{}'{}",
-                colors.red(),
-                template_name,
-                colors.reset()
-            );
-            println!("Run 'ralph --list-work-guides' to see all available Work Guides.");
-        }
+            )?;
+            Ok(())
+        });
         None
     }
 }
@@ -1308,8 +1287,10 @@ mod tests {
         std::fs::write(&prompt_path, "original").unwrap();
 
         let colors = Colors::new();
-        let result = handle_init_prompt_at_path("quick", &prompt_path, false, colors).unwrap();
-        assert!(result);
+        let err = handle_init_prompt_at_path("quick", &prompt_path, false, colors).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Refusing to overwrite in non-interactive mode"));
         let content = std::fs::read_to_string(prompt_path).unwrap();
         assert_eq!(content, "original");
     }

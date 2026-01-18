@@ -65,6 +65,7 @@ pub fn finalize_pipeline(
     if let Some(warning) = make_prompt_writable() {
         // Make this visible even if stdout is redirected or logger filtering is enabled.
         eprintln!("{warning}");
+        eprintln!("If PROMPT.md is still read-only, run: chmod u+w PROMPT.md");
         logger.warn(&warning);
     }
 
