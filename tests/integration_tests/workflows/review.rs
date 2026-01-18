@@ -1,6 +1,5 @@
 use predicates::prelude::*;
 use std::fs;
-use std::path::Path;
 use tempfile::TempDir;
 
 use crate::common::ralph_cmd;

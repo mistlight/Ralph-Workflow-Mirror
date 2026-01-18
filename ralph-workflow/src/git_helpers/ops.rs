@@ -20,8 +20,6 @@ pub enum CommitResult {
     Success(String),
     /// No changes to commit.
     NoChanges,
-    /// Commit failed with an error message.
-    Failed(String),
 }
 
 /// Result of a rebase operation.
@@ -132,20 +130,15 @@ impl GitOps for RealGit {
         git_user_name: Option<&str>,
         git_user_email: Option<&str>,
     ) -> io::Result<CommitResult> {
-        match super::repo::git_commit(message, git_user_name, git_user_email) {
-            Ok(Some(oid)) => Ok(CommitResult::Success(oid.to_string())),
-            Ok(None) => Ok(CommitResult::NoChanges),
-            Err(e) => Ok(CommitResult::Failed(e.to_string())),
-        }
+        super::repo::git_commit(message, git_user_name, git_user_email).map(|oid_opt| match oid_opt
+        {
+            Some(oid) => CommitResult::Success(oid.to_string()),
+            None => CommitResult::NoChanges,
+        })
     }
 
     fn head_oid(&self) -> io::Result<String> {
-        let repo = git2::Repository::discover(".").map_err(|e| io::Error::other(e.to_string()))?;
-        let head = repo.head().map_err(|e| io::Error::other(e.to_string()))?;
-        let commit = head
-            .peel_to_commit()
-            .map_err(|e| io::Error::other(e.to_string()))?;
-        Ok(commit.id().to_string())
+        super::start_commit::get_current_head_oid()
     }
 
     fn rebase_onto(&self, upstream_branch: &str) -> io::Result<RebaseResult> {
@@ -185,11 +178,9 @@ mod tests {
     fn test_commit_result_variants() {
         let success = CommitResult::Success("abc123".to_string());
         let no_changes = CommitResult::NoChanges;
-        let failed = CommitResult::Failed("error".to_string());
 
         assert_eq!(success, CommitResult::Success("abc123".to_string()));
         assert_eq!(no_changes, CommitResult::NoChanges);
-        assert_eq!(failed, CommitResult::Failed("error".to_string()));
     }
 
     #[test]

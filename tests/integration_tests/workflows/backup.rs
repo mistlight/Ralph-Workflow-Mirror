@@ -111,6 +111,14 @@ exit 0
         prompt_path.exists(),
         "PROMPT.md should be restored if deleted during pipeline"
     );
+
+    // Verify the restored content matches the backup
+    let restored_content = fs::read_to_string(&prompt_path).unwrap();
+    let backup_content = fs::read_to_string(&backup_path).unwrap();
+    assert_eq!(
+        restored_content, backup_content,
+        "Restored PROMPT.md content should match the backup content"
+    );
 }
 
 #[test]

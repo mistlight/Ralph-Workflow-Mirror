@@ -436,8 +436,7 @@ mod tests {
 
     #[test]
     fn test_mock_git_captures_commit_call() {
-        let mock =
-            MockGit::new().with_commit(Ok(CommitResult::Success("def456".to_string())));
+        let mock = MockGit::new().with_commit(Ok(CommitResult::Success("def456".to_string())));
         let _ = GitOps::commit(&mock, "test message", None, None);
         let calls = mock.commit_calls();
         assert_eq!(calls.len(), 1);
@@ -455,8 +454,7 @@ mod tests {
 
     #[test]
     fn test_commit_result_success() {
-        let mock =
-            MockGit::new().with_commit(Ok(CommitResult::Success("abc123".to_string())));
+        let mock = MockGit::new().with_commit(Ok(CommitResult::Success("abc123".to_string())));
         let result = GitOps::commit(&mock, "test", None, None).unwrap();
         assert_eq!(result, CommitResult::Success("abc123".to_string()));
     }
@@ -471,8 +469,7 @@ mod tests {
     #[test]
     fn test_rebase_result_conflicts() {
         let conflicts = vec!["file1.txt".to_string(), "file2.txt".to_string()];
-        let mock =
-            MockGit::new().with_rebase_onto(Ok(RebaseResult::Conflicts(conflicts.clone())));
+        let mock = MockGit::new().with_rebase_onto(Ok(RebaseResult::Conflicts(conflicts.clone())));
         let result = GitOps::rebase_onto(&mock, "main").unwrap();
         assert_eq!(result, RebaseResult::Conflicts(conflicts));
     }
