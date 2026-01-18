@@ -9,7 +9,14 @@ use tempfile::TempDir;
 /// Tests using `RALPH_DEVELOPER_ITERS > 0` need to output plan content that
 /// the orchestrator can extract. This constant provides a standard plan format
 /// with proper markdown markers (`## Summary`, `## Implementation Steps`)
-/// and sufficient content length (>50 chars) for text-based extraction.
+/// and sufficient content length for text-based extraction.
+///
+/// # Minimum length requirement
+///
+/// The content must be >50 characters for the text-based extractor to identify
+/// it as plan content. This minimum length prevents false positives where short
+/// snippets of text are incorrectly extracted as "plans". The constant below
+/// is approximately 180 characters, well above the threshold.
 ///
 /// # Usage in shell scripts
 ///

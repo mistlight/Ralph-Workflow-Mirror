@@ -467,7 +467,11 @@ pub mod test_utils {
                 .borrow_mut()
                 .push(FileOperation::Exists(path.to_path_buf()));
 
-            // Default error mode doesn't affect exists (returns false)
+            // Check for default error - returns false in error mode
+            if self.default_error.borrow().is_some() {
+                return false;
+            }
+
             self.files.borrow().contains_key(path)
         }
 

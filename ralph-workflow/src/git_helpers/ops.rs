@@ -66,6 +66,17 @@ pub trait GitOps {
     /// * `message` - The commit message
     /// * `git_user_name` - Optional git user name override
     /// * `git_user_email` - Optional git user email override
+    ///
+    /// # Returns
+    ///
+    /// - `CommitResult::Success(oid)` - Commit was created with the given OID
+    /// - `CommitResult::NoChanges` - No staged changes to commit (working tree clean or only ignored changes)
+    ///
+    /// # Semantics
+    ///
+    /// This method returns `CommitResult::NoChanges` when there are no staged changes.
+    /// Callers that need to distinguish between "nothing to commit" and an actual error
+    /// should check for this variant explicitly.
     fn commit(
         &self,
         message: &str,
