@@ -17,6 +17,9 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
+        // Use generic agents to avoid picking up user's local config
+        .env("RALPH_DEVELOPER_AGENT", "codex")
+        .env("RALPH_REVIEWER_AGENT", "codex")
         // Ensure git identity isn't a factor if a commit happens in the test.
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
@@ -243,6 +246,9 @@ fn ralph_commit_infrastructure_for_review_fix_cycles() {
     let dir = TempDir::new().unwrap();
     init_repo_with_initial_commit(&dir);
 
+    // Create a change to generate a diff (required for review to run)
+    write_file(dir.path().join("initial.txt"), "updated content for review");
+
     // Track calls and create fixes
     let counter_path = dir.path().join(".agent/fix_counter");
     let script_path = dir.path().join("review_script.sh");
@@ -324,6 +330,9 @@ fn ralph_reviewer_receives_cumulative_diff_from_start() {
     fs::write(dir.path().join("file1.txt"), "content1").unwrap();
     fs::write(dir.path().join("file2.txt"), "content2").unwrap();
     let _ = commit_all(&repo, "baseline");
+
+    // Create a change after baseline so the reviewer has something to review
+    fs::write(dir.path().join("file1.txt"), "content1 updated").unwrap();
 
     // Track if diff was received and check its content
     let diff_log_path = dir.path().join(".agent/diff_log.txt");

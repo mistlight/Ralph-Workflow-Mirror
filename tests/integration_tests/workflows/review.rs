@@ -3,12 +3,15 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::ralph_cmd;
-use test_helpers::init_git_repo;
+use test_helpers::{commit_all, init_git_repo, write_file};
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
+        // Use generic agents to avoid picking up user's local config
+        .env("RALPH_DEVELOPER_AGENT", "codex")
+        .env("RALPH_REVIEWER_AGENT", "codex")
         // Ensure git identity isn't a factor if a commit happens in the test.
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
@@ -84,7 +87,14 @@ exit 0
 fn ralph_reviewer_reviews_one_runs_single_cycle() {
     // Test that N=1 runs exactly one review-fix cycle
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     let counter_path = dir.path().join(".agent/review_counter");
     let script_path = dir.path().join("review_script.sh");
@@ -146,7 +156,14 @@ exit 0
 fn ralph_review_multiple_passes() {
     // Test that RALPH_REVIEWER_REVIEWS=N runs exactly N review-fix cycles
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     let counter_path = dir.path().join(".agent/review_counter");
     let script_path = dir.path().join("review_script.sh");
@@ -205,7 +222,14 @@ exit 0
 #[test]
 fn ralph_creates_issues_md_during_review() {
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     // Create review script
     let script_path = dir.path().join("review_script.sh");
@@ -246,7 +270,14 @@ echo "feat: reviewed" > .agent/commit-message.txt
 #[test]
 fn ralph_review_workflow_with_no_issues() {
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     // Create review script
     let script_path = dir.path().join("review_script.sh");
@@ -289,7 +320,14 @@ echo "feat: clean code" > .agent/commit-message.txt
 fn ralph_isolation_mode_deletes_issues_after_fix() {
     // Test that ISSUES.md is deleted after the final fix in isolation mode
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     // Script that creates ISSUES.md during review but not during commit message generation
     let script_path = dir.path().join("review_script.sh");
@@ -337,7 +375,14 @@ exit 0
 fn ralph_non_isolation_mode_keeps_issues_after_fix() {
     // Test that ISSUES.md is preserved after the final fix when NOT in isolation mode
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     let script_path = dir.path().join("review_script.sh");
     fs::write(
@@ -379,7 +424,14 @@ fn ralph_issues_persists_between_review_and_fix_phases() {
     // Test that ISSUES.md created during Review is readable during Fix phase
     // within the SAME cycle. This is critical for the review-fix cycle to work.
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     // Create a marker file to track which phases have run
     let phase_log = dir.path().join(".agent/phase_log.txt");
@@ -501,7 +553,14 @@ fn ralph_early_exit_no_issues_still_cleans_up() {
     // Test that ISSUES.md is cleaned up even when review exits early
     // due to finding no issues
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     let call_counter = dir.path().join(".agent/call_counter");
 
@@ -567,7 +626,14 @@ exit 0
 fn ralph_multiple_review_cycles_final_cleanup() {
     // Test that with N=2 review cycles, ISSUES.md is cleaned up after EACH fix cycle
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     let counter_path = dir.path().join(".agent/call_counter");
     let issues_state_log = dir.path().join(".agent/issues_state.txt");
@@ -670,7 +736,14 @@ exit 0
 fn ralph_issues_md_deleted_after_each_fix_cycle() {
     // Comprehensive test for N=3 cycles verifying exact ISSUES.md lifecycle
     let dir = TempDir::new().unwrap();
-    let _ = init_git_repo(&dir);
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "updated content");
 
     let counter_path = dir.path().join(".agent/call_counter");
     let issues_state_log = dir.path().join(".agent/issues_state.txt");

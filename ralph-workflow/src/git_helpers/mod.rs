@@ -23,6 +23,9 @@ mod repo;
 mod start_commit;
 mod wrapper;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_trait;
+
 pub use branch::{get_default_branch, is_main_or_master_branch};
 pub use hooks::uninstall_hooks;
 pub use rebase::{
