@@ -3,7 +3,8 @@
 //! These tests verify that TestLogger correctly implements the Loggable trait
 //! and can be used as a drop-in replacement for Logger in tests.
 
-use ralph_workflow::logger::{Loggable, TestLogger};
+use ralph_workflow::logger::output::TestLogger;
+use ralph_workflow::logger::Loggable;
 use std::io::Write;
 
 /// Test that TestLogger implements the Loggable trait correctly.

@@ -370,7 +370,7 @@ fn test_user_reported_bug_scenario_with_logger() {
 /// a generic function that works with both Logger and TestLogger.
 #[test]
 fn test_loggable_trait_generic_function() {
-    use ralph_workflow::logger::TestLogger;
+    use ralph_workflow::logger::output::TestLogger;
 
     fn process_logs<L: Loggable>(logger: &L) {
         logger.info("Starting process");
@@ -444,7 +444,7 @@ fn test_loggable_trait_with_logger_file_extraction() {
 /// and captures log messages that can be inspected for testing.
 #[test]
 fn test_loggable_trait_with_testlogger() {
-    use ralph_workflow::logger::TestLogger;
+    use ralph_workflow::logger::output::TestLogger;
 
     let logger = TestLogger::new();
 
@@ -471,7 +471,7 @@ fn test_loggable_trait_with_testlogger() {
 /// and delegate to the log() method.
 #[test]
 fn test_loggable_trait_default_implementations() {
-    use ralph_workflow::logger::TestLogger;
+    use ralph_workflow::logger::output::TestLogger;
 
     struct CustomLogger {
         inner: TestLogger,
