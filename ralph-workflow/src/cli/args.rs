@@ -415,22 +415,11 @@ pub struct RebaseFlags {
 )]
 #[command(version)]
 #[command(after_help = "GETTING STARTED:\n\
-    ralph --init                      Smart init (infers what you need)\n\
-    ralph --init feature-spec         Create PROMPT.md from a Work Guide\n\
-    ralph \"fix: my bug\"              Run the orchestrator\n\
+    ralph --init                 Smart init (infers what you need)\n\
+    ralph --init <work-guide>    Create PROMPT.md from a Work Guide\n\
+    ralph \"fix: my bug\"         Run the orchestrator\n\
 \n\
-PRESET MODES (pick how thorough):\n\
-    -Q  Quick:  1 dev + 1 review      -S  Standard: 5 dev + 2 reviews\n\
-    -U  Rapid:  2 dev + 1 review      -T  Thorough: 10 dev + 5 reviews\n\
-                                      -L  Long:     15 dev + 10 reviews\n\
-\n\
-COMMON OPTIONS:\n\
-    -D N, -R N       Set dev iterations and review cycles\n\
-    -a AGENT         Pick developer agent (claude, opencode, etc.)\n\
-    -r AGENT         Pick reviewer agent\n\
-    -d               Diagnose/show system info\n\
-\n\
-For more help: ralph --extended-help (shell completion, all presets, troubleshooting)")]
+More help: ralph --extended-help  (shell completion, all presets, troubleshooting)")]
 // CLI arguments naturally use many boolean flags. These represent independent
 // user choices, not a state machine, so bools are the appropriate type.
 pub struct Args {

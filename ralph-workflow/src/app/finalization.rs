@@ -61,7 +61,10 @@ pub fn finalize_pipeline(
     }
 
     // Restore PROMPT.md write permissions so users can edit it normally
+    // This is important to ensure users can edit PROMPT.md after pipeline completion
     if let Some(warning) = make_prompt_writable() {
+        // Make this visible even if stdout is redirected or logger filtering is enabled.
+        eprintln!("{warning}");
         logger.warn(&warning);
     }
 

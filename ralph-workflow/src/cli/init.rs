@@ -9,6 +9,7 @@ use crate::config::{unified_config_path, UnifiedConfig, UnifiedConfigInitResult}
 use crate::logger::Colors;
 use crate::templates::{get_template, list_templates, ALL_TEMPLATES};
 use std::fs;
+use std::fs::OpenOptions;
 use std::io::IsTerminal;
 use std::path::Path;
 
@@ -124,28 +125,52 @@ pub fn handle_init_legacy(colors: Colors, agents_config_path: &Path) -> anyhow::
 /// Prompt the user to confirm overwriting an existing PROMPT.md.
 ///
 /// Returns `true` if the user confirms, `false` otherwise.
-fn prompt_overwrite_confirmation(prompt_path: &Path, colors: Colors) -> bool {
+fn can_prompt_user() -> bool {
+    std::io::stdin().is_terminal()
+        && (std::io::stderr().is_terminal() || std::io::stdout().is_terminal())
+}
+
+fn prompt_overwrite_confirmation(prompt_path: &Path, colors: Colors) -> anyhow::Result<bool> {
     use std::io::{self, Write};
 
-    println!(
-        "{}PROMPT.md already exists:{} {}",
-        colors.yellow(),
-        colors.reset(),
-        prompt_path.display()
-    );
-    print!("Do you want to overwrite it? [y/N]: ");
-    if io::stdout().flush().is_err() {
-        return false;
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+
+    let use_stderr = std::io::stderr().is_terminal();
+    if use_stderr {
+        let mut err = io::stderr().lock();
+        writeln!(
+            err,
+            "{}PROMPT.md already exists:{} {}",
+            colors.yellow(),
+            colors.reset(),
+            prompt_path.display()
+        )?;
+        write!(err, "Do you want to overwrite it? [y/N]: ")?;
+        err.flush()?;
+    } else {
+        let mut out = io::stdout().lock();
+        writeln!(
+            out,
+            "{}PROMPT.md already exists:{} {}",
+            colors.yellow(),
+            colors.reset(),
+            prompt_path.display()
+        )?;
+        write!(out, "Do you want to overwrite it? [y/N]: ")?;
+        out.flush()?;
     }
 
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
-        Ok(0) | Err(_) => return false,
+        Ok(0) => return Ok(false),
         Ok(_) => {}
+        Err(_) => return Ok(false),
     }
 
     let response = input.trim().to_lowercase();
-    response == "y" || response == "yes"
+    Ok(response == "y" || response == "yes")
 }
 
 /// Handle the `--init-prompt` flag.
@@ -167,28 +192,16 @@ pub fn handle_init_prompt(
     force: bool,
     colors: Colors,
 ) -> anyhow::Result<bool> {
-    let prompt_path = Path::new("PROMPT.md");
+    handle_init_prompt_at_path(template_name, Path::new("PROMPT.md"), force, colors)
+}
 
-    // Check if PROMPT.md already exists
-    if prompt_path.exists() && !force {
-        // If in a TTY, prompt for confirmation
-        if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
-            if !prompt_overwrite_confirmation(prompt_path, colors) {
-                return Ok(true);
-            }
-        } else {
-            println!(
-                "{}PROMPT.md already exists:{} {}",
-                colors.yellow(),
-                colors.reset(),
-                prompt_path.display()
-            );
-            println!("Use --force-overwrite to overwrite, or delete/backup the existing file.");
-            return Ok(true);
-        }
-    }
-
-    // Validate the template exists
+fn handle_init_prompt_at_path(
+    template_name: &str,
+    prompt_path: &Path,
+    force: bool,
+    colors: Colors,
+) -> anyhow::Result<bool> {
+    // Validate the template exists first, before any file operations
     let Some(template) = get_template(template_name) else {
         println!(
             "{}Unknown template: '{}'{}",
@@ -202,9 +215,41 @@ pub fn handle_init_prompt(
         return Ok(true);
     };
 
-    // Write the template content to PROMPT.md
     let content = template.content();
-    fs::write(prompt_path, content)?;
+    if force {
+        fs::write(prompt_path, content)?;
+    } else {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(prompt_path)
+        {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(content.as_bytes())?;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                if can_prompt_user() {
+                    if !prompt_overwrite_confirmation(prompt_path, colors)? {
+                        return Ok(true);
+                    }
+                    fs::write(prompt_path, content)?;
+                } else {
+                    println!(
+                        "{}PROMPT.md already exists:{} {}",
+                        colors.yellow(),
+                        colors.reset(),
+                        prompt_path.display()
+                    );
+                    println!(
+                        "Use --force-overwrite to overwrite, or delete/backup the existing file."
+                    );
+                    return Ok(true);
+                }
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
 
     println!(
         "{}Created PROMPT.md from template: {}{}{}",
@@ -425,22 +470,36 @@ pub fn handle_smart_init(
 ) -> anyhow::Result<bool> {
     let config_path = crate::config::unified_config_path()
         .ok_or_else(|| anyhow::anyhow!("Cannot determine config directory (no home directory)"))?;
-    let prompt_path = Path::new("PROMPT.md");
+    handle_smart_init_at_paths(
+        template_arg,
+        force,
+        colors,
+        &config_path,
+        Path::new("PROMPT.md"),
+    )
+}
 
+fn handle_smart_init_at_paths(
+    template_arg: Option<&str>,
+    force: bool,
+    colors: Colors,
+    config_path: &std::path::Path,
+    prompt_path: &Path,
+) -> anyhow::Result<bool> {
     let config_exists = config_path.exists();
     let prompt_exists = prompt_path.exists();
 
     // If a template name is provided (non-empty), treat it as --init-prompt
     if let Some(template_name) = template_arg {
         if !template_name.is_empty() {
-            return handle_init_template_arg(template_name, force, colors);
+            return handle_init_template_arg_at_path(template_name, prompt_path, force, colors);
         }
         // Empty string means --init was used without a value, fall through to smart inference
     }
 
     // No template provided - use smart inference based on current state
     handle_init_state_inference(
-        &config_path,
+        config_path,
         prompt_path,
         config_exists,
         prompt_exists,
@@ -530,14 +589,14 @@ fn find_similar_templates(input: &str) -> Vec<(&'static str, u32)> {
     matches
 }
 
-/// Handle --init when a template name is provided.
-fn handle_init_template_arg(
+fn handle_init_template_arg_at_path(
     template_name: &str,
+    prompt_path: &Path,
     force: bool,
     colors: Colors,
 ) -> anyhow::Result<bool> {
     if get_template(template_name).is_some() {
-        return handle_init_prompt(template_name, force, colors);
+        return handle_init_prompt_at_path(template_name, prompt_path, force, colors);
     }
 
     // Unknown value - show helpful error with suggestions
@@ -631,7 +690,7 @@ fn handle_init_only_config_exists(
     print_common_work_guides(colors);
 
     // Check if we're in a TTY for interactive prompting
-    if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+    if can_prompt_user() {
         // Interactive mode: prompt for template selection
         if let Some(template_name) = prompt_for_template(colors) {
             match handle_init_prompt(&template_name, force, colors) {
@@ -653,8 +712,22 @@ fn handle_init_only_config_exists(
         let default_content = create_minimal_prompt_md();
         let prompt_path = Path::new("PROMPT.md");
 
-        match fs::write(prompt_path, default_content) {
-            Ok(()) => {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(prompt_path)
+        {
+            Ok(mut file) => {
+                use std::io::Write;
+                if let Err(e) = file.write_all(default_content.as_bytes()) {
+                    println!(
+                        "{}Failed to create PROMPT.md: {}{}",
+                        colors.red(),
+                        e,
+                        colors.reset()
+                    );
+                    return true;
+                }
                 println!(
                     "{}Created minimal PROMPT.md{}",
                     colors.green(),
@@ -666,6 +739,16 @@ fn handle_init_only_config_exists(
                 println!("  2. Run: ralph \"your commit message\"");
                 println!();
                 println!("Tip: Use ralph --list-work-guides to see all available Work Guides.");
+                return true;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                println!(
+                    "{}PROMPT.md already exists:{} {}",
+                    colors.yellow(),
+                    colors.reset(),
+                    prompt_path.display()
+                );
+                println!("Use --force-overwrite to overwrite, or delete/backup the existing file.");
                 return true;
             }
             Err(e) => {
@@ -713,10 +796,27 @@ fn handle_init_only_config_exists(
 fn prompt_for_template(colors: Colors) -> Option<String> {
     use std::io::{self, Write};
 
-    println!("PROMPT.md contains your task specification for the AI agents.");
-    print!("Would you like to create one from a template? [Y/n]: ");
-    if io::stdout().flush().is_err() {
-        return None;
+    let use_stderr = std::io::stderr().is_terminal();
+    if use_stderr {
+        let mut err = io::stderr().lock();
+        let _ = writeln!(
+            err,
+            "PROMPT.md contains your task specification for the AI agents."
+        );
+        let _ = write!(err, "Would you like to create one from a template? [Y/n]: ");
+        if err.flush().is_err() {
+            return None;
+        }
+    } else {
+        let mut out = io::stdout().lock();
+        let _ = writeln!(
+            out,
+            "PROMPT.md contains your task specification for the AI agents."
+        );
+        let _ = write!(out, "Would you like to create one from a template? [Y/n]: ");
+        if out.flush().is_err() {
+            return None;
+        }
     }
 
     let mut input = String::new();
@@ -731,46 +831,99 @@ fn prompt_for_template(colors: Colors) -> Option<String> {
     }
 
     // Show available templates
-    println!();
-    println!("Available templates:");
-
     let templates: Vec<(&str, &str)> = list_templates();
-    for (i, (name, description)) in templates.iter().enumerate() {
-        println!(
-            "  {}{}{}  {}{}{}",
+    if use_stderr {
+        let mut err = io::stderr().lock();
+        let _ = writeln!(err);
+        let _ = writeln!(err, "Available templates:");
+
+        for (i, (name, description)) in templates.iter().enumerate() {
+            let _ = writeln!(
+                err,
+                "  {}{}{}  {}{}{}",
+                colors.cyan(),
+                name,
+                colors.reset(),
+                colors.dim(),
+                description,
+                colors.reset()
+            );
+            if (i + 1) % 5 == 0 {
+                let _ = writeln!(err); // Group templates in sets of 5 for readability
+            }
+        }
+
+        let _ = writeln!(err);
+        let _ = writeln!(err, "Common choices:");
+        let _ = writeln!(
+            err,
+            "  {}quick{}           - Quick/small changes (typos, minor fixes)",
             colors.cyan(),
-            name,
-            colors.reset(),
-            colors.dim(),
-            description,
             colors.reset()
         );
-        if (i + 1) % 5 == 0 {
-            println!(); // Group templates in sets of 5 for readability
+        let _ = writeln!(
+            err,
+            "  {}bug-fix{}         - Bug fix with investigation guidance",
+            colors.cyan(),
+            colors.reset()
+        );
+        let _ = writeln!(
+            err,
+            "  {}feature-spec{}    - Product specification",
+            colors.cyan(),
+            colors.reset()
+        );
+        let _ = writeln!(err);
+        let _ = write!(err, "Enter template name (or press Enter to use 'quick'): ");
+        if err.flush().is_err() {
+            return None;
         }
-    }
+    } else {
+        let mut out = io::stdout().lock();
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Available templates:");
 
-    println!();
-    println!("Common choices:");
-    println!(
-        "  {}quick{}           - Quick/small changes (typos, minor fixes)",
-        colors.cyan(),
-        colors.reset()
-    );
-    println!(
-        "  {}bug-fix{}         - Bug fix with investigation guidance",
-        colors.cyan(),
-        colors.reset()
-    );
-    println!(
-        "  {}feature-spec{}    - Product specification",
-        colors.cyan(),
-        colors.reset()
-    );
-    println!();
-    print!("Enter template name (or press Enter to use 'quick'): ");
-    if io::stdout().flush().is_err() {
-        return None;
+        for (i, (name, description)) in templates.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "  {}{}{}  {}{}{}",
+                colors.cyan(),
+                name,
+                colors.reset(),
+                colors.dim(),
+                description,
+                colors.reset()
+            );
+            if (i + 1) % 5 == 0 {
+                let _ = writeln!(out); // Group templates in sets of 5 for readability
+            }
+        }
+
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Common choices:");
+        let _ = writeln!(
+            out,
+            "  {}quick{}           - Quick/small changes (typos, minor fixes)",
+            colors.cyan(),
+            colors.reset()
+        );
+        let _ = writeln!(
+            out,
+            "  {}bug-fix{}         - Bug fix with investigation guidance",
+            colors.cyan(),
+            colors.reset()
+        );
+        let _ = writeln!(
+            out,
+            "  {}feature-spec{}    - Product specification",
+            colors.cyan(),
+            colors.reset()
+        );
+        let _ = writeln!(out);
+        let _ = write!(out, "Enter template name (or press Enter to use 'quick'): ");
+        if out.flush().is_err() {
+            return None;
+        }
     }
 
     let mut template_input = String::new();
@@ -789,13 +942,28 @@ fn prompt_for_template(colors: Colors) -> Option<String> {
     if get_template(template_name).is_some() {
         Some(template_name.to_string())
     } else {
-        println!(
-            "{}Unknown template: '{}'{}",
-            colors.red(),
-            template_name,
-            colors.reset()
-        );
-        println!("Run 'ralph --list-work-guides' to see all available Work Guides.");
+        if use_stderr {
+            let mut err = io::stderr().lock();
+            let _ = writeln!(
+                err,
+                "{}Unknown template: '{}'{}",
+                colors.red(),
+                template_name,
+                colors.reset()
+            );
+            let _ = writeln!(
+                err,
+                "Run 'ralph --list-work-guides' to see all available Work Guides."
+            );
+        } else {
+            println!(
+                "{}Unknown template: '{}'{}",
+                colors.red(),
+                template_name,
+                colors.reset()
+            );
+            println!("Run 'ralph --list-work-guides' to see all available Work Guides.");
+        }
         None
     }
 }
@@ -1069,36 +1237,96 @@ EXAMPLES
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    #[test]
-    fn test_handle_smart_init_with_valid_template() {
-        // When a valid template name is provided, it should delegate to handle_init_prompt
-        let colors = Colors::new();
-        let result = handle_smart_init(Some("bug-fix"), false, colors);
+    struct TempDir {
+        dir: PathBuf,
+    }
 
-        // We expect this to return Ok(true) since it handles the init
-        // The actual test would need to mock file system operations
-        assert!(result.is_ok());
+    impl TempDir {
+        fn new() -> Self {
+            static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+            let mut dir = std::env::temp_dir();
+            let pid = std::process::id();
+            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+            dir.push(format!("ralph-workflow-init-tests-{pid}-{n}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self { dir }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
     }
 
     #[test]
-    fn test_handle_smart_init_with_invalid_template() {
-        // When an invalid template name is provided, it should show an error
-        let colors = Colors::new();
-        let result = handle_smart_init(Some("nonexistent-template"), false, colors);
+    fn test_handle_smart_init_with_valid_template_creates_prompt_md() {
+        let dir = TempDir::new();
 
-        // Should still return Ok(true) since it handled the request (showed error)
-        assert!(result.is_ok());
+        let colors = Colors::new();
+        let prompt_path = dir.dir.join("PROMPT.md");
+        let config_path = dir.dir.join("ralph-workflow.toml");
+
+        let result =
+            handle_smart_init_at_paths(Some("quick"), false, colors, &config_path, &prompt_path)
+                .unwrap();
+        assert!(result);
+        assert!(prompt_path.exists());
+
+        let template = get_template("quick").unwrap();
+        let content = std::fs::read_to_string(prompt_path).unwrap();
+        assert_eq!(content, template.content());
     }
 
     #[test]
-    fn test_handle_smart_init_no_arg() {
-        // When no argument is provided, it should check the current state
-        let colors = Colors::new();
-        let result = handle_smart_init(None, false, colors);
+    fn test_handle_smart_init_with_invalid_template_does_not_create_prompt_md() {
+        let dir = TempDir::new();
 
-        // Should return Ok(something) depending on the state of config/PROMPT.md
-        assert!(result.is_ok());
+        let colors = Colors::new();
+        let prompt_path = dir.dir.join("PROMPT.md");
+        let config_path = dir.dir.join("ralph-workflow.toml");
+        let result = handle_smart_init_at_paths(
+            Some("nonexistent-template"),
+            false,
+            colors,
+            &config_path,
+            &prompt_path,
+        )
+        .unwrap();
+        assert!(result);
+        assert!(!prompt_path.exists());
+    }
+
+    #[test]
+    fn test_handle_init_prompt_does_not_overwrite_existing_prompt_without_force() {
+        let dir = TempDir::new();
+        let prompt_path = dir.dir.join("PROMPT.md");
+        std::fs::write(&prompt_path, "original").unwrap();
+
+        let colors = Colors::new();
+        let result = handle_init_prompt_at_path("quick", &prompt_path, false, colors).unwrap();
+        assert!(result);
+        let content = std::fs::read_to_string(prompt_path).unwrap();
+        assert_eq!(content, "original");
+    }
+
+    #[test]
+    fn test_handle_init_prompt_overwrites_existing_prompt_with_force() {
+        let dir = TempDir::new();
+        let prompt_path = dir.dir.join("PROMPT.md");
+        std::fs::write(&prompt_path, "original").unwrap();
+
+        let colors = Colors::new();
+        let result = handle_init_prompt_at_path("quick", &prompt_path, true, colors).unwrap();
+        assert!(result);
+
+        let template = get_template("quick").unwrap();
+        let content = std::fs::read_to_string(prompt_path).unwrap();
+        assert_eq!(content, template.content());
     }
 
     #[test]
