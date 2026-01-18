@@ -3,12 +3,11 @@
 //! These tests verify the Logger → file → extraction flow, simulating
 //! the bug scenario where the last line might not be extracted.
 
-use ralph_workflow::files::result_extraction::json_extraction::extract_result_from_file;
-use ralph_workflow::logger::output::Logger;
+use ralph_workflow::files::result_extraction::extract_last_result;
 use ralph_workflow::logger::Colors;
+use ralph_workflow::logger::Logger;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::Path;
 use tempfile::TempDir;
 
 /// Test that simulates the bug scenario: writing JSON events via file I/O
@@ -39,7 +38,7 @@ fn test_logger_json_event_extraction_last_line_without_newline() {
     drop(file);
 
     // Verify the result can be extracted
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     assert_eq!(result, Some("This is the result content".to_string()));
 }
 
@@ -65,7 +64,7 @@ fn test_logger_json_event_extraction_last_line_with_newline() {
     .unwrap();
     drop(file);
 
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     assert_eq!(result, Some("This is the result content".to_string()));
 }
 
@@ -85,7 +84,7 @@ fn test_logger_json_event_extraction_only_result() {
     write!(file, r#"{{"type":"result","result":"Only result here"}}"#).unwrap();
     drop(file);
 
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     assert_eq!(result, Some("Only result here".to_string()));
 }
 
@@ -109,7 +108,7 @@ fn test_logger_json_event_extraction_mixed_content() {
     write!(file, r#"{{"type":"result","result":"Final result"}}"#).unwrap();
     drop(file);
 
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     assert_eq!(result, Some("Final result".to_string()));
 }
 
@@ -139,7 +138,7 @@ fn test_logger_json_event_extraction_multiple_results() {
     .unwrap();
     drop(file);
 
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     // Both results should be found, and the scoring function should pick one
     // (the longer one in this case due to content length tiebreaker)
     assert!(result.is_some());
@@ -184,14 +183,15 @@ fn test_bug_scenario_last_line_result_extraction() {
     .unwrap();
 
     // The critical result event WITHOUT trailing newline (the bug scenario)
+    // Note: Using regular string literal with escaped newlines in JSON (\\n becomes \n in JSON)
     write!(
         file,
-        "{{\"type\":\"result\",\"result\":\"## Summary\n\nAfter thorough investigation, I found that BufReader::lines() correctly reads the last line even without a trailing newline.\"}}"
+        "{{\"type\":\"result\",\"result\":\"## Summary\\n\\nAfter thorough investigation, I found that BufReader::lines() correctly reads the last line even without a trailing newline.\"}}"
     ).unwrap();
     drop(file);
 
     // Verify the result event is extracted correctly
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
 
     // The result should be found
     assert!(
@@ -217,7 +217,7 @@ fn test_logger_json_event_extraction_empty_file() {
         .open(&log_path)
         .unwrap();
 
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     assert_eq!(result, None);
 }
 
@@ -227,7 +227,7 @@ fn test_logger_json_event_extraction_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
     let log_path = temp_dir.path().join("nonexistent.log");
 
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     assert_eq!(result, None);
 }
 
@@ -269,7 +269,7 @@ fn test_logger_with_log_file_writes_json_events_and_extracts() {
     drop(file);
 
     // Verify the result can be extracted
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     assert_eq!(result, Some("Result content from agent".to_string()));
 }
 
@@ -304,7 +304,7 @@ fn test_logger_with_log_file_trailing_newline_extraction() {
     drop(file);
 
     // Verify extraction works
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
     assert_eq!(result, Some("Result with newline".to_string()));
 }
 
@@ -350,7 +350,7 @@ fn test_user_reported_bug_scenario_with_logger() {
     drop(file);
 
     // Verify the result event IS found (this would have failed in the bug)
-    let result = extract_result_from_file(&log_path).unwrap();
+    let result = extract_last_result(&log_path).unwrap();
 
     assert!(
         result.is_some(),

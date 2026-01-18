@@ -317,8 +317,9 @@ fn run_review_pass(
                 // Count log files in the directory
                 if let Ok(entries) = std::fs::read_dir(log_dir_path) {
                     let file_count = entries.filter_map(Result::ok).count();
-                    ctx.logger
-                        .info(&format!("Debug: Log directory exists, found {file_count} file(s)"));
+                    ctx.logger.info(&format!(
+                        "Debug: Log directory exists, found {file_count} file(s)"
+                    ));
                 }
                 // Try to read first few lines of first log file for diagnosis
                 if let Ok(mut entries) = std::fs::read_dir(log_dir_path) {

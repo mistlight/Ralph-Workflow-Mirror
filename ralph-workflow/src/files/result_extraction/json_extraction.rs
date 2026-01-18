@@ -304,9 +304,7 @@ mod tests {
         // Structure score should be significantly higher due to "## Summary" marker (+1000)
         assert!(
             structure_score > simple_score,
-            "Expected structure score ({}) > simple score ({})",
-            structure_score,
-            simple_score
+            "Expected structure score ({structure_score}) > simple score ({simple_score})"
         );
     }
 }
