@@ -43,6 +43,7 @@ use std::rc::Rc;
 
 use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
+#[cfg(feature = "test-utils")]
 use super::health::StreamingQualityMetrics;
 use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
@@ -194,7 +195,11 @@ impl ClaudeParser {
     /// let printer_ref = parser.printer().borrow();
     /// assert!(!printer_ref.has_duplicate_consecutive_lines());
     /// ```
-    #[cfg_attr(any(debug_assertions, test, feature = "monitoring"), allow(dead_code))]
+    /// Get a clone of the printer used by this parser.
+    ///
+    /// This is primarily useful for testing and monitoring.
+    /// Only available with the `test-utils` feature.
+    #[cfg(feature = "test-utils")]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -208,6 +213,7 @@ impl ClaudeParser {
     /// - Total deltas processed
     ///
     /// Useful for testing, monitoring, and debugging streaming behavior.
+    /// Only available with the `test-utils` feature.
     ///
     /// # Returns
     ///
@@ -229,7 +235,7 @@ impl ClaudeParser {
     /// let metrics = parser.streaming_metrics();
     /// assert!(metrics.snapshot_repairs_count > 0, "Snapshot repairs should occur");
     /// ```
-    #[cfg_attr(any(debug_assertions, test, feature = "monitoring"), allow(dead_code))]
+    #[cfg(feature = "test-utils")]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()
