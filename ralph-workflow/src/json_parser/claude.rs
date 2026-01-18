@@ -321,11 +321,15 @@ impl ClaudeParser {
 
         match event {
             StreamInnerEvent::MessageStart {
-                message: _,
+                message,
                 message_id,
             } => {
+                // Extract message_id from either the top-level field or nested message.id
+                // The Claude API typically puts the ID in message.id, not at the top level
+                let effective_message_id =
+                    message_id.or_else(|| message.as_ref().and_then(|m| m.id.clone()));
                 // Set message ID for tracking and clear session state on new message
-                session.set_current_message_id(message_id);
+                session.set_current_message_id(effective_message_id);
                 session.on_message_start();
                 String::new()
             }
@@ -638,9 +642,19 @@ impl ClaudeParser {
         }
 
         let mut out = String::new();
-        if let Some(msg) = message {
-            if let Some(content) = msg.content {
-                self.format_content_blocks(&mut out, &content, &self.display_name, self.colors);
+        if let Some(ref msg) = message {
+            if let Some(ref content) = msg.content {
+                self.format_content_blocks(&mut out, content, &self.display_name, self.colors);
+
+                // If we successfully rendered content, mark the message as pre-rendered
+                // so that ALL subsequent streaming deltas for this message are suppressed.
+                // This handles the case where assistant event arrives BEFORE streaming starts.
+                if !out.is_empty() {
+                    if let Some(ref message_id) = msg.id {
+                        let mut session = self.streaming_session.borrow_mut();
+                        session.mark_message_pre_rendered(message_id);
+                    }
+                }
             }
         }
         out
@@ -772,6 +786,16 @@ impl ClaudeParser {
                 let accumulated_text = session
                     .get_accumulated(ContentType::Text, &index_str)
                     .unwrap_or("");
+
+                // Check if this message was pre-rendered from an assistant event.
+                // When an assistant event arrives BEFORE streaming deltas, we render it
+                // and mark the message_id as pre-rendered. ALL subsequent streaming deltas
+                // for this message should be suppressed to prevent duplication.
+                if let Some(message_id) = session.get_current_message_id() {
+                    if session.is_message_pre_rendered(message_id) {
+                        return String::new();
+                    }
+                }
 
                 // Sanitize the accumulated text to check if it's empty
                 // This is needed to skip rendering when the accumulated content is just whitespace

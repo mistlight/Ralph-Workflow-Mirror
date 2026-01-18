@@ -607,3 +607,123 @@ fn test_glm_snapshot_as_delta_detected() {
         "Content after snapshot should be in output"
     );
 }
+
+// ===========================================================================
+// Assistant Event Timing Tests
+// ===========================================================================
+//
+// These tests verify that the parser handles various timing scenarios for
+// assistant events vs streaming deltas correctly, preventing duplication.
+
+/// Test that assistant events arriving BEFORE streaming deltas don't cause duplicates.
+///
+/// In some GLM sessions, an `assistant` message event with full content arrives
+/// BEFORE the streaming deltas. This is unusual but valid - the content should
+/// only be rendered once.
+#[test]
+fn test_assistant_event_before_streaming_deltas() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let colors = Colors::new();
+    let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
+
+    // Simulate: assistant event with content BEFORE streaming starts
+    let events = [
+        // System init
+        r#"{"type":"system","subtype":"init","cwd":"/test","session_id":"test-session"}"#,
+        // Assistant event with full content (arrives first!)
+        r#"{"type":"assistant","message":{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello World"}]}}"#,
+        // Then streaming events for the same content
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}"#,
+        r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+    ];
+
+    let input = events.join("\n");
+    let cursor = Cursor::new(input);
+    let reader = std::io::BufReader::new(cursor);
+    parser
+        .parse_stream(reader)
+        .expect("parse_stream should succeed");
+
+    let printer_ref = test_printer.borrow();
+    let output = printer_ref.get_output();
+
+    // DEBUG: Print actual output to understand what's rendered
+    println!("=== DEBUG OUTPUT (assistant before streaming) ===");
+    println!("{}", output);
+    println!("=== END DEBUG OUTPUT ===");
+
+    // Verify no duplicates - "Hello World" should appear only once in a meaningful way
+    verify_no_duplicates(&printer_ref, "assistant event before streaming deltas");
+
+    // Critical check: "Hello World" should NOT appear multiple times
+    // The assistant event has "Hello World" and the streaming also produces "Hello World"
+    // Only ONE of these should be rendered, not both
+    let hello_world_count = output.matches("Hello World").count();
+    assert!(
+        hello_world_count <= 1,
+        "DUPLICATION BUG: 'Hello World' appears {} times in output - should appear at most once.\n\
+        This indicates that both the assistant event AND streaming deltas are being rendered.\n\
+        Output:\n{}",
+        hello_world_count,
+        output
+    );
+
+    assert!(
+        output.contains("Hello") && output.contains("World"),
+        "Output should contain the message content"
+    );
+}
+
+/// Test that assistant events arriving DURING streaming don't cause duplicates.
+///
+/// In some GLM sessions, an `assistant` message event arrives MID-STREAM,
+/// containing the content that has been streamed so far. This should not
+/// cause duplicate output.
+#[test]
+fn test_assistant_event_during_streaming() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let colors = Colors::new();
+    let parser = ClaudeParser::with_printer(colors, Verbosity::Normal, printer);
+
+    // Simulate: streaming starts, assistant event arrives mid-stream, streaming continues
+    let events = [
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[]}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#,
+        // Assistant event arrives mid-stream with accumulated content
+        r#"{"type":"assistant","message":{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}]}}"#,
+        // Streaming continues
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}"#,
+        // Another assistant event with more accumulated content
+        r#"{"type":"assistant","message":{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello World"}]}}"#,
+        r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+    ];
+
+    let input = events.join("\n");
+    let cursor = Cursor::new(input);
+    let reader = std::io::BufReader::new(cursor);
+    parser
+        .parse_stream(reader)
+        .expect("parse_stream should succeed");
+
+    let printer_ref = test_printer.borrow();
+
+    // DEBUG: Print actual output to understand what's rendered
+    let output = printer_ref.get_output();
+    println!("=== DEBUG OUTPUT (assistant during streaming) ===");
+    println!("{}", output);
+    println!("=== END DEBUG OUTPUT ===");
+
+    // Verify no duplicates
+    verify_no_duplicates(&printer_ref, "assistant event during streaming");
+
+    assert!(
+        output.contains("Hello") && output.contains("World"),
+        "Output should contain the complete message"
+    );
+}
