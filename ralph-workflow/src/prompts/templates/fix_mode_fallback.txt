@@ -44,9 +44,10 @@ FILES TO MODIFY:
 
 CRITICAL CONSTRAINTS:
 - The ISSUES content is ALREADY PROVIDED above in this prompt - review it carefully
-- You MUST ONLY modify files listed in "FILES TO MODIFY"
+- You MUST ONLY modify files listed in "FILES TO MODIFY" (if specific files are listed)
+- If "FILES TO MODIFY" shows no specific files, you may work on ANY files in the repository that are needed to fix the issues described in the ISSUES content above
 - You MUST read the files you need to modify before editing them
-- You MUST NOT explore the codebase or run discovery commands (ls, find, git grep, rg, grep, etc.)
+- You MUST NOT explore the codebase or run discovery commands (ls, find, git grep, rg, grep, etc.) unless necessary to locate the files you need to modify
 - You MUST NOT modify ISSUES.md or any issues file - the content is provided for reference
 - Your work MUST be limited to fixing issues described in the embedded ISSUES content above
 
