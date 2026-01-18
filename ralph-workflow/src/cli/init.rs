@@ -50,6 +50,13 @@ pub fn handle_init_global(colors: Colors) -> anyhow::Result<bool> {
             println!("  - Agent chain configuration with fallbacks");
             println!();
             println!("Environment variables (RALPH_*) override these settings.");
+            println!();
+            println!("Next steps:");
+            println!("  1. Create a PROMPT.md for your task:");
+            println!("       ralph --init <work-guide>");
+            println!("       ralph --list-templates  # Show all Work Guides");
+            println!("  2. Or run ralph directly with default settings:");
+            println!("       ralph \"your commit message\"");
             Ok(true)
         }
         Ok(UnifiedConfigInitResult::AlreadyExists) => {
@@ -60,6 +67,13 @@ pub fn handle_init_global(colors: Colors) -> anyhow::Result<bool> {
                 global_path.display()
             );
             println!("Edit the file to customize, or delete it to regenerate from defaults.");
+            println!();
+            println!("Next steps:");
+            println!("  1. Create a PROMPT.md for your task:");
+            println!("       ralph --init <work-guide>");
+            println!("       ralph --list-templates  # Show all Work Guides");
+            println!("  2. Or run ralph directly with default settings:");
+            println!("       ralph \"your commit message\"");
             Ok(true)
         }
         Err(e) => Err(anyhow::anyhow!(
@@ -218,7 +232,7 @@ fn print_template_category(category_name: &str, templates: &[(&str, &str)], colo
 ///
 /// Returns `true` if the flag was handled (program should exit after).
 pub fn handle_list_templates(colors: Colors) -> bool {
-    println!("PROMPT.md Task Templates (use: ralph --init <template>)");
+    println!("PROMPT.md Work Guides (use: ralph --init <template>)");
     println!();
 
     // Common templates (most frequently used)
@@ -456,7 +470,7 @@ fn handle_init_template_arg(template_name: &str, colors: Colors) -> anyhow::Resu
 
     // Unknown value - show helpful error with suggestions
     println!(
-        "{}Unknown template: '{}'{}",
+        "{}Unknown Work Guide: '{}'{}",
         colors.red(),
         template_name,
         colors.reset()
@@ -479,7 +493,7 @@ fn handle_init_template_arg(template_name: &str, colors: Colors) -> anyhow::Resu
         println!();
     }
 
-    println!("Available templates:");
+    println!("Available Work Guides:");
     for (name, description) in list_templates() {
         println!(
             "  {}{}{}  {}{}{}",
@@ -492,8 +506,8 @@ fn handle_init_template_arg(template_name: &str, colors: Colors) -> anyhow::Resu
         );
     }
     println!();
-    println!("Usage: ralph --init=<template>");
-    println!("       ralph --init          # Smart init (infers intent)");
+    println!("Usage: ralph --init=<work-guide>");
+    println!("       ralph --init            # Smart init (infers intent)");
     Ok(true)
 }
 
@@ -578,7 +592,7 @@ fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors)
                 println!("  1. Edit PROMPT.md with your task details");
                 println!("  2. Run: ralph \"your commit message\"");
                 println!();
-                println!("Tip: Use ralph --list-templates to see all available templates.");
+                println!("Tip: Use ralph --list-templates to see all available Work Guides.");
                 return true;
             }
             Err(e) => {
@@ -594,7 +608,7 @@ fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors)
     }
 
     // Show template list if we didn't create PROMPT.md
-    println!("Create a PROMPT.md from a template to get started:");
+    println!("Create a PROMPT.md from a Work Guide to get started:");
     println!();
 
     for (name, description) in list_templates() {
@@ -610,8 +624,8 @@ fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors)
     }
 
     println!();
-    println!("Usage: ralph --init <template>");
-    println!("       ralph --init-prompt <template>");
+    println!("Usage: ralph --init <work-guide>");
+    println!("       ralph --init-prompt <work-guide>");
     println!();
     println!("Example:");
     println!("  ralph --init bug-fix");
@@ -733,8 +747,8 @@ Provide any relevant context about the task:
 ## Notes
 
 - This is a minimal PROMPT.md created by `ralph --init`
-- You can edit this file directly or use `ralph --init <template>` to start from a template
-- Run `ralph --list-templates` to see all available templates
+- You can edit this file directly or use `ralph --init <work-guide>` to start from a Work Guide
+- Run `ralph --list-templates` to see all available Work Guides
 "
     .to_string()
 }
@@ -781,8 +795,8 @@ fn handle_init_both_exist(
     println!("  ralph \"your commit message\"");
     println!();
     println!("Other commands:");
-    println!("  ralph --list-templates    # Show all PROMPT.md templates");
-    println!("  ralph --init=<template>    # Create new PROMPT.md from template");
+    println!("  ralph --list-templates    # Show all Work Guides");
+    println!("  ralph --init=<template>    # Create new PROMPT.md from Work Guide");
     true
 }
 
