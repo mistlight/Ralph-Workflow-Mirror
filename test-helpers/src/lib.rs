@@ -4,6 +4,41 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
+/// Standard plan content that the orchestrator can extract from agent stdout.
+///
+/// Tests using `RALPH_DEVELOPER_ITERS > 0` need to output plan content that
+/// the orchestrator can extract. This constant provides a standard plan format
+/// with proper markdown markers (`## Summary`, `## Implementation Steps`)
+/// and sufficient content length (>50 chars) for text-based extraction.
+///
+/// # Usage in shell scripts
+///
+/// ```bash
+/// cat <<'PLAN_EOF'
+/// ## Summary
+///
+/// Execute the test plan.
+///
+/// ## Implementation Steps
+///
+/// Step 1: Create the required files.
+/// Step 2: Verify the changes are correct.
+/// Step 3: Complete the test iteration.
+/// PLAN_EOF
+/// ```
+///
+/// This should be printed to stdout (not written to a file) so the orchestrator
+/// can capture it in the log file and extract it.
+pub const STANDARD_PLAN_OUTPUT: &str = r#"## Summary
+
+Execute the test plan.
+
+## Implementation Steps
+
+Step 1: Create the required files.
+Step 2: Verify the changes are correct.
+Step 3: Complete the test iteration."#;
+
 /// Initialize a git repository in a temporary directory.
 ///
 /// This function:

@@ -181,9 +181,21 @@ else
 fi
 echo $count > "{counter}"
 
-# Planning phase: create PLAN.md
+# Planning phase: output plan content to stdout for orchestrator extraction
+# The orchestrator captures stdout and extracts plan content from there.
 if [ ! -f .agent/PLAN.md ]; then
-    echo "Plan $count" > .agent/PLAN.md
+    # Output structured plan content for text-based extraction
+    cat <<'PLAN_EOF'
+## Summary
+
+Test plan for iteration.
+
+## Implementation Steps
+
+Step 1: Create the test file.
+Step 2: Verify the changes.
+Step 3: Complete the iteration.
+PLAN_EOF
 fi
 
 # Execution phase: create a change file (only on even calls = execution phases)
