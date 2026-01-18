@@ -113,7 +113,8 @@ impl Printable for StderrPrinter {
 ///
 /// This printer stores all output in memory for testing purposes.
 /// It provides methods to retrieve and inspect the captured output.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Default)]
 pub struct TestPrinter {
     /// Captured output lines.
@@ -122,7 +123,8 @@ pub struct TestPrinter {
     buffer: RefCell<String>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 impl TestPrinter {
     /// Create a new test printer.
     pub fn new() -> Self {
@@ -200,7 +202,8 @@ impl TestPrinter {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 impl std::io::Write for TestPrinter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s =
@@ -228,7 +231,8 @@ impl std::io::Write for TestPrinter {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
+#[cfg_attr(not(test), allow(dead_code))]
 impl Printable for TestPrinter {
     fn is_terminal(&self) -> bool {
         // Test printer is never a terminal

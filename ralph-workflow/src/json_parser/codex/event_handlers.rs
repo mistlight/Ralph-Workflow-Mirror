@@ -585,29 +585,3 @@ pub fn handle_error(
         err
     )
 }
-
-/// Handle `Result` event for console display (debug mode only).
-///
-/// This function returns formatted output for Result events in debug mode.
-/// Result events are always written to the log file via `process_event_line`,
-/// but this function provides debug visibility into what's being logged.
-pub fn handle_result_for_display(ctx: &EventHandlerContext, result: Option<String>) -> Option<String> {
-    if let Some(content) = result {
-        let limit = ctx.verbosity.truncate_limit("result");
-        let preview = truncate_text(&content, limit);
-        Some(format!(
-            "{}[{}]{} {}Result:{} {}{}{}\n",
-            ctx.colors.dim(),
-            ctx.display_name,
-            ctx.colors.reset(),
-            ctx.colors.green(),
-            ctx.colors.reset(),
-            ctx.colors.dim(),
-            preview,
-            ctx.colors.reset()
-        ))
-    } else {
-        None
-    }
-}
-

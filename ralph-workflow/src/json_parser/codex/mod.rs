@@ -47,9 +47,8 @@ use super::terminal::TerminalMode;
 use super::types::{format_unknown_json_event, CodexEvent};
 
 use event_handlers::{
-    handle_error, handle_item_completed, handle_item_started, handle_result_for_display,
-    handle_thread_started, handle_turn_completed, handle_turn_failed, handle_turn_started,
-    EventHandlerContext,
+    handle_error, handle_item_completed, handle_item_started, handle_thread_started,
+    handle_turn_completed, handle_turn_failed, handle_turn_started, EventHandlerContext,
 };
 
 /// Codex event parser
@@ -169,6 +168,7 @@ impl CodexParser {
     /// - Malformed JSON (non-JSON text passed through if meaningful)
     /// - Unknown event types
     /// - Empty or whitespace-only output
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: CodexEvent = if let Ok(e) = serde_json::from_str(line) {
             e
@@ -245,7 +245,21 @@ impl CodexParser {
                 // Result events are synthetic control events that are logged to the file
                 // In debug mode, also show them on console for troubleshooting
                 if self.verbosity.is_debug() {
-                    handle_result_for_display(&ctx, result)
+                    result.map(|content| {
+                        let limit = self.verbosity.truncate_limit("result");
+                        let preview = crate::common::truncate_text(&content, limit);
+                        format!(
+                            "{}[{}]{} {}Result:{} {}{}{}\n",
+                            self.colors.dim(),
+                            self.display_name,
+                            self.colors.reset(),
+                            self.colors.green(),
+                            self.colors.reset(),
+                            self.colors.dim(),
+                            preview,
+                            self.colors.reset()
+                        )
+                    })
                 } else {
                     None
                 }

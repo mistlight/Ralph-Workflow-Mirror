@@ -4,6 +4,7 @@
 //! Each module is declared here as a submodule.
 
 mod cli;
+mod codex_parser_tests;
 mod commit;
 mod common;
 mod deduplication;
