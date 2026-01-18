@@ -9,7 +9,7 @@ use std::fs;
 
 use crate::agents::is_glm_like_agent;
 use crate::config::ReviewDepth;
-use crate::git_helpers::get_git_diff_from_start;
+use crate::git_helpers::get_git_diff_from_review_baseline;
 use crate::guidelines::ReviewGuidelines;
 use crate::prompts::{
     prompt_comprehensive_review_with_diff_with_context,
@@ -317,14 +317,14 @@ fn log_prompt_debug_info(ctx: &PhaseContext<'_>, prompt: &str, prompt_type: &str
     }
 }
 
-/// Fetch and validate the git diff from the starting commit.
+/// Fetch and validate the git diff from the review baseline.
 ///
 /// Returns:
 /// - `Ok(Some(diff))` - Successfully retrieved and validated diff
-/// - `Ok(None)` - No diff found (no changes since start commit)
+/// - `Ok(None)` - No diff found (no changes since baseline)
 /// - `Err(..)` - Failed to retrieve diff (git error)
 fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<String>, ()> {
-    match get_git_diff_from_start() {
+    match get_git_diff_from_review_baseline() {
         Ok(d) if !d.trim().is_empty() => {
             let original_size = d.len();
             let (truncated_diff, was_truncated) = crate::git_helpers::validate_and_truncate_diff(d);
@@ -352,12 +352,12 @@ fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<String>, ()> {
         }
         Ok(_) => {
             ctx.logger
-                .warn("No diff found from starting commit; review will be skipped for this cycle");
+                .warn("No diff found from review baseline; review will be skipped for this cycle");
             Ok(None)
         }
         Err(e) => {
             ctx.logger.error(&format!(
-                "Failed to get diff from starting commit: {e}; skipping review cycle"
+                "Failed to get diff from review baseline: {e}; skipping review cycle"
             ));
             ctx.logger.info(
                 "This may indicate a git repository issue. The review cycle will be skipped.",

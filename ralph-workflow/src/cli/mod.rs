@@ -27,7 +27,8 @@ pub use args::Args;
 pub use completions::handle_generate_completion;
 pub use handlers::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
-    handle_list_available_agents, handle_template_commands, prompt_template_selection,
+    handle_list_available_agents, handle_show_baseline, handle_template_commands,
+    prompt_template_selection,
 };
 pub use init::{
     handle_extended_help, handle_init_global, handle_init_legacy, handle_init_prompt,

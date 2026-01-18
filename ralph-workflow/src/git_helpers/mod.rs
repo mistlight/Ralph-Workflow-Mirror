@@ -9,6 +9,7 @@
 //! - [`identity`] - Git identity resolution with comprehensive fallback chain
 //! - [`repo`] - Basic git repository operations (add, commit, snapshot)
 //! - [`start_commit`] - Starting commit tracking for incremental diffs
+//! - [`review_baseline`] - Per-review-cycle baseline tracking
 //! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
 //! - [`branch`] - Branch detection and default branch resolution
 //! - Rebase operations are provided via the `rebase` module functions
@@ -20,6 +21,7 @@ mod hooks;
 pub mod identity;
 mod rebase;
 mod repo;
+mod review_baseline;
 mod start_commit;
 mod wrapper;
 
@@ -36,10 +38,16 @@ pub use rebase::{
     rebase_onto, RebaseResult,
 };
 pub use repo::{
-    get_git_diff_from_start, get_repo_root, git_add_all, git_commit, git_diff, git_snapshot,
-    require_git_repo, validate_and_truncate_diff, CommitResultFallback,
+    get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
+    validate_and_truncate_diff, CommitResultFallback,
 };
-pub use start_commit::{reset_start_commit, save_start_commit};
+pub use review_baseline::{
+    get_git_diff_from_review_baseline, get_review_baseline_info, load_review_baseline,
+    update_review_baseline, ReviewBaseline,
+};
+pub use start_commit::{
+    get_current_head_oid, load_start_point, reset_start_commit, save_start_commit, StartPoint,
+};
 pub use wrapper::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
     start_agent_phase, GitHelpers,

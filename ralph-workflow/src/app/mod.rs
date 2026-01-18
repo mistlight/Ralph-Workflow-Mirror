@@ -31,8 +31,8 @@ use crate::banner::print_welcome_banner;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
-    handle_list_available_agents, handle_list_providers, handle_template_commands,
-    prompt_template_selection, Args,
+    handle_list_available_agents, handle_list_providers, handle_show_baseline,
+    handle_template_commands, prompt_template_selection, Args,
 };
 use crate::common::utils;
 use crate::files::protection::monitoring::PromptMonitor;
@@ -218,6 +218,21 @@ fn handle_plumbing_commands(args: &Args, logger: &Logger, colors: Colors) -> any
             Err(e) => {
                 logger.error(&format!("Failed to reset starting commit: {e}"));
                 anyhow::bail!("Failed to reset starting commit");
+            }
+        };
+    }
+
+    // Show baseline state
+    if args.commit_display.show_baseline {
+        require_git_repo()?;
+        let repo_root = get_repo_root()?;
+        env::set_current_dir(&repo_root)?;
+
+        return match handle_show_baseline() {
+            Ok(()) => Ok(true),
+            Err(e) => {
+                logger.error(&format!("Failed to show baseline: {e}"));
+                anyhow::bail!("Failed to show baseline");
             }
         };
     }

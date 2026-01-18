@@ -346,6 +346,10 @@ pub struct CommitDisplayFlags {
         hide = true
     )]
     pub reset_start_commit: bool,
+
+    /// Show the current baseline state and exit
+    #[arg(long, help = "Show current review baseline and start commit state")]
+    pub show_baseline: bool,
 }
 
 /// Recovery command flags.
