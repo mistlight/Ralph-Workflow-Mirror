@@ -2,6 +2,71 @@
 //!
 //! Provides structured, colorized logging output for Ralph's pipeline
 //! with support for file logging and various log levels.
+//!
+//! # Logger Design and Behavior
+//!
+//! The `Logger` struct provides dual-output logging:
+//! - **Console output**: Colorized, human-readable messages to stdout/stderr
+//! - **File output**: Plain text (ANSI codes stripped) with timestamps
+//!
+//! ## How Logger Writes to Files
+//!
+//! Logger's file logging is **not** done through the `std::io::Write` trait.
+//! Instead, file logging happens via the internal `log_to_file()` method, which
+//! is called by each log level method (`info()`, `success()`, `warn()`, `error()`).
+//!
+//! ### Important: `Write` Trait Behavior
+//!
+//! Logger implements `std::io::Write`, but the `write()` method **only writes to
+//! stdout**, NOT to the log file. This is intentional design:
+//!
+//! ```ignore
+//! let logger = Logger::new(Colors::new()).with_log_file("app.log");
+//!
+//! // This writes to BOTH console AND file:
+//! logger.info("This message goes everywhere");
+//!
+//! // This writes ONLY to console (via Write trait):
+//! writeln!(logger, "This only goes to console").unwrap();
+//! ```
+//!
+//! If you need file output, always use the Logger's methods (`info()`, `success()`,
+//! etc.) rather than the `Write` trait. The `Write` trait implementation exists
+//! for compatibility with code that expects a writer, but it's a console-only path.
+//!
+//! ## Logger → File → Extraction Flow
+//!
+//! The review and planning phases extract structured output from agent logs:
+//!
+//! 1. **Agent writes JSON events**: Agents emit `{"type": "result", "result": "..."}` events
+//! 2. **Events written to log files**: Via direct file writes or Logger's file logging
+//! 3. **Extraction reads log files**: `extract_last_result()` parses JSON from log files
+//! 4. **Result content captured**: The orchestrator uses extracted content for ISSUES.md/PLAN.md
+//!
+//! ### Last Line Handling
+//!
+//! A key concern is whether the last line without a trailing newline is extracted.
+//! The extraction uses `BufReader::lines()`, which **does** return the last line
+//! even without a trailing newline (this is documented Rust stdlib behavior).
+//!
+//! Reference: <https://doc.rust-lang.org/std/io/struct.BufReader.html#method.lines>
+//!
+//! ### Testing Logger Output
+//!
+//! For testing, use `TestLogger` from this module:
+//!
+//! ```ignore
+//! use ralph_workflow::logger::output::TestLogger;
+//!
+//! let logger = TestLogger::new();
+//! logger.info("Test message");
+//!
+//! assert!(logger.has_log("Test message"));
+//! assert!(logger.has_log("[INFO]"));
+//! ```
+//!
+//! `TestLogger` follows the same pattern as `TestPrinter` with line buffering
+//! and implements the same traits (`Printable`, `std::io::Write`, `LogSink`).
 
 use super::{
     Colors, ARROW, BOX_BL, BOX_BR, BOX_H, BOX_TL, BOX_TR, BOX_V, CHECK, CROSS, INFO, WARN,

@@ -21,7 +21,7 @@
 //! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
 
 mod file_extraction;
-mod file_finder;
+pub mod file_finder;
 mod json_extraction;
 mod plan_extraction;
 mod scoring;

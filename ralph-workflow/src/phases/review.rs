@@ -16,7 +16,7 @@ use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::files::extract_issues;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
-use crate::logger::print_progress;
+use crate::logger::{print_progress, Logger};
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
@@ -245,6 +245,155 @@ struct ReviewPassResult {
     early_exit: bool,
 }
 
+/// Log prefix-based file search results.
+fn log_prefix_search_results(logger: &Logger, parent: &Path, prefix: &str) {
+    use crate::files::result_extraction::file_finder::{
+        find_log_files_with_prefix, find_subdirs_with_prefix,
+    };
+
+    logger.info(&format!("Debug: Parent directory: {}", parent.display()));
+    logger.info(&format!("Debug: Log prefix: '{prefix}'"));
+
+    // Check for prefix-based log files (PRIMARY mode)
+    let prefix_files_result: std::io::Result<Vec<std::path::PathBuf>> =
+        find_log_files_with_prefix(parent, prefix);
+    match prefix_files_result {
+        Ok(files) if !files.is_empty() => {
+            logger.info(&format!(
+                "Debug: Found {} prefix-matched file(s)",
+                files.len()
+            ));
+            for file in &files {
+                logger.info(&format!("Debug:   - {}", file.display()));
+            }
+        }
+        Ok(_) => {
+            logger.info("Debug: No prefix-matched log files found");
+        }
+        Err(e) => {
+            logger.info(&format!("Debug: Error searching for prefix files: {e}"));
+        }
+    }
+
+    // Check for subdirectory fallback
+    let subdirs_result: std::io::Result<Vec<std::path::PathBuf>> =
+        find_subdirs_with_prefix(parent, prefix);
+    match subdirs_result {
+        Ok(subdirs) if !subdirs.is_empty() => {
+            logger.info(&format!(
+                "Debug: Found {} subdirectory(s) matching prefix",
+                subdirs.len()
+            ));
+            for subdir in &subdirs {
+                logger.info(&format!("Debug:   - {}", subdir.display()));
+            }
+        }
+        Ok(_) => {
+            logger.info("Debug: No matching subdirectories found");
+        }
+        Err(e) => {
+            logger.info(&format!("Debug: Error searching for subdirs: {e}"));
+        }
+    }
+}
+
+/// Log directory contents and file details.
+fn log_directory_details(logger: &Logger, log_dir_path: &Path) {
+    // Count log files in the directory
+    match std::fs::read_dir(log_dir_path) {
+        Ok(entries) => {
+            let files: Vec<_> = entries.filter_map(Result::ok).collect();
+            let file_count = files.len();
+            logger.info(&format!(
+                "Debug: Log directory exists with {file_count} file(s)"
+            ));
+            // List files for diagnosis
+            for entry in &files {
+                logger.info(&format!("Debug:   - {}", entry.path().display()));
+            }
+        }
+        Err(e) => {
+            logger.info(&format!("Debug: Error reading log directory: {e}"));
+        }
+    }
+
+    // Try to read first log file content for diagnosis
+    if let Ok(mut entries) = std::fs::read_dir(log_dir_path) {
+        if let Some(Ok(first_entry)) = entries.next() {
+            logger.info(&format!(
+                "Debug: Reading first file for diagnosis: {}",
+                first_entry.path().display()
+            ));
+            match std::fs::read_to_string(first_entry.path()) {
+                Ok(content) => {
+                    let preview: String = content.chars().take(300).collect();
+                    logger.info(&format!(
+                        "Debug: First log file preview (300 chars):\n{preview}"
+                    ));
+                    let line_count = content.lines().count();
+                    logger.info(&format!("Debug: Log file has {line_count} line(s)"));
+
+                    // Check if file contains JSON events
+                    let json_count = content
+                        .lines()
+                        .filter(|line| line.trim().starts_with('{'))
+                        .count();
+                    logger.info(&format!("Debug: Found {json_count} JSON line(s)"));
+
+                    // Check for result events
+                    let result_count = content
+                        .lines()
+                        .filter(|line| {
+                            line.contains(r#""type":"result""#)
+                                || line.contains(r#""type": "result""#)
+                        })
+                        .count();
+                    logger.info(&format!("Debug: Found {result_count} result event line(s)"));
+                }
+                Err(e) => {
+                    logger.info(&format!("Debug: Error reading file content: {e}"));
+                }
+            }
+        }
+    }
+}
+
+/// Log diagnostic information when JSON extraction fails.
+///
+/// Provides detailed debug logging about log file search strategies,
+/// file contents, and why extraction might have failed.
+fn log_extraction_diagnostics(logger: &Logger, log_dir: &str) {
+    let log_dir_path = Path::new(log_dir);
+
+    // Show the exact log path being searched
+    logger.info(&format!("Debug: Log path searched: {log_dir}"));
+
+    // Extract parent and prefix for prefix-mode search info
+    let parent = log_dir_path.parent().unwrap_or_else(|| Path::new("."));
+    let prefix = log_dir_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+
+    if !prefix.is_empty() {
+        log_prefix_search_results(logger, parent, prefix);
+    }
+
+    // Check if log path exists as directory
+    if log_dir_path.exists() {
+        if log_dir_path.is_dir() {
+            log_directory_details(logger, log_dir_path);
+        } else {
+            logger.info(&format!(
+                "Debug: Path exists but is not a directory: {}",
+                log_dir_path.display()
+            ));
+        }
+    } else {
+        logger.info(&format!("Debug: Log path does not exist: {log_dir}"));
+    }
+}
+
 /// Run the review pass for a single cycle.
 fn run_review_pass(
     ctx: &mut PhaseContext<'_>,
@@ -311,34 +460,7 @@ fn run_review_pass(
 
         // Debug logging: provide more diagnostic information
         if ctx.config.verbosity.is_debug() {
-            // Check if log directory exists
-            let log_dir_path = Path::new(&log_dir);
-            if log_dir_path.exists() {
-                // Count log files in the directory
-                if let Ok(entries) = std::fs::read_dir(log_dir_path) {
-                    let file_count = entries.filter_map(Result::ok).count();
-                    ctx.logger.info(&format!(
-                        "Debug: Log directory exists, found {file_count} file(s)"
-                    ));
-                }
-                // Try to read first few lines of first log file for diagnosis
-                if let Ok(mut entries) = std::fs::read_dir(log_dir_path) {
-                    if let Some(Ok(first_entry)) = entries.next() {
-                        if let Ok(content) = std::fs::read_to_string(first_entry.path()) {
-                            let preview: String = content.chars().take(300).collect();
-                            ctx.logger.info(&format!(
-                                "Debug: First log file preview (300 chars):\n{preview}"
-                            ));
-                            let line_count = content.lines().count();
-                            ctx.logger
-                                .info(&format!("Debug: Log file has {line_count} line(s)"));
-                        }
-                    }
-                }
-            } else {
-                ctx.logger
-                    .info(&format!("Debug: Log directory does not exist: {log_dir}"));
-            }
+            log_extraction_diagnostics(ctx.logger, &log_dir);
         }
 
         // Check if agent wrote the file directly (legacy fallback)
