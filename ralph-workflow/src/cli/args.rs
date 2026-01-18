@@ -232,8 +232,7 @@ pub struct WorkGuideListFlag {
     #[arg(
         long = "list-work-guides",
         visible_alias = "list-templates",
-        help = "Show all available Work Guides for PROMPT.md (templates for your tasks)",
-        hide = true
+        help = "Show all available Work Guides for PROMPT.md"
     )]
     pub list_work_guides: bool,
 }
