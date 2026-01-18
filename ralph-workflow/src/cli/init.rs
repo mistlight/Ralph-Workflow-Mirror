@@ -9,6 +9,7 @@ use crate::config::{unified_config_path, UnifiedConfig, UnifiedConfigInitResult}
 use crate::logger::Colors;
 use crate::templates::{get_template, list_templates, ALL_TEMPLATES};
 use std::fs;
+use std::io::IsTerminal;
 use std::path::Path;
 
 /// Minimum similarity threshold for suggesting alternatives (0-100 percentage).
@@ -194,7 +195,13 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
 fn print_template_category(category_name: &str, templates: &[(&str, &str)], colors: Colors) {
     println!("{}{}:{}", colors.bold(), category_name, colors.reset());
     for (name, description) in templates {
-        println!("  {}{}{}  {}", colors.cyan(), name, colors.reset(), description);
+        println!(
+            "  {}{}{}  {}",
+            colors.cyan(),
+            name,
+            colors.reset(),
+            description
+        );
     }
     println!();
 }
@@ -243,7 +250,10 @@ pub fn handle_list_templates(colors: Colors) -> bool {
         &[
             ("cli-tool", "CLI tool with argument parsing and completion"),
             ("web-api", "REST/HTTP API with error handling"),
-            ("ui-component", "UI component with accessibility and responsive design"),
+            (
+                "ui-component",
+                "UI component with accessibility and responsive design",
+            ),
             ("onboarding", "Learn a new codebase efficiently"),
         ],
         colors,
@@ -257,8 +267,14 @@ pub fn handle_list_templates(colors: Colors) -> bool {
                 "performance-optimization",
                 "Performance optimization with benchmarking",
             ),
-            ("security-audit", "Security audit with OWASP Top 10 coverage"),
-            ("api-integration", "API integration with retry logic and resilience"),
+            (
+                "security-audit",
+                "Security audit with OWASP Top 10 coverage",
+            ),
+            (
+                "api-integration",
+                "API integration with retry logic and resilience",
+            ),
             (
                 "database-migration",
                 "Database migration with zero-downtime strategies",
@@ -276,9 +292,18 @@ pub fn handle_list_templates(colors: Colors) -> bool {
     print_template_category(
         "Maintenance & Operations",
         &[
-            ("debug-triage", "Systematic issue investigation and diagnosis"),
-            ("tech-debt", "Technical debt refactoring with prioritization"),
-            ("release", "Release preparation with versioning and changelog"),
+            (
+                "debug-triage",
+                "Systematic issue investigation and diagnosis",
+            ),
+            (
+                "tech-debt",
+                "Technical debt refactoring with prioritization",
+            ),
+            (
+                "release",
+                "Release preparation with versioning and changelog",
+            ),
         ],
         colors,
     );
@@ -324,9 +349,12 @@ pub fn handle_smart_init(template_arg: Option<&str>, colors: Colors) -> anyhow::
     let config_exists = config_path.exists();
     let prompt_exists = prompt_path.exists();
 
-    // If a template name is provided, treat it as --init-prompt
+    // If a template name is provided (non-empty), treat it as --init-prompt
     if let Some(template_name) = template_arg {
-        return handle_init_template_arg(template_name, colors);
+        if !template_name.is_empty() {
+            return handle_init_template_arg(template_name, colors);
+        }
+        // Empty string means --init was used without a value, fall through to smart inference
     }
 
     // No template provided - use smart inference based on current state
@@ -498,6 +526,9 @@ fn handle_init_none_exist(_config_path: &std::path::Path, colors: Colors) -> any
 }
 
 /// Handle --init when only config exists (no PROMPT.md).
+///
+/// When in a TTY, prompts for template selection.
+/// When not in a TTY, creates a minimal default PROMPT.md.
 fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors) -> bool {
     println!(
         "{}Config found at:{} {}",
@@ -511,6 +542,58 @@ fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors)
         colors.reset()
     );
     println!();
+
+    // Check if we're in a TTY for interactive prompting
+    if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+        // Interactive mode: prompt for template selection
+        if let Some(template_name) = prompt_for_template(colors) {
+            match handle_init_prompt(&template_name, colors) {
+                Ok(_) => return true,
+                Err(e) => {
+                    println!(
+                        "{}Failed to create PROMPT.md: {}{}",
+                        colors.red(),
+                        e,
+                        colors.reset()
+                    );
+                    return true;
+                }
+            }
+        }
+        // User declined or entered invalid input, fall through to show usage
+    } else {
+        // Non-interactive mode: create a minimal default PROMPT.md
+        let default_content = create_minimal_prompt_md();
+        let prompt_path = Path::new("PROMPT.md");
+
+        match fs::write(prompt_path, default_content) {
+            Ok(()) => {
+                println!(
+                    "{}Created minimal PROMPT.md{}",
+                    colors.green(),
+                    colors.reset()
+                );
+                println!();
+                println!("Next steps:");
+                println!("  1. Edit PROMPT.md with your task details");
+                println!("  2. Run: ralph \"your commit message\"");
+                println!();
+                println!("Tip: Use ralph --list-templates to see all available templates.");
+                return true;
+            }
+            Err(e) => {
+                println!(
+                    "{}Failed to create PROMPT.md: {}{}",
+                    colors.red(),
+                    e,
+                    colors.reset()
+                );
+                return true;
+            }
+        }
+    }
+
+    // Show template list if we didn't create PROMPT.md
     println!("Create a PROMPT.md from a template to get started:");
     println!();
 
@@ -534,6 +617,126 @@ fn handle_init_only_config_exists(config_path: &std::path::Path, colors: Colors)
     println!("  ralph --init bug-fix");
     println!("  ralph --init feature-spec");
     true
+}
+
+/// Prompt the user to select a template interactively.
+///
+/// Returns `Some(template_name)` if the user selected a template,
+/// or `None` if the user declined or entered invalid input.
+fn prompt_for_template(colors: Colors) -> Option<String> {
+    use std::io::{self, Write};
+
+    println!("PROMPT.md contains your task specification for the AI agents.");
+    print!("Would you like to create one from a template? [Y/n]: ");
+    if io::stdout().flush().is_err() {
+        return None;
+    }
+
+    let mut input = String::new();
+    match io::stdin().read_line(&mut input) {
+        Ok(0) | Err(_) => return None,
+        Ok(_) => {}
+    }
+
+    let response = input.trim().to_lowercase();
+    if response == "n" || response == "no" || response == "skip" {
+        return None;
+    }
+
+    // Show available templates
+    println!();
+    println!("Available templates:");
+
+    let templates: Vec<(&str, &str)> = list_templates();
+    for (i, (name, description)) in templates.iter().enumerate() {
+        println!(
+            "  {}{}{}  {}{}{}",
+            colors.cyan(),
+            name,
+            colors.reset(),
+            colors.dim(),
+            description,
+            colors.reset()
+        );
+        if (i + 1) % 5 == 0 {
+            println!(); // Group templates in sets of 5 for readability
+        }
+    }
+
+    println!();
+    println!("Common choices:");
+    println!(
+        "  {}quick{}           - Quick/small changes (typos, minor fixes)",
+        colors.cyan(),
+        colors.reset()
+    );
+    println!(
+        "  {}bug-fix{}         - Bug fix with investigation guidance",
+        colors.cyan(),
+        colors.reset()
+    );
+    println!(
+        "  {}feature-spec{}    - Product specification",
+        colors.cyan(),
+        colors.reset()
+    );
+    println!();
+    print!("Enter template name (or press Enter to use 'quick'): ");
+    if io::stdout().flush().is_err() {
+        return None;
+    }
+
+    let mut template_input = String::new();
+    match io::stdin().read_line(&mut template_input) {
+        Ok(0) | Err(_) => return None,
+        Ok(_) => {}
+    }
+
+    let template_name = template_input.trim();
+    if template_name.is_empty() {
+        // Default to 'quick' template
+        return Some("quick".to_string());
+    }
+
+    // Validate the template exists
+    if get_template(template_name).is_some() {
+        Some(template_name.to_string())
+    } else {
+        println!(
+            "{}Unknown template: '{}'{}",
+            colors.red(),
+            template_name,
+            colors.reset()
+        );
+        println!("Run 'ralph --list-templates' to see all available templates.");
+        None
+    }
+}
+
+/// Create a minimal default PROMPT.md content.
+fn create_minimal_prompt_md() -> String {
+    "# Task Description
+
+Describe what you want the AI agents to implement.
+
+## Example
+
+\"Fix the typo in the README file\"
+
+## Context
+
+Provide any relevant context about the task:
+- What problem are you trying to solve?
+- What are the acceptance criteria?
+- Are there any specific requirements or constraints?
+
+## Notes
+
+- This is a minimal PROMPT.md created by `ralph --init`
+- You can edit this file directly or use `ralph --init <template>` to start from a template
+- Run `ralph --list-templates` to see all available templates
+"
+    .to_string()
 }
 
 /// Handle --init when only PROMPT.md exists (no config).

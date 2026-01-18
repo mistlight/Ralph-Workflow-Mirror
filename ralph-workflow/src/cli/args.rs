@@ -109,7 +109,7 @@ pub struct UnifiedInitFlags {
         help = "Smart init: create config or PROMPT.md (infers from current state)",
         value_name = "TEMPLATE",
         num_args = 0..=1,
-        require_equals = true,
+        default_missing_value = "",
         // Cannot use possible_values here due to Option<String> type with optional value
         // Completion is handled via --generate-completion
     )]
