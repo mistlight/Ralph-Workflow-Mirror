@@ -217,14 +217,13 @@ commit = ["codex"]
 }
 
 #[test]
-fn ralph_generate_commit_msg_with_working_agent_succeeds() {
-    // This test verifies that commit message generation succeeds when an agent
-    // works correctly. The system has multiple fallback strategies and is
-    // designed to be resilient - it will try different prompting strategies
-    // until one succeeds.
+fn ralph_generate_commit_msg_succeeds_without_commit_agent_configured() {
+    // This test documents the expected behavior when the `commit` agent chain is
+    // not configured: `--generate-commit-msg` should still succeed by using the
+    // built-in fallback commit message generation.
     //
-    // Note: We use the codex agent which is a built-in agent that can
-    // successfully generate commit messages.
+    // This keeps commit automation reliable even if the commit agent is missing,
+    // misconfigured, or unavailable in a given environment.
     let dir = TempDir::new().unwrap();
     let repo = init_git_repo(&dir);
 
@@ -235,7 +234,7 @@ fn ralph_generate_commit_msg_with_working_agent_succeeds() {
     // Create a change in the repository to have something to diff.
     write_file(dir.path().join("initial.txt"), "updated content");
 
-    // Create a test config with a working agent
+    // Create a test config that deliberately omits the `commit` chain.
     let config_home = dir.path().join(".config");
     std::fs::create_dir_all(&config_home).unwrap();
     std::fs::write(
@@ -243,7 +242,6 @@ fn ralph_generate_commit_msg_with_working_agent_succeeds() {
         r#"[agent_chain]
 developer = ["codex"]
 reviewer = ["codex"]
-commit = ["codex"]
 "#,
     )
     .unwrap();
@@ -258,6 +256,10 @@ commit = ["codex"]
         .success()
         .stdout(predicate::str::contains("Commit message generated"));
 
-    // Verify the file was created
-    assert!(dir.path().join(".agent/commit-message.txt").exists());
+    // Verify the file was created and contains something meaningful.
+    let content = fs::read_to_string(dir.path().join(".agent/commit-message.txt")).unwrap();
+    assert!(
+        !content.trim().is_empty(),
+        "Commit message file should not be empty"
+    );
 }

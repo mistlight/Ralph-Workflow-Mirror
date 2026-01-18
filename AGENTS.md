@@ -46,18 +46,18 @@ cargo fmt --all --check
 # Lint the main crate (lib only) with all its features
 cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
 
-# Lint the separate integration test package, enabling its own test-utils feature
-cargo clippy -p ralph-workflow-tests --all-targets --features test-utils -- -D warnings
+# Lint the separate integration test package
+# (test-utils feature is enabled via the integration test crate's Cargo.toml dependency on ralph-workflow)
+cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
 
 # Run the main crate's unit tests with all features
 cargo test -p ralph-workflow --lib --all-features
 
 # Run the integration tests package
-# (dependency features for ralph-workflow should be enabled via ralph-workflow-tests/Cargo.toml)
+# (dependency features for ralph-workflow should be enabled via the integration test crate's Cargo.toml)
 cargo test -p ralph-workflow-tests
 
 # Build release artifacts (default-members only)
 cargo build --release
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
-

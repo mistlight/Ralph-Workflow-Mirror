@@ -757,9 +757,15 @@ impl ClaudeParser {
             ContentBlockDelta::TextDelta { text: Some(text) } => {
                 let index_str = index.to_string();
 
-                // Use StreamingSession to track state and determine prefix display
-                // Note: Snapshot-as-delta detection and extraction is handled internally
-                // by on_text_delta(), which also increments streaming_metrics counters.
+                // Track this delta with StreamingSession for state management.
+                //
+                // StreamingSession handles protocol/streaming quality concerns (including
+                // snapshot-as-delta repairs and consecutive duplicate filtering) and returns
+                // whether a prefix should be displayed for this stream.
+                //
+                // The parser layer still applies additional deduplication:
+                // - Skip whitespace-only accumulated output
+                // - Hash-based deduplication after sanitization (whitespace-insensitive)
                 let show_prefix = session.on_text_delta(index, &text);
 
                 // Get accumulated text for streaming display
@@ -868,9 +874,15 @@ impl ClaudeParser {
         let default_index = 0u64;
         let default_index_str = "0";
 
-        // Use StreamingSession to track state and determine prefix display
-        // Note: Snapshot-as-delta detection and extraction is handled internally
-        // by on_text_delta(), which also increments streaming_metrics counters.
+        // Track this delta with StreamingSession for state management.
+        //
+        // StreamingSession handles protocol/streaming quality concerns (including
+        // snapshot-as-delta repairs and consecutive duplicate filtering) and returns
+        // whether a prefix should be displayed for this stream.
+        //
+        // The parser layer still applies additional deduplication:
+        // - Skip whitespace-only accumulated output
+        // - Hash-based deduplication after sanitization (whitespace-insensitive)
         let show_prefix = session.on_text_delta(default_index, text);
 
         // Get accumulated text for streaming display
@@ -1151,15 +1163,12 @@ impl ClaudeParser {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-utils"))]
 mod tests {
-    #[cfg(test)]
     use super::*;
-    #[cfg(test)]
     use crate::json_parser::printer::{SharedPrinter, TestPrinter};
 
     #[test]
-    #[cfg(test)]
     fn test_printer_method_accessible() {
         // Test that the printer() method is accessible and returns a SharedPrinter
         let test_printer: SharedPrinter = Rc::new(RefCell::new(TestPrinter::new()));
@@ -1171,7 +1180,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(test)]
     fn test_streaming_metrics_method_accessible() {
         // Test that the streaming_metrics() method is accessible
         let test_printer: SharedPrinter = Rc::new(RefCell::new(TestPrinter::new()));

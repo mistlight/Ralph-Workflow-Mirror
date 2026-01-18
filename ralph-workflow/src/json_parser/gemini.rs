@@ -38,6 +38,7 @@ use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
+use super::delta_display;
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 #[cfg(feature = "test-utils")]
@@ -276,22 +277,41 @@ impl GeminiParser {
 
         if let Some(text) = content {
             if is_delta && role_str == "assistant" {
-                // Accumulate delta content using StreamingSession
-                let (show_prefix, accumulated_text) = {
+                // Accumulate delta content using StreamingSession.
+                //
+                // StreamingSession handles streaming state management (including snapshot-as-delta
+                // repairs and consecutive duplicate filtering). The parser layer handles:
+                // - Skipping whitespace-only accumulated output
+                // - Hash-based deduplication after sanitization (whitespace-insensitive)
+                // - Prefix-aware in-place updates via TextDeltaRenderer
+                let (show_prefix, accumulated_text, has_prefix) = {
                     let mut session = self.streaming_session.borrow_mut();
-                    let show_prefix = session.on_text_delta_key("main", &text);
-                    // Get accumulated text for streaming display
+                    let show_prefix = session.on_text_delta(0, &text);
+
                     let accumulated_text = session
-                        .get_accumulated(ContentType::Text, "main")
+                        .get_accumulated(ContentType::Text, "0")
                         .unwrap_or("")
                         .to_string();
-                    (show_prefix, accumulated_text)
+
+                    let sanitized_text = delta_display::sanitize_for_display(&accumulated_text);
+                    if sanitized_text.is_empty() {
+                        return String::new();
+                    }
+
+                    if session.is_content_hash_rendered(ContentType::Text, "0", &sanitized_text) {
+                        return String::new();
+                    }
+
+                    let has_prefix = session.has_rendered_prefix(ContentType::Text, "0");
+
+                    session.mark_rendered(ContentType::Text, "0");
+                    session.mark_content_hash_rendered(ContentType::Text, "0", &sanitized_text);
+
+                    (show_prefix, accumulated_text, has_prefix)
                 };
 
-                // Use TextDeltaRenderer for consistent rendering across all parsers
                 let terminal_mode = *self.terminal_mode.borrow();
-                if show_prefix {
-                    // First delta: use renderer with prefix
+                if show_prefix && !has_prefix {
                     return TextDeltaRenderer::render_first_delta(
                         &accumulated_text,
                         prefix,
@@ -299,7 +319,7 @@ impl GeminiParser {
                         terminal_mode,
                     );
                 }
-                // Subsequent deltas: use renderer for in-place update
+
                 return TextDeltaRenderer::render_subsequent_delta(
                     &accumulated_text,
                     prefix,
