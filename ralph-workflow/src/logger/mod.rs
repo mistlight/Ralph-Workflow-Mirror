@@ -5,6 +5,7 @@
 //! - Progress bar display
 //! - Section headers and formatting
 //! - Colors & Formatting for terminal output
+//! - Test utilities for capturing log output in tests
 //!
 //! # Example
 //!
@@ -21,6 +22,30 @@
 //! logger.warn("Potential issue detected");
 //! logger.error("Critical failure");
 //! ```
+//!
+//! # Testing with `TestLogger`
+//!
+//! For testing purposes, the `output` module provides `TestLogger` which implements
+//! the same traits as `Logger` (`Printable` and `std::io::Write`) for output capture.
+//!
+//! ```ignore
+//! use ralph::logger::output::TestLogger;
+//! use std::io::Write;
+//!
+//! let logger = TestLogger::new();
+//! writeln!(logger, "Test message").unwrap();
+//!
+//! assert!(logger.has_log("Test message"));
+//! let logs = logger.get_logs();
+//! assert_eq!(logs.len(), 1);
+//! ```
+//!
+//! # Trait Implementation
+//!
+//! Both `Logger` and `TestLogger` implement:
+//! - `Printable` trait from `json_parser::printer` - enables terminal detection
+//! - `std::io::Write` trait - enables writing to the logger
+//! - `LogSink` trait (test-only) - internal test API for log message capture
 
 mod output;
 mod progress;

@@ -25,6 +25,19 @@ use std::path::Path;
 /// This handles cases where agents emit multiple partial result events during streaming
 /// or retries, preferring results with proper plan structure over simple length.
 ///
+/// # Important: Last Line Handling
+///
+/// This function uses `BufReader::lines()` which correctly returns the last line
+/// of a file **even if it doesn't have a trailing newline**. According to Rust's
+/// standard library documentation, `lines()` returns an iterator that includes
+/// the last line regardless of whether it ends with `\n` or not.
+///
+/// This behavior is critical for our use case because agents (especially AI CLI tools)
+/// may write JSON events without proper trailing newlines. We rely on this behavior
+/// to ensure result events are always extracted.
+///
+/// Reference: <https://doc.rust-lang.org/std/io/struct.BufReader.html#method.lines>
+///
 /// # Note
 ///
 /// This function is public for testing purposes. The main public API is [`extract_last_result`].
@@ -246,5 +259,54 @@ mod tests {
 
         let result = extract_result_from_file(temp_file.path()).unwrap();
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_result_from_file_empty_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+
+        let result = extract_result_from_file(temp_file.path()).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_result_from_file_multiple_results_best_score() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, r#"{{"type":"message","content":"first"}}"#).unwrap();
+        // First result - plain text
+        writeln!(temp_file, r#"{{"type":"result","result":"simple result"}}"#).unwrap();
+        // Second result - with plan structure (should score higher)
+        // Use \\n in the JSON string to represent literal newline characters
+        write!(
+            temp_file,
+            "{{\"type\":\"result\",\"result\":\"## Summary\\n\\nThis has plan structure\"}}"
+        )
+        .unwrap();
+
+        let result = extract_result_from_file(temp_file.path()).unwrap();
+        // The second result should be selected due to higher score
+        assert_eq!(
+            result,
+            Some("## Summary\n\nThis has plan structure".to_string())
+        );
+    }
+
+    #[test]
+    fn test_score_result_with_summary_marker() {
+        use super::*;
+
+        let simple = "simple result";
+        let with_structure = "## Summary\n\nThis has plan structure";
+
+        let simple_score = score_result(simple);
+        let structure_score = score_result(with_structure);
+
+        // Structure score should be significantly higher due to "## Summary" marker (+1000)
+        assert!(
+            structure_score > simple_score,
+            "Expected structure score ({}) > simple score ({})",
+            structure_score,
+            simple_score
+        );
     }
 }

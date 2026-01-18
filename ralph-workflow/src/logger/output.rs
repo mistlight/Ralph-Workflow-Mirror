@@ -250,11 +250,14 @@ pub trait LogSink {
 ///
 /// This logger stores all log messages in memory for testing purposes.
 /// It provides methods to retrieve and inspect the captured log output.
+/// Uses line buffering similar to `TestPrinter` to handle partial writes.
 #[cfg(test)]
 #[derive(Debug, Default)]
 pub struct TestLogger {
-    /// Captured log messages.
+    /// Captured complete log lines.
     logs: RefCell<Vec<String>>,
+    /// Buffer for incomplete lines (content without trailing newline).
+    buffer: RefCell<String>,
 }
 
 #[cfg(test)]
@@ -264,14 +267,20 @@ impl TestLogger {
         Self::default()
     }
 
-    /// Get all captured log messages.
+    /// Get all captured log messages including partial buffered content.
     pub fn get_logs(&self) -> Vec<String> {
-        self.logs.borrow().clone()
+        let mut result = self.logs.borrow().clone();
+        let buffer = self.buffer.borrow();
+        if !buffer.is_empty() {
+            result.push(buffer.clone());
+        }
+        result
     }
 
-    /// Clear all captured log messages.
+    /// Clear all captured log messages and buffered content.
     pub fn clear(&self) {
         self.logs.borrow_mut().clear();
+        self.buffer.borrow_mut().clear();
     }
 
     /// Check if a specific message exists in the logs.
@@ -292,6 +301,42 @@ impl TestLogger {
 impl LogSink for TestLogger {
     fn log(&self, msg: &str) {
         self.logs.borrow_mut().push(msg.to_string());
+    }
+}
+
+#[cfg(test)]
+impl Printable for TestLogger {
+    fn is_terminal(&self) -> bool {
+        // Test logger is never a terminal
+        false
+    }
+}
+
+#[cfg(test)]
+impl std::io::Write for TestLogger {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let s = std::str::from_utf8(buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let mut buffer = self.buffer.borrow_mut();
+        buffer.push_str(s);
+
+        // Process complete lines (similar to TestPrinter)
+        while let Some(newline_pos) = buffer.find('\n') {
+            let line = buffer.drain(..=newline_pos).collect::<String>();
+            self.logs.borrow_mut().push(line);
+        }
+
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        // Flush any remaining buffer content to logs
+        let mut buffer = self.buffer.borrow_mut();
+        if !buffer.is_empty() {
+            self.logs.borrow_mut().push(buffer.clone());
+            buffer.clear();
+        }
+        Ok(())
     }
 }
 

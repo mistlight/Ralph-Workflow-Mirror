@@ -309,6 +309,37 @@ fn run_review_pass(
         ctx.logger
             .info("No JSON result event found in reviewer logs");
 
+        // Debug logging: provide more diagnostic information
+        if ctx.config.verbosity.is_debug() {
+            // Check if log directory exists
+            let log_dir_path = Path::new(&log_dir);
+            if log_dir_path.exists() {
+                // Count log files in the directory
+                if let Ok(entries) = std::fs::read_dir(log_dir_path) {
+                    let file_count = entries.filter_map(Result::ok).count();
+                    ctx.logger
+                        .info(&format!("Debug: Log directory exists, found {file_count} file(s)"));
+                }
+                // Try to read first few lines of first log file for diagnosis
+                if let Ok(mut entries) = std::fs::read_dir(log_dir_path) {
+                    if let Some(Ok(first_entry)) = entries.next() {
+                        if let Ok(content) = std::fs::read_to_string(first_entry.path()) {
+                            let preview: String = content.chars().take(300).collect();
+                            ctx.logger.info(&format!(
+                                "Debug: First log file preview (300 chars):\n{preview}"
+                            ));
+                            let line_count = content.lines().count();
+                            ctx.logger
+                                .info(&format!("Debug: Log file has {line_count} line(s)"));
+                        }
+                    }
+                }
+            } else {
+                ctx.logger
+                    .info(&format!("Debug: Log directory does not exist: {log_dir}"));
+            }
+        }
+
         // Check if agent wrote the file directly (legacy fallback)
         let agent_wrote_file = issues_path
             .exists()

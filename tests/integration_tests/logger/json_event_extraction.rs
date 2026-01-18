@@ -4,6 +4,8 @@
 //! the bug scenario where the last line might not be extracted.
 
 use ralph_workflow::files::result_extraction::json_extraction::extract_result_from_file;
+use ralph_workflow::logger::output::Logger;
+use ralph_workflow::logger::Colors;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -227,4 +229,136 @@ fn test_logger_json_event_extraction_nonexistent_file() {
 
     let result = extract_result_from_file(&log_path).unwrap();
     assert_eq!(result, None);
+}
+
+/// Test Logger → file → extraction flow using Logger::with_log_file().
+///
+/// This test uses the actual Logger to write JSON events to a file,
+/// then verifies that extraction correctly retrieves the result event.
+/// This tests the full production code path for Logger output.
+#[test]
+fn test_logger_with_log_file_writes_json_events_and_extracts() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("logger_test.log");
+
+    // Create a logger with file logging
+    let logger = Logger::new(Colors::new()).with_log_file(log_path.to_str().unwrap());
+
+    // Write some info messages (which will be logged to file)
+    logger.info("Starting process");
+    logger.info("Processing data");
+
+    // Write a success message
+    logger.success("Operation completed");
+
+    // Now manually append JSON events to the log file
+    // (simulating what an agent would write)
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .unwrap();
+
+    writeln!(file, r#"{{"type":"message","content":"Agent working"}}"#).unwrap();
+    // Write result event WITHOUT trailing newline (the bug scenario)
+    write!(
+        file,
+        r#"{{"type":"result","result":"Result content from agent"}}"#
+    )
+    .unwrap();
+    drop(file);
+
+    // Verify the result can be extracted
+    let result = extract_result_from_file(&log_path).unwrap();
+    assert_eq!(result, Some("Result content from agent".to_string()));
+}
+
+/// Test Logger → file → extraction flow with trailing newline.
+///
+/// Verifies that the Logger correctly writes content that can be
+/// extracted even when the last line has a trailing newline.
+#[test]
+fn test_logger_with_log_file_trailing_newline_extraction() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("logger_test_newline.log");
+
+    let logger = Logger::new(Colors::new()).with_log_file(log_path.to_str().unwrap());
+
+    // Write log messages
+    logger.info("Test with trailing newline");
+    logger.success("All tests passed");
+
+    // Append JSON events with trailing newline
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .unwrap();
+
+    writeln!(file, r#"{{"type":"message","content":"Agent working"}}"#).unwrap();
+    writeln!(
+        file,
+        r#"{{"type":"result","result":"Result with newline"}}"#
+    )
+    .unwrap();
+    drop(file);
+
+    // Verify extraction works
+    let result = extract_result_from_file(&log_path).unwrap();
+    assert_eq!(result, Some("Result with newline".to_string()));
+}
+
+/// Test the specific user-reported bug scenario with Logger.
+///
+/// The user reported that issues were clearly being produced by the agent,
+/// but the extraction was failing with "No JSON result event found in reviewer logs".
+/// This test verifies that when an agent outputs JSON events (with or without
+/// trailing newlines), the extraction correctly finds them.
+#[test]
+fn test_user_reported_bug_scenario_with_logger() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("agent_output.log");
+
+    // Create logger to simulate production environment
+    let _logger = Logger::new(Colors::new()).with_log_file(log_path.to_str().unwrap());
+
+    // Simulate the exact output from the user's report:
+    // The agent produced checklist items but the result event wasn't extracted
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .unwrap();
+
+    // Agent output as seen in the user's report
+    writeln!(
+        file,
+        r#"{{"type":"message","content":"I'll craft a prioritized checklist"}}"#
+    )
+    .unwrap();
+    writeln!(
+        file,
+        r#"{{"type":"message","content":"Let me go ahead and create that response"}}"#
+    )
+    .unwrap();
+
+    // The critical bug scenario: result event WITHOUT trailing newline
+    write!(
+        file,
+        "{{\"type\":\"result\",\"result\":\"- [ ] Critical: args.rs has duplicate `pub init` declarations\\n- [ ] High: Template commands have conflicting attributes\\n- [ ] Medium: Integration test mismatches\"}}"
+    ).unwrap();
+    drop(file);
+
+    // Verify the result event IS found (this would have failed in the bug)
+    let result = extract_result_from_file(&log_path).unwrap();
+
+    assert!(
+        result.is_some(),
+        "Expected to find result event but got None. This indicates the last-line extraction bug."
+    );
+
+    let result_content = result.unwrap();
+    assert!(result_content.contains("Critical:"));
+    assert!(result_content.contains("args.rs"));
+    assert!(result_content.contains("duplicate"));
 }
