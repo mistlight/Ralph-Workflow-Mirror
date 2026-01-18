@@ -15,28 +15,30 @@ For major changes, create a RFC.
 
 # Ralph Workflow
 
-Ralph Workflow is an external (lives outside of the AI Agent) agent orchestrator meant mostly for unattended sessions over long period of time. 
-It is not meant to be babysat as long as you can write a detailed spec file unlike most active agent orchestrator.
-It is inspired by the idea of Ralph by [Geoffrey Huntley](https://ghuntley.com/ralph/). I started this project as a side project with bunch of shell scripts while working on my main project testing
-out the concept but then I decided that I want it working on separate parts of the project like different worktrees, so this became increasingly complex and I changed it to rust (no this isn't 
-one of those rewrite everything in rust stories, shell script genuinely does not scale well in big codebases).
+Ralph Workflow is an external (lives outside of the AI Agent) agent orchestrator meant mostly for unattended sessions over a long period of time.
+It is not meant to be babysat as long as you can write a detailed spec file, unlike most active agent orchestrators.
+It is inspired by the idea of Ralph by [Geoffrey Huntley](https://ghuntley.com/ralph/).
+
+I started this project as a side project with a bunch of shell scripts while working on my main project testing out the concept, but then I decided that I want it working on separate parts of the project like different worktrees. As a result, this became increasingly complex and I changed it to Rust (no, this isn't one of those rewrite-everything-in-Rust stories; shell scripts genuinely do not scale well in big codebases).
 
 If you are looking for an interactive orchestrator, you are probably looking for something else.
 
-Ralph Workflow works best if you think like a Product Manager and can scope out every details about the feature you need. The more details you can add, the better Ralph Workflow will perform. It is meant to run long running tasks that are very deterministic and need a lot of commits and non trivial amount of manual work.
+Ralph Workflow works best if you think like a Product Manager and can scope out every detail about the feature you need. The more details you can add, the better Ralph Workflow will perform. It is meant to run long-running tasks that are very deterministic and need a lot of commits and a non-trivial amount of manual work.
 
 ## Currently Supported Clients
+
 * Claude Code (and Claude Code Switch profiles)
 * OpenAI Codex CLI
 * OpenCode (Not Tested Much Yet, working on that soon)
 
 ## Recommendations
-* Use Claude Code subscription if you have the 20x max plan, but even that will only give you like 2-3 days worth. I actually think GLM is probably best suited for this.
-* Codex is very much recommended as the reviewing agent, I personally had the most success using Codex as the reviewing agent.
+
+* Use Claude Code subscription if you have the 20x max plan, but even that will only give you like 2–3 days worth. I actually think GLM is probably best suited for this.
+* Codex is very much recommended as the reviewing agent; I personally had the most success using Codex as the reviewing agent.
 
 ## Design Philosophy
 
-Ralph Workflow is designed to make as much deterministic decisions as possible. For example, if it detects there is a rebase needed, it would prompt very specifically about the merge conflict that it needs to do, then deterministically performs the rebase itself. It will only call upon AI agent to do things when it doesn't know what to do.
+Ralph Workflow is designed to make as many deterministic decisions as possible. For example, if it detects there is a rebase needed, it would prompt very specifically about the merge conflict that it needs to do, then deterministically performs the rebase itself. It will only call upon an AI agent to do things when it doesn't know what to do.
 
 ## How do I use this?
 
@@ -44,18 +46,22 @@ Look in the [Product README here](ralph-workflow/README.md).
 
 ## Questions
 
-Do I need coding knowledge to use this?
-:Coding knowledge will help a lot but not strictly required in my opinion, but you should at least know the principles of good software engineering. There are times where you need to refactor before adding more features and it will not be obvious to you what that line is if you don't have at least some programming knowledge. I recommend books like Code Complete.
+**Do I need coding knowledge to use this?**
 
-Should I use this in production level code?
-:If you thoroughly review the code that it outputs and it depends on your risk tolerance. Any code change is risky, human or AI generated. 
+Coding knowledge will help a lot but is not strictly required in my opinion. You should at least know the principles of good software engineering. There are times where you need to refactor before adding more features, and it will not be obvious to you what that line is if you don't have at least some programming knowledge. I recommend books like *Code Complete*.
 
-What is the recommended workflow with this?
-:I recommend using Ralph Workflow on different git worktrees so you can work on multiple features at the same time. Due to its unattended nature, Ralph Workflow will naturally take longer than if you interact with an AI agent directly when you work on features. While you can run Ralph Workflow on the main branch, it reduces your ability to work on multiple features at the same time by the nature of ralph process taking a long time.
+**Should I use this in production-level code?**
+
+If you thoroughly review the code that it outputs, it depends on your risk tolerance. Any code change is risky, whether human- or AI-generated.
+
+**What is the recommended workflow with this?**
+
+I recommend using Ralph Workflow on different Git worktrees so you can work on multiple features at the same time. Due to its unattended nature, Ralph Workflow will naturally take longer than if you interact with an AI agent directly when you work on features. While you can run Ralph Workflow on the main branch, it reduces your ability to work on multiple features at the same time by the nature of the Ralph process taking a long time.
 
 ## About Me
 
-I'm Mistlight, while Ralph did generate a lot of code for this repo, this README.md is written by me hence you can tell why it's very awkwardly worded.
+I'm Mistlight. While Ralph did generate a lot of code for this repo, this README.md is written by me, hence you can tell why it's very awkwardly worded.
 
 ## LICENSE
-Licensed under AGPL-v3. No this will not GPL or AGPL the code it generates. AGPL only applies to this codebase itself.
+
+Licensed under AGPL-v3. No, this will not GPL or AGPL the code it generates. AGPL only applies to this codebase itself.
