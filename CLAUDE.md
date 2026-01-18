@@ -73,11 +73,11 @@ rg -n -U --pcre2 '(?x)
 # DO NOT CHANGE ANY OF THIS
 cargo fmt --all --check
 
-# Lint the main crate (lib only) with all its features
+# Lint the main crate (lib only) with all its features - THIS MUST BE RAN WITH THE EXACT FLAG DO NOT CHANGE
 cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
 
-# Lint the separate integration test package (test-utils is enabled via its ralph-workflow dependency)
-cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
+# Lint the separate integration test package (test-utils is enabled via its ralph-workflow dependency) - THIS MUST BE RAN WITH THE EXACT FLAGS DO NOT CHANGE
+cargo clippy -p ralph-workflow-tests --all-targets --features test-utils -- -D warnings
 
 # Run the main crate's unit tests with all features
 cargo test -p ralph-workflow --lib --all-features
