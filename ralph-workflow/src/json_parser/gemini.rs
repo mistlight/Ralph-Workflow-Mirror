@@ -38,6 +38,7 @@ use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
+use super::delta_display;
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 #[cfg(feature = "test-utils")]
@@ -277,7 +278,7 @@ impl GeminiParser {
         if let Some(text) = content {
             if is_delta && role_str == "assistant" {
                 // Accumulate delta content using StreamingSession
-                let (show_prefix, accumulated_text) = {
+                let (show_prefix, accumulated_text, is_duplicate) = {
                     let mut session = self.streaming_session.borrow_mut();
                     let show_prefix = session.on_text_delta_key("main", &text);
                     // Get accumulated text for streaming display
@@ -285,8 +286,37 @@ impl GeminiParser {
                         .get_accumulated(ContentType::Text, "main")
                         .unwrap_or("")
                         .to_string();
-                    (show_prefix, accumulated_text)
+
+                    // Sanitize the accumulated text to check if it's empty
+                    let sanitized_text = delta_display::sanitize_for_display(&accumulated_text);
+
+                    // Check if this sanitized content has already been rendered
+                    // This prevents duplicates when accumulated content differs only by whitespace
+                    let is_duplicate = session.is_content_hash_rendered(
+                        ContentType::Text,
+                        "main",
+                        &sanitized_text,
+                    );
+
+                    // Mark this sanitized content as rendered for future duplicate detection
+                    // We use the sanitized text (not the rendered output) to avoid false positives
+                    // when the same accumulated text is rendered with different terminal modes
+                    if !is_duplicate {
+                        session.mark_rendered(ContentType::Text, "main");
+                        session.mark_content_hash_rendered(
+                            ContentType::Text,
+                            "main",
+                            &sanitized_text,
+                        );
+                    }
+
+                    (show_prefix, accumulated_text, is_duplicate)
                 };
+
+                // Skip rendering if this content was already rendered
+                if is_duplicate {
+                    return String::new();
+                }
 
                 // Use TextDeltaRenderer for consistent rendering across all parsers
                 let terminal_mode = *self.terminal_mode.borrow();
