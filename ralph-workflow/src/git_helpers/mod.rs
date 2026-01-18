@@ -46,7 +46,13 @@ pub use wrapper::{
 };
 
 #[cfg(any(test, feature = "test-utils"))]
-pub use ops::{CommitResult, GitOps, RealGit, RebaseResult as GitRebaseResult};
+pub use ops::{CommitResult, GitOps, RealGit};
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use ops::RebaseResult as OpsRebaseResult;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use test_trait::MockGit;
 
 #[cfg(test)]
 mod tests;

@@ -5,18 +5,15 @@
 //! in integration tests.
 
 use ralph_workflow::files::{FileOperation, FileOps, MockFileOps};
-use ralph_workflow::git_helpers::ops::{CommitResult, GitOps, RebaseResult as GitRebaseResult};
-use ralph_workflow::git_helpers::test_trait::{
-    MockGit, TestCommitResult, TestGit, TestRebaseResult,
-};
+use ralph_workflow::git_helpers::{CommitResult, GitOps, MockGit, OpsRebaseResult};
 use ralph_workflow::pipeline::test_trait::{AgentCommandResult, AgentExecutor, MockAgentExecutor};
 use std::path::{Path, PathBuf};
 
-/// Test that MockGit can be created and used via TestGit trait.
+/// Test that MockGit can be created and used via GitOps trait.
 #[test]
 fn test_mock_git_creation() {
     let mock = MockGit::new();
-    assert!(TestGit::require_repo(&mock).is_ok());
+    assert!(GitOps::require_repo(&mock).is_ok());
 }
 
 /// Test that MockGit builder pattern works.
@@ -28,26 +25,26 @@ fn test_mock_git_builder() {
         .with_snapshot(Ok("M file.txt".to_string()));
 
     assert_eq!(
-        TestGit::repo_root(&mock).unwrap(),
+        GitOps::repo_root(&mock).unwrap(),
         PathBuf::from("/test/repo")
     );
-    assert_eq!(TestGit::diff(&mock).unwrap(), "test diff");
-    assert_eq!(TestGit::snapshot(&mock).unwrap(), "M file.txt");
+    assert_eq!(GitOps::diff(&mock).unwrap(), "test diff");
+    assert_eq!(GitOps::snapshot(&mock).unwrap(), "M file.txt");
 }
 
 /// Test that MockGit implements GitOps trait.
 #[test]
 fn test_mock_git_implements_git_ops() {
     let mock = MockGit::new()
-        .with_commit(Ok(TestCommitResult::Success("abc123".to_string())))
-        .with_rebase_onto(Ok(TestRebaseResult::Success));
+        .with_commit(Ok(CommitResult::Success("abc123".to_string())))
+        .with_rebase_onto(Ok(OpsRebaseResult::Success));
 
     // Test via GitOps trait
     let commit_result = GitOps::commit(&mock, "test message", None, None).unwrap();
     assert_eq!(commit_result, CommitResult::Success("abc123".to_string()));
 
     let rebase_result = GitOps::rebase_onto(&mock, "main").unwrap();
-    assert_eq!(rebase_result, GitRebaseResult::Success);
+    assert_eq!(rebase_result, OpsRebaseResult::Success);
 }
 
 /// Test that MockGit call capture works.
@@ -55,10 +52,10 @@ fn test_mock_git_implements_git_ops() {
 fn test_mock_git_call_capture() {
     let mock = MockGit::new();
 
-    let _ = TestGit::diff(&mock);
-    let _ = TestGit::diff(&mock);
-    let _ = TestGit::commit(&mock, "first");
-    let _ = TestGit::commit(&mock, "second");
+    let _ = GitOps::diff(&mock);
+    let _ = GitOps::diff(&mock);
+    let _ = GitOps::commit(&mock, "first", None, None);
+    let _ = GitOps::commit(&mock, "second", None, None);
 
     assert_eq!(mock.diff_count(), 2);
     assert_eq!(mock.commit_calls().len(), 2);
@@ -146,8 +143,8 @@ fn test_mock_agent_executor_call_capture() {
 #[test]
 fn test_mock_error_variants() {
     let mock_git = MockGit::new_error();
-    assert!(TestGit::repo_root(&mock_git).is_err());
-    assert!(TestGit::diff(&mock_git).is_err());
+    assert!(GitOps::repo_root(&mock_git).is_err());
+    assert!(GitOps::diff(&mock_git).is_err());
 
     let mock_executor = MockAgentExecutor::new_error();
     use ralph_workflow::agents::JsonParserType;

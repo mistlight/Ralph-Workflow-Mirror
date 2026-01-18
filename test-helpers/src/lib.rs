@@ -39,6 +39,28 @@ Step 1: Create the required files.
 Step 2: Verify the changes are correct.
 Step 3: Complete the test iteration."#;
 
+/// Create an isolated config file in the test directory.
+/// This prevents user config from interfering with tests.
+///
+/// # Panics
+///
+/// - If directory creation fails
+/// - If config file write fails
+#[must_use]
+pub fn create_isolated_config(dir: &Path) -> std::path::PathBuf {
+    let config_home = dir.join(".config");
+    fs::create_dir_all(&config_home).expect("create config home");
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["codex"]
+reviewer = ["codex"]
+"#,
+    )
+    .expect("write ralph-workflow.toml");
+    config_home
+}
+
 /// Initialize a git repository in a temporary directory.
 ///
 /// This function:

@@ -4,23 +4,7 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use crate::common::ralph_cmd;
-use test_helpers::{commit_all, init_git_repo, write_file};
-
-/// Create an isolated config file in the test directory.
-/// This prevents user config from interfering with tests.
-fn create_isolated_config(dir: &Path) -> std::path::PathBuf {
-    let config_home = dir.join(".config");
-    fs::create_dir_all(&config_home).unwrap();
-    fs::write(
-        config_home.join("ralph-workflow.toml"),
-        r#"[agent_chain]
-developer = ["codex"]
-reviewer = ["codex"]
-"#,
-    )
-    .unwrap();
-    config_home
-}
+use test_helpers::{commit_all, create_isolated_config, init_git_repo, write_file};
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")

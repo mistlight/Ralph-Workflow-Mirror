@@ -1,6 +1,6 @@
-//! Test trait for Git operations.
+//! Mock implementation for Git operations trait.
 //!
-//! This module provides a trait-based abstraction for git operations that allows
+//! This module provides a mock implementation of the `GitOps` trait that allows
 //! mocking external git side effects in tests. Only external side effects (git2
 //! library calls, file system operations) are mocked - internal code logic is
 //! never mocked.
@@ -12,70 +12,6 @@ use std::io;
 use std::path::PathBuf;
 
 use super::ops::{CommitResult, GitOps, RebaseResult};
-
-/// Result of a git commit operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TestCommitResult {
-    /// Commit succeeded with the given OID.
-    Success(String),
-    /// No changes to commit.
-    NoChanges,
-    /// Commit failed with an error message.
-    Failed(String),
-}
-
-/// Test trait for Git operations.
-///
-/// This trait abstracts git operations for testing purposes. Implementations
-/// can either call real git2 functions (production) or capture calls for
-/// assertion (testing).
-///
-/// Only external side effects are mocked: git2 library calls and file system
-/// operations. Internal code logic is never mocked.
-pub trait TestGit {
-    /// Get the repository root directory.
-    fn repo_root(&self) -> io::Result<PathBuf>;
-
-    /// Get a git diff of all changes.
-    fn diff(&self) -> io::Result<String>;
-
-    /// Get a git diff from a specific starting commit OID.
-    fn diff_from(&self, start_oid: &str) -> io::Result<String>;
-
-    /// Get the current git status snapshot.
-    fn snapshot(&self) -> io::Result<String>;
-
-    /// Stage all changes.
-    fn add_all(&self) -> io::Result<bool>;
-
-    /// Create a commit with the given message.
-    fn commit(&self, message: &str) -> io::Result<TestCommitResult>;
-
-    /// Get the current HEAD commit OID.
-    fn head_oid(&self) -> io::Result<String>;
-
-    /// Perform a rebase onto the specified upstream branch.
-    fn rebase_onto(&self, upstream_branch: &str) -> io::Result<TestRebaseResult>;
-
-    /// Get a list of conflicted files.
-    fn conflicted_files(&self) -> io::Result<Vec<String>>;
-
-    /// Check if we're in a git repository.
-    fn require_repo(&self) -> io::Result<()>;
-}
-
-/// Result of a rebase operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TestRebaseResult {
-    /// Rebase completed successfully.
-    Success,
-    /// Rebase had conflicts.
-    Conflicts(Vec<String>),
-    /// No rebase was needed.
-    NoOp,
-    /// Rebase failed with an error message.
-    Failed(String),
-}
 
 /// Clonable representation of an io::Result.
 ///
@@ -149,7 +85,7 @@ pub struct MockGit {
     /// Captured calls to commit with the message.
     commit_calls: RefCell<Vec<String>>,
     /// Mock return value for commit.
-    commit_result: RefCell<MockResult<TestCommitResult>>,
+    commit_result: RefCell<MockResult<CommitResult>>,
 
     /// Captured calls to head_oid.
     head_oid_calls: RefCell<Vec<()>>,
@@ -159,7 +95,7 @@ pub struct MockGit {
     /// Captured calls to rebase_onto with the upstream branch.
     rebase_onto_calls: RefCell<Vec<String>>,
     /// Mock return value for rebase_onto.
-    rebase_onto_result: RefCell<MockResult<TestRebaseResult>>,
+    rebase_onto_result: RefCell<MockResult<RebaseResult>>,
 
     /// Captured calls to conflicted_files.
     conflicted_files_calls: RefCell<Vec<()>>,
@@ -196,7 +132,7 @@ impl Default for MockGit {
             add_all_result: RefCell::new(MockResult::Ok(true)),
 
             commit_calls: RefCell::new(Vec::new()),
-            commit_result: RefCell::new(MockResult::Ok(TestCommitResult::Success(
+            commit_result: RefCell::new(MockResult::Ok(CommitResult::Success(
                 "mock_oid".to_string(),
             ))),
 
@@ -204,7 +140,7 @@ impl Default for MockGit {
             head_oid_result: RefCell::new(MockResult::Ok("mock_head_oid".to_string())),
 
             rebase_onto_calls: RefCell::new(Vec::new()),
-            rebase_onto_result: RefCell::new(MockResult::Ok(TestRebaseResult::Success)),
+            rebase_onto_result: RefCell::new(MockResult::Ok(RebaseResult::Success)),
 
             conflicted_files_calls: RefCell::new(Vec::new()),
             conflicted_files_result: RefCell::new(MockResult::Ok(Vec::new())),
@@ -306,7 +242,7 @@ impl MockGit {
     }
 
     /// Set the mock return value for commit.
-    pub fn with_commit(self, result: io::Result<TestCommitResult>) -> Self {
+    pub fn with_commit(self, result: io::Result<CommitResult>) -> Self {
         self.commit_result
             .replace(MockResult::from_io_result(result));
         self
@@ -320,7 +256,7 @@ impl MockGit {
     }
 
     /// Set the mock return value for rebase_onto.
-    pub fn with_rebase_onto(self, result: io::Result<TestRebaseResult>) -> Self {
+    pub fn with_rebase_onto(self, result: io::Result<RebaseResult>) -> Self {
         self.rebase_onto_result
             .replace(MockResult::from_io_result(result));
         self
@@ -405,7 +341,7 @@ impl MockGit {
     }
 }
 
-impl TestGit for MockGit {
+impl GitOps for MockGit {
     fn repo_root(&self) -> io::Result<PathBuf> {
         self.repo_root_calls.borrow_mut().push(());
         self.repo_root_result.borrow().to_io_result()
@@ -433,7 +369,12 @@ impl TestGit for MockGit {
         self.add_all_result.borrow().to_io_result()
     }
 
-    fn commit(&self, message: &str) -> io::Result<TestCommitResult> {
+    fn commit(
+        &self,
+        message: &str,
+        _git_user_name: Option<&str>,
+        _git_user_email: Option<&str>,
+    ) -> io::Result<CommitResult> {
         self.commit_calls.borrow_mut().push(message.to_string());
         self.commit_result.borrow().to_io_result()
     }
@@ -443,7 +384,7 @@ impl TestGit for MockGit {
         self.head_oid_result.borrow().to_io_result()
     }
 
-    fn rebase_onto(&self, upstream_branch: &str) -> io::Result<TestRebaseResult> {
+    fn rebase_onto(&self, upstream_branch: &str) -> io::Result<RebaseResult> {
         self.rebase_onto_calls
             .borrow_mut()
             .push(upstream_branch.to_string());
@@ -459,68 +400,6 @@ impl TestGit for MockGit {
         self.require_repo_calls.borrow_mut().push(());
         self.require_repo_result.borrow().to_io_result()
     }
-}
-
-/// Implementation of GitOps for MockGit.
-///
-/// This allows MockGit to be used as a drop-in replacement for RealGit
-/// in integration tests.
-impl GitOps for MockGit {
-    fn repo_root(&self) -> io::Result<PathBuf> {
-        TestGit::repo_root(self)
-    }
-
-    fn diff(&self) -> io::Result<String> {
-        TestGit::diff(self)
-    }
-
-    fn diff_from(&self, start_oid: &str) -> io::Result<String> {
-        TestGit::diff_from(self, start_oid)
-    }
-
-    fn snapshot(&self) -> io::Result<String> {
-        TestGit::snapshot(self)
-    }
-
-    fn add_all(&self) -> io::Result<bool> {
-        TestGit::add_all(self)
-    }
-
-    fn commit(
-        &self,
-        message: &str,
-        _git_user_name: Option<&str>,
-        _git_user_email: Option<&str>,
-    ) -> io::Result<CommitResult> {
-        // Convert TestCommitResult to CommitResult
-        TestGit::commit(self, message).map(|r| match r {
-            TestCommitResult::Success(oid) => CommitResult::Success(oid),
-            TestCommitResult::NoChanges => CommitResult::NoChanges,
-            TestCommitResult::Failed(msg) => CommitResult::Failed(msg),
-        })
-    }
-
-    fn head_oid(&self) -> io::Result<String> {
-        TestGit::head_oid(self)
-    }
-
-    fn rebase_onto(&self, upstream_branch: &str) -> io::Result<RebaseResult> {
-        // Convert TestRebaseResult to RebaseResult
-        TestGit::rebase_onto(self, upstream_branch).map(|r| match r {
-            TestRebaseResult::Success => RebaseResult::Success,
-            TestRebaseResult::Conflicts(files) => RebaseResult::Conflicts(files),
-            TestRebaseResult::NoOp => RebaseResult::NoOp,
-            TestRebaseResult::Failed(msg) => RebaseResult::Failed(msg),
-        })
-    }
-
-    fn conflicted_files(&self) -> io::Result<Vec<String>> {
-        TestGit::conflicted_files(self)
-    }
-
-    fn require_repo(&self) -> io::Result<()> {
-        TestGit::require_repo(self)
-    }
 
     fn diff_from_start(&self) -> io::Result<String> {
         self.diff_from_start_calls.borrow_mut().push(());
@@ -535,21 +414,21 @@ mod tests {
     #[test]
     fn test_mock_git_captures_repo_root_call() {
         let mock = MockGit::new().with_repo_root(Ok(PathBuf::from("/test/repo")));
-        let _ = TestGit::repo_root(&mock);
+        let _ = GitOps::repo_root(&mock);
         assert_eq!(mock.repo_root_count(), 1);
     }
 
     #[test]
     fn test_mock_git_captures_diff_call() {
         let mock = MockGit::new().with_diff(Ok("test diff".to_string()));
-        let _ = TestGit::diff(&mock);
+        let _ = GitOps::diff(&mock);
         assert_eq!(mock.diff_count(), 1);
     }
 
     #[test]
     fn test_mock_git_captures_diff_from_call() {
         let mock = MockGit::new().with_diff_from(Ok("test diff".to_string()));
-        let _ = TestGit::diff_from(&mock, "abc123");
+        let _ = GitOps::diff_from(&mock, "abc123");
         let calls = mock.diff_from_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], "abc123");
@@ -557,8 +436,9 @@ mod tests {
 
     #[test]
     fn test_mock_git_captures_commit_call() {
-        let mock = MockGit::new().with_commit(Ok(TestCommitResult::Success("def456".to_string())));
-        let _ = TestGit::commit(&mock, "test message");
+        let mock =
+            MockGit::new().with_commit(Ok(CommitResult::Success("def456".to_string())));
+        let _ = GitOps::commit(&mock, "test message", None, None);
         let calls = mock.commit_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], "test message");
@@ -566,8 +446,8 @@ mod tests {
 
     #[test]
     fn test_mock_git_captures_rebase_onto_call() {
-        let mock = MockGit::new().with_rebase_onto(Ok(TestRebaseResult::Success));
-        let _ = TestGit::rebase_onto(&mock, "main");
+        let mock = MockGit::new().with_rebase_onto(Ok(RebaseResult::Success));
+        let _ = GitOps::rebase_onto(&mock, "main");
         let calls = mock.rebase_onto_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], "main");
@@ -575,56 +455,41 @@ mod tests {
 
     #[test]
     fn test_commit_result_success() {
-        let mock = MockGit::new().with_commit(Ok(TestCommitResult::Success("abc123".to_string())));
-        let result = TestGit::commit(&mock, "test").unwrap();
-        assert_eq!(result, TestCommitResult::Success("abc123".to_string()));
+        let mock =
+            MockGit::new().with_commit(Ok(CommitResult::Success("abc123".to_string())));
+        let result = GitOps::commit(&mock, "test", None, None).unwrap();
+        assert_eq!(result, CommitResult::Success("abc123".to_string()));
     }
 
     #[test]
     fn test_commit_result_no_changes() {
-        let mock = MockGit::new().with_commit(Ok(TestCommitResult::NoChanges));
-        let result = TestGit::commit(&mock, "test").unwrap();
-        assert_eq!(result, TestCommitResult::NoChanges);
+        let mock = MockGit::new().with_commit(Ok(CommitResult::NoChanges));
+        let result = GitOps::commit(&mock, "test", None, None).unwrap();
+        assert_eq!(result, CommitResult::NoChanges);
     }
 
     #[test]
     fn test_rebase_result_conflicts() {
         let conflicts = vec!["file1.txt".to_string(), "file2.txt".to_string()];
         let mock =
-            MockGit::new().with_rebase_onto(Ok(TestRebaseResult::Conflicts(conflicts.clone())));
-        let result = TestGit::rebase_onto(&mock, "main").unwrap();
-        assert_eq!(result, TestRebaseResult::Conflicts(conflicts));
+            MockGit::new().with_rebase_onto(Ok(RebaseResult::Conflicts(conflicts.clone())));
+        let result = GitOps::rebase_onto(&mock, "main").unwrap();
+        assert_eq!(result, RebaseResult::Conflicts(conflicts));
     }
 
     #[test]
     fn test_rebase_result_no_op() {
-        let mock = MockGit::new().with_rebase_onto(Ok(TestRebaseResult::NoOp));
-        let result = TestGit::rebase_onto(&mock, "main").unwrap();
-        assert_eq!(result, TestRebaseResult::NoOp);
+        let mock = MockGit::new().with_rebase_onto(Ok(RebaseResult::NoOp));
+        let result = GitOps::rebase_onto(&mock, "main").unwrap();
+        assert_eq!(result, RebaseResult::NoOp);
     }
 
     #[test]
     fn test_mock_git_error_returns_error() {
         let mock = MockGit::new_error();
-        assert!(TestGit::repo_root(&mock).is_err());
-        assert!(TestGit::diff(&mock).is_err());
-        assert!(TestGit::commit(&mock, "test").is_err());
-    }
-
-    // Tests for GitOps implementation
-
-    #[test]
-    fn test_git_ops_commit_converts_result() {
-        let mock = MockGit::new().with_commit(Ok(TestCommitResult::Success("abc123".to_string())));
-        let result = GitOps::commit(&mock, "test", None, None).unwrap();
-        assert_eq!(result, CommitResult::Success("abc123".to_string()));
-    }
-
-    #[test]
-    fn test_git_ops_rebase_converts_result() {
-        let mock = MockGit::new().with_rebase_onto(Ok(TestRebaseResult::Success));
-        let result = GitOps::rebase_onto(&mock, "main").unwrap();
-        assert_eq!(result, RebaseResult::Success);
+        assert!(GitOps::repo_root(&mock).is_err());
+        assert!(GitOps::diff(&mock).is_err());
+        assert!(GitOps::commit(&mock, "test", None, None).is_err());
     }
 
     #[test]
