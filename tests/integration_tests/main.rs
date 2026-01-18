@@ -10,5 +10,4 @@ mod common;
 mod deduplication;
 mod git;
 mod logger;
-mod printer;
 mod workflows;

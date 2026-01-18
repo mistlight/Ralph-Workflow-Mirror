@@ -76,8 +76,8 @@ cargo fmt --all --check
 # Lint the main crate (lib only) with all its features
 cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
 
-# Lint the separate integration test package, enabling its own test-utils feature
-cargo clippy -p ralph-workflow-tests --all-targets --features test-utils -- -D warnings
+# Lint the separate integration test package (test-utils is enabled via its ralph-workflow dependency)
+cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
 
 # Run the main crate's unit tests with all features
 cargo test -p ralph-workflow --lib --all-features
