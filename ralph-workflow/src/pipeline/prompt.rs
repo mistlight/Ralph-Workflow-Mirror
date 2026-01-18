@@ -403,12 +403,21 @@ fn stream_agent_output(
                 p.parse_stream(reader)?;
             }
             JsonParserType::Generic => {
+                let mut logfile = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(cmd.logfile)?;
+
                 let mut buf = String::new();
                 for line in reader.lines() {
                     let line = line?;
+                    // Write raw line to log file for extraction
+                    writeln!(logfile, "{line}")?;
                     buf.push_str(&line);
                     buf.push('\n');
                 }
+                logfile.flush()?;
+
                 let formatted = format_generic_json_for_display(&buf, runtime.config.verbosity);
                 out.write_all(formatted.as_bytes())?;
             }
@@ -427,6 +436,7 @@ fn stream_agent_output(
             writeln!(out, "{line}")?;
             writeln!(logfile, "{line}")?;
         }
+        logfile.flush()?;
     }
     Ok(())
 }

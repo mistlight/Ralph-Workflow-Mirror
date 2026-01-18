@@ -53,6 +53,7 @@ impl Logger {
             }
             if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
                 let _ = writeln!(file, "{clean_msg}");
+                let _ = file.flush();
             }
         }
     }
