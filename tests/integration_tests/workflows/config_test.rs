@@ -10,6 +10,8 @@ use tempfile::TempDir;
 
 use test_helpers::init_git_repo;
 
+use crate::common::ralph_bin_path;
+
 /// Test that `ralph --init` exits cleanly without running the pipeline.
 #[test]
 fn test_ralph_init_exits_cleanly() {
@@ -24,7 +26,7 @@ fn test_ralph_init_exits_cleanly() {
     fs::create_dir_all(&config_home).unwrap();
 
     // Run ralph --init with no config or prompt
-    let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
+    let mut cmd = StdCommand::new(ralph_bin_path());
     cmd.current_dir(dir_path)
         .env("XDG_CONFIG_HOME", &config_home)
         .arg("--init")
@@ -96,7 +98,7 @@ reviewer = ["codex"]
     .unwrap();
 
     // Run ralph --init bug-fix
-    let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
+    let mut cmd = StdCommand::new(ralph_bin_path());
     cmd.current_dir(dir_path)
         .env("XDG_CONFIG_HOME", &config_home)
         .arg("--init=bug-fix")
@@ -146,7 +148,7 @@ reviewer = ["codex"]
     fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
 
     // Run ralph --init
-    let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
+    let mut cmd = StdCommand::new(ralph_bin_path());
     cmd.current_dir(dir_path)
         .env("XDG_CONFIG_HOME", &config_home)
         .arg("--init")
@@ -169,4 +171,106 @@ reviewer = ["codex"]
 
     // Should NOT run the pipeline
     assert!(!stdout.contains("PHASE"), "Should not show PHASE output");
+}
+
+/// Test that `ralph --init` with an invalid template name exits cleanly.
+#[test]
+fn test_ralph_init_with_invalid_template_exits_cleanly() {
+    let dir = TempDir::new().unwrap();
+    let dir_path = dir.path();
+
+    // Initialize git repo
+    let _ = init_git_repo(&dir);
+
+    // Set up config dir with existing config
+    let config_home = dir_path.join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["opencode"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+
+    // Run ralph --init with an invalid template name
+    let mut cmd = StdCommand::new(ralph_bin_path());
+    cmd.current_dir(dir_path)
+        .env("XDG_CONFIG_HOME", &config_home)
+        .arg("--init=not-a-real-template")
+        .env("RALPH_INTERACTIVE", "0");
+
+    let output = cmd.output().unwrap();
+
+    // Should exit successfully (even though template is invalid)
+    assert!(
+        output.status.success(),
+        "ralph --init=not-a-real-template should exit successfully"
+    );
+
+    // Should show error about unknown template
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Unknown template"),
+        "Should show unknown template error"
+    );
+
+    // Should NOT run the pipeline
+    assert!(!stdout.contains("PHASE"), "Should not show PHASE output");
+}
+
+/// Test that `ralph --init` when passed with a commit message positionally
+/// interprets the commit message as the template value and exits cleanly.
+#[test]
+fn test_ralph_init_with_commit_message_exits_cleanly() {
+    let dir = TempDir::new().unwrap();
+    let dir_path = dir.path();
+
+    // Initialize git repo
+    let _ = init_git_repo(&dir);
+
+    // Set up config dir with existing config
+    let config_home = dir_path.join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["opencode"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+
+    // Run ralph --init "my commit message"
+    // clap will interpret "my commit message" as the value for --init
+    let mut cmd = StdCommand::new(ralph_bin_path());
+    cmd.current_dir(dir_path)
+        .env("XDG_CONFIG_HOME", &config_home)
+        .arg("--init")
+        .arg("my commit message")
+        .env("RALPH_INTERACTIVE", "0");
+
+    let output = cmd.output().unwrap();
+
+    // Should exit successfully
+    assert!(
+        output.status.success(),
+        "ralph --init with commit message should exit successfully"
+    );
+
+    // Should show error about unknown template (since "my commit message" is not a template)
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Unknown template"),
+        "Should show unknown template error for 'my commit message'"
+    );
+
+    // Should NOT run the pipeline
+    assert!(!stdout.contains("PHASE"), "Should not show PHASE output");
+    assert!(
+        !stdout.contains("Development"),
+        "Should not show Development phase"
+    );
+    assert!(!stdout.contains("Review"), "Should not show Review phase");
 }

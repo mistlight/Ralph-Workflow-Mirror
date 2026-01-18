@@ -96,20 +96,20 @@ pub struct UnifiedInitFlags {
     ///
     /// Behavior:
     ///   --init              (no value)   → Smart mode: infers what you need
-    ///   --init bug-fix      (with value) → Create PROMPT.md from specific Task Template
+    ///   --init bug-fix      (with value) → Create PROMPT.md from specific Work Guide
     ///
     /// Smart mode (no value):
     ///   - No config? Creates config at ~/.config/ralph-workflow.toml
     ///   - Config exists, no PROMPT.md? Creates or prompts for PROMPT.md
     ///   - Both exist? Shows helpful status message and exits
     ///
-    /// Task Templates (for PROMPT.md):
+    /// Work Guides (for PROMPT.md):
     ///   quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
     ///   performance-optimization, security-audit, api-integration, database-migration,
     ///   dependency-update, data-pipeline, ui-component, code-review, debug-triage,
     ///   release, tech-debt, onboarding
     ///
-    /// Note: These are Task Templates for YOUR work descriptions, NOT system prompts.
+    /// Note: These are Work Guides for YOUR work descriptions, NOT Agent Prompts.
     /// See --help for details on the difference.
     #[arg(
         long,
@@ -218,10 +218,10 @@ pub enum Shell {
 /// Template listing flag.
 #[derive(Parser, Debug, Default)]
 pub struct TemplateListFlag {
-    /// List available PROMPT.md templates and exit
+    /// List available PROMPT.md Work Guides and exit
     #[arg(
         long,
-        help = "Show all available PROMPT.md templates (user-facing templates for tasks)"
+        help = "Show all available Work Guides for PROMPT.md (templates for your tasks)"
     )]
     pub list_templates: bool,
 }
@@ -229,11 +229,11 @@ pub struct TemplateListFlag {
 /// Template management subcommands.
 #[derive(Parser, Debug, Default)]
 pub struct TemplateCommands {
-    /// Initialize user templates directory with system prompts (backend AI prompts)
+    /// Initialize user templates directory with Agent Prompts (backend AI prompts)
     #[arg(
         long = "init-system-prompts",
         alias = "init-templates",
-        help = "Create ~/.config/ralph/templates/ with default system prompts (backend AI behavior configuration, NOT task templates for PROMPT.md)",
+        help = "Create ~/.config/ralph/templates/ with default Agent Prompts (backend AI behavior configuration, NOT Work Guides for PROMPT.md)",
         default_missing_value = "false",
         num_args = 0..=1,
         require_equals = true
@@ -249,26 +249,26 @@ pub struct TemplateCommands {
     pub force: bool,
 
     /// Validate all templates for syntax errors
-    #[arg(long, help = "Validate all system prompt templates for syntax errors")]
+    #[arg(long, help = "Validate all Agent Prompt templates for syntax errors")]
     pub validate: bool,
 
     /// Show template content and metadata
     #[arg(
         long,
         value_name = "NAME",
-        help = "Show system prompt template content and metadata"
+        help = "Show Agent Prompt template content and metadata"
     )]
     pub show: Option<String>,
 
     /// List all prompt templates with their variables
-    #[arg(long, help = "List all system prompt templates with their variables")]
+    #[arg(long, help = "List all Agent Prompt templates with their variables")]
     pub list: bool,
 
     /// Extract variables from a template
     #[arg(
         long,
         value_name = "NAME",
-        help = "Extract variables from a system prompt template"
+        help = "Extract variables from an Agent Prompt template"
     )]
     pub variables: Option<String>,
 
@@ -388,25 +388,25 @@ NEW TO RALPH?\n\
         ralph --init feature-spec         # Create PROMPT.md from a Task Template\n\
         ralph \"fix: my bug\"              # Run with AI agents\n\
 \n\
-    TEMPLATES IN RALPH (two different types):\n\
+    WORK GUIDES IN RALPH (two different types):\n\
 \n\
-    1. Task Templates (for PROMPT.md - YOUR task descriptions)\n\
+    1. Work Guides (for PROMPT.md - YOUR task descriptions)\n\
        These are templates for describing YOUR work to the AI.\n\
        Examples: bug-fix, feature-spec, refactor, test, docs, etc.\n\
        \n\
        Commands:\n\
-         ralph --init <template>       # Create PROMPT.md from a template\n\
-         ralph --list-templates        # Show all available Task Templates\n\
+         ralph --init <template>       # Create PROMPT.md from a Work Guide\n\
+         ralph --list-templates        # Show all available Work Guides\n\
          ralph --init-prompt <name>    # Same as --init (legacy alias)\n\
 \n\
-    2. System Prompts (backend AI behavior configuration)\n\
+    2. Agent Prompts (backend AI behavior configuration)\n\
        These configure HOW the AI agents behave (internal prompts).\n\
        You probably don't need to touch these unless you're customizing agent behavior.\n\
        \n\
        Commands:\n\
-         ralph --init-system-prompts    # Create default system prompts\n\
-         ralph --list                   # Show system prompt templates\n\
-         ralph --show <name>            # Show a specific system prompt\n\
+         ralph --init-system-prompts    # Create default Agent Prompts\n\
+         ralph --list                   # Show Agent Prompt templates\n\
+         ralph --show <name>            # Show a specific Agent Prompt\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
@@ -445,8 +445,8 @@ QUICK EXAMPLES:\n\
     ralph -Q \"fix: small bug\"        Quick mode for tiny fixes\n\
     ralph -U \"feat: add button\"      Rapid mode for minor features\n\
     ralph -a claude \"fix: bug\"       Use specific agent\n\
-    ralph --list-templates            See all Task Templates\n\
-    ralph --init bug-fix              # Create PROMPT.md from a Task Template\n\
+    ralph --list-templates            See all Work Guides\n\
+    ralph --init bug-fix              # Create PROMPT.md from a Work Guide\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
 // CLI arguments naturally use many boolean flags. These represent independent
