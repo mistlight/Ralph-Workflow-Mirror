@@ -197,19 +197,8 @@ pub fn handle_init_prompt(
             colors.reset()
         );
         println!();
-        println!("Available templates:");
-        for (name, description) in list_templates() {
-            println!(
-                "  {}{}{}  {}",
-                colors.cyan(),
-                name,
-                colors.reset(),
-                description
-            );
-        }
-        println!();
-        println!("Usage: ralph --init-prompt <template>");
-        println!("       ralph --list-work-guides");
+        print_common_work_guides(colors);
+        println!("Usage: ralph --init-prompt <work-guide>");
         return Ok(true);
     };
 
@@ -576,19 +565,7 @@ fn handle_init_template_arg(
         println!();
     }
 
-    println!("Available Work Guides:");
-    for (name, description) in list_templates() {
-        println!(
-            "  {}{}{}  {}{}{}",
-            colors.cyan(),
-            name,
-            colors.reset(),
-            colors.dim(),
-            description,
-            colors.reset()
-        );
-    }
-    println!();
+    print_common_work_guides(colors);
     println!("Usage: ralph --init=<work-guide>");
     println!("       ralph --init            # Smart init (infers intent)");
     Ok(true)
