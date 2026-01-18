@@ -1,15 +1,16 @@
 //! Integration tests for test trait exports.
 //!
-//! These tests verify that test traits like MockGit and MockAgentExecutor
+//! These tests verify that test traits like MockGit, MockAgentExecutor, and MockFileOps
 //! are properly exported from the ralph-workflow crate and can be used
 //! in integration tests.
 
+use ralph_workflow::files::{FileOperation, FileOps, MockFileOps};
 use ralph_workflow::git_helpers::ops::{CommitResult, GitOps, RebaseResult as GitRebaseResult};
 use ralph_workflow::git_helpers::test_trait::{
     MockGit, TestCommitResult, TestGit, TestRebaseResult,
 };
 use ralph_workflow::pipeline::test_trait::{AgentCommandResult, AgentExecutor, MockAgentExecutor};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Test that MockGit can be created and used via TestGit trait.
 #[test]
@@ -163,4 +164,167 @@ fn test_mock_error_variants() {
     };
 
     assert!(mock_executor.execute(&config).is_err());
+}
+
+// ============================================================================
+// MockFileOps tests
+// ============================================================================
+
+/// Test that MockFileOps can be created and used via FileOps trait.
+#[test]
+fn test_mock_file_ops_creation() {
+    let mock = MockFileOps::new();
+    assert!(!mock.exists(Path::new("nonexistent.txt")));
+}
+
+/// Test that MockFileOps builder pattern works for virtual file system.
+#[test]
+fn test_mock_file_ops_builder() {
+    let mock = MockFileOps::new()
+        .with_file(".agent/PLAN.md", "# Plan\n\nStep 1: Do something")
+        .with_file("PROMPT.md", "# Feature Request\n\nAdd a button");
+
+    // Check file existence
+    assert!(mock.exists(Path::new(".agent/PLAN.md")));
+    assert!(mock.exists(Path::new("PROMPT.md")));
+    assert!(!mock.exists(Path::new(".agent/ISSUES.md")));
+
+    // Read file contents
+    let plan = mock.read_to_string(Path::new(".agent/PLAN.md")).unwrap();
+    assert!(plan.contains("# Plan"));
+    assert!(plan.contains("Step 1"));
+}
+
+/// Test that MockFileOps captures write operations.
+#[test]
+fn test_mock_file_ops_captures_writes() {
+    let mock = MockFileOps::new();
+
+    // Write a commit message
+    mock.write_file(Path::new(".agent/commit-message.txt"), "feat: add button")
+        .unwrap();
+
+    // Write an issues file
+    mock.write_file(Path::new(".agent/ISSUES.md"), "- Issue 1\n- Issue 2")
+        .unwrap();
+
+    // Verify writes were captured
+    assert!(mock.was_written(Path::new(".agent/commit-message.txt")));
+    assert!(mock.was_written(Path::new(".agent/ISSUES.md")));
+    assert!(!mock.was_written(Path::new(".agent/PLAN.md")));
+
+    // Verify written content
+    let commit_msg = mock
+        .get_written_content(Path::new(".agent/commit-message.txt"))
+        .unwrap();
+    assert_eq!(commit_msg, "feat: add button");
+}
+
+/// Test that MockFileOps implements FileOps trait with full roundtrip.
+#[test]
+fn test_mock_file_ops_implements_file_ops_trait() {
+    let mock = MockFileOps::new();
+
+    // Write via FileOps trait
+    FileOps::write_file(&mock, Path::new("test.txt"), "content").unwrap();
+
+    // Read via FileOps trait
+    let content = FileOps::read_to_string(&mock, Path::new("test.txt")).unwrap();
+    assert_eq!(content, "content");
+
+    // Check existence via FileOps trait
+    assert!(FileOps::exists(&mock, Path::new("test.txt")));
+    assert!(FileOps::is_file(&mock, Path::new("test.txt")));
+
+    // Remove via FileOps trait
+    FileOps::remove_file(&mock, Path::new("test.txt")).unwrap();
+    assert!(!FileOps::exists(&mock, Path::new("test.txt")));
+}
+
+/// Test that MockFileOps tracks all operations in order.
+#[test]
+fn test_mock_file_ops_operation_tracking() {
+    let mock = MockFileOps::new().with_file("existing.txt", "content");
+
+    let _ = mock.read_to_string(Path::new("existing.txt"));
+    let _ = mock.exists(Path::new("other.txt"));
+    let _ = mock.write_file(Path::new("new.txt"), "new content");
+
+    let ops = mock.operations();
+    assert_eq!(ops.len(), 3);
+
+    // Verify operation types
+    assert!(matches!(ops[0], FileOperation::Read(_)));
+    assert!(matches!(ops[1], FileOperation::Exists(_)));
+    assert!(matches!(ops[2], FileOperation::Write(_, _)));
+}
+
+/// Test that MockFileOps error variants work.
+#[test]
+fn test_mock_file_ops_error_variants() {
+    // Test error mode
+    let mock_error = MockFileOps::new_error();
+    assert!(mock_error.read_to_string(Path::new("any.txt")).is_err());
+    assert!(mock_error.write_file(Path::new("any.txt"), "x").is_err());
+
+    // Test specific path errors
+    let mock_specific = MockFileOps::new()
+        .with_file("readable.txt", "content")
+        .with_read_error(
+            "readable.txt",
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no permission"),
+        );
+
+    assert!(mock_specific
+        .read_to_string(Path::new("readable.txt"))
+        .is_err());
+}
+
+/// Test that MockFileOps can simulate agent file operations.
+#[test]
+fn test_mock_file_ops_agent_workflow_scenario() {
+    // Simulate a workflow where:
+    // 1. Check if PLAN.md exists
+    // 2. Read PROMPT.md
+    // 3. Write PLAN.md
+    // 4. Write commit-message.txt
+    // 5. Delete PLAN.md after integration
+
+    let mock = MockFileOps::new().with_file("PROMPT.md", "# Feature: Add login button");
+
+    // Phase 1: Planning
+    assert!(!mock.exists(Path::new(".agent/PLAN.md")));
+    let prompt = mock.read_to_string(Path::new("PROMPT.md")).unwrap();
+    assert!(prompt.contains("login button"));
+
+    // Phase 2: Agent produces a plan
+    mock.write_file(
+        Path::new(".agent/PLAN.md"),
+        "# Plan\n\n1. Create button component",
+    )
+    .unwrap();
+    assert!(mock.exists(Path::new(".agent/PLAN.md")));
+
+    // Phase 3: Commit generation
+    mock.write_file(
+        Path::new(".agent/commit-message.txt"),
+        "feat(ui): add login button",
+    )
+    .unwrap();
+
+    // Phase 4: Cleanup
+    mock.remove_file(Path::new(".agent/PLAN.md")).unwrap();
+    assert!(!mock.exists(Path::new(".agent/PLAN.md")));
+
+    // Verify the workflow operations
+    assert!(mock.was_read(Path::new("PROMPT.md")));
+    assert!(mock.was_written(Path::new(".agent/PLAN.md")));
+    assert!(mock.was_written(Path::new(".agent/commit-message.txt")));
+    assert!(mock.was_removed(Path::new(".agent/PLAN.md")));
+
+    // Verify final commit message is available
+    let commit_msg = mock
+        .get_written_content(Path::new(".agent/commit-message.txt"))
+        .unwrap();
+    assert!(commit_msg.contains("login button"));
 }
