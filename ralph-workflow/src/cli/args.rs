@@ -127,7 +127,8 @@ pub struct UnifiedInitFlags {
     #[arg(
         long = "force-overwrite",
         visible_alias = "overwrite",
-        help = "Overwrite existing PROMPT.md without prompting (use with --init or --init-prompt)"
+        help = "Overwrite existing PROMPT.md without prompting (use with --init or --init-prompt)",
+        hide = true
     )]
     pub force_init: bool,
 
@@ -203,7 +204,8 @@ pub struct CompletionFlag {
         long,
         value_name = "SHELL",
         value_enum,
-        help = "Generate shell completion script (bash, zsh, fish, elvish, powershell)"
+        help = "Generate shell completion script (bash, zsh, fish, elvish, powershell)",
+        hide = true
     )]
     pub generate_completion: Option<Shell>,
 }
@@ -230,7 +232,8 @@ pub struct WorkGuideListFlag {
     #[arg(
         long = "list-work-guides",
         visible_alias = "list-templates",
-        help = "Show all available Work Guides for PROMPT.md (templates for your tasks)"
+        help = "Show all available Work Guides for PROMPT.md (templates for your tasks)",
+        hide = true
     )]
     pub list_work_guides: bool,
 }
@@ -245,7 +248,8 @@ pub struct TemplateCommands {
         help = "Create ~/.config/ralph/templates/ with default Agent Prompts (backend AI behavior configuration, NOT Work Guides for PROMPT.md)",
         default_missing_value = "false",
         num_args = 0..=1,
-        require_equals = true
+        require_equals = true,
+        hide = true
     )]
     pub init_templates: Option<bool>,
 
@@ -253,31 +257,42 @@ pub struct TemplateCommands {
     #[arg(
         long,
         requires = "init_templates",
-        help = "Overwrite existing system prompt templates during init (use with caution)"
+        help = "Overwrite existing system prompt templates during init (use with caution)",
+        hide = true
     )]
     pub force: bool,
 
     /// Validate all templates for syntax errors
-    #[arg(long, help = "Validate all Agent Prompt templates for syntax errors")]
+    #[arg(
+        long,
+        help = "Validate all Agent Prompt templates for syntax errors",
+        hide = true
+    )]
     pub validate: bool,
 
     /// Show template content and metadata
     #[arg(
         long,
         value_name = "NAME",
-        help = "Show Agent Prompt template content and metadata"
+        help = "Show Agent Prompt template content and metadata",
+        hide = true
     )]
     pub show: Option<String>,
 
     /// List all prompt templates with their variables
-    #[arg(long, help = "List all Agent Prompt templates with their variables")]
+    #[arg(
+        long,
+        help = "List all Agent Prompt templates with their variables",
+        hide = true
+    )]
     pub list: bool,
 
     /// Extract variables from a template
     #[arg(
         long,
         value_name = "NAME",
-        help = "Extract variables from an Agent Prompt template"
+        help = "Extract variables from an Agent Prompt template",
+        hide = true
     )]
     pub variables: Option<String>,
 
@@ -285,7 +300,8 @@ pub struct TemplateCommands {
     #[arg(
         long,
         value_name = "NAME",
-        help = "Test render a system prompt template with provided variables"
+        help = "Test render a system prompt template with provided variables",
+        hide = true
     )]
     pub render: Option<String>,
 }
@@ -375,14 +391,16 @@ pub struct RebaseFlags {
     /// Skip automatic rebase before/after pipeline
     #[arg(
         long,
-        help = "Skip automatic rebase to main branch before and after pipeline"
+        help = "Skip automatic rebase to main branch before and after pipeline",
+        hide = true
     )]
     pub skip_rebase: bool,
 
     /// Only perform rebase and exit
     #[arg(
         long,
-        help = "Only rebase to main branch, then exit (no pipeline execution)"
+        help = "Only rebase to main branch, then exit (no pipeline execution)",
+        hide = true
     )]
     pub rebase_only: bool,
 }
@@ -647,7 +665,8 @@ pub struct Args {
     #[arg(
         long,
         value_name = "TEMPLATE",
-        help = "Create PROMPT.md from a Work Guide (use --list-work-guides to see options)"
+        help = "Create PROMPT.md from a Work Guide (use --list-work-guides to see options)",
+        hide = true
     )]
     pub init_prompt: Option<String>,
 
@@ -655,7 +674,8 @@ pub struct Args {
     #[arg(
         long,
         short = 'i',
-        help = "Interactive mode: prompt to create PROMPT.md from template when missing"
+        help = "Interactive mode: prompt to create PROMPT.md from template when missing",
+        hide = true
     )]
     pub interactive: bool,
 
@@ -664,7 +684,8 @@ pub struct Args {
         long,
         env = "RALPH_GIT_USER_NAME",
         value_name = "NAME",
-        help = "Git user name for commits (overrides config, env, and git config)"
+        help = "Git user name for commits (overrides config, env, and git config)",
+        hide = true
     )]
     pub git_user_name: Option<String>,
 
@@ -673,14 +694,16 @@ pub struct Args {
         long,
         env = "RALPH_GIT_USER_EMAIL",
         value_name = "EMAIL",
-        help = "Git user email for commits (overrides config, env, and git config)"
+        help = "Git user email for commits (overrides config, env, and git config)",
+        hide = true
     )]
     pub git_user_email: Option<String>,
 
     /// Show streaming quality metrics at the end of agent output
     #[arg(
         long,
-        help = "Display streaming quality metrics (delta stats, repairs, violations) after agent completion"
+        help = "Display streaming quality metrics (delta stats, repairs, violations) after agent completion",
+        hide = true
     )]
     pub show_streaming_metrics: bool,
 }

@@ -999,8 +999,39 @@ COMMON OPTIONS
 
   Other:
     -d, --diagnose       Show system info and agent status
-    -i, --interactive    Interactive mode (prompt if PROMPT.md missing)
-    -c PATH, --config    Use specific config file
+
+═══════════════════════════════════════════════════════════════════════════════
+ADVANCED OPTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+  These options are hidden from the main --help to reduce clutter.
+
+  Initialization:
+    --force-overwrite            Overwrite PROMPT.md without prompting
+    --init-prompt <name>         Create PROMPT.md (legacy, use --init instead)
+    -i, --interactive            Prompt for PROMPT.md if missing
+
+  Git Control:
+    --skip-rebase                Skip automatic rebase to main branch
+    --rebase-only                Only rebase, then exit (no pipeline)
+    --git-user-name <name>       Override git user name for commits
+    --git-user-email <email>     Override git user email for commits
+
+  Recovery:
+    --resume                     Resume from last checkpoint
+    --dry-run                    Validate setup without running agents
+
+  Agent Prompt Management:
+    --init-system-prompts        Create default Agent Prompt templates
+    --list                       List all Agent Prompt templates
+    --show <name>                Show Agent Prompt content
+    --validate                   Validate Agent Prompt templates
+    --variables <name>           Extract variables from template
+    --render <name>              Test render a template
+
+  Debugging:
+    --show-streaming-metrics     Show JSON streaming quality metrics
+    -c PATH, --config PATH       Use specific config file
 
 ═══════════════════════════════════════════════════════════════════════════════
 SHELL COMPLETION
