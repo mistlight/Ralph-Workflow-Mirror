@@ -67,10 +67,10 @@ rg -n -U --pcre2 '(?x)
   \)
   \s*\]
 ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
-# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
-# DO NOT CHANGE ANY OF THIS
+# DO NOT CHANGE ANY OF THE COMMANDS BELOW
 cargo fmt --all --check
 
 # Lint the main crate (lib only) with all its features - THIS MUST BE RAN WITH THE EXACT FLAG DO NOT CHANGE
@@ -88,7 +88,6 @@ cargo test -p ralph-workflow-tests
 
 # Build release artifacts (default-members only)
 cargo build --release
-# DO NOT CHANGE ANY OF THIS
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
-
+```

@@ -69,6 +69,9 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
     let prompt_path = dir.path().join("PROMPT.md");
     let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
+    // Read the original PROMPT.md content before the agent might delete it
+    let original_content = fs::read_to_string(&prompt_path).unwrap();
+
     // Create a developer script that deletes PROMPT.md (simulating buggy agent)
     let script_path = dir.path().join("dev_script.sh");
     fs::write(
@@ -78,6 +81,11 @@ mkdir -p .agent
 echo plan > .agent/PLAN.md
 # Simulate a buggy agent that deletes PROMPT.md
 rm -f PROMPT.md
+# Verify the file was actually deleted
+if [ -f PROMPT.md ]; then
+    echo "ERROR: PROMPT.md was not deleted by the agent script" >&2
+    exit 1
+fi
 exit 0
 "#,
     )
@@ -106,18 +114,17 @@ exit 0
     );
 
     // Verify PROMPT.md still exists (was restored after agent deleted it)
-    // Note: The integrity monitor should have restored it
+    // The integrity monitor should have restored it after the agent deleted it
     assert!(
         prompt_path.exists(),
         "PROMPT.md should be restored if deleted during pipeline"
     );
 
-    // Verify the restored content matches the backup
+    // Verify the restored content matches the original content
     let restored_content = fs::read_to_string(&prompt_path).unwrap();
-    let backup_content = fs::read_to_string(&backup_path).unwrap();
     assert_eq!(
-        restored_content, backup_content,
-        "Restored PROMPT.md content should match the backup content"
+        restored_content, original_content,
+        "Restored PROMPT.md content should match the original content (integrity monitor worked)"
     );
 }
 

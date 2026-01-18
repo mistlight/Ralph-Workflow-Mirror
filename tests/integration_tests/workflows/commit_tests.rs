@@ -217,14 +217,14 @@ commit = ["codex"]
 }
 
 #[test]
-fn ralph_generate_commit_msg_with_working_agent_succeeds() {
-    // This test verifies that commit message generation succeeds when an agent
-    // works correctly. The system has multiple fallback strategies and is
-    // designed to be resilient - it will try different prompting strategies
-    // until one succeeds.
+fn ralph_generate_commit_msg_with_configured_agent_succeeds() {
+    // This test verifies that commit message generation succeeds when a
+    // properly configured agent is available. The system uses the agent chain
+    // from config (in this case, codex) to generate commit messages.
     //
     // Note: We use the codex agent which is a built-in agent that can
-    // successfully generate commit messages.
+    // successfully generate commit messages. The system has fallback mechanisms
+    // including a hardcoded "chore: automated commit" fallback if the agent fails.
     let dir = TempDir::new().unwrap();
     let repo = init_git_repo(&dir);
 

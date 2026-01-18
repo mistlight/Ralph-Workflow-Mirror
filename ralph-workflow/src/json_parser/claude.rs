@@ -757,9 +757,11 @@ impl ClaudeParser {
             ContentBlockDelta::TextDelta { text: Some(text) } => {
                 let index_str = index.to_string();
 
-                // Use StreamingSession to track state and determine prefix display
-                // Note: Snapshot-as-delta detection and extraction is handled internally
-                // by on_text_delta(), which also increments streaming_metrics counters.
+                // Track this delta with StreamingSession for state management and deduplication.
+                // The on_text_delta() method handles:
+                // - Snapshot-as-delta detection (when agent sends accumulated content as a delta)
+                // - Consecutive duplicate filtering
+                // - Prefix display logic via the return value
                 let show_prefix = session.on_text_delta(index, &text);
 
                 // Get accumulated text for streaming display
@@ -868,9 +870,11 @@ impl ClaudeParser {
         let default_index = 0u64;
         let default_index_str = "0";
 
-        // Use StreamingSession to track state and determine prefix display
-        // Note: Snapshot-as-delta detection and extraction is handled internally
-        // by on_text_delta(), which also increments streaming_metrics counters.
+        // Track this delta with StreamingSession for state management and deduplication.
+        // The on_text_delta() method handles:
+        // - Snapshot-as-delta detection (when agent sends accumulated content as a delta)
+        // - Consecutive duplicate filtering
+        // - Prefix display logic via the return value
         let show_prefix = session.on_text_delta(default_index, text);
 
         // Get accumulated text for streaming display

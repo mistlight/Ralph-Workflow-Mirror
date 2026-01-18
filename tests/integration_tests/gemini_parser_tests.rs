@@ -425,3 +425,176 @@ fn test_gemini_parser_truncated_stream() {
         "Log file should exist even for truncated stream"
     );
 }
+
+// ============================================================================
+// GLM/CCS Protocol Quirks Tests
+// ============================================================================
+
+/// Test that snapshot-as-delta is handled correctly (GLM/CCS protocol quirk).
+///
+/// GLM agents can sometimes send accumulated content as a "delta"
+/// (a snapshot glitch). The deduplication system should detect and
+/// filter this to avoid rendering the same content twice.
+#[test]
+fn test_gemini_parser_snapshot_as_delta_glitch() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    // Stream content incrementally, then send entire accumulated content as delta (snapshot glitch)
+    let input = r#"{"type":"init","session_id":"snapshot-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"The","delta":true}
+{"type":"message","role":"assistant","content":" quick","delta":true}
+{"type":"message","role":"assistant","content":" brown","delta":true}
+{"type":"message","role":"assistant","content":"The quick brown","delta":true}
+{"type":"message","role":"assistant","content":" fox","delta":true}
+{"type":"message","role":"assistant","content":"The quick brown fox","delta":false}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify output contains the final content without duplicates
+    let output = test_printer.borrow().get_output();
+    assert!(
+        output.contains("fox"),
+        "Output should contain 'fox' from final content"
+    );
+
+    // Verify no duplicate consecutive lines
+    assert!(
+        !test_printer.borrow().has_duplicate_consecutive_lines(),
+        "Snapshot glitch should not cause duplicate consecutive lines. Output: {}",
+        output
+    );
+}
+
+/// Test that alternating deltas are NOT filtered (not consecutive duplicates).
+///
+/// GLM agents sometimes send deltas in alternating patterns (A, B, A, B).
+/// These are NOT consecutive duplicates and should all be processed.
+#[test]
+fn test_gemini_parser_alternating_deltas_not_filtered() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    // Alternating pattern: Ping, Pong, Ping, Pong
+    let input = r#"{"type":"init","session_id":"alt-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"Ping","delta":true}
+{"type":"message","role":"assistant","content":"Pong","delta":true}
+{"type":"message","role":"assistant","content":"Ping","delta":true}
+{"type":"message","role":"assistant","content":"Pong","delta":true}
+{"type":"message","role":"assistant","content":"PingPongPingPong","delta":false}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    let output = test_printer.borrow().get_output();
+    // Alternating pattern is not consecutive duplicates, so all should be processed
+    // The final content should contain both patterns
+    assert!(
+        output.contains("Ping") && output.contains("Pong"),
+        "Alternating deltas should all be processed. Output: {output}"
+    );
+}
+
+/// Test that consecutive identical deltas are filtered.
+///
+/// When GLM agents send the same delta multiple times consecutively
+/// (a resend glitch), these duplicates should be filtered.
+#[test]
+fn test_gemini_parser_consecutive_identical_deltas_filtered() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    // Same delta sent 4 times consecutively (resend glitch)
+    let input = r#"{"type":"init","session_id":"dup-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"Repeat message","delta":true}
+{"type":"message","role":"assistant","content":"Repeat message","delta":true}
+{"type":"message","role":"assistant","content":"Repeat message","delta":true}
+{"type":"message","role":"assistant","content":"Repeat message","delta":true}
+{"type":"message","role":"assistant","content":"Repeat message","delta":false}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify no duplicate consecutive lines in output
+    assert!(
+        !test_printer.borrow().has_duplicate_consecutive_lines(),
+        "Consecutive identical deltas should be filtered"
+    );
+
+    // Verify content appears at least once
+    let output = test_printer.borrow().get_output();
+    assert!(
+        output.contains("Repeat message"),
+        "Content should appear in output"
+    );
+}
+
+/// Test that repeated init events don't cause issues.
+///
+/// GLM agents sometimes send multiple init events during a conversation.
+/// The parser should handle this gracefully without state corruption.
+#[test]
+fn test_gemini_parser_repeated_init_events() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    // Multiple init events (GLM quirk)
+    let input = r#"{"type":"init","session_id":"init-test-1","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"Hello","delta":true}
+{"type":"init","session_id":"init-test-2","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":" World","delta":true}
+{"type":"message","role":"assistant","content":"Hello World","delta":false}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Parser should handle repeated init events gracefully
+    let output = test_printer.borrow().get_output();
+    assert!(
+        output.contains("Hello") && output.contains("World"),
+        "Output should contain content from both init sessions. Output: {output}"
+    );
+}
+
+/// Test that tool use events intermixed with text deltas don't cause duplicates.
+///
+/// GLM agents can interleave tool use blocks with text blocks.
+/// Switching between them should not cause duplicate rendering.
+#[test]
+fn test_gemini_parser_tool_use_interleaved_with_text() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Verbose, printer);
+
+    let input = r#"{"type":"init","session_id":"tool-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"Let me check","delta":true}
+{"type":"tool_use","tool_name":"Bash","tool_id":"bash-123","parameters":{"command":"ls -la"}}
+{"type":"tool_result","tool_id":"bash-123","status":"success","output":"file1.txt\nfile2.txt"}
+{"type":"message","role":"assistant","content":"Now I can see","delta":true}
+{"type":"message","role":"assistant","content":"Let me checkNow I can see","delta":false}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify no duplicates
+    assert!(
+        !test_printer.borrow().has_duplicate_consecutive_lines(),
+        "Tool use interleaved with text should not cause duplicates"
+    );
+
+    // Verify both text blocks are in output
+    let output = test_printer.borrow().get_output();
+    assert!(
+        output.contains("Let me check"),
+        "First text block should be in output"
+    );
+    assert!(
+        output.contains("Now I can see"),
+        "Second text block should be in output"
+    );
+}
