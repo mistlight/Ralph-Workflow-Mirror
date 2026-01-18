@@ -15,7 +15,9 @@ use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::files::extract_issues;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
-use crate::git_helpers::{git_snapshot, update_review_baseline, CommitResultFallback};
+use crate::git_helpers::{
+    get_baseline_summary, git_snapshot, update_review_baseline, CommitResultFallback,
+};
 use crate::logger::{print_progress, Logger};
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
@@ -112,6 +114,23 @@ pub fn run_review_phase(
             j, ctx.config.reviewer_reviews
         ));
         print_progress(j, ctx.config.reviewer_reviews, "Review-Fix cycles");
+
+        // Display baseline information
+        match get_baseline_summary() {
+            Ok(summary) => {
+                ctx.logger.info(&summary.format_compact());
+                if summary.is_stale {
+                    ctx.logger.warn(&format!(
+                        "Baseline is stale ({} commits behind). Consider updating the baseline to focus the review on recent changes.",
+                        summary.commits_since
+                    ));
+                }
+            }
+            Err(e) => {
+                ctx.logger
+                    .warn(&format!("Unable to retrieve baseline information: {e}"));
+            }
+        }
 
         // PRE-FLIGHT VALIDATION: Check environment before running review
         match pre_flight_review_check(

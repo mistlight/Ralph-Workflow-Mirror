@@ -42,8 +42,8 @@ pub use repo::{
     validate_and_truncate_diff, CommitResultFallback,
 };
 pub use review_baseline::{
-    get_git_diff_from_review_baseline, get_review_baseline_info, load_review_baseline,
-    update_review_baseline, ReviewBaseline,
+    get_baseline_summary, get_git_diff_from_review_baseline, get_review_baseline_info,
+    load_review_baseline, update_review_baseline, ReviewBaseline,
 };
 pub use start_commit::{
     get_current_head_oid, load_start_point, reset_start_commit, save_start_commit, StartPoint,

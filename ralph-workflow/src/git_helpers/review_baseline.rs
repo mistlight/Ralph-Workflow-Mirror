@@ -188,6 +188,69 @@ fn count_commits_since(repo: &git2::Repository, baseline_oid: &str) -> io::Resul
     }
 }
 
+/// Baseline summary information for display.
+#[derive(Debug, Clone)]
+pub struct BaselineSummary {
+    /// The baseline OID (short form).
+    pub baseline_oid: Option<String>,
+    /// Number of commits since baseline.
+    pub commits_since: usize,
+    /// Whether the baseline is stale (>10 commits behind).
+    pub is_stale: bool,
+}
+
+impl BaselineSummary {
+    /// Format a compact version for inline display.
+    pub fn format_compact(&self) -> String {
+        match &self.baseline_oid {
+            Some(oid) => {
+                let short_oid = &oid[..8.min(oid.len())];
+                if self.is_stale {
+                    format!(
+                        "Baseline: {} (+{} commits since)",
+                        short_oid, self.commits_since
+                    )
+                } else if self.commits_since > 0 {
+                    format!(
+                        "Baseline: {} ({} commits since)",
+                        short_oid, self.commits_since
+                    )
+                } else {
+                    format!("Baseline: {}", short_oid)
+                }
+            }
+            None => "Baseline: start_commit".to_string(),
+        }
+    }
+}
+
+/// Get a summary of the baseline state for display.
+///
+/// Returns a `BaselineSummary` containing information about the current
+/// baseline, commits since baseline, and staleness.
+pub fn get_baseline_summary() -> io::Result<BaselineSummary> {
+    let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
+
+    let baseline_oid = match load_review_baseline()? {
+        ReviewBaseline::Commit(oid) => Some(oid.to_string()),
+        ReviewBaseline::NotSet => None,
+    };
+
+    let commits_since = if let Some(ref oid) = baseline_oid {
+        count_commits_since(&repo, oid)?
+    } else {
+        0
+    };
+
+    let is_stale = commits_since > 10;
+
+    Ok(BaselineSummary {
+        baseline_oid,
+        commits_since,
+        is_stale,
+    })
+}
+
 /// Convert git2 error to `io::Error`.
 fn to_io_error(err: &git2::Error) -> io::Error {
     io::Error::other(err.to_string())
