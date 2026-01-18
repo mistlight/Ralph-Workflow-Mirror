@@ -92,30 +92,31 @@ fn build_model_flags_list(ctx: &ModelFlagBuildContext<'_>) -> Vec<Option<String>
 /// Build the command string for a specific model configuration.
 fn build_command_for_model(ctx: &TryModelContext<'_>, runtime: &PipelineRuntime<'_>) -> String {
     let model_ref = ctx.model_flag.map(std::string::String::as_str);
-    // Detect when reviewer is in "fix mode" to enable yolo flag for making edits
-    let is_fix_mode = ctx.role == AgentRole::Reviewer && ctx.base_label.starts_with("fix");
-    let yolo = ctx.role == AgentRole::Developer || is_fix_mode;
+    // Enable yolo for Developer and Commit roles always.
+    // For Reviewer, only enable in fix mode (detected via base_label starting with "fix").
+    let yolo = matches!(ctx.role, AgentRole::Developer | AgentRole::Commit)
+        || (ctx.role == AgentRole::Reviewer && ctx.base_label.starts_with("fix"));
 
     if ctx.agent_index == 0 && ctx.cycle == 0 && ctx.model_index == 0 {
         // For primary agent on first cycle, respect env var command overrides
         match ctx.role {
-            AgentRole::Developer => {
-                runtime.config.developer_cmd.clone().unwrap_or_else(|| {
-                    ctx.agent_config.build_cmd_with_model(true, true, true, model_ref)
-                })
-            }
-            AgentRole::Reviewer => {
-                runtime.config.reviewer_cmd.clone().unwrap_or_else(|| {
-                    ctx.agent_config.build_cmd_with_model(true, true, yolo, model_ref)
-                })
-            }
+            AgentRole::Developer => runtime.config.developer_cmd.clone().unwrap_or_else(|| {
+                ctx.agent_config
+                    .build_cmd_with_model(true, true, true, model_ref)
+            }),
+            AgentRole::Reviewer => runtime.config.reviewer_cmd.clone().unwrap_or_else(|| {
+                ctx.agent_config
+                    .build_cmd_with_model(true, true, yolo, model_ref)
+            }),
             AgentRole::Commit => {
                 // Commit role doesn't have cmd override, use default
-                ctx.agent_config.build_cmd_with_model(true, true, yolo, model_ref)
+                ctx.agent_config
+                    .build_cmd_with_model(true, true, yolo, model_ref)
             }
         }
     } else {
-        ctx.agent_config.build_cmd_with_model(true, true, yolo, model_ref)
+        ctx.agent_config
+            .build_cmd_with_model(true, true, yolo, model_ref)
     }
 }
 

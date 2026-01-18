@@ -26,7 +26,7 @@
 
 FIX MODE
 
-Read .agent/ISSUES.md and fix the issues found.
+Read the ISSUES content below and fix the issues found.
 
 Context:
 
@@ -35,3 +35,19 @@ PROMPT:
 
 PLAN:
 {{PLAN}}
+
+ISSUES:
+{{ISSUES}}
+
+FILES TO MODIFY:
+{{FILES_TO_MODIFY}}
+
+CRITICAL CONSTRAINTS:
+- You MUST ONLY modify files listed in "FILES TO MODIFY"
+- You MUST read the files you need to modify before editing them
+- You MUST NOT explore the codebase or run discovery commands
+
+IMPORTANT: You are in FULL AUTO mode and have permission to:
+- Read files using whatever tools you have available
+- Apply patches, edits, or any modifications needed to fix the issues
+- Make all necessary changes without asking for confirmation
