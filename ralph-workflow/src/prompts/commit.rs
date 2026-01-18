@@ -789,13 +789,13 @@ mod tests {
     }
 
     #[test]
-    fn test_fix_prompt_tells_agent_not_to_read_issues_file() {
+    fn test_fix_prompt_tells_agent_not_to_modify_issues_file() {
         let fix_prompt = prompt_fix("", "", "");
         assert!(
-            fix_prompt.contains("do NOT need to read")
-                || fix_prompt.contains("you do NOT need to")
-                || fix_prompt.contains("DO NOT try to read"),
-            "Fix prompt should explicitly tell agent it doesn't need to read any ISSUES file"
+            fix_prompt.contains("MUST NOT modify ISSUES")
+                || fix_prompt.contains("DO NOT modify")
+                || fix_prompt.contains("provided for reference"),
+            "Fix prompt should explicitly tell agent not to modify the ISSUES file"
         );
     }
 
