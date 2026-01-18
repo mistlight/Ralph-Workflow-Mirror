@@ -228,14 +228,9 @@ fn test_claude_parser_snapshot_glitch() {
 
     // Verify streaming metrics show snapshot repair occurred
     let metrics = parser.streaming_metrics();
-    // TODO: Snapshot repair tracking is not working correctly with the current deduplication logic
-    // The snapshot is being detected and filtered (no duplicates in output), but the metrics
-    // are not being incremented. This is a known issue that needs further investigation.
-    // For now, we just verify that no duplicates occurred (above) and that the final content is correct.
-    // Log metrics for debugging
-    println!(
-        "Snapshot glitch metrics - snapshot_repairs: {}, large_deltas: {}, protocol_violations: {}",
-        metrics.snapshot_repairs_count, metrics.large_delta_count, metrics.protocol_violations
+    assert_eq!(
+        metrics.snapshot_repairs_count, 1,
+        "Should track one snapshot repair when accumulated content is re-sent as a delta"
     );
 }
 

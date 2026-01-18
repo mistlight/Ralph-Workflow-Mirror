@@ -755,26 +755,12 @@ impl ClaudeParser {
 
         match delta {
             ContentBlockDelta::TextDelta { text: Some(text) } => {
-                // Check for snapshot-as-delta bug (GLM sending full accumulated content)
-                // If detected, extract only the delta portion
                 let index_str = index.to_string();
-                let text_to_process = if session.is_likely_snapshot(&text, &index_str) {
-                    // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
-                    session
-                        .get_delta_from_snapshot(&text, &index_str)
-                        .unwrap_or(&text)
-                } else {
-                    // Genuine delta - use as-is
-                    &text
-                };
-
-                // Check for empty delta after snapshot extraction
-                if text_to_process.is_empty() {
-                    return String::new();
-                }
 
                 // Use StreamingSession to track state and determine prefix display
-                let show_prefix = session.on_text_delta(index, text_to_process);
+                // Note: Snapshot-as-delta detection and extraction is handled internally
+                // by on_text_delta(), which also increments streaming_metrics counters.
+                let show_prefix = session.on_text_delta(index, &text);
 
                 // Get accumulated text for streaming display
                 let accumulated_text = session
@@ -882,22 +868,10 @@ impl ClaudeParser {
         let default_index = 0u64;
         let default_index_str = "0";
 
-        // Check for snapshot-as-delta bug
-        let text_to_process = if session.is_likely_snapshot(text, default_index_str) {
-            // Snapshot detected - extract delta (auto-corrects GLM/CCS quirk)
-            session
-                .get_delta_from_snapshot(text, default_index_str)
-                .unwrap_or(text)
-        } else {
-            text
-        };
-
-        // Check for empty delta after snapshot extraction
-        if text_to_process.is_empty() {
-            return String::new();
-        }
-
-        let show_prefix = session.on_text_delta(default_index, text_to_process);
+        // Use StreamingSession to track state and determine prefix display
+        // Note: Snapshot-as-delta detection and extraction is handled internally
+        // by on_text_delta(), which also increments streaming_metrics counters.
+        let show_prefix = session.on_text_delta(default_index, text);
 
         // Get accumulated text for streaming display
         let accumulated_text = session
