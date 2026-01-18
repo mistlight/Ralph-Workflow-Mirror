@@ -90,36 +90,32 @@ fn build_model_flags_list(ctx: &ModelFlagBuildContext<'_>) -> Vec<Option<String>
 }
 
 /// Build the command string for a specific model configuration.
-fn build_command_for_model(
-    agent_index: usize,
-    cycle: u32,
-    model_index: usize,
-    role: AgentRole,
-    model_flag: Option<&str>,
-    agent_config: &AgentConfig,
-    runtime: &PipelineRuntime<'_>,
-) -> String {
-    let model_ref = model_flag;
-    if agent_index == 0 && cycle == 0 && model_index == 0 {
+fn build_command_for_model(ctx: &TryModelContext<'_>, runtime: &PipelineRuntime<'_>) -> String {
+    let model_ref = ctx.model_flag.map(std::string::String::as_str);
+    // Detect when reviewer is in "fix mode" to enable yolo flag for making edits
+    let is_fix_mode = ctx.role == AgentRole::Reviewer && ctx.base_label.starts_with("fix");
+    let yolo = ctx.role == AgentRole::Developer || is_fix_mode;
+
+    if ctx.agent_index == 0 && ctx.cycle == 0 && ctx.model_index == 0 {
         // For primary agent on first cycle, respect env var command overrides
-        match role {
+        match ctx.role {
             AgentRole::Developer => {
                 runtime.config.developer_cmd.clone().unwrap_or_else(|| {
-                    agent_config.build_cmd_with_model(true, true, true, model_ref)
+                    ctx.agent_config.build_cmd_with_model(true, true, true, model_ref)
                 })
             }
             AgentRole::Reviewer => {
                 runtime.config.reviewer_cmd.clone().unwrap_or_else(|| {
-                    agent_config.build_cmd_with_model(true, true, false, model_ref)
+                    ctx.agent_config.build_cmd_with_model(true, true, yolo, model_ref)
                 })
             }
             AgentRole::Commit => {
                 // Commit role doesn't have cmd override, use default
-                agent_config.build_cmd_with_model(true, true, false, model_ref)
+                ctx.agent_config.build_cmd_with_model(true, true, yolo, model_ref)
             }
         }
     } else {
-        agent_config.build_cmd_with_model(true, true, role == AgentRole::Developer, model_ref)
+        ctx.agent_config.build_cmd_with_model(true, true, yolo, model_ref)
     }
 }
 
@@ -226,15 +222,7 @@ fn try_single_model(
         }
     }
 
-    let cmd_str = build_command_for_model(
-        ctx.agent_index,
-        ctx.cycle,
-        ctx.model_index,
-        ctx.role,
-        ctx.model_flag.map(std::string::String::as_str),
-        ctx.agent_config,
-        runtime,
-    );
+    let cmd_str = build_command_for_model(ctx, runtime);
 
     validate_glm_print_flag(
         ctx.agent_name,
