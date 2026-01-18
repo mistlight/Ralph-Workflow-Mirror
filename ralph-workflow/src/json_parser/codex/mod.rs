@@ -168,7 +168,6 @@ impl CodexParser {
     /// - Malformed JSON (non-JSON text passed through if meaningful)
     /// - Unknown event types
     /// - Empty or whitespace-only output
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: CodexEvent = if let Ok(e) = serde_json::from_str(line) {
             e
@@ -193,12 +192,7 @@ impl CodexParser {
 
         match event {
             CodexEvent::ThreadStarted { thread_id } => {
-                let output = handle_thread_started(&ctx, thread_id);
-                if output.is_empty() {
-                    None
-                } else {
-                    Some(output)
-                }
+                Self::optional_output(handle_thread_started(&ctx, thread_id))
             }
             CodexEvent::TurnStarted {} => {
                 // Generate and set synthetic turn ID for duplicate detection
@@ -208,77 +202,65 @@ impl CodexParser {
                     *counter += 1;
                     id
                 };
-                let output = handle_turn_started(&ctx, turn_id);
-                if output.is_empty() {
-                    None
-                } else {
-                    Some(output)
-                }
+                Self::optional_output(handle_turn_started(&ctx, turn_id))
             }
             CodexEvent::TurnCompleted { usage } => {
-                let output = handle_turn_completed(&ctx, usage);
-                if output.is_empty() {
-                    None
-                } else {
-                    Some(output)
-                }
+                Self::optional_output(handle_turn_completed(&ctx, usage))
             }
             CodexEvent::TurnFailed { error } => {
-                let output = handle_turn_failed(&ctx, error);
-                if output.is_empty() {
-                    None
-                } else {
-                    Some(output)
-                }
+                Self::optional_output(handle_turn_failed(&ctx, error))
             }
             CodexEvent::ItemStarted { item } => handle_item_started(&ctx, item.as_ref()),
             CodexEvent::ItemCompleted { item } => handle_item_completed(&ctx, item.as_ref()),
             CodexEvent::Error { message, error } => {
-                let output = handle_error(&ctx, message, error);
-                if output.is_empty() {
-                    None
-                } else {
-                    Some(output)
-                }
+                Self::optional_output(handle_error(&ctx, message, error))
             }
-            CodexEvent::Result { result } => {
-                // Result events are synthetic control events that are logged to the file
-                // In debug mode, also show them on console for troubleshooting
-                if self.verbosity.is_debug() {
-                    result.map(|content| {
-                        let limit = self.verbosity.truncate_limit("result");
-                        let preview = crate::common::truncate_text(&content, limit);
-                        format!(
-                            "{}[{}]{} {}Result:{} {}{}{}\n",
-                            self.colors.dim(),
-                            self.display_name,
-                            self.colors.reset(),
-                            self.colors.green(),
-                            self.colors.reset(),
-                            self.colors.dim(),
-                            preview,
-                            self.colors.reset()
-                        )
-                    })
-                } else {
-                    None
-                }
-            }
+            CodexEvent::Result { result } => self.format_result_event(result),
             CodexEvent::Unknown => {
-                // Use the generic unknown event formatter for consistent handling
                 let output = format_unknown_json_event(
                     line,
                     &self.display_name,
                     self.colors,
                     self.verbosity.is_verbose(),
                 );
-                if output.is_empty() {
-                    None
-                } else {
-                    Some(output)
-                }
+                Self::optional_output(output)
             }
         }
+    }
+
+    /// Convert output string to Option, returning None if empty.
+    #[inline]
+    fn optional_output(output: String) -> Option<String> {
+        if output.is_empty() {
+            None
+        } else {
+            Some(output)
+        }
+    }
+
+    /// Format a Result event for display.
+    ///
+    /// Result events are synthetic control events that are logged to the file.
+    /// In debug mode, they are also shown on console for troubleshooting.
+    fn format_result_event(&self, result: Option<String>) -> Option<String> {
+        if !self.verbosity.is_debug() {
+            return None;
+        }
+        result.map(|content| {
+            let limit = self.verbosity.truncate_limit("result");
+            let preview = crate::common::truncate_text(&content, limit);
+            format!(
+                "{}[{}]{} {}Result:{} {}{}{}\n",
+                self.colors.dim(),
+                self.display_name,
+                self.colors.reset(),
+                self.colors.green(),
+                self.colors.reset(),
+                self.colors.dim(),
+                preview,
+                self.colors.reset()
+            )
+        })
     }
 
     /// Check if a Codex event is a control event (state management with no user output)
@@ -361,11 +343,10 @@ impl CodexParser {
     ///
     /// `Ok(true)` if the line was successfully processed, `Ok(false)` if the line
     /// was empty or skipped, or `Err` if an IO error occurred.
-    #[allow(clippy::needless_pass_by_ref_mut)] // The monitor methods mutate internal counters
     fn process_event_line(
         &self,
         line: &str,
-        monitor: &mut HealthMonitor,
+        monitor: &HealthMonitor,
         log_writer: &mut Option<std::io::BufWriter<std::fs::File>>,
     ) -> io::Result<bool> {
         let trimmed = line.trim();
@@ -452,7 +433,7 @@ impl CodexParser {
     pub(crate) fn parse_stream<R: BufRead>(&self, mut reader: R) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
-        let mut monitor = HealthMonitor::new("Codex");
+        let monitor = HealthMonitor::new("Codex");
         let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
             std::fs::OpenOptions::new()
                 .create(true)
@@ -484,7 +465,7 @@ impl CodexParser {
                         .ok()
                         .is_some_and(|e| matches!(e, CodexEvent::TurnCompleted { .. }));
 
-                self.process_event_line(&line, &mut monitor, &mut log_writer)?;
+                self.process_event_line(&line, &monitor, &mut log_writer)?;
 
                 // Track result event writes
                 if is_turn_completed {
@@ -497,7 +478,7 @@ impl CodexParser {
         // This is important for cases where the last JSON line doesn't have a
         // trailing newline or is otherwise incomplete.
         if let Some(remaining) = incremental_parser.finish() {
-            self.process_event_line(&remaining, &mut monitor, &mut log_writer)?;
+            self.process_event_line(&remaining, &monitor, &mut log_writer)?;
         }
 
         // Ensure accumulated content is written even if turn.completed was not received
