@@ -329,11 +329,110 @@ impl CodexParser {
         Ok(())
     }
 
+    /// Process a single JSON event line during parsing.
+    ///
+    /// This helper method handles the common logic for processing parsed JSON events,
+    /// including debug output, event parsing, health monitoring, and log writing.
+    /// It's used both for events from the streaming parser and for any remaining
+    /// buffered data at the end of the stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `line` - The JSON line to process
+    /// * `monitor` - The health monitor to record parsing metrics (mut needed for `record_*` methods)
+    /// * `log_writer` - Optional log file writer
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if the line was successfully processed, `Ok(false)` if the line
+    /// was empty or skipped, or `Err` if an IO error occurred.
+    #[allow(clippy::needless_pass_by_ref_mut)] // The monitor methods mutate internal counters
+    fn process_event_line(
+        &self,
+        line: &str,
+        monitor: &mut HealthMonitor,
+        log_writer: &mut Option<std::io::BufWriter<std::fs::File>>,
+    ) -> io::Result<bool> {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return Ok(false);
+        }
+
+        let is_turn_completed = trimmed.starts_with('{')
+            && trimmed.contains("\"type\"")
+            && trimmed.contains("turn.completed");
+
+        if self.verbosity.is_debug() {
+            let mut printer = self.printer.borrow_mut();
+            writeln!(
+                printer,
+                "{}[DEBUG]{} {}{}{}",
+                self.colors.dim(),
+                self.colors.reset(),
+                self.colors.dim(),
+                line,
+                self.colors.reset()
+            )?;
+            printer.flush()?;
+        }
+
+        match self.parse_event(line) {
+            Some(output) => {
+                if trimmed.starts_with('{') {
+                    if let Ok(event) = serde_json::from_str::<CodexEvent>(trimmed) {
+                        if Self::is_partial_event(&event) {
+                            monitor.record_partial_event();
+                        } else {
+                            monitor.record_parsed();
+                        }
+                    } else {
+                        monitor.record_parsed();
+                    }
+                } else {
+                    monitor.record_parsed();
+                }
+                let mut printer = self.printer.borrow_mut();
+                write!(printer, "{output}")?;
+                printer.flush()?;
+            }
+            None => {
+                if trimmed.starts_with('{') {
+                    if let Ok(event) = serde_json::from_str::<CodexEvent>(trimmed) {
+                        if Self::is_control_event(&event) {
+                            monitor.record_control_event();
+                        } else {
+                            monitor.record_unknown_event();
+                        }
+                    } else {
+                        monitor.record_parse_error();
+                    }
+                } else {
+                    monitor.record_ignored();
+                }
+            }
+        }
+
+        if let Some(ref mut file) = log_writer {
+            writeln!(file, "{line}")?;
+            if is_turn_completed {
+                if let Some(accumulated) = self
+                    .streaming_session
+                    .borrow()
+                    .get_accumulated(super::types::ContentType::Text, "agent_msg")
+                {
+                    let _ = Self::write_synthetic_result_event(file, accumulated);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
     /// Parse a stream of Codex NDJSON events
     pub(crate) fn parse_stream<R: BufRead>(&self, mut reader: R) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
-        let monitor = HealthMonitor::new("Codex");
+        let mut monitor = HealthMonitor::new("Codex");
         let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
             std::fs::OpenOptions::new()
                 .create(true)
@@ -357,78 +456,15 @@ impl CodexParser {
             reader.consume(consumed);
 
             for line in incremental_parser.feed(&byte_buffer) {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-
-                let is_turn_completed = trimmed.starts_with('{')
-                    && trimmed.contains("\"type\"")
-                    && trimmed.contains("turn.completed");
-
-                if self.verbosity.is_debug() {
-                    let mut printer = self.printer.borrow_mut();
-                    writeln!(
-                        printer,
-                        "{}[DEBUG]{} {}{}{}",
-                        self.colors.dim(),
-                        self.colors.reset(),
-                        self.colors.dim(),
-                        &line,
-                        self.colors.reset()
-                    )?;
-                    printer.flush()?;
-                }
-
-                match self.parse_event(&line) {
-                    Some(output) => {
-                        if trimmed.starts_with('{') {
-                            if let Ok(event) = serde_json::from_str::<CodexEvent>(&line) {
-                                if Self::is_partial_event(&event) {
-                                    monitor.record_partial_event();
-                                } else {
-                                    monitor.record_parsed();
-                                }
-                            } else {
-                                monitor.record_parsed();
-                            }
-                        } else {
-                            monitor.record_parsed();
-                        }
-                        let mut printer = self.printer.borrow_mut();
-                        write!(printer, "{output}")?;
-                        printer.flush()?;
-                    }
-                    None => {
-                        if trimmed.starts_with('{') {
-                            if let Ok(event) = serde_json::from_str::<CodexEvent>(&line) {
-                                if Self::is_control_event(&event) {
-                                    monitor.record_control_event();
-                                } else {
-                                    monitor.record_unknown_event();
-                                }
-                            } else {
-                                monitor.record_parse_error();
-                            }
-                        } else {
-                            monitor.record_ignored();
-                        }
-                    }
-                }
-
-                if let Some(ref mut file) = log_writer {
-                    writeln!(file, "{line}")?;
-                    if is_turn_completed {
-                        if let Some(accumulated) = self
-                            .streaming_session
-                            .borrow()
-                            .get_accumulated(super::types::ContentType::Text, "agent_msg")
-                        {
-                            let _ = Self::write_synthetic_result_event(file, accumulated);
-                        }
-                    }
-                }
+                self.process_event_line(&line, &mut monitor, &mut log_writer)?;
             }
+        }
+
+        // Handle any remaining buffered data when the stream ends.
+        // This is important for cases where the last JSON line doesn't have a
+        // trailing newline or is otherwise incomplete.
+        if let Some(remaining) = incremental_parser.finish() {
+            self.process_event_line(&remaining, &mut monitor, &mut log_writer)?;
         }
 
         if let Some(ref mut file) = log_writer {

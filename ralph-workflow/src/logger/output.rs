@@ -463,7 +463,6 @@ pub trait Loggable {
 /// Uses line buffering similar to `TestPrinter` to handle partial writes.
 #[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Default)]
-#[allow(dead_code)]
 pub struct TestLogger {
     /// Captured complete log lines.
     logs: RefCell<Vec<String>>,
@@ -472,7 +471,6 @@ pub struct TestLogger {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-#[allow(dead_code)]
 impl TestLogger {
     /// Create a new test logger.
     pub fn new() -> Self {

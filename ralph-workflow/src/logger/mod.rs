@@ -50,14 +50,20 @@
 //! The `Loggable` trait mirrors the `Printable` trait pattern used for printers,
 //! providing a consistent API for both production (`Logger`) and test (`TestLogger`) scenarios.
 
+// The output module is pub so that integration tests can access TestLogger
+// when the test-utils feature is enabled.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod output;
+#[cfg(not(any(test, feature = "test-utils")))]
 mod output;
+
 mod progress;
 
 pub use output::{argv_requests_json, format_generic_json_for_display, Loggable, Logger};
 
-#[cfg(any(test, feature = "test-utils"))]
-#[allow(unused_imports)]
-pub use output::TestLogger;
+// Note: TestLogger is available in tests through the output module.
+// It's not re-exported here to avoid unused import warnings in the binary build.
+// Integration tests should use `ralph_workflow::logger::output::TestLogger` directly.
 pub use progress::print_progress;
 
 // ===== Colors & Formatting =====

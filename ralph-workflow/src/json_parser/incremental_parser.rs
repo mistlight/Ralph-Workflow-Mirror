@@ -197,6 +197,44 @@ impl IncrementalNdjsonParser {
     pub const fn is_parsing(&self) -> bool {
         self.started
     }
+
+    /// Finalize parsing and return any remaining buffered data.
+    ///
+    /// This method should be called when the input stream ends to retrieve
+    /// any incomplete JSON that was buffered. This is important for handling
+    /// cases where the last line of a file doesn't have a trailing newline
+    /// or where a complete JSON object was received but not yet extracted.
+    ///
+    /// # Returns
+    ///
+    /// Any remaining buffered data as a string if non-empty, or None if buffer is empty.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut parser = IncrementalNdjsonParser::new();
+    /// parser.feed(b"{\"type\": \"delta\"}\n{\"type\": \"incomplete\"");
+    /// // When stream ends, get any remaining buffered data
+    /// if let Some(remaining) = parser.finish() {
+    ///     println!("Remaining: {}", remaining);
+    /// }
+    /// ```
+    #[must_use]
+    pub fn finish(mut self) -> Option<String> {
+        let trimmed = String::from_utf8(self.buffer.drain(..).collect())
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        // Reset state to clean state
+        self.buffer.clear();
+        self.depth = 0;
+        self.in_string = false;
+        self.escape_next = false;
+        self.started = false;
+
+        trimmed
+    }
 }
 
 impl Default for IncrementalNdjsonParser {
@@ -340,5 +378,63 @@ mod tests {
         // Parser should be in a clean state after handling the error
         assert!(!parser.is_parsing());
         assert_eq!(parser.partial().len(), 0);
+    }
+
+    #[test]
+    fn test_incremental_parser_finish_returns_buffered_data() {
+        let mut parser = IncrementalNdjsonParser::new();
+        // Feed incomplete JSON (missing closing brace)
+        // Note: `b"{\"type\": \"incomplete\""` is the byte string for `{"type": "incomplete"` (no closing brace)
+        let events = parser.feed(b"{\"type\": \"incomplete\"");
+        // No events should be returned yet (missing closing brace)
+        assert_eq!(events, vec![] as Vec<String>);
+
+        // finish() should return the buffered data
+        let remaining = parser.finish();
+        // Note: The buffered data is the incomplete JSON string we fed
+        assert_eq!(remaining, Some("{\"type\": \"incomplete\"".to_string()));
+    }
+
+    #[test]
+    fn test_incremental_parser_finish_returns_none_for_empty_buffer() {
+        let parser = IncrementalNdjsonParser::new();
+        // No data fed, finish should return None
+        assert_eq!(parser.finish(), None);
+    }
+
+    #[test]
+    fn test_incremental_parser_finish_returns_none_for_complete_json() {
+        let mut parser = IncrementalNdjsonParser::new();
+        // Feed complete JSON
+        let events = parser.feed(b"{\"type\": \"delta\"}\n");
+        assert_eq!(events.len(), 1);
+
+        // Buffer should be empty, so finish() should return None
+        assert_eq!(parser.finish(), None);
+    }
+
+    #[test]
+    fn test_incremental_parser_finish_with_complete_json_no_newline() {
+        let mut parser = IncrementalNdjsonParser::new();
+        // Feed complete JSON but without trailing newline
+        // The parser DOES extract it when closing brace is encountered (depth 0)
+        let events = parser.feed(b"{\"type\": \"delta\"}");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], "{\"type\": \"delta\"}");
+
+        // Buffer should be empty after extraction, so finish() should return None
+        assert_eq!(parser.finish(), None);
+    }
+
+    #[test]
+    fn test_incremental_parser_finish_with_incomplete_json_missing_brace() {
+        let mut parser = IncrementalNdjsonParser::new();
+        // Feed complete JSON but missing the closing brace
+        let events = parser.feed(b"{\"type\": \"delta\"");
+        assert_eq!(events.len(), 0); // Not complete yet
+
+        // finish() should return the buffered incomplete JSON
+        let remaining = parser.finish();
+        assert_eq!(remaining, Some("{\"type\": \"delta\"".to_string()));
     }
 }
