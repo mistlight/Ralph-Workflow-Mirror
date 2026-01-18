@@ -196,6 +196,16 @@ impl CodexParser {
             .get_streaming_quality_metrics()
     }
 
+    /// Convert output string to Option, returning None if empty.
+    #[inline]
+    fn optional_output(output: String) -> Option<String> {
+        if output.is_empty() {
+            None
+        } else {
+            Some(output)
+        }
+    }
+
     /// Parse and display a single Codex JSON event
     ///
     /// Returns `Some(formatted_output)` for valid events, or None for:
@@ -262,20 +272,11 @@ impl CodexParser {
         }
     }
 
-    /// Convert output string to Option, returning None if empty.
-    #[inline]
-    fn optional_output(output: String) -> Option<String> {
-        if output.is_empty() {
-            None
-        } else {
-            Some(output)
-        }
-    }
-
     /// Format a Result event for display.
     ///
-    /// Result events are synthetic control events that are logged to the file.
-    /// In debug mode, they are also shown on console for troubleshooting.
+    /// Result events are synthetic control events that are written to the log file
+    /// by `process_event_line`. In debug mode, this method also formats them for
+    /// console output to help with troubleshooting.
     fn format_result_event(&self, result: Option<String>) -> Option<String> {
         if !self.verbosity.is_debug() {
             return None;
@@ -509,10 +510,13 @@ impl CodexParser {
         }
 
         // Handle any remaining buffered data when the stream ends.
-        // This is important for cases where the last JSON line doesn't have a
-        // trailing newline or is otherwise incomplete.
+        // Only process if it's valid JSON - incomplete buffered data should be skipped.
         if let Some(remaining) = incremental_parser.finish() {
-            self.process_event_line(&remaining, &monitor, &mut log_writer)?;
+            // Only process if it's valid JSON to avoid processing incomplete buffered data
+            if remaining.starts_with('{') && serde_json::from_str::<CodexEvent>(&remaining).is_ok()
+            {
+                self.process_event_line(&remaining, &monitor, &mut log_writer)?;
+            }
         }
 
         // Ensure accumulated content is written even if turn.completed was not received

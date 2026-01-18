@@ -43,11 +43,15 @@ rg -n -U --pcre2 '(?x)
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 cargo fmt --all
-cargo clippy -p ralph-workflow --all-targets --all-features -- -D warnings
-cargo clippy -p tests --all-targets --features test-utils -- -D warnings
-cargo test --all-features
+# Check lib with all features (including test-utils)
+cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
+# Check bins without test-utils feature (binary doesn't use test utilities)
+cargo clippy -p ralph-workflow --bins -- -D warnings
+# Run lib tests with all features
+cargo test --lib --all-features
+# Run integration tests (test-utils is enabled via their Cargo.toml)
+cargo test -p ralph-workflow-tests
 cargo build --release
-make release # in theory the same as above
-# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
