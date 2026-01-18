@@ -13,6 +13,7 @@ pub mod backup;
 pub mod cleanup;
 pub mod commit_tests;
 pub mod config;
+pub mod config_test;
 pub mod plan;
 pub mod requirements;
 pub mod review;

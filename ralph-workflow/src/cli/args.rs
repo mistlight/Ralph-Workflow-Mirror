@@ -90,19 +90,27 @@ pub struct StandardPresets {
 /// Unified config initialization flags.
 #[derive(Parser, Debug, Default)]
 pub struct UnifiedInitFlags {
-    /// Smart initialization: infers intent based on state
+    /// Smart initialization: creates setup based on current state
     ///
-    /// With a value matching a known template name: creates PROMPT.md from that template
-    /// Without a value:
-    ///   - If config doesn't exist: creates config
-    ///   - If config exists but PROMPT.md doesn't: prompts for PROMPT.md creation
-    ///   - If both exist: shows helpful message about what's already set up
+    /// This is the RECOMMENDED way to get started with Ralph.
     ///
-    /// Template names for completion (PROMPT.md task templates):
-    /// quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
-    /// performance-optimization, security-audit, api-integration, database-migration,
-    /// dependency-update, data-pipeline, ui-component, code-review, debug-triage,
-    /// release, tech-debt, onboarding
+    /// Behavior:
+    ///   --init              (no value)   → Smart mode: infers what you need
+    ///   --init bug-fix      (with value) → Create PROMPT.md from specific Task Template
+    ///
+    /// Smart mode (no value):
+    ///   - No config? Creates config at ~/.config/ralph-workflow.toml
+    ///   - Config exists, no PROMPT.md? Creates or prompts for PROMPT.md
+    ///   - Both exist? Shows helpful status message and exits
+    ///
+    /// Task Templates (for PROMPT.md):
+    ///   quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
+    ///   performance-optimization, security-audit, api-integration, database-migration,
+    ///   dependency-update, data-pipeline, ui-component, code-review, debug-triage,
+    ///   release, tech-debt, onboarding
+    ///
+    /// Note: These are Task Templates for YOUR work descriptions, NOT system prompts.
+    /// See --help for details on the difference.
     #[arg(
         long,
         conflicts_with_all = ["init_global", "init_config", "init_legacy", "init_prompt"],
@@ -377,15 +385,28 @@ pub struct RebaseFlags {
 \n\
 NEW TO RALPH?\n\
     Just want to get started? Run:\n\
-        ralph --init feature-spec         # Create PROMPT.md from task template\n\
+        ralph --init feature-spec         # Create PROMPT.md from a Task Template\n\
         ralph \"fix: my bug\"              # Run with AI agents\n\
 \n\
-    UNDERSTANDING TEMPLATES IN RALPH:\n\
-    • Task templates (PROMPT.md)  - For YOUR work descriptions (bug-fix, feature-spec, etc.)\n\
-      Use: --list-templates, --init <template>, --init-prompt <template>\n\
+    TEMPLATES IN RALPH (two different types):\n\
 \n\
-    • System prompts (backend AI)   - Configure AI agent behavior (developer, reviewer)\n\
-      Use: --init-system-prompts, --list, --show <name>\n\
+    1. Task Templates (for PROMPT.md - YOUR task descriptions)\n\
+       These are templates for describing YOUR work to the AI.\n\
+       Examples: bug-fix, feature-spec, refactor, test, docs, etc.\n\
+       \n\
+       Commands:\n\
+         ralph --init <template>       # Create PROMPT.md from a template\n\
+         ralph --list-templates        # Show all available Task Templates\n\
+         ralph --init-prompt <name>    # Same as --init (legacy alias)\n\
+\n\
+    2. System Prompts (backend AI behavior configuration)\n\
+       These configure HOW the AI agents behave (internal prompts).\n\
+       You probably don't need to touch these unless you're customizing agent behavior.\n\
+       \n\
+       Commands:\n\
+         ralph --init-system-prompts    # Create default system prompts\n\
+         ralph --list                   # Show system prompt templates\n\
+         ralph --show <name>            # Show a specific system prompt\n\
 \n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
 \n\
@@ -424,8 +445,8 @@ QUICK EXAMPLES:\n\
     ralph -Q \"fix: small bug\"        Quick mode for tiny fixes\n\
     ralph -U \"feat: add button\"      Rapid mode for minor features\n\
     ralph -a claude \"fix: bug\"       Use specific agent\n\
-    ralph --list-templates            See all task templates for PROMPT.md\n\
-    ralph --init bug-fix              # Smart init: create PROMPT.md from task template\n\
+    ralph --list-templates            See all Task Templates\n\
+    ralph --init bug-fix              # Create PROMPT.md from a Task Template\n\
 ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
 // CLI arguments naturally use many boolean flags. These represent independent
@@ -646,9 +667,14 @@ pub struct Args {
     )]
     pub config: Option<std::path::PathBuf>,
 
-    /// Initialize PROMPT.md from template and exit
+    /// Initialize PROMPT.md from a Task Template and exit
     ///
-    /// Available templates (PROMPT.md task templates):
+    /// This is a legacy alias for `--init <template>`. Consider using `--init` instead.
+    ///
+    /// Task Templates describe YOUR work to the AI (e.g., bug-fix, feature-spec).
+    /// These are different from System Prompts which configure AI behavior.
+    ///
+    /// Available Task Templates:
     /// quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
     /// performance-optimization, security-audit, api-integration, database-migration,
     /// dependency-update, data-pipeline, ui-component, code-review, debug-triage,
@@ -656,7 +682,7 @@ pub struct Args {
     #[arg(
         long,
         value_name = "TEMPLATE",
-        help = "Create PROMPT.md from a template (use --list-templates to see options)"
+        help = "Create PROMPT.md from a Task Template (use --list-templates to see options)"
     )]
     pub init_prompt: Option<String>,
 
