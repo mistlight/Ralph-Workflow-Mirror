@@ -101,7 +101,8 @@ pub struct UnifiedInitFlags {
     /// Template names for completion (PROMPT.md task templates):
     /// quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
     /// performance-optimization, security-audit, api-integration, database-migration,
-    /// dependency-update, data-pipeline, ui-component
+    /// dependency-update, data-pipeline, ui-component, code-review, debug-triage,
+    /// release, tech-debt, onboarding
     #[arg(
         long,
         conflicts_with_all = ["init_global", "init_config", "init_legacy", "init_prompt"],
@@ -650,7 +651,8 @@ pub struct Args {
     /// Available templates (PROMPT.md task templates):
     /// quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
     /// performance-optimization, security-audit, api-integration, database-migration,
-    /// dependency-update, data-pipeline, ui-component
+    /// dependency-update, data-pipeline, ui-component, code-review, debug-triage,
+    /// release, tech-debt, onboarding
     #[arg(
         long,
         value_name = "TEMPLATE",

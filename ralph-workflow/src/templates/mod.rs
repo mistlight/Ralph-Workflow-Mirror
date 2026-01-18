@@ -43,6 +43,16 @@ pub enum PromptTemplate {
     DataPipeline,
     /// UI component template
     UiComponent,
+    /// Code review template
+    CodeReview,
+    /// Debug triage template
+    DebugTriage,
+    /// Release preparation template
+    Release,
+    /// Technical debt refactoring template
+    TechDebt,
+    /// Onboarding template
+    Onboarding,
 }
 
 impl PromptTemplate {
@@ -64,6 +74,11 @@ impl PromptTemplate {
             Self::WebApi => "web-api",
             Self::DataPipeline => "data-pipeline",
             Self::UiComponent => "ui-component",
+            Self::CodeReview => "code-review",
+            Self::DebugTriage => "debug-triage",
+            Self::Release => "release",
+            Self::TechDebt => "tech-debt",
+            Self::Onboarding => "onboarding",
         }
     }
 
@@ -85,6 +100,11 @@ impl PromptTemplate {
             Self::WebApi => "Web API development template with REST design, error handling, and security considerations",
             Self::DataPipeline => "Data pipeline template with ETL processing, reliability, and monitoring guidance",
             Self::UiComponent => "UI component template with accessibility, responsive design, and user experience",
+            Self::CodeReview => "Code review template for structured pull request feedback",
+            Self::DebugTriage => "Debug triage template for systematic issue investigation and diagnosis",
+            Self::Release => "Release preparation template with versioning, changelog, and deployment checklist",
+            Self::TechDebt => "Technical debt refactoring template with prioritization and planning guidance",
+            Self::Onboarding => "Onboarding template for learning new codebases efficiently",
         }
     }
 
@@ -136,6 +156,21 @@ impl PromptTemplate {
             Self::UiComponent => {
                 include_str!("../../templates/prompts/ui-component.md")
             }
+            Self::CodeReview => {
+                include_str!("../../templates/prompts/code-review.md")
+            }
+            Self::DebugTriage => {
+                include_str!("../../templates/prompts/debug-triage.md")
+            }
+            Self::Release => {
+                include_str!("../../templates/prompts/release.md")
+            }
+            Self::TechDebt => {
+                include_str!("../../templates/prompts/tech-debt.md")
+            }
+            Self::Onboarding => {
+                include_str!("../../templates/prompts/onboarding.md")
+            }
         }
     }
 }
@@ -147,7 +182,7 @@ impl fmt::Display for PromptTemplate {
 }
 
 /// All available prompt templates.
-pub const ALL_TEMPLATES: [PromptTemplate; 15] = [
+pub const ALL_TEMPLATES: [PromptTemplate; 20] = [
     PromptTemplate::FeatureSpec,
     PromptTemplate::BugFix,
     PromptTemplate::Refactor,
@@ -163,6 +198,11 @@ pub const ALL_TEMPLATES: [PromptTemplate; 15] = [
     PromptTemplate::WebApi,
     PromptTemplate::DataPipeline,
     PromptTemplate::UiComponent,
+    PromptTemplate::CodeReview,
+    PromptTemplate::DebugTriage,
+    PromptTemplate::Release,
+    PromptTemplate::TechDebt,
+    PromptTemplate::Onboarding,
 ];
 
 /// Get a template by name.
@@ -216,6 +256,11 @@ mod tests {
         assert_eq!(PromptTemplate::WebApi.name(), "web-api");
         assert_eq!(PromptTemplate::DataPipeline.name(), "data-pipeline");
         assert_eq!(PromptTemplate::UiComponent.name(), "ui-component");
+        assert_eq!(PromptTemplate::CodeReview.name(), "code-review");
+        assert_eq!(PromptTemplate::DebugTriage.name(), "debug-triage");
+        assert_eq!(PromptTemplate::Release.name(), "release");
+        assert_eq!(PromptTemplate::TechDebt.name(), "tech-debt");
+        assert_eq!(PromptTemplate::Onboarding.name(), "onboarding");
     }
 
     #[test]
@@ -237,6 +282,11 @@ mod tests {
         assert!(!PromptTemplate::WebApi.description().is_empty());
         assert!(!PromptTemplate::DataPipeline.description().is_empty());
         assert!(!PromptTemplate::UiComponent.description().is_empty());
+        assert!(!PromptTemplate::CodeReview.description().is_empty());
+        assert!(!PromptTemplate::DebugTriage.description().is_empty());
+        assert!(!PromptTemplate::Release.description().is_empty());
+        assert!(!PromptTemplate::TechDebt.description().is_empty());
+        assert!(!PromptTemplate::Onboarding.description().is_empty());
     }
 
     #[test]
@@ -276,13 +326,24 @@ mod tests {
             get_template("ui-component"),
             Some(PromptTemplate::UiComponent)
         );
+        assert_eq!(
+            get_template("code-review"),
+            Some(PromptTemplate::CodeReview)
+        );
+        assert_eq!(
+            get_template("debug-triage"),
+            Some(PromptTemplate::DebugTriage)
+        );
+        assert_eq!(get_template("release"), Some(PromptTemplate::Release));
+        assert_eq!(get_template("tech-debt"), Some(PromptTemplate::TechDebt));
+        assert_eq!(get_template("onboarding"), Some(PromptTemplate::Onboarding));
         assert_eq!(get_template("nonexistent"), None);
     }
 
     #[test]
     fn test_list_templates() {
         let templates = list_templates();
-        assert_eq!(templates.len(), 15);
+        assert_eq!(templates.len(), 20);
         assert!(templates.iter().any(|(name, _)| name == &"feature-spec"));
         assert!(templates.iter().any(|(name, _)| name == &"bug-fix"));
         assert!(templates
@@ -300,6 +361,11 @@ mod tests {
         assert!(templates.iter().any(|(name, _)| name == &"web-api"));
         assert!(templates.iter().any(|(name, _)| name == &"data-pipeline"));
         assert!(templates.iter().any(|(name, _)| name == &"ui-component"));
+        assert!(templates.iter().any(|(name, _)| name == &"code-review"));
+        assert!(templates.iter().any(|(name, _)| name == &"debug-triage"));
+        assert!(templates.iter().any(|(name, _)| name == &"release"));
+        assert!(templates.iter().any(|(name, _)| name == &"tech-debt"));
+        assert!(templates.iter().any(|(name, _)| name == &"onboarding"));
     }
 
     #[test]

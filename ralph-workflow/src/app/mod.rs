@@ -373,9 +373,11 @@ fn setup_git_and_prompt_file(
     colors: Colors,
     logger: &Logger,
 ) -> anyhow::Result<Option<()>> {
+    let prompt_exists = std::path::Path::new("PROMPT.md").exists();
+
     // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
     // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
-    if config.behavior.interactive && !std::path::Path::new("PROMPT.md").exists() {
+    if config.behavior.interactive && !prompt_exists {
         if let Some(template_name) = prompt_template_selection(colors) {
             create_prompt_from_template(&template_name, colors)?;
             println!();
@@ -389,12 +391,32 @@ fn setup_git_and_prompt_file(
             return Ok(None);
         }
         println!();
-        logger.info("PROMPT.md is required to run the pipeline.");
-        logger.info(
-            "Create one with 'ralph --init-prompt <template>' (see: 'ralph --list-templates'), then rerun.",
-        );
+        logger.error("PROMPT.md not found in current directory.");
+        logger.warn("PROMPT.md is required to run the Ralph pipeline.");
+        println!();
+        logger.info("To get started:");
+        logger.info("  ralph --init                    # Smart setup wizard");
+        logger.info("  ralph --init bug-fix             # Create from template");
+        logger.info("  ralph --list-templates            # See all templates");
+        println!();
         return Ok(None);
     }
+
+    // Non-interactive mode: show helpful error if PROMPT.md doesn't exist
+    if !prompt_exists {
+        logger.error("PROMPT.md not found in current directory.");
+        logger.warn("PROMPT.md is required to run the Ralph pipeline.");
+        println!();
+        logger.info("Quick start:");
+        logger.info("  ralph --init                    # Smart setup wizard");
+        logger.info("  ralph --init bug-fix             # Create from template");
+        logger.info("  ralph --list-templates            # See all templates");
+        println!();
+        logger.info("Use -i flag for interactive mode to be prompted for template selection.");
+        println!();
+        return Ok(None);
+    }
+
     Ok(Some(()))
 }
 

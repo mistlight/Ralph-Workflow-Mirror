@@ -188,6 +188,17 @@ pub fn handle_init_prompt(template_name: &str, colors: Colors) -> anyhow::Result
     Ok(true)
 }
 
+/// Print a template category section.
+///
+/// Helper function to reduce the length of `handle_list_templates`.
+fn print_template_category(category_name: &str, templates: &[(&str, &str)], colors: Colors) {
+    println!("{}{}:{}", colors.bold(), category_name, colors.reset());
+    for (name, description) in templates {
+        println!("  {}{}{}  {}", colors.cyan(), name, colors.reset(), description);
+    }
+    println!();
+}
+
 /// Handle the `--list-templates` flag.
 ///
 /// Lists all available PROMPT.md templates with descriptions, organized by category.
@@ -204,35 +215,73 @@ pub fn handle_list_templates(colors: Colors) -> bool {
     println!();
 
     // Common templates (most frequently used)
-    println!("{}Common Templates:{}", colors.bold(), colors.reset());
-    println!("  {}quick{}  Quick/small changes (typos, minor fixes)", colors.cyan(), colors.reset());
-    println!("  {}bug-fix{}  Bug fix with investigation guidance", colors.cyan(), colors.reset());
-    println!("  {}feature-spec{}  Comprehensive product specification", colors.cyan(), colors.reset());
-    println!("  {}refactor{}  Code refactoring with behavior preservation", colors.cyan(), colors.reset());
-    println!();
+    print_template_category(
+        "Common Templates",
+        &[
+            ("quick", "Quick/small changes (typos, minor fixes)"),
+            ("bug-fix", "Bug fix with investigation guidance"),
+            ("feature-spec", "Comprehensive product specification"),
+            ("refactor", "Code refactoring with behavior preservation"),
+        ],
+        colors,
+    );
 
     // Testing and documentation
-    println!("{}Testing & Documentation:{}", colors.bold(), colors.reset());
-    println!("  {}test{}  Test writing with edge case considerations", colors.cyan(), colors.reset());
-    println!("  {}docs{}  Documentation update with completeness checklist", colors.cyan(), colors.reset());
-    println!();
+    print_template_category(
+        "Testing & Documentation",
+        &[
+            ("test", "Test writing with edge case considerations"),
+            ("docs", "Documentation update with completeness checklist"),
+            ("code-review", "Structured code review for pull requests"),
+        ],
+        colors,
+    );
 
     // Specialized development
-    println!("{}Specialized Development:{}", colors.bold(), colors.reset());
-    println!("  {}cli-tool{}  CLI tool with argument parsing and completion", colors.cyan(), colors.reset());
-    println!("  {}web-api{}  REST/HTTP API with error handling", colors.cyan(), colors.reset());
-    println!("  {}ui-component{}  UI component with accessibility and responsive design", colors.cyan(), colors.reset());
-    println!();
+    print_template_category(
+        "Specialized Development",
+        &[
+            ("cli-tool", "CLI tool with argument parsing and completion"),
+            ("web-api", "REST/HTTP API with error handling"),
+            ("ui-component", "UI component with accessibility and responsive design"),
+            ("onboarding", "Learn a new codebase efficiently"),
+        ],
+        colors,
+    );
 
     // Advanced/Infrastructure
-    println!("{}Advanced & Infrastructure:{}", colors.bold(), colors.reset());
-    println!("  {}performance-optimization{}  Performance optimization with benchmarking", colors.cyan(), colors.reset());
-    println!("  {}security-audit{}  Security audit with OWASP Top 10 coverage", colors.cyan(), colors.reset());
-    println!("  {}api-integration{}  API integration with retry logic and resilience", colors.cyan(), colors.reset());
-    println!("  {}database-migration{}  Database migration with zero-downtime strategies", colors.cyan(), colors.reset());
-    println!("  {}dependency-update{}  Dependency update with breaking change handling", colors.cyan(), colors.reset());
-    println!("  {}data-pipeline{}  Data pipeline with ETL and monitoring", colors.cyan(), colors.reset());
-    println!();
+    print_template_category(
+        "Advanced & Infrastructure",
+        &[
+            (
+                "performance-optimization",
+                "Performance optimization with benchmarking",
+            ),
+            ("security-audit", "Security audit with OWASP Top 10 coverage"),
+            ("api-integration", "API integration with retry logic and resilience"),
+            (
+                "database-migration",
+                "Database migration with zero-downtime strategies",
+            ),
+            (
+                "dependency-update",
+                "Dependency update with breaking change handling",
+            ),
+            ("data-pipeline", "Data pipeline with ETL and monitoring"),
+        ],
+        colors,
+    );
+
+    // Maintenance
+    print_template_category(
+        "Maintenance & Operations",
+        &[
+            ("debug-triage", "Systematic issue investigation and diagnosis"),
+            ("tech-debt", "Technical debt refactoring with prioritization"),
+            ("release", "Release preparation with versioning and changelog"),
+        ],
+        colors,
+    );
 
     println!("Usage: ralph --init <template>");
     println!("       ralph --init-prompt <template>");
