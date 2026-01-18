@@ -206,3 +206,245 @@ fn test_opencode_parser_tool_sequence() {
     assert!(output.contains("read"), "Output should contain read tool");
     assert!(output.contains("write"), "Output should contain write tool");
 }
+
+// ============================================================================
+// Log Content Tests
+// ============================================================================
+
+/// Test log file contains all events for later analysis.
+#[test]
+fn test_opencode_parser_log_contains_events() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("opencode_events.log");
+
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+        .with_log_file_for_test(log_path.to_str().unwrap());
+
+    let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"extract-test","part":{"type":"step-start"}}
+{"type":"text","timestamp":1001,"sessionID":"extract-test","part":{"type":"text","text":"Extractable content from OpenCode"}}
+{"type":"step_finish","timestamp":1002,"sessionID":"extract-test","part":{"type":"step-finish","reason":"end-turn"}}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify log file contains all events for analysis
+    assert!(log_path.exists(), "Log file should exist");
+    let log_content = std::fs::read_to_string(&log_path).unwrap();
+    assert!(
+        log_content.contains("step_start"),
+        "Log should contain step_start event"
+    );
+    assert!(
+        log_content.contains("Extractable content"),
+        "Log should contain text content"
+    );
+    assert!(
+        log_content.contains("step_finish"),
+        "Log should contain step_finish event"
+    );
+}
+
+/// Test multiple steps in conversation.
+#[test]
+fn test_opencode_parser_multiple_steps() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("opencode_multi.log");
+
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+        .with_log_file_for_test(log_path.to_str().unwrap());
+
+    let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"multi-step","part":{"type":"step-start"}}
+{"type":"text","timestamp":1001,"sessionID":"multi-step","part":{"type":"text","text":"First step content"}}
+{"type":"step_finish","timestamp":1002,"sessionID":"multi-step","part":{"type":"step-finish","reason":"tool-calls"}}
+{"type":"step_start","timestamp":1003,"sessionID":"multi-step","part":{"type":"step-start"}}
+{"type":"text","timestamp":1004,"sessionID":"multi-step","part":{"type":"text","text":"Second step content"}}
+{"type":"step_finish","timestamp":1005,"sessionID":"multi-step","part":{"type":"step-finish","reason":"end-turn"}}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify log contains both steps
+    let log_content = std::fs::read_to_string(&log_path).unwrap();
+    assert!(
+        log_content.contains("First step") && log_content.contains("Second step"),
+        "Log should contain both steps"
+    );
+}
+
+// ============================================================================
+// Error Handling Tests
+// ============================================================================
+
+/// Test handling of malformed JSON.
+#[test]
+fn test_opencode_parser_malformed_json() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    // Mix of valid and invalid JSON
+    let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"malformed","part":{"type":"step-start"}}
+{not valid json at all}
+{"type":"text","timestamp":1002,"sessionID":"malformed","part":{"type":"text","text":"Valid after invalid"}}
+{"type":"step_finish","timestamp":1003,"sessionID":"malformed","part":{"type":"step-finish","reason":"end-turn"}}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    // Should not panic on malformed JSON
+    let result = parser.parse_stream_for_test(reader);
+    assert!(
+        result.is_ok(),
+        "Parser should handle malformed JSON gracefully"
+    );
+
+    // Valid events should still be processed
+    let output = test_printer.borrow().get_output();
+    assert!(
+        output.contains("Valid after invalid") || output.contains("Step"),
+        "Valid events should still be processed"
+    );
+}
+
+/// Test handling of truncated stream (network disconnect simulation).
+#[test]
+fn test_opencode_parser_truncated_stream() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("opencode_truncated.log");
+
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+        .with_log_file_for_test(log_path.to_str().unwrap());
+
+    // Stream that ends without step_finish event
+    let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"truncated","part":{"type":"step-start"}}
+{"type":"text","timestamp":1001,"sessionID":"truncated","part":{"type":"text","text":"Partial content"}}
+{"type":"text","timestamp":1002,"sessionID":"truncated","part":{"type":"text","text":" more content"}}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    let result = parser.parse_stream_for_test(reader);
+
+    // Parser should handle truncated stream gracefully
+    assert!(
+        result.is_ok(),
+        "Parser should handle truncated stream without panic"
+    );
+
+    // Log should still contain the partial events
+    assert!(
+        log_path.exists(),
+        "Log file should exist even for truncated stream"
+    );
+}
+
+/// Test error reason handling in step_finish.
+#[test]
+fn test_opencode_parser_error_reason() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"error-test","part":{"type":"step-start"}}
+{"type":"text","timestamp":1001,"sessionID":"error-test","part":{"type":"text","text":"Some content"}}
+{"type":"step_finish","timestamp":1002,"sessionID":"error-test","part":{"type":"step-finish","reason":"error","error":"Rate limit exceeded"}}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    let output = test_printer.borrow().get_output();
+    // Should still produce output even with error reason
+    assert!(
+        output.contains("Step") || output.contains("content"),
+        "Parser should process content before error"
+    );
+}
+
+// ============================================================================
+// Deduplication Tests
+// ============================================================================
+
+/// Test that consecutive identical text deltas are handled.
+#[test]
+fn test_opencode_parser_consecutive_text_handled() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    // Same text sent multiple times (potential bug scenario)
+    let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"dedup","part":{"type":"step-start"}}
+{"type":"text","timestamp":1001,"sessionID":"dedup","part":{"type":"text","text":"Hello"}}
+{"type":"text","timestamp":1002,"sessionID":"dedup","part":{"type":"text","text":"Hello"}}
+{"type":"text","timestamp":1003,"sessionID":"dedup","part":{"type":"text","text":"Hello"}}
+{"type":"step_finish","timestamp":1004,"sessionID":"dedup","part":{"type":"step-finish","reason":"end-turn"}}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify output doesn't have excessive repetition in render
+    let output = test_printer.borrow().get_output();
+    // Count occurrences - should be reasonable
+    let hello_count = output.matches("Hello").count();
+    assert!(
+        hello_count <= 4,
+        "Consecutive text events should not cause excessive duplication. Got {} occurrences",
+        hello_count
+    );
+}
+
+/// Test that interleaved tool and text events work correctly.
+#[test]
+fn test_opencode_parser_interleaved_tool_text() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"interleaved","part":{"type":"step-start"}}
+{"type":"text","timestamp":1001,"sessionID":"interleaved","part":{"type":"text","text":"Let me check that file"}}
+{"type":"tool_use","timestamp":1002,"sessionID":"interleaved","part":{"type":"tool","tool":"read","state":{"status":"started","input":{"filePath":"test.rs"}}}}
+{"type":"tool_use","timestamp":1003,"sessionID":"interleaved","part":{"type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"test.rs"},"output":"file content"}}}
+{"type":"text","timestamp":1004,"sessionID":"interleaved","part":{"type":"text","text":"Now I can see the content"}}
+{"type":"step_finish","timestamp":1005,"sessionID":"interleaved","part":{"type":"step-finish","reason":"end-turn"}}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    let output = test_printer.borrow().get_output();
+    // Both text blocks should be in output
+    assert!(
+        output.contains("Let me check"),
+        "First text should be in output"
+    );
+    assert!(
+        output.contains("Now I can see"),
+        "Second text should be in output"
+    );
+}
+
+// ============================================================================
+// Token/Cost Tracking Tests
+// ============================================================================
+
+/// Test cost and token reporting in step_finish.
+#[test]
+fn test_opencode_parser_cost_and_tokens() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Verbose, printer);
+
+    let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"cost-test","part":{"type":"step-start"}}
+{"type":"text","timestamp":1001,"sessionID":"cost-test","part":{"type":"text","text":"Response content"}}
+{"type":"step_finish","timestamp":1002,"sessionID":"cost-test","part":{"type":"step-finish","reason":"end-turn","cost":0.0125,"tokens":{"input":100,"output":250,"reasoning":50,"cache":{"read":1000,"write":100}}}}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    let output = test_printer.borrow().get_output();
+    // At verbose level, should show some stats
+    assert!(
+        output.contains("Step finished") || output.contains("250") || output.contains("100"),
+        "Verbose output should contain step finish info"
+    );
+}

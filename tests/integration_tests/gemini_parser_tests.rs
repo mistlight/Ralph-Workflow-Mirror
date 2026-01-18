@@ -209,3 +209,219 @@ fn test_gemini_parser_log_file_flushed() {
         "Log should be readable immediately after parsing (sync_all worked)"
     );
 }
+
+// ============================================================================
+// Deduplication Tests
+// ============================================================================
+
+/// Test that consecutive identical deltas are filtered.
+#[test]
+fn test_gemini_parser_consecutive_duplicates_filtered() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    let input = r#"{"type":"init","session_id":"dedup-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"Hello","delta":true}
+{"type":"message","role":"assistant","content":"Hello","delta":true}
+{"type":"message","role":"assistant","content":"Hello","delta":true}
+{"type":"message","role":"assistant","content":"Hello World","delta":false}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify output doesn't have excessive repetition
+    let output = test_printer.borrow().get_output();
+    // Count occurrences of "Hello" - should not appear more times than necessary
+    let hello_count = output.matches("Hello").count();
+    // Due to delta streaming, we expect a reasonable number but not quadruple
+    assert!(
+        hello_count <= 3,
+        "Consecutive duplicates should be filtered. Got {} occurrences",
+        hello_count
+    );
+}
+
+/// Test that snapshot-as-delta is handled correctly.
+#[test]
+fn test_gemini_parser_snapshot_glitch() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    // Stream content incrementally, then send entire accumulated content as delta (snapshot glitch)
+    let input = r#"{"type":"init","session_id":"snapshot-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"The","delta":true}
+{"type":"message","role":"assistant","content":" quick","delta":true}
+{"type":"message","role":"assistant","content":" brown","delta":true}
+{"type":"message","role":"assistant","content":"The quick brown","delta":true}
+{"type":"message","role":"assistant","content":" fox","delta":true}
+{"type":"message","role":"assistant","content":"The quick brown fox","delta":false}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify output contains the final content
+    let output = test_printer.borrow().get_output();
+    assert!(
+        output.contains("fox"),
+        "Output should contain 'fox' from final content"
+    );
+}
+
+/// Test intentional repetition is preserved.
+#[test]
+fn test_gemini_parser_intentional_repetition_preserved() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    let input = r#"{"type":"init","session_id":"repeat-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"echo","delta":true}
+{"type":"message","role":"assistant","content":" echo","delta":true}
+{"type":"message","role":"assistant","content":" echo","delta":true}
+{"type":"message","role":"assistant","content":"echo echo echo","delta":false}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify output contains the intentional repetition pattern
+    let output = test_printer.borrow().get_output();
+    assert!(
+        output.contains("echo") && output.contains("echo echo"),
+        "Intentional repetition should be preserved in output"
+    );
+}
+
+// ============================================================================
+// Log Content Tests
+// ============================================================================
+
+/// Test log file contains all events for later analysis.
+#[test]
+fn test_gemini_parser_log_contains_events() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("gemini_events.log");
+
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+        .with_log_file_for_test(log_path.to_str().unwrap());
+
+    let input = r#"{"type":"init","session_id":"extract-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"Extracted content here"}
+{"type":"result","status":"success","content":"Final result content"}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify log file contains all events for analysis
+    assert!(log_path.exists(), "Log file should exist");
+    let log_content = std::fs::read_to_string(&log_path).unwrap();
+    assert!(
+        log_content.contains("init"),
+        "Log should contain init event"
+    );
+    assert!(
+        log_content.contains("Extracted content"),
+        "Log should contain message content"
+    );
+    assert!(
+        log_content.contains("result"),
+        "Log should contain result event"
+    );
+}
+
+/// Test multiple turn conversation.
+#[test]
+fn test_gemini_parser_multiple_turns() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("gemini_multi.log");
+
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+        .with_log_file_for_test(log_path.to_str().unwrap());
+
+    let input = r#"{"type":"init","session_id":"multi-test","model":"gemini-2.0"}
+{"type":"message","role":"user","content":"First question"}
+{"type":"message","role":"assistant","content":"First answer"}
+{"type":"message","role":"user","content":"Second question"}
+{"type":"message","role":"assistant","content":"Second answer"}
+{"type":"result","status":"success"}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    parser.parse_stream_for_test(reader).unwrap();
+
+    // Verify log contains both turns
+    let log_content = std::fs::read_to_string(&log_path).unwrap();
+    assert!(
+        log_content.contains("First answer") && log_content.contains("Second answer"),
+        "Log should contain both conversation turns"
+    );
+}
+
+// ============================================================================
+// Error Handling Tests
+// ============================================================================
+
+/// Test handling of malformed JSON.
+#[test]
+fn test_gemini_parser_malformed_json() {
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+
+    // Mix of valid and invalid JSON
+    let input = r#"{"type":"init","session_id":"malformed-test","model":"gemini-2.0"}
+{not valid json}
+{"type":"message","role":"assistant","content":"Valid message after invalid"}
+{"type":"result","status":"success"}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    // Should not panic on malformed JSON
+    let result = parser.parse_stream_for_test(reader);
+    assert!(
+        result.is_ok(),
+        "Parser should handle malformed JSON gracefully"
+    );
+
+    // Valid events should still be processed
+    let output = test_printer.borrow().get_output();
+    assert!(
+        output.contains("Session started") || output.contains("Valid message"),
+        "Valid events should still be processed"
+    );
+}
+
+/// Test handling of network error simulation (truncated response).
+#[test]
+fn test_gemini_parser_truncated_stream() {
+    let temp_dir = TempDir::new().unwrap();
+    let log_path = temp_dir.path().join("gemini_truncated.log");
+
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+    let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+        .with_log_file_for_test(log_path.to_str().unwrap());
+
+    // Stream that ends without result event (simulating network disconnect)
+    let input = r#"{"type":"init","session_id":"truncated-test","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"Partial content","delta":true}
+{"type":"message","role":"assistant","content":" more content","delta":true}"#;
+
+    let reader = BufReader::new(input.as_bytes());
+    let result = parser.parse_stream_for_test(reader);
+
+    // Parser should handle truncated stream gracefully
+    assert!(
+        result.is_ok(),
+        "Parser should handle truncated stream without panic"
+    );
+
+    // Log should still contain the partial events
+    assert!(
+        log_path.exists(),
+        "Log file should exist even for truncated stream"
+    );
+}
