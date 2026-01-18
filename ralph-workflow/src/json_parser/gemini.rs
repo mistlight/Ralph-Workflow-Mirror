@@ -583,6 +583,9 @@ impl GeminiParser {
 
         if let Some(ref mut file) = log_writer {
             file.flush()?;
+            // Ensure data is written to disk before continuing
+            // This prevents race conditions where extraction runs before OS commits writes
+            let _ = file.get_mut().sync_all();
         }
         if let Some(warning) = monitor.check_and_warn(*c) {
             let mut printer = self.printer.borrow_mut();

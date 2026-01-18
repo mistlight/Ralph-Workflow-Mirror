@@ -417,6 +417,9 @@ fn stream_agent_output(
                     buf.push('\n');
                 }
                 logfile.flush()?;
+                // Ensure data is written to disk before continuing
+                // This prevents race conditions where extraction runs before OS commits writes
+                let _ = logfile.sync_all();
 
                 let formatted = format_generic_json_for_display(&buf, runtime.config.verbosity);
                 out.write_all(formatted.as_bytes())?;
@@ -437,6 +440,9 @@ fn stream_agent_output(
             writeln!(logfile, "{line}")?;
         }
         logfile.flush()?;
+        // Ensure data is written to disk before continuing
+        // This prevents race conditions where extraction runs before OS commits writes
+        let _ = logfile.sync_all();
     }
     Ok(())
 }

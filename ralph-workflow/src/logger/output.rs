@@ -136,6 +136,8 @@ impl Logger {
             if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
                 let _ = writeln!(file, "{clean_msg}");
                 let _ = file.flush();
+                // Ensure data is written to disk before continuing
+                let _ = file.sync_all();
             }
         }
     }
