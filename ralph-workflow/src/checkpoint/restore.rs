@@ -161,8 +161,6 @@ pub struct RestoredContext {
 impl RestoredContext {
     /// Create a restored context from a checkpoint.
     pub fn from_checkpoint(checkpoint: &PipelineCheckpoint) -> Self {
-        use crate::checkpoint::state::CliArgsSnapshot;
-
         // Determine if CLI args are meaningful (non-default values)
         let cli_args = if checkpoint.cli_args.developer_iters > 0
             || checkpoint.cli_args.reviewer_reviews > 0
