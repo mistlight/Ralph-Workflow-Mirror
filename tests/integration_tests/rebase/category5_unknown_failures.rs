@@ -22,6 +22,8 @@ use std::fs;
 use tempfile::TempDir;
 use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
+use crate::test_timeout::with_default_timeout;
+
 use ralph_workflow::git_helpers::{rebase_onto, RebaseErrorKind, RebaseResult};
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
@@ -41,316 +43,336 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
 
 #[test]
 fn unknown_error_kind_exists_with_description() {
-    // Verify the Unknown error kind exists and provides a description
-    let err = RebaseErrorKind::Unknown {
-        details: "unexpected error occurred".to_string(),
-    };
+    with_default_timeout(|| {
+        // Verify the Unknown error kind exists and provides a description
+        let err = RebaseErrorKind::Unknown {
+            details: "unexpected error occurred".to_string(),
+        };
 
-    // Should have a description that mentions unknown or unexpected
-    let desc = err.description();
-    assert!(!desc.is_empty(), "Unknown error should have a description");
-    assert!(
-        desc.to_lowercase().contains("unknown")
-            || desc.to_lowercase().contains("unexpected")
-            || desc.contains("undefined"),
-        "Unknown error description should indicate unknown nature: {}",
-        desc
-    );
+        // Should have a description that mentions unknown or unexpected
+        let desc = err.description();
+        assert!(!desc.is_empty(), "Unknown error should have a description");
+        assert!(
+            desc.to_lowercase().contains("unknown")
+                || desc.to_lowercase().contains("unexpected")
+                || desc.contains("undefined"),
+            "Unknown error description should indicate unknown nature: {}",
+            desc
+        );
+    });
 }
 
 #[test]
 fn rebase_handles_unexpected_exit_code() {
-    // Test behavior when git returns an unexpected exit code
-    // This is hard to simulate directly, but we verify the system
-    // can classify unknown errors
-    with_temp_cwd(|dir| {
-        let _repo = init_repo_with_initial_commit(dir);
+    with_default_timeout(|| {
+        // Test behavior when git returns an unexpected exit code
+        // This is hard to simulate directly, but we verify the system
+        // can classify unknown errors
+        with_temp_cwd(|dir| {
+            let _repo = init_repo_with_initial_commit(dir);
 
-        // Try to rebase with an invalid upstream - this should produce
-        // a known error, but verifies the error classification works
-        let result = rebase_onto("definitely-not-a-real-branch-12345");
+            // Try to rebase with an invalid upstream - this should produce
+            // a known error, but verifies the error classification works
+            let result = rebase_onto("definitely-not-a-real-branch-12345");
 
-        // Should return Ok with a result (Failed or NoOp), not panic
-        assert!(result.is_ok(), "Should not panic on unexpected input");
+            // Should return Ok with a result (Failed or NoOp), not panic
+            assert!(result.is_ok(), "Should not panic on unexpected input");
 
-        match result.unwrap() {
-            RebaseResult::Failed(err) => {
-                // Failed result with error is expected
-                assert!(!err.description().is_empty());
+            match result.unwrap() {
+                RebaseResult::Failed(err) => {
+                    // Failed result with error is expected
+                    assert!(!err.description().is_empty());
+                }
+                RebaseResult::NoOp { reason } => {
+                    // NoOp is acceptable if branch doesn't exist
+                    assert!(!reason.is_empty());
+                }
+                _ => {
+                    // Other results are also acceptable
+                }
             }
-            RebaseResult::NoOp { reason } => {
-                // NoOp is acceptable if branch doesn't exist
-                assert!(!reason.is_empty());
-            }
-            _ => {
-                // Other results are also acceptable
-            }
-        }
+        });
     });
 }
 
 #[test]
 fn rebase_handles_unexpected_stderr_format() {
-    // Test that rebase handles unexpected stderr formats from git
-    // This verifies the error classification is resilient
-    with_temp_cwd(|dir| {
-        let _repo = init_repo_with_initial_commit(dir);
-        let default_branch = "main";
+    with_default_timeout(|| {
+        // Test that rebase handles unexpected stderr formats from git
+        // This verifies the error classification is resilient
+        with_temp_cwd(|dir| {
+            let _repo = init_repo_with_initial_commit(dir);
+            let default_branch = "main";
 
-        // Corrupt the git index to trigger an unexpected error
-        let index_path = dir.path().join(".git").join("index");
-        let _ = fs::write(&index_path, "corrupt index data that is not valid");
+            // Corrupt the git index to trigger an unexpected error
+            let index_path = dir.path().join(".git").join("index");
+            let _ = fs::write(&index_path, "corrupt index data that is not valid");
 
-        // Rebase should handle this gracefully, not crash
-        let result = rebase_onto(default_branch);
+            // Rebase should handle this gracefully, not crash
+            let result = rebase_onto(default_branch);
 
-        // Should not panic - should return an error or handle it
-        assert!(result.is_ok(), "Should not panic on corrupt index");
+            // Should not panic - should return an error or handle it
+            assert!(result.is_ok(), "Should not panic on corrupt index");
 
-        match result.unwrap() {
-            RebaseResult::Failed(err) => {
-                // Should classify as some form of error
-                let desc = err.description();
-                assert!(
-                    desc.contains("index")
-                        || desc.contains("corrupt")
-                        || desc.contains("Repository")
-                        || desc.contains("integrity")
-                        || desc.contains("Unknown")
-                        || desc.contains("revision")
-                        || desc.contains("Invalid"),
-                    "Error should describe the problem: {}",
-                    desc
-                );
+            match result.unwrap() {
+                RebaseResult::Failed(err) => {
+                    // Should classify as some form of error
+                    let desc = err.description();
+                    assert!(
+                        desc.contains("index")
+                            || desc.contains("corrupt")
+                            || desc.contains("Repository")
+                            || desc.contains("integrity")
+                            || desc.contains("Unknown")
+                            || desc.contains("revision")
+                            || desc.contains("Invalid"),
+                        "Error should describe the problem: {}",
+                        desc
+                    );
+                }
+                _ => {
+                    // Other results are acceptable
+                }
             }
-            _ => {
-                // Other results are acceptable
-            }
-        }
+        });
     });
 }
 
 #[test]
 fn rebase_handles_case_sensitivity_collision() {
-    // Test platform-specific case sensitivity issues
-    // On case-insensitive filesystems, this could cause issues
-    with_temp_cwd(|dir| {
-        let repo = init_repo_with_initial_commit(dir);
-        let default_branch = get_default_branch_name(&repo);
+    with_default_timeout(|| {
+        // Test platform-specific case sensitivity issues
+        // On case-insensitive filesystems, this could cause issues
+        with_temp_cwd(|dir| {
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
 
-        // Create a file
-        write_file(dir.path().join("test.txt"), "content");
+            // Create a file
+            write_file(dir.path().join("test.txt"), "content");
 
-        // On case-insensitive filesystems, creating TEST.txt would conflict
-        // The rebase should handle this or report an error appropriately
-        let _ = commit_all(&repo, "add test.txt");
+            // On case-insensitive filesystems, creating TEST.txt would conflict
+            // The rebase should handle this or report an error appropriately
+            let _ = commit_all(&repo, "add test.txt");
 
-        // Create a feature branch
-        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
-        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-        test_helpers::git_switch(dir.path(), "feature");
+            // Create a feature branch
+            let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+            let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+            test_helpers::git_switch(dir.path(), "feature");
 
-        // Modify the file
-        write_file(dir.path().join("test.txt"), "modified content");
-        let _ = commit_all(&repo, "modify on feature");
+            // Modify the file
+            write_file(dir.path().join("test.txt"), "modified content");
+            let _ = commit_all(&repo, "modify on feature");
 
-        // Try to rebase - should handle case sensitivity issues
-        let result = rebase_onto(&default_branch);
+            // Try to rebase - should handle case sensitivity issues
+            let result = rebase_onto(&default_branch);
 
-        // Should not crash
-        assert!(result.is_ok());
+            // Should not crash
+            assert!(result.is_ok());
+        });
     });
 }
 
 #[test]
 fn rebase_handles_long_path_names() {
-    // Test that rebase handles very long path names
-    // This could be an issue on some platforms (Windows MAX_PATH)
-    with_temp_cwd(|dir| {
-        let repo = init_repo_with_initial_commit(dir);
-        let default_branch = get_default_branch_name(&repo);
+    with_default_timeout(|| {
+        // Test that rebase handles very long path names
+        // This could be an issue on some platforms (Windows MAX_PATH)
+        with_temp_cwd(|dir| {
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
 
-        // Create a deeply nested directory structure
-        let deep_dir = dir
-            .path()
-            .join("a")
-            .join("b")
-            .join("c")
-            .join("d")
-            .join("e")
-            .join("f")
-            .join("g")
-            .join("h")
-            .join("i")
-            .join("j");
+            // Create a deeply nested directory structure
+            let deep_dir = dir
+                .path()
+                .join("a")
+                .join("b")
+                .join("c")
+                .join("d")
+                .join("e")
+                .join("f")
+                .join("g")
+                .join("h")
+                .join("i")
+                .join("j");
 
-        fs::create_dir_all(&deep_dir).expect("create deep directory");
+            fs::create_dir_all(&deep_dir).expect("create deep directory");
 
-        let long_path_file = deep_dir.join("file.txt");
-        write_file(&long_path_file, "content in deep path");
+            let long_path_file = deep_dir.join("file.txt");
+            write_file(&long_path_file, "content in deep path");
 
-        let _ = commit_all(&repo, "add deep file");
+            let _ = commit_all(&repo, "add deep file");
 
-        // Create a feature branch
-        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
-        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-        test_helpers::git_switch(dir.path(), "feature");
+            // Create a feature branch
+            let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+            let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+            test_helpers::git_switch(dir.path(), "feature");
 
-        // Modify the deep file
-        write_file(&long_path_file, "modified content in deep path");
-        let _ = commit_all(&repo, "modify deep file");
+            // Modify the deep file
+            write_file(&long_path_file, "modified content in deep path");
+            let _ = commit_all(&repo, "modify deep file");
 
-        // Rebase should handle long paths
-        let result = rebase_onto(&default_branch);
+            // Rebase should handle long paths
+            let result = rebase_onto(&default_branch);
 
-        // Should not crash or fail due to path length
-        assert!(result.is_ok());
+            // Should not crash or fail due to path length
+            assert!(result.is_ok());
+        });
     });
 }
 
 #[test]
 fn rebase_handles_special_characters_in_filenames() {
-    // Test that rebase handles special characters in filenames
-    with_temp_cwd(|dir| {
-        let repo = init_repo_with_initial_commit(dir);
-        let default_branch = get_default_branch_name(&repo);
+    with_default_timeout(|| {
+        // Test that rebase handles special characters in filenames
+        with_temp_cwd(|dir| {
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
 
-        // Create files with special characters (that Git allows)
-        let special_files = [
-            "file with spaces.txt",
-            "file-with-dashes.txt",
-            "file_with_underscores.txt",
-            "file.with.dots.txt",
-        ];
+            // Create files with special characters (that Git allows)
+            let special_files = [
+                "file with spaces.txt",
+                "file-with-dashes.txt",
+                "file_with_underscores.txt",
+                "file.with.dots.txt",
+            ];
 
-        for filename in &special_files {
-            write_file(dir.path().join(filename), "content");
-        }
+            for filename in &special_files {
+                write_file(dir.path().join(filename), "content");
+            }
 
-        let _ = commit_all(&repo, "add special files");
+            let _ = commit_all(&repo, "add special files");
 
-        // Create a feature branch
-        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
-        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-        test_helpers::git_switch(dir.path(), "feature");
+            // Create a feature branch
+            let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+            let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+            test_helpers::git_switch(dir.path(), "feature");
 
-        // Modify one of the special files
-        write_file(dir.path().join(special_files[0]), "modified content");
-        let _ = commit_all(&repo, "modify special file");
+            // Modify one of the special files
+            write_file(dir.path().join(special_files[0]), "modified content");
+            let _ = commit_all(&repo, "modify special file");
 
-        // Rebase should handle special characters
-        let result = rebase_onto(&default_branch);
+            // Rebase should handle special characters
+            let result = rebase_onto(&default_branch);
 
-        // Should not crash
-        assert!(result.is_ok());
+            // Should not crash
+            assert!(result.is_ok());
+        });
     });
 }
 
 #[test]
 fn unknown_error_classification_for_unexpected_output() {
-    // Test that unexpected git output is classified as Unknown error
-    // This verifies the error classification is robust
+    with_default_timeout(|| {
+        // Test that unexpected git output is classified as Unknown error
+        // This verifies the error classification is robust
 
-    // The error classification function should handle unexpected patterns
-    // by falling back to Unknown error kind
+        // The error classification function should handle unexpected patterns
+        // by falling back to Unknown error kind
 
-    let unknown_err = RebaseErrorKind::Unknown {
-        details: "git produced unexpected output that we couldn't classify".to_string(),
-    };
+        let unknown_err = RebaseErrorKind::Unknown {
+            details: "git produced unexpected output that we couldn't classify".to_string(),
+        };
 
-    let desc = unknown_err.description();
-    assert!(!desc.is_empty());
+        let desc = unknown_err.description();
+        assert!(!desc.is_empty());
 
-    // The description should be useful for debugging
-    assert!(
-        desc.len() > 10,
-        "Unknown error description should be descriptive"
-    );
+        // The description should be useful for debugging
+        assert!(
+            desc.len() > 10,
+            "Unknown error description should be descriptive"
+        );
+    });
 }
 
 #[test]
 fn rebase_handles_simultaneous_git_operations() {
-    // Test race conditions from concurrent git operations
-    // This documents expected behavior for such scenarios
+    with_default_timeout(|| {
+        // Test race conditions from concurrent git operations
+        // This documents expected behavior for such scenarios
 
-    with_temp_cwd(|dir| {
-        let _repo = init_repo_with_initial_commit(dir);
-        let default_branch = "main";
+        with_temp_cwd(|dir| {
+            let _repo = init_repo_with_initial_commit(dir);
+            let default_branch = "main";
 
-        // Create a fake concurrent operation marker
-        let rebase_merge_dir = dir.path().join(".git").join("rebase-merge");
-        fs::create_dir_all(&rebase_merge_dir).unwrap();
+            // Create a fake concurrent operation marker
+            let rebase_merge_dir = dir.path().join(".git").join("rebase-merge");
+            fs::create_dir_all(&rebase_merge_dir).unwrap();
 
-        // Try to rebase - should detect concurrent operation
-        let result = rebase_onto(default_branch);
+            // Try to rebase - should detect concurrent operation
+            let result = rebase_onto(default_branch);
 
-        // Should handle this appropriately (either error or cleanup)
-        assert!(result.is_ok(), "Should not crash on concurrent operation");
+            // Should handle this appropriately (either error or cleanup)
+            assert!(result.is_ok(), "Should not crash on concurrent operation");
 
-        // Clean up for test continuity
-        let _ = fs::remove_dir_all(rebase_merge_dir);
+            // Clean up for test continuity
+            let _ = fs::remove_dir_all(rebase_merge_dir);
+        });
     });
 }
 
 #[test]
 fn rebase_handles_zero_length_ref_updates() {
-    // Test handling of zero-length or empty ref updates
-    // This could happen with corrupted refs
+    with_default_timeout(|| {
+        // Test handling of zero-length or empty ref updates
+        // This could happen with corrupted refs
 
-    with_temp_cwd(|dir| {
-        let repo = init_repo_with_initial_commit(dir);
-        let default_branch = get_default_branch_name(&repo);
+        with_temp_cwd(|dir| {
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
 
-        // Create a feature branch
-        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
-        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-        test_helpers::git_switch(dir.path(), "feature");
+            // Create a feature branch
+            let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+            let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+            test_helpers::git_switch(dir.path(), "feature");
 
-        // Create an empty HEAD file to simulate corruption
-        let head_path = dir.path().join(".git").join("HEAD");
-        let original_head = fs::read_to_string(&head_path).unwrap();
+            // Create an empty HEAD file to simulate corruption
+            let head_path = dir.path().join(".git").join("HEAD");
+            let original_head = fs::read_to_string(&head_path).unwrap();
 
-        // Try rebase with potentially corrupted state
-        // (Git will usually fix this, but we verify no crash)
-        let result = rebase_onto(&default_branch);
+            // Try rebase with potentially corrupted state
+            // (Git will usually fix this, but we verify no crash)
+            let result = rebase_onto(&default_branch);
 
-        // Should handle gracefully
-        assert!(result.is_ok());
+            // Should handle gracefully
+            assert!(result.is_ok());
 
-        // Restore HEAD for cleanup
-        let _ = fs::write(&head_path, original_head);
+            // Restore HEAD for cleanup
+            let _ = fs::write(&head_path, original_head);
+        });
     });
 }
 
 #[test]
 fn rebase_handles_unicode_in_filenames_and_content() {
-    // Test handling of Unicode characters in filenames and content
-    with_temp_cwd(|dir| {
-        let repo = init_repo_with_initial_commit(dir);
-        let default_branch = get_default_branch_name(&repo);
+    with_default_timeout(|| {
+        // Test handling of Unicode characters in filenames and content
+        with_temp_cwd(|dir| {
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
 
-        // Create files with Unicode names
-        let unicode_files = ["файл.txt", "文件.txt", "datei.txt", "fichier.txt"];
+            // Create files with Unicode names
+            let unicode_files = ["файл.txt", "文件.txt", "datei.txt", "fichier.txt"];
 
-        for filename in &unicode_files {
-            write_file(dir.path().join(filename), "content");
-        }
+            for filename in &unicode_files {
+                write_file(dir.path().join(filename), "content");
+            }
 
-        let _ = commit_all(&repo, "add unicode files");
+            let _ = commit_all(&repo, "add unicode files");
 
-        // Create a feature branch
-        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
-        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-        test_helpers::git_switch(dir.path(), "feature");
+            // Create a feature branch
+            let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+            let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+            test_helpers::git_switch(dir.path(), "feature");
 
-        // Modify one of the unicode files
-        write_file(dir.path().join(unicode_files[0]), "modified content");
-        let _ = commit_all(&repo, "modify unicode file");
+            // Modify one of the unicode files
+            write_file(dir.path().join(unicode_files[0]), "modified content");
+            let _ = commit_all(&repo, "modify unicode file");
 
-        // Rebase should handle Unicode
-        let result = rebase_onto(&default_branch);
+            // Rebase should handle Unicode
+            let result = rebase_onto(&default_branch);
 
-        // Should not crash
-        assert!(result.is_ok());
+            // Should not crash
+            assert!(result.is_ok());
+        });
     });
 }
