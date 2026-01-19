@@ -282,6 +282,20 @@ struct ReviewPassResult {
     early_exit: bool,
 }
 
+/// Result of parsing review output.
+#[derive(Debug)]
+enum ParseResult {
+    /// Successfully parsed with issues found
+    IssuesFound,
+    /// Successfully parsed with explicit "no issues" declaration
+    NoIssuesExplicit,
+    /// Failed to parse - includes error description for re-prompting
+    ParseFailed(String),
+}
+
+/// Maximum number of format correction retries before giving up.
+const MAX_FORMAT_RETRIES: u32 = 5;
+
 /// Log prefix-based file search results.
 fn log_prefix_search_results(logger: &Logger, parent: &Path, prefix: &str) {
     use crate::files::result_extraction::file_finder::{
@@ -439,103 +453,237 @@ fn run_review_pass(
     review_prompt: &str,
 ) -> anyhow::Result<ReviewPassResult> {
     let issues_path = Path::new(".agent/ISSUES.md");
-    let log_dir = format!(".agent/logs/reviewer_review_{j}");
 
-    let _ = {
-        let mut runtime = PipelineRuntime {
-            timer: ctx.timer,
-            logger: ctx.logger,
-            colors: ctx.colors,
-            config: ctx.config,
+    // Run initial review
+    let mut current_prompt = review_prompt.to_string();
+    let mut retry_count = 0;
+
+    loop {
+        let log_dir = format!(".agent/logs/reviewer_review_{j}_attempt_{retry_count}");
+
+        let _ = {
+            let mut runtime = PipelineRuntime {
+                timer: ctx.timer,
+                logger: ctx.logger,
+                colors: ctx.colors,
+                config: ctx.config,
+            };
+            run_with_fallback(
+                AgentRole::Reviewer,
+                &format!(
+                    "{review_label} #{j}{}",
+                    if retry_count > 0 {
+                        format!(" (retry {retry_count})")
+                    } else {
+                        String::new()
+                    }
+                ),
+                &current_prompt,
+                &log_dir,
+                &mut runtime,
+                ctx.registry,
+                ctx.reviewer_agent,
+            )
         };
-        run_with_fallback(
-            AgentRole::Reviewer,
-            &format!("{review_label} #{j}"),
-            review_prompt,
-            &log_dir,
-            &mut runtime,
-            ctx.registry,
-            ctx.reviewer_agent,
-        )
-    };
-    ctx.stats.reviewer_runs_completed += 1;
+        ctx.stats.reviewer_runs_completed += 1;
 
-    // ORCHESTRATOR-CONTROLLED FILE I/O:
-    // Ensure .agent directory exists
-    if let Some(parent) = issues_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+        // ORCHESTRATOR-CONTROLLED FILE I/O:
+        // Ensure .agent directory exists
+        if let Some(parent) = issues_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
 
-    let extraction = extract_issues(Path::new(&log_dir))?;
+        // Extract and validate the review output
+        let parse_result = extract_and_validate_review_output(ctx, &log_dir, issues_path)?;
 
-    if let Some(content) = &extraction.raw_content {
-        // Extraction succeeded - orchestrator writes the file
-        fs::write(issues_path, content)?;
+        match parse_result {
+            ParseResult::IssuesFound => {
+                // POST-FLIGHT VALIDATION: Check review output after agent completes
+                handle_postflight_validation(ctx, j);
+                return Ok(ReviewPassResult { early_exit: false });
+            }
+            ParseResult::NoIssuesExplicit => {
+                ctx.logger
+                    .success(&format!("No issues found after cycle {j} - stopping early"));
+                // Clean up ISSUES.md before early exit in isolation mode
+                if ctx.config.isolation_mode {
+                    delete_issues_file_for_isolation(ctx.logger)?;
+                }
+                return Ok(ReviewPassResult { early_exit: true });
+            }
+            ParseResult::ParseFailed(error_description) => {
+                retry_count += 1;
 
-        if extraction.is_valid {
-            ctx.logger
-                .success("Issues extracted from agent output (JSON)");
-        } else {
-            let warning = extraction.validation_warning.clone().unwrap_or_default();
-            ctx.logger
-                .warn(&format!("Issues written but validation failed: {warning}"));
-            // Debug logging: show the actual content for diagnosis
-            if ctx.config.verbosity.is_debug() {
-                ctx.logger.info(&format!(
-                    "Extracted content (first 200 chars): {}",
-                    content.chars().take(200).collect::<String>()
+                if retry_count > MAX_FORMAT_RETRIES {
+                    ctx.logger.error(&format!(
+                        "Failed to get parseable review output after {} retries. Last error: {}",
+                        MAX_FORMAT_RETRIES, error_description
+                    ));
+                    // Write a marker file indicating the failure - do NOT assume no issues
+                    let failure_marker = format!(
+                        "# Review Output Parse Failure\n\n\
+                        The reviewer agent's output could not be parsed after {} attempts.\n\n\
+                        Last parsing error: {}\n\n\
+                        This does NOT mean there are no issues - it means the output format was not recognized.\n\n\
+                        Please check the logs in .agent/logs/ for the raw reviewer output.\n",
+                        MAX_FORMAT_RETRIES, error_description
+                    );
+                    fs::write(issues_path, failure_marker)?;
+                    // Continue with fix pass anyway - the fix agent will see the failure message
+                    return Ok(ReviewPassResult { early_exit: false });
+                }
+
+                ctx.logger.warn(&format!(
+                    "Review output format not recognized (attempt {}/{}): {}",
+                    retry_count,
+                    MAX_FORMAT_RETRIES + 1,
+                    error_description
                 ));
                 ctx.logger
-                    .info(&format!("Content length: {} characters", content.len()));
-                ctx.logger.info("Hint: Content may not match expected issue format (checkboxes, severity markers, file paths)");
+                    .info("Re-prompting agent with format correction...");
+
+                // Build a format correction prompt
+                current_prompt = build_format_correction_prompt(&error_description);
             }
         }
-    } else {
-        // JSON extraction failed - log for debugging
-        ctx.logger
-            .info("No JSON result event found in reviewer logs");
+    }
+}
 
-        // Debug logging: provide more diagnostic information
+/// Extract review output and validate its format.
+///
+/// Returns a `ParseResult` indicating whether the output was successfully parsed,
+/// explicitly declared no issues, or failed to parse (with an error description).
+fn extract_and_validate_review_output(
+    ctx: &mut PhaseContext<'_>,
+    log_dir: &str,
+    issues_path: &Path,
+) -> anyhow::Result<ParseResult> {
+    let extraction = extract_issues(Path::new(log_dir))?;
+
+    // First, try to get content from extraction or legacy file
+    let content = if let Some(content) = extraction.raw_content {
+        content
+    } else {
+        // JSON extraction failed - check for legacy agent-written file
         if ctx.config.verbosity.is_debug() {
-            log_extraction_diagnostics(ctx.logger, &log_dir);
+            ctx.logger
+                .info("No JSON result event found in reviewer logs");
+            log_extraction_diagnostics(ctx.logger, log_dir);
         }
 
         // Check if agent wrote the file directly (legacy fallback)
-        let agent_wrote_file = issues_path
-            .exists()
-            .then(|| fs::read_to_string(issues_path).ok())
-            .flatten()
-            .is_some_and(|s| !s.trim().is_empty());
-
-        if agent_wrote_file {
-            ctx.logger
-                .info("Using agent-written ISSUES.md (legacy mode)");
-        } else {
-            // No content from extraction or agent - write "no issues" marker
-            let no_issues_marker = "# Issues\n\nNo issues identified by reviewer.\n";
-            fs::write(issues_path, no_issues_marker)?;
-            ctx.logger
-                .info("No issues content found in agent output - assuming no issues");
-        }
-    }
-
-    // POST-FLIGHT VALIDATION: Check review output after agent completes
-    handle_postflight_validation(ctx, j);
-
-    // EARLY EXIT CHECK: If review found no issues, stop
-    if let Ok(metrics) = ReviewMetrics::from_issues_file() {
-        if metrics.no_issues_declared && metrics.total_issues == 0 {
-            ctx.logger
-                .success(&format!("No issues found after cycle {j} - stopping early"));
-            // Clean up ISSUES.md before early exit in isolation mode
-            if ctx.config.isolation_mode {
-                delete_issues_file_for_isolation(ctx.logger)?;
+        if issues_path.exists() {
+            if let Ok(content) = fs::read_to_string(issues_path) {
+                if !content.trim().is_empty() {
+                    ctx.logger
+                        .info("Using agent-written ISSUES.md (legacy mode)");
+                    content
+                } else {
+                    return Ok(ParseResult::ParseFailed(
+                        "Agent wrote an empty ISSUES.md file. Expected either issues in checkbox format \
+                        (e.g., '- [ ] Critical: description') or explicit 'No issues found.' declaration."
+                            .to_string(),
+                    ));
+                }
+            } else {
+                return Ok(ParseResult::ParseFailed(
+                    "No review output captured. The agent may have failed to produce any output."
+                        .to_string(),
+                ));
             }
-            return Ok(ReviewPassResult { early_exit: true });
+        } else {
+            return Ok(ParseResult::ParseFailed(
+                "No review output captured. The agent did not write ISSUES.md and no JSON result was found in logs."
+                    .to_string(),
+            ));
         }
+    };
+
+    // Write the content to ISSUES.md
+    fs::write(issues_path, &content)?;
+
+    // Parse the content to determine the result
+    let metrics = ReviewMetrics::from_issues_content(&content);
+
+    if metrics.total_issues > 0 {
+        ctx.logger.success(&format!(
+            "Issues extracted: {} total ({} critical, {} high, {} medium, {} low)",
+            metrics.total_issues,
+            metrics.critical_issues,
+            metrics.high_issues,
+            metrics.medium_issues,
+            metrics.low_issues
+        ));
+        return Ok(ParseResult::IssuesFound);
     }
 
-    Ok(ReviewPassResult { early_exit: false })
+    if metrics.no_issues_declared {
+        return Ok(ParseResult::NoIssuesExplicit);
+    }
+
+    // Content exists but we couldn't parse any issues AND no explicit "no issues" declaration
+    // This is an ambiguous state - we need to re-prompt
+    let preview: String = content.lines().take(10).collect::<Vec<_>>().join("\n");
+    let content_len = content.len();
+
+    Ok(ParseResult::ParseFailed(format!(
+        "Review output ({} bytes) could not be parsed. No issues found in expected format \
+        (checkbox format like '- [ ] Critical: description' or header format like '#### [ ] Critical: description'), \
+        and no explicit 'No issues found.' declaration. Content preview:\n{}\n\n\
+        If there are no issues, the output must explicitly state 'No issues found.' on its own line.",
+        content_len,
+        preview
+    )))
+}
+
+/// Build a prompt to ask the agent to reformat its output.
+fn build_format_correction_prompt(error_description: &str) -> String {
+    format!(
+        r#"Your previous review output could not be parsed. Please reformat your response.
+
+## Parsing Error
+
+{error_description}
+
+## Required Output Format
+
+You MUST output your review in ONE of these two formats:
+
+### Format A: If you found issues
+
+List each issue using checkbox format with severity:
+
+```
+- [ ] Critical: `file.rs:line` - Description of the critical issue
+- [ ] High: `file.rs:line` - Description of the high priority issue  
+- [ ] Medium: `file.rs:line` - Description of the medium priority issue
+- [ ] Low: `file.rs:line` - Description of the low priority issue
+```
+
+OR using header format:
+
+```
+#### [ ] Critical: `file.rs:line` - Description of the critical issue
+#### [ ] High: `file.rs:line` - Description of the high priority issue
+```
+
+### Format B: If you found NO issues
+
+You MUST explicitly write this exact line:
+
+```
+No issues found.
+```
+
+## Important
+
+- Do NOT write prose about findings without the checkbox/header format
+- Do NOT assume the reader knows there are no issues - be EXPLICIT
+- Every issue MUST have a severity level (Critical, High, Medium, or Low)
+- If you found issues in your previous review, please restate them in the correct format
+
+Please provide your review output now in the correct format."#
+    )
 }
 
 /// Handle post-flight validation after a review pass.

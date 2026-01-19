@@ -9,6 +9,33 @@ use std::path::Path;
 
 use super::severity::IssueSeverity;
 
+/// Parse header-based issue format: `#### [ ] Critical: description`
+///
+/// Returns the text after the checkbox if it matches, or None if not a header issue format.
+fn parse_header_issue_format(line: &str) -> Option<&str> {
+    // Strip leading # characters
+    let stripped = line.trim_start_matches('#');
+    if stripped.len() == line.len() {
+        // No # characters found, not a header
+        return None;
+    }
+
+    let stripped = stripped.trim_start();
+
+    // Check for checkbox format in header
+    if let Some(rest) = stripped.strip_prefix("[ ]") {
+        return Some(rest.trim_start());
+    }
+    if let Some(rest) = stripped
+        .strip_prefix("[x]")
+        .or_else(|| stripped.strip_prefix("[X]"))
+    {
+        return Some(rest.trim_start());
+    }
+
+    None
+}
+
 /// Review metrics collected from a pipeline run
 #[derive(Debug, Clone, Default)]
 pub struct ReviewMetrics {
@@ -38,23 +65,70 @@ impl ReviewMetrics {
         let mut metrics = Self::new();
         metrics.issues_file_found = true;
 
-        // Check for "no issues" declaration
+        // Check for explicit "no issues" declaration
+        // We use line-by-line matching to avoid false positives from phrases like
+        // "No critical security issues found" in review text that does contain issues.
+        // Only lines that are clearly declarations count.
         let content_lower = content.to_lowercase();
-        if content_lower.contains("no issues found")
-            || content_lower.contains("all issues resolved")
-            || content_lower.contains("no issues")
-        {
-            metrics.no_issues_declared = true;
+        for line in content_lower.lines() {
+            let trimmed = line.trim();
+            // Only match explicit declarations, not text that happens to contain the phrase
+            // A declaration is typically: "No issues found" or "No issues" at the start of a line
+            // or as the entire line (possibly after list markers)
+            let cleaned = trimmed
+                .trim_start_matches('-')
+                .trim_start_matches('*')
+                .trim();
+
+            if cleaned == "no issues found"
+                || cleaned == "no issues found."
+                || cleaned == "no issues"
+                || cleaned == "no issues."
+                || cleaned == "all issues resolved"
+                || cleaned == "all issues resolved."
+                // Handle "all issues resolved. <additional text>" pattern
+                || cleaned.starts_with("all issues resolved.")
+                // Handle "no issues found" at start without severity markers
+                || cleaned.starts_with("no issues found")
+                    && !cleaned.contains("critical")
+                    && !cleaned.contains("high")
+                    && !cleaned.contains("medium")
+                    && !cleaned.contains("low")
+            {
+                metrics.no_issues_declared = true;
+                break;
+            }
         }
 
         // Parse issue lines
         // Format: - [ ] Critical: [file:line] Description
         // Format: - [x] High: [file:line] Description
+        // Format: #### [ ] Critical: [file:line] Description (header-based format)
         for line in content.lines() {
             let trimmed = line.trim();
 
-            // Skip empty lines and headers
-            if trimmed.is_empty() || trimmed.starts_with('#') {
+            // Skip empty lines
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Try header-based format first (e.g., "#### [ ] Critical:")
+            // Some agents output issues with markdown headers containing checkboxes
+            if let Some(rest) = parse_header_issue_format(trimmed) {
+                if let Some(severity) = IssueSeverity::from_str(rest) {
+                    metrics.total_issues += 1;
+                    match severity {
+                        IssueSeverity::Critical => metrics.critical_issues += 1,
+                        IssueSeverity::High => metrics.high_issues += 1,
+                        IssueSeverity::Medium => metrics.medium_issues += 1,
+                        IssueSeverity::Low => metrics.low_issues += 1,
+                    }
+                }
+                continue;
+            }
+
+            // Skip headers that don't contain issue format
+            if trimmed.starts_with('#') {
                 continue;
             }
 
@@ -89,6 +163,13 @@ impl ReviewMetrics {
                     IssueSeverity::Low => metrics.low_issues += 1,
                 }
             }
+        }
+
+        // If we found actual issues, the "no issues declared" flag is invalid
+        // This handles cases where review text contains "No issues found" somewhere
+        // but the review actually lists issues elsewhere.
+        if metrics.total_issues > 0 {
+            metrics.no_issues_declared = false;
         }
 
         metrics

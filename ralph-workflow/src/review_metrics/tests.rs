@@ -195,3 +195,139 @@ fn test_review_metrics_default() {
     assert!(!metrics.issues_file_found);
     assert!(!metrics.no_issues_declared);
 }
+
+#[test]
+fn test_parse_header_based_issue_format() {
+    // Test the header-based format: #### [ ] Critical: description
+    let content = r#"# Code Review
+
+## Overview
+This is a code review.
+
+### Issues Found
+
+#### [ ] Critical: `src/main.rs:42` - SQL injection vulnerability
+
+The code is vulnerable to SQL injection.
+
+#### [ ] High: `src/auth.rs:100` - Missing authentication check
+
+Authentication is not verified properly.
+
+#### [ ] Medium: `src/api.rs:50` - No rate limiting
+
+API endpoints lack rate limiting.
+"#;
+    let metrics = ReviewMetrics::from_issues_content(content);
+
+    assert_eq!(metrics.total_issues, 3, "Should find 3 header-based issues");
+    assert_eq!(metrics.critical_issues, 1);
+    assert_eq!(metrics.high_issues, 1);
+    assert_eq!(metrics.medium_issues, 1);
+    assert!(
+        !metrics.no_issues_declared,
+        "Should not declare no issues when issues exist"
+    );
+}
+
+#[test]
+fn test_parse_header_based_mixed_with_list() {
+    // Test mixed header-based and list-based formats
+    let content = r#"# Issues
+
+#### [ ] Critical: Header format critical issue
+
+- [ ] High: List format high issue
+"#;
+    let metrics = ReviewMetrics::from_issues_content(content);
+
+    assert_eq!(
+        metrics.total_issues, 2,
+        "Should find both header and list format issues"
+    );
+    assert_eq!(metrics.critical_issues, 1);
+    assert_eq!(metrics.high_issues, 1);
+}
+
+#[test]
+fn test_no_issues_declared_not_triggered_by_review_text() {
+    // Regression test: "No issues found" in descriptive text should not trigger
+    // no_issues_declared when actual issues exist
+    let content = r#"# Code Review
+
+## Security Analysis
+
+No critical security issues found in the authentication module.
+
+### Issues
+
+#### [ ] High: `src/api.rs:50` - Missing input validation
+
+Input validation is needed.
+
+#### [ ] Medium: `src/logging.rs:30` - Sensitive data in logs
+
+Logs may contain sensitive information.
+"#;
+    let metrics = ReviewMetrics::from_issues_content(content);
+
+    assert_eq!(metrics.total_issues, 2, "Should find 2 issues");
+    assert!(
+        !metrics.no_issues_declared,
+        "Should NOT declare 'no issues' when issues exist"
+    );
+}
+
+#[test]
+fn test_no_issues_declared_with_actual_no_issues_line() {
+    // Explicit "No issues found" on its own line should work
+    let content = r#"# Code Review
+
+## Summary
+
+The code looks good.
+
+No issues found.
+"#;
+    let metrics = ReviewMetrics::from_issues_content(content);
+
+    assert_eq!(metrics.total_issues, 0);
+    assert!(
+        metrics.no_issues_declared,
+        "Should declare no issues when explicit statement exists"
+    );
+}
+
+#[test]
+fn test_header_checkbox_resolved() {
+    // Test resolved issues in header format
+    let content = r#"# Issues
+
+#### [x] Critical: Fixed critical issue
+#### [ ] High: Open high issue
+"#;
+    let metrics = ReviewMetrics::from_issues_content(content);
+
+    assert_eq!(metrics.total_issues, 2);
+    assert_eq!(metrics.critical_issues, 1);
+    assert_eq!(metrics.high_issues, 1);
+    // Note: header format currently doesn't track resolved status
+    // This is acceptable as it's primarily used for review output, not fix tracking
+}
+
+#[test]
+fn test_header_single_hash() {
+    // Headers with different levels of #
+    let content = r#"# [ ] Critical: One hash
+## [ ] High: Two hash
+### [ ] Medium: Three hash
+#### [ ] Low: Four hash
+"#;
+    let metrics = ReviewMetrics::from_issues_content(content);
+
+    assert_eq!(metrics.total_issues, 4);
+    assert_eq!(metrics.critical_issues, 1);
+    assert_eq!(metrics.high_issues, 1);
+    assert_eq!(metrics.medium_issues, 1);
+    assert_eq!(metrics.low_issues, 1);
+}
