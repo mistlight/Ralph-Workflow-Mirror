@@ -26,6 +26,8 @@ use std::fs;
 use tempfile::TempDir;
 use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
+use crate::test_timeout::with_default_timeout;
+
 use ralph_workflow::git_helpers::{rebase_onto, RebaseErrorKind, RebaseResult, RecoveryAction};
 
 /// Helper to create a file with conflict markers
@@ -89,488 +91,520 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
 /// Test that conflict detection works correctly for single file conflicts.
 #[test]
 fn test_detect_single_file_conflict() {
-    with_temp_cwd(|dir| {
-        let file = dir.path().join("conflict.txt");
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let file = dir.path().join("conflict.txt");
 
-        // Create a file with conflict markers
-        create_conflict_file(
-            &file,
-            "<<<<<<< HEAD\nmain version\n=======\nfeature version\n>>>>>>> feature\n",
-        );
+            // Create a file with conflict markers
+            create_conflict_file(
+                &file,
+                "<<<<<<< HEAD\nmain version\n=======\nfeature version\n>>>>>>> feature\n",
+            );
 
-        // Verify we can detect the conflict markers
-        assert!(
-            has_conflict_markers(&file),
-            "Should detect conflict markers"
-        );
+            // Verify we can detect the conflict markers
+            assert!(
+                has_conflict_markers(&file),
+                "Should detect conflict markers"
+            );
+        });
     });
 }
 
 /// Test that conflict detection works correctly for multiple file conflicts.
 #[test]
 fn test_detect_multiple_file_conflicts() {
-    with_temp_cwd(|dir| {
-        let files = vec![
-            dir.path().join("file1.rs"),
-            dir.path().join("file2.rs"),
-            dir.path().join("file3.txt"),
-        ];
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let files = vec![
+                dir.path().join("file1.rs"),
+                dir.path().join("file2.rs"),
+                dir.path().join("file3.txt"),
+            ];
 
-        for file in &files {
-            create_conflict_file(
-                file,
-                "<<<<<<< HEAD\nversion 1\n=======\nversion 2\n>>>>>>> feature\n",
-            );
-        }
+            for file in &files {
+                create_conflict_file(
+                    file,
+                    "<<<<<<< HEAD\nversion 1\n=======\nversion 2\n>>>>>>> feature\n",
+                );
+            }
 
-        // Verify all files have conflict markers
-        for file in &files {
-            assert!(
-                has_conflict_markers(file),
-                "Should detect conflict markers in {:?}",
-                file
-            );
-        }
+            // Verify all files have conflict markers
+            for file in &files {
+                assert!(
+                    has_conflict_markers(file),
+                    "Should detect conflict markers in {:?}",
+                    file
+                );
+            }
+        });
     });
 }
 
 /// Test that we can distinguish between resolved and unresolved conflicts.
 #[test]
 fn test_distinct_resolved_unresolved_conflicts() {
-    with_temp_cwd(|dir| {
-        let file1 = dir.path().join("resolved.rs");
-        let file2 = dir.path().join("unresolved.rs");
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let file1 = dir.path().join("resolved.rs");
+            let file2 = dir.path().join("unresolved.rs");
 
-        // File 1: Resolved (no markers)
-        create_conflict_file(&file1, "fn main() {\n    println!(\"Hello, world!\");\n}\n");
+            // File 1: Resolved (no markers)
+            create_conflict_file(&file1, "fn main() {\n    println!(\"Hello, world!\");\n}\n");
 
-        // File 2: Unresolved (has markers)
-        create_conflict_file(
-            &file2,
-            "<<<<<<< HEAD\nmain version\n=======\nfeature version\n>>>>>>> feature\n",
-        );
+            // File 2: Unresolved (has markers)
+            create_conflict_file(
+                &file2,
+                "<<<<<<< HEAD\nmain version\n=======\nfeature version\n>>>>>>> feature\n",
+            );
 
-        // Verify detection
-        assert!(
-            !has_conflict_markers(&file1),
-            "Resolved file should have no markers"
-        );
-        assert!(
-            has_conflict_markers(&file2),
-            "Unresolved file should have markers"
-        );
+            // Verify detection
+            assert!(
+                !has_conflict_markers(&file1),
+                "Resolved file should have no markers"
+            );
+            assert!(
+                has_conflict_markers(&file2),
+                "Unresolved file should have markers"
+            );
+        });
     });
 }
 
 /// Test validation of balanced delimiters in files.
 #[test]
 fn test_validate_balanced_delimiters() {
-    with_temp_cwd(|dir| {
-        // Balanced file
-        let balanced = dir.path().join("balanced.rs");
-        create_conflict_file(&balanced, "fn main() {\n    let x = { [ (1, 2) ] };\n}\n");
-        let content = fs::read_to_string(&balanced).unwrap();
-        assert!(check_balanced_delimiters(&content).is_ok());
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            // Balanced file
+            let balanced = dir.path().join("balanced.rs");
+            create_conflict_file(&balanced, "fn main() {\n    let x = { [ (1, 2) ] };\n}\n");
+            let content = fs::read_to_string(&balanced).unwrap();
+            assert!(check_balanced_delimiters(&content).is_ok());
 
-        // Unbalanced braces
-        let unbalanced_braces = dir.path().join("unbalanced_braces.rs");
-        create_conflict_file(&unbalanced_braces, "fn main() {\n    let x = 1;\n");
-        let content = fs::read_to_string(&unbalanced_braces).unwrap();
-        assert!(check_balanced_delimiters(&content).is_err());
+            // Unbalanced braces
+            let unbalanced_braces = dir.path().join("unbalanced_braces.rs");
+            create_conflict_file(&unbalanced_braces, "fn main() {\n    let x = 1;\n");
+            let content = fs::read_to_string(&unbalanced_braces).unwrap();
+            assert!(check_balanced_delimiters(&content).is_err());
 
-        // Unbalanced brackets
-        let unbalanced_brackets = dir.path().join("unbalanced_brackets.rs");
-        create_conflict_file(&unbalanced_brackets, "fn main() {\n    let x = [1, 2;\n}\n");
-        let content = fs::read_to_string(&unbalanced_brackets).unwrap();
-        assert!(check_balanced_delimiters(&content).is_err());
+            // Unbalanced brackets
+            let unbalanced_brackets = dir.path().join("unbalanced_brackets.rs");
+            create_conflict_file(&unbalanced_brackets, "fn main() {\n    let x = [1, 2;\n}\n");
+            let content = fs::read_to_string(&unbalanced_brackets).unwrap();
+            assert!(check_balanced_delimiters(&content).is_err());
 
-        // Unbalanced parentheses
-        let unbalanced_parens = dir.path().join("unbalanced_parens.rs");
-        create_conflict_file(&unbalanced_parens, "fn main() {\n    let x = (1, 2;\n}\n");
-        let content = fs::read_to_string(&unbalanced_parens).unwrap();
-        assert!(check_balanced_delimiters(&content).is_err());
+            // Unbalanced parentheses
+            let unbalanced_parens = dir.path().join("unbalanced_parens.rs");
+            create_conflict_file(&unbalanced_parens, "fn main() {\n    let x = (1, 2;\n}\n");
+            let content = fs::read_to_string(&unbalanced_parens).unwrap();
+            assert!(check_balanced_delimiters(&content).is_err());
+        });
     });
 }
 
 /// Test that AI leaving conflict markers is detected.
 #[test]
 fn test_ai_leaves_conflict_markers_is_detected() {
-    with_temp_cwd(|dir| {
-        let file = dir.path().join("partial.rs");
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let file = dir.path().join("partial.rs");
 
-        // AI "resolves" but leaves markers
-        create_conflict_file(
-            &file,
-            "fn main() {\n<<<<<<< HEAD\n    println!(\"main\");\n=======\n    println!(\"feature\");\n>>>>>>> feature\n}\n",
-        );
+            // AI "resolves" but leaves markers
+            create_conflict_file(
+                &file,
+                "fn main() {\n<<<<<<< HEAD\n    println!(\"main\");\n=======\n    println!(\"feature\");\n>>>>>>> feature\n}\n",
+            );
 
-        // Should detect that markers are still present
-        assert!(
-            has_conflict_markers(&file),
-            "Should detect remaining conflict markers"
-        );
+            // Should detect that markers are still present
+            assert!(
+                has_conflict_markers(&file),
+                "Should detect remaining conflict markers"
+            );
+        });
     });
 }
 
 /// Test detection of partial conflict resolution.
 #[test]
 fn test_detect_partial_conflict_resolution() {
-    with_temp_cwd(|dir| {
-        let file1 = dir.path().join("resolved.rs");
-        let file2 = dir.path().join("unresolved.rs");
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let file1 = dir.path().join("resolved.rs");
+            let file2 = dir.path().join("unresolved.rs");
 
-        // One resolved, one not
-        create_conflict_file(&file1, "fn resolved() {}\n");
-        create_conflict_file(
-            &file2,
-            "<<<<<<< HEAD\nmain\n=======\nfeature\n>>>>>>> feature\n",
-        );
+            // One resolved, one not
+            create_conflict_file(&file1, "fn resolved() {}\n");
+            create_conflict_file(
+                &file2,
+                "<<<<<<< HEAD\nmain\n=======\nfeature\n>>>>>>> feature\n",
+            );
 
-        // Should detect partial resolution
-        let file1_resolved = !has_conflict_markers(&file1);
-        let file2_resolved = !has_conflict_markers(&file2);
+            // Should detect partial resolution
+            let file1_resolved = !has_conflict_markers(&file1);
+            let file2_resolved = !has_conflict_markers(&file2);
 
-        assert!(
-            file1_resolved && !file2_resolved,
-            "Should detect partial resolution"
-        );
+            assert!(
+                file1_resolved && !file2_resolved,
+                "Should detect partial resolution"
+            );
+        });
     });
 }
 
 /// Test validation of complete conflict resolution.
 #[test]
 fn test_validate_complete_conflict_resolution() {
-    with_temp_cwd(|dir| {
-        let file1 = dir.path().join("file1.rs");
-        let file2 = dir.path().join("file2.rs");
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let file1 = dir.path().join("file1.rs");
+            let file2 = dir.path().join("file2.rs");
 
-        // Both files properly resolved
-        create_conflict_file(&file1, "fn func1() {}\n");
-        create_conflict_file(&file2, "fn func2() {}\n");
+            // Both files properly resolved
+            create_conflict_file(&file1, "fn func1() {}\n");
+            create_conflict_file(&file2, "fn func2() {}\n");
 
-        // Should validate successfully
-        assert!(!has_conflict_markers(&file1), "file1 should be resolved");
-        assert!(!has_conflict_markers(&file2), "file2 should be resolved");
+            // Should validate successfully
+            assert!(!has_conflict_markers(&file1), "file1 should be resolved");
+            assert!(!has_conflict_markers(&file2), "file2 should be resolved");
+        });
     });
 }
 
 /// Test rebase with actual merge conflicts is detected.
 #[test]
 fn test_rebase_with_conflicts_is_detected() {
-    with_temp_cwd(|dir| {
-        let repo = init_repo_with_initial_commit(dir);
-        let default_branch = get_default_branch_name(&repo);
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
 
-        let file1 = dir.path().join("shared.txt");
+            let file1 = dir.path().join("shared.txt");
 
-        // Main branch: write one version
-        create_conflict_file(&file1, "main version\n");
-        let _ = commit_all(&repo, "Main version");
+            // Main branch: write one version
+            create_conflict_file(&file1, "main version\n");
+            let _ = commit_all(&repo, "Main version");
 
-        // Feature branch: write different version
-        let _feature_obj = repo
-            .branch(
-                "feature",
-                &repo.head().unwrap().peel_to_commit().unwrap(),
-                false,
-            )
-            .unwrap();
-        let obj = repo.revparse_single("feature").unwrap();
-        let commit = obj.peel_to_commit().unwrap();
-        repo.checkout_tree(commit.as_object(), None).unwrap();
-        repo.set_head("refs/heads/feature").unwrap();
+            // Feature branch: write different version
+            let _feature_obj = repo
+                .branch(
+                    "feature",
+                    &repo.head().unwrap().peel_to_commit().unwrap(),
+                    false,
+                )
+                .unwrap();
+            let obj = repo.revparse_single("feature").unwrap();
+            let commit = obj.peel_to_commit().unwrap();
+            repo.checkout_tree(commit.as_object(), None).unwrap();
+            repo.set_head("refs/heads/feature").unwrap();
 
-        create_conflict_file(&file1, "feature version\n");
-        let _ = commit_all(&repo, "Feature version");
+            create_conflict_file(&file1, "feature version\n");
+            let _ = commit_all(&repo, "Feature version");
 
-        // Go back to main and modify the same file
-        let obj = repo.revparse_single(&default_branch).unwrap();
-        let commit = obj.peel_to_commit().unwrap();
-        repo.checkout_tree(commit.as_object(), None).unwrap();
-        repo.set_head(&format!("refs/heads/{}", default_branch))
-            .unwrap();
+            // Go back to main and modify the same file
+            let obj = repo.revparse_single(&default_branch).unwrap();
+            let commit = obj.peel_to_commit().unwrap();
+            repo.checkout_tree(commit.as_object(), None).unwrap();
+            repo.set_head(&format!("refs/heads/{}", default_branch))
+                .unwrap();
 
-        create_conflict_file(&file1, "main updated\n");
-        let _ = commit_all(&repo, "Main updated");
+            create_conflict_file(&file1, "main updated\n");
+            let _ = commit_all(&repo, "Main updated");
 
-        // Go back to feature branch
-        let obj = repo.revparse_single("feature").unwrap();
-        let commit = obj.peel_to_commit().unwrap();
-        repo.checkout_tree(commit.as_object(), None).unwrap();
-        repo.set_head("refs/heads/feature").unwrap();
+            // Go back to feature branch
+            let obj = repo.revparse_single("feature").unwrap();
+            let commit = obj.peel_to_commit().unwrap();
+            repo.checkout_tree(commit.as_object(), None).unwrap();
+            repo.set_head("refs/heads/feature").unwrap();
 
-        // Try to rebase feature onto main - should get conflicts
-        let result = rebase_onto(&default_branch);
+            // Try to rebase feature onto main - should get conflicts
+            let result = rebase_onto(&default_branch);
 
-        // Should either get conflicts or fail
-        match result {
-            Ok(RebaseResult::Conflicts(files)) => {
-                // Expected - conflicts detected
-                assert!(!files.is_empty(), "Should have conflicted files");
+            // Should either get conflicts or fail
+            match result {
+                Ok(RebaseResult::Conflicts(files)) => {
+                    // Expected - conflicts detected
+                    assert!(!files.is_empty(), "Should have conflicted files");
+                }
+                Ok(RebaseResult::Failed(_)) => {
+                    // Also possible - Git may have failed to start rebase
+                }
+                Err(_) => {
+                    // Also acceptable - rebase failed
+                }
+                other => {
+                    panic!("Unexpected result: {:?}", other);
+                }
             }
-            Ok(RebaseResult::Failed(_)) => {
-                // Also possible - Git may have failed to start rebase
-            }
-            Err(_) => {
-                // Also acceptable - rebase failed
-            }
-            other => {
-                panic!("Unexpected result: {:?}", other);
-            }
-        }
+        });
     });
 }
 
 /// Test recovery action decision for various error types.
 #[test]
 fn test_recovery_action_decision_logic() {
-    // Content conflict should Continue to AI resolution
-    let content_conflict = RebaseErrorKind::ContentConflict {
-        files: vec!["test.rs".to_string()],
-    };
-    assert_eq!(
-        RecoveryAction::decide(&content_conflict, 0, 3),
-        RecoveryAction::Continue
-    );
+    with_default_timeout(|| {
+        // Content conflict should Continue to AI resolution
+        let content_conflict = RebaseErrorKind::ContentConflict {
+            files: vec!["test.rs".to_string()],
+        };
+        assert_eq!(
+            RecoveryAction::decide(&content_conflict, 0, 3),
+            RecoveryAction::Continue
+        );
 
-    // Concurrent operation should Retry
-    let concurrent = RebaseErrorKind::ConcurrentOperation {
-        operation: "rebase".to_string(),
-    };
-    assert_eq!(
-        RecoveryAction::decide(&concurrent, 0, 3),
-        RecoveryAction::Retry
-    );
+        // Concurrent operation should Retry
+        let concurrent = RebaseErrorKind::ConcurrentOperation {
+            operation: "rebase".to_string(),
+        };
+        assert_eq!(
+            RecoveryAction::decide(&concurrent, 0, 3),
+            RecoveryAction::Retry
+        );
 
-    // Invalid revision should Abort
-    let invalid = RebaseErrorKind::InvalidRevision {
-        revision: "bad".to_string(),
-    };
-    assert_eq!(
-        RecoveryAction::decide(&invalid, 0, 3),
-        RecoveryAction::Abort
-    );
+        // Invalid revision should Abort
+        let invalid = RebaseErrorKind::InvalidRevision {
+            revision: "bad".to_string(),
+        };
+        assert_eq!(
+            RecoveryAction::decide(&invalid, 0, 3),
+            RecoveryAction::Abort
+        );
 
-    // Empty commit should Skip
-    assert_eq!(
-        RecoveryAction::decide(&RebaseErrorKind::EmptyCommit, 0, 3),
-        RecoveryAction::Skip
-    );
+        // Empty commit should Skip
+        assert_eq!(
+            RecoveryAction::decide(&RebaseErrorKind::EmptyCommit, 0, 3),
+            RecoveryAction::Skip
+        );
 
-    // Max attempts exceeded should Abort
-    assert_eq!(
-        RecoveryAction::decide(&concurrent, 3, 3),
-        RecoveryAction::Abort
-    );
+        // Max attempts exceeded should Abort
+        assert_eq!(
+            RecoveryAction::decide(&concurrent, 3, 3),
+            RecoveryAction::Abort
+        );
+    });
 }
 
 /// Test that already up-to-date branch returns NoOp.
 #[test]
 fn test_rebase_already_up_to_date() {
-    with_temp_cwd(|dir| {
-        let repo = init_repo_with_initial_commit(dir);
-        let default_branch = get_default_branch_name(&repo);
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
 
-        // Create a feature branch at the same point
-        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
-        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+            // Create a feature branch at the same point
+            let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+            let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
 
-        // Checkout feature branch
-        let obj = repo.revparse_single("feature").unwrap();
-        let commit = obj.peel_to_commit().unwrap();
-        repo.checkout_tree(commit.as_object(), None).unwrap();
-        repo.set_head("refs/heads/feature").unwrap();
+            // Checkout feature branch
+            let obj = repo.revparse_single("feature").unwrap();
+            let commit = obj.peel_to_commit().unwrap();
+            repo.checkout_tree(commit.as_object(), None).unwrap();
+            repo.set_head("refs/heads/feature").unwrap();
 
-        // Try to rebase feature onto main (they're at the same point)
-        let result = rebase_onto(&default_branch);
+            // Try to rebase feature onto main (they're at the same point)
+            let result = rebase_onto(&default_branch);
 
-        // Should be NoOp since there's nothing to rebase
-        match result {
-            Ok(RebaseResult::NoOp { .. }) => {
-                // Expected
+            // Should be NoOp since there's nothing to rebase
+            match result {
+                Ok(RebaseResult::NoOp { .. }) => {
+                    // Expected
+                }
+                Ok(RebaseResult::Success) => {
+                    // Also acceptable - some Git versions treat this as success
+                }
+                _ => {
+                    // Also acceptable
+                }
             }
-            Ok(RebaseResult::Success) => {
-                // Also acceptable - some Git versions treat this as success
-            }
-            _ => {
-                // Also acceptable
-            }
-        }
+        });
     });
 }
 
 /// Test that rebase fails correctly when no common ancestor exists.
 #[test]
 fn test_rebase_no_common_ancestor() {
-    with_temp_cwd(|dir| {
-        let _repo = init_repo_with_initial_commit(dir);
+    with_default_timeout(|| {
+        with_temp_cwd(|dir| {
+            let _repo = init_repo_with_initial_commit(dir);
 
-        // Try to rebase onto a nonexistent branch
-        let result = rebase_onto("nonexistent-branch");
+            // Try to rebase onto a nonexistent branch
+            let result = rebase_onto("nonexistent-branch");
 
-        // Should fail or return NoOp
-        match result {
-            Ok(RebaseResult::Failed(_)) => {
-                // Expected outcome
+            // Should fail or return NoOp
+            match result {
+                Ok(RebaseResult::Failed(_)) => {
+                    // Expected outcome
+                }
+                Ok(RebaseResult::NoOp { .. }) => {
+                    // Also acceptable
+                }
+                Err(_) => {
+                    // Also acceptable
+                }
+                other => {
+                    panic!("Unexpected result: {:?}", other);
+                }
             }
-            Ok(RebaseResult::NoOp { .. }) => {
-                // Also acceptable
-            }
-            Err(_) => {
-                // Also acceptable
-            }
-            other => {
-                panic!("Unexpected result: {:?}", other);
-            }
-        }
+        });
     });
 }
 
 /// Test state machine correctly tracks conflict resolution.
 #[test]
 fn test_state_machine_tracks_conflict_resolution() {
-    use ralph_workflow::git_helpers::RebaseStateMachine;
+    with_default_timeout(|| {
+        use ralph_workflow::git_helpers::RebaseStateMachine;
 
-    with_temp_cwd(|_dir| {
-        let mut machine = RebaseStateMachine::new("main".to_string());
+        with_temp_cwd(|_dir| {
+            let mut machine = RebaseStateMachine::new("main".to_string());
 
-        // Record conflicts
-        machine.record_conflict("file1.rs".to_string());
-        machine.record_conflict("file2.rs".to_string());
+            // Record conflicts
+            machine.record_conflict("file1.rs".to_string());
+            machine.record_conflict("file2.rs".to_string());
 
-        assert_eq!(machine.unresolved_conflict_count(), 2);
+            assert_eq!(machine.unresolved_conflict_count(), 2);
 
-        // Resolve one
-        machine.record_resolution("file1.rs".to_string());
+            // Resolve one
+            machine.record_resolution("file1.rs".to_string());
 
-        assert_eq!(machine.unresolved_conflict_count(), 1);
-        assert!(!machine.all_conflicts_resolved());
+            assert_eq!(machine.unresolved_conflict_count(), 1);
+            assert!(!machine.all_conflicts_resolved());
 
-        // Resolve the other
-        machine.record_resolution("file2.rs".to_string());
+            // Resolve the other
+            machine.record_resolution("file2.rs".to_string());
 
-        assert_eq!(machine.unresolved_conflict_count(), 0);
-        assert!(machine.all_conflicts_resolved());
+            assert_eq!(machine.unresolved_conflict_count(), 0);
+            assert!(machine.all_conflicts_resolved());
+        });
     });
 }
 
 /// Test that checkpoint can be saved and loaded for recovery.
 #[test]
 fn test_checkpoint_save_and_load() {
-    use ralph_workflow::git_helpers::rebase_checkpoint::{
-        clear_rebase_checkpoint, load_rebase_checkpoint, rebase_checkpoint_exists,
-        save_rebase_checkpoint,
-    };
-    use ralph_workflow::git_helpers::{RebaseCheckpoint, RebasePhase};
+    with_default_timeout(|| {
+        use ralph_workflow::git_helpers::rebase_checkpoint::{
+            clear_rebase_checkpoint, load_rebase_checkpoint, rebase_checkpoint_exists,
+            save_rebase_checkpoint,
+        };
+        use ralph_workflow::git_helpers::{RebaseCheckpoint, RebasePhase};
 
-    with_temp_cwd(|_dir| {
-        // Create a checkpoint
-        let checkpoint = RebaseCheckpoint::new("main".to_string())
-            .with_phase(RebasePhase::ConflictDetected)
-            .with_conflicted_file("test.rs".to_string())
-            .with_conflicted_file("lib.rs".to_string());
+        with_temp_cwd(|_dir| {
+            // Create a checkpoint
+            let checkpoint = RebaseCheckpoint::new("main".to_string())
+                .with_phase(RebasePhase::ConflictDetected)
+                .with_conflicted_file("test.rs".to_string())
+                .with_conflicted_file("lib.rs".to_string());
 
-        save_rebase_checkpoint(&checkpoint).unwrap();
+            save_rebase_checkpoint(&checkpoint).unwrap();
 
-        // Verify it exists
-        assert!(rebase_checkpoint_exists());
+            // Verify it exists
+            assert!(rebase_checkpoint_exists());
 
-        // Load it back
-        let loaded = load_rebase_checkpoint()
-            .unwrap()
-            .expect("Checkpoint should exist");
+            // Load it back
+            let loaded = load_rebase_checkpoint()
+                .unwrap()
+                .expect("Checkpoint should exist");
 
-        assert_eq!(loaded.upstream_branch, "main");
-        assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
-        assert_eq!(loaded.conflicted_files.len(), 2);
-        assert!(loaded.conflicted_files.contains(&"test.rs".to_string()));
-        assert!(loaded.conflicted_files.contains(&"lib.rs".to_string()));
+            assert_eq!(loaded.upstream_branch, "main");
+            assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
+            assert_eq!(loaded.conflicted_files.len(), 2);
+            assert!(loaded.conflicted_files.contains(&"test.rs".to_string()));
+            assert!(loaded.conflicted_files.contains(&"lib.rs".to_string()));
 
-        // Clean up
-        clear_rebase_checkpoint().unwrap();
-        assert!(!rebase_checkpoint_exists());
+            // Clean up
+            clear_rebase_checkpoint().unwrap();
+            assert!(!rebase_checkpoint_exists());
+        });
     });
 }
 
 /// Test recovery from checkpoint after interruption.
 #[test]
 fn test_recovery_from_checkpoint() {
-    use ralph_workflow::git_helpers::rebase_checkpoint::save_rebase_checkpoint;
-    use ralph_workflow::git_helpers::{RebaseCheckpoint, RebasePhase, RebaseStateMachine};
+    with_default_timeout(|| {
+        use ralph_workflow::git_helpers::rebase_checkpoint::save_rebase_checkpoint;
+        use ralph_workflow::git_helpers::{RebaseCheckpoint, RebasePhase, RebaseStateMachine};
 
-    with_temp_cwd(|_dir| {
-        // Create a checkpoint as if we were interrupted
-        let checkpoint = RebaseCheckpoint::new("main".to_string())
-            .with_phase(RebasePhase::ConflictDetected)
-            .with_conflicted_file("file1.rs".to_string())
-            .with_error("First conflict resolution attempt failed".to_string())
-            .with_error("Second attempt also failed".to_string());
+        with_temp_cwd(|_dir| {
+            // Create a checkpoint as if we were interrupted
+            let checkpoint = RebaseCheckpoint::new("main".to_string())
+                .with_phase(RebasePhase::ConflictDetected)
+                .with_conflicted_file("file1.rs".to_string())
+                .with_error("First conflict resolution attempt failed".to_string())
+                .with_error("Second attempt also failed".to_string());
 
-        save_rebase_checkpoint(&checkpoint).unwrap();
+            save_rebase_checkpoint(&checkpoint).unwrap();
 
-        // Load the state machine
-        let machine = RebaseStateMachine::load_or_create("main".to_string()).unwrap();
+            // Load the state machine
+            let machine = RebaseStateMachine::load_or_create("main".to_string()).unwrap();
 
-        // Verify state was restored
-        assert_eq!(machine.phase(), &RebasePhase::ConflictDetected);
-        assert_eq!(machine.upstream_branch(), "main");
-        assert_eq!(machine.unresolved_conflict_count(), 1);
-        assert_eq!(machine.checkpoint().error_count, 2);
+            // Verify state was restored
+            assert_eq!(machine.phase(), &RebasePhase::ConflictDetected);
+            assert_eq!(machine.upstream_branch(), "main");
+            assert_eq!(machine.unresolved_conflict_count(), 1);
+            assert_eq!(machine.checkpoint().error_count, 2);
 
-        // Can still recover (not at max attempts yet)
-        assert!(machine.can_recover());
+            // Can still recover (not at max attempts yet)
+            assert!(machine.can_recover());
+        });
     });
 }
 
 /// Test that rebase lock prevents concurrent operations.
 #[test]
 fn test_rebase_lock_prevents_concurrent() {
-    use ralph_workflow::git_helpers::rebase_state_machine::{
-        acquire_rebase_lock, release_rebase_lock,
-    };
+    with_default_timeout(|| {
+        use ralph_workflow::git_helpers::rebase_state_machine::{
+            acquire_rebase_lock, release_rebase_lock,
+        };
 
-    with_temp_cwd(|_dir| {
-        // Acquire lock
-        acquire_rebase_lock().unwrap();
+        with_temp_cwd(|_dir| {
+            // Acquire lock
+            acquire_rebase_lock().unwrap();
 
-        // Try to acquire again - should fail
-        let result = acquire_rebase_lock();
-        assert!(result.is_err(), "Should not be able to acquire lock twice");
+            // Try to acquire again - should fail
+            let result = acquire_rebase_lock();
+            assert!(result.is_err(), "Should not be able to acquire lock twice");
 
-        // Release lock
-        release_rebase_lock().unwrap();
+            // Release lock
+            release_rebase_lock().unwrap();
 
-        // Now should be able to acquire again
-        acquire_rebase_lock().unwrap();
+            // Now should be able to acquire again
+            acquire_rebase_lock().unwrap();
 
-        // Clean up
-        release_rebase_lock().unwrap();
+            // Clean up
+            release_rebase_lock().unwrap();
+        });
     });
 }
 
 /// Test that stale lock is cleaned up and can be acquired.
 #[test]
 fn test_stale_lock_is_cleaned_up() {
-    use ralph_workflow::git_helpers::rebase_state_machine::{
-        acquire_rebase_lock, release_rebase_lock,
-    };
+    with_default_timeout(|| {
+        use ralph_workflow::git_helpers::rebase_state_machine::{
+            acquire_rebase_lock, release_rebase_lock,
+        };
 
-    with_temp_cwd(|dir| {
-        // Manually create a stale lock file
-        let lock_path = dir.path().join(".agent").join("rebase.lock");
-        fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+        with_temp_cwd(|dir| {
+            // Manually create a stale lock file
+            let lock_path = dir.path().join(".agent").join("rebase.lock");
+            fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
 
-        // Create a lock with old timestamp (> 30 minutes ago)
-        // Write timestamp that is clearly stale (more than 30 minutes ago)
-        let stale_timestamp = "2020-01-01T00:00:00+00:00";
-        let content = format!("pid=12345\ntimestamp={stale_timestamp}\n");
-        fs::write(&lock_path, content).unwrap();
+            // Create a lock with old timestamp (> 30 minutes ago)
+            // Write timestamp that is clearly stale (more than 30 minutes ago)
+            let stale_timestamp = "2020-01-01T00:00:00+00:00";
+            let content = format!("pid=12345\ntimestamp={stale_timestamp}\n");
+            fs::write(&lock_path, content).unwrap();
 
-        // Should be able to acquire lock (stale one gets cleaned up)
-        acquire_rebase_lock().unwrap();
+            // Should be able to acquire lock (stale one gets cleaned up)
+            acquire_rebase_lock().unwrap();
 
-        // Clean up
-        release_rebase_lock().unwrap();
+            // Clean up
+            release_rebase_lock().unwrap();
+        });
     });
 }
 
@@ -582,96 +616,98 @@ fn test_stale_lock_is_cleaned_up() {
 /// conflict verification, not JSON parsing.
 #[test]
 fn test_conflict_resolution_continues_without_json() {
-    use ralph_workflow::git_helpers::{abort_rebase, get_conflicted_files, git_add_all};
+    with_default_timeout(|| {
+        use ralph_workflow::git_helpers::{abort_rebase, get_conflicted_files, git_add_all};
 
-    with_temp_cwd(|dir| {
-        let repo = init_repo_with_initial_commit(dir);
-        let default_branch = get_default_branch_name(&repo);
+        with_temp_cwd(|dir| {
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
 
-        // Create a conflicting file
-        let conflict_file = dir.path().join("conflict.txt");
+            // Create a conflicting file
+            let conflict_file = dir.path().join("conflict.txt");
 
-        // Main branch: write one version
-        create_conflict_file(&conflict_file, "main version\n");
-        let _ = commit_all(&repo, "Main version");
+            // Main branch: write one version
+            create_conflict_file(&conflict_file, "main version\n");
+            let _ = commit_all(&repo, "Main version");
 
-        // Feature branch: write different version
-        let _feature_obj = repo
-            .branch(
-                "feature",
-                &repo.head().unwrap().peel_to_commit().unwrap(),
-                false,
-            )
-            .unwrap();
-        let obj = repo.revparse_single("feature").unwrap();
-        let commit = obj.peel_to_commit().unwrap();
-        repo.checkout_tree(commit.as_object(), None).unwrap();
-        repo.set_head("refs/heads/feature").unwrap();
+            // Feature branch: write different version
+            let _feature_obj = repo
+                .branch(
+                    "feature",
+                    &repo.head().unwrap().peel_to_commit().unwrap(),
+                    false,
+                )
+                .unwrap();
+            let obj = repo.revparse_single("feature").unwrap();
+            let commit = obj.peel_to_commit().unwrap();
+            repo.checkout_tree(commit.as_object(), None).unwrap();
+            repo.set_head("refs/heads/feature").unwrap();
 
-        create_conflict_file(&conflict_file, "feature version\n");
-        let _ = commit_all(&repo, "Feature version");
+            create_conflict_file(&conflict_file, "feature version\n");
+            let _ = commit_all(&repo, "Feature version");
 
-        // Go back to main and modify the same file
-        let obj = repo.revparse_single(&default_branch).unwrap();
-        let commit = obj.peel_to_commit().unwrap();
-        repo.checkout_tree(commit.as_object(), None).unwrap();
-        repo.set_head(&format!("refs/heads/{}", default_branch))
-            .unwrap();
+            // Go back to main and modify the same file
+            let obj = repo.revparse_single(&default_branch).unwrap();
+            let commit = obj.peel_to_commit().unwrap();
+            repo.checkout_tree(commit.as_object(), None).unwrap();
+            repo.set_head(&format!("refs/heads/{}", default_branch))
+                .unwrap();
 
-        create_conflict_file(&conflict_file, "main updated\n");
-        let _ = commit_all(&repo, "Main updated");
+            create_conflict_file(&conflict_file, "main updated\n");
+            let _ = commit_all(&repo, "Main updated");
 
-        // Go back to feature branch
-        let obj = repo.revparse_single("feature").unwrap();
-        let commit = obj.peel_to_commit().unwrap();
-        repo.checkout_tree(commit.as_object(), None).unwrap();
-        repo.set_head("refs/heads/feature").unwrap();
+            // Go back to feature branch
+            let obj = repo.revparse_single("feature").unwrap();
+            let commit = obj.peel_to_commit().unwrap();
+            repo.checkout_tree(commit.as_object(), None).unwrap();
+            repo.set_head("refs/heads/feature").unwrap();
 
-        // Try to rebase feature onto main - should get conflicts
-        let result = rebase_onto(&default_branch);
+            // Try to rebase feature onto main - should get conflicts
+            let result = rebase_onto(&default_branch);
 
-        match result {
-            Ok(RebaseResult::Conflicts(files)) => {
-                // Conflicts detected - this is expected
-                assert!(!files.is_empty(), "Should have conflict files");
+            match result {
+                Ok(RebaseResult::Conflicts(files)) => {
+                    // Conflicts detected - this is expected
+                    assert!(!files.is_empty(), "Should have conflict files");
 
-                // Manually resolve the conflict (simulating AI resolution without JSON)
-                // The system should verify via LibGit2 that conflicts are resolved
-                create_conflict_file(&conflict_file, "merged version\n");
+                    // Manually resolve the conflict (simulating AI resolution without JSON)
+                    // The system should verify via LibGit2 that conflicts are resolved
+                    create_conflict_file(&conflict_file, "merged version\n");
 
-                // Stage the resolved file
-                let _ = git_add_all();
+                    // Stage the resolved file
+                    let _ = git_add_all();
 
-                // Verify conflicts are resolved via LibGit2 (not JSON)
-                // get_conflicted_files returns empty vec when no conflicts
-                let conflicted = get_conflicted_files().unwrap_or_default();
+                    // Verify conflicts are resolved via LibGit2 (not JSON)
+                    // get_conflicted_files returns empty vec when no conflicts
+                    let conflicted = get_conflicted_files().unwrap_or_default();
 
-                // Should be resolved since we manually fixed it
-                assert!(
-                    conflicted.is_empty(),
-                    "Conflicts should be resolved after manual fix, verified via LibGit2. Found conflicts: {:?}",
-                    conflicted
-                );
+                    // Should be resolved since we manually fixed it
+                    assert!(
+                        conflicted.is_empty(),
+                        "Conflicts should be resolved after manual fix, verified via LibGit2. Found conflicts: {:?}",
+                        conflicted
+                    );
 
-                // Clean up
-                let _ = abort_rebase();
+                    // Clean up
+                    let _ = abort_rebase();
+                }
+                Ok(RebaseResult::Failed(_)) => {
+                    // Rebase failed - acceptable
+                }
+                Err(_) => {
+                    // Rebase error - acceptable
+                }
+                Ok(RebaseResult::Success) => {
+                    // Rebase succeeded without conflicts - also acceptable
+                }
+                _ => {
+                    // Clean up any other state
+                    let _ = abort_rebase();
+                }
             }
-            Ok(RebaseResult::Failed(_)) => {
-                // Rebase failed - acceptable
-            }
-            Err(_) => {
-                // Rebase error - acceptable
-            }
-            Ok(RebaseResult::Success) => {
-                // Rebase succeeded without conflicts - also acceptable
-            }
-            _ => {
-                // Clean up any other state
-                let _ = abort_rebase();
-            }
-        }
 
-        // Always clean up
-        let _ = abort_rebase();
+            // Always clean up
+            let _ = abort_rebase();
+        });
     });
 }
