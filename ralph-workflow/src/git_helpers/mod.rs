@@ -39,6 +39,9 @@ pub use rebase::{
     abort_rebase, continue_rebase, get_conflict_markers_for_file, get_conflicted_files,
     rebase_onto, RebaseErrorKind, RebaseResult,
 };
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase::{cleanup_stale_rebase_state, is_dirty_tree_cli, rebase_in_progress_cli};
 pub use rebase_checkpoint::RebasePhase;
 pub use rebase_state_machine::RebaseStateMachine;
 pub use repo::{

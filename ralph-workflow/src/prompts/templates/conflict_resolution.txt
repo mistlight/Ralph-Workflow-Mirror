@@ -1,6 +1,6 @@
 {# ============================================================================ #}
 {# Template: conflict_resolution.txt                                            #}
-{# Version: 1.1                                                                  #}
+{# Version: 1.2                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
@@ -37,20 +37,65 @@ There are merge conflicts that need to be resolved. Below are the files with con
 
 PRIMARY GOAL: Resolve all merge conflicts by editing the files on disk.
 
-For each conflicted file below:
-1. Review both versions of the changes (the 'ours' and 'theirs' sections)
-2. Intelligently merge the changes, considering:
-   - The task context above
-   - The implementation plan if available
-   - The intent of both versions
-   - Code correctness and consistency
-3. **EDIT THE FILE ON DISK** using the Edit tool to resolve the conflicts
-   - Remove ALL conflict markers (<<<<<<<, =======, >>>>>>>)
-   - Keep the merged content that best combines both versions
+### Understanding the Conflict Markers
 
-**CRITICAL**: You MUST use the Edit tool to modify each conflicted file on disk. This is the primary way conflicts are resolved. The files will be validated to ensure all conflict markers are removed.
+In the conflicted files below, you will see conflict markers:
+- `<<<<<<<` marks the start of a conflict
+- `=======` separates the two versions
+- `>>>>>>>` marks the end of a conflict
 
-OPTIONAL: After editing files, you may optionally provide JSON output confirming what was resolved. This is not required - successful file edits are sufficient.
+The sections represent different versions of the same code:
+- The section between `<<<<<<<` and `=======` contains your changes (the feature branch)
+- The section between `=======` and `>>>>>>>` contains changes from the main branch
+
+### Resolution Strategy
+
+For each conflicted file:
+
+1. **Analyze Both Versions**: Understand what each version is trying to accomplish
+   - Your changes: The work you were doing for this task
+   - Main branch changes: Updates that were made to the default branch
+
+2. **Intelligent Merge**: Combine both versions when appropriate:
+   - If both versions change different parts of the code, include both changes
+   - If both versions change the same code differently, determine which approach is correct
+   - Preserve semantic intent from both versions when possible
+   - Consider the task context and implementation plan above
+
+3. **Handle Special Cases**:
+   - **Add/Add conflicts**: Both sides added the same file - merge the content
+   - **Modify/Delete conflicts**: One side modified, the other deleted - decide based on task needs
+   - **Rename conflicts**: Files were renamed - preserve the rename and merge content
+
+4. **Validate Your Resolution**:
+   - Ensure ALL conflict markers are removed (<<<<<<<, =======, >>>>>>>)
+   - Verify the code is syntactically correct
+   - Check that imports and dependencies are consistent
+   - Ensure no duplicate code or leftover merge artifacts
+
+5. **Edit the File**: Use the Edit tool to modify each conflicted file on disk
+
+**CRITICAL REMINDERS**:
+- Remove ALL conflict markers - the file must not contain `<<<<<<<`, `=======`, or `>>>>>>>`
+- Preserve the intent of BOTH sides when they serve different purposes
+- The goal is a clean, working merge - not just "picking one side"
+
+### Conflict Types and Guidance
+
+**Content Conflicts** (same lines modified differently):
+- Analyze which version is correct for the current task
+- Often the best approach combines both changes
+- Consider if main branch changes fix bugs or add features you need
+
+**Add/Add Conflicts** (same file added on both sides):
+- Both versions have value - merge them intelligently
+- Look for duplicate functionality and consolidate
+- Ensure imports and structures are compatible
+
+**Modify/Delete Conflicts** (one side deleted, other modified):
+- If the main branch deleted code, consider whether it's still needed
+- If you need the modified code, keep it
+- Document why you kept/removed code in comments if unclear
 
 ## Conflicted Files
 
