@@ -8,8 +8,7 @@ use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
-    cmd.arg("--skip-rebase")
-        .env("RALPH_INTERACTIVE", "0")
+    cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
         // Ensure git identity isn't a factor if a commit happens in the test.

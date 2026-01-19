@@ -1,6 +1,6 @@
 //! Common utilities for integration tests
 
-use std::{env, fs, path::PathBuf};
+use std::{env, path::PathBuf};
 
 /// Get the path to the ralph binary for testing
 ///
@@ -8,7 +8,7 @@ use std::{env, fs, path::PathBuf};
 pub fn ralph_cmd() -> assert_cmd::Command {
     let bin_path = ralph_bin_path();
     let mut cmd = assert_cmd::Command::new(bin_path);
-    cmd.arg("--test-mode"); // Enable test mode for immediate retries
+    cmd.arg("--fast-retry"); // Enable fast retry mode for immediate retries
     cmd
 }
 
@@ -67,53 +67,4 @@ fn find_cargo_target_dir() -> PathBuf {
     // During tests, cargo uses the debug profile by default
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
     target_dir.join(profile)
-}
-
-// ============================================================================
-// File-Based Mock Helpers
-// ============================================================================
-
-/// Mock agent output by pre-creating files that agents would write.
-///
-/// This approach avoids spawning shell scripts (which violates the
-/// integration test guidelines) by directly creating the expected
-/// output files that the pipeline reads.
-pub struct MockAgentOutput {
-    /// The base directory for the test
-    pub dir: PathBuf,
-}
-
-impl MockAgentOutput {
-    /// Create a new mock agent output helper for the given directory.
-    pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
-    }
-
-    /// Create the .agent directory and any needed subdirectories.
-    fn ensure_agent_dir(&self) {
-        let agent_dir = self.dir.join(".agent");
-        fs::create_dir_all(&agent_dir).expect("Failed to create .agent directory");
-        let logs_dir = agent_dir.join("logs");
-        fs::create_dir_all(&logs_dir).expect("Failed to create .agent/logs directory");
-    }
-
-    /// Write a plan to `.agent/PLAN.md` (developer output).
-    pub fn with_plan(&self, content: impl AsRef<str>) -> &Self {
-        self.ensure_agent_dir();
-        let plan_path = self.dir.join(".agent/PLAN.md");
-        fs::write(&plan_path, content.as_ref()).expect("Failed to write PLAN.md");
-        self
-    }
-}
-
-/// Extension trait to make it easy to create mock agent output from TempDir.
-pub trait MockAgentOutputExt {
-    /// Get a MockAgentOutput helper for this directory.
-    fn mock_agent(&self) -> MockAgentOutput;
-}
-
-impl MockAgentOutputExt for tempfile::TempDir {
-    fn mock_agent(&self) -> MockAgentOutput {
-        MockAgentOutput::new(self.path().to_path_buf())
-    }
 }

@@ -145,9 +145,9 @@ pub fn initialize_config(
     }
 
     // Initialize agent registry with built-in defaults + unified config.
-    let test_mode_enabled = args.test_mode_flags.test_mode;
+    let fast_retry_enabled = args.fast_retry_flags.fast_retry;
     let (registry, config_sources) =
-        load_agent_registry(unified.as_ref(), config_path.as_path(), test_mode_enabled)?;
+        load_agent_registry(unified.as_ref(), config_path.as_path(), fast_retry_enabled)?;
 
     // Apply default agents from fallback chains
     apply_default_agents(&mut config, &registry);
@@ -163,17 +163,18 @@ pub fn initialize_config(
 fn load_agent_registry(
     unified: Option<&UnifiedConfig>,
     config_path: &std::path::Path,
-    test_mode_enabled: bool,
+    fast_retry_enabled: bool,
 ) -> anyhow::Result<(AgentRegistry, Vec<ConfigSource>)> {
     let mut registry = AgentRegistry::new().map_err(|e| {
         anyhow::anyhow!("Failed to load built-in default agents config (examples/agents.toml): {e}")
     })?;
 
-    // Configure test mode retry timer if enabled via CLI flag
+    // Configure fast retry mode if enabled via CLI flag
     // When enabled, use TestRetryTimer for immediate retries (no actual sleep)
-    if test_mode_enabled {
-        let test_timer: Arc<dyn RetryTimerProvider> = Arc::new(TestRetryTimer::new());
-        registry.set_retry_timer(test_timer);
+    // This is useful for automation/CI scenarios where you want rapid failure detection
+    if fast_retry_enabled {
+        let fast_timer: Arc<dyn RetryTimerProvider> = Arc::new(TestRetryTimer::new());
+        registry.set_retry_timer(fast_timer);
     }
 
     let mut sources = Vec::new();

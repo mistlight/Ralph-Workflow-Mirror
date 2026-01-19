@@ -401,13 +401,16 @@ pub struct RecoveryFlags {
 /// Rebase control flags.
 #[derive(Parser, Debug, Default)]
 pub struct RebaseFlags {
-    /// Skip automatic rebase before/after pipeline
+    /// Enable automatic rebase before/after pipeline
+    ///
+    /// When enabled, ralph will automatically rebase to the main branch before
+    /// starting development and after the review phase. Default is disabled to
+    /// keep operations fast and avoid conflicts.
     #[arg(
         long,
-        help = "Skip automatic rebase to main branch before and after pipeline",
-        hide = true
+        help = "Enable automatic rebase to main branch before and after pipeline"
     )]
-    pub skip_rebase: bool,
+    pub with_rebase: bool,
 
     /// Only perform rebase and exit
     #[arg(
@@ -416,18 +419,33 @@ pub struct RebaseFlags {
         hide = true
     )]
     pub rebase_only: bool,
-}
 
-/// Test mode flags (hidden, for integration testing).
-#[derive(Parser, Debug, Default)]
-pub struct TestModeFlags {
-    /// Enable test mode with immediate retries (no actual sleep delays)
+    /// Skip automatic rebase before/after pipeline (deprecated: use default behavior or --with-rebase)
     #[arg(
         long,
-        help = "Enable test mode (for integration tests only)",
+        help = "Skip automatic rebase to main branch before and after pipeline",
         hide = true
     )]
-    pub test_mode: bool,
+    #[deprecated(
+        since = "0.4.2",
+        note = "Rebase is now disabled by default; use --with-rebase to enable"
+    )]
+    pub skip_rebase: bool,
+}
+
+/// Fast retry mode flags (for automation/CI scenarios).
+#[derive(Parser, Debug, Default)]
+pub struct FastRetryFlags {
+    /// Enable fast retry mode with immediate retries (no sleep delays).
+    ///
+    /// This is useful for automation/CI scenarios where you want rapid failure
+    /// detection without waiting for exponential backoff delays. All retry logic
+    /// still executes, just without the sleep delays.
+    #[arg(
+        long,
+        help = "Enable fast retry mode (no sleep delays between retries)"
+    )]
+    pub fast_retry: bool,
 }
 
 /// Ralph: PROMPT-driven agent orchestrator for git repos
@@ -509,9 +527,9 @@ pub struct Args {
     #[command(flatten)]
     pub rebase_flags: RebaseFlags,
 
-    /// Test mode flags (hidden, for integration testing)
+    /// Fast retry mode flags (for automation/CI)
     #[command(flatten)]
-    pub test_mode_flags: TestModeFlags,
+    pub fast_retry_flags: FastRetryFlags,
 
     /// Commit message for the final commit
     #[arg(

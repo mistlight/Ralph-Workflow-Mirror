@@ -474,8 +474,8 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         create_phase_context(ctx, &mut timer, &mut stats, review_guidelines.as_ref());
     save_start_commit_or_warn(ctx);
 
-    // Run pre-development rebase (skip if requested)
-    if !ctx.args.rebase_flags.skip_rebase {
+    // Run pre-development rebase (only if explicitly requested via --with-rebase)
+    if ctx.args.rebase_flags.with_rebase {
         run_initial_rebase(
             &ctx.args,
             &ctx.config,
@@ -493,8 +493,8 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
     check_prompt_restoration(ctx, &mut prompt_monitor, "review");
 
-    // Run post-review rebase (skip if requested)
-    if !ctx.args.rebase_flags.skip_rebase {
+    // Run post-review rebase (only if explicitly requested via --with-rebase)
+    if ctx.args.rebase_flags.with_rebase {
         run_post_review_rebase(
             &ctx.args,
             &ctx.config,

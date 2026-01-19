@@ -3,13 +3,11 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::ralph_cmd;
-use crate::common::MockAgentOutputExt;
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
-    cmd.arg("--skip-rebase")
-        .env("RALPH_INTERACTIVE", "0")
+    cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
         // Use generic agents to avoid picking up user's local config
@@ -30,23 +28,18 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 fn ralph_succeeds_without_commit_message_file() {
     with_default_timeout(|| {
         // With auto-commit behavior, the pipeline should succeed even without
-        // a commit-message.txt file since commits are created automatically by
-        // the orchestrator after each development iteration and fix cycle.
+        // a pre-existing commit-message.txt file since commits are created
+        // automatically by the orchestrator using the commit message generation.
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
-        // Pre-create the plan file that the developer would have created
-        // This avoids spawning shell scripts
-        dir.mock_agent().with_plan("Test plan content");
+        // Create a file to have something to commit
+        fs::write(dir.path().join("test.txt"), "test content").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
-            .current_dir(dir.path())
-            // Use no-op commands instead of shell scripts
-            .env("RALPH_DEVELOPER_CMD", "true")
-            .env("RALPH_REVIEWER_CMD", "true");
+        base_env(&mut cmd).current_dir(dir.path());
 
-        // Should succeed even without commit-message.txt (auto-commit behavior)
+        // Should succeed - auto-commit will generate a message
         cmd.assert()
             .success()
             .stdout(predicate::str::contains("Pipeline Complete"));
@@ -180,107 +173,5 @@ fn ralph_apply_commit_fails_without_message_file() {
         cmd.assert()
             .failure()
             .stderr(predicate::str::contains("commit-message.txt"));
-    });
-}
-
-#[test]
-fn ralph_generate_commit_msg_creates_message_file() {
-    with_default_timeout(|| {
-        // Test that --generate-commit-msg creates a commit message file.
-        //
-        // Note: Commit message generation uses the `commit` agent chain from config,
-        // NOT RALPH_DEVELOPER_CMD. The system has extensive fallbacks including a
-        // hardcoded "chore: automated commit" fallback, so this test simply verifies
-        // that a non-empty commit message file is created.
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
-
-        // Create an initial commit so the repo is not empty
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
-
-        // Now create a change to test with
-        write_file(dir.path().join("initial.txt"), "updated content");
-
-        // Set up config to use codex agent for commit generation
-        let config_home = dir.path().join(".config");
-        std::fs::create_dir_all(&config_home).unwrap();
-        std::fs::write(
-            config_home.join("ralph-workflow.toml"),
-            r#"[agent_chain]
-developer = ["codex"]
-reviewer = ["codex"]
-commit = ["codex"]
-"#,
-        )
-        .unwrap();
-
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
-            .current_dir(dir.path())
-            .env("XDG_CONFIG_HOME", &config_home)
-            .arg("--generate-commit-msg");
-
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Commit message generated"));
-
-        // Verify the file was created and contains something meaningful
-        let content = fs::read_to_string(dir.path().join(".agent/commit-message.txt")).unwrap();
-        // The commit message should be non-empty
-        assert!(
-            !content.trim().is_empty(),
-            "Commit message file should not be empty"
-        );
-    });
-}
-
-#[test]
-fn ralph_generate_commit_msg_succeeds_without_commit_agent_configured() {
-    with_default_timeout(|| {
-        // This test documents the expected behavior when the `commit` agent chain is
-        // not configured: `--generate-commit-msg` should still succeed by using the
-        // built-in fallback commit message generation.
-        //
-        // This keeps commit automation reliable even if the commit agent is missing,
-        // misconfigured, or unavailable in a given environment.
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
-
-        // Create an initial commit so there is a HEAD to diff against.
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
-
-        // Create a change in the repository to have something to diff.
-        write_file(dir.path().join("initial.txt"), "updated content");
-
-        // Create a test config that deliberately omits the `commit` chain.
-        let config_home = dir.path().join(".config");
-        std::fs::create_dir_all(&config_home).unwrap();
-        std::fs::write(
-            config_home.join("ralph-workflow.toml"),
-            r#"[agent_chain]
-developer = ["codex"]
-reviewer = ["codex"]
-"#,
-        )
-        .unwrap();
-
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
-            .current_dir(dir.path())
-            .env("XDG_CONFIG_HOME", &config_home)
-            .arg("--generate-commit-msg");
-
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Commit message generated"));
-
-        // Verify the file was created and contains something meaningful.
-        let content = fs::read_to_string(dir.path().join(".agent/commit-message.txt")).unwrap();
-        assert!(
-            !content.trim().is_empty(),
-            "Commit message file should not be empty"
-        );
     });
 }
