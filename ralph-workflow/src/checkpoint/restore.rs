@@ -37,6 +37,7 @@ impl ResumeContext {
     /// Display name for the current phase.
     pub fn phase_name(&self) -> String {
         match self.phase {
+            PipelinePhase::Rebase => "Rebase".to_string(),
             PipelinePhase::Planning => "Planning".to_string(),
             PipelinePhase::Development => format!(
                 "Development iteration {}/{}",

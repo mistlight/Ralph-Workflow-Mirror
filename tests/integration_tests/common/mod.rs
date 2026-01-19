@@ -1,4 +1,24 @@
 //! Common utilities for integration tests
+//!
+//! This module provides shared utilities for integration tests across all test modules.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All integration tests MUST follow the style guide defined in
+//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//!
+//! Before writing, modifying, or debugging any integration test, you MUST read
+//! that document. Key principles:
+//!
+//! - Test **observable behavior**, not implementation details
+//! - Mock only at **architectural boundaries** (filesystem, network, external APIs)
+//! - Use `TestPrinter` for parser tests (replaces stdout)
+//! - Use `TempDir` for filesystem isolation
+//! - NEVER use `cfg!(test)` branches in production code
+//!
+//! The utilities in this module support proper integration test patterns:
+//! - `ralph_cmd()`: Get a command to invoke the ralph binary for CLI testing
+//! - `ralph_bin_path()`: Get the path to the ralph binary for custom invocation
 
 use std::{env, path::PathBuf};
 

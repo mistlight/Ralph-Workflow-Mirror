@@ -26,8 +26,26 @@ Follow these instructions exactly. If unsure, choose the safest and simplest opt
 If any instruction here conflicts with another project file (e.g. `CONTRIBUTING.md`),
 follow the **stricter** rule.
 
-For integration test guidance (behavior-based testing, mocking strategy, when to update tests), see **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**.
-This **MUST** be followed when dealing with integration tests
+---
+
+## Integration Tests
+
+**CRITICAL:** When working with integration tests, you **MUST** follow the integration test style guide.
+
+- **Read first:** Before modifying, adding, or debugging integration tests, read **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**
+- **This is mandatory:** The guide defines non-negotiable rules for behavior-based testing, mocking strategy, and when to update tests
+- **Key principles:**
+  - Test **observable behavior**, not implementation details
+  - Mock only at **architectural boundaries** (filesystem, network, external APIs)
+  - NEVER use `cfg!(test)` branches or test-only flags in production code
+  - When a test fails, fix the implementation unless the expected behavior changed intentionally
+
+The integration test guide is referenced from multiple locations for visibility:
+- CLAUDE.md (this file) - Primary AI agent instructions
+- AGENTS.md - Agent-specific guidelines
+- tests/integration_tests/main.rs - Main test entry point
+- tests/integration_tests/common/mod.rs - Common test utilities
+- CONTRIBUTING.md - Human contributor guidelines
 
 For design principles, testing philosophy, and dead code policy, see **[CODE_STYLE.md](CODE_STYLE.md)**.
 

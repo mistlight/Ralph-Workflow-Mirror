@@ -29,8 +29,8 @@ pub enum RebaseResult {
     Success,
     /// Rebase had conflicts.
     Conflicts(Vec<String>),
-    /// No rebase was needed.
-    NoOp,
+    /// No rebase was needed with a reason.
+    NoOp { reason: String },
     /// Rebase failed with an error message.
     Failed(String),
 }
@@ -156,7 +156,10 @@ impl GitOps for RealGit {
         match super::rebase::rebase_onto(upstream_branch) {
             Ok(super::rebase::RebaseResult::Success) => Ok(RebaseResult::Success),
             Ok(super::rebase::RebaseResult::Conflicts(files)) => Ok(RebaseResult::Conflicts(files)),
-            Ok(super::rebase::RebaseResult::NoOp) => Ok(RebaseResult::NoOp),
+            Ok(super::rebase::RebaseResult::NoOp { reason }) => Ok(RebaseResult::NoOp { reason }),
+            Ok(super::rebase::RebaseResult::Failed(err)) => {
+                Ok(RebaseResult::Failed(err.description()))
+            }
             Err(e) => Ok(RebaseResult::Failed(e.to_string())),
         }
     }
@@ -198,7 +201,9 @@ mod tests {
     fn test_rebase_result_variants() {
         let success = RebaseResult::Success;
         let conflicts = RebaseResult::Conflicts(vec!["file.txt".to_string()]);
-        let no_op = RebaseResult::NoOp;
+        let no_op = RebaseResult::NoOp {
+            reason: "test".to_string(),
+        };
         let failed = RebaseResult::Failed("error".to_string());
 
         assert_eq!(success, RebaseResult::Success);
@@ -206,7 +211,12 @@ mod tests {
             conflicts,
             RebaseResult::Conflicts(vec!["file.txt".to_string()])
         );
-        assert_eq!(no_op, RebaseResult::NoOp);
+        assert_eq!(
+            no_op,
+            RebaseResult::NoOp {
+                reason: "test".to_string()
+            }
+        );
         assert_eq!(failed, RebaseResult::Failed("error".to_string()));
     }
 }

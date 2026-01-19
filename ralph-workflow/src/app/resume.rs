@@ -644,18 +644,19 @@ fn display_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) 
 /// should run when resuming from a checkpoint.
 pub const fn phase_rank(p: PipelinePhase) -> u8 {
     match p {
-        PipelinePhase::Planning => 0,
-        PipelinePhase::PreRebase => 1,
-        PipelinePhase::PreRebaseConflict => 2,
-        PipelinePhase::Development => 3,
-        PipelinePhase::Review => 4,
-        PipelinePhase::Fix => 5,
-        PipelinePhase::ReviewAgain => 6,
-        PipelinePhase::PostRebase => 7,
-        PipelinePhase::PostRebaseConflict => 8,
-        PipelinePhase::CommitMessage => 9,
-        PipelinePhase::FinalValidation => 10,
-        PipelinePhase::Complete => 11,
+        PipelinePhase::Rebase => 0, // Backward compatibility with old checkpoints
+        PipelinePhase::Planning => 1,
+        PipelinePhase::PreRebase => 2,
+        PipelinePhase::PreRebaseConflict => 3,
+        PipelinePhase::Development => 4,
+        PipelinePhase::Review => 5,
+        PipelinePhase::Fix => 6,
+        PipelinePhase::ReviewAgain => 7,
+        PipelinePhase::PostRebase => 8,
+        PipelinePhase::PostRebaseConflict => 9,
+        PipelinePhase::CommitMessage => 10,
+        PipelinePhase::FinalValidation => 11,
+        PipelinePhase::Complete => 12,
     }
 }
 

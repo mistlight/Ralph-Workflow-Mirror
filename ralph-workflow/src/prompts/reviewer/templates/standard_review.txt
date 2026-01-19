@@ -11,14 +11,16 @@
 {#   Default template for most review scenarios.                                #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
-{#   PROMPT    - Original user request from PROMPT.md (required)                #}
-{#   PLAN      - Implementation plan from PLAN.md (required)                   #}
-{#   DIFF      - Git diff content to review (required)                          #}
-{#   GUIDELINES - Language-specific guidelines (injected by reviewer)           #}
+{#   PROMPT              - Original user request from PROMPT.md (required)      #}
+{#   PLAN                - Implementation plan from PLAN.md (required)         #}
+{#   DIFF                - Git diff content to review (required)                #}
+{#   GUIDELINES          - Language-specific guidelines (injected by reviewer)  #}
+{#   EXPLORATION_MODE    - Whether exploration is required (true/false)         #}
+{#   EXPLORATION_REQUIRED - Instructions for exploration when diff is truncated #}
 {#                                                                             #}
 {# NOTES:                                                                      #}
 {#   - GUIDELINES variable is injected at runtime based on detected language     #}
-{#   - Exploration is limited to files mentioned in the diff                    #}
+{#   - When EXPLORATION_MODE is true, agent must explore full diff              #}
 {# ============================================================================ #}
 
 *** BALANCED REVIEW - LIMITED EXPLORATION ALLOWED ***
@@ -28,14 +30,27 @@ You are in REVIEW MODE.
 YOUR TASK:
 Review the code changes in the DIFF below thoroughly. Your primary focus MUST be on the diff content.
 
+{% if EXPLORATION_MODE %}
+CRITICAL - EXPLORATION REQUIRED:
+The diff content provided is abbreviated. You MUST explore the full diff yourself using git commands.
+- Use 'git diff HEAD' to view the complete diff
+- Use 'git diff HEAD -- <file>' to view specific files
+- Review ALL changed files, not just what is shown above
+{% endif %}
+
+{% if !EXPLORATION_MODE %}
 CRITICAL CONSTRAINTS:
 - You MUST read the files mentioned in the diff (changed files) for full context
-- You MAY use targeted search ONLY to find definitions/imports mentioned in the diff
-- Example: If diff references `use crate::foo::bar`, you MAY search for `foo` module definition
-- You MUST stop exploring once you find the relevant definition
-- You MUST NOT explore or read any other files beyond changed files and their direct dependencies
+- You MAY use targeted search ONLY to find definitions of types/traits/functions immediately imported in the diff
+- "Direct dependencies" means ONLY the immediate imports/uses visible in the diff (e.g., `use crate::foo::Bar`)
+- You MAY navigate to those specific imported items to understand their signatures
+- You MUST NOT follow transitive dependencies (imports of imports, indirect dependencies)
+- Example: If diff has `use crate::foo::Bar`, you MAY read `foo.rs` to find `Bar`, but you MUST NOT explore what `Bar` imports
+- You MUST stop exploring once you find the relevant immediate definition
+- You MUST NOT explore or read any other files beyond changed files and their immediate dependencies
 - You MUST NOT run discovery commands (ls, find, git log, git grep, rg, grep, etc.)
 - Your analysis MUST be centered on the changes shown in the diff
+{% endif %}
 
 {# ORIGINAL REQUEST - The user's original prompt #}
 ORIGINAL REQUEST:
@@ -45,10 +60,16 @@ ORIGINAL REQUEST:
 IMPLEMENTATION PLAN:
 {{PLAN}}
 
+{{EXPLORATION_REQUIRED}}
+
+DIFF CONTEXT:
+{{DIFF_CONTEXT}}
+
 Language-Specific checks (Optional Reference - Do NOT explore beyond the diff and its direct dependencies):
 {{GUIDELINES}}
 
 DIFF TO REVIEW:
+{{EXPLORATION_REQUIRED}}
 ```diff
 {{DIFF}}
 ```

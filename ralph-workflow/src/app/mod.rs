@@ -1003,9 +1003,13 @@ fn handle_rebase_only(
             logger.success("Rebase completed successfully");
             Ok(())
         }
-        Ok(RebaseResult::NoOp) => {
-            logger.info("No rebase needed (already up-to-date)");
+        Ok(RebaseResult::NoOp { reason }) => {
+            logger.info(&format!("No rebase needed: {reason}"));
             Ok(())
+        }
+        Ok(RebaseResult::Failed(err)) => {
+            logger.error(&format!("Rebase failed: {err}"));
+            anyhow::bail!("Rebase failed: {err}")
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
             // Get the actual conflicted files
@@ -1094,6 +1098,15 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 ///
 /// This function is called before the development phase starts to ensure
 /// the feature branch is up-to-date with the default branch.
+///
+/// Uses a state machine for fault tolerance and automatic recovery from
+/// interruptions or failures.
+///
+/// # Rebase Control
+///
+/// Rebase is only performed when both conditions are met:
+/// - `--with-rebase` CLI flag is set (caller already checked this)
+/// - `auto_rebase` config is enabled (checked here)
 fn run_initial_rebase(
     ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext,
@@ -1134,9 +1147,9 @@ fn run_initial_rebase(
             ctx.logger.success("Rebase completed successfully");
             Ok(())
         }
-        Ok(RebaseResult::NoOp) => {
+        Ok(RebaseResult::NoOp { reason }) => {
             ctx.logger
-                .info("No rebase needed (already up-to-date or on main branch)");
+                .info(&format!("No rebase needed: {reason}"));
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
@@ -1224,6 +1237,11 @@ fn run_initial_rebase(
                 }
             }
         }
+        Ok(RebaseResult::Failed(err)) => {
+            ctx.logger.error(&format!("Rebase failed: {err}"));
+            let _ = abort_rebase();
+            Ok(()) // Continue pipeline despite failure
+        }
         Err(e) => {
             ctx.logger
                 .warn(&format!("Rebase failed, continuing without rebase: {e}"));
@@ -1236,6 +1254,15 @@ fn run_initial_rebase(
 ///
 /// This function is called after the review phase completes to ensure
 /// the feature branch is still up-to-date with the default branch.
+///
+/// Uses a state machine for fault tolerance and automatic recovery from
+/// interruptions or failures.
+///
+/// # Rebase Control
+///
+/// Rebase is only performed when both conditions are met:
+/// - `--with-rebase` CLI flag is set (caller already checked this)
+/// - `auto_rebase` config is enabled (checked here)
 fn run_post_review_rebase(
     ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext,
@@ -1280,9 +1307,9 @@ fn run_post_review_rebase(
             ctx.logger.success("Rebase completed successfully");
             Ok(())
         }
-        Ok(RebaseResult::NoOp) => {
+        Ok(RebaseResult::NoOp { reason }) => {
             ctx.logger
-                .info("No rebase needed (already up-to-date or on main branch)");
+                .info(&format!("No rebase needed: {reason}"));
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
@@ -1370,6 +1397,11 @@ fn run_post_review_rebase(
                 }
             }
         }
+        Ok(RebaseResult::Failed(err)) => {
+            ctx.logger.error(&format!("Rebase failed: {err}"));
+            let _ = abort_rebase();
+            Ok(()) // Continue pipeline despite failure
+        }
         Err(e) => {
             ctx.logger
                 .warn(&format!("Rebase failed, continuing without rebase: {e}"));
@@ -1415,11 +1447,20 @@ fn try_resolve_conflicts_with_fallback(
 
     match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
-            // Agent provided JSON output - parse and write files
-            let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
-            write_resolved_files(&resolved_files, logger)?;
+            // Agent provided JSON output - attempt to parse and write files
+            // JSON is optional for verification - LibGit2 state is authoritative
+            match parse_and_validate_resolved_files(&resolved_content, logger) {
+                Ok(resolved_files) => {
+                    write_resolved_files(&resolved_files, logger)?;
+                }
+                Err(_) => {
+                    // JSON parsing failed - this is expected and normal
+                    // We verify conflicts via LibGit2 state, not JSON parsing
+                    // Continue to LibGit2 verification below
+                }
+            }
 
-            // Verify all conflicts are resolved
+            // Verify all conflicts are resolved via LibGit2 (authoritative source)
             let remaining_conflicts = get_conflicted_files()?;
             if remaining_conflicts.is_empty() {
                 Ok(true)
@@ -1505,18 +1546,30 @@ fn build_resolution_prompt(
     conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
     template_context: &TemplateContext,
 ) -> String {
-    use crate::prompts::build_conflict_resolution_prompt_with_context;
+    build_enhanced_resolution_prompt(conflicts, None::<()>, template_context)
+        .unwrap_or_else(|_| String::new())
+}
+
+/// Build the conflict resolution prompt.
+///
+/// This function uses the standard conflict resolution prompt.
+fn build_enhanced_resolution_prompt(
+    conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
+    _branch_info: Option<()>, // Kept for API compatibility, currently unused
+    template_context: &TemplateContext,
+) -> anyhow::Result<String> {
     use std::fs;
 
     let prompt_md_content = fs::read_to_string("PROMPT.md").ok();
     let plan_content = fs::read_to_string(".agent/PLAN.md").ok();
 
-    build_conflict_resolution_prompt_with_context(
+    // Use standard prompt
+    Ok(crate::prompts::build_conflict_resolution_prompt_with_context(
         template_context,
         conflicts,
         prompt_md_content.as_deref(),
         plan_content.as_deref(),
-    )
+    ))
 }
 
 /// Run AI agent to resolve conflicts with fallback mechanism.
@@ -1643,25 +1696,30 @@ fn run_ai_conflict_resolution(
 }
 
 /// Parse and validate the resolved files from AI output.
+///
+/// JSON parsing failures are expected and handled gracefully - LibGit2 state
+/// is used for verification, not JSON output. This function only parses the
+/// JSON to write resolved files if available.
 fn parse_and_validate_resolved_files(
     resolved_content: &str,
     logger: &Logger,
 ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
-    let json: serde_json::Value = serde_json::from_str(resolved_content).map_err(|e| {
-        logger.error(&format!("Failed to parse agent output as JSON: {e}"));
-        anyhow::anyhow!("Failed to parse agent output as JSON")
+    let json: serde_json::Value = serde_json::from_str(resolved_content).map_err(|_e| {
+        // Agent did not provide JSON output - fall back to LibGit2 verification
+        // This is expected and normal, not an error condition
+        anyhow::anyhow!("Agent did not provide JSON output (will verify via Git state)")
     })?;
 
     let resolved_files = match json.get("resolved_files") {
         Some(v) if v.is_object() => v.as_object().unwrap(),
         _ => {
-            logger.error("Agent output missing 'resolved_files' object");
+            logger.info("Agent output missing 'resolved_files' object");
             anyhow::bail!("Agent output missing 'resolved_files' object");
         }
     };
 
     if resolved_files.is_empty() {
-        logger.error("No files were resolved by the agent");
+        logger.info("No resolved files in JSON output");
         anyhow::bail!("No files were resolved by the agent");
     }
 
@@ -1694,3 +1752,4 @@ fn write_resolved_files(
     logger.success(&format!("Successfully resolved {files_written} file(s)"));
     Ok(files_written)
 }
+

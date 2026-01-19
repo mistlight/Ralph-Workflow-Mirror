@@ -9,6 +9,16 @@
 //!
 //! These tests use file-based mocking instead of shell scripts to avoid
 //! external process spawning, making tests faster and more deterministic.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (file system state)
+//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
+//! - Tests are deterministic and isolated
 
 use predicates::prelude::*;
 use std::fs;
