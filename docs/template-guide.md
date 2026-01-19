@@ -32,7 +32,6 @@ templates/
 ├── commit_message_xml.txt              # Normal strategy (XML format)
 ├── commit_simplified.txt               # Simplified strategy (direct instructions)
 ├── commit_xsd_retry.txt                # XSD validation retry (in-session)
-├── commit_message_fallback.txt         # Fallback when template rendering fails
 ├── developer_iteration.txt             # Implementation mode prompt
 ├── planning.txt                        # Planning phase prompt
 ├── fix_mode.txt                        # Fix mode prompt
@@ -179,13 +178,7 @@ All commit templates are used during the commit message generation phase, with d
 | `BRANCH_NAME` | Current branch name (optional) |
 | `XSD_ERROR` | XSD validation error message |
 
-#### `commit_message_fallback.txt`
-**When used**: Fallback when template rendering fails
-
-| Variable | Description |
-|----------|-------------|
-| `DIFF` | Git diff to analyze |
-| `FILES_CHANGED` | List of changed files |
+**Retry Strategy**: The commit generation uses a two-strategy approach (Normal, Simplified) with in-session XSD validation retries. Each strategy allows up to 5 in-session retries when XSD validation fails, with detailed error feedback provided to the agent.
 
 ### Fix Template
 

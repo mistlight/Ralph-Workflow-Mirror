@@ -216,18 +216,11 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
 
     template.render(&variables).unwrap_or_else(|e| {
         eprintln!("Warning: Failed to render commit template: {e}");
-        // Use fallback template if main template fails
-        let fallback_content = include_str!("templates/commit_message_fallback.txt");
-        let fallback_template = Template::new(fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
-                     Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
-                )
-            })
+        // Last resort: simple inline prompt (no fallback template needed)
+        format!(
+            "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
+             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
+        )
     })
 }
 
@@ -263,21 +256,11 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
 
     template.render(&variables).unwrap_or_else(|e| {
         eprintln!("Warning: Failed to render commit template: {e}");
-        // Use fallback template if main template fails
-        let fallback_content = context
-            .registry()
-            .get_template("commit_message_fallback")
-            .unwrap_or_else(|_| include_str!("templates/commit_message_fallback.txt").to_string());
-        let fallback_template = Template::new(&fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
-                     Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
-                )
-            })
+        // Last resort: simple inline prompt (no fallback template needed)
+        format!(
+            "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
+             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
+        )
     })
 }
 

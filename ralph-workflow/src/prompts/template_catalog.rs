@@ -99,16 +99,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         m.insert(
-            "commit_message_fallback",
-            EmbeddedTemplate {
-                name: "commit_message_fallback",
-                content: include_str!("templates/commit_message_fallback.txt"),
-                description: "Fallback commit message template",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
             "commit_xsd_retry",
             EmbeddedTemplate {
                 name: "commit_xsd_retry",
@@ -124,6 +114,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_simplified",
                 content: include_str!("templates/commit_simplified.txt"),
                 description: "Simplified commit prompt with direct instructions",
+                deprecated: false,
             },
         );
 
@@ -484,7 +475,8 @@ mod tests {
         assert!(get_embedded_template("planning_fallback").is_some());
         assert!(get_embedded_template("fix_mode_fallback").is_some());
         assert!(get_embedded_template("conflict_resolution_fallback").is_some());
-        assert!(get_embedded_template("commit_message_fallback").is_some());
+        // Note: commit_message_fallback was removed as part of the XML-only with XSD validation approach
+        // The retry strategy now uses in-session XSD validation retries instead of fallback templates
     }
 
     #[test]
