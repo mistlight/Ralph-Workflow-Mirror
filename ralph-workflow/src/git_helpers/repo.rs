@@ -215,6 +215,17 @@ pub fn git_diff() -> io::Result<String> {
 /// and the truncation level indicates what instructions should be shown
 /// to the reviewer agent about exploring the full diff themselves.
 ///
+/// # Warning Behavior
+///
+/// This function does not print warnings directly. Callers should check the
+/// return value's boolean flag and log appropriate warnings if truncation occurred.
+///
+/// # Truncation Behavior
+///
+/// When a diff exceeds `MAX_DIFF_SIZE_HARD`, it is truncated and a warning marker
+/// is placed **before** the diff content (not after). This ensures the LLM reviewer
+/// is immediately aware that the context is incomplete before analyzing the diff.
+///
 /// # Arguments
 ///
 /// * `diff` - The full git diff

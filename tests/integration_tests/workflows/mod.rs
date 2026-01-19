@@ -9,7 +9,6 @@
 //! - Baseline management tests (baseline.rs)
 //! - PLAN workflow tests (plan.rs)
 //! - Review workflow tests (review.rs)
-//! - Full workflow requirements (requirements.rs)
 
 pub mod backup;
 pub mod baseline;
@@ -19,5 +18,4 @@ pub mod config;
 pub mod config_test;
 pub mod fallback;
 pub mod plan;
-pub mod requirements;
 pub mod review;

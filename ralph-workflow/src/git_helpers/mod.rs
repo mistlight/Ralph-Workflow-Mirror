@@ -13,6 +13,18 @@
 //! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
 //! - [`branch`] - Branch detection and default branch resolution
 //! - Rebase operations are provided via the `rebase` module functions
+//!
+//! # Diff Truncation
+//!
+//! This module provides diff truncation for LLM consumption via
+//! [`validate_and_truncate_diff`]. Large diffs are truncated to prevent
+//! exceeding LLM context limits:
+//!
+//! - **Warning threshold** ([`MAX_DIFF_SIZE_WARNING`]): 100KB - logs a warning
+//! - **Hard limit**: 1MB - truncates the diff
+//!
+//! When truncation occurs, a marker is prepended to the diff content to
+//! inform the LLM reviewer that the context is incomplete.
 
 #![deny(unsafe_code)]
 
