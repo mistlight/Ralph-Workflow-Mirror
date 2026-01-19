@@ -42,8 +42,9 @@ use crate::files::{
 };
 use crate::git_helpers::{
     abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
-    get_default_branch, get_repo_root, is_main_or_master_branch, rebase_onto, require_git_repo,
-    reset_start_commit, save_start_commit, start_agent_phase, RebaseResult,
+    get_default_branch, get_repo_root, get_start_commit_summary, is_main_or_master_branch,
+    rebase_onto, require_git_repo, reset_start_commit, save_start_commit, start_agent_phase,
+    RebaseResult,
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -178,6 +179,7 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
         || template_cmds.validate
         || template_cmds.show.is_some()
         || template_cmds.list
+        || template_cmds.list_all
         || template_cmds.variables.is_some()
         || template_cmds.render.is_some()
     {
@@ -649,6 +651,30 @@ fn save_start_commit_or_warn(ctx: &PipelineContext) {
             ctx.logger.info(
                 "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
             );
+        }
+    }
+
+    // Display start commit information to user
+    match get_start_commit_summary() {
+        Ok(summary) => {
+            if ctx.config.verbosity.is_debug() || summary.commits_since > 5 || summary.is_stale {
+                ctx.logger.info(&summary.format_compact());
+                if summary.is_stale {
+                    ctx.logger.warn(
+                        "Start commit is stale. Consider running: ralph --reset-start-commit",
+                    );
+                } else if summary.commits_since > 5 {
+                    ctx.logger
+                        .info("Tip: Run 'ralph --show-baseline' for more details");
+                }
+            }
+        }
+        Err(e) => {
+            // Only show error in debug mode since this is informational
+            if ctx.config.verbosity.is_debug() {
+                ctx.logger
+                    .warn(&format!("Failed to get start commit summary: {e}"));
+            }
         }
     }
 }

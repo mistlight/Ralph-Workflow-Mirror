@@ -82,7 +82,7 @@ pub fn load_review_baseline() -> io::Result<ReviewBaseline> {
     let oid = git2::Oid::from_str(raw).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Invalid OID format in review baseline: {raw}"),
+            format!("Invalid OID format in {}: '{}'. The review baseline will be reset. Run 'ralph --reset-start-commit' if this persists.", REVIEW_BASELINE_FILE, raw),
         )
     })?;
 

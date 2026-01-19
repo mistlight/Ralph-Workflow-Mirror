@@ -1302,3 +1302,248 @@ exit 0
         "ISSUES.md should preserve resolved issues"
     );
 }
+
+// ============================================================================
+// Edge Case Tests (Step 4 from hardening plan)
+// ============================================================================
+
+#[test]
+fn ralph_review_handles_only_deleted_files() {
+    // Test that review works correctly when the diff only contains file deletions
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with multiple files
+    write_file(dir.path().join("file_to_delete.txt"), "content to delete");
+    write_file(dir.path().join("keeper.txt"), "keeper content");
+    let _ = commit_all(&repo, "initial commit with files");
+
+    // Run ralph to establish start_commit baseline
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: baseline\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Delete the file (creates a deletion-only diff)
+    fs::remove_file(dir.path().join("file_to_delete.txt")).unwrap();
+
+    let script_path = dir.path().join("review_deletion.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+cat > .agent/ISSUES.md << 'ISSUES_EOF'
+Review of Deletion
+
+- [ ] Low: File deletion detected, verify it was intentional
+ISSUES_EOF
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    // Should complete successfully with deletion-only diff
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_review_handles_only_renamed_files() {
+    // Test that review works correctly when the diff only contains file renames
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with a file
+    write_file(dir.path().join("old_name.txt"), "file content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Run ralph to establish start_commit baseline
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: baseline\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Rename the file using git mv
+    std::process::Command::new("git")
+        .args(["mv", "old_name.txt", "new_name.txt"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run git mv");
+
+    let script_path = dir.path().join("review_rename.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+cat > .agent/ISSUES.md << 'ISSUES_EOF'
+Review of Rename
+
+No issues found.
+ISSUES_EOF
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    // Should complete successfully with rename-only diff
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_fixer_handles_whitespace_only_issues() {
+    // Test that fixer handles ISSUES.md with only whitespace gracefully
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("code.py"), "print('hello')");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change
+    write_file(dir.path().join("code.py"), "print('hello world')");
+
+    let script_path = dir.path().join("whitespace_issues.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+if [ -f .agent/call_counter ]; then
+    count=$(cat .agent/call_counter)
+    count=$((count + 1))
+else
+    count=1
+fi
+echo $count > .agent/call_counter
+
+case $count in
+    1) # Review phase - create ISSUES.md with only whitespace
+        printf "   \n\n\t\t\n   \n" > .agent/ISSUES.md
+        ;;
+    2) # Fix phase - should handle whitespace-only ISSUES.md gracefully
+        # Just exit successfully
+        ;;
+esac
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    // Should complete gracefully with whitespace-only issues
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_review_works_with_detached_head() {
+    // Test that review works correctly in detached HEAD state
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a second commit
+    write_file(dir.path().join("initial.txt"), "second content");
+    let second_commit_oid = commit_all(&repo, "second commit");
+
+    // Checkout the first commit in detached HEAD state
+    std::process::Command::new("git")
+        .args(["checkout", "HEAD~1"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to checkout");
+
+    // Verify we're in detached HEAD state
+    let status_output = std::process::Command::new("git")
+        .args(["status"])
+        .current_dir(dir.path())
+        .output()
+        .expect("Failed to run git status");
+    let status_str = String::from_utf8_lossy(&status_output.stdout);
+    assert!(
+        status_str.contains("HEAD detached") || status_str.contains("detached"),
+        "Should be in detached HEAD state"
+    );
+
+    // Create a change while in detached HEAD
+    write_file(dir.path().join("initial.txt"), "detached head change");
+
+    let script_path = dir.path().join("detached_review.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+cat > .agent/ISSUES.md << 'ISSUES_EOF'
+Review in detached HEAD
+
+No issues found.
+ISSUES_EOF
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    // Should complete successfully in detached HEAD state
+    cmd.assert().success();
+
+    // Restore the branch for cleanup
+    let _ = std::process::Command::new("git")
+        .args(["checkout", &format!("{}", second_commit_oid)])
+        .current_dir(dir.path())
+        .output();
+}

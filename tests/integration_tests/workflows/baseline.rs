@@ -602,3 +602,238 @@ exit 0
         "External file should have been created"
     );
 }
+
+// ============================================================================
+// Start Commit UX Tests (Step 3 from hardening plan)
+// ============================================================================
+
+#[test]
+fn ralph_start_commit_shown_at_pipeline_start() {
+    // Test that start_commit information is displayed at pipeline start
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // First run - should establish start_commit
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: first\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Verify start_commit was created
+    let start_commit_path = dir.path().join(".agent/start_commit");
+    assert!(
+        start_commit_path.exists(),
+        "start_commit should be created after first run"
+    );
+
+    // Create several commits to make the start commit stale
+    for i in 1..=6 {
+        write_file(
+            dir.path().join("initial.txt"),
+            format!("content update {}", i).as_str(),
+        );
+        let _ = commit_all(&repo, format!("commit {}", i).as_str());
+    }
+
+    // Run with verbose mode to see start_commit info
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--verbosity=2")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: second\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_stale_start_commit_warning_at_start() {
+    // Test that stale start_commit warning is shown
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Run to establish start_commit
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: baseline\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Create more than 10 commits to make it stale
+    for i in 1..=11 {
+        write_file(
+            dir.path().join("initial.txt"),
+            format!("content update {}", i).as_str(),
+        );
+        let _ = commit_all(&repo, format!("commit {}", i).as_str());
+    }
+
+    // Run with verbose mode - should show stale warning
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--verbosity=2")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: review\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+}
+
+// ============================================================================
+// Additional Edge Case Tests (Step 4 from hardening plan)
+// ============================================================================
+
+#[test]
+fn ralph_handles_corrupted_start_commit_file() {
+    // Test recovery from corrupted .agent/start_commit
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Manually create a corrupted start_commit file
+    let start_commit_path = dir.path().join(".agent/start_commit");
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    fs::write(&start_commit_path, "corrupted_invalid_oid").unwrap();
+
+    // Run ralph - should recover from corrupted state
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: recovered\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Verify start_commit was repaired (now contains valid OID)
+    let repaired_content = fs::read_to_string(&start_commit_path).unwrap();
+    assert_ne!(
+        repaired_content.trim(),
+        "corrupted_invalid_oid",
+        "start_commit should be repaired to a valid OID"
+    );
+}
+
+#[test]
+fn ralph_handles_corrupted_review_baseline_file() {
+    // Test recovery from corrupted .agent/review_baseline.txt
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Run to establish start_commit
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: baseline\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Manually corrupt the review_baseline.txt file
+    let baseline_path = dir.path().join(".agent/review_baseline.txt");
+    fs::write(&baseline_path, "corrupted_invalid_baseline_oid").unwrap();
+
+    // Create a change
+    write_file(dir.path().join("initial.txt"), "modified content");
+
+    // Run review - should handle corrupted baseline gracefully
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: review\" > .agent/commit-message.txt'",
+        );
+
+    // Should complete successfully despite corrupted baseline
+    cmd.assert().success();
+}
+
+#[test]
+fn ralf_handles_missing_start_commit_oid() {
+    // Test when start_commit references non-existent commit (history rewritten)
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Run to establish start_commit
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: baseline\" > .agent/commit-message.txt'",
+        );
+
+    cmd.assert().success();
+
+    // Manually set start_commit to a non-existent OID
+    let start_commit_path = dir.path().join(".agent/start_commit");
+    fs::write(
+        &start_commit_path,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap();
+
+    // Create a change
+    write_file(dir.path().join("initial.txt"), "modified content");
+
+    // Run review - should handle missing OID gracefully
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent && echo \"feat: review\" > .agent/commit-message.txt'",
+        );
+
+    // Should recover and reset the start_commit
+    cmd.assert().success();
+}

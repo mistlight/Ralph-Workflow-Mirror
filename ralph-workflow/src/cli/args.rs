@@ -286,6 +286,13 @@ pub struct TemplateCommands {
     )]
     pub list: bool,
 
+    /// List all templates including deprecated ones
+    #[arg(
+        long,
+        help = "List all Agent Prompt templates including deprecated ones"
+    )]
+    pub list_all: bool,
+
     /// Extract variables from a template
     #[arg(
         long,

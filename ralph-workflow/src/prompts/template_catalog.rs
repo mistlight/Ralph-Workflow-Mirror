@@ -16,6 +16,8 @@ pub struct EmbeddedTemplate {
     pub content: &'static str,
     /// Human-readable description
     pub description: &'static str,
+    /// Whether this template is deprecated
+    pub deprecated: bool,
 }
 
 /// Get an embedded template by name.
@@ -36,7 +38,6 @@ pub fn get_embedded_template(name: &str) -> Option<String> {
 /// * `Some(&EmbeddedTemplate)` - Template metadata if found
 /// * `None` - Template not found
 #[must_use]
-#[cfg(test)]
 pub fn get_template_metadata(name: &str) -> Option<&'static EmbeddedTemplate> {
     EMBEDDED_TEMPLATES.get(name)
 }
@@ -93,6 +94,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_message_xml",
                 content: include_str!("templates/commit_message_xml.txt"),
                 description: "Generate Conventional Commits messages from git diffs (XML format)",
+                deprecated: false,
             },
         );
 
@@ -102,6 +104,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_strict_json",
                 content: include_str!("templates/commit_strict_json.txt"),
                 description: "Strict JSON commit message format (retry attempt 1)",
+                deprecated: false,
             },
         );
 
@@ -111,6 +114,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_strict_json_v2",
                 content: include_str!("templates/commit_strict_json_v2.txt"),
                 description: "Strict JSON commit message format with examples (retry attempt 2)",
+                deprecated: false,
             },
         );
 
@@ -120,6 +124,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_ultra_minimal",
                 content: include_str!("templates/commit_ultra_minimal.txt"),
                 description: "Ultra-minimal commit message prompt (retry attempt 3)",
+                deprecated: false,
             },
         );
 
@@ -129,6 +134,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_ultra_minimal_v2",
                 content: include_str!("templates/commit_ultra_minimal_v2.txt"),
                 description: "Ultra-minimal commit message prompt v2 (retry attempt 4)",
+                deprecated: false,
             },
         );
 
@@ -138,6 +144,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_file_list_only",
                 content: include_str!("templates/commit_file_list_only.txt"),
                 description: "Commit message from file list only (fallback 1)",
+                deprecated: false,
             },
         );
 
@@ -147,6 +154,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_file_list_summary",
                 content: include_str!("templates/commit_file_list_summary.txt"),
                 description: "Commit message from file summary (fallback 2)",
+                deprecated: false,
             },
         );
 
@@ -156,6 +164,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_emergency",
                 content: include_str!("templates/commit_emergency.txt"),
                 description: "Emergency commit message with diff (fallback 3)",
+                deprecated: false,
             },
         );
 
@@ -165,6 +174,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_emergency_no_diff",
                 content: include_str!("templates/commit_emergency_no_diff.txt"),
                 description: "Emergency commit message without diff (last resort)",
+                deprecated: false,
             },
         );
 
@@ -174,6 +184,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_message_fallback",
                 content: include_str!("templates/commit_message_fallback.txt"),
                 description: "Fallback commit message template",
+                deprecated: false,
             },
         );
 
@@ -187,6 +198,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "developer_iteration",
                 content: include_str!("templates/developer_iteration.txt"),
                 description: "Developer agent implementation mode prompt",
+                deprecated: false,
             },
         );
 
@@ -196,6 +208,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "planning",
                 content: include_str!("templates/planning.txt"),
                 description: "Planning phase prompt for implementation plans",
+                deprecated: false,
             },
         );
 
@@ -205,6 +218,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "developer_iteration_fallback",
                 content: include_str!("templates/developer_iteration_fallback.txt"),
                 description: "Fallback developer iteration prompt",
+                deprecated: false,
             },
         );
 
@@ -214,6 +228,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "planning_fallback",
                 content: include_str!("templates/planning_fallback.txt"),
                 description: "Fallback planning prompt",
+                deprecated: false,
             },
         );
 
@@ -227,6 +242,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "fix_mode",
                 content: include_str!("templates/fix_mode.txt"),
                 description: "Fix mode prompt for addressing review issues",
+                deprecated: false,
             },
         );
 
@@ -236,6 +252,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "fix_mode_fallback",
                 content: include_str!("templates/fix_mode_fallback.txt"),
                 description: "Fallback fix mode prompt",
+                deprecated: false,
             },
         );
 
@@ -249,6 +266,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "conflict_resolution",
                 content: include_str!("templates/conflict_resolution.txt"),
                 description: "Merge conflict resolution prompt",
+                deprecated: false,
             },
         );
 
@@ -258,6 +276,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "conflict_resolution_fallback",
                 content: include_str!("templates/conflict_resolution_fallback.txt"),
                 description: "Fallback conflict resolution prompt",
+                deprecated: false,
             },
         );
 
@@ -282,6 +301,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "standard_review",
                 content: include_str!("reviewer/templates/standard_review.txt"),
                 description: "Standard balanced review with comprehensive checklist (DEFAULT)",
+                deprecated: false,
             },
         );
 
@@ -291,6 +311,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "comprehensive_review",
                 content: include_str!("reviewer/templates/comprehensive_review.txt"),
                 description: "Comprehensive priority-ordered review (12 categories)",
+                deprecated: false,
             },
         );
 
@@ -300,6 +321,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "security_review",
                 content: include_str!("reviewer/templates/security_review.txt"),
                 description: "Security-focused review (OWASP Top 10)",
+                deprecated: false,
             },
         );
 
@@ -309,6 +331,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "universal_review",
                 content: include_str!("reviewer/templates/universal_review.txt"),
                 description: "Simplified review for maximum agent compatibility",
+                deprecated: false,
             },
         );
 
@@ -320,6 +343,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "detailed_review_minimal",
                 content: include_str!("reviewer/templates/standard_review.txt"),
                 description: "[DEPRECATED] Use standard_review instead",
+                deprecated: true,
             },
         );
 
@@ -329,6 +353,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "detailed_review_normal",
                 content: include_str!("reviewer/templates/standard_review.txt"),
                 description: "[DEPRECATED] Use standard_review instead",
+                deprecated: true,
             },
         );
 
@@ -338,6 +363,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "incremental_review_minimal",
                 content: include_str!("reviewer/templates/standard_review.txt"),
                 description: "[DEPRECATED] Use standard_review instead",
+                deprecated: true,
             },
         );
 
@@ -347,6 +373,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "incremental_review_normal",
                 content: include_str!("reviewer/templates/standard_review.txt"),
                 description: "[DEPRECATED] Use standard_review instead",
+                deprecated: true,
             },
         );
 
@@ -356,6 +383,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "universal_review_minimal",
                 content: include_str!("reviewer/templates/universal_review.txt"),
                 description: "[DEPRECATED] Use universal_review instead",
+                deprecated: true,
             },
         );
 
@@ -365,6 +393,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "universal_review_normal",
                 content: include_str!("reviewer/templates/universal_review.txt"),
                 description: "[DEPRECATED] Use universal_review instead",
+                deprecated: true,
             },
         );
 
@@ -374,6 +403,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "standard_review_minimal",
                 content: include_str!("reviewer/templates/standard_review.txt"),
                 description: "[DEPRECATED] Use standard_review instead",
+                deprecated: true,
             },
         );
 
@@ -383,6 +413,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "standard_review_normal",
                 content: include_str!("reviewer/templates/standard_review.txt"),
                 description: "[DEPRECATED] Use standard_review instead",
+                deprecated: true,
             },
         );
 
@@ -392,6 +423,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "comprehensive_review_minimal",
                 content: include_str!("reviewer/templates/comprehensive_review.txt"),
                 description: "[DEPRECATED] Use comprehensive_review instead",
+                deprecated: true,
             },
         );
 
@@ -401,6 +433,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "comprehensive_review_normal",
                 content: include_str!("reviewer/templates/comprehensive_review.txt"),
                 description: "[DEPRECATED] Use comprehensive_review instead",
+                deprecated: true,
             },
         );
 
@@ -410,6 +443,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "security_review_minimal",
                 content: include_str!("reviewer/templates/security_review.txt"),
                 description: "[DEPRECATED] Use security_review instead",
+                deprecated: true,
             },
         );
 
@@ -419,6 +453,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "security_review_normal",
                 content: include_str!("reviewer/templates/security_review.txt"),
                 description: "[DEPRECATED] Use security_review instead",
+                deprecated: true,
             },
         );
 
