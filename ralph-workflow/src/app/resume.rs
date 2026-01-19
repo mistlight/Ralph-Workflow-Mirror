@@ -142,16 +142,39 @@ fn display_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) 
     logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
     logger.info(&format!("Checkpoint version: {}", checkpoint.version));
 
+    // Show run ID and resume count
+    logger.info(&format!("Run ID: {}", checkpoint.run_id));
+    if checkpoint.resume_count > 0 {
+        logger.info(&format!(
+            "Resume count: {} (this is resume #{} of this session)",
+            checkpoint.resume_count,
+            checkpoint.resume_count + 1
+        ));
+    }
+    if let Some(ref parent_id) = checkpoint.parent_run_id {
+        logger.info(&format!("Parent run ID: {}", parent_id));
+    }
+
+    // Show actual execution counts vs configured counts
+    logger.info(&format!(
+        "Development: {} iteration(s) configured, {} completed",
+        checkpoint.total_iterations, checkpoint.actual_developer_runs
+    ));
+    logger.info(&format!(
+        "Review: {} pass(es) configured, {} completed",
+        checkpoint.total_reviewer_passes, checkpoint.actual_reviewer_runs
+    ));
+
     // Show iteration progress
     if checkpoint.total_iterations > 0 {
         logger.info(&format!(
-            "Development progress: iteration {}/{}",
+            "Current position: iteration {}/{}",
             checkpoint.iteration, checkpoint.total_iterations
         ));
     }
     if checkpoint.total_reviewer_passes > 0 {
         logger.info(&format!(
-            "Review progress: pass {}/{}",
+            "Current position: pass {}/{}",
             checkpoint.reviewer_pass, checkpoint.total_reviewer_passes
         ));
     }

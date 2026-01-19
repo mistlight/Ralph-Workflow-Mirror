@@ -114,12 +114,16 @@ pub fn run_review_phase(
                     ctx.developer_agent,
                     ctx.reviewer_agent,
                     ctx.logger,
+                    &ctx.run_context,
                 )
                 .build()
             {
                 let _ = save_checkpoint(&checkpoint);
             }
         }
+
+        // Record this pass as completed
+        ctx.record_reviewer_pass();
 
         ctx.logger.subheader(&format!(
             "Review-Fix Cycle {} of {}",

@@ -234,6 +234,7 @@ mod tests {
             AgentConfigSnapshot::new("claude".into(), "claude".into(), "-p".into(), None, true);
         let rev_config =
             AgentConfigSnapshot::new("codex".into(), "codex".into(), "-p".into(), None, true);
+        let run_id = uuid::Uuid::new_v4().to_string();
 
         PipelineCheckpoint::from_params(CheckpointParams {
             phase: PipelinePhase::Development,
@@ -249,6 +250,11 @@ mod tests {
             rebase_state: RebaseState::default(),
             git_user_name: None,
             git_user_email: None,
+            run_id: &run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: 2,
+            actual_reviewer_runs: 0,
         })
     }
 

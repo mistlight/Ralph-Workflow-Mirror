@@ -5,6 +5,7 @@
 //! logging utilities, and runtime state that all phases need access to.
 
 use crate::agents::{AgentRegistry, AgentRole};
+use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::guidelines::ReviewGuidelines;
 use crate::logger::{Colors, Logger};
@@ -37,9 +38,21 @@ pub struct PhaseContext<'a> {
     pub review_guidelines: Option<&'a ReviewGuidelines>,
     /// Template context for loading user templates.
     pub template_context: &'a TemplateContext,
+    /// Run context for tracking execution lineage and state.
+    pub run_context: RunContext,
 }
 
-impl PhaseContext<'_> {}
+impl PhaseContext<'_> {
+    /// Record a completed developer iteration.
+    pub fn record_developer_iteration(&mut self) {
+        self.run_context.record_developer_iteration();
+    }
+
+    /// Record a completed reviewer pass.
+    pub fn record_reviewer_pass(&mut self) {
+        self.run_context.record_reviewer_pass();
+    }
+}
 
 /// Get the primary commit agent from the registry.
 ///
@@ -124,6 +137,7 @@ mod tests {
             reviewer_agent: "reviewer-agent",
             review_guidelines: None,
             template_context: &fixture.template_context,
+            run_context: RunContext::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -159,6 +173,7 @@ mod tests {
             reviewer_agent: "reviewer-agent-1",
             review_guidelines: None,
             template_context: &fixture.template_context,
+            run_context: RunContext::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -186,6 +201,7 @@ mod tests {
             reviewer_agent: "fallback-reviewer",
             review_guidelines: None,
             template_context: &fixture.template_context,
+            run_context: RunContext::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);

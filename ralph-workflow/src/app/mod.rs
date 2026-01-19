@@ -455,6 +455,15 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     );
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
 
+    // Create run context - either new or from checkpoint
+    let run_context = if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::RunContext;
+        RunContext::from_checkpoint(checkpoint)
+    } else {
+        use crate::checkpoint::RunContext;
+        RunContext::new()
+    };
+
     // Apply checkpoint configuration restoration if resuming
     let config = if let Some(ref checkpoint) = resume_checkpoint {
         use crate::checkpoint::apply_checkpoint_to_config;
@@ -507,12 +516,13 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         &mut timer,
         &mut stats,
         review_guidelines.as_ref(),
+        &run_context,
     );
     save_start_commit_or_warn(ctx);
 
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
-        run_initial_rebase(ctx)?;
+        run_initial_rebase(ctx, &run_context)?;
     }
 
     // Run pipeline phases
@@ -525,7 +535,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Run post-review rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
-        run_post_review_rebase(ctx)?;
+        run_post_review_rebase(ctx, &run_context)?;
     }
 
     update_status("In progress.", config.isolation_mode)?;
@@ -547,6 +557,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
                 &ctx.developer_agent,
                 &ctx.reviewer_agent,
                 &ctx.logger,
+                &run_context,
             )
             .build()
         {
@@ -654,6 +665,7 @@ fn create_phase_context_with_config<'ctx>(
     timer: &'ctx mut Timer,
     stats: &'ctx mut Stats,
     review_guidelines: Option<&'ctx crate::guidelines::ReviewGuidelines>,
+    run_context: &'ctx crate::checkpoint::RunContext,
 ) -> PhaseContext<'ctx> {
     PhaseContext {
         config,
@@ -666,6 +678,7 @@ fn create_phase_context_with_config<'ctx>(
         reviewer_agent: &ctx.reviewer_agent,
         review_guidelines,
         template_context: &ctx.template_context,
+        run_context: run_context.clone(),
     }
 }
 
@@ -879,6 +892,7 @@ fn run_final_validation(
                 ctx.developer_agent,
                 ctx.reviewer_agent,
                 ctx.logger,
+                &ctx.run_context,
             )
             .build()
         {
@@ -1031,7 +1045,10 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 ///
 /// This function is called before the development phase starts to ensure
 /// the feature branch is up-to-date with the default branch.
-fn run_initial_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
+fn run_initial_rebase(
+    ctx: &PipelineContext,
+    run_context: &crate::checkpoint::RunContext,
+) -> anyhow::Result<()> {
     ctx.logger.header("Pre-development rebase", Colors::cyan);
 
     // Save checkpoint at start of pre-rebase phase
@@ -1046,6 +1063,7 @@ fn run_initial_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
                 &ctx.developer_agent,
                 &ctx.reviewer_agent,
                 &ctx.logger,
+                run_context,
             )
             .build()
         {
@@ -1091,6 +1109,7 @@ fn run_initial_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
                         &ctx.developer_agent,
                         &ctx.reviewer_agent,
                         &ctx.logger,
+                        run_context,
                     )
                     .build()
                 {
@@ -1157,7 +1176,10 @@ fn run_initial_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
 ///
 /// This function is called after the review phase completes to ensure
 /// the feature branch is still up-to-date with the default branch.
-fn run_post_review_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
+fn run_post_review_rebase(
+    ctx: &PipelineContext,
+    run_context: &crate::checkpoint::RunContext,
+) -> anyhow::Result<()> {
     ctx.logger.header("Post-review rebase", Colors::cyan);
 
     // Save checkpoint at start of post-rebase phase
@@ -1176,6 +1198,7 @@ fn run_post_review_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
                 &ctx.developer_agent,
                 &ctx.reviewer_agent,
                 &ctx.logger,
+                run_context,
             )
             .build()
         {
@@ -1221,6 +1244,7 @@ fn run_post_review_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
                         &ctx.developer_agent,
                         &ctx.reviewer_agent,
                         &ctx.logger,
+                        run_context,
                     )
                     .build()
                 {

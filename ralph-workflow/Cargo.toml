@@ -73,6 +73,9 @@ git2 = "0.18"
 # File system monitoring for PROMPT.md protection
 notify = "6.1"
 
+# UUID generation for unique run identifiers
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
 [dev-dependencies]
 # Testing utilities
 tempfile = "3.10"

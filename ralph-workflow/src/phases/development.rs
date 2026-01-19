@@ -90,12 +90,16 @@ pub fn run_development_phase(
                     ctx.developer_agent,
                     ctx.reviewer_agent,
                     ctx.logger,
+                    &ctx.run_context,
                 )
                 .build()
             {
                 let _ = save_checkpoint(&checkpoint);
             }
         }
+
+        // Record this iteration as completed
+        ctx.record_developer_iteration();
 
         // Step 2: Execute the PLAN
         ctx.logger.info("Executing plan...");
@@ -213,6 +217,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
                 ctx.developer_agent,
                 ctx.reviewer_agent,
                 ctx.logger,
+                &ctx.run_context,
             )
             .build()
         {

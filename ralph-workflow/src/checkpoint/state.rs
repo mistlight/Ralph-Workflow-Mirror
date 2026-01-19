@@ -20,7 +20,9 @@ const CHECKPOINT_FILE: &str = "checkpoint.json";
 ///
 /// Increment this when making breaking changes to the checkpoint format.
 /// This allows for future migration logic if needed.
-const CHECKPOINT_VERSION: u32 = 1;
+/// v1: Initial checkpoint format
+/// v2: Added run_id, parent_run_id, resume_count, actual_developer_runs, actual_reviewer_runs
+const CHECKPOINT_VERSION: u32 = 2;
 
 /// Get the checkpoint file path.
 ///
@@ -174,6 +176,16 @@ pub struct CheckpointParams<'a> {
     pub git_user_name: Option<&'a str>,
     /// Git user email for commits (if overridden)
     pub git_user_email: Option<&'a str>,
+    /// Unique identifier for this run (UUID v4)
+    pub run_id: &'a str,
+    /// Parent run ID if this is a resumed session
+    pub parent_run_id: Option<&'a str>,
+    /// Number of times this session has been resumed
+    pub resume_count: u32,
+    /// Actual completed developer iterations
+    pub actual_developer_runs: u32,
+    /// Actual completed reviewer passes
+    pub actual_reviewer_runs: u32,
 }
 
 /// Rebase state tracking.
@@ -308,6 +320,20 @@ pub struct PipelineCheckpoint {
     pub git_user_name: Option<String>,
     /// Git user email for commits (if overridden)
     pub git_user_email: Option<String>,
+
+    // === Run identification and lineage (v2+) ===
+    /// Unique identifier for this run (UUID v4)
+    pub run_id: String,
+    /// Parent run ID if this is a resumed session
+    pub parent_run_id: Option<String>,
+    /// Number of times this session has been resumed
+    pub resume_count: u32,
+
+    // === Actual execution state (v2+) ===
+    /// Actual number of developer iterations that completed
+    pub actual_developer_runs: u32,
+    /// Actual number of reviewer passes that completed
+    pub actual_reviewer_runs: u32,
 }
 
 impl PipelineCheckpoint {
@@ -348,6 +374,12 @@ impl PipelineCheckpoint {
             prompt_md_checksum,
             git_user_name: params.git_user_name.map(String::from),
             git_user_email: params.git_user_email.map(String::from),
+            // New v2 fields
+            run_id: params.run_id.to_string(),
+            parent_run_id: params.parent_run_id.map(String::from),
+            resume_count: params.resume_count,
+            actual_developer_runs: params.actual_developer_runs,
+            actual_reviewer_runs: params.actual_reviewer_runs,
         }
     }
 
@@ -397,36 +429,89 @@ impl PipelineCheckpoint {
     }
 }
 
-/// Legacy checkpoint format (for backward compatibility).
-///
-/// This represents the old checkpoint format that may exist on disk.
-/// We keep this to allow migration to the new format.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LegacyPipelineCheckpoint {
-    phase: PipelinePhase,
-    iteration: u32,
-    total_iterations: u32,
-    reviewer_pass: u32,
-    total_reviewer_passes: u32,
-    timestamp: String,
-    developer_agent: String,
-    reviewer_agent: String,
-}
-
-/// Try to load a checkpoint, handling both new and legacy formats.
+/// Try to load a checkpoint, handling both v1 and v2 formats.
 fn load_checkpoint_with_fallback(
     content: &str,
 ) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
-    // Try new format first
+    // Try v2 format first
     if let Ok(checkpoint) = serde_json::from_str::<PipelineCheckpoint>(content) {
-        if checkpoint.version == CHECKPOINT_VERSION {
+        // Accept v2 (current) or higher
+        if checkpoint.version >= 2 {
             return Ok(checkpoint);
         }
     }
 
-    // Try legacy format
-    if let Ok(legacy) = serde_json::from_str::<LegacyPipelineCheckpoint>(content) {
-        // Migrate to new format
+    // Try v1 format and migrate to v2
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct V1Checkpoint {
+        version: u32,
+        phase: PipelinePhase,
+        iteration: u32,
+        total_iterations: u32,
+        reviewer_pass: u32,
+        total_reviewer_passes: u32,
+        timestamp: String,
+        developer_agent: String,
+        reviewer_agent: String,
+        cli_args: CliArgsSnapshot,
+        developer_agent_config: AgentConfigSnapshot,
+        reviewer_agent_config: AgentConfigSnapshot,
+        rebase_state: RebaseState,
+        config_path: Option<String>,
+        config_checksum: Option<String>,
+        working_dir: String,
+        prompt_md_checksum: Option<String>,
+        git_user_name: Option<String>,
+        git_user_email: Option<String>,
+    }
+
+    if let Ok(v1) = serde_json::from_str::<V1Checkpoint>(content) {
+        // Migrate v1 to v2: generate new run_id, set defaults for new fields
+        let new_run_id = uuid::Uuid::new_v4().to_string();
+        return Ok(PipelineCheckpoint {
+            version: CHECKPOINT_VERSION,
+            phase: v1.phase,
+            iteration: v1.iteration,
+            total_iterations: v1.total_iterations,
+            reviewer_pass: v1.reviewer_pass,
+            total_reviewer_passes: v1.total_reviewer_passes,
+            timestamp: v1.timestamp,
+            developer_agent: v1.developer_agent,
+            reviewer_agent: v1.reviewer_agent,
+            cli_args: v1.cli_args,
+            developer_agent_config: v1.developer_agent_config,
+            reviewer_agent_config: v1.reviewer_agent_config,
+            rebase_state: v1.rebase_state,
+            config_path: v1.config_path,
+            config_checksum: v1.config_checksum,
+            working_dir: v1.working_dir,
+            prompt_md_checksum: v1.prompt_md_checksum,
+            git_user_name: v1.git_user_name,
+            git_user_email: v1.git_user_email,
+            // New v2 fields - use defaults for migrated checkpoints
+            run_id: new_run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: v1.iteration, // Assume completed iterations = current iteration
+            actual_reviewer_runs: v1.reviewer_pass, // Assume completed passes = current pass
+        });
+    }
+
+    // Try truly legacy format (pre-v1)
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct LegacyCheckpoint {
+        phase: PipelinePhase,
+        iteration: u32,
+        total_iterations: u32,
+        reviewer_pass: u32,
+        total_reviewer_passes: u32,
+        timestamp: String,
+        developer_agent: String,
+        reviewer_agent: String,
+    }
+
+    if let Ok(legacy) = serde_json::from_str::<LegacyCheckpoint>(content) {
+        let new_run_id = uuid::Uuid::new_v4().to_string();
         return Ok(PipelineCheckpoint {
             version: CHECKPOINT_VERSION,
             phase: legacy.phase,
@@ -459,6 +544,11 @@ fn load_checkpoint_with_fallback(
             prompt_md_checksum: None,
             git_user_name: None,
             git_user_email: None,
+            run_id: new_run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: legacy.iteration,
+            actual_reviewer_runs: legacy.reviewer_pass,
         });
     }
 
@@ -580,6 +670,7 @@ mod tests {
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
             AgentConfigSnapshot::new("codex".into(), "cmd".into(), "-o".into(), None, true);
+        let run_id = uuid::Uuid::new_v4().to_string();
         PipelineCheckpoint::from_params(CheckpointParams {
             phase,
             iteration,
@@ -594,6 +685,11 @@ mod tests {
             rebase_state: RebaseState::default(),
             git_user_name: None,
             git_user_email: None,
+            run_id: &run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: iteration,
+            actual_reviewer_runs: 0,
         })
     }
 
@@ -643,6 +739,7 @@ mod tests {
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
             AgentConfigSnapshot::new("codex".into(), "cmd".into(), "-o".into(), None, true);
+        let run_id = uuid::Uuid::new_v4().to_string();
         let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
             phase: PipelinePhase::Development,
             iteration: 2,
@@ -657,6 +754,11 @@ mod tests {
             rebase_state: RebaseState::default(),
             git_user_name: None,
             git_user_email: None,
+            run_id: &run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: 2,
+            actual_reviewer_runs: 0,
         });
 
         assert_eq!(checkpoint.phase, PipelinePhase::Development);
@@ -668,6 +770,10 @@ mod tests {
         assert_eq!(checkpoint.reviewer_agent, "codex");
         assert_eq!(checkpoint.version, CHECKPOINT_VERSION);
         assert!(!checkpoint.timestamp.is_empty());
+        assert_eq!(checkpoint.run_id, run_id);
+        assert_eq!(checkpoint.resume_count, 0);
+        assert_eq!(checkpoint.actual_developer_runs, 2);
+        assert!(checkpoint.parent_run_id.is_none());
     }
 
     #[test]
@@ -675,6 +781,7 @@ mod tests {
         let checkpoint = make_test_checkpoint(PipelinePhase::Development, 3);
         assert_eq!(checkpoint.description(), "Development iteration 3/5");
 
+        let run_id = uuid::Uuid::new_v4().to_string();
         let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
             phase: PipelinePhase::ReviewAgain,
             iteration: 5,
@@ -701,6 +808,11 @@ mod tests {
             rebase_state: RebaseState::default(),
             git_user_name: None,
             git_user_email: None,
+            run_id: &run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: 5,
+            actual_reviewer_runs: 2,
         });
         assert_eq!(checkpoint.description(), "Verification review 2/3");
     }
@@ -753,6 +865,7 @@ mod tests {
 
     #[test]
     fn test_checkpoint_serialization() {
+        let run_id = uuid::Uuid::new_v4().to_string();
         let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
             phase: PipelinePhase::Fix,
             iteration: 3,
@@ -781,6 +894,11 @@ mod tests {
             },
             git_user_name: None,
             git_user_email: None,
+            run_id: &run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: 3,
+            actual_reviewer_runs: 1,
         });
 
         let json = serde_json::to_string(&checkpoint).unwrap();
@@ -798,6 +916,9 @@ mod tests {
             deserialized.rebase_state,
             RebaseState::PreRebaseCompleted { .. }
         ));
+        assert_eq!(deserialized.run_id, run_id);
+        assert_eq!(deserialized.actual_developer_runs, 3);
+        assert_eq!(deserialized.actual_reviewer_runs, 1);
     }
 
     #[test]

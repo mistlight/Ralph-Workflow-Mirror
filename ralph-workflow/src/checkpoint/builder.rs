@@ -8,6 +8,7 @@ use crate::checkpoint::state::{
     AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, PipelineCheckpoint, PipelinePhase,
     RebaseState,
 };
+use crate::checkpoint::RunContext;
 use crate::config::{Config, ReviewDepth};
 use crate::logger::Logger;
 
@@ -40,6 +41,8 @@ pub struct CheckpointBuilder {
     config_path: Option<std::path::PathBuf>,
     git_user_name: Option<String>,
     git_user_email: Option<String>,
+    // Run context for tracking execution lineage and state
+    run_context: Option<RunContext>,
 }
 
 impl Default for CheckpointBuilder {
@@ -66,6 +69,7 @@ impl CheckpointBuilder {
             config_path: None,
             git_user_name: None,
             git_user_email: None,
+            run_context: None,
         }
     }
 
@@ -161,7 +165,11 @@ impl CheckpointBuilder {
         developer_name: &str,
         reviewer_name: &str,
         logger: &Logger,
+        run_context: &RunContext,
     ) -> Self {
+        // Store run context (cloned for builder ownership)
+        self.run_context = Some(run_context.clone());
+
         // Capture CLI args
         self = self.capture_cli_args(config);
 
@@ -217,6 +225,7 @@ impl CheckpointBuilder {
     /// Build the checkpoint.
     ///
     /// Returns None if required fields (phase, agent configs) are missing.
+    /// Generates a new RunContext if not set.
     pub fn build(self) -> Option<PipelineCheckpoint> {
         let phase = self.phase?;
         let developer_agent = self.developer_agent?;
@@ -227,6 +236,9 @@ impl CheckpointBuilder {
 
         let git_user_name = self.git_user_name.as_deref();
         let git_user_email = self.git_user_email.as_deref();
+
+        // Use provided run context or generate a new one
+        let run_context = self.run_context.unwrap_or_default();
 
         let mut checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
             phase,
@@ -242,6 +254,11 @@ impl CheckpointBuilder {
             rebase_state: self.rebase_state,
             git_user_name,
             git_user_email,
+            run_id: &run_context.run_id,
+            parent_run_id: run_context.parent_run_id.as_deref(),
+            resume_count: run_context.resume_count,
+            actual_developer_runs: run_context.actual_developer_runs.max(self.iteration),
+            actual_reviewer_runs: run_context.actual_reviewer_runs.max(self.reviewer_pass),
         });
 
         if let Some(path) = self.config_path {
