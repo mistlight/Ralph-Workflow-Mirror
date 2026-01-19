@@ -117,6 +117,8 @@ pub fn run_development_phase(
             logger: ctx.logger,
             colors: ctx.colors,
             config: ctx.config,
+            #[cfg(any(test, feature = "test-utils"))]
+            agent_executor: None,
         };
         let exit_code = run_with_fallback(
             AgentRole::Developer,
@@ -210,6 +212,8 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         logger: ctx.logger,
         colors: ctx.colors,
         config: ctx.config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
     };
     let _exit_code = run_with_fallback(
         AgentRole::Developer,

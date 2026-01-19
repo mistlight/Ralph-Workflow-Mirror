@@ -147,6 +147,8 @@ pub fn handle_generate_commit_msg(
         logger,
         colors: &colors,
         config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
     };
 
     // Use the standard commit message generation from phases/commit.rs
