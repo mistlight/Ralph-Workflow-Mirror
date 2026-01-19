@@ -476,12 +476,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
-        run_initial_rebase(
-            &ctx.config,
-            &ctx.template_context,
-            &ctx.logger,
-            ctx.colors,
-        )?;
+        run_initial_rebase(&ctx.config, &ctx.template_context, &ctx.logger, ctx.colors)?;
     }
 
     // Run pipeline phases
@@ -494,12 +489,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Run post-review rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
-        run_post_review_rebase(
-            &ctx.config,
-            &ctx.template_context,
-            &ctx.logger,
-            ctx.colors,
-        )?;
+        run_post_review_rebase(&ctx.config, &ctx.template_context, &ctx.logger, ctx.colors)?;
     }
 
     update_status("In progress.", ctx.config.isolation_mode)?;
@@ -1200,13 +1190,9 @@ fn try_resolve_conflicts_with_fallback(
                 Ok(resolved_files) => {
                     write_resolved_files(&resolved_files, logger)?;
                 }
-                Err(json_err) => {
-                    // JSON parsing failed - this is NOT a verification failure
+                Err(_) => {
+                    // JSON parsing failed - this is expected and normal
                     // We verify conflicts via LibGit2 state, not JSON parsing
-                    logger.info(&format!(
-                        "JSON output unavailable ({}), verifying via LibGit2 state...",
-                        json_err
-                    ));
                     // Continue to LibGit2 verification below
                 }
             }
@@ -1469,9 +1455,10 @@ fn parse_and_validate_resolved_files(
     resolved_content: &str,
     logger: &Logger,
 ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
-    let json: serde_json::Value = serde_json::from_str(resolved_content).map_err(|e| {
-        logger.info(&format!("JSON output unavailable: {e}"));
-        anyhow::anyhow!("Failed to parse agent output as JSON")
+    let json: serde_json::Value = serde_json::from_str(resolved_content).map_err(|_e| {
+        // Agent did not provide JSON output - fall back to LibGit2 verification
+        // This is expected and normal, not an error condition
+        anyhow::anyhow!("Agent did not provide JSON output (will verify via Git state)")
     })?;
 
     let resolved_files = match json.get("resolved_files") {
@@ -1906,23 +1893,21 @@ fn try_resolve_conflicts_with_state_machine(
             Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
                 // Agent provided JSON output - attempt to parse and write files
                 // JSON is optional for verification - LibGit2 state is authoritative
-                let resolved_files =
-                    match parse_and_validate_resolved_files(&resolved_content, logger) {
-                        Ok(files) => {
-                            // Write files if JSON was successfully parsed
-                            write_resolved_files(&files, logger)?;
-                            Some(files)
-                        }
-                        Err(json_err) => {
-                            // JSON parsing failed - this is NOT a verification failure
-                            // We verify conflicts via LibGit2 state, not JSON parsing
-                            logger.info(&format!(
-                                "JSON output unavailable ({}), verifying via LibGit2 state...",
-                                json_err
-                            ));
-                            None
-                        }
-                    };
+                let resolved_files = match parse_and_validate_resolved_files(
+                    &resolved_content,
+                    logger,
+                ) {
+                    Ok(files) => {
+                        // Write files if JSON was successfully parsed
+                        write_resolved_files(&files, logger)?;
+                        Some(files)
+                    }
+                    Err(_) => {
+                        // JSON parsing failed - this is expected and normal
+                        // We verify conflicts via LibGit2 state, not JSON parsing
+                        None
+                    }
+                };
 
                 // Clear previous failures before new validation
                 previous_validation_failures.clear();

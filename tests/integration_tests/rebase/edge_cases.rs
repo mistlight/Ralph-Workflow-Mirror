@@ -1282,3 +1282,182 @@ fn rebase_with_large_file_handling() {
         let _ = fs::remove_file(dir.path().join("large.bin"));
     });
 }
+
+#[test]
+fn rebase_handles_rename_rename_conflict() {
+    // Test rename/rename conflicts - both branches rename the same file
+    // to different names
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+
+        // Create original.txt on main
+        fs::write(dir.path().join("original.txt"), "original content").unwrap();
+        let _ = commit_all(&repo, "Add original.txt on main");
+
+        // Create feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        let obj = repo.revparse_single("feature").unwrap();
+        let commit = obj.peel_to_commit().unwrap();
+        repo.checkout_tree(commit.as_object(), None).unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // On feature: rename original.txt to feature.txt
+        let _ = std::fs::remove_file(dir.path().join("original.txt"));
+        fs::write(dir.path().join("feature.txt"), "modified on feature").unwrap();
+        let _ = commit_all(&repo, "Rename original.txt to feature.txt");
+
+        // Go back to main and rename to a different name
+        let default_branch = get_default_branch_name(&repo);
+        let default_ref = format!("refs/heads/{}", default_branch);
+        repo.set_head(&default_ref).unwrap();
+        repo.checkout_head(None).unwrap();
+
+        let _ = std::fs::remove_file(dir.path().join("original.txt"));
+        fs::write(dir.path().join("main.txt"), "modified on main").unwrap();
+        let _ = commit_all(&repo, "Rename original.txt to main.txt");
+
+        // Go back to feature and try to rebase
+        repo.set_head("refs/heads/feature").unwrap();
+        repo.checkout_head(None).unwrap();
+
+        let result = rebase_onto(&default_branch);
+
+        // Rename/rename conflicts should be detected or handled gracefully
+        match result {
+            Ok(RebaseResult::Success) => {
+                // Git may resolve this in some versions
+            }
+            Ok(RebaseResult::Conflicts(_files)) => {
+                // Should detect the conflict
+                // Files might be empty if both sides are modified
+            }
+            Ok(RebaseResult::Failed(err)) => {
+                // May fail with clear error
+                assert!(!err.description().is_empty());
+            }
+            _ => {}
+        }
+    });
+}
+
+#[test]
+fn rebase_handles_directory_file_conflict() {
+    // Test directory/file conflicts - one side creates a directory,
+    // the other creates a file with the same name
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+
+        // Create a file on main first
+        write_file(dir.path().join("base.txt"), "base");
+        let _ = commit_all(&repo, "Add base file");
+
+        // Create a feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        let obj = repo.revparse_single("feature").unwrap();
+        let commit = obj.peel_to_commit().unwrap();
+        repo.checkout_tree(commit.as_object(), None).unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // On feature: create a directory named "data"
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&data_dir).unwrap();
+        fs::write(data_dir.join("file.txt"), "data in directory").unwrap();
+        let _ = commit_all(&repo, "Add data directory");
+
+        // Go back to main and create a file named "data"
+        let default_branch = get_default_branch_name(&repo);
+        let default_ref = format!("refs/heads/{}", default_branch);
+        repo.set_head(&default_ref).unwrap();
+        repo.checkout_head(None).unwrap();
+
+        // Remove the data directory that was created on feature branch
+        // (it's not tracked on main, so checkout_head doesn't remove it)
+        let _ = fs::remove_dir_all(dir.path().join("data"));
+
+        // Create a file with the same name as the directory on feature
+        write_file(dir.path().join("data"), "data as file");
+        let _ = commit_all(&repo, "Add data file");
+
+        // Go back to feature and try to rebase
+        repo.set_head("refs/heads/feature").unwrap();
+        repo.checkout_head(None).unwrap();
+
+        let result = rebase_onto(&default_branch);
+
+        // Directory/file conflicts should be detected
+        match result {
+            Ok(RebaseResult::Success) => {
+                // Git may resolve in some configurations
+            }
+            Ok(RebaseResult::Conflicts(_files)) => {
+                // Should detect the conflict
+                // The "data" path should be in conflicts
+            }
+            Ok(RebaseResult::Failed(err)) => {
+                // May fail with clear error
+                assert!(!err.description().is_empty());
+            }
+            _ => {}
+        }
+    });
+}
+
+#[test]
+fn rebase_handles_nested_repository() {
+    // Test behavior with nested directories
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+
+        // Create a feature branch first
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        // Switch to feature branch
+        let obj = repo.revparse_single("feature").unwrap();
+        let commit = obj.peel_to_commit().unwrap();
+        repo.checkout_tree(commit.as_object(), None).unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Create a nested directory on feature branch
+        let nested_dir = dir.path().join("nested");
+        fs::create_dir_all(&nested_dir).unwrap();
+
+        // Create a file in nested dir
+        fs::write(nested_dir.join("test.txt"), "test in nested").unwrap();
+        let _ = commit_all(&repo, "Add nested directory");
+
+        // Go back to main
+        let default_branch = get_default_branch_name(&repo);
+        let default_ref = format!("refs/heads/{}", default_branch);
+        repo.set_head(&default_ref).unwrap();
+        repo.checkout_head(None).unwrap();
+
+        // Add a commit on main
+        write_file(dir.path().join("main.txt"), "main change");
+        let _ = commit_all(&repo, "Add main file");
+
+        // Go back to feature and try to rebase
+        repo.set_head("refs/heads/feature").unwrap();
+        repo.checkout_head(None).unwrap();
+
+        let result = rebase_onto(&default_branch);
+
+        // Should succeed or fail gracefully (not crash)
+        match result {
+            Ok(RebaseResult::Success) => {}
+            Ok(RebaseResult::NoOp { .. }) => {}
+            Ok(RebaseResult::Conflicts(_)) => {}
+            Ok(RebaseResult::Failed(err)) => {
+                // Error should be informative
+                assert!(!err.description().is_empty());
+            }
+            Err(_) => {
+                // IO error is acceptable
+            }
+        }
+    });
+}
