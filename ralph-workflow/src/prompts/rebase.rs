@@ -220,6 +220,192 @@ fn get_language_marker(path: &str) -> String {
     .to_string()
 }
 
+/// Information about divergent branches for enhanced conflict resolution.
+#[derive(Debug, Clone)]
+pub struct BranchInfo {
+    /// The current branch name
+    pub current_branch: String,
+    /// The upstream/target branch name
+    pub upstream_branch: String,
+    /// Recent commit messages from current branch
+    pub current_commits: Vec<String>,
+    /// Recent commit messages from upstream branch
+    pub upstream_commits: Vec<String>,
+    /// Number of diverging commits
+    pub diverging_count: usize,
+}
+
+/// Build a conflict resolution prompt with enhanced branch context.
+///
+/// This version provides richer context about the branches involved in the conflict,
+/// including recent commit history and divergence information.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `conflicts` - Map of file paths to their conflict information
+/// * `branch_info` - Optional branch information for enhanced context
+/// * `prompt_md_content` - Optional content from PROMPT.md for task context
+/// * `plan_content` - Optional content from PLAN.md for additional context
+pub fn build_enhanced_conflict_resolution_prompt(
+    context: &TemplateContext,
+    conflicts: &HashMap<String, FileConflict>,
+    branch_info: Option<&BranchInfo>,
+    prompt_md_content: Option<&str>,
+    plan_content: Option<&str>,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("conflict_resolution")
+        .unwrap_or_else(|_| include_str!("templates/conflict_resolution.txt").to_string());
+    let template = Template::new(&template_content);
+
+    let mut ctx_section = format_context_section(prompt_md_content, plan_content);
+
+    // Add branch information if available
+    if let Some(info) = branch_info {
+        ctx_section.push_str(&format_branch_info_section(info));
+    }
+
+    let conflicts_section = format_conflicts_section(conflicts);
+
+    let variables = HashMap::from([
+        ("CONTEXT", ctx_section),
+        ("CONFLICTS", conflicts_section.clone()),
+    ]);
+
+    template.render(&variables).unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to render conflict resolution template: {e}");
+        // Use fallback template
+        let fallback_template_content = context
+            .registry()
+            .get_template("conflict_resolution_fallback")
+            .unwrap_or_else(|_| {
+                include_str!("templates/conflict_resolution_fallback.txt").to_string()
+            });
+        let fallback_template = Template::new(&fallback_template_content);
+        fallback_template.render(&variables).unwrap_or_else(|e| {
+            eprintln!("Critical: Failed to render fallback template: {e}");
+            // Last resort: minimal emergency prompt - conflicts_section is captured from closure
+            format!(
+                "# MERGE CONFLICT RESOLUTION\n\nResolve these conflicts:\n\n{}",
+                &conflicts_section
+            )
+        })
+    })
+}
+
+/// Format branch information for context section.
+///
+/// This helper builds a branch information section that gets injected
+/// into the context for AI conflict resolution.
+fn format_branch_info_section(info: &BranchInfo) -> String {
+    let mut section = String::new();
+
+    section.push_str("## Branch Information\n\n");
+    section.push_str(&format!(
+        "- **Current branch**: `{}`\n",
+        info.current_branch
+    ));
+    section.push_str(&format!(
+        "- **Target branch**: `{}`\n",
+        info.upstream_branch
+    ));
+    section.push_str(&format!(
+        "- **Diverging commits**: {}\n\n",
+        info.diverging_count
+    ));
+
+    if !info.current_commits.is_empty() {
+        section.push_str("### Recent commits on current branch:\n\n");
+        for (i, msg) in info.current_commits.iter().enumerate().take(5) {
+            section.push_str(&format!("{}. {}\n", i + 1, msg));
+        }
+        section.push('\n');
+    }
+
+    if !info.upstream_commits.is_empty() {
+        section.push_str("### Recent commits on target branch:\n\n");
+        for (i, msg) in info.upstream_commits.iter().enumerate().take(5) {
+            section.push_str(&format!("{}. {}\n", i + 1, msg));
+        }
+        section.push('\n');
+    }
+
+    section
+}
+
+/// Collect branch information for conflict resolution.
+///
+/// Queries git to gather information about the branches involved in the conflict.
+///
+/// # Arguments
+///
+/// * `upstream_branch` - The name of the upstream/target branch
+///
+/// # Returns
+///
+/// Returns `Ok(BranchInfo)` with the gathered information, or an error if git operations fail.
+pub fn collect_branch_info(upstream_branch: &str) -> std::io::Result<BranchInfo> {
+    use std::process::Command;
+
+    // Get current branch name
+    let current_branch = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .map_err(|e| std::io::Error::other(format!("git rev-parse failed: {e}")))?;
+
+    let current_branch = String::from_utf8_lossy(&current_branch.stdout)
+        .trim()
+        .to_string();
+
+    // Get recent commits from current branch
+    let current_log = Command::new("git")
+        .args(["log", "--oneline", "-10", "HEAD"])
+        .output()
+        .map_err(|e| std::io::Error::other(format!("git log failed: {e}")))?;
+
+    let current_commits: Vec<String> = String::from_utf8_lossy(&current_log.stdout)
+        .lines()
+        .map(|s| s.to_string())
+        .collect();
+
+    // Get recent commits from upstream branch
+    let upstream_log = Command::new("git")
+        .args(["log", "--oneline", "-10", upstream_branch])
+        .output()
+        .map_err(|e| std::io::Error::other(format!("git log failed: {e}")))?;
+
+    let upstream_commits: Vec<String> = String::from_utf8_lossy(&upstream_log.stdout)
+        .lines()
+        .map(|s| s.to_string())
+        .collect();
+
+    // Count diverging commits
+    let diverging = Command::new("git")
+        .args([
+            "rev-list",
+            "--count",
+            "--left-right",
+            &format!("HEAD...{upstream_branch}"),
+        ])
+        .output()
+        .map_err(|e| std::io::Error::other(format!("git rev-list failed: {e}")))?;
+
+    let diverging_count = String::from_utf8_lossy(&diverging.stdout)
+        .split_whitespace()
+        .map(|s| s.parse::<usize>().unwrap_or(0))
+        .sum::<usize>();
+
+    Ok(BranchInfo {
+        current_branch,
+        upstream_branch: upstream_branch.to_string(),
+        current_commits,
+        upstream_commits,
+        diverging_count,
+    })
+}
+
 /// Collect conflict information from all conflicted files.
 ///
 /// This function reads all conflicted files and builds a map of
@@ -465,5 +651,76 @@ mod tests {
         );
         // Both should produce equivalent output
         assert_eq!(regular, with_context);
+    }
+
+    #[test]
+    fn test_branch_info_struct_exists() {
+        let info = BranchInfo {
+            current_branch: "feature".to_string(),
+            upstream_branch: "main".to_string(),
+            current_commits: vec!["abc123 feat: add thing".to_string()],
+            upstream_commits: vec!["def456 fix: bug".to_string()],
+            diverging_count: 5,
+        };
+        assert_eq!(info.current_branch, "feature");
+        assert_eq!(info.diverging_count, 5);
+    }
+
+    #[test]
+    fn test_format_branch_info_section() {
+        let info = BranchInfo {
+            current_branch: "feature".to_string(),
+            upstream_branch: "main".to_string(),
+            current_commits: vec!["abc123 feat: add thing".to_string()],
+            upstream_commits: vec!["def456 fix: bug".to_string()],
+            diverging_count: 5,
+        };
+
+        let section = format_branch_info_section(&info);
+
+        assert!(section.contains("Branch Information"));
+        assert!(section.contains("feature"));
+        assert!(section.contains("main"));
+        assert!(section.contains("5"));
+        assert!(section.contains("abc123"));
+        assert!(section.contains("def456"));
+    }
+
+    #[test]
+    fn test_enhanced_prompt_with_branch_info() {
+        let context = TemplateContext::default();
+        let mut conflicts = HashMap::new();
+        conflicts.insert(
+            "test.rs".to_string(),
+            FileConflict {
+                conflict_content: "conflict".to_string(),
+                current_content: "current".to_string(),
+            },
+        );
+
+        let branch_info = BranchInfo {
+            current_branch: "feature".to_string(),
+            upstream_branch: "main".to_string(),
+            current_commits: vec!["abc123 my change".to_string()],
+            upstream_commits: vec!["def456 their change".to_string()],
+            diverging_count: 3,
+        };
+
+        let prompt = build_enhanced_conflict_resolution_prompt(
+            &context,
+            &conflicts,
+            Some(&branch_info),
+            None,
+            None,
+        );
+
+        // Should include branch information
+        assert!(prompt.contains("Branch Information"));
+        assert!(prompt.contains("feature"));
+        assert!(prompt.contains("main"));
+        assert!(prompt.contains("3")); // diverging count
+
+        // Should NOT mention rebase
+        assert!(!prompt.to_lowercase().contains("rebase"));
     }
 }

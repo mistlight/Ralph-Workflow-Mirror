@@ -52,14 +52,15 @@ pub fn handle_resume(
 /// Helper to get phase rank for resume logic.
 pub const fn phase_rank(p: PipelinePhase) -> u8 {
     match p {
-        PipelinePhase::Planning => 0,
-        PipelinePhase::Development => 1,
-        PipelinePhase::Review => 2,
-        PipelinePhase::Fix => 3,
-        PipelinePhase::ReviewAgain => 4,
-        PipelinePhase::CommitMessage => 5,
-        PipelinePhase::FinalValidation => 6,
-        PipelinePhase::Complete => 7,
+        PipelinePhase::Rebase => 0,
+        PipelinePhase::Planning => 1,
+        PipelinePhase::Development => 2,
+        PipelinePhase::Review => 3,
+        PipelinePhase::Fix => 4,
+        PipelinePhase::ReviewAgain => 5,
+        PipelinePhase::CommitMessage => 6,
+        PipelinePhase::FinalValidation => 7,
+        PipelinePhase::Complete => 8,
     }
 }
 

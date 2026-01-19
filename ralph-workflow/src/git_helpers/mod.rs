@@ -12,12 +12,12 @@
 //! - [`review_baseline`] - Per-review-cycle baseline tracking
 //! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
 //! - [`branch`] - Branch detection and default branch resolution
-//! - Rebase operations are provided via the `rebase` module functions
+//! - [`rebase`] - Rebase operations with fault tolerance
 //!
 //! # Diff Truncation
 //!
 //! This module provides diff truncation for LLM consumption via
-//! [`validate_and_truncate_diff`]. Large diffs are truncated to prevent
+//! [`truncate_diff_for_review`]. Large diffs are truncated to prevent
 //! exceeding LLM context limits:
 //!
 //! - **Warning threshold** ([`MAX_DIFF_SIZE_WARNING`]): 100KB - logs a warning
@@ -32,6 +32,8 @@ pub mod branch;
 mod hooks;
 pub mod identity;
 mod rebase;
+pub mod rebase_checkpoint;
+pub mod rebase_state_machine;
 mod repo;
 mod review_baseline;
 mod start_commit;
@@ -46,9 +48,23 @@ pub mod test_trait;
 pub use branch::{get_default_branch, is_main_or_master_branch};
 pub use hooks::uninstall_hooks;
 pub use rebase::{
-    abort_rebase, continue_rebase, get_conflict_markers_for_file, get_conflicted_files,
-    rebase_onto, RebaseResult,
+    abort_rebase, cleanup_stale_rebase_state, continue_rebase, detect_concurrent_git_operations,
+    get_conflict_markers_for_file, get_conflicted_files, rebase_onto, validate_git_state,
+    validate_post_rebase_state, validate_rebase_preconditions, RebaseErrorKind, RebaseResult,
 };
+
+// Types that are part of the public API but not used in binary
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase::{CleanupResult, ConcurrentOperation};
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase::{
+    attempt_automatic_recovery, is_dirty_tree_cli, rebase_in_progress_cli, restore_from_reflog,
+    validate_post_rebase_with_checks, verify_rebase_completed, PostRebaseValidationResult,
+};
+
+pub use rebase_checkpoint::RebasePhase;
+pub use rebase_state_machine::{RebaseLock, RebaseStateMachine};
 pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
     truncate_diff_for_review, CommitResultFallback, DiffReviewContent, DiffTruncationLevel,
@@ -74,6 +90,13 @@ pub use ops::RebaseResult as OpsRebaseResult;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub use test_trait::MockGit;
+
+// Re-export checkpoint and recovery action for tests only
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase_checkpoint::RebaseCheckpoint;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase_state_machine::RecoveryAction;
 
 #[cfg(test)]
 mod tests;
