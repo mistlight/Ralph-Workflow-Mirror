@@ -5,6 +5,7 @@
 //! logging utilities, and runtime state that all phases need access to.
 
 use crate::agents::{AgentRegistry, AgentRole};
+use crate::checkpoint::execution_history::ExecutionHistory;
 use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::guidelines::ReviewGuidelines;
@@ -40,6 +41,8 @@ pub struct PhaseContext<'a> {
     pub template_context: &'a TemplateContext,
     /// Run context for tracking execution lineage and state.
     pub run_context: RunContext,
+    /// Execution history for tracking pipeline steps.
+    pub execution_history: ExecutionHistory,
 }
 
 impl PhaseContext<'_> {
@@ -138,6 +141,7 @@ mod tests {
             review_guidelines: None,
             template_context: &fixture.template_context,
             run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -174,6 +178,7 @@ mod tests {
             review_guidelines: None,
             template_context: &fixture.template_context,
             run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -202,6 +207,7 @@ mod tests {
             review_guidelines: None,
             template_context: &fixture.template_context,
             run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);

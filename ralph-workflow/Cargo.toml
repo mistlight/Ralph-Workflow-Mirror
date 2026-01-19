@@ -21,13 +21,12 @@ path = "src/main.rs"
 
 [features]
 # INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
-default = ["monitoring"]
+default = ["monitoring", "hardened-resume"]
 # Enable monitoring/debugging APIs (printer, streaming_metrics)
 monitoring = []
 # Enable test utilities (TestLogger, TestPrinter, etc.) for integration testing
 test-utils = []
 # Enable hardened resume functionality (execution history, file state capture, recovery)
-# This is a work-in-progress feature that will become default once fully integrated
 hardened-resume = []
 
 [dependencies]

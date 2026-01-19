@@ -544,7 +544,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
-        if let Some(checkpoint) = CheckpointBuilder::new()
+        let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Complete,
                 config.developer_iters,
@@ -558,9 +558,11 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
                 &ctx.reviewer_agent,
                 &ctx.logger,
                 &run_context,
-            )
-            .build()
-        {
+            );
+
+        let builder = builder.with_execution_history(phase_ctx.execution_history.clone());
+
+        if let Some(checkpoint) = builder.build() {
             let _ = save_checkpoint(&checkpoint);
         }
     }
@@ -679,6 +681,7 @@ fn create_phase_context_with_config<'ctx>(
         review_guidelines,
         template_context: &ctx.template_context,
         run_context: run_context.clone(),
+        execution_history: crate::checkpoint::execution_history::ExecutionHistory::new(),
     }
 }
 
@@ -887,7 +890,7 @@ fn run_final_validation(
     }
 
     if ctx.config.features.checkpoint_enabled {
-        if let Some(checkpoint) = CheckpointBuilder::new()
+        let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::FinalValidation,
                 ctx.config.developer_iters,
@@ -901,9 +904,11 @@ fn run_final_validation(
                 ctx.reviewer_agent,
                 ctx.logger,
                 &ctx.run_context,
-            )
-            .build()
-        {
+            );
+
+        let builder = builder.with_execution_history(ctx.execution_history.clone());
+
+        if let Some(checkpoint) = builder.build() {
             let _ = save_checkpoint(&checkpoint);
         }
     }

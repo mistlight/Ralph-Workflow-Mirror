@@ -336,16 +336,13 @@ pub struct PipelineCheckpoint {
     /// Actual number of reviewer passes that completed
     pub actual_reviewer_runs: u32,
 
-    // === Hardened resume state (v3+) - behind feature flag ===
-    #[cfg(feature = "hardened-resume")]
+    // === Hardened resume state (v3+) ===
     /// Execution history tracking for idempotent recovery
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_history: Option<crate::checkpoint::ExecutionHistory>,
-    #[cfg(feature = "hardened-resume")]
     /// File system state for validation on resume
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_system_state: Option<crate::checkpoint::FileSystemState>,
-    #[cfg(feature = "hardened-resume")]
     /// Stored prompts used during this run
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_history: Option<std::collections::HashMap<String, String>>,
@@ -396,11 +393,8 @@ impl PipelineCheckpoint {
             actual_developer_runs: params.actual_developer_runs,
             actual_reviewer_runs: params.actual_reviewer_runs,
             // New v3 fields - initialize as None, will be populated by caller
-            #[cfg(feature = "hardened-resume")]
             execution_history: None,
-            #[cfg(feature = "hardened-resume")]
             file_system_state: None,
-            #[cfg(feature = "hardened-resume")]
             prompt_history: None,
         }
     }
@@ -520,11 +514,8 @@ fn load_checkpoint_with_fallback(
             actual_developer_runs: v2.actual_developer_runs,
             actual_reviewer_runs: v2.actual_reviewer_runs,
             // New v3 fields - use empty defaults for migrated checkpoints
-            #[cfg(feature = "hardened-resume")]
             execution_history: None,
-            #[cfg(feature = "hardened-resume")]
             file_system_state: None,
-            #[cfg(feature = "hardened-resume")]
             prompt_history: None,
         });
     }
@@ -583,11 +574,8 @@ fn load_checkpoint_with_fallback(
             actual_developer_runs: v1.iteration,
             actual_reviewer_runs: v1.reviewer_pass,
             // New v3 fields - use empty defaults for migrated checkpoints
-            #[cfg(feature = "hardened-resume")]
             execution_history: None,
-            #[cfg(feature = "hardened-resume")]
             file_system_state: None,
-            #[cfg(feature = "hardened-resume")]
             prompt_history: None,
         });
     }
@@ -645,11 +633,8 @@ fn load_checkpoint_with_fallback(
             actual_developer_runs: legacy.iteration,
             actual_reviewer_runs: legacy.reviewer_pass,
             // New v3 fields - use empty defaults for migrated checkpoints
-            #[cfg(feature = "hardened-resume")]
             execution_history: None,
-            #[cfg(feature = "hardened-resume")]
             file_system_state: None,
-            #[cfg(feature = "hardened-resume")]
             prompt_history: None,
         });
     }

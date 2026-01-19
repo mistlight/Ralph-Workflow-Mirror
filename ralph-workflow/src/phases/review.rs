@@ -26,6 +26,8 @@ use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback_and_validator, FallbackConfig, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, PromptConfig, Role};
 use crate::review_metrics::ReviewMetrics;
+use std::fs;
+use std::path::Path;
 
 mod prompt;
 pub use prompt::{build_review_prompt, should_use_universal_prompt};
@@ -36,8 +38,10 @@ pub use validation::{
 };
 
 use super::context::PhaseContext;
-use std::fs;
-use std::path::Path;
+
+use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+
+use std::time::Instant;
 
 /// Result of the review phase.
 pub struct ReviewResult {
@@ -102,7 +106,7 @@ pub fn run_review_phase(
         let resuming_into_review = resume_context.is_some() && j == start_pass;
         // Save checkpoint at start of each iteration
         if ctx.config.features.checkpoint_enabled {
-            if let Some(checkpoint) = CheckpointBuilder::new()
+            let builder = CheckpointBuilder::new()
                 .phase(
                     PipelinePhase::Review,
                     ctx.config.developer_iters,
@@ -116,9 +120,11 @@ pub fn run_review_phase(
                     ctx.reviewer_agent,
                     ctx.logger,
                     &ctx.run_context,
-                )
-                .build()
-            {
+                );
+
+            let builder = builder.with_execution_history(ctx.execution_history.clone());
+
+            if let Some(checkpoint) = builder.build() {
                 let _ = save_checkpoint(&checkpoint);
             }
         }
@@ -202,7 +208,7 @@ pub fn run_review_phase(
             skipped_cycles += 1;
 
             // Check for external git changes and commit if found
-            prev_snap = handle_skipped_cycle(ctx, &prev_snap)?;
+            prev_snap = handle_skipped_cycle(ctx, j, &prev_snap)?;
             continue;
         }
 
@@ -249,7 +255,7 @@ pub fn run_review_phase(
         }
 
         // Check for changes and create commit if modified
-        prev_snap = handle_post_fix_commit(ctx, &prev_snap)?;
+        prev_snap = handle_post_fix_commit(ctx, j, &prev_snap)?;
     }
 
     // Provide feedback if any review cycles were skipped
@@ -261,7 +267,13 @@ pub fn run_review_phase(
 }
 
 /// Handle a skipped review cycle by checking for external git changes.
-fn handle_skipped_cycle(ctx: &mut PhaseContext<'_>, prev_snap: &str) -> anyhow::Result<String> {
+fn handle_skipped_cycle(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+    prev_snap: &str,
+) -> anyhow::Result<String> {
+    let start_time = Instant::now();
+
     let snap = git_snapshot()?;
     if snap != prev_snap {
         ctx.logger
@@ -294,17 +306,70 @@ fn handle_skipped_cycle(ctx: &mut PhaseContext<'_>, prev_snap: &str) -> anyhow::
                     ctx.logger
                         .success(&format!("Commit created successfully: {oid}"));
                     ctx.stats.commits_created += 1;
+
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Review",
+                        iteration,
+                        "commit",
+                        StepOutcome::Success {
+                            output: Some(oid.to_string()),
+                            files_modified: vec![],
+                        },
+                    )
+                    .with_agent(&agent)
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
                 }
                 CommitResultFallback::NoChanges => {
                     ctx.logger.info("No commit created (no meaningful changes)");
+
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Review",
+                        iteration,
+                        "commit",
+                        StepOutcome::Skipped {
+                            reason: "No meaningful changes to commit".to_string(),
+                        },
+                    )
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
                 }
                 CommitResultFallback::Failed(err) => {
                     ctx.logger.error(&format!("Failed to create commit: {err}"));
+
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Review",
+                        iteration,
+                        "commit",
+                        StepOutcome::Failure {
+                            error: err.to_string(),
+                            recoverable: false,
+                        },
+                    )
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
+
                     return Err(anyhow::anyhow!(err));
                 }
             }
         } else {
             ctx.logger.warn("Unable to get commit agent for commit");
+
+            let duration = start_time.elapsed().as_secs();
+            let step = ExecutionStep::new(
+                "Review",
+                iteration,
+                "commit",
+                StepOutcome::Failure {
+                    error: "No commit agent available".to_string(),
+                    recoverable: true,
+                },
+            )
+            .with_duration(duration);
+            ctx.execution_history.add_step(step);
         }
     }
     Ok(snap)
@@ -493,6 +558,7 @@ fn run_review_pass(
     let mut retry_count = 0;
 
     loop {
+        let attempt_start = Instant::now();
         let log_dir = format!(".agent/logs/reviewer_review_{j}_attempt_{retry_count}");
 
         let _ = {
@@ -538,6 +604,8 @@ fn run_review_pass(
         };
         ctx.stats.reviewer_runs_completed += 1;
 
+        let attempt_duration = attempt_start.elapsed().as_secs();
+
         // ORCHESTRATOR-CONTROLLED FILE I/O:
         // Ensure .agent directory exists
         if let Some(parent) = issues_path.parent() {
@@ -551,6 +619,20 @@ fn run_review_pass(
             ParseResult::IssuesFound => {
                 // POST-FLIGHT VALIDATION: Check review output after agent completes
                 handle_postflight_validation(ctx, j);
+
+                let step = ExecutionStep::new(
+                    "Review",
+                    j,
+                    "review",
+                    StepOutcome::Success {
+                        output: Some("Issues found".to_string()),
+                        files_modified: vec![".agent/ISSUES.md".to_string()],
+                    },
+                )
+                .with_agent(ctx.reviewer_agent)
+                .with_duration(attempt_duration);
+                ctx.execution_history.add_step(step);
+
                 return Ok(ReviewPassResult { early_exit: false });
             }
             ParseResult::NoIssuesExplicit => {
@@ -560,9 +642,36 @@ fn run_review_pass(
                 if ctx.config.isolation_mode {
                     delete_issues_file_for_isolation(ctx.logger)?;
                 }
+
+                let step = ExecutionStep::new(
+                    "Review",
+                    j,
+                    "review",
+                    StepOutcome::Success {
+                        output: Some("No issues found".to_string()),
+                        files_modified: vec![],
+                    },
+                )
+                .with_agent(ctx.reviewer_agent)
+                .with_duration(attempt_duration);
+                ctx.execution_history.add_step(step);
+
                 return Ok(ReviewPassResult { early_exit: true });
             }
             ParseResult::ParseFailed(error_description) => {
+                let step = ExecutionStep::new(
+                    "Review",
+                    j,
+                    "review",
+                    StepOutcome::Failure {
+                        error: format!("Parse failed: {error_description}"),
+                        recoverable: true,
+                    },
+                )
+                .with_agent(ctx.reviewer_agent)
+                .with_duration(attempt_duration);
+                ctx.execution_history.add_step(step);
+
                 retry_count += 1;
 
                 if retry_count > max_retries {
@@ -789,6 +898,8 @@ fn run_fix_pass(
     reviewer_context: ContextLevel,
     resume_context: Option<&ResumeContext>,
 ) -> anyhow::Result<()> {
+    let fix_start_time = Instant::now();
+
     update_status("Applying fixes", ctx.config.isolation_mode)?;
 
     // Read PROMPT.md, PLAN.md, and ISSUES.md for context
@@ -864,6 +975,20 @@ fn run_fix_pass(
     };
     ctx.stats.reviewer_runs_completed += 1;
 
+    let duration = fix_start_time.elapsed().as_secs();
+    let step = ExecutionStep::new(
+        "Review",
+        j,
+        "fix",
+        StepOutcome::Success {
+            output: None,
+            files_modified: vec![],
+        },
+    )
+    .with_agent(ctx.reviewer_agent)
+    .with_duration(duration);
+    ctx.execution_history.add_step(step);
+
     // Clean up ISSUES.md after each fix cycle in isolation mode
     if ctx.config.isolation_mode {
         delete_issues_file_for_isolation(ctx.logger)?;
@@ -876,7 +1001,13 @@ fn run_fix_pass(
 }
 
 /// Handle post-fix commit creation.
-fn handle_post_fix_commit(ctx: &mut PhaseContext<'_>, prev_snap: &str) -> anyhow::Result<String> {
+fn handle_post_fix_commit(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+    prev_snap: &str,
+) -> anyhow::Result<String> {
+    let start_time = Instant::now();
+
     let snap = git_snapshot()?;
     if snap != prev_snap {
         ctx.logger.success("Repository modified during fix pass");
@@ -908,20 +1039,73 @@ fn handle_post_fix_commit(ctx: &mut PhaseContext<'_>, prev_snap: &str) -> anyhow
                     ctx.logger
                         .success(&format!("Commit created successfully: {oid}"));
                     ctx.stats.commits_created += 1;
+
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Review",
+                        iteration,
+                        "commit",
+                        StepOutcome::Success {
+                            output: Some(oid.to_string()),
+                            files_modified: vec![],
+                        },
+                    )
+                    .with_agent(&agent)
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
                 }
                 CommitResultFallback::NoChanges => {
                     ctx.logger.info("No commit created (no meaningful changes)");
+
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Review",
+                        iteration,
+                        "commit",
+                        StepOutcome::Skipped {
+                            reason: "No meaningful changes to commit".to_string(),
+                        },
+                    )
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
                 }
                 CommitResultFallback::Failed(err) => {
                     ctx.logger.error(&format!(
                         "Failed to create commit (git operation failed): {err}"
                     ));
+
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Review",
+                        iteration,
+                        "commit",
+                        StepOutcome::Failure {
+                            error: err.to_string(),
+                            recoverable: false,
+                        },
+                    )
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
+
                     return Err(anyhow::anyhow!(err));
                 }
             }
         } else {
             ctx.logger
                 .warn("Unable to get commit agent chain for commit");
+
+            let duration = start_time.elapsed().as_secs();
+            let step = ExecutionStep::new(
+                "Review",
+                iteration,
+                "commit",
+                StepOutcome::Failure {
+                    error: "No commit agent available".to_string(),
+                    recoverable: true,
+                },
+            )
+            .with_duration(duration);
+            ctx.execution_history.add_step(step);
         }
     }
     Ok(snap)

@@ -4,6 +4,7 @@
 //! including validation and state restoration.
 
 use crate::agents::AgentRegistry;
+use crate::checkpoint::file_state::FileSystemState;
 use crate::checkpoint::{load_checkpoint, validate_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::config::Config;
 use crate::git_helpers::rebase_in_progress;
@@ -13,6 +14,15 @@ use crate::logger::Logger;
 pub struct ResumeResult {
     /// The loaded checkpoint.
     pub checkpoint: PipelineCheckpoint,
+}
+
+/// Result of file system validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationOutcome {
+    /// Validation passed, safe to resume
+    Passed,
+    /// Validation failed, cannot resume
+    Failed(String),
 }
 
 /// Handles the --resume flag and loads checkpoint if applicable.
@@ -86,6 +96,22 @@ pub fn handle_resume_with_validation(
             // Check for in-progress git rebase
             check_rebase_state_on_resume(&checkpoint, logger);
 
+            // Perform file system state validation
+            let validation_outcome = if let Some(file_system_state) = &checkpoint.file_system_state
+            {
+                validate_file_system_state(
+                    file_system_state,
+                    logger,
+                    args.recovery.recovery_strategy.into(),
+                )
+            } else {
+                ValidationOutcome::Passed
+            };
+
+            if matches!(validation_outcome, ValidationOutcome::Failed(_)) {
+                return None;
+            }
+
             Some(ResumeResult { checkpoint })
         }
         Ok(None) => {
@@ -95,6 +121,59 @@ pub fn handle_resume_with_validation(
         Err(e) => {
             logger.warn(&format!("Failed to load checkpoint (starting fresh): {e}"));
             None
+        }
+    }
+}
+
+/// Validate file system state when resuming.
+///
+/// This function validates that the current file system state matches
+/// the state captured in the checkpoint. This is part of the hardened
+/// resume feature that ensures idempotent recovery.
+///
+/// Returns a `ValidationOutcome` indicating whether validation passed
+/// or failed with a reason.
+fn validate_file_system_state(
+    file_system_state: &FileSystemState,
+    logger: &Logger,
+    strategy: crate::checkpoint::recovery::RecoveryStrategy,
+) -> ValidationOutcome {
+    let errors = file_system_state.validate();
+
+    if errors.is_empty() {
+        logger.info("File system state validation passed.");
+        return ValidationOutcome::Passed;
+    }
+
+    logger.warn("File system state validation detected changes:");
+
+    for error in &errors {
+        logger.warn(&format!("  - {}", error));
+        logger.info(&format!("    Suggestion: {}", error.recovery_suggestion()));
+    }
+
+    // Handle based on the recovery strategy
+    match strategy {
+        crate::checkpoint::recovery::RecoveryStrategy::Fail => {
+            logger.error("File system state validation failed (strategy: fail).");
+            logger.info("Use --recovery-strategy=auto to attempt automatic recovery.");
+            logger.info("Use --recovery-strategy=force to proceed anyway (not recommended).");
+            ValidationOutcome::Failed(
+                "File system state changed - see errors above or use --recovery-strategy=force to proceed anyway".to_string()
+            )
+        }
+        crate::checkpoint::recovery::RecoveryStrategy::Force => {
+            logger.warn("Proceeding with resume despite file changes (strategy: force).");
+            logger.info("Note: Pipeline behavior may be unpredictable.");
+            ValidationOutcome::Passed
+        }
+        crate::checkpoint::recovery::RecoveryStrategy::Auto => {
+            // Auto recovery - for now, we just warn but continue
+            // In the future, this could attempt automatic fixes
+            logger.warn("Automatic recovery not fully implemented for file system changes.");
+            logger.warn("Proceeding with resume despite file changes (strategy: auto).");
+            logger.info("Note: Pipeline behavior may be unpredictable.");
+            ValidationOutcome::Passed
         }
     }
 }

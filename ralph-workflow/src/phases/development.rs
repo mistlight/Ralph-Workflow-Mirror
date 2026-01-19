@@ -25,6 +25,10 @@ use std::process::Command;
 
 use super::context::PhaseContext;
 
+use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+
+use std::time::Instant;
+
 /// Result of the development phase.
 pub struct DevelopmentResult {
     /// Whether any errors occurred during the phase.
@@ -82,7 +86,7 @@ pub fn run_development_phase(
 
         // Save checkpoint at start of development phase (if enabled)
         if ctx.config.features.checkpoint_enabled {
-            if let Some(checkpoint) = CheckpointBuilder::new()
+            let builder = CheckpointBuilder::new()
                 .phase(PipelinePhase::Development, i, ctx.config.developer_iters)
                 .reviewer_pass(0, ctx.config.reviewer_reviews)
                 .capture_from_context(
@@ -92,9 +96,11 @@ pub fn run_development_phase(
                     ctx.reviewer_agent,
                     ctx.logger,
                     &ctx.run_context,
-                )
-                .build()
-            {
+                );
+
+            let builder = builder.with_execution_history(ctx.execution_history.clone());
+
+            if let Some(checkpoint) = builder.build() {
                 let _ = save_checkpoint(&checkpoint);
             }
         }
@@ -131,23 +137,25 @@ pub fn run_development_phase(
             prompt_config,
         );
 
-        let mut runtime = PipelineRuntime {
-            timer: ctx.timer,
-            logger: ctx.logger,
-            colors: ctx.colors,
-            config: ctx.config,
-            #[cfg(any(test, feature = "test-utils"))]
-            agent_executor: None,
+        let dev_start_time = Instant::now();
+
+        let exit_code = {
+            let mut runtime = PipelineRuntime {
+                timer: ctx.timer,
+                logger: ctx.logger,
+                colors: ctx.colors,
+                config: ctx.config,
+            };
+            run_with_fallback(
+                AgentRole::Developer,
+                &format!("run #{i}"),
+                &prompt,
+                &format!(".agent/logs/developer_{i}"),
+                &mut runtime,
+                ctx.registry,
+                ctx.developer_agent,
+            )?
         };
-        let exit_code = run_with_fallback(
-            AgentRole::Developer,
-            &format!("run #{i}"),
-            &prompt,
-            &format!(".agent/logs/developer_{i}"),
-            &mut runtime,
-            ctx.registry,
-            ctx.developer_agent,
-        )?;
 
         if exit_code != 0 {
             ctx.logger.error(&format!(
@@ -157,6 +165,25 @@ pub fn run_development_phase(
         }
 
         ctx.stats.developer_runs_completed += 1;
+
+        {
+            let duration = dev_start_time.elapsed().as_secs();
+            let outcome = if exit_code != 0 {
+                StepOutcome::Failure {
+                    error: format!("Agent exited with code {exit_code}"),
+                    recoverable: true,
+                }
+            } else {
+                StepOutcome::Success {
+                    output: None,
+                    files_modified: vec![],
+                }
+            };
+            let step = ExecutionStep::new("Development", i, "dev_run", outcome)
+                .with_agent(ctx.developer_agent)
+                .with_duration(duration);
+            ctx.execution_history.add_step(step);
+        }
         update_status("Completed progress step", ctx.config.isolation_mode)?;
 
         let snap = git_snapshot()?;
@@ -176,7 +203,7 @@ pub fn run_development_phase(
                 snap.lines().count()
             ));
             ctx.stats.changes_detected += 1;
-            handle_commit_after_development(ctx)?;
+            handle_commit_after_development(ctx, i)?;
         }
         prev_snap = snap;
 
@@ -205,9 +232,10 @@ pub fn run_development_phase(
 /// The orchestrator ALWAYS extracts and writes PLAN.md from agent JSON output.
 /// Agent file writes are ignored - the orchestrator is the sole writer.
 fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
+    let start_time = Instant::now();
     // Save checkpoint at start of planning phase (if enabled)
     if ctx.config.features.checkpoint_enabled {
-        if let Some(checkpoint) = CheckpointBuilder::new()
+        let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Planning,
                 iteration,
@@ -221,9 +249,11 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
                 ctx.reviewer_agent,
                 ctx.logger,
                 &ctx.run_context,
-            )
-            .build()
-        {
+            );
+
+        let builder = builder.with_execution_history(ctx.execution_history.clone());
+
+        if let Some(checkpoint) = builder.build() {
             let _ = save_checkpoint(&checkpoint);
         }
     }
@@ -327,6 +357,22 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         }
     }
 
+    {
+        let duration = start_time.elapsed().as_secs();
+        let step = ExecutionStep::new(
+            "Planning",
+            iteration,
+            "plan_generation",
+            StepOutcome::Success {
+                output: None,
+                files_modified: vec![".agent/PLAN.md".to_string()],
+            },
+        )
+        .with_agent(ctx.developer_agent)
+        .with_duration(duration);
+        ctx.execution_history.add_step(step);
+    }
+
     Ok(())
 }
 
@@ -407,7 +453,11 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
 /// Creates a commit with an auto-generated message using the primary commit agent.
 /// This is done by the orchestrator, not the agent, using fallback-aware commit
 /// generation which tries multiple agents if needed.
-fn handle_commit_after_development(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
+fn handle_commit_after_development(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+) -> anyhow::Result<()> {
+    let start_time = Instant::now();
     // Get the primary commit agent from the registry
     let commit_agent = get_primary_commit_agent(ctx);
 
@@ -437,16 +487,62 @@ fn handle_commit_after_development(ctx: &mut PhaseContext<'_>) -> anyhow::Result
                 ctx.logger
                     .success(&format!("Commit created successfully: {oid}"));
                 ctx.stats.commits_created += 1;
+
+                {
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Development",
+                        iteration,
+                        "commit",
+                        StepOutcome::Success {
+                            output: Some(oid.to_string()),
+                            files_modified: vec![],
+                        },
+                    )
+                    .with_agent(&agent)
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
+                }
             }
             CommitResultFallback::NoChanges => {
                 // No meaningful changes to commit (already handled by has_meaningful_changes)
                 ctx.logger.info("No commit created (no meaningful changes)");
+
+                {
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Development",
+                        iteration,
+                        "commit",
+                        StepOutcome::Skipped {
+                            reason: "No meaningful changes to commit".to_string(),
+                        },
+                    )
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
+                }
             }
             CommitResultFallback::Failed(err) => {
                 // Actual git operation failed - this is critical
                 ctx.logger.error(&format!(
                     "Failed to create commit (git operation failed): {err}"
                 ));
+
+                {
+                    let duration = start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Development",
+                        iteration,
+                        "commit",
+                        StepOutcome::Failure {
+                            error: err.to_string(),
+                            recoverable: false,
+                        },
+                    )
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
+                }
+
                 // Don't continue - this is a real error that needs attention
                 return Err(anyhow::anyhow!(err));
             }
@@ -454,6 +550,21 @@ fn handle_commit_after_development(ctx: &mut PhaseContext<'_>) -> anyhow::Result
     } else {
         ctx.logger
             .warn("Unable to get primary commit agent for commit");
+
+        {
+            let duration = start_time.elapsed().as_secs();
+            let step = ExecutionStep::new(
+                "Development",
+                iteration,
+                "commit",
+                StepOutcome::Failure {
+                    error: "No commit agent available".to_string(),
+                    recoverable: true,
+                },
+            )
+            .with_duration(duration);
+            ctx.execution_history.add_step(step);
+        }
     }
 
     Ok(())

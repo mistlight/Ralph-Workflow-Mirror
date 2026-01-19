@@ -385,12 +385,15 @@ mod tests {
 
     #[test]
     fn test_rollback_manager_new() {
-        let manager = RollbackManager::new().unwrap();
-        assert_eq!(manager.checkpoint_dir, ".agent");
+        test_helpers::with_temp_cwd(|_dir| {
+            let manager = RollbackManager::new().unwrap();
+            assert_eq!(manager.checkpoint_dir, ".agent");
+        });
     }
 
     #[test]
     fn test_rollback_manager_default() {
+        // Default doesn't create the directory, so it doesn't need temp
         let manager = RollbackManager::default();
         assert_eq!(manager.checkpoint_dir, ".agent");
     }

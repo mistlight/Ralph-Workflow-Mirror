@@ -4,6 +4,8 @@
 //! from various contexts in the pipeline.
 
 use crate::agents::AgentRegistry;
+use crate::checkpoint::execution_history::ExecutionHistory;
+use crate::checkpoint::file_state::FileSystemState;
 use crate::checkpoint::state::{
     AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, PipelineCheckpoint, PipelinePhase,
     RebaseState,
@@ -43,6 +45,9 @@ pub struct CheckpointBuilder {
     git_user_email: Option<String>,
     // Run context for tracking execution lineage and state
     run_context: Option<RunContext>,
+    // Hardened resume fields
+    execution_history: Option<ExecutionHistory>,
+    prompt_history: Option<std::collections::HashMap<String, String>>,
 }
 
 impl Default for CheckpointBuilder {
@@ -70,6 +75,8 @@ impl CheckpointBuilder {
             git_user_name: None,
             git_user_email: None,
             run_context: None,
+            execution_history: None,
+            prompt_history: None,
         }
     }
 
@@ -136,6 +143,18 @@ impl CheckpointBuilder {
     pub fn git_identity(mut self, name: Option<&str>, email: Option<&str>) -> Self {
         self.git_user_name = name.map(String::from);
         self.git_user_email = email.map(String::from);
+        self
+    }
+
+    /// Set the execution history.
+    pub fn execution_history(mut self, history: ExecutionHistory) -> Self {
+        self.execution_history = Some(history);
+        self
+    }
+
+    /// Set the prompt history.
+    pub fn prompt_history(mut self, history: std::collections::HashMap<String, String>) -> Self {
+        self.prompt_history = Some(history);
         self
     }
 
@@ -222,6 +241,15 @@ impl CheckpointBuilder {
         self
     }
 
+    /// Attach execution history from a PhaseContext.
+    ///
+    /// This method captures the execution history from the phase context
+    /// and attaches it to the checkpoint.
+    pub fn with_execution_history(mut self, history: ExecutionHistory) -> Self {
+        self.execution_history = Some(history);
+        self
+    }
+
     /// Build the checkpoint.
     ///
     /// Returns None if required fields (phase, agent configs) are missing.
@@ -264,6 +292,15 @@ impl CheckpointBuilder {
         if let Some(path) = self.config_path {
             checkpoint = checkpoint.with_config(Some(path));
         }
+
+        // Populate execution history
+        checkpoint.execution_history = self.execution_history;
+
+        // Populate prompt history
+        checkpoint.prompt_history = self.prompt_history;
+
+        // Capture and populate file system state
+        checkpoint.file_system_state = Some(FileSystemState::capture_current());
 
         Some(checkpoint)
     }

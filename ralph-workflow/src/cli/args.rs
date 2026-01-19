@@ -225,6 +225,28 @@ pub enum Shell {
     Pwsh,
 }
 
+/// Recovery strategy for checkpoint validation failures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Default)]
+pub enum RecoveryStrategyArg {
+    /// Fail fast - require user intervention
+    #[default]
+    Fail,
+    /// Attempt automatic recovery where possible
+    Auto,
+    /// Warn but continue (not recommended)
+    Force,
+}
+
+impl From<RecoveryStrategyArg> for crate::checkpoint::recovery::RecoveryStrategy {
+    fn from(arg: RecoveryStrategyArg) -> Self {
+        match arg {
+            RecoveryStrategyArg::Fail => Self::Fail,
+            RecoveryStrategyArg::Auto => Self::Auto,
+            RecoveryStrategyArg::Force => Self::Force,
+        }
+    }
+}
+
 /// Work Guide listing flag.
 #[derive(Parser, Debug, Default)]
 pub struct WorkGuideListFlag {
@@ -372,6 +394,15 @@ pub struct RecoveryFlags {
         hide = true
     )]
     pub resume: bool,
+
+    /// Recovery strategy when validation fails (requires hardened-resume feature)
+    #[arg(
+        long,
+        value_enum,
+        default_value = "fail",
+        help = "Recovery strategy when checkpoint validation fails (fail=stop, auto=attempt recovery, force=continue anyway)"
+    )]
+    pub recovery_strategy: RecoveryStrategyArg,
 
     /// Validate setup without running agents (dry run)
     #[arg(
