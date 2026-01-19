@@ -82,40 +82,6 @@ impl ExecutionStep {
         self.duration_secs = Some(duration_secs);
         self
     }
-
-    /// Create a successful step outcome.
-    pub fn success(files_modified: Vec<String>) -> StepOutcome {
-        StepOutcome::Success {
-            output: None,
-            files_modified,
-        }
-    }
-
-    /// Create a successful step outcome with output.
-    pub fn success_with_output(output: String, files_modified: Vec<String>) -> StepOutcome {
-        StepOutcome::Success {
-            output: Some(output),
-            files_modified,
-        }
-    }
-
-    /// Create a failure outcome.
-    pub fn failure(error: String, recoverable: bool) -> StepOutcome {
-        StepOutcome::Failure { error, recoverable }
-    }
-
-    /// Create a partial outcome.
-    pub fn partial(completed: String, remaining: String) -> StepOutcome {
-        StepOutcome::Partial {
-            completed,
-            remaining,
-        }
-    }
-
-    /// Create a skipped outcome.
-    pub fn skipped(reason: String) -> StepOutcome {
-        StepOutcome::Skipped { reason }
-    }
 }
 
 /// Snapshot of a file's state at a point in time.
@@ -206,61 +172,6 @@ impl ExecutionHistory {
     pub fn add_step(&mut self, step: ExecutionStep) {
         self.steps.push(step);
     }
-
-    /// Add a file snapshot.
-    pub fn add_file_snapshot(&mut self, path: String, snapshot: FileSnapshot) {
-        self.file_snapshots.insert(path, snapshot);
-    }
-
-    /// Get the last step of a given type.
-    pub fn last_step_of_type(&self, step_type: &str) -> Option<&ExecutionStep> {
-        self.steps.iter().rev().find(|s| s.step_type == step_type)
-    }
-
-    /// Get all steps for a specific phase.
-    pub fn steps_for_phase(&self, phase: &str) -> Vec<&ExecutionStep> {
-        self.steps.iter().filter(|s| s.phase == phase).collect()
-    }
-
-    /// Get the last completed iteration for a phase.
-    pub fn last_completed_iteration(&self, phase: &str) -> Option<u32> {
-        self.steps
-            .iter()
-            .filter(|s| s.phase == phase && matches!(s.outcome, StepOutcome::Success { .. }))
-            .map(|s| s.iteration)
-            .max()
-    }
-
-    /// Check if a step was already completed.
-    pub fn is_step_completed(&self, phase: &str, iteration: u32, step_type: &str) -> bool {
-        self.steps.iter().any(|s| {
-            s.phase == phase
-                && s.iteration == iteration
-                && s.step_type == step_type
-                && matches!(s.outcome, StepOutcome::Success { .. })
-        })
-    }
-
-    /// Get a summary of completed work.
-    pub fn summary(&self) -> String {
-        let mut summary = String::from("Execution History:\n");
-
-        for step in &self.steps {
-            let status = match &step.outcome {
-                StepOutcome::Success { .. } => "✓",
-                StepOutcome::Failure { .. } => "✗",
-                StepOutcome::Partial { .. } => "○",
-                StepOutcome::Skipped { .. } => "⊘",
-            };
-
-            summary.push_str(&format!(
-                "  {} {} (iteration {}): {}\n",
-                status, step.phase, step.iteration, step.step_type
-            ));
-        }
-
-        summary
-    }
 }
 
 #[cfg(test)]
@@ -279,6 +190,7 @@ mod tests {
         assert_eq!(step.phase, "Development");
         assert_eq!(step.iteration, 1);
         assert_eq!(step.step_type, "dev_run");
+        assert!(step.prompt.is_none());
         assert!(step.agent.is_none());
         assert!(step.duration_secs.is_none());
     }
@@ -296,21 +208,6 @@ mod tests {
 
         assert_eq!(step.agent, Some("claude".to_string()));
         assert_eq!(step.duration_secs, Some(120));
-    }
-
-    #[test]
-    fn test_step_outcomes() {
-        let success = ExecutionStep::success(vec!["file.rs".to_string()]);
-        assert!(matches!(success, StepOutcome::Success { .. }));
-
-        let failure = ExecutionStep::failure("error".to_string(), true);
-        assert!(matches!(failure, StepOutcome::Failure { .. }));
-
-        let partial = ExecutionStep::partial("done".to_string(), "todo".to_string());
-        assert!(matches!(partial, StepOutcome::Partial { .. }));
-
-        let skipped = ExecutionStep::skipped("reason".to_string());
-        assert!(matches!(skipped, StepOutcome::Skipped { .. }));
     }
 
     #[test]
@@ -341,125 +238,11 @@ mod tests {
         };
 
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
+
         history.add_step(step);
 
         assert_eq!(history.steps.len(), 1);
-    }
-
-    #[test]
-    fn test_execution_history_last_step_of_type() {
-        let mut history = ExecutionHistory::new();
-
-        let outcome = StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        };
-
-        history.add_step(
-            ExecutionStep::new("Development", 1, "dev_run", outcome.clone()).with_agent("agent1"),
-        );
-        history.add_step(
-            ExecutionStep::new("Development", 2, "dev_run", outcome.clone()).with_agent("agent2"),
-        );
-
-        let last = history.last_step_of_type("dev_run");
-        assert!(last.is_some());
-        assert_eq!(last.unwrap().agent, Some("agent2".to_string()));
-    }
-
-    #[test]
-    fn test_execution_history_is_step_completed() {
-        let mut history = ExecutionHistory::new();
-
-        let outcome = StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        };
-
-        history.add_step(ExecutionStep::new("Development", 1, "dev_run", outcome));
-
-        assert!(history.is_step_completed("Development", 1, "dev_run"));
-        assert!(!history.is_step_completed("Development", 2, "dev_run"));
-        assert!(!history.is_step_completed("Review", 1, "dev_run"));
-    }
-
-    #[test]
-    fn test_execution_history_last_completed_iteration() {
-        let mut history = ExecutionHistory::new();
-
-        let outcome = StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        };
-
-        history.add_step(ExecutionStep::new(
-            "Development",
-            1,
-            "dev_run",
-            outcome.clone(),
-        ));
-        history.add_step(ExecutionStep::new(
-            "Development",
-            2,
-            "dev_run",
-            outcome.clone(),
-        ));
-        history.add_step(ExecutionStep::new("Development", 3, "dev_run", outcome));
-
-        assert_eq!(history.last_completed_iteration("Development"), Some(3));
-        assert_eq!(history.last_completed_iteration("Review"), None);
-    }
-
-    #[test]
-    fn test_execution_history_summary() {
-        let mut history = ExecutionHistory::new();
-
-        let outcome = StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        };
-
-        history.add_step(ExecutionStep::new("Development", 1, "dev_run", outcome));
-
-        let summary = history.summary();
-        assert!(summary.contains("Execution History:"));
-        assert!(summary.contains("Development"));
-        assert!(summary.contains("✓"));
-    }
-
-    #[test]
-    fn test_execution_history_add_file_snapshot() {
-        let mut history = ExecutionHistory::new();
-        let snapshot = FileSnapshot::new("test.txt", "abc123".to_string(), 100, true);
-
-        history.add_file_snapshot("test.txt".to_string(), snapshot);
-
-        assert_eq!(history.file_snapshots.len(), 1);
-        assert!(history.file_snapshots.contains_key("test.txt"));
-    }
-
-    #[test]
-    fn test_execution_history_steps_for_phase() {
-        let mut history = ExecutionHistory::new();
-
-        let outcome = StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        };
-
-        history.add_step(ExecutionStep::new(
-            "Development",
-            1,
-            "dev_run",
-            outcome.clone(),
-        ));
-        history.add_step(ExecutionStep::new("Review", 1, "review", outcome.clone()));
-        history.add_step(ExecutionStep::new("Development", 2, "dev_run", outcome));
-
-        let dev_steps = history.steps_for_phase("Development");
-        assert_eq!(dev_steps.len(), 2);
-
-        let review_steps = history.steps_for_phase("Review");
-        assert_eq!(review_steps.len(), 1);
+        assert_eq!(history.steps[0].phase, "Development");
+        assert_eq!(history.steps[0].iteration, 1);
     }
 }

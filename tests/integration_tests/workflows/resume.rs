@@ -305,7 +305,7 @@ fn ralph_resume_validates_working_directory() {
 
     // Create a checkpoint with a different working directory
     // Note: Using the helper function to ensure consistent JSON format
-    let working_dir = canonical_working_dir(&dir);
+    let _working_dir = canonical_working_dir(&dir);
     let wrong_working_dir = "/some/other/directory".to_string();
     fs::create_dir_all(dir.path().join(".agent")).unwrap();
 

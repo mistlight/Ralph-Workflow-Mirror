@@ -146,18 +146,6 @@ impl CheckpointBuilder {
         self
     }
 
-    /// Set the execution history.
-    pub fn execution_history(mut self, history: ExecutionHistory) -> Self {
-        self.execution_history = Some(history);
-        self
-    }
-
-    /// Set the prompt history.
-    pub fn prompt_history(mut self, history: std::collections::HashMap<String, String>) -> Self {
-        self.prompt_history = Some(history);
-        self
-    }
-
     /// Capture CLI arguments from a Config.
     pub fn capture_cli_args(mut self, config: &Config) -> Self {
         let review_depth_str = review_depth_to_string(config.review_depth);

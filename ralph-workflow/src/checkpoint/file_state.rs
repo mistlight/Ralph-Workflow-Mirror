@@ -177,45 +177,6 @@ impl FileSystemState {
 
         Ok(())
     }
-
-    /// Get a summary of the file system state.
-    pub fn summary(&self) -> String {
-        let mut summary = String::from("File System State:\n");
-
-        for (path, snapshot) in &self.files {
-            let status = if snapshot.exists {
-                format!("exists ({} bytes)", snapshot.size)
-            } else {
-                "does not exist".to_string()
-            };
-            summary.push_str(&format!("  {}: {}\n", path, status));
-        }
-
-        if let Some(oid) = &self.git_head_oid {
-            summary.push_str(&format!("  Git HEAD: {}\n", oid));
-        }
-
-        if let Some(branch) = &self.git_branch {
-            summary.push_str(&format!("  Git branch: {}\n", branch));
-        }
-
-        summary
-    }
-
-    /// Check if a file has changed since this snapshot.
-    pub fn has_file_changed(&self, path: &str) -> bool {
-        if let Some(snapshot) = self.files.get(path) {
-            !snapshot.verify()
-        } else {
-            // File wasn't tracked, consider it unchanged
-            false
-        }
-    }
-
-    /// Get the checksum of a tracked file.
-    pub fn file_checksum(&self, path: &str) -> Option<&str> {
-        self.files.get(path).map(|s| s.checksum.as_str())
-    }
 }
 
 /// Validation errors for file system state.
@@ -401,54 +362,5 @@ mod tests {
             actual: "def456".to_string(),
         };
         assert!(err.recovery_suggestion().contains("abc123"));
-    }
-
-    #[test]
-    fn test_file_system_state_summary() {
-        with_temp_cwd(|_dir| {
-            fs::write("test.txt", "content").unwrap();
-
-            let mut state = FileSystemState::new();
-            state.capture_file("test.txt");
-
-            let summary = state.summary();
-            assert!(summary.contains("File System State:"));
-            assert!(summary.contains("test.txt"));
-            assert!(summary.contains("exists"));
-        });
-    }
-
-    #[test]
-    fn test_file_system_state_has_file_changed() {
-        with_temp_cwd(|_dir| {
-            fs::write("test.txt", "content").unwrap();
-
-            let mut state = FileSystemState::new();
-            state.capture_file("test.txt");
-
-            assert!(!state.has_file_changed("test.txt"));
-
-            // Modify the file
-            fs::write("test.txt", "modified").unwrap();
-
-            assert!(state.has_file_changed("test.txt"));
-        });
-    }
-
-    #[test]
-    fn test_file_system_state_file_checksum() {
-        with_temp_cwd(|_dir| {
-            fs::write("test.txt", "content").unwrap();
-
-            let mut state = FileSystemState::new();
-            state.capture_file("test.txt");
-
-            let checksum = state.file_checksum("test.txt");
-            assert!(checksum.is_some());
-            assert!(!checksum.unwrap().is_empty());
-
-            // Non-existent file returns None
-            assert!(state.file_checksum("nonexistent").is_none());
-        });
     }
 }

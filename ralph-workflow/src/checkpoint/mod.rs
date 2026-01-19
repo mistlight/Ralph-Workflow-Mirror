@@ -42,9 +42,8 @@ pub mod state;
 pub mod validation;
 
 pub use builder::CheckpointBuilder;
-pub use execution_history::{ExecutionHistory, ExecutionStep, FileSnapshot, StepOutcome};
-pub use file_state::{FileSystemState, ValidationError};
-pub use recovery::{RecoveryManager, RecoveryResult, RecoveryStrategy, RollbackManager};
+pub use execution_history::ExecutionHistory;
+pub use file_state::FileSystemState;
 pub use restore::apply_checkpoint_to_config;
 pub use run_context::RunContext;
 pub use state::{
