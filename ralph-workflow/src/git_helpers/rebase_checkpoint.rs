@@ -1,15 +1,27 @@
 //! Rebase checkpoint system for fault tolerance.
 //!
-//! This module provides types for persisting and restoring rebase state,
+//! This module provides types and persistence for rebase state,
 //! allowing recovery from interrupted or failed rebase operations.
-//!
-//! NOTE: The full checkpoint save/load functionality will be implemented
-//! as part of the rebase state machine. This module currently only provides
-//! the data types needed for checkpoint management.
 
 #![deny(unsafe_code)]
 
+use std::fs;
 use std::io;
+use std::path::Path;
+
+/// Default directory for Ralph's internal files.
+const AGENT_DIR: &str = ".agent";
+
+/// Rebase checkpoint file name.
+const REBASE_CHECKPOINT_FILE: &str = "rebase_checkpoint.json";
+
+/// Get the rebase checkpoint file path.
+///
+/// The checkpoint is stored in `.agent/rebase_checkpoint.json`
+/// relative to the current working directory.
+pub fn rebase_checkpoint_path() -> String {
+    format!("{AGENT_DIR}/{REBASE_CHECKPOINT_FILE}")
+}
 
 /// Phase of a rebase operation.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -129,6 +141,98 @@ impl RebaseCheckpoint {
     }
 }
 
+/// Save a rebase checkpoint to disk.
+///
+/// Writes the checkpoint atomically by writing to a temp file first,
+/// then renaming to the final path. This prevents corruption if the
+/// process is interrupted during the write.
+///
+/// # Errors
+///
+/// Returns an error if serialization fails or the file cannot be written.
+pub fn save_rebase_checkpoint(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
+    let json = serde_json::to_string_pretty(checkpoint).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to serialize rebase checkpoint: {e}"),
+        )
+    })?;
+
+    // Ensure the .agent directory exists before attempting to write
+    fs::create_dir_all(AGENT_DIR)?;
+
+    // Write atomically by writing to temp file then renaming
+    let checkpoint_path_str = rebase_checkpoint_path();
+    let temp_path = format!("{checkpoint_path_str}.tmp");
+
+    // Ensure temp file is cleaned up even if write or rename fails
+    let write_result = fs::write(&temp_path, &json);
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+        return write_result;
+    }
+
+    let rename_result = fs::rename(&temp_path, &checkpoint_path_str);
+    if rename_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+        return rename_result;
+    }
+
+    Ok(())
+}
+
+/// Load an existing rebase checkpoint if one exists.
+///
+/// Returns `Ok(Some(checkpoint))` if a valid checkpoint was loaded,
+/// `Ok(None)` if no checkpoint file exists, or an error if the file
+/// exists but cannot be parsed.
+///
+/// # Errors
+///
+/// Returns an error if the checkpoint file exists but cannot be read
+/// or contains invalid JSON.
+pub fn load_rebase_checkpoint() -> io::Result<Option<RebaseCheckpoint>> {
+    let checkpoint = rebase_checkpoint_path();
+    let path = Path::new(&checkpoint);
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(path)?;
+    let loaded_checkpoint: RebaseCheckpoint = serde_json::from_str(&content).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to parse rebase checkpoint: {e}"),
+        )
+    })?;
+
+    Ok(Some(loaded_checkpoint))
+}
+
+/// Delete the rebase checkpoint file.
+///
+/// Called on successful rebase completion to clean up the checkpoint.
+/// Does nothing if the checkpoint file doesn't exist.
+///
+/// # Errors
+///
+/// Returns an error if the file exists but cannot be deleted.
+pub fn clear_rebase_checkpoint() -> io::Result<()> {
+    let checkpoint = rebase_checkpoint_path();
+    let path = Path::new(&checkpoint);
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+/// Check if a rebase checkpoint exists.
+///
+/// Returns `true` if a checkpoint file exists, `false` otherwise.
+pub fn rebase_checkpoint_exists() -> bool {
+    Path::new(&rebase_checkpoint_path()).exists()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,5 +312,106 @@ mod tests {
     fn test_rebase_phase_equality() {
         assert_eq!(RebasePhase::NotStarted, RebasePhase::NotStarted);
         assert_ne!(RebasePhase::NotStarted, RebasePhase::RebaseInProgress);
+    }
+
+    #[test]
+    fn test_rebase_checkpoint_path() {
+        let path = rebase_checkpoint_path();
+        assert!(path.contains(".agent"));
+        assert!(path.contains("rebase_checkpoint.json"));
+    }
+
+    #[test]
+    fn test_save_load_rebase_checkpoint() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            let checkpoint = RebaseCheckpoint::new("main".to_string())
+                .with_phase(RebasePhase::ConflictDetected)
+                .with_conflicted_file("file1.rs".to_string())
+                .with_conflicted_file("file2.rs".to_string());
+
+            save_rebase_checkpoint(&checkpoint).unwrap();
+            assert!(rebase_checkpoint_exists());
+
+            let loaded = load_rebase_checkpoint()
+                .unwrap()
+                .expect("checkpoint should exist after save");
+            assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
+            assert_eq!(loaded.upstream_branch, "main");
+            assert_eq!(loaded.conflicted_files.len(), 2);
+        });
+    }
+
+    #[test]
+    fn test_clear_rebase_checkpoint() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            let checkpoint = RebaseCheckpoint::new("main".to_string());
+            save_rebase_checkpoint(&checkpoint).unwrap();
+            assert!(rebase_checkpoint_exists());
+
+            clear_rebase_checkpoint().unwrap();
+            assert!(!rebase_checkpoint_exists());
+        });
+    }
+
+    #[test]
+    fn test_load_nonexistent_rebase_checkpoint() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            let result = load_rebase_checkpoint().unwrap();
+            assert!(result.is_none());
+            assert!(!rebase_checkpoint_exists());
+        });
+    }
+
+    #[test]
+    fn test_rebase_checkpoint_serialization() {
+        let checkpoint = RebaseCheckpoint::new("feature-branch".to_string())
+            .with_phase(RebasePhase::ConflictResolutionInProgress)
+            .with_conflicted_file("src/lib.rs".to_string())
+            .with_resolved_file("src/main.rs".to_string())
+            .with_error("Test error".to_string());
+
+        let json = serde_json::to_string(&checkpoint).unwrap();
+        assert!(json.contains("feature-branch"));
+        assert!(json.contains("src/lib.rs"));
+
+        let deserialized: RebaseCheckpoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.phase, checkpoint.phase);
+        assert_eq!(deserialized.upstream_branch, checkpoint.upstream_branch);
+    }
+
+    #[test]
+    fn test_atomic_checkpoint_write() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            // Create a checkpoint
+            let checkpoint1 =
+                RebaseCheckpoint::new("main".to_string()).with_phase(RebasePhase::RebaseInProgress);
+
+            save_rebase_checkpoint(&checkpoint1).unwrap();
+
+            // Verify it was written
+            assert!(rebase_checkpoint_exists());
+
+            // Overwrite with a new checkpoint
+            let checkpoint2 = RebaseCheckpoint::new("main".to_string())
+                .with_phase(RebasePhase::RebaseComplete)
+                .with_conflicted_file("test.rs".to_string());
+
+            save_rebase_checkpoint(&checkpoint2).unwrap();
+
+            // Load and verify the new state
+            let loaded = load_rebase_checkpoint()
+                .unwrap()
+                .expect("checkpoint should exist");
+            assert_eq!(loaded.phase, RebasePhase::RebaseComplete);
+            assert_eq!(loaded.conflicted_files.len(), 1);
+        });
     }
 }

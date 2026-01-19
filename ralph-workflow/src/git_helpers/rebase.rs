@@ -91,7 +91,6 @@ pub enum RebaseErrorKind {
 
 impl RebaseErrorKind {
     /// Returns a human-readable description of the error.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn description(&self) -> String {
         match self {
             RebaseErrorKind::InvalidRevision { revision } => {
@@ -148,7 +147,6 @@ impl RebaseErrorKind {
     }
 
     /// Returns whether this error can potentially be recovered automatically.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn is_recoverable(&self) -> bool {
         match self {
             // These are generally recoverable with automatic retry or cleanup
@@ -173,13 +171,12 @@ impl RebaseErrorKind {
             | RebaseErrorKind::CommitCreationFailed { .. }
             | RebaseErrorKind::ReferenceUpdateFailed { .. } => false,
             #[cfg(any(test, feature = "test-utils"))]
-            RebaseErrorKind::ValidationFailed { .. }
-            | RebaseErrorKind::Unknown { .. } => false,
+            RebaseErrorKind::ValidationFailed { .. } => false,
+            RebaseErrorKind::Unknown { .. } => false,
         }
     }
 
     /// Returns the category number (1-5) for this error.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn category(&self) -> u8 {
         match self {
             RebaseErrorKind::InvalidRevision { .. }
@@ -209,14 +206,12 @@ impl RebaseErrorKind {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl std::fmt::Display for RebaseErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.description())
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl std::error::Error for RebaseErrorKind {}
 
 /// Result of a rebase operation.
@@ -459,7 +454,6 @@ pub fn classify_rebase_error(stderr: &str, stdout: &str) -> RebaseErrorKind {
 }
 
 /// Extract revision name from error output.
-#[cfg(any(test, feature = "test-utils"))]
 fn extract_revision(output: &str) -> Option<String> {
     // Look for patterns like "invalid revision 'foo'" or "unknown revision 'bar'"
     // Using simple string parsing instead of regex for reliability
@@ -491,9 +485,10 @@ fn extract_revision(output: &str) -> Option<String> {
             // Extract potential branch/revision name
             let words: Vec<&str> = line.split_whitespace().collect();
             for (i, word) in words.iter().enumerate() {
-                if *word == "'" || *word == "\""
-                    && i + 2 < words.len()
-                    && (words[i + 2] == "'" || words[i + 2] == "\"")
+                if *word == "'"
+                    || *word == "\""
+                        && i + 2 < words.len()
+                        && (words[i + 2] == "'" || words[i + 2] == "\"")
                 {
                     return Some(words[i + 1].to_string());
                 }
@@ -505,7 +500,6 @@ fn extract_revision(output: &str) -> Option<String> {
 }
 
 /// Extract operation name from error output.
-#[cfg(any(test, feature = "test-utils"))]
 fn extract_operation(output: &str) -> Option<String> {
     if output.contains("rebase in progress") {
         Some("rebase".to_string())
@@ -523,7 +517,6 @@ fn extract_operation(output: &str) -> Option<String> {
 }
 
 /// Extract hook name from error output.
-#[cfg(any(test, feature = "test-utils"))]
 fn extract_hook_name(output: &str) -> String {
     if output.contains("pre-rebase") {
         "pre-rebase".to_string()
@@ -539,7 +532,6 @@ fn extract_hook_name(output: &str) -> String {
 }
 
 /// Extract command name from error output.
-#[cfg(any(test, feature = "test-utils"))]
 fn extract_command(output: &str) -> String {
     if output.contains("edit") {
         "edit".to_string()
@@ -555,7 +547,6 @@ fn extract_command(output: &str) -> String {
 }
 
 /// Extract the first meaningful error line from output.
-#[cfg(any(test, feature = "test-utils"))]
 fn extract_error_line(output: &str) -> String {
     output
         .lines()
@@ -571,7 +562,6 @@ fn extract_error_line(output: &str) -> String {
 }
 
 /// Extract conflict file paths from error output.
-#[cfg(any(test, feature = "test-utils"))]
 fn extract_conflict_files(output: &str) -> Vec<String> {
     let mut files = Vec::new();
 
@@ -606,7 +596,6 @@ fn extract_conflict_files(output: &str) -> Vec<String> {
 ///
 /// Returns `Ok(())` if all validations pass, or `RebaseErrorKind` if
 /// any validation fails.
-#[cfg(test)]
 pub fn validate_rebase_preconditions(_upstream_branch: &str) -> Result<(), RebaseErrorKind> {
     // Check for dirty working tree
     check_dirty_working_tree()?;
@@ -629,7 +618,6 @@ pub fn validate_rebase_preconditions(_upstream_branch: &str) -> Result<(), Rebas
 /// Check if the working tree is dirty.
 ///
 /// Returns an error if there are unstaged or staged changes.
-#[cfg(test)]
 fn check_dirty_working_tree() -> Result<(), RebaseErrorKind> {
     let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
         details: "Cannot open repository".to_string(),
@@ -665,7 +653,6 @@ fn check_dirty_working_tree() -> Result<(), RebaseErrorKind> {
 ///
 /// Returns an error if there's a rebase, merge, cherry-pick, revert,
 /// or bisect in progress.
-#[cfg(test)]
 fn check_concurrent_operations() -> Result<(), RebaseErrorKind> {
     let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
         details: "Cannot open repository".to_string(),
@@ -701,7 +688,6 @@ fn check_concurrent_operations() -> Result<(), RebaseErrorKind> {
 /// Validate repository state.
 ///
 /// Checks for repository corruption and other integrity issues.
-#[cfg(test)]
 fn validate_repository_state() -> Result<(), RebaseErrorKind> {
     let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
         details: "Cannot open repository".to_string(),
@@ -721,7 +707,6 @@ fn validate_repository_state() -> Result<(), RebaseErrorKind> {
 /// Validate environment configuration.
 ///
 /// Checks that Git identity is configured and editor is available.
-#[cfg(test)]
 fn validate_environment() -> Result<(), RebaseErrorKind> {
     let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
         details: "Cannot open repository".to_string(),
@@ -756,7 +741,6 @@ fn validate_environment() -> Result<(), RebaseErrorKind> {
 ///
 /// Returns an error if there are stale lock files that might block
 /// the rebase operation.
-#[cfg(test)]
 fn check_lock_files() -> Result<(), RebaseErrorKind> {
     let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
         details: "Cannot open repository".to_string(),
