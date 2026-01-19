@@ -37,14 +37,11 @@ pub use cleaning::preprocess_raw_content;
 pub use cleaning::clean_plain_text;
 
 // Re-export public functions from commit module
-pub use commit::{
-    detect_agent_errors_in_output, generate_fallback_commit_message,
-    try_extract_xml_commit_with_trace, validate_commit_message_with_report, CommitExtractionResult,
-};
+pub use commit::{try_extract_xml_commit_with_trace, CommitExtractionResult};
 
-// Re-export validate_commit_message for tests
+// Re-export for tests
 #[cfg(test)]
-pub use commit::validate_commit_message;
+pub use commit::is_conventional_commit_subject;
 
 // XSD validation is now internal (pub(crate))
 
