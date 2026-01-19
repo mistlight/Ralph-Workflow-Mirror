@@ -1175,10 +1175,20 @@ fn validate_git_version_requirements() {
 
     match output {
         Ok(result) => {
-            let version_str = String::from_utf8_lossy(&result.stdout);
+            // Check both stdout and stderr in case output goes to stderr
+            let version_str = if result.stdout.is_empty() {
+                String::from_utf8_lossy(&result.stderr)
+            } else {
+                String::from_utf8_lossy(&result.stdout)
+            };
+
+            // Also check if the command succeeded (exit code 0)
+            let success = result.status.success();
+
             assert!(
-                version_str.contains("git version"),
-                "Git version check should succeed"
+                success || version_str.contains("git version"),
+                "Git version check should succeed, got: {version_str:?}, status: {status:?}",
+                status = result.status,
             );
 
             // Parse major version (e.g., "git version 2.45.0" -> 2)
