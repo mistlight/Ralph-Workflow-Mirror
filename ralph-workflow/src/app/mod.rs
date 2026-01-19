@@ -1465,25 +1465,29 @@ fn run_ai_conflict_resolution(
 }
 
 /// Parse and validate the resolved files from AI output.
+///
+/// JSON parsing failures are expected and handled gracefully - LibGit2 state
+/// is used for verification, not JSON output. This function only parses the
+/// JSON to write resolved files if available.
 fn parse_and_validate_resolved_files(
     resolved_content: &str,
     logger: &Logger,
 ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
     let json: serde_json::Value = serde_json::from_str(resolved_content).map_err(|e| {
-        logger.error(&format!("Failed to parse agent output as JSON: {e}"));
+        logger.info(&format!("JSON output unavailable: {e}"));
         anyhow::anyhow!("Failed to parse agent output as JSON")
     })?;
 
     let resolved_files = match json.get("resolved_files") {
         Some(v) if v.is_object() => v.as_object().unwrap(),
         _ => {
-            logger.error("Agent output missing 'resolved_files' object");
+            logger.info("Agent output missing 'resolved_files' object");
             anyhow::bail!("Agent output missing 'resolved_files' object");
         }
     };
 
     if resolved_files.is_empty() {
-        logger.error("No files were resolved by the agent");
+        logger.info("No resolved files in JSON output");
         anyhow::bail!("No files were resolved by the agent");
     }
 

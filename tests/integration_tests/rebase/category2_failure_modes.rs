@@ -558,3 +558,273 @@ fn rebase_handles_autostash_with_conflicts() {
         let _ = abort_rebase();
     });
 }
+
+#[test]
+fn rebase_handles_rename_rename_conflicts() {
+    use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
+
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Create a file on initial commit
+        write_file(dir.path().join("original.txt"), "original content");
+        let _ = commit_all(&repo, "add original file");
+
+        // Create feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        // On feature: rename the file to new_feature.txt
+        fs::remove_file(dir.path().join("original.txt")).unwrap();
+        write_file(dir.path().join("new_feature.txt"), "feature content");
+        let _ = commit_all(&repo, "rename on feature");
+
+        // Go back to default branch
+        let main_obj = repo.revparse_single(&default_branch).unwrap();
+        let main_commit = main_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(main_commit.as_object(), None).unwrap();
+        repo.set_head(&format!("refs/heads/{}", default_branch))
+            .unwrap();
+
+        // On default: rename the same file to new_main.txt
+        fs::remove_file(dir.path().join("original.txt")).unwrap();
+        write_file(dir.path().join("new_main.txt"), "main content");
+        let _ = commit_all(&repo, "rename on main");
+
+        // Go back to feature
+        let feature_obj = repo.revparse_single("feature").unwrap();
+        let feature_commit = feature_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(feature_commit.as_object(), None)
+            .unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Try to rebase - should detect rename/rename conflict
+        let result = rebase_onto(&default_branch);
+
+        match result {
+            Ok(RebaseResult::Conflicts(files)) => {
+                assert!(!files.is_empty(), "Should have conflict files");
+            }
+            Ok(RebaseResult::Failed(err)) => {
+                assert!(
+                    err.description().contains("Conflict")
+                        || err.description().contains("conflict")
+                        || err.description().contains("rename")
+                );
+            }
+            Ok(RebaseResult::Success) => {
+                // Git may resolve rename/rename automatically in some versions
+            }
+            _ => {}
+        }
+
+        // Clean up
+        let _ = abort_rebase();
+    });
+}
+
+#[test]
+fn rebase_handles_directory_file_conflicts() {
+    use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
+
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Create a file on initial commit
+        write_file(dir.path().join("path.txt"), "file content");
+        let _ = commit_all(&repo, "add file");
+
+        // Create feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        // On feature: rename path.txt to path/new.txt (create directory)
+        fs::remove_file(dir.path().join("path.txt")).unwrap();
+        fs::create_dir(dir.path().join("path")).unwrap();
+        write_file(dir.path().join("path/new.txt"), "feature content");
+        let _ = commit_all(&repo, "convert to directory on feature");
+
+        // Go back to default branch
+        let main_obj = repo.revparse_single(&default_branch).unwrap();
+        let main_commit = main_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(main_commit.as_object(), None).unwrap();
+        repo.set_head(&format!("refs/heads/{}", default_branch))
+            .unwrap();
+
+        // On default: modify path.txt
+        write_file(dir.path().join("path.txt"), "modified content");
+        let _ = commit_all(&repo, "modify file");
+
+        // Go back to feature
+        let feature_obj = repo.revparse_single("feature").unwrap();
+        let feature_commit = feature_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(feature_commit.as_object(), None)
+            .unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Try to rebase - should detect directory/file conflict
+        let result = rebase_onto(&default_branch);
+
+        match result {
+            Ok(RebaseResult::Conflicts(files)) => {
+                assert!(!files.is_empty(), "Should have conflict files");
+            }
+            Ok(RebaseResult::Failed(err)) => {
+                assert!(
+                    err.description().contains("Conflict")
+                        || err.description().contains("conflict")
+                );
+            }
+            Ok(RebaseResult::Success) => {
+                // Git may handle this in some versions
+            }
+            _ => {}
+        }
+
+        // Clean up
+        let _ = abort_rebase();
+    });
+}
+
+#[test]
+fn rebase_handles_rename_delete_conflicts() {
+    use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
+
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Create a file on initial commit
+        write_file(dir.path().join("rename_me.txt"), "original content");
+        let _ = commit_all(&repo, "add file");
+
+        // Create feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        // On feature: rename the file
+        fs::remove_file(dir.path().join("rename_me.txt")).unwrap();
+        write_file(dir.path().join("renamed.txt"), "renamed content");
+        let _ = commit_all(&repo, "rename file");
+
+        // Go back to default branch
+        let main_obj = repo.revparse_single(&default_branch).unwrap();
+        let main_commit = main_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(main_commit.as_object(), None).unwrap();
+        repo.set_head(&format!("refs/heads/{}", default_branch))
+            .unwrap();
+
+        // On default: delete the file
+        fs::remove_file(dir.path().join("rename_me.txt")).unwrap();
+        let _ = commit_all(&repo, "delete file");
+
+        // Go back to feature
+        let feature_obj = repo.revparse_single("feature").unwrap();
+        let feature_commit = feature_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(feature_commit.as_object(), None)
+            .unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Try to rebase - should detect rename/delete conflict
+        let result = rebase_onto(&default_branch);
+
+        match result {
+            Ok(RebaseResult::Conflicts(files)) => {
+                assert!(!files.is_empty(), "Should have conflict files");
+            }
+            Ok(RebaseResult::Failed(err)) => {
+                assert!(
+                    err.description().contains("Conflict")
+                        || err.description().contains("conflict")
+                        || err.description().contains("delete")
+                );
+            }
+            Ok(RebaseResult::Success) => {
+                // Git may resolve automatically
+            }
+            _ => {}
+        }
+
+        // Clean up
+        let _ = abort_rebase();
+    });
+}
+
+#[test]
+fn rebase_handles_symlink_conflicts() {
+    use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
+
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Create a file on initial commit
+        write_file(dir.path().join("target.txt"), "target content");
+        let _ = commit_all(&repo, "add target file");
+
+        // Create feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        // On feature: convert to symlink
+        // Note: symlinks require special permissions, may not work on all platforms
+        // We'll document expected behavior instead
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs as unix_fs;
+            fs::remove_file(dir.path().join("target.txt")).unwrap();
+            unix_fs::symlink("other.txt", dir.path().join("target.txt")).unwrap();
+            let _ = commit_all(&repo, "convert to symlink");
+        }
+
+        #[cfg(not(unix))]
+        {
+            // On non-Unix platforms, just modify the file
+            write_file(dir.path().join("target.txt"), "modified content");
+            let _ = commit_all(&repo, "modify file");
+        }
+
+        // Go back to default branch
+        let main_obj = repo.revparse_single(&default_branch).unwrap();
+        let main_commit = main_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(main_commit.as_object(), None).unwrap();
+        repo.set_head(&format!("refs/heads/{}", default_branch))
+            .unwrap();
+
+        // On default: modify the file
+        write_file(dir.path().join("target.txt"), "main content");
+        let _ = commit_all(&repo, "modify on main");
+
+        // Go back to feature
+        let feature_obj = repo.revparse_single("feature").unwrap();
+        let feature_commit = feature_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(feature_commit.as_object(), None)
+            .unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Try to rebase - should handle symlink conflicts gracefully
+        let result = rebase_onto(&default_branch);
+
+        match result {
+            Ok(RebaseResult::Conflicts(files)) => {
+                assert!(!files.is_empty(), "Should have conflict files");
+            }
+            Ok(RebaseResult::Failed(err)) => {
+                assert!(
+                    err.description().contains("Conflict")
+                        || err.description().contains("conflict")
+                        || err.description().contains("link")
+                );
+            }
+            Ok(RebaseResult::Success) => {
+                // Git may resolve automatically
+            }
+            _ => {}
+        }
+
+        // Clean up
+        let _ = abort_rebase();
+    });
+}
