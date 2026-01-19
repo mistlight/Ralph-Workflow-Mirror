@@ -137,6 +137,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         git_user_name: general.git_user_name.clone(),
         git_user_email: general.git_user_email.clone(),
         show_streaming_metrics: false, // Default to false; can be enabled via CLI flag or config file
+        review_format_retries: 5,      // Default to 5 retries for format correction
     }
 }
 
@@ -178,6 +179,7 @@ fn default_config() -> Config {
         git_user_name: None,
         git_user_email: None,
         show_streaming_metrics: false,
+        review_format_retries: 5,
     }
 }
 
@@ -186,12 +188,14 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
     const MAX_ITERS: u32 = 50;
     const MAX_REVIEWS: u32 = 10;
     const MAX_CONTEXT: u8 = 2;
+    const MAX_FORMAT_RETRIES: u32 = 20;
 
     // Apply all environment variable overrides by category
     apply_agent_selection_env(&mut config, warnings);
     apply_command_env(&mut config, warnings);
     apply_model_provider_env(&mut config);
     apply_iteration_counts_env(&mut config, warnings, MAX_ITERS, MAX_REVIEWS);
+    apply_review_config_env(&mut config, warnings, MAX_FORMAT_RETRIES);
     apply_boolean_flags_env(&mut config);
     apply_verbosity_env(&mut config, warnings);
     apply_review_depth_env(&mut config, warnings);
@@ -295,6 +299,13 @@ fn apply_iteration_counts_env(
     }
     if let Some(n) = parse_env_u32("RALPH_REVIEWER_REVIEWS", warnings, max_reviews) {
         config.reviewer_reviews = n;
+    }
+}
+
+/// Apply review-specific configuration environment variables.
+fn apply_review_config_env(config: &mut Config, warnings: &mut Vec<String>, max_retries: u32) {
+    if let Some(n) = parse_env_u32("RALPH_REVIEW_FORMAT_RETRIES", warnings, max_retries) {
+        config.review_format_retries = n;
     }
 }
 

@@ -94,37 +94,45 @@ pub fn handle_show_baseline() -> io::Result<()> {
 fn print_commit_info(oid: &str) {
     if let Ok(repo) = git2::Repository::discover(".") {
         if let Ok(parsed_oid) = git2::Oid::from_str(oid) {
-            if let Ok(commit) = repo.find_commit(parsed_oid) {
-                // Get short ID
-                let short_id = commit
-                    .as_object()
-                    .short_id()
-                    .ok()
-                    .and_then(|buf| buf.as_str().map(|s| s.to_string()))
-                    .unwrap_or_else(|| {
-                        let len = 8.min(oid.len());
-                        oid[..len].to_string()
-                    });
+            match repo.find_commit(parsed_oid) {
+                Ok(commit) => {
+                    // Get short ID
+                    let short_id = commit
+                        .as_object()
+                        .short_id()
+                        .ok()
+                        .and_then(|buf| buf.as_str().map(|s| s.to_string()))
+                        .unwrap_or_else(|| {
+                            let len = 8.min(oid.len());
+                            oid[..len].to_string()
+                        });
 
-                println!("  Short ID: {}", short_id);
+                    println!("  Short ID: {}", short_id);
 
-                // Get author info
-                let author = commit.author();
-                let name = author.name().unwrap_or("<unknown>");
-                let when = author.when();
-                println!("  Author: {}", name);
-                println!("  Time: {} seconds since epoch", when.seconds());
+                    // Get author info
+                    let author = commit.author();
+                    let name = author.name().unwrap_or("<unknown>");
+                    let when = author.when();
+                    println!("  Author: {}", name);
+                    println!("  Time: {} seconds since epoch", when.seconds());
 
-                // Get commit summary
-                let summary = commit.summary().unwrap_or("<no message>");
-                // Truncate long summaries
-                let summary = if summary.len() > 60 {
-                    format!("{}...", &summary[..57.min(summary.len())])
-                } else {
-                    summary.to_string()
-                };
-                println!("  Summary: {}", summary);
+                    // Get commit summary
+                    let summary = commit.summary().unwrap_or("<no message>");
+                    // Truncate long summaries
+                    let summary = if summary.len() > 60 {
+                        format!("{}...", &summary[..57.min(summary.len())])
+                    } else {
+                        summary.to_string()
+                    };
+                    println!("  Summary: {}", summary);
+                }
+                Err(_) => {
+                    println!("  Warning: Commit not found in repository");
+                    println!("  The OID may reference a deleted commit or be from a different repository");
+                }
             }
+        } else {
+            println!("  Warning: Invalid OID format");
         }
     }
 }

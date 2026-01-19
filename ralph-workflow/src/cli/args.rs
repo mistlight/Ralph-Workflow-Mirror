@@ -340,6 +340,9 @@ pub struct CommitPlumbingFlags {
 }
 
 /// Commit display plumbing flags.
+///
+/// This groups flags for displaying commit-related information.
+/// Note: The handler for `show_baseline` is in `cli/handlers/baseline.rs`.
 #[derive(Parser, Debug, Default)]
 pub struct CommitDisplayFlags {
     /// Show the generated commit message and exit
@@ -355,6 +358,7 @@ pub struct CommitDisplayFlags {
     pub reset_start_commit: bool,
 
     /// Show the current baseline state and exit
+    /// Handler: `cli/handlers/baseline.rs::handle_show_baseline()`
     #[arg(long, help = "Show current review baseline and start commit state")]
     pub show_baseline: bool,
 }

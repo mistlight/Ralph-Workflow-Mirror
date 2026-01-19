@@ -420,8 +420,8 @@ fn get_diff_stats(repo: &git2::Repository, baseline_oid: &Option<String>) -> io:
     // Count lines added/deleted
     for (blob_id, is_new_or_modified) in delta_ids {
         if let Ok(blob) = repo.find_blob(blob_id) {
-            let content = blob.content();
-            let line_count = content.iter().filter(|&&c| c == b'\n').count() + 1;
+            let content = std::str::from_utf8(blob.content());
+            let line_count = content.map(|s| s.lines().count()).unwrap_or(0);
 
             if is_new_or_modified {
                 stats.lines_added += line_count;
