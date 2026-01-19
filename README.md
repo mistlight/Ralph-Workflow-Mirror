@@ -16,7 +16,9 @@ For major changes, create a RFC.
 # Ralph Workflow
 
 Ralph Workflow is an external (lives outside of the AI Agent) agent orchestrator meant mostly for unattended sessions over a long period of time.
-It is not meant to be babysat as long as you can write a detailed spec file, unlike most active agent orchestrators.
+It is not meant to be babysat as long as you can write a detailed spec file, unlike most active agent orchestrator. Due to it's unattended nature, ralph will not
+ask you for clarification if there is any ambiguity like a lot of active interactive AI agents. You will have to provide enough context in your PROMPT.md to ensure
+that ralph can fully complete the work without additional input or it will be forced to make assumptions that you may or may not agree with.
 It is inspired by the idea of Ralph by [Geoffrey Huntley](https://ghuntley.com/ralph/).
 
 I started this project as a side project with a bunch of shell scripts while working on my main project testing out the concept, but then I decided that I want it working on separate parts of the project like different worktrees. As a result, this became increasingly complex and I changed it to Rust (no, this isn't one of those rewrite-everything-in-Rust stories; shell scripts genuinely do not scale well in big codebases).
@@ -35,6 +37,7 @@ Ralph Workflow works best if you think like a Product Manager and can scope out 
 
 * Use Claude Code subscription if you have the 20x max plan, but even that will only give you like 2–3 days worth. I actually think GLM is probably best suited for this.
 * Codex is very much recommended as the reviewing agent; I personally had the most success using Codex as the reviewing agent.
+* Make sure your PROMPT.md is through, I can't emphasize this enough. The AI agent will not ask you for clarification and will be forced to make assumptions due to it's unattended nature. Hence you really need to be through with your product specification, feature specs, and so on. Any ambiguity means the AI agent will be forced to make a decision without your input.
 
 ## Design Philosophy
 
