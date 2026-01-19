@@ -512,13 +512,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
-        run_initial_rebase(
-            &ctx.args,
-            &config,
-            &ctx.template_context,
-            &ctx.logger,
-            ctx.colors,
-        )?;
+        run_initial_rebase(ctx)?;
     }
 
     // Run pipeline phases
@@ -531,13 +525,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Run post-review rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
-        run_post_review_rebase(
-            &ctx.args,
-            &config,
-            &ctx.template_context,
-            &ctx.logger,
-            ctx.colors,
-        )?;
+        run_post_review_rebase(ctx)?;
     }
 
     update_status("In progress.", config.isolation_mode)?;
@@ -1043,69 +1031,77 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 ///
 /// This function is called before the development phase starts to ensure
 /// the feature branch is up-to-date with the default branch.
-fn run_initial_rebase(
-    _args: &Args,
-    config: &crate::config::Config,
-    template_context: &TemplateContext,
-    logger: &Logger,
-    colors: Colors,
-) -> anyhow::Result<()> {
-    logger.header("Pre-development rebase", Colors::cyan);
+fn run_initial_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
+    ctx.logger.header("Pre-development rebase", Colors::cyan);
 
     // Save checkpoint at start of pre-rebase phase
-    if config.features.checkpoint_enabled {
+    if ctx.config.features.checkpoint_enabled {
         let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
-        let mut checkpoint = PipelineCheckpoint::new_minimal(
-            PipelinePhase::PreRebase,
-            0,
-            config.developer_iters,
-            0,
-            config.reviewer_reviews,
-            "developer", // Placeholder - will be overwritten by next phase
-            "reviewer",
-        );
-        checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
-            upstream_branch: default_branch,
-        };
-        let _ = save_checkpoint(&checkpoint);
+        if let Some(mut checkpoint) = CheckpointBuilder::new()
+            .phase(PipelinePhase::PreRebase, 0, ctx.config.developer_iters)
+            .reviewer_pass(0, ctx.config.reviewer_reviews)
+            .capture_from_context(
+                &ctx.config,
+                &ctx.registry,
+                &ctx.developer_agent,
+                &ctx.reviewer_agent,
+                &ctx.logger,
+            )
+            .build()
+        {
+            checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
+                upstream_branch: default_branch,
+            };
+            let _ = save_checkpoint(&checkpoint);
+        }
     }
 
-    match run_rebase_to_default(logger, colors) {
+    match run_rebase_to_default(&ctx.logger, ctx.colors) {
         Ok(RebaseResult::Success) => {
-            logger.success("Rebase completed successfully");
+            ctx.logger.success("Rebase completed successfully");
             Ok(())
         }
         Ok(RebaseResult::NoOp) => {
-            logger.info("No rebase needed (already up-to-date or on main branch)");
+            ctx.logger
+                .info("No rebase needed (already up-to-date or on main branch)");
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
             // Get the actual conflicted files
             let conflicted_files = get_conflicted_files()?;
             if conflicted_files.is_empty() {
-                logger.warn("Rebase reported conflicts but no conflicted files found");
+                ctx.logger
+                    .warn("Rebase reported conflicts but no conflicted files found");
                 let _ = abort_rebase();
                 return Ok(());
             }
 
             // Save checkpoint for conflict state
-            if config.features.checkpoint_enabled {
-                let mut checkpoint = PipelineCheckpoint::new_minimal(
-                    PipelinePhase::PreRebaseConflict,
-                    0,
-                    config.developer_iters,
-                    0,
-                    config.reviewer_reviews,
-                    "developer",
-                    "reviewer",
-                );
-                checkpoint.rebase_state = RebaseState::HasConflicts {
-                    files: conflicted_files.clone(),
-                };
-                let _ = save_checkpoint(&checkpoint);
+            if ctx.config.features.checkpoint_enabled {
+                if let Some(mut checkpoint) = CheckpointBuilder::new()
+                    .phase(
+                        PipelinePhase::PreRebaseConflict,
+                        0,
+                        ctx.config.developer_iters,
+                    )
+                    .reviewer_pass(0, ctx.config.reviewer_reviews)
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                    )
+                    .build()
+                {
+                    checkpoint.rebase_state = RebaseState::HasConflicts {
+                        files: conflicted_files.clone(),
+                    };
+                    let _ = save_checkpoint(&checkpoint);
+                }
             }
 
-            logger.warn(&format!(
+            ctx.logger.warn(&format!(
                 "Rebase resulted in {} conflict(s), attempting AI resolution",
                 conflicted_files.len()
             ));
@@ -1113,21 +1109,23 @@ fn run_initial_rebase(
             // Attempt to resolve conflicts with AI
             match try_resolve_conflicts_with_fallback(
                 &conflicted_files,
-                config,
-                template_context,
-                logger,
-                colors,
+                &ctx.config,
+                &ctx.template_context,
+                &ctx.logger,
+                ctx.colors,
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
-                    logger.info("Continuing rebase after conflict resolution");
+                    ctx.logger
+                        .info("Continuing rebase after conflict resolution");
                     match continue_rebase() {
                         Ok(()) => {
-                            logger.success("Rebase completed successfully after AI resolution");
+                            ctx.logger
+                                .success("Rebase completed successfully after AI resolution");
                             Ok(())
                         }
                         Err(e) => {
-                            logger.warn(&format!("Failed to continue rebase: {e}"));
+                            ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
                             let _ = abort_rebase();
                             Ok(()) // Continue anyway - conflicts were resolved
                         }
@@ -1135,19 +1133,21 @@ fn run_initial_rebase(
                 }
                 Ok(false) => {
                     // AI resolution failed
-                    logger.warn("AI conflict resolution failed, aborting rebase");
+                    ctx.logger
+                        .warn("AI conflict resolution failed, aborting rebase");
                     let _ = abort_rebase();
                     Ok(()) // Continue pipeline - don't block on rebase failure
                 }
                 Err(e) => {
-                    logger.error(&format!("Conflict resolution error: {e}"));
+                    ctx.logger.error(&format!("Conflict resolution error: {e}"));
                     let _ = abort_rebase();
                     Ok(()) // Continue pipeline
                 }
             }
         }
         Err(e) => {
-            logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            ctx.logger
+                .warn(&format!("Rebase failed, continuing without rebase: {e}"));
             Ok(())
         }
     }
@@ -1157,69 +1157,81 @@ fn run_initial_rebase(
 ///
 /// This function is called after the review phase completes to ensure
 /// the feature branch is still up-to-date with the default branch.
-fn run_post_review_rebase(
-    _args: &Args,
-    config: &crate::config::Config,
-    template_context: &TemplateContext,
-    logger: &Logger,
-    colors: Colors,
-) -> anyhow::Result<()> {
-    logger.header("Post-review rebase", Colors::cyan);
+fn run_post_review_rebase(ctx: &PipelineContext) -> anyhow::Result<()> {
+    ctx.logger.header("Post-review rebase", Colors::cyan);
 
     // Save checkpoint at start of post-rebase phase
-    if config.features.checkpoint_enabled {
+    if ctx.config.features.checkpoint_enabled {
         let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
-        let mut checkpoint = PipelineCheckpoint::new_minimal(
-            PipelinePhase::PostRebase,
-            config.developer_iters,
-            config.developer_iters,
-            config.reviewer_reviews,
-            config.reviewer_reviews,
-            "developer",
-            "reviewer",
-        );
-        checkpoint.rebase_state = RebaseState::PostRebaseInProgress {
-            upstream_branch: default_branch,
-        };
-        let _ = save_checkpoint(&checkpoint);
+        if let Some(mut checkpoint) = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::PostRebase,
+                ctx.config.developer_iters,
+                ctx.config.developer_iters,
+            )
+            .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+            .capture_from_context(
+                &ctx.config,
+                &ctx.registry,
+                &ctx.developer_agent,
+                &ctx.reviewer_agent,
+                &ctx.logger,
+            )
+            .build()
+        {
+            checkpoint.rebase_state = RebaseState::PostRebaseInProgress {
+                upstream_branch: default_branch,
+            };
+            let _ = save_checkpoint(&checkpoint);
+        }
     }
 
-    match run_rebase_to_default(logger, colors) {
+    match run_rebase_to_default(&ctx.logger, ctx.colors) {
         Ok(RebaseResult::Success) => {
-            logger.success("Rebase completed successfully");
+            ctx.logger.success("Rebase completed successfully");
             Ok(())
         }
         Ok(RebaseResult::NoOp) => {
-            logger.info("No rebase needed (already up-to-date or on main branch)");
+            ctx.logger
+                .info("No rebase needed (already up-to-date or on main branch)");
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
             // Get the actual conflicted files
             let conflicted_files = get_conflicted_files()?;
             if conflicted_files.is_empty() {
-                logger.warn("Rebase reported conflicts but no conflicted files found");
+                ctx.logger
+                    .warn("Rebase reported conflicts but no conflicted files found");
                 let _ = abort_rebase();
                 return Ok(());
             }
 
             // Save checkpoint for conflict state
-            if config.features.checkpoint_enabled {
-                let mut checkpoint = PipelineCheckpoint::new_minimal(
-                    PipelinePhase::PostRebaseConflict,
-                    config.developer_iters,
-                    config.developer_iters,
-                    config.reviewer_reviews,
-                    config.reviewer_reviews,
-                    "developer",
-                    "reviewer",
-                );
-                checkpoint.rebase_state = RebaseState::HasConflicts {
-                    files: conflicted_files.clone(),
-                };
-                let _ = save_checkpoint(&checkpoint);
+            if ctx.config.features.checkpoint_enabled {
+                if let Some(mut checkpoint) = CheckpointBuilder::new()
+                    .phase(
+                        PipelinePhase::PostRebaseConflict,
+                        ctx.config.developer_iters,
+                        ctx.config.developer_iters,
+                    )
+                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                    )
+                    .build()
+                {
+                    checkpoint.rebase_state = RebaseState::HasConflicts {
+                        files: conflicted_files.clone(),
+                    };
+                    let _ = save_checkpoint(&checkpoint);
+                }
             }
 
-            logger.warn(&format!(
+            ctx.logger.warn(&format!(
                 "Rebase resulted in {} conflict(s), attempting AI resolution",
                 conflicted_files.len()
             ));
@@ -1227,21 +1239,23 @@ fn run_post_review_rebase(
             // Attempt to resolve conflicts with AI
             match try_resolve_conflicts_with_fallback(
                 &conflicted_files,
-                config,
-                template_context,
-                logger,
-                colors,
+                &ctx.config,
+                &ctx.template_context,
+                &ctx.logger,
+                ctx.colors,
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
-                    logger.info("Continuing rebase after conflict resolution");
+                    ctx.logger
+                        .info("Continuing rebase after conflict resolution");
                     match continue_rebase() {
                         Ok(()) => {
-                            logger.success("Rebase completed successfully after AI resolution");
+                            ctx.logger
+                                .success("Rebase completed successfully after AI resolution");
                             Ok(())
                         }
                         Err(e) => {
-                            logger.warn(&format!("Failed to continue rebase: {e}"));
+                            ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
                             let _ = abort_rebase();
                             Ok(()) // Continue anyway - conflicts were resolved
                         }
@@ -1249,19 +1263,21 @@ fn run_post_review_rebase(
                 }
                 Ok(false) => {
                     // AI resolution failed
-                    logger.warn("AI conflict resolution failed, aborting rebase");
+                    ctx.logger
+                        .warn("AI conflict resolution failed, aborting rebase");
                     let _ = abort_rebase();
                     Ok(()) // Continue pipeline - don't block on rebase failure
                 }
                 Err(e) => {
-                    logger.error(&format!("Conflict resolution error: {e}"));
+                    ctx.logger.error(&format!("Conflict resolution error: {e}"));
                     let _ = abort_rebase();
                     Ok(()) // Continue pipeline
                 }
             }
         }
         Err(e) => {
-            logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            ctx.logger
+                .warn(&format!("Rebase failed, continuing without rebase: {e}"));
             Ok(())
         }
     }

@@ -178,8 +178,12 @@ pub fn run_review_phase(
 
         // REVIEW PASS
         update_status("Reviewing code", ctx.config.isolation_mode)?;
-        let (review_label, review_prompt) =
-            build_review_prompt(ctx, reviewer_context, ctx.review_guidelines);
+        let (review_label, review_prompt) = build_review_prompt(
+            ctx,
+            reviewer_context,
+            ctx.review_guidelines,
+            resuming_into_review,
+        );
 
         // Check if the review prompt is empty (e.g., due to diff retrieval failure)
         // If so, skip the review and fix passes but still check for git changes

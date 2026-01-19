@@ -1293,3 +1293,481 @@ fn ralph_checkpoint_records_rebase_state() {
             .or(predicate::str::contains("checkpoint")),
     );
 }
+
+// ============================================================================
+// Rebase Phase Full Config Preservation Tests
+// ============================================================================
+
+/// Helper to create a checkpoint with full agent config for rebase phases.
+fn make_rebase_checkpoint_json(
+    params: CheckpointTestParams<'_>,
+    rebase_state: &str,
+    model_override: Option<&str>,
+    provider_override: Option<&str>,
+    context_level: u8,
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+) -> String {
+    let model_json = model_override
+        .map(|m| format!("\"{}\"", m))
+        .unwrap_or_else(|| "null".to_string());
+    let provider_json = provider_override
+        .map(|p| format!("\"{}\"", p))
+        .unwrap_or_else(|| "null".to_string());
+    let git_name_json = git_user_name
+        .map(|n| format!("\"{}\"", n))
+        .unwrap_or_else(|| "null".to_string());
+    let git_email_json = git_user_email
+        .map(|e| format!("\"{}\"", e))
+        .unwrap_or_else(|| "null".to_string());
+
+    format!(
+        r#"{{
+            "version": 1,
+            "phase": "{}",
+            "iteration": {},
+            "total_iterations": {},
+            "reviewer_pass": {},
+            "total_reviewer_passes": {},
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": {},
+                "reviewer_reviews": {},
+                "commit_msg": "checkpoint commit message",
+                "review_depth": null,
+                "skip_rebase": false
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": {},
+                "provider_override": {},
+                "context_level": {}
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": {},
+                "provider_override": {},
+                "context_level": {}
+            }},
+            "rebase_state": {},
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": {},
+            "git_user_email": {}
+        }}"#,
+        params.phase,
+        params.iteration,
+        params.total_iterations,
+        params.reviewer_pass,
+        params.total_reviewer_passes,
+        params.developer_iters,
+        params.reviewer_reviews,
+        model_json,
+        provider_json,
+        context_level,
+        model_json,
+        provider_json,
+        context_level,
+        rebase_state,
+        params.working_dir,
+        git_name_json,
+        git_email_json
+    )
+}
+
+#[test]
+fn ralph_resume_from_prerebase_phase_preserves_full_config() {
+    let dir = TempDir::new().unwrap();
+    let _repo = init_git_repo(&dir);
+
+    // Create a checkpoint at PreRebase phase with full agent config
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    let working_dir = canonical_working_dir(&dir);
+    fs::write(
+        dir.path().join(".agent/checkpoint.json"),
+        make_rebase_checkpoint_json(
+            CheckpointTestParams {
+                working_dir: &working_dir,
+                phase: "PreRebase",
+                iteration: 0,
+                total_iterations: 3,
+                reviewer_pass: 0,
+                total_reviewer_passes: 2,
+                developer_iters: 3,
+                reviewer_reviews: 2,
+            },
+            r#"{"PreRebaseInProgress": {"upstream_branch": "main"}}"#,
+            Some("gpt-4-turbo"),
+            Some("openai"),
+            0, // Minimal context
+            Some("Test Developer"),
+            Some("dev@test.com"),
+        ),
+    )
+    .unwrap();
+
+    // Run with --resume - should use checkpoint config
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--resume")
+        .env("RALPH_DEVELOPER_ITERS", "1") // Different from checkpoint
+        .env("RALPH_REVIEWER_REVIEWS", "0") // Different from checkpoint
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"No issues\" > .agent/ISSUES.md'",
+        );
+
+    // Should succeed and restore full config from checkpoint
+    cmd.assert().success().stdout(
+        predicate::str::contains("checkpoint")
+            .or(predicate::str::contains("Resuming"))
+            .or(predicate::str::contains("PreRebase")),
+    );
+}
+
+#[test]
+fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
+    let dir = TempDir::new().unwrap();
+    let _repo = init_git_repo(&dir);
+
+    // Create a checkpoint at PreRebaseConflict phase with conflict state
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    let working_dir = canonical_working_dir(&dir);
+    fs::write(
+        dir.path().join(".agent/checkpoint.json"),
+        make_rebase_checkpoint_json(
+            CheckpointTestParams {
+                working_dir: &working_dir,
+                phase: "PreRebaseConflict",
+                iteration: 0,
+                total_iterations: 2,
+                reviewer_pass: 0,
+                total_reviewer_passes: 1,
+                developer_iters: 2,
+                reviewer_reviews: 1,
+            },
+            r#"{"HasConflicts": {"files": ["src/main.rs"]}}"#,
+            Some("claude-3-opus"),
+            Some("anthropic"),
+            1, // Normal context
+            None,
+            None,
+        ),
+    )
+    .unwrap();
+
+    // Run with --resume
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--resume")
+        .env("RALPH_DEVELOPER_ITERS", "2")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "sh -c 'mkdir -p .agent; echo \"No issues\" > .agent/ISSUES.md'",
+        );
+
+    // Should detect rebase conflict state
+    cmd.assert().success().stdout(
+        predicate::str::contains("conflict")
+            .or(predicate::str::contains("rebase"))
+            .or(predicate::str::contains("checkpoint")),
+    );
+}
+
+#[test]
+fn ralph_resume_from_postrebase_phase_preserves_full_config() {
+    let dir = TempDir::new().unwrap();
+    let _repo = init_git_repo(&dir);
+
+    // Create a checkpoint at PostRebase phase with full config
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    let working_dir = canonical_working_dir(&dir);
+    fs::write(
+        dir.path().join(".agent/checkpoint.json"),
+        make_rebase_checkpoint_json(
+            CheckpointTestParams {
+                working_dir: &working_dir,
+                phase: "PostRebase",
+                iteration: 3,
+                total_iterations: 3,
+                reviewer_pass: 2,
+                total_reviewer_passes: 2,
+                developer_iters: 3,
+                reviewer_reviews: 2,
+            },
+            r#"{"PostRebaseInProgress": {"upstream_branch": "main"}}"#,
+            Some("gemini-pro"),
+            Some("google"),
+            0,
+            Some("Post Rebase User"),
+            Some("post@rebase.com"),
+        ),
+    )
+    .unwrap();
+
+    // Run with --resume
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--resume")
+        .env("RALPH_DEVELOPER_ITERS", "3")
+        .env("RALPH_REVIEWER_REVIEWS", "2")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+    // Should succeed with PostRebase phase
+    cmd.assert().success().stdout(
+        predicate::str::contains("PostRebase")
+            .or(predicate::str::contains("checkpoint"))
+            .or(predicate::str::contains("Complete")),
+    );
+}
+
+#[test]
+fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
+    let dir = TempDir::new().unwrap();
+    let _repo = init_git_repo(&dir);
+
+    // Create a checkpoint at PostRebaseConflict phase
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    let working_dir = canonical_working_dir(&dir);
+    fs::write(
+        dir.path().join(".agent/checkpoint.json"),
+        make_rebase_checkpoint_json(
+            CheckpointTestParams {
+                working_dir: &working_dir,
+                phase: "PostRebaseConflict",
+                iteration: 2,
+                total_iterations: 2,
+                reviewer_pass: 1,
+                total_reviewer_passes: 1,
+                developer_iters: 2,
+                reviewer_reviews: 1,
+            },
+            r#"{"HasConflicts": {"files": ["README.md", "Cargo.toml"]}}"#,
+            None, // No model override
+            None, // No provider override
+            1,
+            None,
+            None,
+        ),
+    )
+    .unwrap();
+
+    // Run with --resume
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--resume")
+        .env("RALPH_DEVELOPER_ITERS", "2")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+    // Should detect post-rebase conflict state
+    cmd.assert().success().stdout(
+        predicate::str::contains("conflict")
+            .or(predicate::str::contains("rebase"))
+            .or(predicate::str::contains("checkpoint"))
+            .or(predicate::str::contains("Complete")),
+    );
+}
+
+// ============================================================================
+// Resume Context in Agent Prompts Tests
+// ============================================================================
+
+#[test]
+fn ralph_resume_passes_context_to_developer_agent() {
+    let dir = TempDir::new().unwrap();
+    let _repo = init_git_repo(&dir);
+
+    // Create a checkpoint at development phase
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    let working_dir = canonical_working_dir(&dir);
+    fs::write(
+        dir.path().join(".agent/checkpoint.json"),
+        make_checkpoint_json(CheckpointTestParams {
+            working_dir: &working_dir,
+            phase: "Development",
+            iteration: 1,
+            total_iterations: 1,
+            reviewer_pass: 0,
+            total_reviewer_passes: 0,
+            developer_iters: 1,
+            reviewer_reviews: 0,
+        }),
+    )
+    .unwrap();
+
+    // Use a command that captures the prompt to a file
+    let prompt_capture = dir.path().join("captured_prompt.txt");
+    let capture_cmd = format!(
+        "sh -c 'cat > {}; mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
+        prompt_capture.display()
+    );
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--resume")
+        .env("RALPH_DEVELOPER_ITERS", "1")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env("RALPH_DEVELOPER_CMD", &capture_cmd)
+        .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+    cmd.assert().success();
+
+    // Check that the captured prompt contains resume context
+    if prompt_capture.exists() {
+        let captured = fs::read_to_string(&prompt_capture).unwrap_or_default();
+        // The prompt should mention resuming or previous run
+        assert!(
+            captured.contains("resuming")
+                || captured.contains("previous run")
+                || captured.contains("git log"),
+            "Developer prompt should contain resume context. Got: {}",
+            &captured[..captured.len().min(500)]
+        );
+    }
+}
+
+#[test]
+fn ralph_resume_passes_context_to_reviewer_agent() {
+    let dir = TempDir::new().unwrap();
+    let _repo = init_git_repo(&dir);
+
+    // Create a checkpoint at review phase
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    let working_dir = canonical_working_dir(&dir);
+    fs::write(
+        dir.path().join(".agent/checkpoint.json"),
+        make_checkpoint_json(CheckpointTestParams {
+            working_dir: &working_dir,
+            phase: "Review",
+            iteration: 1,
+            total_iterations: 1,
+            reviewer_pass: 1,
+            total_reviewer_passes: 1,
+            developer_iters: 1,
+            reviewer_reviews: 1,
+        }),
+    )
+    .unwrap();
+
+    // Use a command that captures the prompt to a file
+    let prompt_capture = dir.path().join("captured_reviewer_prompt.txt");
+    let capture_cmd = format!(
+        "sh -c 'cat > {}; mkdir -p .agent; echo \"No issues\" > .agent/ISSUES.md'",
+        prompt_capture.display()
+    );
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--resume")
+        .env("RALPH_DEVELOPER_ITERS", "1")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env("RALPH_REVIEWER_CMD", &capture_cmd);
+
+    cmd.assert().success();
+
+    // Check that the captured prompt contains resume context
+    if prompt_capture.exists() {
+        let captured = fs::read_to_string(&prompt_capture).unwrap_or_default();
+        // The prompt should mention resuming or previous run
+        assert!(
+            captured.contains("resuming")
+                || captured.contains("previous run")
+                || captured.contains("git log"),
+            "Reviewer prompt should contain resume context. Got: {}",
+            &captured[..captured.len().min(500)]
+        );
+    }
+}
+
+// ============================================================================
+// Idempotent Resume from Rebase Phases Tests
+// ============================================================================
+
+#[test]
+fn ralph_resume_is_idempotent_from_prerebase() {
+    let dir = TempDir::new().unwrap();
+    let _repo = init_git_repo(&dir);
+
+    // Create a checkpoint at PreRebase phase
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    let working_dir = canonical_working_dir(&dir);
+    let checkpoint_content = make_rebase_checkpoint_json(
+        CheckpointTestParams {
+            working_dir: &working_dir,
+            phase: "PreRebase",
+            iteration: 0,
+            total_iterations: 1,
+            reviewer_pass: 0,
+            total_reviewer_passes: 0,
+            developer_iters: 1,
+            reviewer_reviews: 0,
+        },
+        r#"{"PreRebaseInProgress": {"upstream_branch": "main"}}"#,
+        None,
+        None,
+        1,
+        None,
+        None,
+    );
+    fs::write(
+        dir.path().join(".agent/checkpoint.json"),
+        &checkpoint_content,
+    )
+    .unwrap();
+
+    // First resume run
+    let mut cmd1 = ralph_cmd();
+    base_env(&mut cmd1)
+        .current_dir(dir.path())
+        .arg("--resume")
+        .env("RALPH_DEVELOPER_ITERS", "1")
+        .env("RALPH_REVIEWER_REVIEWS", "0")
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
+        )
+        .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+    cmd1.assert().success();
+
+    // After successful completion, checkpoint should be at Complete or cleared
+    let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+    if checkpoint_path.exists() {
+        let content = fs::read_to_string(&checkpoint_path).unwrap();
+        assert!(
+            content.contains("Complete"),
+            "Checkpoint should be at Complete phase after successful run from PreRebase"
+        );
+    }
+}

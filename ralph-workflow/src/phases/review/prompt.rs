@@ -76,6 +76,7 @@ pub fn build_review_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
     guidelines: Option<&ReviewGuidelines>,
+    is_resume: bool,
 ) -> (String, String) {
     let diff_result = get_and_validate_diff(ctx);
 
@@ -85,22 +86,34 @@ pub fn build_review_prompt(
         ctx.config.features.force_universal_prompt,
     );
 
-    if use_universal {
-        return build_universal_prompt(ctx, reviewer_context, diff_result);
-    }
+    let (label, prompt) = if use_universal {
+        build_universal_prompt(ctx, reviewer_context, diff_result)
+    } else {
+        match ctx.config.review_depth {
+            ReviewDepth::Security => {
+                build_security_prompt(ctx, reviewer_context, guidelines, diff_result)
+            }
+            ReviewDepth::Incremental => {
+                build_incremental_prompt(ctx, reviewer_context, diff_result)
+            }
+            ReviewDepth::Comprehensive => {
+                build_comprehensive_prompt(ctx, reviewer_context, guidelines, diff_result)
+            }
+            ReviewDepth::Standard => {
+                build_standard_prompt(ctx, reviewer_context, guidelines, diff_result)
+            }
+        }
+    };
 
-    match ctx.config.review_depth {
-        ReviewDepth::Security => {
-            build_security_prompt(ctx, reviewer_context, guidelines, diff_result)
-        }
-        ReviewDepth::Incremental => build_incremental_prompt(ctx, reviewer_context, diff_result),
-        ReviewDepth::Comprehensive => {
-            build_comprehensive_prompt(ctx, reviewer_context, guidelines, diff_result)
-        }
-        ReviewDepth::Standard => {
-            build_standard_prompt(ctx, reviewer_context, guidelines, diff_result)
-        }
-    }
+    // Prepend resume note if this is a resumed session
+    let prompt = if is_resume {
+        let resume_note = "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history. You can check 'git log' for context about what was done before.\n\n";
+        format!("{}{}", resume_note, prompt)
+    } else {
+        prompt
+    };
+
+    (label, prompt)
 }
 
 /// Build the universal/simplified review prompt.

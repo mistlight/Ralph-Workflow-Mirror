@@ -395,61 +395,6 @@ impl PipelineCheckpoint {
         }
         self
     }
-
-    /// Create a checkpoint with minimal information (for backward compatibility).
-    ///
-    /// This is a convenience function for creating checkpoints when you don't
-    /// have all the enhanced state information. It uses default values for
-    /// the new fields.
-    ///
-    /// # Deprecated
-    ///
-    /// Use `CheckpointBuilder` instead for better control over checkpoint state.
-    pub fn new_minimal(
-        phase: PipelinePhase,
-        iteration: u32,
-        total_iterations: u32,
-        reviewer_pass: u32,
-        total_reviewer_passes: u32,
-        developer_agent: &str,
-        reviewer_agent: &str,
-    ) -> Self {
-        Self {
-            version: CHECKPOINT_VERSION,
-            phase,
-            iteration,
-            total_iterations,
-            reviewer_pass,
-            total_reviewer_passes,
-            timestamp: timestamp(),
-            developer_agent: developer_agent.to_string(),
-            reviewer_agent: reviewer_agent.to_string(),
-            cli_args: CliArgsSnapshot::new(0, 0, String::new(), None, false),
-            developer_agent_config: AgentConfigSnapshot::new(
-                developer_agent.to_string(),
-                String::new(),
-                String::new(),
-                None,
-                false,
-            ),
-            reviewer_agent_config: AgentConfigSnapshot::new(
-                reviewer_agent.to_string(),
-                String::new(),
-                String::new(),
-                None,
-                false,
-            ),
-            rebase_state: RebaseState::default(),
-            config_path: None,
-            config_checksum: None,
-            working_dir: std::env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default(),
-            prompt_md_checksum: None,
-            git_user_name: None,
-            git_user_email: None,
-        }
-    }
 }
 
 /// Legacy checkpoint format (for backward compatibility).
