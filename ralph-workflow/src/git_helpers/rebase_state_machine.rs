@@ -65,6 +65,10 @@ impl RebaseStateMachine {
     /// If a checkpoint exists, this will resume from that state.
     /// Otherwise, creates a new state machine.
     ///
+    /// This method handles corrupted checkpoints by:
+    /// - Attempting to load backup checkpoint
+    /// - Creating a fresh state if checkpoint is completely corrupted
+    ///
     /// # Arguments
     ///
     /// * `upstream_branch` - The branch to rebase onto (used if no checkpoint exists)
@@ -74,19 +78,89 @@ impl RebaseStateMachine {
     /// Returns `Ok(state_machine)` if successful, or an error if loading fails.
     pub fn load_or_create(upstream_branch: String) -> io::Result<Self> {
         if rebase_checkpoint_exists() {
-            let checkpoint = load_rebase_checkpoint()?.ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "Checkpoint file exists but could not be loaded",
-                )
-            })?;
-            Ok(Self {
-                checkpoint,
-                max_recovery_attempts: DEFAULT_MAX_RECOVERY_ATTEMPTS,
-            })
+            // Try to load the primary checkpoint
+            match load_rebase_checkpoint() {
+                Ok(Some(checkpoint)) => {
+                    // Successfully loaded checkpoint
+                    Ok(Self {
+                        checkpoint,
+                        max_recovery_attempts: DEFAULT_MAX_RECOVERY_ATTEMPTS,
+                    })
+                }
+                Ok(None) => {
+                    // Checkpoint file exists but is empty - try backup or create fresh
+                    Self::try_load_backup_or_create(upstream_branch)
+                }
+                Err(e) => {
+                    // Checkpoint is corrupted - try backup or create fresh
+                    // Log the error but attempt recovery
+                    eprintln!("Warning: Failed to load checkpoint: {e}. Attempting recovery...");
+
+                    match Self::try_load_backup_or_create(upstream_branch.clone()) {
+                        Ok(sm) => {
+                            // Backup loaded or fresh state created - clear corrupted checkpoint
+                            let _ = clear_rebase_checkpoint();
+                            Ok(sm)
+                        }
+                        Err(backup_err) => {
+                            // Even backup failed - return original error with context
+                            Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                format!(
+                                    "Failed to load checkpoint ({e}) and backup ({backup_err}). \
+                                     Manual intervention may be required."
+                                ),
+                            ))
+                        }
+                    }
+                }
+            }
         } else {
             Ok(Self::new(upstream_branch))
         }
+    }
+
+    /// Try to load a backup checkpoint or create a fresh state machine.
+    ///
+    /// This is called when the primary checkpoint cannot be loaded.
+    ///
+    /// # Arguments
+    ///
+    /// * `upstream_branch` - The branch to rebase onto
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(state_machine)` with either backup loaded or fresh state.
+    fn try_load_backup_or_create(upstream_branch: String) -> io::Result<Self> {
+        use super::rebase_checkpoint::rebase_checkpoint_backup_path;
+
+        let backup_path = rebase_checkpoint_backup_path();
+
+        // Check if backup exists
+        if Path::new(&backup_path).exists() {
+            // Try to load the backup checkpoint directly
+            match fs::read_to_string(&backup_path) {
+                Ok(content) => match serde_json::from_str::<RebaseCheckpoint>(&content) {
+                    Ok(checkpoint) => {
+                        eprintln!("Successfully recovered from backup checkpoint");
+                        return Ok(Self {
+                            checkpoint,
+                            max_recovery_attempts: DEFAULT_MAX_RECOVERY_ATTEMPTS,
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("Backup checkpoint is also corrupted: {e}");
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to read backup checkpoint file: {e}");
+                }
+            }
+        }
+
+        // No backup available or backup is corrupted - create fresh state
+        eprintln!("Creating fresh state machine (checkpoint data lost)");
+        Ok(Self::new(upstream_branch))
     }
 
     /// Set the maximum number of recovery attempts.

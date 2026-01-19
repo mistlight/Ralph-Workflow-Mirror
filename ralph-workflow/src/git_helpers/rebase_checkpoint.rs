@@ -27,17 +27,7 @@ pub fn rebase_checkpoint_path() -> String {
 ///
 /// The backup is stored in `.agent/rebase_checkpoint.json.bak`
 /// and is used for corruption recovery.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn rebase_checkpoint_backup_path() -> String {
-    format!("{AGENT_DIR}/{REBASE_CHECKPOINT_FILE}.bak")
-}
-
-/// Get the rebase checkpoint backup file path.
-///
-/// The backup is stored in `.agent/rebase_checkpoint.json.bak`
-/// and is used for corruption recovery.
-#[cfg(not(any(test, feature = "test-utils")))]
-fn rebase_checkpoint_backup_path() -> String {
     format!("{AGENT_DIR}/{REBASE_CHECKPOINT_FILE}.bak")
 }
 
