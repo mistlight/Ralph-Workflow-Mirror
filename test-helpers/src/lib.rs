@@ -1,3 +1,4 @@
+use git2::build::CheckoutBuilder;
 use git2::{IndexAddOption, Oid, Repository, Signature, Status, StatusOptions};
 use std::fs;
 use std::path::Path;
@@ -194,6 +195,167 @@ pub fn stage_all(repo: &Repository) {
         .add_all(["."], IndexAddOption::DEFAULT, None)
         .expect("add_all");
     index.write().expect("write index");
+}
+
+/// Checkout a commit, updating HEAD, index, and working directory.
+///
+/// This function properly checks out a commit, ensuring:
+/// - HEAD is updated to point to the commit
+/// - The index is updated with the commit's tree
+/// - The working directory is updated to match the commit
+///
+/// # Arguments
+///
+/// * `repo` - The git repository
+/// * `commit_oid` - The OID of the commit to checkout
+///
+/// # Panics
+///
+/// - If the commit cannot be found
+/// - If checkout fails
+/// - If setting HEAD fails
+pub fn checkout_commit(repo: &Repository, commit_oid: Oid) {
+    let commit = repo
+        .find_commit(commit_oid)
+        .expect("find commit for checkout");
+
+    // Create a checkout builder that forces update and removes untracked files
+    let mut checkout_builder = CheckoutBuilder::new();
+    checkout_builder
+        .force()
+        .remove_untracked(true)
+        .remove_ignored(true);
+
+    repo.checkout_tree(commit.as_object(), Some(&mut checkout_builder))
+        .expect("checkout tree");
+
+    repo.set_head(&detached_head(commit_oid)).expect("set HEAD");
+}
+
+/// Checkout a branch by name, updating HEAD, index, and working directory.
+///
+/// This function properly checks out a branch, ensuring:
+/// - HEAD is updated to point to the branch
+/// - The index is updated with the branch's tree
+/// - The working directory is updated to match the branch
+///
+/// # Arguments
+///
+/// * `repo` - The git repository
+/// * `branch_name` - The name of the branch to checkout (e.g., "main", "feature")
+///
+/// # Panics
+///
+/// - If the branch cannot be found
+/// - If checkout fails
+/// - If setting HEAD fails
+pub fn checkout_branch(repo: &Repository, branch_name: &str) {
+    let branch_ref = format!("refs/heads/{}", branch_name);
+    let obj = repo
+        .revparse_single(&branch_ref)
+        .expect("find branch for checkout");
+    let commit = obj.peel_to_commit().expect("peel to commit");
+
+    // Create a checkout builder that forces update and removes untracked files
+    let mut checkout_builder = CheckoutBuilder::new();
+    checkout_builder
+        .force()
+        .remove_untracked(true)
+        .remove_ignored(true);
+
+    repo.checkout_tree(commit.as_object(), Some(&mut checkout_builder))
+        .expect("checkout tree");
+
+    repo.set_head(&branch_ref).expect("set HEAD");
+}
+
+/// Get the detached HEAD reference for an OID.
+fn detached_head(oid: Oid) -> String {
+    format!("{}", oid)
+}
+
+/// Commit all staged changes using git CLI.
+///
+/// This function uses `git commit` to create a commit with all staged changes.
+/// It's useful when working with git CLI operations (like `git mv`, `git rm`)
+/// to ensure the index state is consistent.
+///
+/// # Arguments
+///
+/// * `dir` - The repository directory
+/// * `message` - The commit message
+///
+/// # Panics
+///
+/// - If git commit fails
+pub fn git_commit_all(dir: &Path, message: &str) {
+    use std::process::Command;
+
+    let status = Command::new("git")
+        .args(["commit", "-m", message])
+        .current_dir(dir)
+        .status()
+        .expect("git commit should execute");
+    assert!(status.success(), "git commit should succeed");
+}
+
+/// Switch to a branch using git CLI, ensuring working directory is updated.
+///
+/// This function uses `git switch` to change branches, which properly updates
+/// the working directory. It's more reliable than `git checkout` for tests
+/// that mix libgit2 and git CLI operations.
+///
+/// # Arguments
+///
+/// * `dir` - The repository directory
+/// * `branch_name` - The name of the branch to switch to
+///
+/// # Panics
+///
+/// - If git switch fails
+pub fn git_switch(dir: &Path, branch_name: &str) {
+    use std::process::Command;
+
+    let status = Command::new("git")
+        .args(["switch", branch_name])
+        .current_dir(dir)
+        .status()
+        .expect("git switch should execute");
+    assert!(status.success(), "git switch should succeed");
+}
+
+/// Switch to a branch using git CLI with force checkout of working directory.
+///
+/// This function uses low-level git commands to ensure the working directory
+/// is fully synchronized before switching branches. This is useful when the
+/// index and working directory are out of sync due to mixing libgit2 and
+/// git CLI operations.
+///
+/// # Arguments
+///
+/// * `dir` - The repository directory
+/// * `branch_name` - The name of the branch to switch to
+///
+/// # Panics
+///
+/// - If git commands fail
+pub fn git_switch_force(dir: &Path, branch_name: &str) {
+    use std::process::Command;
+
+    // Use checkout-index -f -a to force refresh all files from the index
+    let _ = Command::new("git")
+        .args(["checkout-index", "-f", "-a"])
+        .current_dir(dir)
+        .status()
+        .expect("git checkout-index should execute");
+
+    // Switch to the target branch
+    let status = Command::new("git")
+        .args(["switch", branch_name])
+        .current_dir(dir)
+        .status()
+        .expect("git switch should execute");
+    assert!(status.success(), "git switch should succeed");
 }
 
 /// Global mutex for tests that modify the current working directory.

@@ -10,8 +10,11 @@
 //! - Reference update failures
 
 use std::fs;
+use std::process::Command;
 use tempfile::TempDir;
-use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
+use test_helpers::{
+    commit_all, git_commit_all, git_switch_force, init_git_repo, with_temp_cwd, write_file,
+};
 
 use ralph_workflow::git_helpers::RebaseResult;
 
@@ -571,33 +574,42 @@ fn rebase_handles_rename_rename_conflicts() {
         write_file(dir.path().join("original.txt"), "original content");
         let _ = commit_all(&repo, "add original file");
 
-        // Create feature branch
+        // Create feature branch and switch to it
         let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
         let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+        git_switch_force(dir.path(), "feature");
 
-        // On feature: rename the file to new_feature.txt
-        fs::remove_file(dir.path().join("original.txt")).unwrap();
+        // On feature: rename the file using git mv
+        let status = Command::new("git")
+            .args(["mv", "original.txt", "new_feature.txt"])
+            .current_dir(dir.path())
+            .status()
+            .expect("git mv should execute");
+        assert!(status.success(), "git mv should succeed");
         write_file(dir.path().join("new_feature.txt"), "feature content");
-        let _ = commit_all(&repo, "rename on feature");
+        git_commit_all(dir.path(), "rename on feature");
 
-        // Go back to default branch
-        let main_obj = repo.revparse_single(&default_branch).unwrap();
-        let main_commit = main_obj.peel_to_commit().unwrap();
-        repo.checkout_tree(main_commit.as_object(), None).unwrap();
-        repo.set_head(&format!("refs/heads/{}", default_branch))
-            .unwrap();
+        // Go back to default branch using git switch with force
+        git_switch_force(dir.path(), &default_branch);
 
-        // On default: rename the same file to new_main.txt
-        fs::remove_file(dir.path().join("original.txt")).unwrap();
+        // Verify the file was restored
+        assert!(
+            dir.path().join("original.txt").exists(),
+            "original.txt should exist after checkout"
+        );
+
+        // On default: rename the same file using git mv
+        let status = Command::new("git")
+            .args(["mv", "original.txt", "new_main.txt"])
+            .current_dir(dir.path())
+            .status()
+            .expect("git mv should execute");
+        assert!(status.success(), "git mv should succeed");
         write_file(dir.path().join("new_main.txt"), "main content");
-        let _ = commit_all(&repo, "rename on main");
+        git_commit_all(dir.path(), "rename on main");
 
-        // Go back to feature
-        let feature_obj = repo.revparse_single("feature").unwrap();
-        let feature_commit = feature_obj.peel_to_commit().unwrap();
-        repo.checkout_tree(feature_commit.as_object(), None)
-            .unwrap();
-        repo.set_head("refs/heads/feature").unwrap();
+        // Go back to feature using git switch with force
+        git_switch_force(dir.path(), "feature");
 
         // Try to rebase - should detect rename/rename conflict
         let result = rebase_onto(&default_branch);
@@ -700,32 +712,41 @@ fn rebase_handles_rename_delete_conflicts() {
         write_file(dir.path().join("rename_me.txt"), "original content");
         let _ = commit_all(&repo, "add file");
 
-        // Create feature branch
+        // Create feature branch and switch to it
         let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
         let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+        git_switch_force(dir.path(), "feature");
 
-        // On feature: rename the file
-        fs::remove_file(dir.path().join("rename_me.txt")).unwrap();
+        // On feature: rename the file using git mv
+        let status = Command::new("git")
+            .args(["mv", "rename_me.txt", "renamed.txt"])
+            .current_dir(dir.path())
+            .status()
+            .expect("git mv should execute");
+        assert!(status.success(), "git mv should succeed");
         write_file(dir.path().join("renamed.txt"), "renamed content");
-        let _ = commit_all(&repo, "rename file");
+        git_commit_all(dir.path(), "rename file");
 
-        // Go back to default branch
-        let main_obj = repo.revparse_single(&default_branch).unwrap();
-        let main_commit = main_obj.peel_to_commit().unwrap();
-        repo.checkout_tree(main_commit.as_object(), None).unwrap();
-        repo.set_head(&format!("refs/heads/{}", default_branch))
-            .unwrap();
+        // Go back to default branch using git switch with force
+        git_switch_force(dir.path(), &default_branch);
 
-        // On default: delete the file
-        fs::remove_file(dir.path().join("rename_me.txt")).unwrap();
-        let _ = commit_all(&repo, "delete file");
+        // Verify the file was restored
+        assert!(
+            dir.path().join("rename_me.txt").exists(),
+            "rename_me.txt should exist after checkout"
+        );
 
-        // Go back to feature
-        let feature_obj = repo.revparse_single("feature").unwrap();
-        let feature_commit = feature_obj.peel_to_commit().unwrap();
-        repo.checkout_tree(feature_commit.as_object(), None)
-            .unwrap();
-        repo.set_head("refs/heads/feature").unwrap();
+        // On default: delete the file using git rm
+        let status = Command::new("git")
+            .args(["rm", "rename_me.txt"])
+            .current_dir(dir.path())
+            .status()
+            .expect("git rm should execute");
+        assert!(status.success(), "git rm should succeed");
+        git_commit_all(dir.path(), "delete file");
+
+        // Go back to feature using git switch with force
+        git_switch_force(dir.path(), "feature");
 
         // Try to rebase - should detect rename/delete conflict
         let result = rebase_onto(&default_branch);
