@@ -1682,29 +1682,69 @@ fn ralph_resume_passes_context_to_reviewer_agent() {
     let dir = TempDir::new().unwrap();
     let _repo = init_git_repo(&dir);
 
-    // Create a checkpoint at review phase
+    // Create a checkpoint at review phase with a custom reviewer command that captures the prompt
     fs::create_dir_all(dir.path().join(".agent")).unwrap();
     let working_dir = canonical_working_dir(&dir);
-    fs::write(
-        dir.path().join(".agent/checkpoint.json"),
-        make_checkpoint_json(CheckpointTestParams {
-            working_dir: &working_dir,
-            phase: "Review",
-            iteration: 1,
-            total_iterations: 1,
-            reviewer_pass: 1,
-            total_reviewer_passes: 1,
-            developer_iters: 1,
-            reviewer_reviews: 1,
-        }),
-    )
-    .unwrap();
+    let prompt_capture = dir.path().join(".captured_reviewer_prompt.txt");
 
-    // Use a command that captures the prompt to a file
-    // Note: Prompts are passed as command-line arguments, not via stdin
-    let prompt_capture = dir.path().join("captured_reviewer_prompt.txt");
+    // Build checkpoint with custom reviewer command
+    let checkpoint_json = format!(
+        r#"{{
+            "version": 1,
+            "phase": "Review",
+            "iteration": 1,
+            "total_iterations": 1,
+            "reviewer_pass": 1,
+            "total_reviewer_passes": 1,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 1,
+                "reviewer_reviews": 1,
+                "commit_msg": "checkpoint commit message",
+                "review_depth": null,
+                "skip_rebase": false
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null
+        }}"#,
+        working_dir
+    );
+
+    fs::write(dir.path().join(".agent/checkpoint.json"), checkpoint_json).unwrap();
+
+    // Pre-create ISSUES.md with valid content to avoid parse errors
+    fs::write(dir.path().join(".agent/ISSUES.md"), "No issues found.\n").unwrap();
+
+    // Use a command that captures the prompt to a file and outputs valid review content
     let capture_cmd = format!(
-        "sh -c 'echo \"$1\" > {}; mkdir -p .agent; echo \"No issues\" > .agent/ISSUES.md' sh",
+        "sh -c 'echo \"$1\" > {}; echo \"No issues found.\"' sh",
         prompt_capture.display()
     );
 
