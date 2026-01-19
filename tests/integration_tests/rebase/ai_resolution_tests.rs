@@ -572,9 +572,7 @@ fn test_stale_lock_is_cleaned_up() {
 /// conflict verification, not JSON parsing.
 #[test]
 fn test_conflict_resolution_continues_without_json() {
-    use ralph_workflow::git_helpers::{
-        abort_rebase, get_conflicted_files, git_add_all,
-    };
+    use ralph_workflow::git_helpers::{abort_rebase, get_conflicted_files, git_add_all};
 
     with_temp_cwd(|dir| {
         let repo = init_repo_with_initial_commit(dir);

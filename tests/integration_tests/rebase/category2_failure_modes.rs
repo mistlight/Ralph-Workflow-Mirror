@@ -828,3 +828,156 @@ fn rebase_handles_symlink_conflicts() {
         let _ = abort_rebase();
     });
 }
+
+#[test]
+fn rebase_handles_line_ending_conflicts() {
+    use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
+
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Configure git to not normalize line endings for this test
+        // This ensures we can create true CRLF vs LF conflicts
+        let _ = std::process::Command::new("git")
+            .args(["config", "core.autocrlf", "false"])
+            .current_dir(dir.path())
+            .output();
+
+        // Create a text file with LF endings
+        let lf_content = "line 1\nline 2\nline 3\n";
+        write_file(dir.path().join("text.txt"), lf_content);
+        let _ = commit_all(&repo, "add text file with LF");
+
+        // Create feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        // Checkout feature branch
+        let obj = repo.revparse_single("feature").unwrap();
+        let commit = obj.peel_to_commit().unwrap();
+        repo.checkout_tree(commit.as_object(), None).unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Modify with CRLF on feature (simulating Windows-style)
+        let crlf_content = "line 1\r\nline 2 modified\r\nline 3\r\n";
+        fs::write(dir.path().join("text.txt"), crlf_content).unwrap();
+        let _ = commit_all(&repo, "modify with CRLF");
+
+        // Go back to default branch
+        let main_obj = repo.revparse_single(&default_branch).unwrap();
+        let main_commit = main_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(main_commit.as_object(), None).unwrap();
+        repo.set_head(&format!("refs/heads/{}", default_branch))
+            .unwrap();
+
+        // Modify with LF on default
+        let lf_modified = "line 1\nline 2 changed differently\nline 3\n";
+        fs::write(dir.path().join("text.txt"), lf_modified).unwrap();
+        let _ = commit_all(&repo, "modify with LF");
+
+        // Go back to feature
+        let feature_obj = repo.revparse_single("feature").unwrap();
+        let feature_commit = feature_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(feature_commit.as_object(), None)
+            .unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Try to rebase - should handle line ending conflicts
+        let result = rebase_onto(&default_branch);
+
+        match result {
+            Ok(RebaseResult::Conflicts(files)) => {
+                // Should detect conflict
+                assert!(!files.is_empty(), "Should have conflict files");
+            }
+            Ok(RebaseResult::Failed(err)) => {
+                // May report conflict error
+                assert!(
+                    err.description().contains("Conflict")
+                        || err.description().contains("conflict")
+                );
+            }
+            Ok(RebaseResult::Success) => {
+                // Git may resolve automatically
+            }
+            _ => {}
+        }
+
+        // Clean up
+        let _ = abort_rebase();
+    });
+}
+
+#[test]
+fn rebase_handles_whitespace_only_conflicts() {
+    use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
+
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Create a text file
+        let content = "line 1\nline 2\nline 3\n";
+        write_file(dir.path().join("text.txt"), content);
+        let _ = commit_all(&repo, "add text file");
+
+        // Create feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        // Checkout feature branch
+        let obj = repo.revparse_single("feature").unwrap();
+        let commit = obj.peel_to_commit().unwrap();
+        repo.checkout_tree(commit.as_object(), None).unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Modify with trailing whitespace
+        let trailing_ws = "line 1   \nline 2\t\nline 3\n";
+        fs::write(dir.path().join("text.txt"), trailing_ws).unwrap();
+        let _ = commit_all(&repo, "add trailing whitespace");
+
+        // Go back to default branch
+        let main_obj = repo.revparse_single(&default_branch).unwrap();
+        let main_commit = main_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(main_commit.as_object(), None).unwrap();
+        repo.set_head(&format!("refs/heads/{}", default_branch))
+            .unwrap();
+
+        // Modify with leading whitespace
+        let leading_ws = "line 1\n  line 2\nline 3\n";
+        fs::write(dir.path().join("text.txt"), leading_ws).unwrap();
+        let _ = commit_all(&repo, "add leading whitespace");
+
+        // Go back to feature
+        let feature_obj = repo.revparse_single("feature").unwrap();
+        let feature_commit = feature_obj.peel_to_commit().unwrap();
+        repo.checkout_tree(feature_commit.as_object(), None)
+            .unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Try to rebase - should handle whitespace conflicts
+        let result = rebase_onto(&default_branch);
+
+        match result {
+            Ok(RebaseResult::Conflicts(files)) => {
+                // Should detect conflict
+                assert!(!files.is_empty(), "Should have conflict files");
+            }
+            Ok(RebaseResult::Failed(err)) => {
+                // May report conflict error
+                assert!(
+                    err.description().contains("Conflict")
+                        || err.description().contains("conflict")
+                );
+            }
+            Ok(RebaseResult::Success) => {
+                // Git may resolve automatically (often with conflict markers)
+            }
+            _ => {}
+        }
+
+        // Clean up
+        let _ = abort_rebase();
+    });
+}

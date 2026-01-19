@@ -660,7 +660,7 @@ mod tests {
                 assert!(Path::new(&lock_path).exists());
 
                 // Leak the lock - it won't be released
-                lock.leak();
+                let _ = lock.leak();
             }
 
             // Lock should still exist after guard is dropped
