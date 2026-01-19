@@ -1,3 +1,23 @@
+//! PLAN workflow integration tests.
+//!
+//! These tests verify the plan workflow functionality.
+//!
+//! Note: Tests that require agent execution (developer_iters > 0) cannot be
+//! properly tested without the AgentExecutor trait infrastructure. Those tests
+//! should be unit tests with mocked executors at the code level.
+//!
+//! These integration tests focus on behavior that doesn't require agent execution.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (exit codes, output)
+//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
+//! - Tests are deterministic and isolated
+
 use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
