@@ -12,7 +12,7 @@
 //! - [`validation`] - Pre-flight and post-flight validation checks
 
 use crate::agents::AgentRole;
-use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase};
 use crate::files::extract_issues;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::git_helpers::{
@@ -98,15 +98,24 @@ pub fn run_review_phase(
     for j in start_pass..=ctx.config.reviewer_reviews {
         // Save checkpoint at start of each iteration
         if ctx.config.features.checkpoint_enabled {
-            let _ = save_checkpoint(&PipelineCheckpoint::new(
-                PipelinePhase::Review,
-                ctx.config.developer_iters,
-                ctx.config.developer_iters,
-                j,
-                ctx.config.reviewer_reviews,
-                ctx.developer_agent,
-                ctx.reviewer_agent,
-            ));
+            if let Some(checkpoint) = CheckpointBuilder::new()
+                .phase(
+                    PipelinePhase::Review,
+                    ctx.config.developer_iters,
+                    ctx.config.developer_iters,
+                )
+                .reviewer_pass(j, ctx.config.reviewer_reviews)
+                .capture_from_context(
+                    ctx.config,
+                    ctx.registry,
+                    ctx.developer_agent,
+                    ctx.reviewer_agent,
+                    ctx.logger,
+                )
+                .build()
+            {
+                let _ = save_checkpoint(&checkpoint);
+            }
         }
 
         ctx.logger.subheader(&format!(

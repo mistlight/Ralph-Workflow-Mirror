@@ -5,6 +5,7 @@
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -15,6 +16,12 @@ const AGENT_DIR: &str = ".agent";
 /// Default checkpoint file name.
 const CHECKPOINT_FILE: &str = "checkpoint.json";
 
+/// Current checkpoint format version.
+///
+/// Increment this when making breaking changes to the checkpoint format.
+/// This allows for future migration logic if needed.
+const CHECKPOINT_VERSION: u32 = 1;
+
 /// Get the checkpoint file path.
 ///
 /// By default, the checkpoint is stored in `.agent/checkpoint.json`
@@ -23,6 +30,142 @@ const CHECKPOINT_FILE: &str = "checkpoint.json";
 /// easier to configure or override in the future if needed.
 fn checkpoint_path() -> String {
     format!("{AGENT_DIR}/{CHECKPOINT_FILE}")
+}
+
+/// Calculate SHA-256 checksum of a file's contents.
+///
+/// Returns None if the file doesn't exist or cannot be read.
+pub(crate) fn calculate_file_checksum(path: &Path) -> Option<String> {
+    let content = fs::read(path).ok()?;
+    let mut hasher = Sha256::new();
+    hasher.update(&content);
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+/// Snapshot of CLI arguments for exact restoration.
+///
+/// Captures all relevant CLI arguments so that resuming a pipeline
+/// uses the exact same configuration as the original run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CliArgsSnapshot {
+    /// Number of developer iterations (-D flag)
+    pub developer_iters: u32,
+    /// Number of reviewer reviews (-R flag)
+    pub reviewer_reviews: u32,
+    /// Commit message for the final commit
+    pub commit_msg: String,
+    /// Review depth level (if specified)
+    pub review_depth: Option<String>,
+    /// Whether to skip automatic rebase
+    pub skip_rebase: bool,
+}
+
+impl CliArgsSnapshot {
+    /// Create a snapshot from CLI argument values.
+    pub fn new(
+        developer_iters: u32,
+        reviewer_reviews: u32,
+        commit_msg: String,
+        review_depth: Option<String>,
+        skip_rebase: bool,
+    ) -> Self {
+        Self {
+            developer_iters,
+            reviewer_reviews,
+            commit_msg,
+            review_depth,
+            skip_rebase,
+        }
+    }
+}
+
+/// Snapshot of agent configuration.
+///
+/// Captures the complete agent configuration to ensure
+/// the exact same agent behavior is used when resuming.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConfigSnapshot {
+    /// Agent name
+    pub name: String,
+    /// Agent command
+    pub cmd: String,
+    /// Output flag for JSON extraction
+    pub output_flag: String,
+    /// YOLO flag (if any)
+    pub yolo_flag: Option<String>,
+    /// Whether this agent can commit
+    pub can_commit: bool,
+}
+
+impl AgentConfigSnapshot {
+    /// Create a snapshot from agent configuration.
+    pub fn new(
+        name: String,
+        cmd: String,
+        output_flag: String,
+        yolo_flag: Option<String>,
+        can_commit: bool,
+    ) -> Self {
+        Self {
+            name,
+            cmd,
+            output_flag,
+            yolo_flag,
+            can_commit,
+        }
+    }
+}
+
+/// Parameters for creating a new checkpoint.
+///
+/// Groups all the parameters needed to create a checkpoint, avoiding
+/// functions with too many individual parameters.
+pub struct CheckpointParams<'a> {
+    /// Current pipeline phase
+    pub phase: PipelinePhase,
+    /// Current developer iteration number
+    pub iteration: u32,
+    /// Total developer iterations configured
+    pub total_iterations: u32,
+    /// Current reviewer pass number
+    pub reviewer_pass: u32,
+    /// Total reviewer passes configured
+    pub total_reviewer_passes: u32,
+    /// Display name of the developer agent
+    pub developer_agent: &'a str,
+    /// Display name of the reviewer agent
+    pub reviewer_agent: &'a str,
+    /// Snapshot of CLI arguments
+    pub cli_args: CliArgsSnapshot,
+    /// Snapshot of developer agent configuration
+    pub developer_agent_config: AgentConfigSnapshot,
+    /// Snapshot of reviewer agent configuration
+    pub reviewer_agent_config: AgentConfigSnapshot,
+    /// Current rebase state
+    pub rebase_state: RebaseState,
+}
+
+/// Rebase state tracking.
+///
+/// Tracks the state of rebase operations to enable
+/// proper recovery from interruptions during rebase.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub enum RebaseState {
+    /// Rebase not started yet
+    #[default]
+    NotStarted,
+    /// Pre-development rebase in progress
+    PreRebaseInProgress { upstream_branch: String },
+    /// Pre-development rebase completed
+    PreRebaseCompleted { commit_oid: String },
+    /// Post-review rebase in progress
+    PostRebaseInProgress { upstream_branch: String },
+    /// Post-review rebase completed
+    PostRebaseCompleted { commit_oid: String },
+    /// Rebase has conflicts that need resolution
+    HasConflicts { files: Vec<String> },
+    /// Rebase failed
+    Failed { error: String },
 }
 
 /// Pipeline phases for checkpoint tracking.
@@ -47,6 +190,14 @@ pub enum PipelinePhase {
     FinalValidation,
     /// Pipeline complete
     Complete,
+    /// Before initial rebase
+    PreRebase,
+    /// During pre-rebase conflict resolution
+    PreRebaseConflict,
+    /// Before post-review rebase
+    PostRebase,
+    /// During post-review conflict resolution
+    PostRebaseConflict,
 }
 
 impl std::fmt::Display for PipelinePhase {
@@ -60,17 +211,28 @@ impl std::fmt::Display for PipelinePhase {
             Self::CommitMessage => write!(f, "Commit Message Generation"),
             Self::FinalValidation => write!(f, "Final Validation"),
             Self::Complete => write!(f, "Complete"),
+            Self::PreRebase => write!(f, "Pre-Rebase"),
+            Self::PreRebaseConflict => write!(f, "Pre-Rebase Conflict"),
+            Self::PostRebase => write!(f, "Post-Rebase"),
+            Self::PostRebaseConflict => write!(f, "Post-Rebase Conflict"),
         }
     }
 }
 
-/// Pipeline checkpoint for resume functionality.
+/// Enhanced pipeline checkpoint for resume functionality.
 ///
-/// Contains all state needed to resume an interrupted pipeline from
-/// where it left off, including iteration counts, agent names, and
-/// the timestamp when the checkpoint was saved.
+/// Contains comprehensive state needed to resume an interrupted pipeline
+/// exactly where it left off, including CLI arguments, agent configurations,
+/// rebase state, and file checksums for validation.
+///
+/// This is inspired by video game save states - capturing the complete
+/// execution context to enable seamless recovery.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineCheckpoint {
+    /// Checkpoint format version (for future compatibility)
+    pub version: u32,
+
+    // === Core pipeline state ===
     /// Current pipeline phase
     pub phase: PipelinePhase,
     /// Current iteration number (for developer iterations)
@@ -81,44 +243,72 @@ pub struct PipelineCheckpoint {
     pub reviewer_pass: u32,
     /// Total reviewer passes configured
     pub total_reviewer_passes: u32,
+
+    // === Metadata ===
     /// Timestamp when checkpoint was saved
     pub timestamp: String,
-    /// Developer agent name
+    /// Developer agent display name
     pub developer_agent: String,
-    /// Reviewer agent name
+    /// Reviewer agent display name
     pub reviewer_agent: String,
+
+    // === Enhanced state capture ===
+    /// CLI argument snapshot
+    pub cli_args: CliArgsSnapshot,
+    /// Developer agent configuration snapshot
+    pub developer_agent_config: AgentConfigSnapshot,
+    /// Reviewer agent configuration snapshot
+    pub reviewer_agent_config: AgentConfigSnapshot,
+    /// Rebase state tracking
+    pub rebase_state: RebaseState,
+
+    // === Validation data ===
+    /// Path to config file used for this run (if any)
+    pub config_path: Option<String>,
+    /// Checksum of config file (for validation on resume)
+    pub config_checksum: Option<String>,
+    /// Working directory when checkpoint was created
+    pub working_dir: String,
+    /// Checksum of PROMPT.md (for validation on resume)
+    pub prompt_md_checksum: Option<String>,
 }
 
 impl PipelineCheckpoint {
-    /// Create a new checkpoint with the given state.
+    /// Create a new checkpoint with comprehensive state capture.
+    ///
+    /// This is the main constructor for creating checkpoints during pipeline execution.
+    /// It captures all necessary state to enable exact restoration of the pipeline.
     ///
     /// # Arguments
     ///
-    /// * `phase` - Current pipeline phase
-    /// * `iteration` - Current developer iteration number
-    /// * `total_iterations` - Total developer iterations configured
-    /// * `reviewer_pass` - Current reviewer pass number
-    /// * `total_reviewer_passes` - Total reviewer passes configured
-    /// * `developer_agent` - Name of the developer agent
-    /// * `reviewer_agent` - Name of the reviewer agent
-    pub fn new(
-        phase: PipelinePhase,
-        iteration: u32,
-        total_iterations: u32,
-        reviewer_pass: u32,
-        total_reviewer_passes: u32,
-        developer_agent: &str,
-        reviewer_agent: &str,
-    ) -> Self {
+    /// * `params` - All checkpoint parameters bundled in a struct
+    pub fn from_params(params: CheckpointParams<'_>) -> Self {
+        // Get current working directory
+        let working_dir = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        // Calculate PROMPT.md checksum if it exists
+        let prompt_md_checksum = calculate_file_checksum(Path::new("PROMPT.md"));
+
         Self {
-            phase,
-            iteration,
-            total_iterations,
-            reviewer_pass,
-            total_reviewer_passes,
+            version: CHECKPOINT_VERSION,
+            phase: params.phase,
+            iteration: params.iteration,
+            total_iterations: params.total_iterations,
+            reviewer_pass: params.reviewer_pass,
+            total_reviewer_passes: params.total_reviewer_passes,
             timestamp: timestamp(),
-            developer_agent: developer_agent.to_string(),
-            reviewer_agent: reviewer_agent.to_string(),
+            developer_agent: params.developer_agent.to_string(),
+            reviewer_agent: params.reviewer_agent.to_string(),
+            cli_args: params.cli_args,
+            developer_agent_config: params.developer_agent_config,
+            reviewer_agent_config: params.reviewer_agent_config,
+            rebase_state: params.rebase_state,
+            config_path: None,     // Will be set by caller if needed
+            config_checksum: None, // Will be set by caller if needed
+            working_dir,
+            prompt_md_checksum,
         }
     }
 
@@ -151,8 +341,140 @@ impl PipelineCheckpoint {
             PipelinePhase::CommitMessage => "Commit message generation".to_string(),
             PipelinePhase::FinalValidation => "Final validation".to_string(),
             PipelinePhase::Complete => "Pipeline complete".to_string(),
+            PipelinePhase::PreRebase => "Pre-development rebase".to_string(),
+            PipelinePhase::PreRebaseConflict => "Pre-rebase conflict resolution".to_string(),
+            PipelinePhase::PostRebase => "Post-review rebase".to_string(),
+            PipelinePhase::PostRebaseConflict => "Post-rebase conflict resolution".to_string(),
         }
     }
+
+    /// Set the config path and calculate its checksum.
+    pub fn with_config(mut self, path: Option<std::path::PathBuf>) -> Self {
+        if let Some(p) = path {
+            self.config_path = Some(p.to_string_lossy().to_string());
+            self.config_checksum = calculate_file_checksum(&p);
+        }
+        self
+    }
+
+    /// Create a checkpoint with minimal information (for backward compatibility).
+    ///
+    /// This is a convenience function for creating checkpoints when you don't
+    /// have all the enhanced state information. It uses default values for
+    /// the new fields.
+    ///
+    /// # Deprecated
+    ///
+    /// Use `CheckpointBuilder` instead for better control over checkpoint state.
+    pub fn new_minimal(
+        phase: PipelinePhase,
+        iteration: u32,
+        total_iterations: u32,
+        reviewer_pass: u32,
+        total_reviewer_passes: u32,
+        developer_agent: &str,
+        reviewer_agent: &str,
+    ) -> Self {
+        Self {
+            version: CHECKPOINT_VERSION,
+            phase,
+            iteration,
+            total_iterations,
+            reviewer_pass,
+            total_reviewer_passes,
+            timestamp: timestamp(),
+            developer_agent: developer_agent.to_string(),
+            reviewer_agent: reviewer_agent.to_string(),
+            cli_args: CliArgsSnapshot::new(0, 0, String::new(), None, false),
+            developer_agent_config: AgentConfigSnapshot::new(
+                developer_agent.to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            ),
+            reviewer_agent_config: AgentConfigSnapshot::new(
+                reviewer_agent.to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            ),
+            rebase_state: RebaseState::default(),
+            config_path: None,
+            config_checksum: None,
+            working_dir: std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            prompt_md_checksum: None,
+        }
+    }
+}
+
+/// Legacy checkpoint format (for backward compatibility).
+///
+/// This represents the old checkpoint format that may exist on disk.
+/// We keep this to allow migration to the new format.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LegacyPipelineCheckpoint {
+    phase: PipelinePhase,
+    iteration: u32,
+    total_iterations: u32,
+    reviewer_pass: u32,
+    total_reviewer_passes: u32,
+    timestamp: String,
+    developer_agent: String,
+    reviewer_agent: String,
+}
+
+/// Try to load a checkpoint, handling both new and legacy formats.
+fn load_checkpoint_with_fallback(
+    content: &str,
+) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
+    // Try new format first
+    if let Ok(checkpoint) = serde_json::from_str::<PipelineCheckpoint>(content) {
+        if checkpoint.version == CHECKPOINT_VERSION {
+            return Ok(checkpoint);
+        }
+    }
+
+    // Try legacy format
+    if let Ok(legacy) = serde_json::from_str::<LegacyPipelineCheckpoint>(content) {
+        // Migrate to new format
+        return Ok(PipelineCheckpoint {
+            version: CHECKPOINT_VERSION,
+            phase: legacy.phase,
+            iteration: legacy.iteration,
+            total_iterations: legacy.total_iterations,
+            reviewer_pass: legacy.reviewer_pass,
+            total_reviewer_passes: legacy.total_reviewer_passes,
+            timestamp: legacy.timestamp,
+            developer_agent: legacy.developer_agent.clone(),
+            reviewer_agent: legacy.reviewer_agent.clone(),
+            cli_args: CliArgsSnapshot::new(0, 0, String::new(), None, false),
+            developer_agent_config: AgentConfigSnapshot::new(
+                legacy.developer_agent.clone(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            ),
+            reviewer_agent_config: AgentConfigSnapshot::new(
+                legacy.reviewer_agent.clone(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            ),
+            rebase_state: RebaseState::default(),
+            config_path: None,
+            config_checksum: None,
+            working_dir: String::new(),
+            prompt_md_checksum: None,
+        });
+    }
+
+    Err("Invalid checkpoint format".into())
 }
 
 /// Get current timestamp in "YYYY-MM-DD HH:MM:SS" format.
@@ -210,6 +532,12 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
 ///
 /// Returns an error if the checkpoint file exists but cannot be read
 /// or contains invalid JSON.
+///
+/// # Note
+///
+/// This function handles both new format (v1) and legacy checkpoints
+/// for backward compatibility. Legacy checkpoints are migrated to the
+/// new format automatically.
 pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
     let checkpoint = checkpoint_path();
     let path = Path::new(&checkpoint);
@@ -218,7 +546,7 @@ pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
     }
 
     let content = fs::read_to_string(path)?;
-    let loaded_checkpoint: PipelineCheckpoint = serde_json::from_str(&content).map_err(|e| {
+    let loaded_checkpoint = load_checkpoint_with_fallback(&content).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Failed to parse checkpoint: {e}"),
@@ -257,6 +585,28 @@ mod tests {
     use super::*;
     use test_helpers::with_temp_cwd;
 
+    /// Helper function to create a checkpoint for testing.
+    fn make_test_checkpoint(phase: PipelinePhase, iteration: u32) -> PipelineCheckpoint {
+        let cli_args = CliArgsSnapshot::new(5, 2, "test commit".to_string(), None, false);
+        let dev_config =
+            AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
+        let rev_config =
+            AgentConfigSnapshot::new("codex".into(), "cmd".into(), "-o".into(), None, true);
+        PipelineCheckpoint::from_params(CheckpointParams {
+            phase,
+            iteration,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            developer_agent: "claude",
+            reviewer_agent: "codex",
+            cli_args,
+            developer_agent_config: dev_config,
+            reviewer_agent_config: rev_config,
+            rebase_state: RebaseState::default(),
+        })
+    }
+
     #[test]
     fn test_timestamp_format() {
         let ts = timestamp();
@@ -284,12 +634,38 @@ mod tests {
             "Final Validation"
         );
         assert_eq!(format!("{}", PipelinePhase::Complete), "Complete");
+        assert_eq!(format!("{}", PipelinePhase::PreRebase), "Pre-Rebase");
+        assert_eq!(
+            format!("{}", PipelinePhase::PreRebaseConflict),
+            "Pre-Rebase Conflict"
+        );
+        assert_eq!(format!("{}", PipelinePhase::PostRebase), "Post-Rebase");
+        assert_eq!(
+            format!("{}", PipelinePhase::PostRebaseConflict),
+            "Post-Rebase Conflict"
+        );
     }
 
     #[test]
-    fn test_checkpoint_new() {
-        let checkpoint =
-            PipelineCheckpoint::new(PipelinePhase::Development, 2, 5, 0, 2, "claude", "codex");
+    fn test_checkpoint_from_params() {
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".to_string(), None, false);
+        let dev_config =
+            AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
+        let rev_config =
+            AgentConfigSnapshot::new("codex".into(), "cmd".into(), "-o".into(), None, true);
+        let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            developer_agent: "claude",
+            reviewer_agent: "codex",
+            cli_args,
+            developer_agent_config: dev_config,
+            reviewer_agent_config: rev_config,
+            rebase_state: RebaseState::default(),
+        });
 
         assert_eq!(checkpoint.phase, PipelinePhase::Development);
         assert_eq!(checkpoint.iteration, 2);
@@ -298,17 +674,40 @@ mod tests {
         assert_eq!(checkpoint.total_reviewer_passes, 2);
         assert_eq!(checkpoint.developer_agent, "claude");
         assert_eq!(checkpoint.reviewer_agent, "codex");
+        assert_eq!(checkpoint.version, CHECKPOINT_VERSION);
         assert!(!checkpoint.timestamp.is_empty());
     }
 
     #[test]
     fn test_checkpoint_description() {
-        let checkpoint =
-            PipelineCheckpoint::new(PipelinePhase::Development, 3, 5, 0, 2, "claude", "codex");
+        let checkpoint = make_test_checkpoint(PipelinePhase::Development, 3);
         assert_eq!(checkpoint.description(), "Development iteration 3/5");
 
-        let checkpoint =
-            PipelineCheckpoint::new(PipelinePhase::ReviewAgain, 5, 5, 2, 3, "claude", "codex");
+        let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
+            phase: PipelinePhase::ReviewAgain,
+            iteration: 5,
+            total_iterations: 5,
+            reviewer_pass: 2,
+            total_reviewer_passes: 3,
+            developer_agent: "claude",
+            reviewer_agent: "codex",
+            cli_args: CliArgsSnapshot::new(5, 3, "test".to_string(), None, false),
+            developer_agent_config: AgentConfigSnapshot::new(
+                "claude".into(),
+                "cmd".into(),
+                "-o".into(),
+                None,
+                true,
+            ),
+            reviewer_agent_config: AgentConfigSnapshot::new(
+                "codex".into(),
+                "cmd".into(),
+                "-o".into(),
+                None,
+                true,
+            ),
+            rebase_state: RebaseState::default(),
+        });
         assert_eq!(checkpoint.description(), "Verification review 2/3");
     }
 
@@ -317,8 +716,7 @@ mod tests {
         with_temp_cwd(|_dir| {
             fs::create_dir_all(".agent").unwrap();
 
-            let checkpoint =
-                PipelineCheckpoint::new(PipelinePhase::Review, 5, 5, 1, 2, "claude", "codex");
+            let checkpoint = make_test_checkpoint(PipelinePhase::Review, 5);
 
             save_checkpoint(&checkpoint).unwrap();
             assert!(checkpoint_exists());
@@ -330,6 +728,7 @@ mod tests {
             assert_eq!(loaded.iteration, 5);
             assert_eq!(loaded.developer_agent, "claude");
             assert_eq!(loaded.reviewer_agent, "codex");
+            assert_eq!(loaded.version, CHECKPOINT_VERSION);
         });
     }
 
@@ -338,8 +737,7 @@ mod tests {
         with_temp_cwd(|_dir| {
             fs::create_dir_all(".agent").unwrap();
 
-            let checkpoint =
-                PipelineCheckpoint::new(PipelinePhase::Development, 1, 5, 0, 2, "claude", "codex");
+            let checkpoint = make_test_checkpoint(PipelinePhase::Development, 1);
 
             save_checkpoint(&checkpoint).unwrap();
             assert!(checkpoint_exists());
@@ -361,16 +759,175 @@ mod tests {
 
     #[test]
     fn test_checkpoint_serialization() {
-        let checkpoint =
-            PipelineCheckpoint::new(PipelinePhase::Fix, 3, 5, 1, 2, "aider", "opencode");
+        let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
+            phase: PipelinePhase::Fix,
+            iteration: 3,
+            total_iterations: 5,
+            reviewer_pass: 1,
+            total_reviewer_passes: 2,
+            developer_agent: "aider",
+            reviewer_agent: "opencode",
+            cli_args: CliArgsSnapshot::new(5, 2, "fix".to_string(), Some("standard".into()), false),
+            developer_agent_config: AgentConfigSnapshot::new(
+                "aider".into(),
+                "aider".into(),
+                "-o".into(),
+                Some("--yes".into()),
+                true,
+            ),
+            reviewer_agent_config: AgentConfigSnapshot::new(
+                "opencode".into(),
+                "opencode".into(),
+                "-o".into(),
+                None,
+                false,
+            ),
+            rebase_state: RebaseState::PreRebaseCompleted {
+                commit_oid: "abc123".into(),
+            },
+        });
 
         let json = serde_json::to_string(&checkpoint).unwrap();
         assert!(json.contains("Fix"));
         assert!(json.contains("aider"));
         assert!(json.contains("opencode"));
+        assert!(json.contains("\"version\":"));
 
         let deserialized: PipelineCheckpoint = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.phase, checkpoint.phase);
         assert_eq!(deserialized.iteration, checkpoint.iteration);
+        assert_eq!(deserialized.cli_args.developer_iters, 5);
+        assert_eq!(deserialized.cli_args.commit_msg, "fix");
+        assert!(matches!(
+            deserialized.rebase_state,
+            RebaseState::PreRebaseCompleted { .. }
+        ));
+    }
+
+    #[test]
+    fn test_cli_args_snapshot() {
+        let snapshot = CliArgsSnapshot::new(
+            10,
+            3,
+            "feat: new feature".to_string(),
+            Some("comprehensive".into()),
+            true,
+        );
+
+        assert_eq!(snapshot.developer_iters, 10);
+        assert_eq!(snapshot.reviewer_reviews, 3);
+        assert_eq!(snapshot.commit_msg, "feat: new feature");
+        assert_eq!(snapshot.review_depth, Some("comprehensive".to_string()));
+        assert!(snapshot.skip_rebase);
+    }
+
+    #[test]
+    fn test_agent_config_snapshot() {
+        let config = AgentConfigSnapshot::new(
+            "test-agent".into(),
+            "/usr/bin/test".into(),
+            "--output".into(),
+            Some("--yolo".into()),
+            false,
+        );
+
+        assert_eq!(config.name, "test-agent");
+        assert_eq!(config.cmd, "/usr/bin/test");
+        assert_eq!(config.output_flag, "--output");
+        assert_eq!(config.yolo_flag, Some("--yolo".to_string()));
+        assert!(!config.can_commit);
+    }
+
+    #[test]
+    fn test_rebase_state() {
+        let state = RebaseState::PreRebaseInProgress {
+            upstream_branch: "main".into(),
+        };
+        assert!(matches!(state, RebaseState::PreRebaseInProgress { .. }));
+
+        let state = RebaseState::Failed {
+            error: "conflict".into(),
+        };
+        assert!(matches!(state, RebaseState::Failed { .. }));
+    }
+
+    #[test]
+    fn test_calculate_file_checksum() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+
+            // Create a test file in current directory (temp cwd)
+            let test_file = Path::new("test.txt");
+            fs::write(&test_file, "test content").unwrap();
+
+            let checksum1 = calculate_file_checksum(test_file);
+            assert!(checksum1.is_some());
+
+            // Same content should give same checksum
+            let checksum2 = calculate_file_checksum(test_file);
+            assert_eq!(checksum1, checksum2);
+
+            // Different content should give different checksum
+            fs::write(&test_file, "different content").unwrap();
+            let checksum3 = calculate_file_checksum(test_file);
+            assert_ne!(checksum1, checksum3);
+
+            // Non-existent file should return None
+            let nonexistent = Path::new("nonexistent.txt");
+            assert!(calculate_file_checksum(nonexistent).is_none());
+        });
+    }
+
+    #[test]
+    fn test_load_checkpoint_preserves_working_dir() {
+        with_temp_cwd(|_dir| {
+            fs::create_dir_all(".agent").unwrap();
+
+            let json = r#"{
+                "version": 1,
+                "phase": "Development",
+                "iteration": 1,
+                "total_iterations": 1,
+                "reviewer_pass": 0,
+                "total_reviewer_passes": 0,
+                "timestamp": "2024-01-01 12:00:00",
+                "developer_agent": "test-agent",
+                "reviewer_agent": "test-agent",
+                "cli_args": {
+                    "developer_iters": 1,
+                    "reviewer_reviews": 0,
+                    "commit_msg": "",
+                    "review_depth": null,
+                    "skip_rebase": false
+                },
+                "developer_agent_config": {
+                    "name": "test-agent",
+                    "cmd": "echo",
+                    "output_flag": "",
+                    "yolo_flag": null,
+                    "can_commit": false
+                },
+                "reviewer_agent_config": {
+                    "name": "test-agent",
+                    "cmd": "echo",
+                    "output_flag": "",
+                    "yolo_flag": null,
+                    "can_commit": false
+                },
+                "rebase_state": "NotStarted",
+                "config_path": null,
+                "config_checksum": null,
+                "working_dir": "/some/other/directory",
+                "prompt_md_checksum": null
+            }"#;
+
+            fs::write(".agent/checkpoint.json", json).unwrap();
+
+            let loaded = load_checkpoint().unwrap().expect("should load checkpoint");
+            assert_eq!(
+                loaded.working_dir, "/some/other/directory",
+                "working_dir should be preserved from JSON"
+            );
+        });
     }
 }

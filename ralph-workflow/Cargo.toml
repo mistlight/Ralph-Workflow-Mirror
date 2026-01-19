@@ -36,6 +36,9 @@ clap_complete = "4.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# SHA-256 checksums for checkpoint validation
+sha2 = "0.10"
+
 # Date/time handling
 chrono = "0.4"
 

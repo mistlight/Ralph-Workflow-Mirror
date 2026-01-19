@@ -28,7 +28,7 @@ use crate::agents::AgentRegistry;
 use crate::app::finalization::finalize_pipeline;
 use crate::app::resume::{phase_rank, should_run_from};
 use crate::banner::print_welcome_banner;
-use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase, RebaseState};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
     handle_list_available_agents, handle_list_providers, handle_show_baseline,
@@ -58,7 +58,7 @@ use config_init::initialize_config;
 use context::PipelineContext;
 use detection::detect_project_stack;
 use plumbing::{handle_apply_commit, handle_generate_commit_msg, handle_show_commit_msg};
-use resume::handle_resume;
+use resume::handle_resume_with_validation;
 use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
@@ -439,13 +439,16 @@ fn setup_git_and_prompt_file(
 
 /// Runs the full development/review/commit pipeline.
 fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
-    // Handle --resume
-    let resume_checkpoint = handle_resume(
+    // Handle --resume with validation
+    let resume_result = handle_resume_with_validation(
         &ctx.args,
+        &ctx.config,
+        &ctx.registry,
         &ctx.logger,
         &ctx.developer_display,
         &ctx.reviewer_display,
     );
+    let resume_checkpoint = resume_result.map(|r| r.checkpoint);
 
     // Set up git helpers and agent phase
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
@@ -817,7 +820,7 @@ fn run_final_validation(
     }
 
     if ctx.config.features.checkpoint_enabled {
-        let _ = save_checkpoint(&PipelineCheckpoint::new(
+        let _ = save_checkpoint(&PipelineCheckpoint::new_minimal(
             PipelinePhase::FinalValidation,
             ctx.config.developer_iters,
             ctx.config.developer_iters,
@@ -982,6 +985,24 @@ fn run_initial_rebase(
 ) -> anyhow::Result<()> {
     logger.header("Pre-development rebase", Colors::cyan);
 
+    // Save checkpoint at start of pre-rebase phase
+    if config.features.checkpoint_enabled {
+        let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
+        let mut checkpoint = PipelineCheckpoint::new_minimal(
+            PipelinePhase::PreRebase,
+            0,
+            config.developer_iters,
+            0,
+            config.reviewer_reviews,
+            "developer", // Placeholder - will be overwritten by next phase
+            "reviewer",
+        );
+        checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
+            upstream_branch: default_branch,
+        };
+        let _ = save_checkpoint(&checkpoint);
+    }
+
     match run_rebase_to_default(logger, colors) {
         Ok(RebaseResult::Success) => {
             logger.success("Rebase completed successfully");
@@ -998,6 +1019,23 @@ fn run_initial_rebase(
                 logger.warn("Rebase reported conflicts but no conflicted files found");
                 let _ = abort_rebase();
                 return Ok(());
+            }
+
+            // Save checkpoint for conflict state
+            if config.features.checkpoint_enabled {
+                let mut checkpoint = PipelineCheckpoint::new_minimal(
+                    PipelinePhase::PreRebaseConflict,
+                    0,
+                    config.developer_iters,
+                    0,
+                    config.reviewer_reviews,
+                    "developer",
+                    "reviewer",
+                );
+                checkpoint.rebase_state = RebaseState::HasConflicts {
+                    files: conflicted_files.clone(),
+                };
+                let _ = save_checkpoint(&checkpoint);
             }
 
             logger.warn(&format!(
@@ -1061,6 +1099,24 @@ fn run_post_review_rebase(
 ) -> anyhow::Result<()> {
     logger.header("Post-review rebase", Colors::cyan);
 
+    // Save checkpoint at start of post-rebase phase
+    if config.features.checkpoint_enabled {
+        let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
+        let mut checkpoint = PipelineCheckpoint::new_minimal(
+            PipelinePhase::PostRebase,
+            config.developer_iters,
+            config.developer_iters,
+            config.reviewer_reviews,
+            config.reviewer_reviews,
+            "developer",
+            "reviewer",
+        );
+        checkpoint.rebase_state = RebaseState::PostRebaseInProgress {
+            upstream_branch: default_branch,
+        };
+        let _ = save_checkpoint(&checkpoint);
+    }
+
     match run_rebase_to_default(logger, colors) {
         Ok(RebaseResult::Success) => {
             logger.success("Rebase completed successfully");
@@ -1077,6 +1133,23 @@ fn run_post_review_rebase(
                 logger.warn("Rebase reported conflicts but no conflicted files found");
                 let _ = abort_rebase();
                 return Ok(());
+            }
+
+            // Save checkpoint for conflict state
+            if config.features.checkpoint_enabled {
+                let mut checkpoint = PipelineCheckpoint::new_minimal(
+                    PipelinePhase::PostRebaseConflict,
+                    config.developer_iters,
+                    config.developer_iters,
+                    config.reviewer_reviews,
+                    config.reviewer_reviews,
+                    "developer",
+                    "reviewer",
+                );
+                checkpoint.rebase_state = RebaseState::HasConflicts {
+                    files: conflicted_files.clone(),
+                };
+                let _ = save_checkpoint(&checkpoint);
             }
 
             logger.warn(&format!(

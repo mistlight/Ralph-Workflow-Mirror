@@ -8,7 +8,7 @@
 //! 4. Optionally runs fast checks
 
 use crate::agents::AgentRole;
-use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase};
 use crate::files::{delete_plan_file, update_status};
 use crate::files::{extract_plan, extract_plan_from_logs_text};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
@@ -81,15 +81,20 @@ pub fn run_development_phase(
 
         // Save checkpoint at start of development phase (if enabled)
         if ctx.config.features.checkpoint_enabled {
-            let _ = save_checkpoint(&PipelineCheckpoint::new(
-                PipelinePhase::Development,
-                i,
-                ctx.config.developer_iters,
-                0,
-                ctx.config.reviewer_reviews,
-                ctx.developer_agent,
-                ctx.reviewer_agent,
-            ));
+            if let Some(checkpoint) = CheckpointBuilder::new()
+                .phase(PipelinePhase::Development, i, ctx.config.developer_iters)
+                .reviewer_pass(0, ctx.config.reviewer_reviews)
+                .capture_from_context(
+                    ctx.config,
+                    ctx.registry,
+                    ctx.developer_agent,
+                    ctx.reviewer_agent,
+                    ctx.logger,
+                )
+                .build()
+            {
+                let _ = save_checkpoint(&checkpoint);
+            }
         }
 
         // Step 2: Execute the PLAN
@@ -188,15 +193,24 @@ pub fn run_development_phase(
 fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
     // Save checkpoint at start of planning phase (if enabled)
     if ctx.config.features.checkpoint_enabled {
-        let _ = save_checkpoint(&PipelineCheckpoint::new(
-            PipelinePhase::Planning,
-            iteration,
-            ctx.config.developer_iters,
-            0,
-            ctx.config.reviewer_reviews,
-            ctx.developer_agent,
-            ctx.reviewer_agent,
-        ));
+        if let Some(checkpoint) = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::Planning,
+                iteration,
+                ctx.config.developer_iters,
+            )
+            .reviewer_pass(0, ctx.config.reviewer_reviews)
+            .capture_from_context(
+                ctx.config,
+                ctx.registry,
+                ctx.developer_agent,
+                ctx.reviewer_agent,
+                ctx.logger,
+            )
+            .build()
+        {
+            let _ = save_checkpoint(&checkpoint);
+        }
     }
 
     ctx.logger.info("Creating plan from PROMPT.md...");

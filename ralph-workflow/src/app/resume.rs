@@ -1,17 +1,45 @@
 //! Resume functionality for pipeline checkpoints.
 //!
-//! This module handles the --resume flag and checkpoint loading logic.
+//! This module handles the --resume flag and checkpoint loading logic,
+//! including validation and state restoration.
 
-use crate::checkpoint::{load_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::agents::AgentRegistry;
+use crate::checkpoint::{load_checkpoint, validate_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::config::Config;
 use crate::logger::Logger;
 
+/// Result of handling resume, containing the checkpoint.
+pub struct ResumeResult {
+    /// The loaded checkpoint.
+    pub checkpoint: PipelineCheckpoint,
+}
+
 /// Handles the --resume flag and loads checkpoint if applicable.
-pub fn handle_resume(
+///
+/// This function loads and validates the checkpoint, providing detailed
+/// feedback about what state is being restored and any configuration changes.
+///
+/// # Arguments
+///
+/// * `args` - CLI arguments
+/// * `config` - Current configuration (for validation comparison)
+/// * `registry` - Agent registry (for agent validation)
+/// * `logger` - Logger for output
+/// * `developer_agent` - Current developer agent name
+/// * `reviewer_agent` - Current reviewer agent name
+///
+/// # Returns
+///
+/// `Some(ResumeResult)` if a valid checkpoint was found and loaded,
+/// `None` if no checkpoint exists or --resume was not specified.
+pub fn handle_resume_with_validation(
     args: &crate::cli::Args,
+    config: &Config,
+    registry: &AgentRegistry,
     logger: &Logger,
     developer_agent: &str,
     reviewer_agent: &str,
-) -> Option<PipelineCheckpoint> {
+) -> Option<ResumeResult> {
     if !args.recovery.resume {
         return None;
     }
@@ -19,10 +47,28 @@ pub fn handle_resume(
     match load_checkpoint() {
         Ok(Some(checkpoint)) => {
             logger.header("RESUME: Loading Checkpoint", crate::logger::Colors::yellow);
-            logger.info(&format!("Resuming from: {}", checkpoint.description()));
-            logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
+            display_checkpoint_summary(&checkpoint, logger);
 
-            // Verify agents match
+            // Validate checkpoint
+            let validation = validate_checkpoint(&checkpoint, config, registry);
+
+            // Display validation results
+            for warning in &validation.warnings {
+                logger.warn(warning);
+            }
+            for error in &validation.errors {
+                logger.error(error);
+            }
+
+            if !validation.is_valid {
+                logger.error("Checkpoint validation failed. Cannot resume.");
+                logger.info(
+                    "Delete .agent/checkpoint.json and start fresh, or fix the issues above.",
+                );
+                return None;
+            }
+
+            // Verify agents match (additional agent-specific warnings)
             if checkpoint.developer_agent != developer_agent {
                 logger.warn(&format!(
                     "Developer agent changed: {} -> {}",
@@ -36,7 +82,7 @@ pub fn handle_resume(
                 ));
             }
 
-            Some(checkpoint)
+            Some(ResumeResult { checkpoint })
         }
         Ok(None) => {
             logger.warn("No checkpoint found. Starting fresh pipeline...");
@@ -49,17 +95,54 @@ pub fn handle_resume(
     }
 }
 
+/// Display a summary of the checkpoint being loaded.
+fn display_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+    logger.info(&format!("Resuming from: {}", checkpoint.description()));
+    logger.info(&format!("Checkpoint saved at: {}", checkpoint.timestamp));
+    logger.info(&format!("Checkpoint version: {}", checkpoint.version));
+
+    // Show iteration progress
+    if checkpoint.total_iterations > 0 {
+        logger.info(&format!(
+            "Development progress: iteration {}/{}",
+            checkpoint.iteration, checkpoint.total_iterations
+        ));
+    }
+    if checkpoint.total_reviewer_passes > 0 {
+        logger.info(&format!(
+            "Review progress: pass {}/{}",
+            checkpoint.reviewer_pass, checkpoint.total_reviewer_passes
+        ));
+    }
+
+    // Show CLI args if available
+    let cli = &checkpoint.cli_args;
+    if cli.developer_iters > 0 || cli.reviewer_reviews > 0 {
+        logger.info(&format!(
+            "Original config: -D {} -R {}",
+            cli.developer_iters, cli.reviewer_reviews
+        ));
+    }
+}
+
 /// Helper to get phase rank for resume logic.
+///
+/// Lower ranks = earlier in pipeline. Used to determine which phases
+/// should run when resuming from a checkpoint.
 pub const fn phase_rank(p: PipelinePhase) -> u8 {
     match p {
         PipelinePhase::Planning => 0,
-        PipelinePhase::Development => 1,
-        PipelinePhase::Review => 2,
-        PipelinePhase::Fix => 3,
-        PipelinePhase::ReviewAgain => 4,
-        PipelinePhase::CommitMessage => 5,
-        PipelinePhase::FinalValidation => 6,
-        PipelinePhase::Complete => 7,
+        PipelinePhase::PreRebase => 1,
+        PipelinePhase::PreRebaseConflict => 2,
+        PipelinePhase::Development => 3,
+        PipelinePhase::Review => 4,
+        PipelinePhase::Fix => 5,
+        PipelinePhase::ReviewAgain => 6,
+        PipelinePhase::PostRebase => 7,
+        PipelinePhase::PostRebaseConflict => 8,
+        PipelinePhase::CommitMessage => 9,
+        PipelinePhase::FinalValidation => 10,
+        PipelinePhase::Complete => 11,
     }
 }
 
