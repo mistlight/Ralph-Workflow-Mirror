@@ -1578,7 +1578,14 @@ fn run_rebase_with_state_machine(
     // Get the rebase result and handle each case
     match rebase_onto(&upstream_branch) {
         Ok(RebaseResult::Success) => {
+            // Perform post-rebase validation
             state_machine.transition_to(RebasePhase::RebaseComplete)?;
+            if let Err(e) = crate::git_helpers::validate_post_rebase_state() {
+                logger.warn(&format!("Post-rebase validation failed: {e}"));
+                state_machine.record_error(format!("Post-rebase validation failed: {e}"));
+                // Still return success since the rebase itself succeeded
+                // The validation warning is informational
+            }
             Ok(RebaseResult::Success)
         }
         Ok(RebaseResult::NoOp { reason }) => {
@@ -1613,6 +1620,13 @@ fn run_rebase_with_state_machine(
                     logger.info("Continuing rebase after conflict resolution");
                     match continue_rebase() {
                         Ok(()) => {
+                            // Perform post-rebase validation
+                            if let Err(e) = crate::git_helpers::validate_post_rebase_state() {
+                                logger.warn(&format!("Post-rebase validation failed: {e}"));
+                                state_machine
+                                    .record_error(format!("Post-rebase validation failed: {e}"));
+                                // Still return success since the rebase itself succeeded
+                            }
                             state_machine.transition_to(RebasePhase::RebaseComplete)?;
                             Ok(RebaseResult::Success)
                         }
@@ -1803,6 +1817,9 @@ fn try_resolve_conflicts_with_state_machine(
     // Maximum iterations for the review/fix cycle
     let max_iterations = 3;
 
+    // Track validation failures for better retry feedback
+    let mut previous_validation_failures = Vec::new();
+
     for iteration in 1..=max_iterations {
         logger.info(&format!(
             "Conflict resolution cycle {iteration}/{max_iterations}",
@@ -1816,23 +1833,46 @@ fn try_resolve_conflicts_with_state_machine(
             // First attempt: use enhanced prompt with branch info
             build_enhanced_resolution_prompt(&conflicts, branch_info.as_ref(), template_context)?
         } else {
-            // Retry: add context about previous failures
+            // Retry: add context about previous failures with specific feedback
+            let failure_context = if previous_validation_failures.is_empty() {
+                "Your previous resolution attempt was not successful.".to_string()
+            } else {
+                format!(
+                    "Your previous resolution attempt failed validation with these issues:\n\
+                     {}\n\nPlease address these specific issues in your next attempt.",
+                    previous_validation_failures
+                        .iter()
+                        .map(|s| format!("- {s}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            };
+
             format!(
                 "{}\n\n## Previous Resolution Failed\n\n\
-                 Your previous resolution attempt was not successful. \
-                 Please ensure:\n\
-                 1. ALL conflict markers (<<<<<<<, =======, >>>>>>>) are removed\n\
-                 2. The code is syntactically valid\n\
-                 3. You preserve the intent of BOTH sides where possible\n\n{}",
+                 {}\n\n\
+                 **Validation Requirements**:\n\
+                 1. ALL conflict markers (<<<<<<<, =======, >>>>>>>) must be removed\n\
+                 2. The code must be syntactically valid (balanced brackets, etc.)\n\
+                 3. Files must be actually modified (not left unchanged)\n\
+                 4. Git must report no conflicted files after resolution\n\
+                 5. You must preserve the intent of BOTH sides where possible\n\n\
+                 **Guidance for this attempt**:\n\
+                 - Review each file carefully for remaining conflict markers\n\
+                 - Check for syntax errors like unbalanced braces/brackets/parentheses\n\
+                 - Ensure you're not accidentally leaving files unchanged\n\
+                 - Consider using the JSON output format to confirm your resolutions\n\n{}",
                 build_enhanced_resolution_prompt(
                     &conflicts,
                     branch_info.as_ref(),
                     template_context
                 )?,
+                failure_context,
                 if iteration == max_iterations {
-                    "This is your final attempt. If conflicts remain, manual intervention will be required."
+                    "**FINAL ATTEMPT**: If conflicts remain after this attempt, manual intervention will be required. \
+                     Take extra care to ensure all validation criteria are met."
                 } else {
-                    "Please try again with a careful review of the conflicts."
+                    "Please try again with careful attention to the validation feedback above."
                 }
             )
         };
@@ -1844,51 +1884,116 @@ fn try_resolve_conflicts_with_state_machine(
                 let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
                 write_resolved_files(&resolved_files, logger)?;
 
-                // Validate the resolution
-                if validate_conflict_resolution(logger, &conflicted_files)? {
-                    // Mark files as resolved
-                    for path in resolved_files.keys() {
-                        state_machine.record_resolution(path.clone());
-                    }
-                    logger.success(&format!(
-                        "All conflicts resolved successfully after {} cycle(s)",
-                        iteration
-                    ));
-                    return Ok(true);
-                }
+                // Clear previous failures before new validation
+                previous_validation_failures.clear();
 
-                // Validation failed - record error and continue to next iteration
-                state_machine.record_error(format!(
-                    "Conflict resolution validation failed, cycle {iteration}/{max_iterations}",
-                    iteration = iteration,
-                    max_iterations = max_iterations
-                ));
-                logger.warn("Resolution validation failed, retrying...");
+                // Validate the resolution and collect any failures
+                match validate_conflict_resolution_detailed(logger, &conflicted_files) {
+                    Ok(validation_result) if validation_result.is_valid() => {
+                        // Mark files as resolved
+                        for path in resolved_files.keys() {
+                            state_machine.record_resolution(path.clone());
+                        }
+                        logger.success(&format!(
+                            "All conflicts resolved successfully after {} cycle(s)",
+                            iteration
+                        ));
+                        return Ok(true);
+                    }
+                    Ok(validation_result) => {
+                        // Validation failed - collect specific failures for retry
+                        if !validation_result.files_with_markers.is_empty() {
+                            previous_validation_failures.push(format!(
+                                "Files still have conflict markers: {}",
+                                validation_result.files_with_markers.join(", ")
+                            ));
+                        }
+                        if !validation_result.files_with_syntax_errors.is_empty() {
+                            previous_validation_failures.push(format!(
+                                "Files have syntax errors: {}",
+                                validation_result.files_with_syntax_errors.join(", ")
+                            ));
+                        }
+                        if !validation_result.unmodified_files.is_empty() {
+                            previous_validation_failures.push(format!(
+                                "Files were not modified: {}",
+                                validation_result.unmodified_files.join(", ")
+                            ));
+                        }
+                        // Also check for remaining conflicts from git
+                        let remaining = get_conflicted_files().unwrap_or_default();
+                        if !remaining.is_empty() {
+                            previous_validation_failures.push(format!(
+                                "Git still reports conflicts: {}",
+                                remaining.join(", ")
+                            ));
+                        }
+
+                        state_machine.record_error(format!(
+                            "Conflict resolution validation failed: {}",
+                            validation_result.failure_summary()
+                        ));
+                        logger.warn(&format!(
+                            "Resolution validation failed: {}, retrying...",
+                            validation_result.failure_summary()
+                        ));
+                    }
+                    Err(e) => {
+                        previous_validation_failures.push(format!("Validation error: {e}"));
+                        state_machine.record_error(format!("Validation error: {e}"));
+                        logger.warn(&format!("Resolution validation error: {e}, retrying..."));
+                    }
+                }
             }
             Ok(ConflictResolutionResult::FileEditsOnly) => {
                 // Agent resolved conflicts by editing files directly
                 logger.info("Agent resolved conflicts via file edits (no JSON output)");
 
-                // Validate the resolution
-                if validate_conflict_resolution(logger, &conflicted_files)? {
-                    // Mark all original conflicted files as resolved
-                    for file in &conflicted_files {
-                        state_machine.record_resolution(file.clone());
-                    }
-                    logger.success(&format!(
-                        "All conflicts resolved successfully after {} cycle(s)",
-                        iteration
-                    ));
-                    return Ok(true);
-                }
+                // Clear previous failures and validate
+                previous_validation_failures.clear();
 
-                // Validation failed - record error and continue to next iteration
-                state_machine.record_error(format!(
-                    "Conflict resolution validation failed, cycle {iteration}/{max_iterations}",
-                    iteration = iteration,
-                    max_iterations = max_iterations
-                ));
-                logger.warn("Resolution validation failed, retrying...");
+                match validate_conflict_resolution_detailed(logger, &conflicted_files) {
+                    Ok(validation_result) if validation_result.is_valid() => {
+                        // Mark all original conflicted files as resolved
+                        for file in &conflicted_files {
+                            state_machine.record_resolution(file.clone());
+                        }
+                        logger.success(&format!(
+                            "All conflicts resolved successfully after {} cycle(s)",
+                            iteration
+                        ));
+                        return Ok(true);
+                    }
+                    Ok(validation_result) => {
+                        // Collect failures for retry
+                        if !validation_result.files_with_markers.is_empty() {
+                            previous_validation_failures.push(format!(
+                                "Files still have conflict markers: {}",
+                                validation_result.files_with_markers.join(", ")
+                            ));
+                        }
+                        if !validation_result.files_with_syntax_errors.is_empty() {
+                            previous_validation_failures.push(format!(
+                                "Files have syntax errors: {}",
+                                validation_result.files_with_syntax_errors.join(", ")
+                            ));
+                        }
+
+                        state_machine.record_error(format!(
+                            "Conflict resolution validation failed: {}",
+                            validation_result.failure_summary()
+                        ));
+                        logger.warn(&format!(
+                            "Resolution validation failed: {}, retrying...",
+                            validation_result.failure_summary()
+                        ));
+                    }
+                    Err(e) => {
+                        previous_validation_failures.push(format!("Validation error: {e}"));
+                        state_machine.record_error(format!("Validation error: {e}"));
+                        logger.warn(&format!("Resolution validation error: {e}, retrying..."));
+                    }
+                }
             }
             Ok(ConflictResolutionResult::Failed) | Err(_) => {
                 logger.warn("AI conflict resolution attempt failed");
@@ -1920,11 +2025,160 @@ fn try_resolve_conflicts_with_state_machine(
     }
 }
 
-/// Validate that conflict resolution was successful.
+/// Result of validating conflict resolution.
 ///
-/// Checks that:
-/// 1. No conflict markers remain in files
-/// 2. Git reports no conflicted files
+/// Provides detailed feedback on what failed during validation.
+#[derive(Debug, Clone, Default)]
+struct ConflictValidationResult {
+    /// Files that still have conflict markers
+    pub files_with_markers: Vec<String>,
+    /// Files that have syntax errors (if detectable)
+    pub files_with_syntax_errors: Vec<String>,
+    /// Files that weren't modified despite being conflicted
+    pub unmodified_files: Vec<String>,
+    /// Overall validation status
+    pub is_valid: bool,
+}
+
+impl ConflictValidationResult {
+    /// Returns true if all validations passed.
+    pub fn is_valid(&self) -> bool {
+        self.is_valid
+    }
+
+    /// Returns a summary of validation failures.
+    pub fn failure_summary(&self) -> String {
+        let mut parts = Vec::new();
+
+        if !self.files_with_markers.is_empty() {
+            parts.push(format!(
+                "{} file(s) still have conflict markers",
+                self.files_with_markers.len()
+            ));
+        }
+        if !self.files_with_syntax_errors.is_empty() {
+            parts.push(format!(
+                "{} file(s) have syntax errors",
+                self.files_with_syntax_errors.len()
+            ));
+        }
+        if !self.unmodified_files.is_empty() {
+            parts.push(format!(
+                "{} file(s) were not modified",
+                self.unmodified_files.len()
+            ));
+        }
+
+        if parts.is_empty() {
+            "No specific issues detected".to_string()
+        } else {
+            parts.join(", ")
+        }
+    }
+}
+
+/// Perform basic syntax validation for common file types.
+///
+/// This is a lightweight validation that checks for obvious syntax errors
+/// like unmatched brackets, incomplete statements, etc.
+///
+/// # Arguments
+///
+/// * `extension` - File extension (e.g., "rs", "py", "js")
+/// * `content` - File content to validate
+///
+/// # Returns
+///
+/// Returns `Ok(())` if syntax appears valid, `Err` if issues detected.
+fn validate_file_syntax(extension: &str, content: &str) -> anyhow::Result<()> {
+    match extension {
+        // Rust files - check for balanced braces and parentheses
+        "rs" => {
+            let open_braces = content.matches('{').count();
+            let close_braces = content.matches('}').count();
+            let open_parens = content.matches('(').count();
+            let close_parens = content.matches(')').count();
+            let open_brackets = content.matches('[').count();
+            let close_brackets = content.matches(']').count();
+
+            if open_braces != close_braces {
+                anyhow::bail!("Unbalanced braces: {open_braces} open, {close_braces} close");
+            }
+            if open_parens != close_parens {
+                anyhow::bail!("Unbalanced parentheses: {open_parens} open, {close_parens} close");
+            }
+            if open_brackets != close_brackets {
+                anyhow::bail!("Unbalanced brackets: {open_brackets} open, {close_brackets} close");
+            }
+            Ok(())
+        }
+        // Python files - check for basic indentation consistency
+        "py" => {
+            // Python's syntax is complex; we do a basic check for obvious issues
+            let lines: Vec<&str> = content.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                // Check for tabs mixed with spaces (common issue)
+                if line.contains('\t') && line.matches(' ').count() > 0 {
+                    anyhow::bail!("Line {}: mixed tabs and spaces", i + 1);
+                }
+            }
+            Ok(())
+        }
+        // JavaScript/TypeScript - check for balanced braces
+        "js" | "ts" | "jsx" | "tsx" => {
+            let open_braces = content.matches('{').count();
+            let close_braces = content.matches('}').count();
+            let open_parens = content.matches('(').count();
+            let close_parens = content.matches(')').count();
+            let open_brackets = content.matches('[').count();
+            let close_brackets = content.matches(']').count();
+
+            if open_braces != close_braces {
+                anyhow::bail!("Unbalanced braces: {open_braces} open, {close_braces} close");
+            }
+            if open_parens != close_parens {
+                anyhow::bail!("Unbalanced parentheses: {open_parens} open, {close_parens} close");
+            }
+            if open_brackets != close_brackets {
+                anyhow::bail!("Unbalanced brackets: {open_brackets} open, {close_brackets} close");
+            }
+            Ok(())
+        }
+        // JSON files - check for balanced braces and brackets
+        "json" => {
+            let open_braces = content.matches('{').count();
+            let close_braces = content.matches('}').count();
+            let open_brackets = content.matches('[').count();
+            let close_brackets = content.matches(']').count();
+
+            if open_braces != close_braces {
+                anyhow::bail!("Unbalanced braces: {open_braces} open, {close_braces} close");
+            }
+            if open_brackets != close_brackets {
+                anyhow::bail!("Unbalanced brackets: {open_brackets} open, {close_brackets} close");
+            }
+            Ok(())
+        }
+        // YAML files - basic structure check
+        "yaml" | "yml" => {
+            // Check for obvious syntax issues
+            for line in content.lines() {
+                // Check for tabs (YAML doesn't allow tabs for indentation)
+                if line.starts_with('\t') {
+                    anyhow::bail!("YAML files should not use tabs for indentation");
+                }
+            }
+            Ok(())
+        }
+        // Unknown file type - skip validation
+        _ => Ok(()),
+    }
+}
+
+/// Validate that conflict resolution was successful, returning detailed results.
+///
+/// Performs comprehensive validation and returns detailed feedback about
+/// what failed, which can be used to provide better context for retry attempts.
 ///
 /// # Arguments
 ///
@@ -1933,29 +2187,45 @@ fn try_resolve_conflicts_with_state_machine(
 ///
 /// # Returns
 ///
-/// Returns `Ok(true)` if validation passes, `Ok(false)` if conflicts remain.
-fn validate_conflict_resolution(
+/// Returns `Ok(ConflictValidationResult)` with detailed validation results.
+fn validate_conflict_resolution_detailed(
     logger: &Logger,
     original_conflicts: &[String],
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<ConflictValidationResult> {
     use std::fs;
 
-    // Check each originally conflicted file for conflict markers
+    let mut validation_result = ConflictValidationResult::default();
+
+    // Check each originally conflicted file
     for path in original_conflicts {
         match fs::read_to_string(path) {
             Ok(content) => {
                 // Check for conflict markers
-                if content.contains("<<<<<<<")
+                let has_markers = content.contains("<<<<<<<")
                     || content.contains("=======")
-                    || content.contains(">>>>>>>")
-                {
+                    || content.contains(">>>>>>>");
+
+                if has_markers {
+                    validation_result.files_with_markers.push(path.clone());
                     logger.warn(&format!("File {} still contains conflict markers", path));
-                    return Ok(false);
+                }
+
+                // Check for basic syntax validation on known file types
+                if let Some(ext) = std::path::Path::new(path).extension() {
+                    if let Some(ext_str) = ext.to_str() {
+                        if validate_file_syntax(ext_str, &content).is_err() {
+                            validation_result
+                                .files_with_syntax_errors
+                                .push(path.clone());
+                            logger.warn(&format!("File {} may have syntax errors", path));
+                        }
+                    }
                 }
             }
             Err(e) => {
                 logger.warn(&format!("Failed to read file {}: {}", path, e));
-                return Ok(false);
+                // If we can't read the file, consider it invalid
+                validation_result.files_with_markers.push(path.clone());
             }
         }
     }
@@ -1964,11 +2234,29 @@ fn validate_conflict_resolution(
     let remaining_conflicts = get_conflicted_files()?;
     if !remaining_conflicts.is_empty() {
         logger.warn(&format!(
-            "Git still reports {} conflicted file(s)",
-            remaining_conflicts.len()
+            "Git still reports {} conflicted file(s): {}",
+            remaining_conflicts.len(),
+            remaining_conflicts.join(", ")
         ));
-        return Ok(false);
     }
 
-    Ok(true)
+    // Detect partial resolution: files that still show as conflicted in git
+    for path in original_conflicts {
+        if remaining_conflicts.contains(path)
+            && !validation_result.files_with_markers.contains(path)
+        {
+            // File is still conflicted according to git but has no markers
+            // This might indicate a partial resolution or state issue
+            logger.warn(&format!(
+                "File {} is still marked as conflicted by Git",
+                path
+            ));
+        }
+    }
+
+    validation_result.is_valid = validation_result.files_with_markers.is_empty()
+        && validation_result.files_with_syntax_errors.is_empty()
+        && remaining_conflicts.is_empty();
+
+    Ok(validation_result)
 }

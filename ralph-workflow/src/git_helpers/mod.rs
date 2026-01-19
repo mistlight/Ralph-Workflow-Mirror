@@ -38,7 +38,7 @@ pub use hooks::uninstall_hooks;
 pub use rebase::{
     abort_rebase, cleanup_stale_rebase_state, continue_rebase, detect_concurrent_git_operations,
     get_conflict_markers_for_file, get_conflicted_files, rebase_onto, validate_git_state,
-    RebaseErrorKind, RebaseResult,
+    validate_post_rebase_state, RebaseErrorKind, RebaseResult,
 };
 
 // Types that are part of the public API but not used in binary
@@ -46,10 +46,11 @@ pub use rebase::{
 pub use rebase::{CleanupResult, ConcurrentOperation};
 
 #[cfg(any(test, feature = "test-utils"))]
-pub use rebase::restore_from_reflog;
+pub use rebase::{
+    is_dirty_tree_cli, rebase_in_progress_cli, restore_from_reflog,
+    validate_post_rebase_with_checks, PostRebaseValidationResult,
+};
 
-#[cfg(any(test, feature = "test-utils"))]
-pub use rebase::{is_dirty_tree_cli, rebase_in_progress_cli};
 pub use rebase_checkpoint::RebasePhase;
 pub use rebase_state_machine::{RebaseLock, RebaseStateMachine};
 pub use repo::{

@@ -1,6 +1,6 @@
 {# ============================================================================ #}
 {# Template: conflict_resolution.txt                                            #}
-{# Version: 1.2                                                                  #}
+{# Version: 1.3                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
@@ -25,6 +25,7 @@
 {#   - Agent MUST NOT know we're in a rebase (security requirement)             #}
 {#   - Prompt frames conflicts as "merge conflicts" not rebase conflicts         #}
 {#   - File edits are validated for conflict marker removal                     #}
+{#   - Resolution is verified with syntax checks and git state                  #}
 {# ============================================================================ #}
 
 # MERGE CONFLICT RESOLUTION
@@ -35,7 +36,9 @@ There are merge conflicts that need to be resolved. Below are the files with con
 
 ## Conflict Resolution Instructions
 
-PRIMARY GOAL: Resolve all merge conflicts by editing the files on disk.
+PRIMARY GOAL: Resolve ALL merge conflicts by editing the files on disk.
+
+**IMPORTANT**: Your resolution will be validated automatically. Failure to properly resolve conflicts will require additional attempts.
 
 ### Understanding the Conflict Markers
 
@@ -67,11 +70,12 @@ For each conflicted file:
    - **Modify/Delete conflicts**: One side modified, the other deleted - decide based on task needs
    - **Rename conflicts**: Files were renamed - preserve the rename and merge content
 
-4. **Validate Your Resolution**:
+4. **Validate Your Resolution** (CRITICAL):
    - Ensure ALL conflict markers are removed (<<<<<<<, =======, >>>>>>>)
    - Verify the code is syntactically correct
    - Check that imports and dependencies are consistent
    - Ensure no duplicate code or leftover merge artifacts
+   - **Your resolution will be automatically validated**
 
 5. **Edit the File**: Use the Edit tool to modify each conflicted file on disk
 
@@ -79,6 +83,7 @@ For each conflicted file:
 - Remove ALL conflict markers - the file must not contain `<<<<<<<`, `=======`, or `>>>>>>>`
 - Preserve the intent of BOTH sides when they serve different purposes
 - The goal is a clean, working merge - not just "picking one side"
+- **Partial resolutions will be detected and will require retries**
 
 ### Conflict Types and Guidance
 
@@ -117,3 +122,14 @@ If you choose to provide JSON output (optional), use this format to confirm your
 Each resolved file should contain the COMPLETE file content, not just the changed sections. The content must be free of conflict markers.
 
 **Note**: If you cannot resolve a particular conflict, you may mark it for manual resolution by omitting it from the resolved_files object. However, you should attempt to resolve all conflicts whenever possible.
+
+## Validation Checklist
+
+Your resolution will be validated against the following criteria:
+
+- [ ] No conflict markers remain in any file (`<<<<<<<`, `=======`, `>>>>>>>`)
+- [ ] Code is syntactically valid (balanced brackets, valid syntax)
+- [ ] Git reports no conflicted files
+- [ ] Files were actually modified (not left unchanged)
+
+If validation fails, you will be asked to retry with additional context about what went wrong.

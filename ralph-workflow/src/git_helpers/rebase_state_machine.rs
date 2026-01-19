@@ -204,13 +204,110 @@ impl RebaseStateMachine {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryAction {
     /// Continue with the rebase operation.
+    ///
+    /// Used when the operation can proceed without changes,
+    /// such as after resolving conflicts or recovering from a checkpoint.
     Continue,
     /// Retry the current operation.
+    ///
+    /// Used when transient failures can be overcome by retrying,
+    /// such as concurrent operations or stale locks.
     Retry,
     /// Abort the rebase.
+    ///
+    /// Used when the error cannot be recovered automatically
+    /// and requires manual intervention or a full restart.
     Abort,
     /// Skip the current step and proceed.
+    ///
+    /// Used when the current step can be safely bypassed,
+    /// such as for empty commits or NoOp scenarios.
     Skip,
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl RecoveryAction {
+    /// Decide the appropriate recovery action based on the error and current state.
+    ///
+    /// # Arguments
+    ///
+    /// * `error_kind` - The error that occurred
+    /// * `error_count` - The number of errors that have occurred so far
+    /// * `max_attempts` - The maximum number of recovery attempts allowed
+    ///
+    /// # Returns
+    ///
+    /// Returns the appropriate `RecoveryAction` for the given error and state.
+    pub fn decide(
+        error_kind: &crate::git_helpers::rebase::RebaseErrorKind,
+        error_count: u32,
+        max_attempts: u32,
+    ) -> Self {
+        // Check if we've exceeded maximum attempts
+        if error_count >= max_attempts {
+            return RecoveryAction::Abort;
+        }
+
+        match error_kind {
+            // Category 1: Rebase Cannot Start - Generally not recoverable
+            crate::git_helpers::rebase::RebaseErrorKind::InvalidRevision { .. } => {
+                RecoveryAction::Abort
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::DirtyWorkingTree => RecoveryAction::Abort,
+            crate::git_helpers::rebase::RebaseErrorKind::ConcurrentOperation { .. } => {
+                RecoveryAction::Retry
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::RepositoryCorrupt { .. } => {
+                RecoveryAction::Abort
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::EnvironmentFailure { .. } => {
+                RecoveryAction::Abort
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::HookRejection { .. } => {
+                RecoveryAction::Abort
+            }
+
+            // Category 2: Rebase Stops (Interrupted)
+            crate::git_helpers::rebase::RebaseErrorKind::ContentConflict { .. } => {
+                RecoveryAction::Continue
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::PatchApplicationFailed { .. } => {
+                RecoveryAction::Retry
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::InteractiveStop { .. } => {
+                RecoveryAction::Abort
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::EmptyCommit => RecoveryAction::Skip,
+            crate::git_helpers::rebase::RebaseErrorKind::AutostashFailed { .. } => {
+                RecoveryAction::Retry
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::CommitCreationFailed { .. } => {
+                RecoveryAction::Retry
+            }
+            crate::git_helpers::rebase::RebaseErrorKind::ReferenceUpdateFailed { .. } => {
+                RecoveryAction::Retry
+            }
+
+            // Category 3: Post-Rebase Failures
+            #[cfg(any(test, feature = "test-utils"))]
+            crate::git_helpers::rebase::RebaseErrorKind::ValidationFailed { .. } => {
+                RecoveryAction::Abort
+            }
+
+            // Category 4: Interrupted/Corrupted State
+            #[cfg(any(test, feature = "test-utils"))]
+            crate::git_helpers::rebase::RebaseErrorKind::ProcessTerminated { .. } => {
+                RecoveryAction::Continue
+            }
+            #[cfg(any(test, feature = "test-utils"))]
+            crate::git_helpers::rebase::RebaseErrorKind::InconsistentState { .. } => {
+                RecoveryAction::Retry
+            }
+
+            // Category 5: Unknown
+            crate::git_helpers::rebase::RebaseErrorKind::Unknown { .. } => RecoveryAction::Abort,
+        }
+    }
 }
 
 /// RAII-style guard for rebase lock.
@@ -598,5 +695,248 @@ mod tests {
             // Clean up
             release_rebase_lock().unwrap();
         });
+    }
+
+    #[test]
+    fn test_recovery_action_decide_content_conflict() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::ContentConflict {
+            files: vec!["file1.rs".to_string()],
+        };
+
+        // Content conflict should always return Continue (to AI resolution)
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Continue);
+
+        // Even at max attempts, ContentConflict should Continue
+        let action = RecoveryAction::decide(&error, 2, 3);
+        assert_eq!(action, RecoveryAction::Continue);
+
+        // But if we exceed max attempts, it should Abort
+        let action = RecoveryAction::decide(&error, 3, 3);
+        assert_eq!(action, RecoveryAction::Abort);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_concurrent_operation() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::ConcurrentOperation {
+            operation: "rebase".to_string(),
+        };
+
+        // Concurrent operation should be retried
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Retry);
+
+        // Should keep retrying until max attempts
+        let action = RecoveryAction::decide(&error, 2, 3);
+        assert_eq!(action, RecoveryAction::Retry);
+
+        // At max attempts, should abort
+        let action = RecoveryAction::decide(&error, 3, 3);
+        assert_eq!(action, RecoveryAction::Abort);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_invalid_revision() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::InvalidRevision {
+            revision: "nonexistent".to_string(),
+        };
+
+        // Invalid revision should always abort (not recoverable)
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Abort);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_dirty_working_tree() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::DirtyWorkingTree;
+
+        // Dirty working tree should always abort (user needs to commit/stash)
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Abort);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_empty_commit() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::EmptyCommit;
+
+        // Empty commit should be skipped
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Skip);
+
+        // Even at high error counts, should still skip
+        let action = RecoveryAction::decide(&error, 5, 10);
+        assert_eq!(action, RecoveryAction::Skip);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_process_terminated() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::ProcessTerminated {
+            reason: "agent crashed".to_string(),
+        };
+
+        // Process termination should continue (recover from checkpoint)
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Continue);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_inconsistent_state() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::InconsistentState {
+            details: "HEAD detached unexpectedly".to_string(),
+        };
+
+        // Inconsistent state should retry (after cleanup)
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Retry);
+
+        // Should keep retrying until max attempts
+        let action = RecoveryAction::decide(&error, 2, 3);
+        assert_eq!(action, RecoveryAction::Retry);
+
+        // At max attempts, should abort
+        let action = RecoveryAction::decide(&error, 3, 3);
+        assert_eq!(action, RecoveryAction::Abort);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_patch_application_failed() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::PatchApplicationFailed {
+            reason: "context mismatch".to_string(),
+        };
+
+        // Patch application failure should retry
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Retry);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_validation_failed() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::ValidationFailed {
+            reason: "tests failed".to_string(),
+        };
+
+        // Validation failure should abort (needs manual fix)
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Abort);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_unknown() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let error = RebaseErrorKind::Unknown {
+            details: "something went wrong".to_string(),
+        };
+
+        // Unknown errors should abort (safe default)
+        let action = RecoveryAction::decide(&error, 0, 3);
+        assert_eq!(action, RecoveryAction::Abort);
+    }
+
+    #[test]
+    fn test_recovery_action_decide_max_attempts_exceeded() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let retryable_errors = [
+            RebaseErrorKind::ConcurrentOperation {
+                operation: "merge".to_string(),
+            },
+            RebaseErrorKind::PatchApplicationFailed {
+                reason: "fuzz failure".to_string(),
+            },
+            RebaseErrorKind::AutostashFailed {
+                reason: "stash pop failed".to_string(),
+            },
+        ];
+
+        // All retryable errors should abort when max attempts exceeded
+        for error in retryable_errors {
+            let action = RecoveryAction::decide(&error, 5, 3);
+            assert_eq!(
+                action,
+                RecoveryAction::Abort,
+                "Expected Abort for error: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_recovery_action_decide_category_1_non_recoverable() {
+        use super::super::rebase::RebaseErrorKind;
+
+        let non_recoverable_errors = [
+            RebaseErrorKind::InvalidRevision {
+                revision: "bad-ref".to_string(),
+            },
+            RebaseErrorKind::RepositoryCorrupt {
+                details: "missing objects".to_string(),
+            },
+            RebaseErrorKind::EnvironmentFailure {
+                reason: "no editor configured".to_string(),
+            },
+            RebaseErrorKind::HookRejection {
+                hook_name: "pre-rebase".to_string(),
+            },
+        ];
+
+        // All these should abort regardless of error count
+        for error in non_recoverable_errors {
+            let action = RecoveryAction::decide(&error, 0, 3);
+            assert_eq!(
+                action,
+                RecoveryAction::Abort,
+                "Expected Abort for error: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_recovery_action_decide_category_2_mixed() {
+        use super::super::rebase::RebaseErrorKind;
+
+        // Interactive stop should abort (manual intervention needed)
+        let interactive = RebaseErrorKind::InteractiveStop {
+            command: "edit".to_string(),
+        };
+        assert_eq!(
+            RecoveryAction::decide(&interactive, 0, 3),
+            RecoveryAction::Abort
+        );
+
+        // Reference update failure should retry (transient)
+        let ref_fail = RebaseErrorKind::ReferenceUpdateFailed {
+            reason: "concurrent update".to_string(),
+        };
+        assert_eq!(
+            RecoveryAction::decide(&ref_fail, 0, 3),
+            RecoveryAction::Retry
+        );
+
+        // Commit creation failure should retry (transient)
+        let commit_fail = RebaseErrorKind::CommitCreationFailed {
+            reason: "hook failed".to_string(),
+        };
+        assert_eq!(
+            RecoveryAction::decide(&commit_fail, 0, 3),
+            RecoveryAction::Retry
+        );
     }
 }

@@ -3,6 +3,7 @@
 //! These tests verify that the rebase system handles all documented
 //! Git rebase failure modes and can recover from interruptions.
 
+pub mod ai_resolution_tests;
 pub mod category1_failure_modes;
 pub mod category2_failure_modes;
 pub mod category3_failure_modes;
