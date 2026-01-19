@@ -247,6 +247,8 @@ mod tests {
             developer_agent_config: dev_config,
             reviewer_agent_config: rev_config,
             rebase_state: RebaseState::default(),
+            git_user_name: None,
+            git_user_email: None,
         })
     }
 

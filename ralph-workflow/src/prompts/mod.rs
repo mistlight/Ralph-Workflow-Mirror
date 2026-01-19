@@ -74,6 +74,8 @@ pub struct PromptConfig {
     pub prompt_and_plan: Option<(String, String)>,
     /// (PROMPT.md, PLAN.md, ISSUES.md) content tuple for fix prompts.
     pub prompt_plan_and_issues: Option<(String, String, String)>,
+    /// Whether this is a resumed session (from a checkpoint).
+    pub is_resume: bool,
 }
 
 impl PromptConfig {
@@ -86,6 +88,7 @@ impl PromptConfig {
             prompt_md_content: None,
             prompt_and_plan: None,
             prompt_plan_and_issues: None,
+            is_resume: false,
         }
     }
 
@@ -121,6 +124,14 @@ impl PromptConfig {
         self.prompt_plan_and_issues = Some((prompt, plan, issues));
         self
     }
+
+    /// Set whether this is a resumed session.
+    #[must_use = "returns the updated configuration for chaining"]
+    #[cfg(test)]
+    pub const fn with_resume(mut self, is_resume: bool) -> Self {
+        self.is_resume = is_resume;
+        self
+    }
 }
 
 /// Generate a prompt for any agent type.
@@ -147,7 +158,13 @@ pub fn prompt_for_agent(
     template_context: &TemplateContext,
     config: PromptConfig,
 ) -> String {
-    match (role, action) {
+    let resume_note = if config.is_resume {
+        "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history. You can check 'git log' for context about what was done before.\n\n"
+    } else {
+        ""
+    };
+
+    let base_prompt = match (role, action) {
         (_, Action::Plan) => {
             prompt_plan_with_context(template_context, config.prompt_md_content.as_deref())
         }
@@ -175,6 +192,13 @@ pub fn prompt_for_agent(
                 &issues_content,
             )
         }
+    };
+
+    // Prepend resume note if applicable
+    if config.is_resume {
+        format!("{}{}", resume_note, base_prompt)
+    } else {
+        base_prompt
     }
 }
 
@@ -487,5 +511,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_prompt_with_resume_context() {
+        let template_context = TemplateContext::default();
+        let result = prompt_for_agent(
+            Role::Developer,
+            Action::Iterate,
+            ContextLevel::Normal,
+            &template_context,
+            PromptConfig::new()
+                .with_resume(true)
+                .with_iterations(2, 5)
+                .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
+        );
+        // Should include resume note
+        assert!(result.contains("resuming from a previous run"));
+        assert!(result.contains("git log"));
     }
 }

@@ -2,15 +2,136 @@
 //!
 //! This module provides functionality to restore pipeline state from a checkpoint,
 //! including CLI arguments and configuration overrides.
-//!
-//! Note: This module is currently only used in tests. The public API is reserved
-//! for future enhancements to the resume functionality.
 
-#[cfg(test)]
-use crate::checkpoint::state::{CliArgsSnapshot, PipelineCheckpoint, PipelinePhase};
-
-#[cfg(test)]
+use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase};
 use crate::config::Config;
+
+/// Apply checkpoint CLI args to a config.
+///
+/// This function modifies the config to use values from the checkpoint's
+/// CLI args snapshot, ensuring the resumed pipeline uses the same settings
+/// as the original run.
+///
+/// # Arguments
+///
+/// * `config` - The config to modify
+/// * `checkpoint` - The checkpoint to restore from
+///
+/// # Returns
+///
+/// The modified config with checkpoint values applied.
+pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineCheckpoint) {
+    let cli_args = &checkpoint.cli_args;
+
+    // Only override if checkpoint has meaningful values
+    if cli_args.developer_iters > 0 {
+        config.developer_iters = cli_args.developer_iters;
+    }
+
+    if cli_args.reviewer_reviews > 0 {
+        config.reviewer_reviews = cli_args.reviewer_reviews;
+    }
+
+    if !cli_args.commit_msg.is_empty() {
+        config.commit_msg = cli_args.commit_msg.clone();
+    }
+
+    // Note: review_depth is stored as a string in the checkpoint
+    // but as an enum in Config. For now, we don't override it.
+    // This could be enhanced to parse the string back to an enum.
+
+    // Apply model overrides if they exist in the checkpoint
+    if let Some(ref model) = checkpoint.developer_agent_config.model_override {
+        config.developer_model = Some(model.clone());
+    }
+    if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
+        config.reviewer_model = Some(model.clone());
+    }
+
+    // Apply provider overrides if they exist in the checkpoint
+    if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
+        config.developer_provider = Some(provider.clone());
+    }
+    if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
+        config.reviewer_provider = Some(provider.clone());
+    }
+
+    // Apply context levels if they exist in the checkpoint
+    config.developer_context = checkpoint.developer_agent_config.context_level;
+    config.reviewer_context = checkpoint.reviewer_agent_config.context_level;
+
+    // Apply git identity if it exists in the checkpoint
+    if let Some(ref name) = checkpoint.git_user_name {
+        config.git_user_name = Some(name.clone());
+    }
+    if let Some(ref email) = checkpoint.git_user_email {
+        config.git_user_email = Some(email.clone());
+    }
+}
+
+/// Calculate the starting iteration for development phase resume.
+///
+/// When resuming from a checkpoint in the development phase, this determines
+/// which iteration to start from based on the checkpoint state.
+///
+/// # Arguments
+///
+/// * `checkpoint` - The checkpoint to calculate from
+/// * `max_iterations` - Maximum iterations configured
+///
+/// # Returns
+///
+/// The iteration number to start from (1-indexed).
+pub fn calculate_start_iteration(checkpoint: &PipelineCheckpoint, max_iterations: u32) -> u32 {
+    match checkpoint.phase {
+        PipelinePhase::Planning | PipelinePhase::Development => {
+            checkpoint.iteration.clamp(1, max_iterations)
+        }
+        // For later phases, development is already complete
+        _ => max_iterations,
+    }
+}
+
+/// Calculate the starting reviewer pass for review phase resume.
+///
+/// When resuming from a checkpoint in the review phase, this determines
+/// which pass to start from based on the checkpoint state.
+///
+/// # Arguments
+///
+/// * `checkpoint` - The checkpoint to calculate from
+/// * `max_passes` - Maximum review passes configured
+///
+/// # Returns
+///
+/// The pass number to start from (1-indexed).
+pub fn calculate_start_reviewer_pass(checkpoint: &PipelineCheckpoint, max_passes: u32) -> u32 {
+    match checkpoint.phase {
+        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
+            checkpoint.reviewer_pass.clamp(1, max_passes.max(1))
+        }
+        // For earlier phases, start from the beginning
+        PipelinePhase::Planning
+        | PipelinePhase::Development
+        | PipelinePhase::PreRebase
+        | PipelinePhase::PreRebaseConflict => 1,
+        // For later phases, review is already complete
+        _ => max_passes,
+    }
+}
+
+/// Determine if a phase should be skipped based on checkpoint.
+///
+/// Returns true if the checkpoint indicates this phase has already been completed.
+///
+/// # Arguments
+///
+/// * `phase` - The phase to check
+/// * `checkpoint` - The checkpoint to compare against
+pub fn should_skip_phase(phase: PipelinePhase, checkpoint: &PipelineCheckpoint) -> bool {
+    use crate::app::resume::phase_rank;
+    phase_rank(phase) < phase_rank(checkpoint.phase)
+}
 
 /// Restored context from a checkpoint.
 ///
@@ -33,13 +154,15 @@ pub struct RestoredContext {
     /// Reviewer agent name from checkpoint.
     pub reviewer_agent: String,
     /// CLI arguments snapshot (if available).
-    pub cli_args: Option<CliArgsSnapshot>,
+    pub cli_args: Option<crate::checkpoint::state::CliArgsSnapshot>,
 }
 
 #[cfg(test)]
 impl RestoredContext {
     /// Create a restored context from a checkpoint.
     pub fn from_checkpoint(checkpoint: &PipelineCheckpoint) -> Self {
+        use crate::checkpoint::state::CliArgsSnapshot;
+
         // Determine if CLI args are meaningful (non-default values)
         let cli_args = if checkpoint.cli_args.developer_iters > 0
             || checkpoint.cli_args.reviewer_reviews > 0
@@ -80,109 +203,6 @@ impl RestoredContext {
     }
 }
 
-/// Apply checkpoint CLI args to a config.
-///
-/// This function modifies the config to use values from the checkpoint's
-/// CLI args snapshot, ensuring the resumed pipeline uses the same settings
-/// as the original run.
-///
-/// # Arguments
-///
-/// * `config` - The config to modify
-/// * `checkpoint` - The checkpoint to restore from
-///
-/// # Returns
-///
-/// The modified config with checkpoint values applied.
-#[cfg(test)]
-pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineCheckpoint) {
-    let cli_args = &checkpoint.cli_args;
-
-    // Only override if checkpoint has meaningful values
-    if cli_args.developer_iters > 0 {
-        config.developer_iters = cli_args.developer_iters;
-    }
-
-    if cli_args.reviewer_reviews > 0 {
-        config.reviewer_reviews = cli_args.reviewer_reviews;
-    }
-
-    if !cli_args.commit_msg.is_empty() {
-        config.commit_msg = cli_args.commit_msg.clone();
-    }
-
-    // Note: review_depth is stored as a string in the checkpoint
-    // but as an enum in Config. For now, we don't override it.
-    // This could be enhanced to parse the string back to an enum.
-}
-
-/// Calculate the starting iteration for development phase resume.
-///
-/// When resuming from a checkpoint in the development phase, this determines
-/// which iteration to start from based on the checkpoint state.
-///
-/// # Arguments
-///
-/// * `checkpoint` - The checkpoint to calculate from
-/// * `max_iterations` - Maximum iterations configured
-///
-/// # Returns
-///
-/// The iteration number to start from (1-indexed).
-#[cfg(test)]
-pub fn calculate_start_iteration(checkpoint: &PipelineCheckpoint, max_iterations: u32) -> u32 {
-    match checkpoint.phase {
-        PipelinePhase::Planning | PipelinePhase::Development => {
-            checkpoint.iteration.clamp(1, max_iterations)
-        }
-        // For later phases, development is already complete
-        _ => max_iterations,
-    }
-}
-
-/// Calculate the starting reviewer pass for review phase resume.
-///
-/// When resuming from a checkpoint in the review phase, this determines
-/// which pass to start from based on the checkpoint state.
-///
-/// # Arguments
-///
-/// * `checkpoint` - The checkpoint to calculate from
-/// * `max_passes` - Maximum review passes configured
-///
-/// # Returns
-///
-/// The pass number to start from (1-indexed).
-#[cfg(test)]
-pub fn calculate_start_reviewer_pass(checkpoint: &PipelineCheckpoint, max_passes: u32) -> u32 {
-    match checkpoint.phase {
-        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
-            checkpoint.reviewer_pass.clamp(1, max_passes.max(1))
-        }
-        // For earlier phases, start from the beginning
-        PipelinePhase::Planning
-        | PipelinePhase::Development
-        | PipelinePhase::PreRebase
-        | PipelinePhase::PreRebaseConflict => 1,
-        // For later phases, review is already complete
-        _ => max_passes,
-    }
-}
-
-/// Determine if a phase should be skipped based on checkpoint.
-///
-/// Returns true if the checkpoint indicates this phase has already been completed.
-///
-/// # Arguments
-///
-/// * `phase` - The phase to check
-/// * `checkpoint` - The checkpoint to compare against
-#[cfg(test)]
-pub fn should_skip_phase(phase: PipelinePhase, checkpoint: &PipelineCheckpoint) -> bool {
-    use crate::app::resume::phase_rank;
-    phase_rank(phase) < phase_rank(checkpoint.phase)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,6 +229,8 @@ mod tests {
             developer_agent_config: dev_config,
             reviewer_agent_config: rev_config,
             rebase_state: RebaseState::default(),
+            git_user_name: None,
+            git_user_email: None,
         })
     }
 

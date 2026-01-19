@@ -6,6 +6,7 @@
 use crate::agents::AgentRegistry;
 use crate::checkpoint::{load_checkpoint, validate_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::config::Config;
+use crate::git_helpers::rebase_in_progress;
 use crate::logger::Logger;
 
 /// Result of handling resume, containing the checkpoint.
@@ -82,6 +83,9 @@ pub fn handle_resume_with_validation(
                 ));
             }
 
+            // Check for in-progress git rebase
+            check_rebase_state_on_resume(&checkpoint, logger);
+
             Some(ResumeResult { checkpoint })
         }
         Ok(None) => {
@@ -91,6 +95,43 @@ pub fn handle_resume_with_validation(
         Err(e) => {
             logger.warn(&format!("Failed to load checkpoint (starting fresh): {e}"));
             None
+        }
+    }
+}
+
+/// Check for in-progress git rebase when resuming.
+///
+/// This function detects if a git rebase is in progress and provides
+/// appropriate guidance to the user.
+fn check_rebase_state_on_resume(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+    // Only check for rebase if we're resuming from a rebase-related phase
+    let is_rebase_phase = matches!(
+        checkpoint.phase,
+        PipelinePhase::PreRebase
+            | PipelinePhase::PreRebaseConflict
+            | PipelinePhase::PostRebase
+            | PipelinePhase::PostRebaseConflict
+    );
+
+    if !is_rebase_phase {
+        return;
+    }
+
+    match rebase_in_progress() {
+        Ok(true) => {
+            logger.warn("A git rebase is currently in progress.");
+            logger.info("The checkpoint indicates you were in a rebase phase.");
+            logger.info("Options:");
+            logger.info("  - Continue: Let ralph complete the rebase process");
+            logger.info("  - Abort manually: Run 'git rebase --abort' then use --resume");
+        }
+        Ok(false) => {
+            // No rebase in progress - this is expected if rebase completed
+            // but checkpoint wasn't cleared (e.g., pipeline was interrupted)
+            logger.info("No git rebase is currently in progress.");
+        }
+        Err(e) => {
+            logger.warn(&format!("Could not check rebase state: {e}"));
         }
     }
 }
@@ -122,6 +163,43 @@ fn display_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) 
             "Original config: -D {} -R {}",
             cli.developer_iters, cli.reviewer_reviews
         ));
+    }
+
+    // Show agent configs
+    logger.info(&format!("Developer agent: {}", checkpoint.developer_agent));
+    logger.info(&format!("Reviewer agent: {}", checkpoint.reviewer_agent));
+
+    // Show model overrides if present
+    if let Some(ref model) = checkpoint.developer_agent_config.model_override {
+        logger.info(&format!("Developer model override: {}", model));
+    }
+    if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
+        logger.info(&format!("Reviewer model override: {}", model));
+    }
+
+    // Show provider overrides if present
+    if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
+        logger.info(&format!("Developer provider: {}", provider));
+    }
+    if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
+        logger.info(&format!("Reviewer provider: {}", provider));
+    }
+
+    // Show rebase state if applicable
+    match &checkpoint.rebase_state {
+        crate::checkpoint::RebaseState::PreRebaseInProgress { upstream_branch } => {
+            logger.warn(&format!("Pre-rebase in progress to: {}", upstream_branch));
+        }
+        crate::checkpoint::RebaseState::HasConflicts { files } => {
+            logger.warn(&format!("Rebase has conflicts in {} files", files.len()));
+            for file in files.iter().take(3) {
+                logger.warn(&format!("  - {}", file));
+            }
+            if files.len() > 3 {
+                logger.warn(&format!("  ... and {} more", files.len() - 3));
+            }
+        }
+        _ => {}
     }
 }
 

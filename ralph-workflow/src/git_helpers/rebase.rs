@@ -373,6 +373,24 @@ pub fn continue_rebase() -> io::Result<()> {
     }
 }
 
+/// Check if a rebase is currently in progress.
+///
+/// This function checks the repository state to determine if a rebase
+/// operation is in progress. This is useful for detecting interrupted
+/// rebases that need to be resumed or aborted.
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if a rebase is in progress, `Ok(false)` otherwise,
+/// or an error if the repository cannot be accessed.
+pub fn rebase_in_progress() -> io::Result<bool> {
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    let state = repo.state();
+    Ok(state == git2::RepositoryState::Rebase
+        || state == git2::RepositoryState::RebaseMerge
+        || state == git2::RepositoryState::RebaseInteractive)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

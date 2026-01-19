@@ -26,8 +26,11 @@ pub mod validation;
 
 use crate::agents::AgentRegistry;
 use crate::app::finalization::finalize_pipeline;
-use crate::app::resume::{phase_rank, should_run_from};
+use crate::app::resume::should_run_from;
 use crate::banner::print_welcome_banner;
+use crate::checkpoint::restore::{
+    calculate_start_iteration, calculate_start_reviewer_pass, should_skip_phase,
+};
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase, RebaseState};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
@@ -450,6 +453,29 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     );
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
 
+    // Apply checkpoint configuration restoration if resuming
+    let config = if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::apply_checkpoint_to_config;
+        let mut restored_config = ctx.config.clone();
+        apply_checkpoint_to_config(&mut restored_config, checkpoint);
+        ctx.logger.info("Restored configuration from checkpoint:");
+        if checkpoint.cli_args.developer_iters > 0 {
+            ctx.logger.info(&format!(
+                "  Developer iterations: {} (from checkpoint)",
+                checkpoint.cli_args.developer_iters
+            ));
+        }
+        if checkpoint.cli_args.reviewer_reviews > 0 {
+            ctx.logger.info(&format!(
+                "  Reviewer passes: {} (from checkpoint)",
+                checkpoint.cli_args.reviewer_reviews
+            ));
+        }
+        restored_config
+    } else {
+        ctx.config.clone()
+    };
+
     // Set up git helpers and agent phase
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
     cleanup_orphaned_marker(&ctx.logger)?;
@@ -458,7 +484,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Print welcome banner and validate PROMPT.md
     print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
-    print_pipeline_info(ctx);
+    print_pipeline_info_with_config(ctx, &config);
     validate_prompt_and_setup_backup(ctx)?;
 
     // Set up PROMPT.md monitoring
@@ -466,22 +492,27 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Detect project stack and review guidelines
     let (_project_stack, review_guidelines) =
-        detect_project_stack(&ctx.config, &ctx.repo_root, &ctx.logger, ctx.colors);
+        detect_project_stack(&config, &ctx.repo_root, &ctx.logger, ctx.colors);
 
     print_review_guidelines(ctx, review_guidelines.as_ref());
     println!();
 
     // Create phase context and save starting commit
     let (mut timer, mut stats) = (Timer::new(), Stats::new());
-    let mut phase_ctx =
-        create_phase_context(ctx, &mut timer, &mut stats, review_guidelines.as_ref());
+    let mut phase_ctx = create_phase_context_with_config(
+        ctx,
+        &config,
+        &mut timer,
+        &mut stats,
+        review_guidelines.as_ref(),
+    );
     save_start_commit_or_warn(ctx);
 
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
         run_initial_rebase(
             &ctx.args,
-            &ctx.config,
+            &config,
             &ctx.template_context,
             &ctx.logger,
             ctx.colors,
@@ -491,7 +522,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     // Run pipeline phases
     run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
     check_prompt_restoration(ctx, &mut prompt_monitor, "development");
-    update_status("In progress.", ctx.config.isolation_mode)?;
+    update_status("In progress.", config.isolation_mode)?;
 
     run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
     check_prompt_restoration(ctx, &mut prompt_monitor, "review");
@@ -500,44 +531,41 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     if ctx.args.rebase_flags.with_rebase {
         run_post_review_rebase(
             &ctx.args,
-            &ctx.config,
+            &config,
             &ctx.template_context,
             &ctx.logger,
             ctx.colors,
         )?;
     }
 
-    update_status("In progress.", ctx.config.isolation_mode)?;
+    update_status("In progress.", config.isolation_mode)?;
 
     run_final_validation(&phase_ctx, resume_checkpoint.as_ref())?;
+
+    // Save Complete checkpoint before clearing (for idempotent resume)
+    if config.features.checkpoint_enabled {
+        let _ = save_checkpoint(&PipelineCheckpoint::new_minimal(
+            PipelinePhase::Complete,
+            config.developer_iters,
+            config.developer_iters,
+            config.reviewer_reviews,
+            config.reviewer_reviews,
+            &ctx.developer_agent,
+            &ctx.reviewer_agent,
+        ));
+    }
 
     // Commit phase
     finalize_pipeline(
         &mut agent_phase_guard,
         &ctx.logger,
         ctx.colors,
-        &ctx.config,
+        &config,
         &timer,
         &stats,
         prompt_monitor,
     );
     Ok(())
-}
-
-/// Print pipeline information (working directory and commit message).
-fn print_pipeline_info(ctx: &PipelineContext) {
-    ctx.logger.info(&format!(
-        "Working directory: {}{}{}",
-        ctx.colors.cyan(),
-        ctx.repo_root.display(),
-        ctx.colors.reset()
-    ));
-    ctx.logger.info(&format!(
-        "Commit message: {}{}{}",
-        ctx.colors.cyan(),
-        ctx.config.commit_msg,
-        ctx.colors.reset()
-    ));
 }
 
 /// Validate PROMPT.md and set up backup/protection.
@@ -620,15 +648,16 @@ fn print_review_guidelines(
     }
 }
 
-/// Create the phase context for running pipeline phases.
-fn create_phase_context<'ctx>(
+/// Create the phase context with a modified config (for resume restoration).
+fn create_phase_context_with_config<'ctx>(
     ctx: &'ctx PipelineContext,
+    config: &'ctx crate::config::Config,
     timer: &'ctx mut Timer,
     stats: &'ctx mut Stats,
     review_guidelines: Option<&'ctx crate::guidelines::ReviewGuidelines>,
 ) -> PhaseContext<'ctx> {
     PhaseContext {
-        config: &ctx.config,
+        config,
         registry: &ctx.registry,
         logger: &ctx.logger,
         colors: &ctx.colors,
@@ -639,6 +668,22 @@ fn create_phase_context<'ctx>(
         review_guidelines,
         template_context: &ctx.template_context,
     }
+}
+
+/// Print pipeline info with a specific config.
+fn print_pipeline_info_with_config(ctx: &PipelineContext, config: &crate::config::Config) {
+    ctx.logger.info(&format!(
+        "Working directory: {}{}{}",
+        ctx.colors.cyan(),
+        ctx.repo_root.display(),
+        ctx.colors.reset()
+    ));
+    ctx.logger.info(&format!(
+        "Commit message: {}{}{}",
+        ctx.colors.cyan(),
+        config.commit_msg,
+        ctx.colors.reset()
+    ));
 }
 
 /// Save starting commit or warn if it fails.
@@ -710,13 +755,13 @@ fn run_development(
     ctx.logger
         .header("PHASE 1: Development", crate::logger::Colors::blue);
 
-    let resume_phase = resume_checkpoint.map(|c| c.phase);
-    let resume_rank = resume_phase.map(phase_rank);
-
-    if resume_rank.is_some_and(|rank| rank >= phase_rank(PipelinePhase::Review)) {
-        ctx.logger
-            .info("Skipping development phase (checkpoint indicates it already completed)");
-        return Ok(());
+    // Check if we should skip this phase based on checkpoint
+    if let Some(checkpoint) = resume_checkpoint {
+        if should_skip_phase(PipelinePhase::Development, checkpoint) {
+            ctx.logger
+                .info("Skipping development phase (checkpoint indicates it already completed)");
+            return Ok(());
+        }
     }
 
     if !should_run_from(PipelinePhase::Planning, resume_checkpoint) {
@@ -725,15 +770,13 @@ fn run_development(
         return Ok(());
     }
 
-    let start_iter = match resume_phase {
-        Some(PipelinePhase::Planning | PipelinePhase::Development) => resume_checkpoint
-            .map_or(1, |c| c.iteration)
-            .clamp(1, ctx.config.developer_iters),
-        _ => 1,
+    let start_iter = match resume_checkpoint {
+        Some(checkpoint) => calculate_start_iteration(checkpoint, ctx.config.developer_iters),
+        None => 1,
     };
 
-    let resuming_from_development =
-        args.recovery.resume && resume_phase == Some(PipelinePhase::Development);
+    let resuming_from_development = resume_checkpoint
+        .is_some_and(|c| args.recovery.resume && c.phase == PipelinePhase::Development);
     let development_result = run_development_phase(ctx, start_iter, resuming_from_development)?;
 
     if development_result.had_errors {
@@ -753,8 +796,6 @@ fn run_review_and_fix(
     ctx.logger
         .header("PHASE 2: Review & Fix", crate::logger::Colors::magenta);
 
-    let resume_phase = resume_checkpoint.map(|c| c.phase);
-
     // Check if we should run any reviewer phase
     let run_any_reviewer_phase = should_run_from(PipelinePhase::Review, resume_checkpoint)
         || should_run_from(PipelinePhase::Fix, resume_checkpoint)
@@ -762,17 +803,15 @@ fn run_review_and_fix(
         || should_run_from(PipelinePhase::CommitMessage, resume_checkpoint);
 
     let should_run_review_phase = should_run_from(PipelinePhase::Review, resume_checkpoint)
-        || resume_phase == Some(PipelinePhase::Fix)
-        || resume_phase == Some(PipelinePhase::ReviewAgain);
+        || resume_checkpoint
+            .is_some_and(|c| matches!(c.phase, PipelinePhase::Fix | PipelinePhase::ReviewAgain));
 
     if should_run_review_phase && ctx.config.reviewer_reviews > 0 {
-        let start_pass = match resume_phase {
-            Some(PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain) => {
-                resume_checkpoint
-                    .map_or(1, |c| c.reviewer_pass)
-                    .clamp(1, ctx.config.reviewer_reviews.max(1))
+        let start_pass = match resume_checkpoint {
+            Some(checkpoint) => {
+                calculate_start_reviewer_pass(checkpoint, ctx.config.reviewer_reviews)
             }
-            _ => 1,
+            None => 1,
         };
 
         let review_result = run_review_phase(ctx, start_pass)?;

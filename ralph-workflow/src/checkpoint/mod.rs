@@ -38,6 +38,7 @@ pub mod state;
 pub mod validation;
 
 pub use builder::CheckpointBuilder;
+pub use restore::apply_checkpoint_to_config;
 pub use state::{
     checkpoint_exists, clear_checkpoint, load_checkpoint, save_checkpoint, timestamp,
     PipelineCheckpoint, PipelinePhase, RebaseState,

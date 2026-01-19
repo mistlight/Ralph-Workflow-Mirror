@@ -38,6 +38,8 @@ pub struct CheckpointBuilder {
     reviewer_agent_config: Option<AgentConfigSnapshot>,
     rebase_state: RebaseState,
     config_path: Option<std::path::PathBuf>,
+    git_user_name: Option<String>,
+    git_user_email: Option<String>,
 }
 
 impl Default for CheckpointBuilder {
@@ -62,6 +64,8 @@ impl CheckpointBuilder {
             reviewer_agent_config: None,
             rebase_state: RebaseState::default(),
             config_path: None,
+            git_user_name: None,
+            git_user_email: None,
         }
     }
 
@@ -123,6 +127,14 @@ impl CheckpointBuilder {
         self
     }
 
+    /// Set the git user name and email.
+    #[cfg(test)]
+    pub fn git_identity(mut self, name: Option<&str>, email: Option<&str>) -> Self {
+        self.git_user_name = name.map(String::from);
+        self.git_user_email = email.map(String::from);
+        self
+    }
+
     /// Capture CLI arguments from a Config.
     pub fn capture_cli_args(mut self, config: &Config) -> Self {
         let review_depth_str = review_depth_to_string(config.review_depth);
@@ -161,7 +173,10 @@ impl CheckpointBuilder {
                 agent_config.output_flag.clone(),
                 Some(agent_config.yolo_flag.clone()),
                 agent_config.can_commit,
-            );
+            )
+            .with_model_override(config.developer_model.clone())
+            .with_provider_override(config.developer_provider.clone())
+            .with_context_level(config.developer_context);
             self.developer_agent_config = Some(snapshot);
             self.developer_agent = Some(developer_name.to_string());
         } else {
@@ -179,7 +194,10 @@ impl CheckpointBuilder {
                 agent_config.output_flag.clone(),
                 Some(agent_config.yolo_flag.clone()),
                 agent_config.can_commit,
-            );
+            )
+            .with_model_override(config.reviewer_model.clone())
+            .with_provider_override(config.reviewer_provider.clone())
+            .with_context_level(config.reviewer_context);
             self.reviewer_agent_config = Some(snapshot);
             self.reviewer_agent = Some(reviewer_name.to_string());
         } else {
@@ -188,6 +206,10 @@ impl CheckpointBuilder {
                 reviewer_name
             ));
         }
+
+        // Capture git identity
+        self.git_user_name = config.git_user_name.clone();
+        self.git_user_email = config.git_user_email.clone();
 
         self
     }
@@ -203,6 +225,9 @@ impl CheckpointBuilder {
         let developer_config = self.developer_agent_config?;
         let reviewer_config = self.reviewer_agent_config?;
 
+        let git_user_name = self.git_user_name.as_deref();
+        let git_user_email = self.git_user_email.as_deref();
+
         let mut checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
             phase,
             iteration: self.iteration,
@@ -215,6 +240,8 @@ impl CheckpointBuilder {
             developer_agent_config: developer_config,
             reviewer_agent_config: reviewer_config,
             rebase_state: self.rebase_state,
+            git_user_name,
+            git_user_email,
         });
 
         if let Some(path) = self.config_path {

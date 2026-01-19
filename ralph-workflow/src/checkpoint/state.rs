@@ -95,6 +95,12 @@ pub struct AgentConfigSnapshot {
     pub yolo_flag: Option<String>,
     /// Whether this agent can commit
     pub can_commit: bool,
+    /// Model override (e.g., "-m opencode/glm-4.7-free")
+    pub model_override: Option<String>,
+    /// Provider override (e.g., "opencode", "anthropic")
+    pub provider_override: Option<String>,
+    /// Context level (0=minimal, 1=normal)
+    pub context_level: u8,
 }
 
 impl AgentConfigSnapshot {
@@ -112,7 +118,28 @@ impl AgentConfigSnapshot {
             output_flag,
             yolo_flag,
             can_commit,
+            model_override: None,
+            provider_override: None,
+            context_level: 1, // Default to normal context
         }
+    }
+
+    /// Set model override.
+    pub fn with_model_override(mut self, model: Option<String>) -> Self {
+        self.model_override = model;
+        self
+    }
+
+    /// Set provider override.
+    pub fn with_provider_override(mut self, provider: Option<String>) -> Self {
+        self.provider_override = provider;
+        self
+    }
+
+    /// Set context level.
+    pub fn with_context_level(mut self, level: u8) -> Self {
+        self.context_level = level;
+        self
     }
 }
 
@@ -143,6 +170,10 @@ pub struct CheckpointParams<'a> {
     pub reviewer_agent_config: AgentConfigSnapshot,
     /// Current rebase state
     pub rebase_state: RebaseState,
+    /// Git user name for commits (if overridden)
+    pub git_user_name: Option<&'a str>,
+    /// Git user email for commits (if overridden)
+    pub git_user_email: Option<&'a str>,
 }
 
 /// Rebase state tracking.
@@ -271,6 +302,12 @@ pub struct PipelineCheckpoint {
     pub working_dir: String,
     /// Checksum of PROMPT.md (for validation on resume)
     pub prompt_md_checksum: Option<String>,
+
+    // === Additional state for exact restoration ===
+    /// Git user name for commits (if overridden)
+    pub git_user_name: Option<String>,
+    /// Git user email for commits (if overridden)
+    pub git_user_email: Option<String>,
 }
 
 impl PipelineCheckpoint {
@@ -309,6 +346,8 @@ impl PipelineCheckpoint {
             config_checksum: None, // Will be set by caller if needed
             working_dir,
             prompt_md_checksum,
+            git_user_name: params.git_user_name.map(String::from),
+            git_user_email: params.git_user_email.map(String::from),
         }
     }
 
@@ -407,6 +446,8 @@ impl PipelineCheckpoint {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default(),
             prompt_md_checksum: None,
+            git_user_name: None,
+            git_user_email: None,
         }
     }
 }
@@ -471,6 +512,8 @@ fn load_checkpoint_with_fallback(
             config_checksum: None,
             working_dir: String::new(),
             prompt_md_checksum: None,
+            git_user_name: None,
+            git_user_email: None,
         });
     }
 
@@ -604,6 +647,8 @@ mod tests {
             developer_agent_config: dev_config,
             reviewer_agent_config: rev_config,
             rebase_state: RebaseState::default(),
+            git_user_name: None,
+            git_user_email: None,
         })
     }
 
@@ -665,6 +710,8 @@ mod tests {
             developer_agent_config: dev_config,
             reviewer_agent_config: rev_config,
             rebase_state: RebaseState::default(),
+            git_user_name: None,
+            git_user_email: None,
         });
 
         assert_eq!(checkpoint.phase, PipelinePhase::Development);
@@ -707,6 +754,8 @@ mod tests {
                 true,
             ),
             rebase_state: RebaseState::default(),
+            git_user_name: None,
+            git_user_email: None,
         });
         assert_eq!(checkpoint.description(), "Verification review 2/3");
     }
@@ -785,6 +834,8 @@ mod tests {
             rebase_state: RebaseState::PreRebaseCompleted {
                 commit_oid: "abc123".into(),
             },
+            git_user_name: None,
+            git_user_email: None,
         });
 
         let json = serde_json::to_string(&checkpoint).unwrap();
@@ -905,20 +956,28 @@ mod tests {
                     "cmd": "echo",
                     "output_flag": "",
                     "yolo_flag": null,
-                    "can_commit": false
+                    "can_commit": false,
+                    "model_override": null,
+                    "provider_override": null,
+                    "context_level": 1
                 },
                 "reviewer_agent_config": {
                     "name": "test-agent",
                     "cmd": "echo",
                     "output_flag": "",
                     "yolo_flag": null,
-                    "can_commit": false
+                    "can_commit": false,
+                    "model_override": null,
+                    "provider_override": null,
+                    "context_level": 1
                 },
                 "rebase_state": "NotStarted",
                 "config_path": null,
                 "config_checksum": null,
                 "working_dir": "/some/other/directory",
-                "prompt_md_checksum": null
+                "prompt_md_checksum": null,
+                "git_user_name": null,
+                "git_user_email": null
             }"#;
 
             fs::write(".agent/checkpoint.json", json).unwrap();
