@@ -145,7 +145,9 @@ pub fn initialize_config(
     }
 
     // Initialize agent registry with built-in defaults + unified config.
-    let (registry, config_sources) = load_agent_registry(unified.as_ref(), config_path.as_path())?;
+    let test_mode_enabled = args.test_mode_flags.test_mode;
+    let (registry, config_sources) =
+        load_agent_registry(unified.as_ref(), config_path.as_path(), test_mode_enabled)?;
 
     // Apply default agents from fallback chains
     apply_default_agents(&mut config, &registry);
@@ -161,14 +163,15 @@ pub fn initialize_config(
 fn load_agent_registry(
     unified: Option<&UnifiedConfig>,
     config_path: &std::path::Path,
+    test_mode_enabled: bool,
 ) -> anyhow::Result<(AgentRegistry, Vec<ConfigSource>)> {
     let mut registry = AgentRegistry::new().map_err(|e| {
         anyhow::anyhow!("Failed to load built-in default agents config (examples/agents.toml): {e}")
     })?;
 
-    // Check for test mode via environment variable
+    // Configure test mode retry timer if enabled via CLI flag
     // When enabled, use TestRetryTimer for immediate retries (no actual sleep)
-    if std::env::var("RALPH_TEST_MODE").is_ok() {
+    if test_mode_enabled {
         let test_timer: Arc<dyn RetryTimerProvider> = Arc::new(TestRetryTimer::new());
         registry.set_retry_timer(test_timer);
     }

@@ -418,6 +418,18 @@ pub struct RebaseFlags {
     pub rebase_only: bool,
 }
 
+/// Test mode flags (hidden, for integration testing).
+#[derive(Parser, Debug, Default)]
+pub struct TestModeFlags {
+    /// Enable test mode with immediate retries (no actual sleep delays)
+    #[arg(
+        long,
+        help = "Enable test mode (for integration tests only)",
+        hide = true
+    )]
+    pub test_mode: bool,
+}
+
 /// Ralph: PROMPT-driven agent orchestrator for git repos
 #[derive(Parser, Debug)]
 #[command(name = "ralph")]
@@ -496,6 +508,10 @@ pub struct Args {
     /// Rebase control flags
     #[command(flatten)]
     pub rebase_flags: RebaseFlags,
+
+    /// Test mode flags (hidden, for integration testing)
+    #[command(flatten)]
+    pub test_mode_flags: TestModeFlags,
 
     /// Commit message for the final commit
     #[arg(

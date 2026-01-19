@@ -3,6 +3,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::ralph_cmd;
+use crate::common::MockAgentOutputExt;
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -34,14 +35,16 @@ fn ralph_succeeds_without_commit_message_file() {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
+        // Pre-create the plan file that the developer would have created
+        // This avoids spawning shell scripts
+        dir.mock_agent().with_plan("Test plan content");
+
         let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
-            .env(
-                "RALPH_DEVELOPER_CMD",
-                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
-            )
-            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            // Use no-op commands instead of shell scripts
+            .env("RALPH_DEVELOPER_CMD", "true")
+            .env("RALPH_REVIEWER_CMD", "true");
 
         // Should succeed even without commit-message.txt (auto-commit behavior)
         cmd.assert()

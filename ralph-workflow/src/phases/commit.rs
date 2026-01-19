@@ -1067,21 +1067,6 @@ pub fn generate_commit_message(
     commit_agent: &str,
     template_context: &crate::prompts::TemplateContext,
 ) -> anyhow::Result<CommitMessageResult> {
-    // Check if we should skip LLM commit message generation (for testing)
-    // RALPH_TEST_MODE=1 bypasses the LLM call and uses a hardcoded fallback
-    let test_mode = std::env::var("RALPH_TEST_MODE").ok().as_deref() == Some("1");
-
-    if test_mode {
-        runtime
-            .logger
-            .info("Using hardcoded fallback commit message (test mode)...");
-        return Ok(CommitMessageResult {
-            message: HARDCODED_FALLBACK_COMMIT.to_string(),
-            success: true,
-            _log_path: String::new(),
-        });
-    }
-
     let log_dir = ".agent/logs/commit_generation";
     let log_file = format!("{log_dir}/final.log");
 
