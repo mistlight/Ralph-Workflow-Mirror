@@ -29,6 +29,10 @@ use test_helpers::init_git_repo;
 // Version and Help Commands
 // ============================================================================
 
+/// Test that the `--version` flag produces a successful exit.
+///
+/// This verifies that when a user invokes ralph with the `--version` flag,
+/// the CLI executes successfully without errors.
 #[test]
 fn ralph_prints_version() {
     with_default_timeout(|| {
@@ -36,6 +40,10 @@ fn ralph_prints_version() {
     });
 }
 
+/// Test that the `--version` flag outputs a version number.
+///
+/// This verifies that when a user invokes ralph with the `--version` flag,
+/// the output contains a semantic version number in the format MAJOR.MINOR.PATCH.
 #[test]
 fn ralph_version_contains_version_number() {
     with_default_timeout(|| {
@@ -47,6 +55,10 @@ fn ralph_version_contains_version_number() {
     });
 }
 
+/// Test that the `--help` flag displays usage information.
+///
+/// This verifies that when a user invokes ralph with the `--help` flag,
+/// the output contains the program name and references to PROMPT.md.
 #[test]
 fn ralph_help_shows_usage() {
     with_default_timeout(|| {
@@ -59,6 +71,10 @@ fn ralph_help_shows_usage() {
     });
 }
 
+/// Test that the `--help` flag displays all available preset modes.
+///
+/// This verifies that when a user invokes ralph with the `--help` flag,
+/// the output contains all preset mode names (Quick, Rapid, Standard, Thorough, Long).
 #[test]
 fn ralph_help_shows_preset_modes() {
     with_default_timeout(|| {
@@ -78,6 +94,10 @@ fn ralph_help_shows_preset_modes() {
 // Template Listing Commands
 // ============================================================================
 
+/// Test that the `--list-templates` flag shows available templates.
+///
+/// This verifies that when a user invokes ralph with the `--list-templates` flag,
+/// the output contains template names like "bug-fix" and "feature-spec".
 #[test]
 fn ralph_list_templates_shows_available() {
     with_default_timeout(|| {
@@ -90,6 +110,10 @@ fn ralph_list_templates_shows_available() {
     });
 }
 
+/// Test that the `--list-templates` flag shows template descriptions.
+///
+/// This verifies that when a user invokes ralph with the `--list-templates` flag,
+/// the output contains descriptive keywords like "quick" and "refactor".
 #[test]
 fn ralph_list_templates_shows_descriptions() {
     with_default_timeout(|| {
@@ -107,6 +131,10 @@ fn ralph_list_templates_shows_descriptions() {
 // Diagnose Command
 // ============================================================================
 
+/// Test that the `--diagnose` flag displays system diagnostic information.
+///
+/// This verifies that when a user invokes ralph with the `--diagnose` flag
+/// in a git repository, the output contains diagnostic information about ralph or the system.
 #[test]
 fn ralph_diagnose_shows_system_info() {
     with_default_timeout(|| {
@@ -123,6 +151,10 @@ fn ralph_diagnose_shows_system_info() {
     });
 }
 
+/// Test that the `-d` short flag works equivalently to `--diagnose`.
+///
+/// This verifies that when a user invokes ralph with the `-d` short flag,
+/// the command executes successfully without errors.
 #[test]
 fn ralph_diagnose_short_flag_works() {
     with_default_timeout(|| {
@@ -142,6 +174,11 @@ fn ralph_diagnose_short_flag_works() {
 // Dry Run Command
 // ============================================================================
 
+/// Test that the `--dry-run` flag validates configuration without executing agents.
+///
+/// This verifies that when a user invokes ralph with the `--dry-run` flag
+/// with a valid PROMPT.md and config, the pipeline validates without running agents
+/// and outputs an indication of dry-run mode or validation success.
 #[test]
 fn ralph_dry_run_validates_without_executing() {
     with_default_timeout(|| {
@@ -175,6 +212,11 @@ reviewer = ["codex"]
     });
 }
 
+/// Test that the `--dry-run` flag warns about missing PROMPT.md sections.
+///
+/// This verifies that when a user invokes ralph with the `--dry-run` flag
+/// without a PROMPT.md or with an incomplete one, the pipeline succeeds
+/// but outputs a warning about missing required sections like Goal.
 #[test]
 fn ralph_dry_run_warns_on_missing_prompt_sections() {
     with_default_timeout(|| {
@@ -210,6 +252,11 @@ reviewer = ["codex"]
 // Init Commands
 // ============================================================================
 
+/// Test that the `--init` flag with a template creates a PROMPT.md file.
+///
+/// This verifies that when a user invokes ralph with the `--init` flag
+/// and a template name like "bug-fix", a PROMPT.md file is created
+/// with content appropriate for that template (e.g., Goal section).
 #[test]
 fn ralph_init_with_template_creates_prompt() {
     with_default_timeout(|| {
@@ -261,6 +308,10 @@ reviewer = ["codex"]
     });
 }
 
+/// Test that the `--init-prompt` flag works as an alias for `--init`.
+///
+/// This verifies that when a user invokes ralph with the `--init-prompt` flag
+/// and a template name, a PROMPT.md file is created successfully.
 #[test]
 fn ralph_init_prompt_is_alias_for_init() {
     with_default_timeout(|| {
@@ -300,6 +351,10 @@ reviewer = ["codex"]
 // Shell Completion Generation
 // ============================================================================
 
+/// Test that shell completion generation works for bash.
+///
+/// This verifies that when a user invokes ralph with `--generate-completion=bash`,
+/// the output contains bash-specific completion script content.
 #[test]
 fn ralph_generate_completion_bash() {
     with_default_timeout(|| {
@@ -311,6 +366,10 @@ fn ralph_generate_completion_bash() {
     });
 }
 
+/// Test that shell completion generation works for zsh.
+///
+/// This verifies that when a user invokes ralph with `--generate-completion=zsh`,
+/// the output contains zsh-specific completion script content including the compdef directive.
 #[test]
 fn ralph_generate_completion_zsh() {
     with_default_timeout(|| {
@@ -322,6 +381,10 @@ fn ralph_generate_completion_zsh() {
     });
 }
 
+/// Test that shell completion generation works for fish.
+///
+/// This verifies that when a user invokes ralph with `--generate-completion=fish`,
+/// the output contains fish-specific completion script content including the complete directive.
 #[test]
 fn ralph_generate_completion_fish() {
     with_default_timeout(|| {

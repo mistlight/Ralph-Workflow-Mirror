@@ -39,6 +39,11 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 // Commit Behavior Tests
 // ============================================================================
 
+/// Test that the pipeline succeeds without a pre-existing commit message file.
+///
+/// This verifies that when a user runs ralph without a commit-message.txt file,
+/// the pipeline still succeeds using auto-commit behavior which generates
+/// a commit message automatically.
 #[test]
 fn ralph_succeeds_without_commit_message_file() {
     with_default_timeout(|| {
@@ -65,6 +70,10 @@ fn ralph_succeeds_without_commit_message_file() {
 // Plumbing Command Tests
 // ============================================================================
 
+/// Test that the `--show-commit-msg` flag displays the commit message.
+///
+/// This verifies that when a user invokes ralph with the `--show-commit-msg` flag
+/// and a commit-message.txt file exists, the message content is displayed in stdout.
 #[test]
 fn ralph_show_commit_msg_displays_message() {
     with_default_timeout(|| {
@@ -87,6 +96,11 @@ fn ralph_show_commit_msg_displays_message() {
     });
 }
 
+/// Test that the `--show-commit-msg` flag uses the repo root commit message from a subdirectory.
+///
+/// This verifies that when a user invokes ralph with the `--show-commit-msg` flag
+/// from a subdirectory, the command reads the commit-message.txt from the repo root
+/// rather than from the subdirectory.
 #[test]
 fn ralph_show_commit_msg_uses_repo_root_from_subdir() {
     with_default_timeout(|| {
@@ -119,6 +133,10 @@ fn ralph_show_commit_msg_uses_repo_root_from_subdir() {
     });
 }
 
+/// Test that the `--show-commit-msg` flag fails when the commit message file is missing.
+///
+/// This verifies that when a user invokes ralph with the `--show-commit-msg` flag
+/// without a commit-message.txt file, the command fails with an appropriate error message.
 #[test]
 fn ralph_show_commit_msg_fails_if_missing() {
     with_default_timeout(|| {
@@ -136,6 +154,11 @@ fn ralph_show_commit_msg_fails_if_missing() {
     });
 }
 
+/// Test that the `--apply-commit` flag creates a commit with the specified message.
+///
+/// This verifies that when a user invokes ralph with the `--apply-commit` flag
+/// and a commit-message.txt file exists, a commit is created with that message
+/// and the commit-message.txt file is cleaned up afterward.
 #[test]
 fn ralph_apply_commit_creates_commit() {
     with_default_timeout(|| {
@@ -174,6 +197,10 @@ fn ralph_apply_commit_creates_commit() {
     });
 }
 
+/// Test that the `--apply-commit` flag fails when the commit message file is missing.
+///
+/// This verifies that when a user invokes ralph with the `--apply-commit` flag
+/// without a commit-message.txt file, the command fails with an appropriate error message.
 #[test]
 fn ralph_apply_commit_fails_without_message_file() {
     with_default_timeout(|| {

@@ -20,6 +20,11 @@ use crate::test_timeout::with_default_timeout;
 
 use ralph_workflow::git_helpers::{RebasePhase, RebaseStateMachine, RecoveryAction};
 
+/// Test that creating a state machine initializes with correct initial state.
+///
+/// This verifies that when a new RebaseStateMachine is created,
+/// it has the correct initial phase, upstream branch, zero conflicts,
+/// and can recover from errors.
 #[test]
 fn state_machine_creates_initial_checkpoint() {
     with_default_timeout(|| {
@@ -35,6 +40,11 @@ fn state_machine_creates_initial_checkpoint() {
     });
 }
 
+/// Test that the state machine transitions correctly through all phases.
+///
+/// This verifies that when a state machine is transitioned through
+/// each phase sequentially, each transition succeeds and the phase
+/// property reflects the current state.
 #[test]
 fn state_machine_transitions_through_phases() {
     with_default_timeout(|| {
@@ -73,6 +83,10 @@ fn state_machine_transitions_through_phases() {
     });
 }
 
+/// Test that the state machine records conflict files correctly.
+///
+/// This verifies that when conflict files are recorded via record_conflict,
+/// the unresolved_conflict_count reflects the number of recorded conflicts.
 #[test]
 fn state_machine_records_conflicts() {
     with_default_timeout(|| {
@@ -86,6 +100,11 @@ fn state_machine_records_conflicts() {
     });
 }
 
+/// Test that the state machine records resolved files correctly.
+///
+/// This verifies that when conflict resolutions are recorded via record_resolution,
+/// the unresolved_conflict_count decreases and all_conflicts_resolved returns true
+/// when all conflicts are resolved.
 #[test]
 fn state_machine_records_resolutions() {
     with_default_timeout(|| {
@@ -107,6 +126,10 @@ fn state_machine_records_resolutions() {
     });
 }
 
+/// Test that the state machine correctly determines recovery state based on error count.
+///
+/// This verifies that when errors are recorded, can_recover returns true
+/// until the error limit (3) is reached, at which point should_abort returns true.
 #[test]
 fn state_machine_checks_recovery_state() {
     with_default_timeout(|| {
@@ -130,6 +153,11 @@ fn state_machine_checks_recovery_state() {
     });
 }
 
+/// Test that the state machine records errors and counts them correctly.
+///
+/// This verifies that when errors are recorded via record_error,
+/// the error count is tracked and the recovery state is updated
+/// when the limit is reached.
 #[test]
 fn state_machine_records_and_counts_errors() {
     with_default_timeout(|| {
@@ -146,6 +174,10 @@ fn state_machine_records_and_counts_errors() {
     });
 }
 
+/// Test that a checkpoint can be saved and loaded correctly.
+///
+/// This verifies that when a state machine's checkpoint is saved
+/// and then loaded into a new machine, the state is preserved correctly.
 #[test]
 fn state_machine_checkpoint_roundtrip() {
     with_default_timeout(|| {
@@ -171,6 +203,10 @@ fn state_machine_checkpoint_roundtrip() {
     });
 }
 
+/// Test that a checkpoint can be cleared correctly.
+///
+/// This verifies that when clear_checkpoint is called on a state machine,
+/// the checkpoint file is removed from the filesystem.
 #[test]
 fn state_machine_clears_checkpoint() {
     with_default_timeout(|| {
@@ -194,6 +230,10 @@ fn state_machine_clears_checkpoint() {
     });
 }
 
+/// Test that all valid state transitions are allowed.
+///
+/// This verifies that when transition_to is called with valid phase transitions,
+/// each transition succeeds and returns Ok.
 #[test]
 fn state_machine_allows_valid_transitions() {
     with_default_timeout(|| {
@@ -216,6 +256,10 @@ fn state_machine_allows_valid_transitions() {
     });
 }
 
+/// Test that the abort transition works correctly.
+///
+/// This verifies that when abort is called on a state machine with conflicts,
+/// the phase is set to RebaseAborted and this state persists when loaded.
 #[test]
 fn state_machine_handles_abort() {
     with_default_timeout(|| {
@@ -241,6 +285,10 @@ fn state_machine_handles_abort() {
     });
 }
 
+/// Test that all RecoveryAction enum variants can be instantiated.
+///
+/// This verifies that the RecoveryAction enum has all expected variants:
+/// Continue, Retry, Abort, and Skip.
 #[test]
 fn state_machine_recovery_action_variants() {
     with_default_timeout(|| {

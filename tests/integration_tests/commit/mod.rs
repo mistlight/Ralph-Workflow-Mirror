@@ -53,6 +53,11 @@ fn get_last_commit_message(repo: &git2::Repository) -> String {
     commit.message().unwrap().to_string()
 }
 
+/// Test that a commit message is generated when there is a simple change.
+///
+/// This verifies that when a user has uncommitted changes and runs ralph
+/// with developer_iters=0 to skip agent execution, a commit is created
+/// with a non-empty commit message.
 #[test]
 fn test_commit_message_generated_with_simple_diff() {
     with_default_timeout(|| {
@@ -83,6 +88,11 @@ fn test_commit_message_generated_with_simple_diff() {
     });
 }
 
+/// Test that a commit message is generated when there are changes to multiple files.
+///
+/// This verifies that when a user has uncommitted changes across multiple files
+/// and runs ralph with developer_iters=0 to skip agent execution,
+/// a commit is created with a non-empty commit message.
 #[test]
 fn test_commit_message_generated_with_multiple_files() {
     with_default_timeout(|| {
@@ -110,6 +120,11 @@ fn test_commit_message_generated_with_multiple_files() {
     });
 }
 
+/// Test that a commit captures the diff content correctly.
+///
+/// This verifies that when a user has uncommitted changes including modifications
+/// deep within a large file and runs ralph with developer_iters=0,
+/// a commit is created with a non-empty commit message.
 #[test]
 fn test_commit_created_with_diff_content() {
     with_default_timeout(|| {
@@ -154,6 +169,11 @@ fn test_commit_created_with_diff_content() {
     });
 }
 
+/// Test that a commit succeeds when both developer and review phases are skipped.
+///
+/// This verifies that when a user runs ralph with both developer_iters=0
+/// and reviewer_reviews=0 to skip agent execution, a commit is still created
+/// with a non-empty commit message.
 #[test]
 fn test_commit_succeeds_without_developer_or_review() {
     with_default_timeout(|| {
