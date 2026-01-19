@@ -38,6 +38,14 @@ pub mod run_context;
 pub mod state;
 pub mod validation;
 
+// Hardened resume modules - behind feature flag until fully integrated
+#[cfg(feature = "hardened-resume")]
+pub mod execution_history;
+#[cfg(feature = "hardened-resume")]
+pub mod file_state;
+#[cfg(feature = "hardened-resume")]
+pub mod recovery;
+
 pub use builder::CheckpointBuilder;
 pub use restore::apply_checkpoint_to_config;
 pub use run_context::RunContext;
@@ -46,3 +54,11 @@ pub use state::{
     PipelineCheckpoint, PipelinePhase, RebaseState,
 };
 pub use validation::validate_checkpoint;
+
+// Re-export hardened resume types when feature is enabled
+#[cfg(feature = "hardened-resume")]
+pub use execution_history::{ExecutionHistory, ExecutionStep, FileSnapshot, StepOutcome};
+#[cfg(feature = "hardened-resume")]
+pub use file_state::{FileSystemState, ValidationError};
+#[cfg(feature = "hardened-resume")]
+pub use recovery::{RecoveryManager, RecoveryResult, RecoveryStrategy, RollbackManager};

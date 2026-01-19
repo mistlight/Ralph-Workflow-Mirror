@@ -132,8 +132,8 @@ impl PromptConfig {
     }
 
     /// Set whether this is a resumed session.
+    #[cfg(test)]
     #[must_use = "returns the updated configuration for chaining"]
-    #[allow(dead_code)]
     pub const fn with_resume(mut self, is_resume: bool) -> Self {
         self.is_resume = is_resume;
         self
@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn test_prompt_with_rich_resume_context_development() {
-        use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase, RebaseState};
+        use crate::checkpoint::state::{PipelinePhase, RebaseState};
 
         let template_context = TemplateContext::default();
 
@@ -664,7 +664,7 @@ mod tests {
 
     #[test]
     fn test_prompt_with_rich_resume_context_review() {
-        use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase, RebaseState};
+        use crate::checkpoint::state::{PipelinePhase, RebaseState};
 
         let template_context = TemplateContext::default();
 
@@ -703,7 +703,7 @@ mod tests {
 
     #[test]
     fn test_prompt_with_rich_resume_context_fix() {
-        use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase, RebaseState};
+        use crate::checkpoint::state::{PipelinePhase, RebaseState};
 
         let template_context = TemplateContext::default();
 

@@ -22,7 +22,8 @@ const CHECKPOINT_FILE: &str = "checkpoint.json";
 /// This allows for future migration logic if needed.
 /// v1: Initial checkpoint format
 /// v2: Added run_id, parent_run_id, resume_count, actual_developer_runs, actual_reviewer_runs
-const CHECKPOINT_VERSION: u32 = 2;
+/// v3: Added execution_history, file_system_state for hardened resume
+const CHECKPOINT_VERSION: u32 = 3;
 
 /// Get the checkpoint file path.
 ///
@@ -334,6 +335,20 @@ pub struct PipelineCheckpoint {
     pub actual_developer_runs: u32,
     /// Actual number of reviewer passes that completed
     pub actual_reviewer_runs: u32,
+
+    // === Hardened resume state (v3+) - behind feature flag ===
+    #[cfg(feature = "hardened-resume")]
+    /// Execution history tracking for idempotent recovery
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_history: Option<crate::checkpoint::ExecutionHistory>,
+    #[cfg(feature = "hardened-resume")]
+    /// File system state for validation on resume
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_system_state: Option<crate::checkpoint::FileSystemState>,
+    #[cfg(feature = "hardened-resume")]
+    /// Stored prompts used during this run
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_history: Option<std::collections::HashMap<String, String>>,
 }
 
 impl PipelineCheckpoint {
@@ -380,6 +395,13 @@ impl PipelineCheckpoint {
             resume_count: params.resume_count,
             actual_developer_runs: params.actual_developer_runs,
             actual_reviewer_runs: params.actual_reviewer_runs,
+            // New v3 fields - initialize as None, will be populated by caller
+            #[cfg(feature = "hardened-resume")]
+            execution_history: None,
+            #[cfg(feature = "hardened-resume")]
+            file_system_state: None,
+            #[cfg(feature = "hardened-resume")]
+            prompt_history: None,
         }
     }
 
@@ -429,19 +451,85 @@ impl PipelineCheckpoint {
     }
 }
 
-/// Try to load a checkpoint, handling both v1 and v2 formats.
+/// Try to load a checkpoint, handling v1, v2, and v3 formats.
 fn load_checkpoint_with_fallback(
     content: &str,
 ) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
-    // Try v2 format first
+    // Try v3 format first (current)
     if let Ok(checkpoint) = serde_json::from_str::<PipelineCheckpoint>(content) {
-        // Accept v2 (current) or higher
-        if checkpoint.version >= 2 {
+        // Accept v3 (current) or higher
+        if checkpoint.version >= 3 {
             return Ok(checkpoint);
         }
     }
 
-    // Try v1 format and migrate to v2
+    // Try v2 format and migrate to v3
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct V2Checkpoint {
+        version: u32,
+        phase: PipelinePhase,
+        iteration: u32,
+        total_iterations: u32,
+        reviewer_pass: u32,
+        total_reviewer_passes: u32,
+        timestamp: String,
+        developer_agent: String,
+        reviewer_agent: String,
+        cli_args: CliArgsSnapshot,
+        developer_agent_config: AgentConfigSnapshot,
+        reviewer_agent_config: AgentConfigSnapshot,
+        rebase_state: RebaseState,
+        config_path: Option<String>,
+        config_checksum: Option<String>,
+        working_dir: String,
+        prompt_md_checksum: Option<String>,
+        git_user_name: Option<String>,
+        git_user_email: Option<String>,
+        run_id: String,
+        parent_run_id: Option<String>,
+        resume_count: u32,
+        actual_developer_runs: u32,
+        actual_reviewer_runs: u32,
+    }
+
+    if let Ok(v2) = serde_json::from_str::<V2Checkpoint>(content) {
+        // Migrate v2 to v3: add new hardened resume fields (empty defaults)
+        return Ok(PipelineCheckpoint {
+            version: CHECKPOINT_VERSION,
+            phase: v2.phase,
+            iteration: v2.iteration,
+            total_iterations: v2.total_iterations,
+            reviewer_pass: v2.reviewer_pass,
+            total_reviewer_passes: v2.total_reviewer_passes,
+            timestamp: v2.timestamp,
+            developer_agent: v2.developer_agent,
+            reviewer_agent: v2.reviewer_agent,
+            cli_args: v2.cli_args,
+            developer_agent_config: v2.developer_agent_config,
+            reviewer_agent_config: v2.reviewer_agent_config,
+            rebase_state: v2.rebase_state,
+            config_path: v2.config_path,
+            config_checksum: v2.config_checksum,
+            working_dir: v2.working_dir,
+            prompt_md_checksum: v2.prompt_md_checksum,
+            git_user_name: v2.git_user_name,
+            git_user_email: v2.git_user_email,
+            run_id: v2.run_id,
+            parent_run_id: v2.parent_run_id,
+            resume_count: v2.resume_count,
+            actual_developer_runs: v2.actual_developer_runs,
+            actual_reviewer_runs: v2.actual_reviewer_runs,
+            // New v3 fields - use empty defaults for migrated checkpoints
+            #[cfg(feature = "hardened-resume")]
+            execution_history: None,
+            #[cfg(feature = "hardened-resume")]
+            file_system_state: None,
+            #[cfg(feature = "hardened-resume")]
+            prompt_history: None,
+        });
+    }
+
+    // Try v1 format and migrate to v3
     #[derive(Debug, Clone, Serialize, Deserialize)]
     struct V1Checkpoint {
         version: u32,
@@ -466,7 +554,7 @@ fn load_checkpoint_with_fallback(
     }
 
     if let Ok(v1) = serde_json::from_str::<V1Checkpoint>(content) {
-        // Migrate v1 to v2: generate new run_id, set defaults for new fields
+        // Migrate v1 to v3: generate new run_id, set defaults for new fields
         let new_run_id = uuid::Uuid::new_v4().to_string();
         return Ok(PipelineCheckpoint {
             version: CHECKPOINT_VERSION,
@@ -492,8 +580,15 @@ fn load_checkpoint_with_fallback(
             run_id: new_run_id,
             parent_run_id: None,
             resume_count: 0,
-            actual_developer_runs: v1.iteration, // Assume completed iterations = current iteration
-            actual_reviewer_runs: v1.reviewer_pass, // Assume completed passes = current pass
+            actual_developer_runs: v1.iteration,
+            actual_reviewer_runs: v1.reviewer_pass,
+            // New v3 fields - use empty defaults for migrated checkpoints
+            #[cfg(feature = "hardened-resume")]
+            execution_history: None,
+            #[cfg(feature = "hardened-resume")]
+            file_system_state: None,
+            #[cfg(feature = "hardened-resume")]
+            prompt_history: None,
         });
     }
 
@@ -549,6 +644,13 @@ fn load_checkpoint_with_fallback(
             resume_count: 0,
             actual_developer_runs: legacy.iteration,
             actual_reviewer_runs: legacy.reviewer_pass,
+            // New v3 fields - use empty defaults for migrated checkpoints
+            #[cfg(feature = "hardened-resume")]
+            execution_history: None,
+            #[cfg(feature = "hardened-resume")]
+            file_system_state: None,
+            #[cfg(feature = "hardened-resume")]
+            prompt_history: None,
         });
     }
 

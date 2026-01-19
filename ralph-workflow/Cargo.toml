@@ -26,6 +26,9 @@ default = ["monitoring"]
 monitoring = []
 # Enable test utilities (TestLogger, TestPrinter, etc.) for integration testing
 test-utils = []
+# Enable hardened resume functionality (execution history, file state capture, recovery)
+# This is a work-in-progress feature that will become default once fully integrated
+hardened-resume = []
 
 [dependencies]
 # CLI argument parsing
