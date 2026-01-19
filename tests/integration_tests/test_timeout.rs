@@ -4,20 +4,37 @@
 //! for integration tests. Tests that take longer than the specified
 //! timeout will be terminated and fail with a clear error message.
 //!
+//! # MANDATORY Usage
+//!
+//! **ALL integration tests MUST use either `with_default_timeout()` or `with_timeout()`
+//! to wrap their test code.** This is enforced by code review and the integration test style guide.
+//!
+//! The timeout wrapper must be the **outermost** wrapper in any test - no test code
+//! should execute before the timeout wrapper is invoked.
+//!
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::test_timeout::with_timeout;
+//! use crate::test_timeout::with_default_timeout;
 //!
-//! with_timeout(|| {
-//!     // Test code here
-//! }, std::time::Duration::from_secs(10));
+//! #[test]
+//! fn test_name() {
+//!     with_default_timeout(|| {
+//!         // ALL test code must run inside this closure
+//!         let dir = TempDir::new().unwrap();
+//!         // ... rest of test
+//!     });
+//! }
 //! ```
 //!
 //! # Default Timeout
 //!
 //! The default timeout for all integration tests is 10 seconds.
 //! This is enforced via the `DEFAULT_TIMEOUT` constant.
+//!
+//! Tests that exceed 10 seconds likely have external I/O dependencies
+//! (real LLM calls, network requests, shell scripts, long sleeps) which
+//! violate the integration test style guide.
 
 use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
